@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -58,7 +58,6 @@ if __name__ == "__main__":
     # Create a fill model (optional)
     fill_model = FillModel(
         prob_fill_on_limit=0.2,
-        prob_fill_on_stop=0.95,
         prob_slippage=0.5,
         random_seed=42,
     )

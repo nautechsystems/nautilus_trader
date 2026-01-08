@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -698,7 +698,7 @@ impl From<u8> for OKXVipLevel {
             8 => Self::Vip8,
             9 => Self::Vip9,
             _ => {
-                tracing::warn!("Invalid VIP level {value}, defaulting to Vip0");
+                log::warn!("Invalid VIP level {value}, defaulting to Vip0");
                 Self::Vip0
             }
         }

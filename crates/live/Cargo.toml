@@ -26,11 +26,8 @@ streaming = ["nautilus-persistence", "nautilus-system/streaming"]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
-  "nautilus-data/extension-module",
   "nautilus-execution/extension-module",
   "nautilus-model/extension-module",
-  "nautilus-portfolio/extension-module",
-  "nautilus-risk/extension-module",
   "python",
   "pyo3/extension-module",
   "streaming",
@@ -39,16 +36,13 @@ ffi = ["nautilus-common/ffi", "nautilus-core/ffi", "nautilus-model/ffi"]
 python = [
   "nautilus-common/python",
   "nautilus-core/python",
-  "nautilus-data/python",
   "nautilus-execution/python",
   "nautilus-model/python",
-  "nautilus-portfolio/python",
-  "nautilus-risk/python",
   "nautilus-system/python",
   "pyo3",
   "streaming",
 ]
-defi = ["nautilus-common/defi"]
+defi = ["nautilus-common/defi", "nautilus-data/defi"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -68,13 +62,11 @@ nautilus-trading = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
-async-trait = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tracing = { workspace = true }
 ustr = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }

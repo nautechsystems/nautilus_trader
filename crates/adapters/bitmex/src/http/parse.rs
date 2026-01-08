@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -642,29 +642,29 @@ pub fn parse_order_status_report(
         // Infer status from quantity fields and working indicator
         match (order.leaves_qty, order.cum_qty, order.working_indicator) {
             (Some(0), Some(cum), _) if cum > 0 => {
-                tracing::debug!(
-                    order_id = ?order.order_id,
-                    client_order_id = ?order.cl_ord_id,
-                    cum_qty = cum,
-                    "Inferred Filled from missing ordStatus (leaves_qty=0, cum_qty>0)"
+                log::debug!(
+                    "Inferred Filled from missing ordStatus (leaves_qty=0, cum_qty>0): order_id={:?}, client_order_id={:?}, cum_qty={}",
+                    order.order_id,
+                    order.cl_ord_id,
+                    cum,
                 );
                 OrderStatus::Filled
             }
             (Some(0), _, _) => {
-                tracing::debug!(
-                    order_id = ?order.order_id,
-                    client_order_id = ?order.cl_ord_id,
-                    cum_qty = ?order.cum_qty,
-                    "Inferred Canceled from missing ordStatus (leaves_qty=0, cum_qty<=0)"
+                log::debug!(
+                    "Inferred Canceled from missing ordStatus (leaves_qty=0, cum_qty<=0): order_id={:?}, client_order_id={:?}, cum_qty={:?}",
+                    order.order_id,
+                    order.cl_ord_id,
+                    order.cum_qty,
                 );
                 OrderStatus::Canceled
             }
             // BitMEX cancel responses may omit all quantity fields but include working_indicator
             (None, None, Some(false)) => {
-                tracing::debug!(
-                    order_id = ?order.order_id,
-                    client_order_id = ?order.cl_ord_id,
-                    "Inferred Canceled from missing ordStatus with working_indicator=false"
+                log::debug!(
+                    "Inferred Canceled from missing ordStatus with working_indicator=false: order_id={:?}, client_order_id={:?}",
+                    order.order_id,
+                    order.cl_ord_id,
                 );
                 OrderStatus::Canceled
             }
@@ -689,12 +689,12 @@ pub fn parse_order_status_report(
         let filled_qty = parse_signed_contracts_quantity(order.cum_qty.unwrap_or(0), instrument);
         (quantity, filled_qty)
     } else if let (Some(cum), Some(leaves)) = (order.cum_qty, order.leaves_qty) {
-        tracing::debug!(
-            order_id = ?order.order_id,
-            client_order_id = ?order.cl_ord_id,
-            cum_qty = cum,
-            leaves_qty = leaves,
-            "Reconstructing order_qty from cum_qty + leaves_qty"
+        log::debug!(
+            "Reconstructing order_qty from cum_qty + leaves_qty: order_id={:?}, client_order_id={:?}, cum_qty={}, leaves_qty={}",
+            order.order_id,
+            order.cl_ord_id,
+            cum,
+            leaves,
         );
         let quantity = parse_signed_contracts_quantity(cum + leaves, instrument);
         let filled_qty = parse_signed_contracts_quantity(cum, instrument);
@@ -702,11 +702,11 @@ pub fn parse_order_status_report(
     } else if order_status == OrderStatus::Canceled || order_status == OrderStatus::Rejected {
         // For canceled/rejected orders, both quantities will be reconciled from cache
         // BitMEX sometimes omits all quantity fields in cancel responses
-        tracing::debug!(
-            order_id = ?order.order_id,
-            client_order_id = ?order.cl_ord_id,
-            status = ?order_status,
-            "Order missing quantity fields, using 0 for both (will be reconciled from cache)"
+        log::debug!(
+            "Order missing quantity fields, using 0 for both (will be reconciled from cache): order_id={:?}, client_order_id={:?}, status={:?}",
+            order.order_id,
+            order.cl_ord_id,
+            order_status,
         );
         let zero_qty = Quantity::zero(instrument.size_precision());
         (zero_qty, zero_qty)
@@ -796,42 +796,42 @@ pub fn parse_order_status_report(
         ContingencyType::Oco | ContingencyType::Oto | ContingencyType::Ouo
     ) && report.order_list_id.is_none()
     {
-        tracing::debug!(
-            order_id = %order.order_id,
-            client_order_id = ?report.client_order_id,
-            contingency_type = ?report.contingency_type,
-            "BitMEX order missing clOrdLinkID for contingent order",
+        log::debug!(
+            "BitMEX order missing clOrdLinkID for contingent order: order_id={}, client_order_id={:?}, contingency_type={:?}",
+            order.order_id,
+            report.client_order_id,
+            report.contingency_type,
         );
     }
 
     // Extract rejection/cancellation reason
     if order_status == OrderStatus::Rejected {
         if let Some(reason) = order.ord_rej_reason.or(order.text) {
-            tracing::debug!(
-                order_id = ?order.order_id,
-                client_order_id = ?order.cl_ord_id,
-                reason = ?reason,
-                "Order rejected with reason"
+            log::debug!(
+                "Order rejected with reason: order_id={:?}, client_order_id={:?}, reason={:?}",
+                order.order_id,
+                order.cl_ord_id,
+                reason,
             );
             report = report.with_cancel_reason(clean_reason(reason.as_ref()));
         } else {
-            tracing::debug!(
-                order_id = ?order.order_id,
-                client_order_id = ?order.cl_ord_id,
-                ord_status = ?order.ord_status,
-                ord_rej_reason = ?order.ord_rej_reason,
-                text = ?order.text,
-                "Order rejected without reason from BitMEX"
+            log::debug!(
+                "Order rejected without reason from BitMEX: order_id={:?}, client_order_id={:?}, ord_status={:?}, ord_rej_reason={:?}, text={:?}",
+                order.order_id,
+                order.cl_ord_id,
+                order.ord_status,
+                order.ord_rej_reason,
+                order.text,
             );
         }
     } else if order_status == OrderStatus::Canceled
         && let Some(reason) = order.ord_rej_reason.or(order.text)
     {
-        tracing::trace!(
-            order_id = ?order.order_id,
-            client_order_id = ?order.cl_ord_id,
-            reason = ?reason,
-            "Order canceled with reason"
+        log::trace!(
+            "Order canceled with reason: order_id={:?}, client_order_id={:?}, reason={:?}",
+            order.order_id,
+            order.cl_ord_id,
+            reason,
         );
         report = report.with_cancel_reason(clean_reason(reason.as_ref()));
     }
@@ -2315,10 +2315,6 @@ mod tests {
         assert!((report.quantity.as_f64() - 0.1).abs() < 1e-9);
     }
 
-    // ========================================================================
-    // Test Fixtures for Instrument Parsing
-    // ========================================================================
-
     fn create_test_spot_instrument() -> BitmexInstrument {
         BitmexInstrument {
             symbol: Ustr::from("XBTUSD"),
@@ -2672,10 +2668,6 @@ mod tests {
             prev_total_volume: None,
         }
     }
-
-    // ========================================================================
-    // Instrument Parsing Tests
-    // ========================================================================
 
     #[rstest]
     fn test_parse_spot_instrument() {

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -580,9 +580,8 @@ impl HyperliquidRejectCode {
 
             // Unknown error - log for monitoring and return with original message
             _ => {
-                tracing::warn!(
-                    "Unknown Hyperliquid error pattern (consider updating error parsing): {}",
-                    error // Use original error, not normalized
+                log::warn!(
+                    "Unknown Hyperliquid error pattern (consider updating error parsing): {error}" // Use original error, not normalized
                 );
                 Self::Unknown(error.to_string())
             }
@@ -1059,10 +1058,6 @@ mod tests {
             OrderStatus::Rejected
         );
     }
-
-    // ========================================================================
-    // Conditional Order Tests
-    // ========================================================================
 
     #[rstest]
     fn test_hyperliquid_tpsl_serialization() {

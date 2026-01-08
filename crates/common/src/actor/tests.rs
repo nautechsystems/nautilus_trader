@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -37,6 +37,7 @@ use nautilus_model::{
     identifiers::{ClientId, TraderId, Venue},
     instruments::{CurrencyPair, InstrumentAny, stubs::*},
     orderbook::OrderBook,
+    stubs::TestDefault,
     types::{Price, Quantity},
 };
 use rstest::*;
@@ -285,7 +286,7 @@ fn switchboard() -> Arc<MessagingSwitchboard> {
 
 #[fixture]
 fn trader_id() -> TraderId {
-    TraderId::from("TRADER-000")
+    TraderId::test_default()
 }
 
 #[fixture]
@@ -792,7 +793,7 @@ fn test_request_instruments(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    let venue = Venue::from("SIM");
+    let venue = Venue::test_default();
     let request_id = actor
         .request_instruments(Some(venue), None, None, None, None)
         .unwrap();
@@ -946,7 +947,7 @@ fn test_subscribe_and_receive_instruments(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    let venue = Venue::from("SIM");
+    let venue = Venue::test_default();
     actor.subscribe_instruments(venue, None, None);
 
     let topic = get_instruments_topic(venue);
@@ -1135,7 +1136,7 @@ fn test_unsubscribe_instruments(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    let venue = Venue::from("SIM");
+    let venue = Venue::test_default();
     actor.subscribe_instruments(venue, None, None);
 
     let topic = get_instruments_topic(venue);

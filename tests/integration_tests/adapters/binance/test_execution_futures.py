@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -37,6 +37,7 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
@@ -2283,3 +2284,100 @@ class TestBinanceFuturesExecutionClient:
         assert len(result) == 1
         assert result[0].algoId == 12345
         assert result[0].algoStatus == "CANCELLED"
+
+    @pytest.mark.asyncio
+    async def test_generate_order_status_report_falls_back_to_algo_order(self, mocker):
+        """
+        Test that generate_order_status_report falls back to algo order endpoint when
+        regular order query returns None.
+        """
+        # Arrange - mock base class returning None (order not found)
+        mocker.patch.object(
+            self.exec_client.__class__.__bases__[0],
+            "generate_order_status_report",
+            new=AsyncMock(return_value=None),
+        )
+
+        algo_order_response = BinanceFuturesAlgoOrder(
+            algoId=12345,
+            clientAlgoId="O-20251224-071254-eK0z-000-1",
+            algoType="CONDITIONAL",
+            orderType="STOP_MARKET",
+            symbol="ETHUSDT",
+            side="SELL",
+            positionSide="BOTH",
+            timeInForce="GTC",
+            quantity="80.0",
+            algoStatus="NEW",
+            triggerPrice="0.1243",
+            price="0",
+            workingType="CONTRACT_PRICE",
+            activatePrice=None,
+            callbackRate=None,
+            reduceOnly=False,
+            closePosition=False,
+            priceProtect=False,
+            selfTradePreventionMode="NONE",
+        )
+        mock_query_algo = mocker.patch.object(
+            self.exec_client._futures_http_account,
+            "query_algo_order",
+            return_value=algo_order_response,
+        )
+
+        command = GenerateOrderStatusReport(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            client_order_id=ClientOrderId("O-20251224-071254-eK0z-000-1"),
+            venue_order_id=None,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        report = await self.exec_client.generate_order_status_report(command)
+
+        # Assert
+        mock_query_algo.assert_called_once_with(
+            algo_id=None,
+            client_algo_id="O-20251224-071254-eK0z-000-1",
+        )
+        assert report is not None
+        assert report.client_order_id == ClientOrderId("O-20251224-071254-eK0z-000-1")
+        assert report.venue_order_id == VenueOrderId("12345")
+
+    @pytest.mark.asyncio
+    async def test_generate_order_status_report_does_not_query_algo_when_regular_found(
+        self,
+        mocker,
+    ):
+        """
+        Test that generate_order_status_report does not query algo order endpoint when
+        regular order query succeeds.
+        """
+        # Arrange - mock base class returning a valid report
+        mock_report = mocker.Mock()
+        mocker.patch.object(
+            self.exec_client.__class__.__bases__[0],
+            "generate_order_status_report",
+            new=AsyncMock(return_value=mock_report),
+        )
+
+        mock_query_algo = mocker.patch.object(
+            self.exec_client._futures_http_account,
+            "query_algo_order",
+        )
+
+        command = GenerateOrderStatusReport(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            client_order_id=ClientOrderId("O-20251224-071254-eK0z-000-1"),
+            venue_order_id=None,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        report = await self.exec_client.generate_order_status_report(command)
+
+        # Assert - algo order endpoint should NOT be called
+        mock_query_algo.assert_not_called()
+        assert report is mock_report

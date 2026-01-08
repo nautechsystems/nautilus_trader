@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -289,7 +289,7 @@ impl CoinbaseIntxWebSocketClient {
     ///
     /// Returns an error if the WebSocket fails to close properly.
     pub async fn close(&mut self) -> Result<(), Error> {
-        tracing::debug!("Closing");
+        log::debug!("Closing");
         self.signal.store(true, Ordering::Relaxed);
 
         match tokio::time::timeout(Duration::from_secs(5), async {
@@ -302,10 +302,10 @@ impl CoinbaseIntxWebSocketClient {
         .await
         {
             Ok(()) => {
-                tracing::debug!("Inner disconnected");
+                log::debug!("Inner disconnected");
             }
             Err(_) => {
-                tracing::error!("Timeout waiting for inner client to disconnect");
+                log::error!("Timeout waiting for inner client to disconnect");
             }
         }
 
@@ -331,7 +331,7 @@ impl CoinbaseIntxWebSocketClient {
                 .or_default()
                 .extend(product_ids.clone());
         }
-        tracing::debug!(
+        log::debug!(
             "Added active subscription(s): channels={channels:?}, product_ids={product_ids:?}"
         );
 
@@ -354,7 +354,7 @@ impl CoinbaseIntxWebSocketClient {
 
         if let Some(inner) = self.inner.read().await.as_ref() {
             if let Err(e) = inner.send_text(json_txt, None).await {
-                tracing::error!("Error sending message: {e:?}");
+                log::error!("Error sending message: {e:?}");
             }
         } else {
             return Err(CoinbaseIntxWsError::ClientError(
@@ -383,7 +383,7 @@ impl CoinbaseIntxWebSocketClient {
                 }
             }
         }
-        tracing::debug!(
+        log::debug!(
             "Removed active subscription(s): channels={channels:?}, product_ids={product_ids:?}"
         );
 
@@ -406,7 +406,7 @@ impl CoinbaseIntxWebSocketClient {
 
         if let Some(inner) = self.inner.read().await.as_ref() {
             if let Err(e) = inner.send_text(json_txt, None).await {
-                tracing::error!("Error sending message: {e:?}");
+                log::error!("Error sending message: {e:?}");
             }
         } else {
             return Err(CoinbaseIntxWsError::ClientError(
@@ -428,13 +428,13 @@ impl CoinbaseIntxWebSocketClient {
         }
 
         for (channel, product_ids) in subs {
-            tracing::debug!("Resubscribing: channel={channel}, product_ids={product_ids:?}");
+            log::debug!("Resubscribing: channel={channel}, product_ids={product_ids:?}");
 
             if let Err(e) = self
                 .subscribe(vec![channel], product_ids.into_iter().collect())
                 .await
             {
-                tracing::error!("Failed to resubscribe to channel {channel}: {e}");
+                log::error!("Failed to resubscribe to channel {channel}: {e}");
             }
         }
     }
@@ -729,26 +729,26 @@ impl CoinbaseIntxFeedHandler {
 
         loop {
             if self.signal.load(Ordering::Relaxed) {
-                tracing::debug!("Stop signal received");
+                log::debug!("Stop signal received");
                 break;
             }
 
             match tokio::time::timeout(timeout, self.reader.next()).await {
                 Ok(Some(msg)) => match msg {
                     Ok(Message::Pong(_)) => {
-                        tracing::trace!("Received pong");
+                        log::trace!("Received pong");
                     }
                     Ok(Message::Ping(_)) => {
-                        tracing::trace!("Received pong"); // Coinbase send ping frames as pongs
+                        log::trace!("Received pong"); // Coinbase send ping frames as pongs
                     }
                     Ok(Message::Text(text)) => {
                         match serde_json::from_str(&text) {
                             Ok(event) => match &event {
                                 CoinbaseIntxWsMessage::Reject(msg) => {
-                                    tracing::error!("{msg:?}");
+                                    log::error!("{msg:?}");
                                 }
                                 CoinbaseIntxWsMessage::Confirmation(msg) => {
-                                    tracing::debug!("{msg:?}");
+                                    log::debug!("{msg:?}");
                                     continue;
                                 }
                                 CoinbaseIntxWsMessage::Instrument(_) => return Some(event),
@@ -762,28 +762,28 @@ impl CoinbaseIntxFeedHandler {
                                 CoinbaseIntxWsMessage::CandleUpdate(_) => continue, // Ignore
                             },
                             Err(e) => {
-                                tracing::error!("Failed to parse message: {e}: {text}");
+                                log::error!("Failed to parse message: {e}: {text}");
                                 break;
                             }
                         }
                     }
                     Ok(Message::Binary(msg)) => {
-                        tracing::debug!("Raw binary: {msg:?}");
+                        log::debug!("Raw binary: {msg:?}");
                     }
                     Ok(Message::Close(_)) => {
-                        tracing::debug!("Received close message");
+                        log::debug!("Received close message");
                         return None;
                     }
                     Ok(msg) => {
-                        tracing::warn!("Unexpected message: {msg:?}");
+                        log::warn!("Unexpected message: {msg:?}");
                     }
                     Err(e) => {
-                        tracing::error!("{e}, stopping client");
+                        log::error!("{e}, stopping client");
                         break; // Break as indicates a bug in the code
                     }
                 },
                 Ok(None) => {
-                    tracing::info!("WebSocket stream closed");
+                    log::info!("WebSocket stream closed");
                     break;
                 }
                 Err(_) => {} // Timeout occurred awaiting a message, continue loop to check signal
@@ -822,7 +822,7 @@ impl CoinbaseIntxWsMessageHandler {
     async fn run(&mut self) {
         while let Some(data) = self.next().await {
             if let Err(e) = self.tx.send(data) {
-                tracing::error!("Error sending data: {e}");
+                log::error!("Error sending data: {e}");
                 break; // Stop processing on channel error
             }
         }
@@ -843,7 +843,7 @@ impl CoinbaseIntxWsMessageHandler {
                     }
                 }
                 CoinbaseIntxWsMessage::Funding(msg) => {
-                    tracing::warn!("Received {msg:?}"); // TODO: Implement
+                    log::warn!("Received {msg:?}"); // TODO: Implement
                 }
                 CoinbaseIntxWsMessage::BookSnapshot(msg) => {
                     if let Some(inst) = self.instruments_cache.get(&msg.product_id) {
@@ -860,12 +860,12 @@ impl CoinbaseIntxWsMessageHandler {
                                 return Some(NautilusWsMessage::Data(data));
                             }
                             Err(e) => {
-                                tracing::error!("Failed to parse orderbook snapshot: {e}");
+                                log::error!("Failed to parse orderbook snapshot: {e}");
                                 return None;
                             }
                         }
                     }
-                    tracing::error!("No instrument found for {}", msg.product_id);
+                    log::error!("No instrument found for {}", msg.product_id);
                     return None;
                 }
                 CoinbaseIntxWsMessage::BookUpdate(msg) => {
@@ -883,11 +883,11 @@ impl CoinbaseIntxWsMessageHandler {
                                 return Some(NautilusWsMessage::Data(data));
                             }
                             Err(e) => {
-                                tracing::error!("Failed to parse orderbook update: {e}");
+                                log::error!("Failed to parse orderbook update: {e}");
                             }
                         }
                     } else {
-                        tracing::error!("No instrument found for {}", msg.product_id);
+                        log::error!("No instrument found for {}", msg.product_id);
                     }
                 }
                 CoinbaseIntxWsMessage::Quote(msg) => {
@@ -901,11 +901,11 @@ impl CoinbaseIntxWsMessageHandler {
                         ) {
                             Ok(quote) => return Some(NautilusWsMessage::Data(Data::Quote(quote))),
                             Err(e) => {
-                                tracing::error!("Failed to parse quote: {e}");
+                                log::error!("Failed to parse quote: {e}");
                             }
                         }
                     } else {
-                        tracing::error!("No instrument found for {}", msg.product_id);
+                        log::error!("No instrument found for {}", msg.product_id);
                     }
                 }
                 CoinbaseIntxWsMessage::Trade(msg) => {
@@ -919,11 +919,11 @@ impl CoinbaseIntxWsMessageHandler {
                         ) {
                             Ok(trade) => return Some(NautilusWsMessage::Data(Data::Trade(trade))),
                             Err(e) => {
-                                tracing::error!("Failed to parse trade: {e}");
+                                log::error!("Failed to parse trade: {e}");
                             }
                         }
                     } else {
-                        tracing::error!("No instrument found for {}", msg.product_id);
+                        log::error!("No instrument found for {}", msg.product_id);
                     }
                 }
                 CoinbaseIntxWsMessage::Risk(msg) => {
@@ -936,7 +936,7 @@ impl CoinbaseIntxWsMessageHandler {
                         ) {
                             Ok(mark_price) => Some(mark_price),
                             Err(e) => {
-                                tracing::error!("Failed to parse mark price: {e}");
+                                log::error!("Failed to parse mark price: {e}");
                                 None
                             }
                         };
@@ -949,7 +949,7 @@ impl CoinbaseIntxWsMessageHandler {
                         ) {
                             Ok(index_price) => Some(index_price),
                             Err(e) => {
-                                tracing::error!("Failed to parse index price: {e}");
+                                log::error!("Failed to parse index price: {e}");
                                 None
                             }
                         };
@@ -965,7 +965,7 @@ impl CoinbaseIntxWsMessageHandler {
                             (None, None) => continue,
                         };
                     }
-                    tracing::error!("No instrument found for {}", msg.product_id);
+                    log::error!("No instrument found for {}", msg.product_id);
                 }
                 CoinbaseIntxWsMessage::CandleSnapshot(msg) => {
                     if let Some(inst) = self.instruments_cache.get(&msg.product_id) {
@@ -978,15 +978,15 @@ impl CoinbaseIntxWsMessageHandler {
                         ) {
                             Ok(bar) => return Some(NautilusWsMessage::Data(Data::Bar(bar))),
                             Err(e) => {
-                                tracing::error!("Failed to parse candle: {e}");
+                                log::error!("Failed to parse candle: {e}");
                             }
                         }
                     } else {
-                        tracing::error!("No instrument found for {}", msg.product_id);
+                        log::error!("No instrument found for {}", msg.product_id);
                     }
                 }
                 _ => {
-                    tracing::warn!("Not implemented: {event:?}");
+                    log::warn!("Not implemented: {event:?}");
                 }
             }
         }

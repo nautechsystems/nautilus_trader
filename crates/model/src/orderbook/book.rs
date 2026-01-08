@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -696,12 +696,13 @@ impl OrderBook {
     /// Returns the total quantity available at specified price level.
     #[must_use]
     pub fn get_quantity_for_price(&self, price: Price, order_side: OrderSide) -> f64 {
-        let levels = match order_side.as_specified() {
+        let side = order_side.as_specified();
+        let levels = match side {
             OrderSideSpecified::Buy => &self.asks.levels,
             OrderSideSpecified::Sell => &self.bids.levels,
         };
 
-        analysis::get_quantity_for_price(price, order_side, levels)
+        analysis::get_quantity_for_price(price, side, levels)
     }
 
     /// Simulates fills for an order, returning list of (price, quantity) tuples.
@@ -711,6 +712,27 @@ impl OrderBook {
             OrderSideSpecified::Buy => self.asks.simulate_fills(order),
             OrderSideSpecified::Sell => self.bids.simulate_fills(order),
         }
+    }
+
+    /// Returns all price levels crossed by an order at the given price and side.
+    ///
+    /// Unlike `simulate_fills`, this returns ALL crossed levels regardless of
+    /// order quantity. Used when liquidity consumption tracking needs visibility
+    /// into all available levels.
+    #[must_use]
+    pub fn get_all_crossed_levels(
+        &self,
+        order_side: OrderSide,
+        price: Price,
+        size_precision: u8,
+    ) -> Vec<(Price, Quantity)> {
+        let side = order_side.as_specified();
+        let levels = match side {
+            OrderSideSpecified::Buy => &self.asks.levels,
+            OrderSideSpecified::Sell => &self.bids.levels,
+        };
+
+        analysis::get_levels_for_price(price, side, levels, size_precision)
     }
 
     /// Return a formatted string representation of the order book.

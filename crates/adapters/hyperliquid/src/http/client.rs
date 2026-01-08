@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -346,7 +346,7 @@ impl HyperliquidRawHttpClient {
         let request = InfoRequest::candle_snapshot(coin, interval, start_time, end_time);
         let response = self.send_info_request(&request).await?;
 
-        tracing::trace!(
+        log::trace!(
             "Candle snapshot raw response (len={}): {:?}",
             response.as_array().map_or(0, |a| a.len()),
             response
@@ -375,7 +375,9 @@ impl HyperliquidRawHttpClient {
                 let extra = info_extra_weight(request, &val);
                 if extra > 0 {
                     self.rest_limiter.debit_extra(extra).await;
-                    tracing::debug!(endpoint=?request, base_w, extra, "info: debited extra weight");
+                    log::debug!(
+                        "Info debited extra weight: endpoint={request:?}, base_w={base_w}, extra={extra}"
+                    );
                 }
                 return Ok(val);
             }
@@ -398,7 +400,10 @@ impl HyperliquidRawHttpClient {
                         },
                         Duration::from_millis,
                     );
-                tracing::warn!(endpoint=?request, attempt, wait_ms=?delay.as_millis(), "429 Too Many Requests; backing off");
+                log::warn!(
+                    "429 Too Many Requests; backing off: endpoint={request:?}, attempt={attempt}, wait_ms={:?}",
+                    delay.as_millis()
+                );
                 attempt += 1;
                 tokio::time::sleep(delay).await;
                 // tiny re-acquire to avoid stampede exactly on minute boundary
@@ -415,7 +420,11 @@ impl HyperliquidRawHttpClient {
                     self.rate_limit_backoff_base,
                     self.rate_limit_backoff_cap,
                 );
-                tracing::warn!(endpoint=?request, attempt, status=?response.status.as_u16(), wait_ms=?delay.as_millis(), "transient error; retrying");
+                log::warn!(
+                    "Transient error; retrying: endpoint={request:?}, attempt={attempt}, status={:?}, wait_ms={:?}",
+                    response.status.as_u16(),
+                    delay.as_millis()
+                );
                 attempt += 1;
                 tokio::time::sleep(delay).await;
                 continue;
@@ -523,11 +532,11 @@ impl HyperliquidRawHttpClient {
                     let error_msg = response_data
                         .as_str()
                         .map_or_else(|| response_data.to_string(), |s| s.to_string());
-                    tracing::error!("Hyperliquid API returned error: {error_msg}");
+                    log::error!("Hyperliquid API returned error: {error_msg}");
                     Err(Error::bad_request(format!("API error: {error_msg}")))
                 }
                 HyperliquidExchangeResponse::Error { error } => {
-                    tracing::error!("Hyperliquid API returned error: {error}");
+                    log::error!("Hyperliquid API returned error: {error}");
                     Err(Error::bad_request(format!("API error: {error}")))
                 }
                 _ => Ok(parsed_response),
@@ -537,7 +546,7 @@ impl HyperliquidRawHttpClient {
             Err(Error::rate_limit("exchange", w, ra))
         } else {
             let error_body = String::from_utf8_lossy(&response.body);
-            tracing::error!(
+            log::error!(
                 "Exchange API error (status {}): {}",
                 response.status.as_u16(),
                 error_body
@@ -628,11 +637,11 @@ impl HyperliquidRawHttpClient {
                     let error_msg = response_data
                         .as_str()
                         .map_or_else(|| response_data.to_string(), |s| s.to_string());
-                    tracing::error!("Hyperliquid API returned error: {error_msg}");
+                    log::error!("Hyperliquid API returned error: {error_msg}");
                     Err(Error::bad_request(format!("API error: {error_msg}")))
                 }
                 HyperliquidExchangeResponse::Error { error } => {
-                    tracing::error!("Hyperliquid API returned error: {error}");
+                    log::error!("Hyperliquid API returned error: {error}");
                     Err(Error::bad_request(format!("API error: {error}")))
                 }
                 _ => Ok(parsed_response),
@@ -835,10 +844,7 @@ impl HyperliquidHttpClient {
                 .expect("Failed to acquire write lock");
             instruments_by_coin.insert((coin, product_type), instrument);
         } else {
-            tracing::warn!(
-                "Unable to determine product type for symbol: {}",
-                full_symbol
-            );
+            log::warn!("Unable to determine product type for symbol: {full_symbol}");
         }
     }
 
@@ -894,7 +900,7 @@ impl HyperliquidHttpClient {
 
         // Vault tokens aren't in standard API, create synthetic instruments
         if coin.as_str().starts_with("vntls:") {
-            tracing::info!("Creating synthetic instrument for vault token: {coin}");
+            log::info!("Creating synthetic instrument for vault token: {coin}");
 
             let clock = nautilus_core::time::get_atomic_clock_realtime();
             let ts_event = clock.get_time_ns();
@@ -955,7 +961,7 @@ impl HyperliquidHttpClient {
             Some(instrument)
         } else {
             // For non-vault tokens, log warning and return None
-            tracing::warn!("Instrument not found in cache: {coin}");
+            log::warn!("Instrument not found in cache: {coin}");
             None
         }
     }
@@ -974,36 +980,36 @@ impl HyperliquidHttpClient {
         match self.inner.load_perp_meta().await {
             Ok(perp_meta) => match parse_perp_instruments(&perp_meta) {
                 Ok(perp_defs) => {
-                    tracing::debug!(
-                        count = perp_defs.len(),
-                        "Loaded Hyperliquid perp definitions"
+                    log::debug!(
+                        "Loaded Hyperliquid perp definitions: count={}",
+                        perp_defs.len(),
                     );
                     defs.extend(perp_defs);
                 }
                 Err(e) => {
-                    tracing::warn!(%e, "Failed to parse Hyperliquid perp instruments");
+                    log::warn!("Failed to parse Hyperliquid perp instruments: {e}");
                 }
             },
             Err(e) => {
-                tracing::warn!(%e, "Failed to load Hyperliquid perp metadata");
+                log::warn!("Failed to load Hyperliquid perp metadata: {e}");
             }
         }
 
         match self.inner.get_spot_meta().await {
             Ok(spot_meta) => match parse_spot_instruments(&spot_meta) {
                 Ok(spot_defs) => {
-                    tracing::debug!(
-                        count = spot_defs.len(),
-                        "Loaded Hyperliquid spot definitions"
+                    log::debug!(
+                        "Loaded Hyperliquid spot definitions: count={}",
+                        spot_defs.len(),
                     );
                     defs.extend(spot_defs);
                 }
                 Err(e) => {
-                    tracing::warn!(%e, "Failed to parse Hyperliquid spot instruments");
+                    log::warn!("Failed to parse Hyperliquid spot instruments: {e}");
                 }
             },
             Err(e) => {
-                tracing::warn!(%e, "Failed to load Hyperliquid spot metadata");
+                log::warn!("Failed to load Hyperliquid spot metadata: {e}");
             }
         }
 
@@ -1164,6 +1170,10 @@ impl HyperliquidHttpClient {
     /// # Errors
     ///
     /// Returns an error if the API request fails or parsing fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `account_id` is not set on the client.
     pub async fn request_order_status_reports(
         &self,
         user: &str,
@@ -1184,7 +1194,7 @@ impl HyperliquidHttpClient {
                 match serde_json::from_value(order_value.clone()) {
                     Ok(o) => o,
                     Err(e) => {
-                        tracing::warn!("Failed to parse order: {e}");
+                        log::warn!("Failed to parse order: {e}");
                         continue;
                     }
                 };
@@ -1210,11 +1220,11 @@ impl HyperliquidHttpClient {
                 &order,
                 &status,
                 &instrument,
-                self.account_id.unwrap_or_default(),
+                self.account_id.expect("account_id not set"),
                 ts_init,
             ) {
                 Ok(report) => reports.push(report),
-                Err(e) => tracing::error!("Failed to parse order status report: {e}"),
+                Err(e) => log::error!("Failed to parse order status report: {e}"),
             }
         }
 
@@ -1232,6 +1242,10 @@ impl HyperliquidHttpClient {
     /// # Errors
     ///
     /// Returns an error if the API request fails or parsing fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `account_id` is not set on the client.
     pub async fn request_fill_reports(
         &self,
         user: &str,
@@ -1260,11 +1274,11 @@ impl HyperliquidHttpClient {
             match crate::http::parse::parse_fill_report(
                 &fill,
                 &instrument,
-                self.account_id.unwrap_or_default(),
+                self.account_id.expect("account_id not set"),
                 ts_init,
             ) {
                 Ok(report) => reports.push(report),
-                Err(e) => tracing::error!("Failed to parse fill report: {e}"),
+                Err(e) => log::error!("Failed to parse fill report: {e}"),
             }
         }
 
@@ -1282,6 +1296,10 @@ impl HyperliquidHttpClient {
     /// # Errors
     ///
     /// Returns an error if the API request fails or parsing fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `account_id` has not been set on the client.
     pub async fn request_position_status_reports(
         &self,
         user: &str,
@@ -1325,11 +1343,11 @@ impl HyperliquidHttpClient {
             match crate::http::parse::parse_position_status_report(
                 &position_value,
                 &instrument,
-                self.account_id.unwrap_or_default(),
+                self.account_id.expect("account_id not set"),
                 ts_init,
             ) {
                 Ok(report) => reports.push(report),
-                Err(e) => tracing::error!("Failed to parse position status report: {e}"),
+                Err(e) => log::error!("Failed to parse position status report: {e}"),
             }
         }
 
@@ -1416,11 +1434,7 @@ impl HyperliquidHttpClient {
             .filter_map(|(i, candle)| {
                 crate::data::candle_to_bar(candle, bar_type, price_precision, size_precision)
                     .map_err(|e| {
-                        tracing::error!(
-                            "Failed to convert candle {} to bar: {:?} error: {e}",
-                            i,
-                            candle
-                        );
+                        log::error!("Failed to convert candle {i} to bar: {candle:?} error: {e}");
                         e
                     })
                     .ok()
@@ -1435,7 +1449,7 @@ impl HyperliquidHttpClient {
             bars.truncate(limit as usize);
         }
 
-        tracing::debug!(
+        log::debug!(
             "Received {} bars for {} (filtered {} incomplete)",
             bars.len(),
             bar_type,

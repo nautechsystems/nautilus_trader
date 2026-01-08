@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -471,7 +471,6 @@ impl FromU8 for BookAction {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[allow(non_camel_case_types)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -482,6 +481,7 @@ impl FromU8 for BookAction {
         module = "nautilus_trader.core.nautilus_pyo3.model.enums"
     )
 )]
+#[allow(non_camel_case_types)]
 pub enum BookType {
     /// Top-of-book best bid/ask, one level per side.
     L1_MBP = 1,
@@ -1158,6 +1158,20 @@ impl OrderStatus {
                 Self::PartiallyFilled,
             ])
         })
+    }
+
+    /// Returns whether the order status represents an open/working order.
+    #[must_use]
+    pub const fn is_open(self) -> bool {
+        matches!(
+            self,
+            Self::Submitted
+                | Self::Accepted
+                | Self::Triggered
+                | Self::PendingUpdate
+                | Self::PendingCancel
+                | Self::PartiallyFilled
+        )
     }
 }
 

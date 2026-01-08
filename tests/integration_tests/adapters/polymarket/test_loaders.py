@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -114,7 +114,10 @@ async def test_fetch_markets(markets_list_data):
     mock_http_client.get.assert_called_once()
     assert len(markets) == 3
     assert markets[0]["slug"] == "fed-rate-hike-in-2025"
-    assert markets[0]["conditionId"] == "0x4319532e181605cb15b1bd677759a3bc7f7394b2fdf145195b700eeaedfd5221"
+    assert (
+        markets[0]["conditionId"]
+        == "0x4319532e181605cb15b1bd677759a3bc7f7394b2fdf145195b700eeaedfd5221"
+    )
 
 
 @pytest.mark.asyncio
@@ -137,7 +140,10 @@ async def test_find_market_by_slug(market_slug_data):
         url="https://gamma-api.polymarket.com/markets/slug/kamala-harris-divorce-in-2025",
     )
     assert market["slug"] == "kamala-harris-divorce-in-2025"
-    assert market["conditionId"] == "0x270d5aa3b23be0d4e713361d603b187dd1919c71c74226ad867699f33972c5f2"
+    assert (
+        market["conditionId"]
+        == "0x270d5aa3b23be0d4e713361d603b187dd1919c71c74226ad867699f33972c5f2"
+    )
     assert market["active"] is True
 
 
@@ -270,7 +276,12 @@ async def test_fetch_orderbook_history_with_pagination(test_instrument):
     loader = PolymarketDataLoader(test_instrument, http_client=mock_http_client)
 
     # Act - use limit=1 to force pagination
-    snapshots = await loader.fetch_orderbook_history("token123", 1729000000000, 1729000120000, limit=1)
+    snapshots = await loader.fetch_orderbook_history(
+        "token123",
+        1729000000000,
+        1729000120000,
+        limit=1,
+    )
 
     # Assert
     assert mock_http_client.get.call_count == 2

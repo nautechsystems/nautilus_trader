@@ -107,7 +107,7 @@ Actors have access to core system components:
 
 | Property          | Description                                              |
 |-------------------|----------------------------------------------------------|
-| `self.cache`      | Read-only access to instruments, orders, positions, etc. |
+| `self.cache`      | Shared state for instruments, orders, positions, etc.    |
 | `self.portfolio`  | Portfolio state and calculations.                        |
 | `self.clock`      | Current time and timer/alert scheduling.                 |
 | `self.log`        | Structured logging.                                      |

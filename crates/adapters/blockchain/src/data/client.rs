@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_common::{
+    clients::DataClient,
     defi::RequestPoolSnapshot,
     live::get_runtime,
     messages::{
@@ -27,7 +28,6 @@ use nautilus_common::{
         },
     },
 };
-use nautilus_data::client::DataClient;
 use nautilus_model::{
     defi::{DefiData, PoolIdentifier, SharedChain, validation::validate_address},
     identifiers::{ClientId, Venue},
@@ -104,7 +104,7 @@ impl BlockchainDataClient {
         let command_rx = if let Some(r) = self.command_rx.take() {
             r
         } else {
-            tracing::error!("Command receiver already taken, not spawning handler");
+            log::error!("Command receiver already taken, not spawning handler");
             return;
         };
 
@@ -123,15 +123,15 @@ impl BlockchainDataClient {
         );
 
         let handle = get_runtime().spawn(async move {
-            tracing::debug!("Started task 'process'");
+            log::debug!("Started task 'process'");
 
             if let Err(e) = core_client.connect().await {
                 // TODO: connect() could return more granular error types to distinguish
                 // cancellation from actual failures without string matching
                 if e.to_string().contains("cancelled") || e.to_string().contains("Sync cancelled") {
-                    tracing::warn!("Blockchain core client connection interrupted: {e}");
+                    log::warn!("Blockchain core client connection interrupted: {e}");
                 } else {
-                    tracing::error!("Failed to connect blockchain core client: {e}");
+                    log::error!("Failed to connect blockchain core client: {e}");
                 }
                 return;
             }
@@ -141,7 +141,7 @@ impl BlockchainDataClient {
             loop {
                 tokio::select! {
                     () = cancellation_token.cancelled() => {
-                        tracing::debug!("Received cancellation signal in Blockchain data client process task");
+                        log::debug!("Received cancellation signal in Blockchain data client process task");
                         core_client.disconnect().await;
                         break;
                     }
@@ -151,33 +151,33 @@ impl BlockchainDataClient {
                                 DefiDataCommand::Subscribe(cmd) => {
                                     let chain = cmd.blockchain();
                                     if chain != core_client.chain.name {
-                                        tracing::error!("Incorrect blockchain for subscribe command: {chain}");
+                                        log::error!("Incorrect blockchain for subscribe command: {chain}");
                                         continue;
                                     }
 
                                       if let Err(e) = Self::handle_subscribe_command(cmd, &mut core_client).await{
-                                        tracing::error!("Error processing subscribe command: {e}");
+                                        log::error!("Error processing subscribe command: {e}");
                                     }
                                 }
                                 DefiDataCommand::Unsubscribe(cmd) => {
                                     let chain = cmd.blockchain();
                                     if chain != core_client.chain.name {
-                                        tracing::error!("Incorrect blockchain for subscribe command: {chain}");
+                                        log::error!("Incorrect blockchain for subscribe command: {chain}");
                                         continue;
                                     }
 
                                     if let Err(e) = Self::handle_unsubscribe_command(cmd, &mut core_client).await{
-                                        tracing::error!("Error processing subscribe command: {e}");
+                                        log::error!("Error processing subscribe command: {e}");
                                     }
                                 }
                                 DefiDataCommand::Request(cmd) => {
                                     if let Err(e) = Self::handle_request_command(cmd, &mut core_client).await {
-                                        tracing::error!("Error processing request command: {e}");
+                                        log::error!("Error processing request command: {e}");
                                     }
                                 }
                             }
                         } else {
-                            tracing::debug!("Command channel closed");
+                            log::debug!("Command channel closed");
                             break;
                         }
                     }
@@ -208,13 +208,13 @@ impl BlockchainDataClient {
                                             match core_client.process_pool_swap_event(&swap_event, pool){
                                                 Ok(swap) => Some(DataEvent::DeFi(DefiData::PoolSwap(swap))),
                                                 Err(e) => {
-                                                    tracing::error!("Error processing pool swap event: {e}");
+                                                    log::error!("Error processing pool swap event: {e}");
                                                     None
                                                 }
                                             }
                                         }
                                         Err(e) => {
-                                            tracing::error!("Failed to get pool {} with error {:?}", swap_event.pool_identifier, e);
+                                            log::error!("Failed to get pool {} with error {:?}", swap_event.pool_identifier, e);
                                             None
                                         }
                                     }
@@ -230,13 +230,13 @@ impl BlockchainDataClient {
                                             ){
                                                 Ok(update) => Some(DataEvent::DeFi(DefiData::PoolLiquidityUpdate(update))),
                                                 Err(e) => {
-                                                    tracing::error!("Error processing pool burn event: {e}");
+                                                    log::error!("Error processing pool burn event: {e}");
                                                     None
                                                 }
                                             }
                                         }
                                         Err(e) => {
-                                            tracing::error!("Failed to get pool {} with error {:?}", burn_event.pool_identifier, e);
+                                            log::error!("Failed to get pool {} with error {:?}", burn_event.pool_identifier, e);
                                             None
                                         }
                                     }
@@ -252,13 +252,13 @@ impl BlockchainDataClient {
                                             ){
                                                 Ok(update) => Some(DataEvent::DeFi(DefiData::PoolLiquidityUpdate(update))),
                                                 Err(e) => {
-                                                    tracing::error!("Error processing pool mint event: {e}");
+                                                    log::error!("Error processing pool mint event: {e}");
                                                     None
                                                 }
                                             }
                                         }
                                         Err(e) => {
-                                            tracing::error!("Failed to get pool {} with error {:?}", mint_event.pool_identifier, e);
+                                            log::error!("Failed to get pool {} with error {:?}", mint_event.pool_identifier, e);
                                             None
                                         }
                                     }
@@ -274,13 +274,13 @@ impl BlockchainDataClient {
                                             ){
                                                 Ok(update) => Some(DataEvent::DeFi(DefiData::PoolFeeCollect(update))),
                                                 Err(e) => {
-                                                    tracing::error!("Error processing pool collect event: {e}");
+                                                    log::error!("Error processing pool collect event: {e}");
                                                     None
                                                 }
                                             }
                                         }
                                         Err(e) => {
-                                            tracing::error!("Failed to get pool {} with error {:?}", collect_event.pool_identifier, e);
+                                            log::error!("Failed to get pool {} with error {:?}", collect_event.pool_identifier, e);
                                             None
                                         }
                                     }
@@ -291,13 +291,13 @@ impl BlockchainDataClient {
                                             match core_client.process_pool_flash_event(&flash_event,pool){
                                                 Ok(flash) => Some(DataEvent::DeFi(DefiData::PoolFlash(flash))),
                                                 Err(e) => {
-                                                    tracing::error!("Error processing pool flash event: {e}");
+                                                    log::error!("Error processing pool flash event: {e}");
                                                     None
                                                 }
                                             }
                                         }
                                         Err(e) => {
-                                            tracing::error!("Failed to get pool {} with error {:?}", flash_event.pool_identifier, e);
+                                            log::error!("Failed to get pool {} with error {:?}", flash_event.pool_identifier, e);
                                             None
                                         }
                                     }
@@ -308,7 +308,7 @@ impl BlockchainDataClient {
                                 core_client.send_data(event);
                             }
                         } else {
-                            tracing::debug!("HyperSync data channel closed");
+                            log::debug!("HyperSync data channel closed");
                             break;
                         }
                     }
@@ -325,29 +325,29 @@ impl BlockchainDataClient {
                                 core_client.send_data(data);
                             },
                             Ok(BlockchainMessage::SwapEvent(_)) => {
-                                tracing::warn!("RPC swap events are not yet supported");
+                                log::warn!("RPC swap events are not yet supported");
                             }
                             Ok(BlockchainMessage::MintEvent(_)) => {
-                                tracing::warn!("RPC mint events are not yet supported");
+                                log::warn!("RPC mint events are not yet supported");
                             }
                             Ok(BlockchainMessage::BurnEvent(_)) => {
-                                tracing::warn!("RPC burn events are not yet supported");
+                                log::warn!("RPC burn events are not yet supported");
                             }
                             Ok(BlockchainMessage::CollectEvent(_)) => {
-                                tracing::warn!("RPC collect events are not yet supported");
+                                log::warn!("RPC collect events are not yet supported");
                             }
                             Ok(BlockchainMessage::FlashEvent(_)) => {
-                                tracing::warn!("RPC flash events are not yet supported");
+                                log::warn!("RPC flash events are not yet supported");
                             }
                             Err(e) => {
-                                tracing::error!("Error processing RPC message: {e}");
+                                log::error!("Error processing RPC message: {e}");
                             }
                         }
                     }
                 }
             }
 
-            tracing::debug!("Stopped task 'process'");
+            log::debug!("Stopped task 'process'");
         });
 
         self.process_task = Some(handle);
@@ -360,21 +360,21 @@ impl BlockchainDataClient {
     ) -> anyhow::Result<()> {
         match command {
             DefiSubscribeCommand::Blocks(_cmd) => {
-                tracing::info!("Processing subscribe blocks command");
+                log::info!("Processing subscribe blocks command");
 
                 // Try RPC client first if available, otherwise use HyperSync
                 if let Some(ref mut rpc) = core_client.rpc_client {
                     if let Err(e) = rpc.subscribe_blocks().await {
-                        tracing::warn!(
+                        log::warn!(
                             "RPC blocks subscription failed: {e}, falling back to HyperSync"
                         );
                         core_client.hypersync_client.subscribe_blocks();
                         tokio::task::yield_now().await;
                     } else {
-                        tracing::info!("Successfully subscribed to blocks via RPC");
+                        log::info!("Successfully subscribed to blocks via RPC");
                     }
                 } else {
-                    tracing::info!("Subscribing to blocks via HyperSync");
+                    log::info!("Subscribing to blocks via HyperSync");
                     core_client.hypersync_client.subscribe_blocks();
                     tokio::task::yield_now().await;
                 }
@@ -382,13 +382,13 @@ impl BlockchainDataClient {
                 Ok(())
             }
             DefiSubscribeCommand::Pool(cmd) => {
-                tracing::info!(
+                log::info!(
                     "Processing subscribe pool command for {}",
                     cmd.instrument_id
                 );
 
                 if let Some(ref mut _rpc) = core_client.rpc_client {
-                    tracing::warn!("RPC pool subscription not yet implemented, using HyperSync");
+                    log::warn!("RPC pool subscription not yet implemented, using HyperSync");
                 }
 
                 if let Ok((_, dex)) = cmd.instrument_id.venue.parse_dex() {
@@ -418,7 +418,7 @@ impl BlockchainDataClient {
                         .subscription_manager
                         .subscribe_flashes(dex, pool_address);
 
-                    tracing::info!(
+                    log::info!(
                         "Subscribed to all pool events for {} at address {}",
                         cmd.instrument_id,
                         pool_address
@@ -433,15 +433,13 @@ impl BlockchainDataClient {
                 Ok(())
             }
             DefiSubscribeCommand::PoolSwaps(cmd) => {
-                tracing::info!(
+                log::info!(
                     "Processing subscribe pool swaps command for {}",
                     cmd.instrument_id
                 );
 
                 if let Some(ref mut _rpc) = core_client.rpc_client {
-                    tracing::warn!(
-                        "RPC pool swaps subscription not yet implemented, using HyperSync"
-                    );
+                    log::warn!("RPC pool swaps subscription not yet implemented, using HyperSync");
                 }
 
                 if let Ok((_, dex)) = cmd.instrument_id.venue.parse_dex() {
@@ -466,13 +464,13 @@ impl BlockchainDataClient {
                 Ok(())
             }
             DefiSubscribeCommand::PoolLiquidityUpdates(cmd) => {
-                tracing::info!(
+                log::info!(
                     "Processing subscribe pool liquidity updates command for address: {}",
                     cmd.instrument_id
                 );
 
                 if let Some(ref mut _rpc) = core_client.rpc_client {
-                    tracing::warn!(
+                    log::warn!(
                         "RPC pool liquidity updates subscription not yet implemented, using HyperSync"
                     );
                 }
@@ -498,13 +496,13 @@ impl BlockchainDataClient {
                 Ok(())
             }
             DefiSubscribeCommand::PoolFeeCollects(cmd) => {
-                tracing::info!(
+                log::info!(
                     "Processing subscribe pool fee collects command for address: {}",
                     cmd.instrument_id
                 );
 
                 if let Some(ref mut _rpc) = core_client.rpc_client {
-                    tracing::warn!(
+                    log::warn!(
                         "RPC pool fee collects subscription not yet implemented, using HyperSync"
                     );
                 }
@@ -530,13 +528,13 @@ impl BlockchainDataClient {
                 Ok(())
             }
             DefiSubscribeCommand::PoolFlashEvents(cmd) => {
-                tracing::info!(
+                log::info!(
                     "Processing subscribe pool flash command for address: {}",
                     cmd.instrument_id
                 );
 
                 if let Some(ref mut _rpc) = core_client.rpc_client {
-                    tracing::warn!(
+                    log::warn!(
                         "RPC pool fee collects subscription not yet implemented, using HyperSync"
                     );
                 }
@@ -571,21 +569,21 @@ impl BlockchainDataClient {
     ) -> anyhow::Result<()> {
         match command {
             DefiUnsubscribeCommand::Blocks(_cmd) => {
-                tracing::info!("Processing unsubscribe blocks command");
+                log::info!("Processing unsubscribe blocks command");
 
                 // TODO: Implement RPC unsubscription when available
                 if core_client.rpc_client.is_some() {
-                    tracing::warn!("RPC blocks unsubscription not yet implemented");
+                    log::warn!("RPC blocks unsubscription not yet implemented");
                 }
 
                 // Use HyperSync client for unsubscription
                 core_client.hypersync_client.unsubscribe_blocks().await;
-                tracing::info!("Unsubscribed from blocks via HyperSync");
+                log::info!("Unsubscribed from blocks via HyperSync");
 
                 Ok(())
             }
             DefiUnsubscribeCommand::Pool(cmd) => {
-                tracing::info!(
+                log::info!(
                     "Processing unsubscribe pool command for {}",
                     cmd.instrument_id
                 );
@@ -613,7 +611,7 @@ impl BlockchainDataClient {
                         .subscription_manager
                         .unsubscribe_flashes(dex, pool_address);
 
-                    tracing::info!(
+                    log::info!(
                         "Unsubscribed from all pool events for {} at address {}",
                         cmd.instrument_id,
                         pool_address
@@ -628,7 +626,7 @@ impl BlockchainDataClient {
                 Ok(())
             }
             DefiUnsubscribeCommand::PoolSwaps(cmd) => {
-                tracing::info!("Processing unsubscribe pool swaps command");
+                log::info!("Processing unsubscribe pool swaps command");
 
                 if let Ok((_, dex)) = cmd.instrument_id.venue.parse_dex() {
                     let pool_address = validate_address(cmd.instrument_id.symbol.as_str())
@@ -648,7 +646,7 @@ impl BlockchainDataClient {
                 Ok(())
             }
             DefiUnsubscribeCommand::PoolLiquidityUpdates(cmd) => {
-                tracing::info!(
+                log::info!(
                     "Processing unsubscribe pool liquidity updates command for {}",
                     cmd.instrument_id
                 );
@@ -674,7 +672,7 @@ impl BlockchainDataClient {
                 Ok(())
             }
             DefiUnsubscribeCommand::PoolFeeCollects(cmd) => {
-                tracing::info!(
+                log::info!(
                     "Processing unsubscribe pool fee collects command for {}",
                     cmd.instrument_id
                 );
@@ -700,7 +698,7 @@ impl BlockchainDataClient {
                 Ok(())
             }
             DefiUnsubscribeCommand::PoolFlashEvents(cmd) => {
-                tracing::info!(
+                log::info!(
                     "Processing unsubscribe pool flash command for {}",
                     cmd.instrument_id
                 );
@@ -732,7 +730,7 @@ impl BlockchainDataClient {
     ) -> anyhow::Result<()> {
         match command {
             DefiRequestCommand::PoolSnapshot(cmd) => {
-                tracing::info!("Processing pool snapshot request for {}", cmd.instrument_id);
+                log::info!("Processing pool snapshot request for {}", cmd.instrument_id);
 
                 let pool_address =
                     validate_address(cmd.instrument_id.symbol.as_str()).map_err(|e| {
@@ -748,7 +746,7 @@ impl BlockchainDataClient {
                 match core_client.get_pool(&pool_identifier) {
                     Ok(pool) => {
                         let pool = pool.clone();
-                        tracing::debug!("Found pool for snapshot request: {}", cmd.instrument_id);
+                        log::debug!("Found pool for snapshot request: {}", cmd.instrument_id);
 
                         // Send the pool definition
                         let pool_data = DataEvent::DeFi(DefiData::Pool(pool.as_ref().clone()));
@@ -758,7 +756,7 @@ impl BlockchainDataClient {
                             Ok((profiler, already_valid)) => {
                                 let snapshot = profiler.extract_snapshot();
 
-                                tracing::info!(
+                                log::info!(
                                     "Saving pool snapshot with {} positions and {} ticks to database...",
                                     snapshot.positions.len(),
                                     snapshot.ticks.len()
@@ -782,15 +780,14 @@ impl BlockchainDataClient {
                                     core_client.send_data(snapshot_data);
                                 }
                             }
-                            Err(e) => tracing::error!(
-                                "Failed to bootstrap pool profiler for {} and extract snapshot with error {}",
-                                cmd.instrument_id,
-                                e.to_string()
+                            Err(e) => log::error!(
+                                "Failed to bootstrap pool profiler for {} and extract snapshot with error {e}",
+                                cmd.instrument_id
                             ),
                         }
                     }
                     Err(e) => {
-                        tracing::warn!("Pool {} not found in cache: {e}", cmd.instrument_id);
+                        log::warn!("Pool {} not found in cache: {e}", cmd.instrument_id);
                     }
                 }
 
@@ -807,7 +804,7 @@ impl BlockchainDataClient {
         if let Some(handle) = self.process_task.take()
             && let Err(e) = handle.await
         {
-            tracing::error!("Process task join error: {e}");
+            log::error!("Process task join error: {e}");
         }
     }
 }
@@ -825,19 +822,19 @@ impl DataClient for BlockchainDataClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
-        tracing::info!(
-            chain_name = %self.chain.name,
-            dex_ids = ?self.config.dex_ids,
-            use_hypersync_for_live_data = self.config.use_hypersync_for_live_data,
-            http_proxy_url = ?self.config.http_proxy_url,
-            ws_proxy_url = ?self.config.ws_proxy_url,
-            "Starting blockchain data client"
+        log::info!(
+            "Starting blockchain data client: chain_name={}, dex_ids={:?}, use_hypersync_for_live_data={}, http_proxy_url={:?}, ws_proxy_url={:?}",
+            self.chain.name,
+            self.config.dex_ids,
+            self.config.use_hypersync_for_live_data,
+            self.config.http_proxy_url,
+            self.config.ws_proxy_url
         );
         Ok(())
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
-        tracing::info!(
+        log::info!(
             "Stopping blockchain data client for '{chain_name}'",
             chain_name = self.chain.name
         );
@@ -849,7 +846,7 @@ impl DataClient for BlockchainDataClient {
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
-        tracing::info!(
+        log::info!(
             "Resetting blockchain data client for '{chain_name}'",
             chain_name = self.chain.name
         );
@@ -858,7 +855,7 @@ impl DataClient for BlockchainDataClient {
     }
 
     fn dispose(&mut self) -> anyhow::Result<()> {
-        tracing::info!(
+        log::info!(
             "Disposing blockchain data client for '{chain_name}'",
             chain_name = self.chain.name
         );
@@ -866,7 +863,7 @@ impl DataClient for BlockchainDataClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        tracing::info!(
+        log::info!(
             "Connecting blockchain data client for '{}'",
             self.chain.name
         );
@@ -879,7 +876,7 @@ impl DataClient for BlockchainDataClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        tracing::info!(
+        log::info!(
             "Disconnecting blockchain data client for '{}'",
             self.chain.name
         );

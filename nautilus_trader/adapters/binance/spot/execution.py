@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -124,6 +124,7 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
             BinanceSpotEventType.executionReport: self._handle_execution_report,
             BinanceSpotEventType.listStatus: self._handle_list_status,
             BinanceSpotEventType.balanceUpdate: self._handle_balance_update,
+            BinanceSpotEventType.listenKeyExpired: self._handle_listen_key_expired,
         }
 
         # Websocket spot schema decoders
@@ -239,6 +240,9 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
     def _handle_user_ws_message(self, raw: bytes) -> None:
         try:
             wrapper = self._decoder_spot_user_msg_wrapper.decode(raw)
+            if not wrapper.stream or not wrapper.data:
+                return  # Control message response
+
             self._spot_user_ws_handlers[wrapper.data.e](raw)
         except Exception as e:
             self._log.exception(f"Error on handling {raw!r}", e)
@@ -256,3 +260,6 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
 
     def _handle_balance_update(self, raw: bytes) -> None:
         self.create_task(self._update_account_state())
+
+    def _handle_listen_key_expired(self, raw: bytes) -> None:
+        self._log.warning("Listen key expired")

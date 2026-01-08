@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -83,18 +83,10 @@ pub fn parse_ticker_currencies(ticker: &str) -> anyhow::Result<(&str, &str)> {
     Ok((parts[0], parts[1]))
 }
 
-/// Validates that a market is active and tradable.
-///
-/// # Errors
-///
-/// Returns an error if the market status is not Active.
-pub fn validate_market_active(ticker: &str, status: &DydxMarketStatus) -> anyhow::Result<()> {
-    if *status != DydxMarketStatus::Active {
-        anyhow::bail!(
-            "Market '{ticker}' is not active (status: {status:?}). Only active markets can be parsed."
-        );
-    }
-    Ok(())
+/// Returns true if the market status is Active.
+#[must_use]
+pub const fn is_market_active(status: &DydxMarketStatus) -> bool {
+    matches!(status, DydxMarketStatus::Active)
 }
 
 /// Calculate time-in-force for conditional orders.
@@ -210,21 +202,19 @@ pub fn validate_conditional_order(
 /// # Errors
 ///
 /// Returns an error if:
-/// - Market status is not Active.
 /// - Ticker format is invalid (not BASE-QUOTE).
 /// - Required fields are missing or invalid.
 /// - Price or quantity values cannot be parsed.
 /// - Currency parsing fails.
 /// - Margin fractions are out of valid range.
+///
+/// Note: Callers should pre-filter inactive markets using [`is_market_active`].
 pub fn parse_instrument_any(
     definition: &PerpetualMarket,
     maker_fee: Option<rust_decimal::Decimal>,
     taker_fee: Option<rust_decimal::Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    // Validate market status - only parse active markets
-    validate_market_active(&definition.ticker, &definition.status)?;
-
     // Parse instrument ID with Nautilus perpetual suffix and keep raw symbol as venue ticker
     let instrument_id = parse_instrument_id(&definition.ticker);
     let raw_symbol = Symbol::from(definition.ticker.as_str());
@@ -395,13 +385,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_instrument_any_inactive_market() {
-        let mut market = create_test_market();
-        market.status = DydxMarketStatus::Paused;
-
-        let result = parse_instrument_any(&market, None, None, UnixNanos::default());
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not active"));
+    fn test_is_market_active() {
+        assert!(is_market_active(&DydxMarketStatus::Active));
+        assert!(!is_market_active(&DydxMarketStatus::Paused));
+        assert!(!is_market_active(&DydxMarketStatus::CancelOnly));
+        assert!(!is_market_active(&DydxMarketStatus::PostOnly));
+        assert!(!is_market_active(&DydxMarketStatus::Initializing));
+        assert!(!is_market_active(&DydxMarketStatus::FinalSettlement));
     }
 
     #[rstest]
@@ -460,15 +450,6 @@ mod tests {
     fn test_parse_ticker_currencies_invalid() {
         assert!(parse_ticker_currencies("INVALID").is_err());
         assert!(parse_ticker_currencies("BTC-USD-PERP").is_err());
-    }
-
-    #[rstest]
-    fn test_validate_market_active() {
-        assert!(validate_market_active("BTC-USD", &DydxMarketStatus::Active).is_ok());
-
-        assert!(validate_market_active("BTC-USD", &DydxMarketStatus::Paused).is_err());
-        assert!(validate_market_active("BTC-USD", &DydxMarketStatus::CancelOnly).is_err());
-        assert!(validate_market_active("BTC-USD", &DydxMarketStatus::PostOnly).is_err());
     }
 
     #[rstest]
@@ -1178,9 +1159,8 @@ pub fn parse_account_state(
             let instrument = match instruments.get(&instrument_id) {
                 Some(inst) => inst,
                 None => {
-                    tracing::warn!(
-                        "Cannot calculate margin for position {}: instrument not found",
-                        market_str
+                    log::warn!(
+                        "Cannot calculate margin for position {market_str}: instrument not found"
                     );
                     continue;
                 }
@@ -1190,9 +1170,8 @@ pub fn parse_account_state(
             let (margin_init, margin_maint) = match instrument {
                 InstrumentAny::CryptoPerpetual(perp) => (perp.margin_init, perp.margin_maint),
                 _ => {
-                    tracing::warn!(
-                        "Instrument {} is not a CryptoPerpetual, skipping margin calculation",
-                        instrument_id
+                    log::warn!(
+                        "Instrument {instrument_id} is not a CryptoPerpetual, skipping margin calculation"
                     );
                     continue;
                 }
@@ -1202,7 +1181,7 @@ pub fn parse_account_state(
             let position_size = match Decimal::from_str(&position.size) {
                 Ok(size) => size.abs(),
                 Err(e) => {
-                    tracing::warn!(
+                    log::warn!(
                         "Failed to parse position size '{}' for {}: {}",
                         position.size,
                         market_str,
@@ -1225,10 +1204,7 @@ pub fn parse_account_state(
                 .unwrap_or(Decimal::ZERO);
 
             if oracle_price.is_zero() {
-                tracing::warn!(
-                    "No valid price for position {}, skipping margin calculation",
-                    market_str
-                );
+                log::warn!("No valid price for position {market_str}, skipping margin calculation");
                 continue;
             }
 

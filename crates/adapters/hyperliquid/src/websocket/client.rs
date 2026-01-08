@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -150,7 +150,7 @@ impl HyperliquidWebSocketClient {
     /// Establishes WebSocket connection and spawns the message handler.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
         if self.is_active() {
-            tracing::warn!("WebSocket already connected");
+            log::warn!("WebSocket already connected");
             return Ok(());
         }
         let (message_handler, raw_rx) = channel_message_handler();
@@ -171,7 +171,7 @@ impl HyperliquidWebSocketClient {
 
         // Atomically swap connection state to the client's atomic
         self.connection_mode.store(client.connection_mode_atomic());
-        tracing::info!("Hyperliquid WebSocket connected: {}", self.url);
+        log::info!("Hyperliquid WebSocket connected: {}", self.url);
 
         // Create channels for handler communication
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
@@ -191,7 +191,7 @@ impl HyperliquidWebSocketClient {
         if !instruments_vec.is_empty()
             && let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(instruments_vec))
         {
-            tracing::error!("Failed to send InitializeInstruments: {e}");
+            log::error!("Failed to send InitializeInstruments: {e}");
         }
 
         // Spawn handler task
@@ -213,11 +213,11 @@ impl HyperliquidWebSocketClient {
             let resubscribe_all = || {
                 let topics = subscriptions.all_topics();
                 if topics.is_empty() {
-                    tracing::debug!("No active subscriptions to restore after reconnection");
+                    log::debug!("No active subscriptions to restore after reconnection");
                     return;
                 }
 
-                tracing::info!(
+                log::info!(
                     "Resubscribing to {} active subscriptions after reconnection",
                     topics.len()
                 );
@@ -227,14 +227,12 @@ impl HyperliquidWebSocketClient {
                             if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe {
                                 subscriptions: vec![subscription],
                             }) {
-                                tracing::error!(error = %e, "Failed to send resubscribe command");
+                                log::error!("Failed to send resubscribe command: {e}");
                             }
                         }
                         Err(e) => {
-                            tracing::error!(
-                                error = %e,
-                                topic = %topic,
-                                "Failed to reconstruct subscription from topic"
+                            log::error!(
+                                "Failed to reconstruct subscription from topic: topic={topic}, {e}"
                             );
                         }
                     }
@@ -243,27 +241,27 @@ impl HyperliquidWebSocketClient {
             loop {
                 match handler.next().await {
                     Some(NautilusWsMessage::Reconnected) => {
-                        tracing::info!("WebSocket reconnected");
+                        log::info!("WebSocket reconnected");
                         resubscribe_all();
                         continue;
                     }
                     Some(msg) => {
                         if handler.send(msg).is_err() {
-                            tracing::error!("Failed to send message (receiver dropped)");
+                            log::error!("Failed to send message (receiver dropped)");
                             break;
                         }
                     }
                     None => {
                         if handler.is_stopped() {
-                            tracing::debug!("Stop signal received, ending message processing");
+                            log::debug!("Stop signal received, ending message processing");
                             break;
                         }
-                        tracing::warn!("WebSocket stream ended unexpectedly");
+                        log::warn!("WebSocket stream ended unexpectedly");
                         break;
                     }
                 }
             }
-            tracing::debug!("Handler task completed");
+            log::debug!("Handler task completed");
         });
         self.task_handle = Some(Arc::new(stream_handle));
         *self.cmd_tx.write().await = cmd_tx;
@@ -273,38 +271,38 @@ impl HyperliquidWebSocketClient {
 
     /// Disconnects the WebSocket connection.
     pub async fn disconnect(&mut self) -> anyhow::Result<()> {
-        tracing::info!("Disconnecting Hyperliquid WebSocket");
+        log::info!("Disconnecting Hyperliquid WebSocket");
         self.signal.store(true, Ordering::Relaxed);
         if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Disconnect) {
-            tracing::debug!(
+            log::debug!(
                 "Failed to send disconnect command (handler may already be shut down): {e}"
             );
         }
         if let Some(task_handle) = self.task_handle.take() {
             match Arc::try_unwrap(task_handle) {
                 Ok(handle) => {
-                    tracing::debug!("Waiting for task handle to complete");
+                    log::debug!("Waiting for task handle to complete");
                     match tokio::time::timeout(tokio::time::Duration::from_secs(2), handle).await {
-                        Ok(Ok(())) => tracing::debug!("Task handle completed successfully"),
-                        Ok(Err(e)) => tracing::error!("Task handle encountered an error: {e:?}"),
+                        Ok(Ok(())) => log::debug!("Task handle completed successfully"),
+                        Ok(Err(e)) => log::error!("Task handle encountered an error: {e:?}"),
                         Err(_) => {
-                            tracing::warn!(
+                            log::warn!(
                                 "Timeout waiting for task handle, task may still be running"
                             );
                         }
                     }
                 }
                 Err(arc_handle) => {
-                    tracing::debug!(
+                    log::debug!(
                         "Cannot take ownership of task handle - other references exist, aborting task"
                     );
                     arc_handle.abort();
                 }
             }
         } else {
-            tracing::debug!("No task handle to await");
+            log::debug!("No task handle to await");
         }
-        tracing::debug!("Disconnected");
+        log::debug!("Disconnected");
         Ok(())
     }
 
@@ -617,7 +615,7 @@ impl HyperliquidWebSocketClient {
             .map_err(|e| anyhow::anyhow!("Failed to send UpdateAssetContextSubs command: {e}"))?;
 
         if is_first_subscription {
-            tracing::debug!(
+            log::debug!(
                 "First asset context subscription for coin '{coin}', subscribing to ActiveAssetCtx"
             );
             let subscription = SubscriptionRequest::ActiveAssetCtx { coin };
@@ -632,7 +630,7 @@ impl HyperliquidWebSocketClient {
                 })
                 .map_err(|e| anyhow::anyhow!("Failed to send subscribe command: {e}"))?;
         } else {
-            tracing::debug!(
+            log::debug!(
                 "Already subscribed to ActiveAssetCtx for coin '{coin}', adding {data_type:?} to tracked types"
             );
         }
@@ -661,7 +659,7 @@ impl HyperliquidWebSocketClient {
             if should_unsubscribe {
                 self.asset_context_subs.remove(&coin);
 
-                tracing::debug!(
+                log::debug!(
                     "Last asset context subscription removed for coin '{coin}', unsubscribing from ActiveAssetCtx"
                 );
                 let subscription = SubscriptionRequest::ActiveAssetCtx { coin };
@@ -681,7 +679,7 @@ impl HyperliquidWebSocketClient {
                     })
                     .map_err(|e| anyhow::anyhow!("Failed to send unsubscribe command: {e}"))?;
             } else {
-                tracing::debug!(
+                log::debug!(
                     "Removed {data_type:?} from tracked types for coin '{coin}', but keeping ActiveAssetCtx subscription"
                 );
 
@@ -706,7 +704,7 @@ impl HyperliquidWebSocketClient {
             let symbol = inst.symbol().inner();
             self.instruments.insert(symbol, inst.clone());
         }
-        tracing::info!(
+        log::info!(
             "Hyperliquid instrument cache initialized with {} instruments",
             self.instruments.len()
         );

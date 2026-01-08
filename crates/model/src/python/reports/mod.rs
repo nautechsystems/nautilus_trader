@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,26 +15,7 @@
 
 //! Python bindings from [PyO3](https://pyo3.rs).
 
-use pyo3::prelude::*;
-
-use crate::reports;
-
 pub mod fill;
 pub mod mass_status;
 pub mod order;
 pub mod position;
-
-/// Loaded as `nautilus_pyo3.execution`.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if registering any module components fails.
-#[pymodule]
-#[rustfmt::skip]
-pub fn execution(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<reports::fill::FillReport>()?;
-    m.add_class::<reports::order::OrderStatusReport>()?;
-    m.add_class::<reports::position::PositionStatusReport>()?;
-    m.add_class::<reports::mass_status::ExecutionMassStatus>()?;
-    Ok(())
-}

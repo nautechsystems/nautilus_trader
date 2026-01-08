@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -124,11 +124,11 @@ def test_own_book_order_repr():
     )
 
     expected_repr = (
-        'OwnBookOrder(trader_id=TRADER-001, client_order_id=O-12345, venue_order_id=Some(u!("1")), side=BUY, price=100.00, size=10, '
+        'OwnBookOrder(trader_id=TRADER-001, client_order_id=O-12345, venue_order_id=Some("1"), side=BUY, price=100.00, size=10, '
         "order_type=LIMIT, time_in_force=GTC, status=ACCEPTED, ts_last=2, ts_accepted=2, ts_submitted=1, ts_init=1)"
     )
     assert repr(order) == expected_repr
-    assert str(order) == 'TRADER-001,O-12345,Some(u!("1")),BUY,100.00,10,LIMIT,GTC,ACCEPTED,2,2,1,1'
+    assert str(order) == 'TRADER-001,O-12345,Some("1"),BUY,100.00,10,LIMIT,GTC,ACCEPTED,2,2,1,1'
 
 
 # ------------------------------------------------------------------------------
@@ -583,7 +583,7 @@ def test_own_order_book_quantities_parametrized(
     for i, (side, price, size) in enumerate(orders):
         order = OwnBookOrder(
             trader_id=TraderId("TRADER-001"),
-            client_order_id=ClientOrderId(f"O-{i+1}"),
+            client_order_id=ClientOrderId(f"O-{i + 1}"),
             venue_order_id=VenueOrderId("i"),
             side=side,
             price=Price(price, 2),
@@ -883,8 +883,8 @@ def test_bid_quantity_with_depth_limit():
         book.add(
             OwnBookOrder(
                 trader_id=TraderId("TRADER-001"),
-                client_order_id=ClientOrderId(f"O-{i+1}"),
-                venue_order_id=VenueOrderId(f"{i+1}"),
+                client_order_id=ClientOrderId(f"O-{i + 1}"),
+                venue_order_id=VenueOrderId(f"{i + 1}"),
                 side=OrderSide.BUY,
                 price=Price(price, 2),
                 size=Quantity(size, 0),
@@ -934,8 +934,8 @@ def test_ask_quantity_with_depth_limit():
         book.add(
             OwnBookOrder(
                 trader_id=TraderId("TRADER-001"),
-                client_order_id=ClientOrderId(f"A-{i+1}"),
-                venue_order_id=VenueOrderId(f"{i+1}"),
+                client_order_id=ClientOrderId(f"A-{i + 1}"),
+                venue_order_id=VenueOrderId(f"{i + 1}"),
                 side=OrderSide.SELL,
                 price=Price(price, 2),
                 size=Quantity(size, 0),
@@ -977,8 +977,8 @@ def test_bid_quantity_with_grouping():
         book.add(
             OwnBookOrder(
                 trader_id=TraderId("TRADER-001"),
-                client_order_id=ClientOrderId(f"O-{i+1}"),
-                venue_order_id=VenueOrderId(f"{i+1}"),
+                client_order_id=ClientOrderId(f"O-{i + 1}"),
+                venue_order_id=VenueOrderId(f"{i + 1}"),
                 side=OrderSide.BUY,
                 price=Price(price, 2),
                 size=Quantity(size, 0),
@@ -1020,8 +1020,8 @@ def test_ask_quantity_with_grouping():
         book.add(
             OwnBookOrder(
                 trader_id=TraderId("TRADER-001"),
-                client_order_id=ClientOrderId(f"A-{i+1}"),
-                venue_order_id=VenueOrderId(f"{i+1}"),
+                client_order_id=ClientOrderId(f"A-{i + 1}"),
+                venue_order_id=VenueOrderId(f"{i + 1}"),
                 side=OrderSide.SELL,
                 price=Price(price, 2),
                 size=Quantity(size, 0),
@@ -1065,8 +1065,8 @@ def test_bid_quantity_with_grouping_and_depth():
         book.add(
             OwnBookOrder(
                 trader_id=TraderId("TRADER-001"),
-                client_order_id=ClientOrderId(f"O-{i+1}"),
-                venue_order_id=VenueOrderId(f"{i+1}"),
+                client_order_id=ClientOrderId(f"O-{i + 1}"),
+                venue_order_id=VenueOrderId(f"{i + 1}"),
                 side=OrderSide.BUY,
                 price=Price(price, 2),
                 size=Quantity(size, 0),
@@ -1111,8 +1111,8 @@ def test_quantity_methods_with_status_and_grouping():
         book.add(
             OwnBookOrder(
                 trader_id=TraderId("TRADER-001"),
-                client_order_id=ClientOrderId(f"O-{i+1}"),
-                venue_order_id=VenueOrderId(f"{i+1}") if status == OrderStatus.ACCEPTED else None,
+                client_order_id=ClientOrderId(f"O-{i + 1}"),
+                venue_order_id=VenueOrderId(f"{i + 1}") if status == OrderStatus.ACCEPTED else None,
                 side=OrderSide.BUY,
                 price=Price(price, 2),
                 size=Quantity(size, 0),
@@ -1166,8 +1166,8 @@ def test_own_order_book_pprint():
         book.add(
             OwnBookOrder(
                 trader_id=TraderId("TRADER-001"),
-                client_order_id=ClientOrderId(f"O-{i+1}"),
-                venue_order_id=VenueOrderId(f"{i+1}"),
+                client_order_id=ClientOrderId(f"O-{i + 1}"),
+                venue_order_id=VenueOrderId(f"{i + 1}"),
                 side=side,
                 price=Price(price, 2),
                 size=Quantity(size, 0),
@@ -1235,8 +1235,8 @@ def test_own_order_book_pprint_with_group_size():
         book.add(
             OwnBookOrder(
                 trader_id=TraderId("TRADER-001"),
-                client_order_id=ClientOrderId(f"O-{i+1}"),
-                venue_order_id=VenueOrderId(f"{i+1}"),
+                client_order_id=ClientOrderId(f"O-{i + 1}"),
+                venue_order_id=VenueOrderId(f"{i + 1}"),
                 side=side,
                 price=Price(price, 5),
                 size=Quantity(size, 0),

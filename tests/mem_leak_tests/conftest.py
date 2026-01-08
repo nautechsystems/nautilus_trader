@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -53,7 +53,7 @@ def snapshot_memory(runs):
 
                 # Print the difference in memory usage between runs
                 print(
-                    f"Memory allocated after run {i+1}: {current_memory} MB",
+                    f"Memory allocated after run {i + 1}: {current_memory} MB",
                 )
                 print(
                     f"Max peak memory recorded: {max_peak_memory} MB",

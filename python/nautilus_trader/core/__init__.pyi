@@ -3,7 +3,6 @@
 import builtins
 import typing
 
-
 def convert_to_snake_case(input: builtins.str) -> builtins.str:
     r"""
     Convert the given string from any common case (PascalCase, camelCase, kebab-case, etc.)
@@ -183,7 +182,9 @@ def secs_to_nanos(secs: builtins.float) -> builtins.int:
     int
     """
 
-def unix_nanos_to_iso8601(timestamp_ns: builtins.int, nanos_precision: builtins.bool | None = True) -> builtins.str:
+def unix_nanos_to_iso8601(
+    timestamp_ns: builtins.int, nanos_precision: builtins.bool | None = True
+) -> builtins.str:
     r"""
     Return UNIX nanoseconds as an ISO 8601 (RFC 3339) format string.
 
@@ -203,4 +204,3 @@ def unix_nanos_to_iso8601(timestamp_ns: builtins.int, nanos_precision: builtins.
     ValueError
         If `timestamp_ns` is invalid.
     """
-

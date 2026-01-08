@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,6 @@
 use std::{collections::HashMap, fmt::Display, str::FromStr};
 
 use nautilus_core::{UUID4, UnixNanos};
-pub use nautilus_execution::models::latency::LatencyModel;
 use nautilus_model::{
     data::{delta::OrderBookDelta, deltas::OrderBookDeltas, order::BookOrder},
     enums::{AccountType, BookAction, OrderSide, PositionSide, RecordFlag},
@@ -184,36 +183,6 @@ impl HyperliquidDataConverter {
         Self {
             configs: HashMap::new(),
         }
-    }
-
-    /// Create a latency model for order processing simulation
-    ///
-    /// This uses the execution crate's LatencyModel for simulating order processing latencies.
-    /// For real-time latency monitoring, use standard `tracing` macros.
-    pub fn create_latency_model(
-        &self,
-        base_latency_ns: u64,
-        insert_latency_ns: u64,
-        update_latency_ns: u64,
-        delete_latency_ns: u64,
-    ) -> LatencyModel {
-        LatencyModel::new(
-            UnixNanos::from(base_latency_ns),
-            UnixNanos::from(insert_latency_ns),
-            UnixNanos::from(update_latency_ns),
-            UnixNanos::from(delete_latency_ns),
-        )
-    }
-
-    /// Create a default latency model for Hyperliquid (typical network latencies)
-    pub fn create_default_latency_model(&self) -> LatencyModel {
-        // Typical latencies for crypto exchanges (in nanoseconds)
-        self.create_latency_model(
-            50_000_000, // 50ms base latency
-            10_000_000, // 10ms insert latency
-            5_000_000,  // 5ms update latency
-            5_000_000,  // 5ms delete latency
-        )
     }
 
     /// Normalize an order's price and quantity for Hyperliquid
@@ -1221,35 +1190,6 @@ mod tests {
         assert!(result.is_none());
         assert!(cache.is_empty());
         assert_eq!(cache.len(), 0);
-    }
-
-    #[rstest]
-    fn test_latency_model_creation() {
-        let converter = HyperliquidDataConverter::new();
-
-        // Test custom latency model
-        let latency_model = converter.create_latency_model(
-            100_000_000, // 100ms base
-            20_000_000,  // 20ms insert
-            10_000_000,  // 10ms update
-            10_000_000,  // 10ms delete
-        );
-
-        assert_eq!(latency_model.base_latency_nanos.as_u64(), 100_000_000);
-        assert_eq!(latency_model.insert_latency_nanos.as_u64(), 20_000_000);
-        assert_eq!(latency_model.update_latency_nanos.as_u64(), 10_000_000);
-        assert_eq!(latency_model.delete_latency_nanos.as_u64(), 10_000_000);
-
-        // Test default latency model
-        let default_model = converter.create_default_latency_model();
-        assert_eq!(default_model.base_latency_nanos.as_u64(), 50_000_000);
-        assert_eq!(default_model.insert_latency_nanos.as_u64(), 10_000_000);
-        assert_eq!(default_model.update_latency_nanos.as_u64(), 5_000_000);
-        assert_eq!(default_model.delete_latency_nanos.as_u64(), 5_000_000);
-
-        // Test that Display trait works
-        let display_str = format!("{default_model}");
-        assert_eq!(display_str, "LatencyModel()");
     }
 
     #[rstest]

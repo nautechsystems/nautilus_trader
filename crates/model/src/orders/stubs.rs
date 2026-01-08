@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,20 +16,325 @@
 use std::{collections::HashMap, str::FromStr};
 
 use nautilus_core::{UUID4, UnixNanos};
+use rust_decimal_macros::dec;
 
-use super::any::OrderAny;
+use super::{
+    any::OrderAny, limit::LimitOrder, limit_if_touched::LimitIfTouchedOrder, market::MarketOrder,
+    market_if_touched::MarketIfTouchedOrder, market_to_limit::MarketToLimitOrder,
+    stop_limit::StopLimitOrder, stop_market::StopMarketOrder,
+    trailing_stop_limit::TrailingStopLimitOrder, trailing_stop_market::TrailingStopMarketOrder,
+};
 use crate::{
-    enums::{LiquiditySide, OrderType},
+    enums::{LiquiditySide, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
     events::{OrderAccepted, OrderCanceled, OrderEventAny, OrderFilled, OrderSubmitted},
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, Venue, VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId, Venue,
+        VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderTestBuilder},
+    stubs::TestDefault,
     types::{Money, Price, Quantity},
 };
 
-// Test Event Stubs
+impl TestDefault for LimitOrder {
+    /// Creates a new test default [`LimitOrder`] instance.
+    fn test_default() -> Self {
+        Self::new(
+            TraderId::test_default(),
+            StrategyId::test_default(),
+            InstrumentId::test_default(),
+            ClientOrderId::test_default(),
+            OrderSide::Buy,
+            Quantity::from(100_000),
+            Price::from("1.00000"),
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::default(),
+            UnixNanos::default(),
+        )
+    }
+}
+
+impl TestDefault for LimitIfTouchedOrder {
+    /// Creates a new test default [`LimitIfTouchedOrder`] instance.
+    fn test_default() -> Self {
+        Self::new(
+            TraderId::test_default(),
+            StrategyId::test_default(),
+            InstrumentId::test_default(),
+            ClientOrderId::test_default(),
+            OrderSide::Buy,
+            Quantity::from(100_000),
+            Price::from("1.00000"),
+            Price::from("1.00000"),
+            TriggerType::BidAsk,
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::default(),
+            UnixNanos::default(),
+        )
+    }
+}
+
+impl TestDefault for MarketOrder {
+    /// Creates a new test default [`MarketOrder`] instance.
+    fn test_default() -> Self {
+        Self::new(
+            TraderId::test_default(),
+            StrategyId::test_default(),
+            InstrumentId::test_default(),
+            ClientOrderId::test_default(),
+            OrderSide::Buy,
+            Quantity::from(100_000),
+            TimeInForce::Day,
+            UUID4::default(),
+            UnixNanos::default(),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+}
+
+impl TestDefault for MarketIfTouchedOrder {
+    /// Creates a new test default [`MarketIfTouchedOrder`] instance.
+    fn test_default() -> Self {
+        Self::new(
+            TraderId::test_default(),
+            StrategyId::test_default(),
+            InstrumentId::test_default(),
+            ClientOrderId::test_default(),
+            OrderSide::Buy,
+            Quantity::from(100_000),
+            Price::from("1.00000"),
+            TriggerType::BidAsk,
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::default(),
+            UnixNanos::default(),
+        )
+    }
+}
+
+impl TestDefault for MarketToLimitOrder {
+    /// Creates a new test default [`MarketToLimitOrder`] instance.
+    fn test_default() -> Self {
+        Self::new(
+            TraderId::test_default(),
+            StrategyId::test_default(),
+            InstrumentId::test_default(),
+            ClientOrderId::test_default(),
+            OrderSide::Buy,
+            Quantity::from(100_000),
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::default(),
+            UnixNanos::default(),
+        )
+    }
+}
+
+impl TestDefault for StopLimitOrder {
+    /// Creates a new test default [`StopLimitOrder`] instance.
+    fn test_default() -> Self {
+        Self::new(
+            TraderId::test_default(),
+            StrategyId::test_default(),
+            InstrumentId::test_default(),
+            ClientOrderId::test_default(),
+            OrderSide::Buy,
+            Quantity::from(100_000),
+            Price::from("1.00000"),
+            Price::from("1.00000"),
+            TriggerType::BidAsk,
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::default(),
+            UnixNanos::default(),
+        )
+    }
+}
+
+impl TestDefault for StopMarketOrder {
+    /// Creates a new test default [`StopMarketOrder`] instance.
+    fn test_default() -> Self {
+        Self::new(
+            TraderId::test_default(),
+            StrategyId::test_default(),
+            InstrumentId::test_default(),
+            ClientOrderId::test_default(),
+            OrderSide::Buy,
+            Quantity::from(100_000),
+            Price::from("1.00000"),
+            TriggerType::BidAsk,
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::default(),
+            UnixNanos::default(),
+        )
+    }
+}
+
+impl TestDefault for TrailingStopLimitOrder {
+    /// Creates a new test default [`TrailingStopLimitOrder`] instance.
+    fn test_default() -> Self {
+        Self::new(
+            TraderId::test_default(),
+            StrategyId::test_default(),
+            InstrumentId::test_default(),
+            ClientOrderId::test_default(),
+            OrderSide::Buy,
+            Quantity::from(100_000),
+            Price::from("1.00000"),
+            Price::from("1.00000"),
+            TriggerType::BidAsk,
+            dec!(0.001),
+            dec!(0.001),
+            TrailingOffsetType::Price,
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::default(),
+            UnixNanos::default(),
+        )
+    }
+}
+
+impl TestDefault for TrailingStopMarketOrder {
+    /// Creates a new test default [`TrailingStopMarketOrder`] instance.
+    fn test_default() -> Self {
+        Self::new(
+            TraderId::test_default(),
+            StrategyId::test_default(),
+            InstrumentId::test_default(),
+            ClientOrderId::test_default(),
+            OrderSide::Buy,
+            Quantity::from(100_000),
+            Price::from("1.00000"),
+            TriggerType::BidAsk,
+            dec!(0.001),
+            TrailingOffsetType::Price,
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::default(),
+            UnixNanos::default(),
+        )
+    }
+}
+
 #[derive(Debug)]
 pub struct TestOrderEventStubs;
 
@@ -104,7 +409,9 @@ impl TestOrderEventStubs {
         ts_filled_ns: Option<UnixNanos>,
         account_id: Option<AccountId>,
     ) -> OrderEventAny {
-        let venue_order_id = order.venue_order_id().unwrap_or_default();
+        let venue_order_id = order
+            .venue_order_id()
+            .unwrap_or_else(VenueOrderId::test_default);
         let account_id = account_id
             .or(order.account_id())
             .unwrap_or(AccountId::from("SIM-001"));

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -2367,9 +2367,9 @@ async def test_continuous_reconciliation_detects_fully_filled_mismatch(
     await exec_engine._check_orders_consistency()
 
     # Assert
-    assert (
-        len(reconciled_orders) > 0
-    ), f"No reconciliation triggered. Order status: {order.status}, filled: {order.filled_qty}"
+    assert len(reconciled_orders) > 0, (
+        f"No reconciliation triggered. Order status: {order.status}, filled: {order.filled_qty}"
+    )
     assert order.client_order_id in reconciled_orders
     # Order should be updated to fully filled via inferred fill
     assert order.filled_qty == Quantity.from_int(100)  # Updated to match venue
@@ -2496,6 +2496,7 @@ async def test_query_order_status_reports_handles_exceptions(exec_engine_open_ch
     """
     Test _query_order_status_reports handles client exceptions gracefully.
     """
+
     # Arrange
     async def raise_error(command):
         raise RuntimeError("API error")
@@ -2511,7 +2512,11 @@ async def test_query_order_status_reports_handles_exceptions(exec_engine_open_ch
 
 
 @pytest.mark.asyncio
-async def test_query_order_status_reports_multiple_clients(exec_engine_open_check, exec_client, account_id):
+async def test_query_order_status_reports_multiple_clients(
+    exec_engine_open_check,
+    exec_client,
+    account_id,
+):
     """
     Test _query_order_status_reports handles multiple clients.
     """
@@ -2668,7 +2673,11 @@ async def test_reconcile_order_reports_matches_cache(exec_engine_open_check, cac
 
 
 @pytest.mark.asyncio
-async def test_reconcile_order_reports_filled_qty_mismatch(exec_engine_open_check, cache, account_id):
+async def test_reconcile_order_reports_filled_qty_mismatch(
+    exec_engine_open_check,
+    cache,
+    account_id,
+):
     """
     Test _reconcile_order_reports reconciles when filled_qty differs.
     """
@@ -2778,7 +2787,11 @@ async def test_reconcile_order_reports_status_mismatch(exec_engine_open_check, c
 
 
 @pytest.mark.asyncio
-async def test_reconcile_order_reports_clears_retry_counts(exec_engine_open_check, cache, account_id):
+async def test_reconcile_order_reports_clears_retry_counts(
+    exec_engine_open_check,
+    cache,
+    account_id,
+):
     """
     Test _reconcile_order_reports clears retry counts for successfully queried orders.
     """
@@ -2863,7 +2876,9 @@ async def test_handle_missing_orders_at_venue_queries_single_order(
     cache.update_order(order)
 
     # Set retry count to threshold
-    exec_engine_open_check._recon_check_retries[order.client_order_id] = exec_engine_open_check.open_check_missing_retries
+    exec_engine_open_check._recon_check_retries[order.client_order_id] = (
+        exec_engine_open_check.open_check_missing_retries
+    )
 
     query_called = False
     original_resolve = exec_engine_open_check._resolve_order_not_found_at_venue
@@ -2986,7 +3001,10 @@ async def test_handle_missing_orders_at_venue_respects_retry_limit(
 
     # Assert
     assert not query_called  # Should not query until retry threshold reached
-    assert exec_engine_open_check._recon_check_retries[order.client_order_id] == exec_engine_open_check.open_check_missing_retries
+    assert (
+        exec_engine_open_check._recon_check_retries[order.client_order_id]
+        == exec_engine_open_check.open_check_missing_retries
+    )
 
 
 # =============================================================================
@@ -3023,7 +3041,11 @@ def test_validate_open_orders_consistency_no_issues(exec_engine_open_check, cach
     exec_engine_open_check._validate_open_orders_consistency()
 
 
-def test_validate_open_orders_consistency_detects_inconsistency(exec_engine_open_check, cache, account_id):
+def test_validate_open_orders_consistency_detects_inconsistency(
+    exec_engine_open_check,
+    cache,
+    account_id,
+):
     """
     Test _validate_open_orders_consistency detects filled_qty inconsistency.
     """

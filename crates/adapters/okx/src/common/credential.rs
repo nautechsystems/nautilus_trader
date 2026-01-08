@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,7 +17,7 @@
 
 #![allow(unused_assignments)] // Fields are accessed externally, false positive from nightly
 
-use std::fmt::{Debug, Formatter};
+use std::fmt::Debug;
 
 use aws_lc_rs::hmac;
 use base64::prelude::*;
@@ -37,7 +37,7 @@ pub struct Credential {
 }
 
 impl Debug for Credential {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Credential))
             .field("api_key", &self.api_key)
             .field("api_passphrase", &self.api_passphrase)

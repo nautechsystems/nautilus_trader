@@ -1,6 +1,6 @@
 [project]
 name = "nautilus_trader"
-version = "1.222.0"
+version = "1.223.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = [{ name = "Nautech Systems", email = "info@nautechsystems.io" }]
 classifiers = [
@@ -47,7 +47,7 @@ requires = [
   "setuptools>=80",
   "poetry-core==2.2.1", # Pinned to 2.2.1 for stability
   "numpy>=1.26.4",
-  "cython==3.2.3", # Pinned to 3.2.3 for stability
+  "cython==3.2.4", # Pinned to 3.2.4 for stability
 ]
 build-backend = "poetry.core.masonry.api"
 
@@ -88,14 +88,12 @@ dydx = [
   "bip-utils>=2.10.0,<3.0.0; python_version < '3.14'",
   "pycryptodome>=3.20.0,<4.0.0; python_version < '3.14'",
 ]
-polymarket = [
-  "py-clob-client==0.32.0,<1.0.0", # Pinned to 0.32.0 for stability
-]
+polymarket = ["py-clob-client>=0.34.4,<1.0.0"]
 visualization = ["plotly>=6.3.1,<7.0.0"]
 
 [dependency-groups]
 dev = [
-  "cython==3.2.3", # Pinned to 3.2.3 for stability
+  "cython==3.2.4", # Pinned to 3.2.4 for stability
   "setuptools>=80",
   "mypy==1.19.1,<2.0.0", # Pinned to 1.19.1 (keep in line with pre-commit)
   "pandas-stubs>=2.3.3,<3.0.0",
@@ -105,8 +103,8 @@ dev = [
   "types-toml>=0.10.2,<1.0.0",
 ]
 test = [
-  "aiohttp==3.12.14,<4.0.0", # Pinned to 3.12.14 (fixes GHSA-9548-qrrj-x5pj)
-  "coverage>=7.12.0,<8.0.0",
+  "aiohttp>=3.13.3,<4.0.0",
+  "coverage>=7.13.1,<8.0.0",
   "pytest>=7.4.4,<8.0.0", # Intentionally held at 7.x
   "pytest-aiohttp>=1.1.0,<2.0.0",
   "pytest-asyncio==0.23.8", # Pinned to 0.23.8 for stability
@@ -179,7 +177,7 @@ select = [
   "PT",
   "PYI",
   "Q",
-  # "I",  # Disabled - using isort instead
+  "I", # isort
   "RSE",
   "TID",
   "SIM", # flake8-simplify
@@ -254,8 +252,11 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 force-single-line = true
 lines-after-imports = 2
 split-on-trailing-comma = true
-force-sort-within-sections = true
 known-first-party = ["nautilus_trader"]
+
+[tool.ruff.format]
+# Inherits target-version, line-length, exclude from [tool.ruff]
+docstring-code-format = true
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10

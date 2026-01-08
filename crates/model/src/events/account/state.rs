@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,10 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::HashMap,
-    fmt::{Display, Formatter},
-};
+use std::{collections::HashMap, fmt::Display};
 
 use nautilus_core::{UUID4, UnixNanos};
 use serde::{Deserialize, Serialize};
@@ -155,7 +152,7 @@ impl AccountState {
 }
 
 impl Display for AccountState {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}(account_id={}, account_type={}, base_currency={}, is_reported={}, balances=[{}], margins=[{}], event_id={})",
@@ -171,12 +168,12 @@ impl Display for AccountState {
                 .iter()
                 .map(|b| format!("{b}"))
                 .collect::<Vec<String>>()
-                .join(","),
+                .join(", "),
             self.margins
                 .iter()
                 .map(|m| format!("{m}"))
                 .collect::<Vec<String>>()
-                .join(","),
+                .join(", "),
             self.event_id
         )
     }

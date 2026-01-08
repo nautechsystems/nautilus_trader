@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -455,7 +455,7 @@ impl OKXWebSocketClient {
                 .map(|entry| entry.value().clone())
                 .collect();
             if let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(cached_instruments)) {
-                tracing::error!("Failed to replay instruments to handler: {e}");
+                log::error!("Failed to replay instruments to handler: {e}");
             }
         }
 
@@ -501,7 +501,7 @@ impl OKXWebSocketClient {
                                 inst_id: Some(*inst_id),
                             };
                             if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe { args: vec![arg] }) {
-                                tracing::error!(error = %e, "Failed to send resubscribe command");
+                                log::error!("Failed to send resubscribe command: error={e}");
                             }
                         }
                     }
@@ -515,7 +515,7 @@ impl OKXWebSocketClient {
                             inst_id: None,
                         };
                         if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe { args: vec![arg] }) {
-                            tracing::error!(error = %e, "Failed to send resubscribe command");
+                            log::error!("Failed to send resubscribe command: error={e}");
                         }
                     }
 
@@ -529,7 +529,7 @@ impl OKXWebSocketClient {
                                 inst_id: None,
                             };
                             if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe { args: vec![arg] }) {
-                                tracing::error!(error = %e, "Failed to send resubscribe command");
+                                log::error!("Failed to send resubscribe command: error={e}");
                             }
                         }
                     }
@@ -544,7 +544,7 @@ impl OKXWebSocketClient {
                                 inst_id: None,
                             };
                             if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe { args: vec![arg] }) {
-                                tracing::error!(error = %e, "Failed to send resubscribe command");
+                                log::error!("Failed to send resubscribe command: error={e}");
                             }
                         }
                     }
@@ -578,14 +578,14 @@ impl OKXWebSocketClient {
                             };
 
                             if !confirmed_topics_vec.is_empty() {
-                                tracing::debug!(count = confirmed_topics_vec.len(), "Marking confirmed subscriptions as pending for replay");
+                                log::debug!("Marking confirmed subscriptions as pending for replay: count={}", confirmed_topics_vec.len());
                                 for topic in confirmed_topics_vec {
                                     subscriptions_state.mark_failure(&topic);
                                 }
                             }
 
                             if let Some(cred) = &credential {
-                                tracing::debug!("Re-authenticating after reconnection");
+                                log::debug!("Re-authenticating after reconnection");
                                 let timestamp = std::time::SystemTime::now()
                                     .duration_since(std::time::SystemTime::UNIX_EPOCH)
                                     .expect("System time should be after UNIX epoch")
@@ -605,17 +605,17 @@ impl OKXWebSocketClient {
 
                                 if let Ok(payload) = serde_json::to_string(&auth_message) {
                                     if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Authenticate { payload }) {
-                                        tracing::error!(error = %e, "Failed to send reconnection auth command");
+                                        log::error!("Failed to send reconnection auth command: error={e}");
                                     }
                                 } else {
-                                    tracing::error!("Failed to serialize reconnection auth message");
+                                    log::error!("Failed to serialize reconnection auth message");
                                 }
                             }
 
                             // Unauthenticated sessions resubscribe immediately after reconnection,
                             // authenticated sessions wait for Authenticated message
                             if credential.is_none() {
-                                tracing::debug!("No authentication required, resubscribing immediately");
+                                log::debug!("No authentication required, resubscribing immediately");
                                 resubscribe_all();
                             }
 
@@ -638,7 +638,7 @@ impl OKXWebSocketClient {
                         }
                         Some(msg) => {
                             if handler.send(msg).is_err() {
-                                tracing::error!(
+                                log::error!(
                                     "Failed to send message through channel: receiver dropped",
                                 );
                                 break;
@@ -646,18 +646,18 @@ impl OKXWebSocketClient {
                         }
                         None => {
                             if handler.is_stopped() {
-                                tracing::debug!(
+                                log::debug!(
                                     "Stop signal received, ending message processing",
                                 );
                                 break;
                             }
-                            tracing::debug!("WebSocket stream closed");
+                            log::debug!("WebSocket stream closed");
                             break;
                         }
                     }
                 }
 
-                tracing::debug!("Handler task exiting");
+                log::debug!("Handler task exiting");
             }
         });
 
@@ -670,7 +670,7 @@ impl OKXWebSocketClient {
             .map_err(|e| {
                 OKXWsError::ClientError(format!("Failed to send WebSocket client to handler: {e}"))
             })?;
-        tracing::debug!("Sent WebSocket client to handler");
+        log::debug!("Sent WebSocket client to handler");
 
         if self.credential.is_some()
             && let Err(e) = self.authenticate().await
@@ -730,11 +730,11 @@ impl OKXWebSocketClient {
             .await
         {
             Ok(()) => {
-                tracing::info!("WebSocket authenticated");
+                log::info!("WebSocket authenticated");
                 Ok(())
             }
             Err(e) => {
-                tracing::error!(error = %e, "WebSocket authentication failed");
+                log::error!("WebSocket authentication failed: error={e}");
                 Err(Error::Io(std::io::Error::other(e.to_string())))
             }
         }
@@ -1020,11 +1020,11 @@ impl OKXWebSocketClient {
         }
 
         if all_args.is_empty() {
-            tracing::debug!("No active subscriptions to unsubscribe from");
+            log::debug!("No active subscriptions to unsubscribe from");
             return Ok(());
         }
 
-        tracing::debug!("Batched unsubscribe from {} channels", all_args.len());
+        log::debug!("Batched unsubscribe from {} channels", all_args.len());
 
         const BATCH_SIZE: usize = 256;
 
@@ -1083,13 +1083,11 @@ impl OKXWebSocketClient {
             .is_some_and(|types| types.contains(&inst_type));
 
         if already_subscribed {
-            tracing::debug!(
-                "Already subscribed to instrument type {inst_type:?} for {instrument_id}"
-            );
+            log::debug!("Already subscribed to instrument type {inst_type:?} for {instrument_id}");
             return Ok(());
         }
 
-        tracing::debug!("Subscribing to instrument type {inst_type:?} for {instrument_id}");
+        log::debug!("Subscribing to instrument type {inst_type:?} for {instrument_id}");
         self.subscribe_instruments(inst_type).await
     }
 
@@ -2757,18 +2755,18 @@ mod tests {
             cancel_source: None,
             cancel_source_reason: None,
             category: OKXOrderCategory::Normal,
-            ccy: ustr::Ustr::from("USDT"),
+            ccy: Ustr::from("USDT"),
             cl_ord_id: "order-1".to_string(),
             algo_cl_ord_id: None,
             fee: None,
-            fee_ccy: ustr::Ustr::from("USDT"),
+            fee_ccy: Ustr::from("USDT"),
             fill_px: "0".to_string(),
             fill_sz: "0".to_string(),
             fill_time: 0,
-            inst_id: ustr::Ustr::from("ETH-USDT-SWAP"),
+            inst_id: Ustr::from("ETH-USDT-SWAP"),
             inst_type: OKXInstrumentType::Swap,
             lever: "1".to_string(),
-            ord_id: ustr::Ustr::from("123456"),
+            ord_id: Ustr::from("123456"),
             ord_type: OKXOrderType::Limit,
             pnl: "0".to_string(),
             pos_side: OKXPositionSide::Net,

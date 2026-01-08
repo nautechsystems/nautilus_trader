@@ -92,7 +92,7 @@ All Rust files must include the standardized copyright header:
 
 ```rust
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -168,8 +168,7 @@ The `check_anyhow_usage.sh` pre-commit hook enforces these anyhow conventions au
 ### Logging
 
 - Fully qualify logging macros so the backend is explicit:
-  - Use `log::…` (`log::info!`, `log::warn!`, etc.) inside synchronous core crates.
-  - Use `tracing::…` (`tracing::debug!`, `tracing::info!`, etc.) for async runtimes, adapters, and peripheral components.
+  - Use `log::…` (`log::debug!`, `log::info!`, `log::warn!`, etc.) for all Rust components.
 - Start messages with a capitalised word, prefer complete sentences, and omit terminal periods (e.g. `"Processing batch"`, not `"Processing batch."`).
 
 :::info Automated enforcement
@@ -514,6 +513,18 @@ pub use crate::identifiers::{
 
 Use third-person declarative voice for all doc comments (e.g., "Returns the account ID" not "Return the account ID").
 
+#### Section header casing
+
+Rustdoc section headers use Title Case, matching the Rust standard library convention:
+
+- `# Examples`
+- `# Errors`
+- `# Panics`
+- `# Safety`
+- `# Notes`
+- `# Thread Safety`
+- `# Feature Flags`
+
 #### Module-Level documentation
 
 All modules must have module-level documentation starting with a brief description:
@@ -710,6 +721,27 @@ Use descriptive test names that explain the scenario:
 fn test_sma_with_no_inputs()
 fn test_sma_with_single_input()
 fn test_symbol_is_composite()
+```
+
+### Box-style banner comments
+
+Do not use box-style banner or separator comments. If code requires visual
+separation, consider splitting it into separate modules or files. Instead use:
+
+- Clear function names that convey purpose.
+- Module structure for logical groupings (`mod tests { mod fixtures { } }`).
+- Impl blocks to group related methods.
+- Doc comments (`///`) for semantic documentation.
+- IDE navigation and code folding.
+
+Patterns to avoid:
+
+```rust
+// ============================================================================
+// Some Section
+// ============================================================================
+
+// ========== Test Fixtures ==========
 ```
 
 ## Rust-Python memory management

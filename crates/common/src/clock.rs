@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,26 +15,19 @@
 
 //! Real-time and static `Clock` implementations.
 
-use std::{
-    any::Any,
-    collections::{BTreeMap, BinaryHeap},
-    fmt::Debug,
-    ops::Deref,
-    time::Duration,
-};
+use std::{any::Any, collections::BTreeMap, fmt::Debug, ops::Deref, time::Duration};
 
 use ahash::AHashMap;
 use chrono::{DateTime, Utc};
 use nautilus_core::{
     AtomicTime, UnixNanos,
     correctness::{check_positive_u64, check_predicate_true, check_valid_string_utf8},
+    formatting::Separable,
 };
-use thousands::Separable;
 use ustr::Ustr;
 
 use crate::timer::{
-    ScheduledTimeEvent, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2,
-    create_valid_interval,
+    TestTimer, TimeEvent, TimeEventCallback, TimeEventHandler, create_valid_interval,
 };
 
 /// Represents a type of clock.
@@ -76,7 +69,7 @@ pub trait Clock: Debug + Any {
     /// Get handler for [`TimeEvent`].
     ///
     /// Note: Panics if the event does not have an associated handler
-    fn get_handler(&self, event: TimeEvent) -> TimeEventHandlerV2;
+    fn get_handler(&self, event: TimeEvent) -> TimeEventHandler;
 
     /// Set a timer to alert at the specified time.
     ///
@@ -284,12 +277,12 @@ impl CallbackRegistry {
     ///
     /// Panics if no callback exists for the event name.
     #[must_use]
-    pub fn get_handler(&self, event: TimeEvent) -> TimeEventHandlerV2 {
+    pub fn get_handler(&self, event: TimeEvent) -> TimeEventHandler {
         let callback = self
             .get_callback(&event.name)
             .unwrap_or_else(|| panic!("Event '{}' should have associated handler", event.name));
 
-        TimeEventHandlerV2::new(event, callback)
+        TimeEventHandler::new(event, callback)
     }
 
     /// Clears all registered callbacks.
@@ -416,7 +409,6 @@ pub struct TestClock {
     // Use btree map to ensure stable ordering when scanning for timers in `advance_time`
     timers: BTreeMap<Ustr, TestTimer>,
     callbacks: CallbackRegistry,
-    heap: BinaryHeap<ScheduledTimeEvent>, // TODO: Deprecated - move to global time event heap
 }
 
 impl TestClock {
@@ -427,7 +419,6 @@ impl TestClock {
             time: AtomicTime::new(false, UnixNanos::default()),
             timers: BTreeMap::new(),
             callbacks: CallbackRegistry::new(),
-            heap: BinaryHeap::new(),
         }
     }
 
@@ -458,10 +449,9 @@ impl TestClock {
 
         let from_time_ns = self.time.get_time_ns();
 
-        // Time should be non-decreasing
         assert!(
             to_time_ns >= from_time_ns,
-            "`to_time_ns` {to_time_ns} was < `from_time_ns` {from_time_ns}"
+            "Invariant violated: time must be non-decreasing, `to_time_ns` {to_time_ns} < `from_time_ns` {from_time_ns}"
         );
 
         if set_time {
@@ -492,49 +482,6 @@ impl TestClock {
         events
     }
 
-    /// Advances the internal clock to the specified `to_time_ns` and optionally sets the clock to that time.
-    ///
-    /// Pushes the [`TimeEvent`]s on the heap to ensure ordering
-    ///
-    /// Note: `set_time` is not used but present to keep backward compatible api call
-    ///
-    /// # Warnings
-    ///
-    /// Logs a warning when the internal heap already exceeds 100,000 scheduled events before pushing new ones.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `to_time_ns` is less than the current internal clock time.
-    pub fn advance_to_time_on_heap(&mut self, to_time_ns: UnixNanos) {
-        const WARN_HEAP_SIZE_THRESHOLD: usize = 100_000;
-
-        let from_time_ns = self.time.get_time_ns();
-
-        // Time should be non-decreasing
-        assert!(
-            to_time_ns >= from_time_ns,
-            "`to_time_ns` {to_time_ns} was < `from_time_ns` {from_time_ns}"
-        );
-
-        self.time.set_time(to_time_ns);
-
-        if self.heap.len() > WARN_HEAP_SIZE_THRESHOLD {
-            log::warn!(
-                "TestClock heap size {} exceeds recommended limit",
-                self.heap.len()
-            );
-        }
-
-        // Iterate and advance timers and push events to heap. Only retain alive timers.
-        self.timers.retain(|_, timer| {
-            timer.advance(to_time_ns).for_each(|event| {
-                self.heap.push(ScheduledTimeEvent::new(event));
-            });
-
-            !timer.is_expired()
-        });
-    }
-
     /// Matches `TimeEvent` objects with their corresponding event handlers.
     ///
     /// This function takes an `events` vector of `TimeEvent` objects, assumes they are already sorted
@@ -545,7 +492,7 @@ impl TestClock {
     ///
     /// Panics if the default callback is not set for the clock when matching handlers.
     #[must_use]
-    pub fn match_handlers(&self, events: Vec<TimeEvent>) -> Vec<TimeEventHandlerV2> {
+    pub fn match_handlers(&self, events: Vec<TimeEvent>) -> Vec<TimeEventHandler> {
         events
             .into_iter()
             .map(|event| self.callbacks.get_handler(event))
@@ -557,16 +504,6 @@ impl TestClock {
             self.cancel_timer(name.as_str());
             log::warn!("Timer '{name}' replaced");
         }
-    }
-}
-
-impl Iterator for TestClock {
-    type Item = TimeEventHandlerV2;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.heap
-            .pop()
-            .map(|event| self.get_handler(event.into_inner()))
     }
 }
 
@@ -630,7 +567,7 @@ impl Clock for TestClock {
     /// # Panics
     ///
     /// Panics if no event-specific or default callback has been registered for the event.
-    fn get_handler(&self, event: TimeEvent) -> TimeEventHandlerV2 {
+    fn get_handler(&self, event: TimeEvent) -> TimeEventHandler {
         self.callbacks.get_handler(event)
     }
 
@@ -743,7 +680,6 @@ impl Clock for TestClock {
     fn reset(&mut self) {
         self.time = AtomicTime::new(false, UnixNanos::default());
         self.timers = BTreeMap::new();
-        self.heap = BinaryHeap::new();
         self.callbacks.clear();
     }
 }
@@ -1622,5 +1558,133 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].name.as_str(), "alert_at_current_time");
         assert_eq!(*events[0].ts_event, *current_time);
+    }
+
+    #[rstest]
+    fn test_cancel_and_reschedule_same_name(mut test_clock: TestClock) {
+        let start = test_clock.timestamp_ns();
+
+        test_clock
+            .set_time_alert_ns("timer", UnixNanos::from(*start + 1000), None, None)
+            .unwrap();
+        assert_eq!(test_clock.timer_count(), 1);
+
+        test_clock.cancel_timer("timer");
+        assert_eq!(test_clock.timer_count(), 0);
+
+        test_clock
+            .set_time_alert_ns("timer", UnixNanos::from(*start + 2000), None, None)
+            .unwrap();
+        assert_eq!(test_clock.timer_count(), 1);
+
+        let events = test_clock.advance_time(UnixNanos::from(*start + 1500), true);
+        assert!(events.is_empty());
+
+        let events = test_clock.advance_time(UnixNanos::from(*start + 2000), true);
+        assert_eq!(events.len(), 1);
+        assert_eq!(*events[0].ts_event, *start + 2000);
+    }
+
+    #[rstest]
+    fn test_multiple_timers_same_timestamp_all_fire(mut test_clock: TestClock) {
+        let fire_time = UnixNanos::from(*test_clock.timestamp_ns() + 1000);
+
+        for i in 0..5 {
+            test_clock
+                .set_time_alert_ns(&format!("timer_{i}"), fire_time, None, None)
+                .unwrap();
+        }
+        assert_eq!(test_clock.timer_count(), 5);
+
+        let events = test_clock.advance_time(fire_time, true);
+        assert_eq!(events.len(), 5);
+        for event in &events {
+            assert_eq!(*event.ts_event, *fire_time);
+        }
+    }
+
+    #[rstest]
+    fn test_events_ordered_by_timestamp_after_advance() {
+        let mut clock = TestClock::new();
+        clock.register_default_handler(TestCallback::default().into());
+        let start = clock.timestamp_ns();
+
+        clock
+            .set_time_alert_ns("third", UnixNanos::from(*start + 300), None, None)
+            .unwrap();
+        clock
+            .set_time_alert_ns("first", UnixNanos::from(*start + 100), None, None)
+            .unwrap();
+        clock
+            .set_time_alert_ns("second", UnixNanos::from(*start + 200), None, None)
+            .unwrap();
+
+        let events = clock.advance_time(UnixNanos::from(*start + 400), true);
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].name.as_str(), "first");
+        assert_eq!(events[1].name.as_str(), "second");
+        assert_eq!(events[2].name.as_str(), "third");
+    }
+
+    #[rstest]
+    fn test_large_interval_does_not_overflow(mut test_clock: TestClock) {
+        let start = test_clock.timestamp_ns();
+        let large_interval: u64 = 1_000_000_000 * 60 * 60 * 24 * 365; // ~1 year in ns
+
+        test_clock
+            .set_timer_ns(
+                "large_interval",
+                large_interval,
+                Some(start),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        let events = test_clock.advance_time(UnixNanos::from(*start + large_interval), true);
+        assert_eq!(events.len(), 1);
+        assert_eq!(*events[0].ts_event, *start + large_interval);
+    }
+
+    #[rstest]
+    fn test_near_zero_interval_fires_correctly(mut test_clock: TestClock) {
+        let start = test_clock.timestamp_ns();
+
+        test_clock
+            .set_timer_ns("tiny", 1, Some(start), None, None, None, None)
+            .unwrap();
+
+        let events = test_clock.advance_time(UnixNanos::from(*start + 10), true);
+        assert_eq!(events.len(), 10);
+
+        for i in 1..events.len() {
+            assert!(events[i].ts_event >= events[i - 1].ts_event);
+        }
+    }
+
+    #[rstest]
+    fn test_repeated_advance_to_same_time_no_double_fire(mut test_clock: TestClock) {
+        let fire_time = UnixNanos::from(*test_clock.timestamp_ns() + 1000);
+
+        test_clock
+            .set_time_alert_ns("once", fire_time, None, None)
+            .unwrap();
+
+        let events1 = test_clock.advance_time(fire_time, true);
+        assert_eq!(events1.len(), 1);
+
+        let events2 = test_clock.advance_time(fire_time, true);
+        assert!(events2.is_empty());
+    }
+
+    #[rstest]
+    fn test_advance_with_no_timers(mut test_clock: TestClock) {
+        let start = test_clock.timestamp_ns();
+
+        let events = test_clock.advance_time(UnixNanos::from(*start + 1000), true);
+        assert!(events.is_empty());
+        assert_eq!(*test_clock.timestamp_ns(), *start + 1000);
     }
 }

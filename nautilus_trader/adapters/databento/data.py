@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -1041,12 +1041,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             "unsubscribing not supported by Databento.",
         )
 
-    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
-        raise NotImplementedError(
-            f"Cannot unsubscribe from {command.instrument_id} order book snapshots, "
-            "unsubscribing not supported by Databento.",
-        )
-
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         raise NotImplementedError(
             f"Cannot unsubscribe from {command.instrument_id} quotes, "
@@ -1614,12 +1608,10 @@ class DatabentoDataClient(LiveMarketDataClient):
         self,
         record: object,
     ) -> None:
-        # Handle subscription acknowledgements
         if isinstance(record, DatabentoSubscriptionAck):
             self._handle_subscription_ack(record)
             return
 
-        # TODO: Improve the efficiency of this
         if isinstance(record, nautilus_pyo3.InstrumentStatus):
             data = InstrumentStatus.from_pyo3(record)
         elif isinstance(record, DatabentoImbalance):
@@ -1634,7 +1626,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._handle_data(data)
 
     def _handle_subscription_ack(self, ack: DatabentoSubscriptionAck) -> None:
-        self._log.info(f"Subscription acknowledged: {ack.message}", LogColor.GREEN)
+        self._log.info(f"Subscription acknowledged: {ack.message}", LogColor.BLUE)
 
     def _handle_msg(
         self,

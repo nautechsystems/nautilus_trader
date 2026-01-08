@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -28,11 +28,11 @@ static INSTALL_PROVIDER: Once = Once::new();
 pub fn install_cryptographic_provider() {
     INSTALL_PROVIDER.call_once(|| {
         if CryptoProvider::get_default().is_none() {
-            tracing::debug!("Installing aws_lc_rs cryptographic provider");
+            log::debug!("Installing aws_lc_rs cryptographic provider");
 
             match aws_lc_rs::default_provider().install_default() {
-                Ok(()) => tracing::debug!("Cryptographic provider installed successfully"),
-                Err(e) => tracing::debug!("Error installing cryptographic provider: {e:?}"),
+                Ok(()) => log::debug!("Cryptographic provider installed successfully"),
+                Err(e) => log::debug!("Error installing cryptographic provider: {e:?}"),
             }
         }
     });

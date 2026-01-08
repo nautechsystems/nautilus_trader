@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -40,7 +40,6 @@ log = Logger(__name__)
 
 
 if __name__ == "__main__":
-
     # ----------------------------------------------------------------------------------
     # Step 1: Configure and Create the Backtest Engine
     # ----------------------------------------------------------------------------------

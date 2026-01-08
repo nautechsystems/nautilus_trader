@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -39,6 +39,7 @@ use config::ExecutionEngineConfig;
 use futures::future::join_all;
 use nautilus_common::{
     cache::Cache,
+    clients::ExecutionClient,
     clock::Clock,
     generators::position_id::PositionIdGenerator,
     logging::{CMD, EVT, RECV, SEND},
@@ -56,17 +57,18 @@ use nautilus_model::{
     enums::{ContingencyType, OmsType, OrderSide, PositionSide},
     events::{
         OrderDenied, OrderEvent, OrderEventAny, OrderFilled, PositionChanged, PositionClosed,
-        PositionOpened,
+        PositionEvent, PositionOpened,
     },
     identifiers::{ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::own::{OwnOrderBook, should_handle_own_book_order},
     orders::{Order, OrderAny, OrderError},
     position::Position,
+    reports::ExecutionMassStatus,
     types::{Money, Price, Quantity},
 };
 
-use crate::client::{ExecutionClient, ExecutionClientAdapter};
+use crate::client::ExecutionClientAdapter;
 
 /// Central execution engine responsible for orchestrating order routing and execution.
 ///
@@ -199,7 +201,7 @@ impl ExecutionEngine {
 
         self.routing_map.insert(venue, client_id);
 
-        log::info!("Registered client {client_id}");
+        log::debug!("Registered client {client_id}");
         self.clients.insert(client_id, adapter);
         Ok(())
     }
@@ -209,7 +211,7 @@ impl ExecutionEngine {
         let client_id = client.client_id();
         let adapter = ExecutionClientAdapter::new(client);
 
-        log::info!("Registered default client {client_id}");
+        log::debug!("Registered default client {client_id}");
         self.default_client = Some(adapter);
     }
 
@@ -217,6 +219,48 @@ impl ExecutionEngine {
     /// Returns a reference to the execution client registered with the given ID.
     pub fn get_client(&self, client_id: &ClientId) -> Option<&dyn ExecutionClient> {
         self.clients.get(client_id).map(|a| a.client.as_ref())
+    }
+
+    #[must_use]
+    /// Returns a mutable reference to the execution client adapter registered with the given ID.
+    pub fn get_client_adapter_mut(
+        &mut self,
+        client_id: &ClientId,
+    ) -> Option<&mut ExecutionClientAdapter> {
+        if let Some(default) = &self.default_client
+            && &default.client_id == client_id
+        {
+            return self.default_client.as_mut();
+        }
+        self.clients.get_mut(client_id)
+    }
+
+    /// Generates mass status for the given client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client is not found or mass status generation fails.
+    pub async fn generate_mass_status(
+        &mut self,
+        client_id: &ClientId,
+        lookback_mins: Option<u64>,
+    ) -> anyhow::Result<Option<ExecutionMassStatus>> {
+        if let Some(client) = self.get_client_adapter_mut(client_id) {
+            client.generate_mass_status(lookback_mins).await
+        } else {
+            anyhow::bail!("Client {client_id} not found")
+        }
+    }
+
+    #[must_use]
+    /// Returns all registered execution client IDs.
+    pub fn client_ids(&self) -> Vec<ClientId> {
+        let mut ids: Vec<_> = self.clients.keys().copied().collect();
+
+        if let Some(default) = &self.default_client {
+            ids.push(default.client_id);
+        }
+        ids
     }
 
     #[must_use]
@@ -509,17 +553,18 @@ impl ExecutionEngine {
             log::debug!("{RECV}{CMD} {command:?}");
         }
 
-        if self.external_clients.contains(&command.client_id()) {
+        if let Some(cid) = command.client_id()
+            && self.external_clients.contains(&cid)
+        {
             if self.config.debug {
-                let cid = command.client_id();
                 log::debug!("Skipping execution command for external client {cid}: {command:?}");
             }
             return;
         }
 
-        let client = if let Some(adapter) = self
-            .clients
-            .get(&command.client_id())
+        let client = if let Some(adapter) = command
+            .client_id()
+            .and_then(|cid| self.clients.get(&cid))
             .or_else(|| {
                 self.routing_map
                     .get(&command.instrument_id().venue)
@@ -559,8 +604,7 @@ impl ExecutionEngine {
             // Add order to cache in a separate scope to drop the mutable borrow
             {
                 let mut cache = self.cache.borrow_mut();
-                if let Err(e) =
-                    cache.add_order(order.clone(), cmd.position_id, Some(cmd.client_id), true)
+                if let Err(e) = cache.add_order(order.clone(), cmd.position_id, cmd.client_id, true)
                 {
                     log::error!("Error adding order to cache: {e}");
                     return;
@@ -628,8 +672,7 @@ impl ExecutionEngine {
         let mut cache = self.cache.borrow_mut();
         for order in &orders {
             if !cache.order_exists(&order.client_order_id()) {
-                if let Err(e) =
-                    cache.add_order(order.clone(), cmd.position_id, Some(cmd.client_id), true)
+                if let Err(e) = cache.add_order(order.clone(), cmd.position_id, cmd.client_id, true)
                 {
                     log::error!("Error adding order to cache: {e}");
                     return;
@@ -1186,7 +1229,7 @@ impl ExecutionEngine {
         let ts_init = self.clock.borrow().timestamp_ns();
         let event = PositionOpened::create(&position, &fill, UUID4::new(), ts_init);
         let topic = switchboard::get_event_positions_topic(event.strategy_id);
-        msgbus::publish(topic, &event);
+        msgbus::publish(topic, &PositionEvent::PositionOpened(event));
 
         Ok(())
     }
@@ -1249,10 +1292,10 @@ impl ExecutionEngine {
 
         if is_closed {
             let event = PositionClosed::create(position, &fill, UUID4::new(), ts_init);
-            msgbus::publish(topic, &event);
+            msgbus::publish(topic, &PositionEvent::PositionClosed(event));
         } else {
             let event = PositionChanged::create(position, &fill, UUID4::new(), ts_init);
-            msgbus::publish(topic, &event);
+            msgbus::publish(topic, &PositionEvent::PositionChanged(event));
         }
     }
 

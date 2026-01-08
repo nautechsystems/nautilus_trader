@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,15 +25,10 @@ use nautilus_bybit::{
 };
 use nautilus_model::data::Data;
 use tokio::{pin, signal};
-use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::INFO)
-        .with_target(false)
-        .compact()
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let mut client = BybitWebSocketClient::new_public_with(
         BybitProductType::Linear,
@@ -56,98 +51,89 @@ async fn main() -> Result<(), Box<dyn Error>> {
     pin!(stream);
     pin!(shutdown);
 
-    tracing::info!("Streaming Bybit market data; press Ctrl+C to exit");
+    log::info!("Streaming Bybit market data; press Ctrl+C to exit");
 
     loop {
         tokio::select! {
             Some(event) = stream.next() => {
                 match event {
                     NautilusWsMessage::Data(data_vec) => {
-                        tracing::info!(count = data_vec.len(), "data update");
+                        log::info!("data update: count={}", data_vec.len());
                         for data in data_vec {
                             match data {
                                 Data::Trade(tick) => {
-                                    tracing::info!(instrument = %tick.instrument_id, price = %tick.price, size = %tick.size, "trade");
+                                    log::info!("trade: instrument={}, price={}, size={}", tick.instrument_id, tick.price, tick.size);
                                 }
                                 Data::Quote(quote) => {
-                                    tracing::info!(instrument = %quote.instrument_id, bid = %quote.bid_price, ask = %quote.ask_price, "quote");
+                                    log::info!("quote: instrument={}, bid={}, ask={}", quote.instrument_id, quote.bid_price, quote.ask_price);
                                 }
                                 Data::Bar(bar) => {
-                                    tracing::info!(bar_type = %bar.bar_type, close = %bar.close, "bar");
+                                    log::info!("bar: bar_type={}, close={}", bar.bar_type, bar.close);
                                 }
                                 _ => {
-                                    tracing::debug!("other data type");
+                                    log::debug!("other data type");
                                 }
                             }
                         }
                     }
                     NautilusWsMessage::Deltas(deltas) => {
-                        tracing::info!(instrument = %deltas.instrument_id, sequence = deltas.sequence, "orderbook deltas");
+                        log::info!("orderbook deltas: instrument={}, sequence={}", deltas.instrument_id, deltas.sequence);
                     }
                     NautilusWsMessage::FundingRates(rates) => {
-                        tracing::info!(count = rates.len(), "funding rate updates");
+                        log::info!("funding rate updates: count={}", rates.len());
                         for rate in rates {
-                            tracing::info!(
-                                instrument = %rate.instrument_id,
-                                rate = %rate.rate,
-                                next_funding = ?rate.next_funding_ns,
-                                "funding rate"
+                            log::info!(
+                                "funding rate: instrument={}, rate={}, next_funding={:?}",
+                                rate.instrument_id, rate.rate, rate.next_funding_ns
                             );
                         }
                     }
                     NautilusWsMessage::OrderStatusReports(reports) => {
-                        tracing::info!(count = reports.len(), "order status reports");
+                        log::info!("order status reports: count={}", reports.len());
                         for report in reports {
-                            tracing::info!(
-                                instrument = %report.instrument_id,
-                                client_order_id = ?report.client_order_id,
-                                venue_order_id = ?report.venue_order_id,
-                                status = ?report.order_status,
-                                "order status report"
+                            log::info!(
+                                "order status report: instrument={}, client_order_id={:?}, venue_order_id={:?}, status={:?}",
+                                report.instrument_id, report.client_order_id, report.venue_order_id, report.order_status
                             );
                         }
                     }
                     NautilusWsMessage::FillReports(reports) => {
-                        tracing::info!(count = reports.len(), "fill reports");
+                        log::info!("fill reports: count={}", reports.len());
                         for report in reports {
-                            tracing::info!(
-                                instrument = %report.instrument_id,
-                                client_order_id = ?report.client_order_id,
-                                venue_order_id = ?report.venue_order_id,
-                                last_qty = %report.last_qty,
-                                last_px = %report.last_px,
-                                "fill report"
+                            log::info!(
+                                "fill report: instrument={}, client_order_id={:?}, venue_order_id={:?}, last_qty={}, last_px={}",
+                                report.instrument_id, report.client_order_id, report.venue_order_id, report.last_qty, report.last_px
                             );
                         }
                     }
                     NautilusWsMessage::PositionStatusReport(report) => {
-                        tracing::info!(instrument = %report.instrument_id, quantity = %report.quantity, "position status report");
+                        log::info!("position status report: instrument={}, quantity={}", report.instrument_id, report.quantity);
                     }
                     NautilusWsMessage::AccountState(state) => {
-                        tracing::info!(account_id = %state.account_id, balances = state.balances.len(), "account state");
+                        log::info!("account state: account_id={}, balances={}", state.account_id, state.balances.len());
                     }
                     NautilusWsMessage::OrderRejected(event) => {
-                        tracing::warn!(trader_id = %event.trader_id, client_order_id = %event.client_order_id, reason = %event.reason, "order rejected");
+                        log::warn!("order rejected: trader_id={}, client_order_id={}, reason={}", event.trader_id, event.client_order_id, event.reason);
                     }
                     NautilusWsMessage::OrderCancelRejected(event) => {
-                        tracing::warn!(trader_id = %event.trader_id, client_order_id = %event.client_order_id, reason = %event.reason, "order cancel rejected");
+                        log::warn!("order cancel rejected: trader_id={}, client_order_id={}, reason={}", event.trader_id, event.client_order_id, event.reason);
                     }
                     NautilusWsMessage::OrderModifyRejected(event) => {
-                        tracing::warn!(trader_id = %event.trader_id, client_order_id = %event.client_order_id, reason = %event.reason, "order modify rejected");
+                        log::warn!("order modify rejected: trader_id={}, client_order_id={}, reason={}", event.trader_id, event.client_order_id, event.reason);
                     }
                     NautilusWsMessage::Error(err) => {
-                        tracing::error!(code = err.code, message = %err.message, "websocket error");
+                        log::error!("websocket error: code={}, message={}", err.code, err.message);
                     }
                     NautilusWsMessage::Reconnected => {
-                        tracing::warn!("WebSocket reconnected");
+                        log::warn!("WebSocket reconnected");
                     }
                     NautilusWsMessage::Authenticated => {
-                        tracing::info!("Authenticated successfully");
+                        log::info!("Authenticated successfully");
                     }
                 }
             }
             _ = &mut shutdown => {
-                tracing::info!("Received Ctrl+C, closing connection");
+                log::info!("Received Ctrl+C, closing connection");
                 client.close().await?;
                 break;
             }

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,10 +17,7 @@
 
 #![allow(unused_assignments)] // Fields are accessed externally, false positive from nightly
 
-use std::{
-    collections::HashMap,
-    fmt::{Debug, Formatter},
-};
+use std::{collections::HashMap, fmt::Debug};
 
 use aws_lc_rs::hmac;
 use hex;
@@ -42,7 +39,7 @@ pub struct Credential {
 }
 
 impl Debug for Credential {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Credential))
             .field("api_key", &self.api_key)
             .field("api_secret", &"<redacted>")
@@ -57,6 +54,42 @@ impl Credential {
         Self {
             api_key: api_key.into(),
             api_secret: api_secret.into_bytes().into_boxed_slice(),
+        }
+    }
+
+    /// Load credentials from environment variables.
+    ///
+    /// For mainnet: Looks for `DERIBIT_API_KEY` and `DERIBIT_API_SECRET`.
+    /// For testnet: Looks for `DERIBIT_TESTNET_API_KEY` and `DERIBIT_TESTNET_API_SECRET`.
+    ///
+    /// Returns `None` if either key or secret is not set.
+    #[must_use]
+    pub fn from_env(is_testnet: bool) -> Option<Self> {
+        let (key_var, secret_var) = if is_testnet {
+            ("DERIBIT_TESTNET_API_KEY", "DERIBIT_TESTNET_API_SECRET")
+        } else {
+            ("DERIBIT_API_KEY", "DERIBIT_API_SECRET")
+        };
+
+        let key = std::env::var(key_var).ok()?;
+        let secret = std::env::var(secret_var).ok()?;
+
+        Some(Self::new(key, secret))
+    }
+
+    /// Resolves credentials from provided values or environment.
+    ///
+    /// If both `api_key` and `api_secret` are provided, uses those.
+    /// Otherwise falls back to loading from environment variables.
+    #[must_use]
+    pub fn resolve(
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        is_testnet: bool,
+    ) -> Option<Self> {
+        match (api_key, api_secret) {
+            (Some(k), Some(s)) => Some(Self::new(k, s)),
+            _ => Self::from_env(is_testnet),
         }
     }
 

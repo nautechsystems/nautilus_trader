@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,12 +23,12 @@ use arrow::{
 };
 use nautilus_model::{
     data::{Bar, BarType},
-    types::{Price, Quantity, fixed::PRECISION_BYTES},
+    types::fixed::PRECISION_BYTES,
 };
 
 use super::{
     DecodeDataFromRecordBatch, EncodingError, KEY_BAR_TYPE, KEY_PRICE_PRECISION,
-    KEY_SIZE_PRECISION, extract_column, get_corrected_raw_price, get_corrected_raw_quantity,
+    KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -174,27 +174,11 @@ impl DecodeFromRecordBatch for Bar {
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {
-                // Use corrected raw values to handle floating-point precision errors in stored data
-                let open = Price::from_raw(
-                    get_corrected_raw_price(open_values.value(i), price_precision),
-                    price_precision,
-                );
-                let high = Price::from_raw(
-                    get_corrected_raw_price(high_values.value(i), price_precision),
-                    price_precision,
-                );
-                let low = Price::from_raw(
-                    get_corrected_raw_price(low_values.value(i), price_precision),
-                    price_precision,
-                );
-                let close = Price::from_raw(
-                    get_corrected_raw_price(close_values.value(i), price_precision),
-                    price_precision,
-                );
-                let volume = Quantity::from_raw(
-                    get_corrected_raw_quantity(volume_values.value(i), size_precision),
-                    size_precision,
-                );
+                let open = decode_price(open_values.value(i), price_precision, "open", i)?;
+                let high = decode_price(high_values.value(i), price_precision, "high", i)?;
+                let low = decode_price(low_values.value(i), price_precision, "low", i)?;
+                let close = decode_price(close_values.value(i), price_precision, "close", i)?;
+                let volume = decode_quantity(volume_values.value(i), size_precision, "volume", i)?;
                 let ts_event = ts_event_values.value(i).into();
                 let ts_init = ts_init_values.value(i).into();
 
@@ -230,7 +214,9 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::{array::Array, record_batch::RecordBatch};
-    use nautilus_model::types::{fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw};
+    use nautilus_model::types::{
+        Price, Quantity, fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw,
+    };
     use rstest::rstest;
 
     use super::*;
@@ -420,5 +406,131 @@ mod tests {
 
         let decoded_data = Bar::decode_batch(&metadata, record_batch).unwrap();
         assert_eq!(decoded_data.len(), 2);
+    }
+
+    #[rstest]
+    fn test_decode_batch_invalid_price_returns_error() {
+        let bar_type = BarType::from_str("AAPL.XNAS-1-MINUTE-LAST-INTERNAL").unwrap();
+        let metadata = Bar::get_metadata(&bar_type, 2, 0);
+
+        let invalid_price: PriceRaw = PriceRaw::MAX - 1000;
+        let valid_price = (100.00 * FIXED_SCALAR) as PriceRaw;
+
+        let open = FixedSizeBinaryArray::from(vec![&invalid_price.to_le_bytes()]);
+        let high = FixedSizeBinaryArray::from(vec![&valid_price.to_le_bytes()]);
+        let low = FixedSizeBinaryArray::from(vec![&valid_price.to_le_bytes()]);
+        let close = FixedSizeBinaryArray::from(vec![&valid_price.to_le_bytes()]);
+        let volume = FixedSizeBinaryArray::from(vec![
+            &((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
+        let ts_event = UInt64Array::from(vec![1]);
+        let ts_init = UInt64Array::from(vec![2]);
+
+        let record_batch = RecordBatch::try_new(
+            Bar::get_schema(Some(metadata.clone())).into(),
+            vec![
+                Arc::new(open),
+                Arc::new(high),
+                Arc::new(low),
+                Arc::new(close),
+                Arc::new(volume),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        let result = Bar::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("open") && err.to_string().contains("row 0"),
+            "Expected open error at row 0, got: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_batch_missing_bar_type_returns_error() {
+        let bar_type = BarType::from_str("AAPL.XNAS-1-MINUTE-LAST-INTERNAL").unwrap();
+        let mut metadata = Bar::get_metadata(&bar_type, 2, 0);
+
+        let valid_price = (100.00 * FIXED_SCALAR) as PriceRaw;
+        let open = FixedSizeBinaryArray::from(vec![&valid_price.to_le_bytes()]);
+        let high = FixedSizeBinaryArray::from(vec![&valid_price.to_le_bytes()]);
+        let low = FixedSizeBinaryArray::from(vec![&valid_price.to_le_bytes()]);
+        let close = FixedSizeBinaryArray::from(vec![&valid_price.to_le_bytes()]);
+        let volume = FixedSizeBinaryArray::from(vec![
+            &((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
+        let ts_event = UInt64Array::from(vec![1]);
+        let ts_init = UInt64Array::from(vec![2]);
+
+        let record_batch = RecordBatch::try_new(
+            Bar::get_schema(Some(metadata.clone())).into(),
+            vec![
+                Arc::new(open),
+                Arc::new(high),
+                Arc::new(low),
+                Arc::new(close),
+                Arc::new(volume),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        metadata.remove(KEY_BAR_TYPE);
+
+        let result = Bar::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("bar_type"),
+            "Expected missing bar_type error, got: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_encode_decode_round_trip() {
+        let bar_type = BarType::from_str("AAPL.XNAS-1-MINUTE-LAST-INTERNAL").unwrap();
+        let metadata = Bar::get_metadata(&bar_type, 2, 0);
+
+        let bar1 = Bar::new(
+            bar_type,
+            Price::from("100.10"),
+            Price::from("102.00"),
+            Price::from("100.00"),
+            Price::from("101.00"),
+            Quantity::from(1100),
+            1_000_000_000.into(),
+            1_000_000_001.into(),
+        );
+
+        let bar2 = Bar::new(
+            bar_type,
+            Price::from("101.00"),
+            Price::from("103.00"),
+            Price::from("100.50"),
+            Price::from("102.50"),
+            Quantity::from(2200),
+            2_000_000_000.into(),
+            2_000_000_001.into(),
+        );
+
+        let original = vec![bar1, bar2];
+        let record_batch = Bar::encode_batch(&metadata, &original).unwrap();
+        let decoded = Bar::decode_batch(&metadata, record_batch).unwrap();
+
+        assert_eq!(decoded.len(), original.len());
+        for (orig, dec) in original.iter().zip(decoded.iter()) {
+            assert_eq!(dec.bar_type, orig.bar_type);
+            assert_eq!(dec.open, orig.open);
+            assert_eq!(dec.high, orig.high);
+            assert_eq!(dec.low, orig.low);
+            assert_eq!(dec.close, orig.close);
+            assert_eq!(dec.volume, orig.volume);
+            assert_eq!(dec.ts_event, orig.ts_event);
+            assert_eq!(dec.ts_init, orig.ts_init);
+        }
     }
 }

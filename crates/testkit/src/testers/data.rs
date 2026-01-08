@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -86,9 +86,10 @@ pub struct DataTesterConfig {
     // TODO: Support request_trades when historical data requests are available
     /// Whether to request historical trades (not yet implemented).
     pub request_trades: bool,
-    // TODO: Support request_bars when historical data requests are available
-    /// Whether to request historical bars (not yet implemented).
+    /// Whether to request historical bars.
     pub request_bars: bool,
+    /// Whether to request order book snapshots.
+    pub request_book_snapshot: bool,
     // TODO: Support requests_start_delta when we implement historical data requests
     /// Book type for order book subscriptions.
     pub book_type: BookType,
@@ -129,6 +130,7 @@ impl DataTesterConfig {
             subscribe_index_prices: false,
             subscribe_funding_rates: false,
             subscribe_bars: false,
+
             subscribe_instrument: false,
             subscribe_instrument_status: false,
             subscribe_instrument_close: false,
@@ -137,6 +139,7 @@ impl DataTesterConfig {
             request_quotes: false,
             request_trades: false,
             request_bars: false,
+            request_book_snapshot: false,
             book_type: BookType::L2_MBP,
             book_depth: None,
             book_interval_ms: NonZeroUsize::new(1000).unwrap(),
@@ -268,6 +271,18 @@ impl DataTesterConfig {
     }
 
     #[must_use]
+    pub fn with_request_bars(mut self, request: bool) -> Self {
+        self.request_bars = request;
+        self
+    }
+
+    #[must_use]
+    pub fn with_request_book_snapshot(mut self, request: bool) -> Self {
+        self.request_book_snapshot = request;
+        self
+    }
+
+    #[must_use]
     pub fn with_can_unsubscribe(mut self, can_unsubscribe: bool) -> Self {
         self.can_unsubscribe = can_unsubscribe;
         self
@@ -304,6 +319,7 @@ impl Default for DataTesterConfig {
             request_quotes: false,
             request_trades: false,
             request_bars: false,
+            request_book_snapshot: false,
             book_type: BookType::L2_MBP,
             book_depth: None,
             book_interval_ms: NonZeroUsize::new(1000).unwrap(),
@@ -453,6 +469,16 @@ impl DataActor for DataTester {
                     log::error!("Failed to request trades for {instrument_id}: {e}");
                 }
             }
+
+            // Request order book snapshot if configured
+            if self.config.request_book_snapshot {
+                let _ = self.request_book_snapshot(
+                    instrument_id,
+                    self.config.book_depth,
+                    client_id,
+                    None,
+                );
+            }
         }
 
         // Subscribe to bars
@@ -462,10 +488,20 @@ impl DataActor for DataTester {
                     self.subscribe_bars(bar_type, client_id, None);
                 }
 
-                // TODO: Implement historical data requests
-                // if self.config.request_bars {
-                //     self.request_bars(...);
-                // }
+                // Request historical bars (default to last 1 hour)
+                if self.config.request_bars {
+                    let start = self.clock().utc_now() - ChronoDuration::hours(1);
+                    if let Err(e) = self.request_bars(
+                        bar_type,
+                        Some(start),
+                        None, // end: None means "now"
+                        None, // limit: None means use API default
+                        client_id,
+                        None, // params
+                    ) {
+                        log::error!("Failed to request bars for {bar_type}: {e}");
+                    }
+                }
             }
         }
 
@@ -667,6 +703,27 @@ impl DataActor for DataTester {
                 log_info!(
                     "  ... and {} more trades",
                     trades.len() - 5,
+                    color = LogColor::Cyan
+                );
+            }
+        }
+        Ok(())
+    }
+
+    fn on_historical_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
+        if self.config.log_data {
+            log_info!(
+                "Received {} historical bars",
+                bars.len(),
+                color = LogColor::Cyan
+            );
+            for bar in bars.iter().take(5) {
+                log_info!("  {bar:?}", color = LogColor::Cyan);
+            }
+            if bars.len() > 5 {
+                log_info!(
+                    "  ... and {} more bars",
+                    bars.len() - 5,
                     color = LogColor::Cyan
                 );
             }

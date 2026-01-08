@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -27,8 +27,8 @@ from nautilus_trader.adapters.dydx.factories import DYDXLiveDataClientFactory
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.test_kit.mocks.cache_database import MockCacheDatabase
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 @pytest.mark.parametrize(
@@ -83,7 +83,7 @@ def test_create_dydx_live_data_client(event_loop_for_setup) -> None:
     # Prepare
     clock = LiveClock()
     msgbus = MessageBus(
-        trader_id=TraderId("TESTER-000"),
+        trader_id=TestIdStubs.trader_id(),
         clock=clock,
     )
     cache = Cache(database=MockCacheDatabase())

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,7 +29,6 @@ async def run():
     URL = f"{WS_REPLAY_URL}?exchange=bitmex&from=2019-10-01&to=2019-10-02"
 
     async with aiohttp.ClientSession() as session, session.ws_connect(URL) as websocket:
-
         await websocket.send_str(
             json.dumps(
                 {

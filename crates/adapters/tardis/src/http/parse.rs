@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -56,7 +56,7 @@ pub fn parse_instrument_any(
             match parse_option_instrument(info, effective, ts_init, normalize_symbols) {
                 Ok(instruments) => instruments,
                 Err(e) => {
-                    tracing::error!("Failed to parse option instrument: {e}");
+                    log::error!("Failed to parse option instrument: {e}");
                     vec![]
                 }
             }
@@ -702,7 +702,7 @@ fn parse_multiplier(value: Option<f64>) -> Option<Quantity> {
 /// Returns zero for invalid f64 values (NaN, infinity).
 fn parse_fee_rate(value: f64) -> Decimal {
     Decimal::try_from(value).unwrap_or_else(|e| {
-        tracing::warn!("Invalid fee rate value {value}: {e}, defaulting to zero");
+        log::warn!("Invalid fee rate value {value}: {e}, defaulting to zero");
         Decimal::ZERO
     })
 }
@@ -715,7 +715,7 @@ fn parse_datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> UnixNanos {
         .map(|dt| {
             let nanos = dt.timestamp_nanos_opt().unwrap_or(0);
             if nanos < 0 {
-                tracing::warn!("Timestamp {dt} is before UNIX epoch, defaulting to 0");
+                log::warn!("Timestamp {dt} is before UNIX epoch, defaulting to 0");
                 UnixNanos::default()
             } else {
                 UnixNanos::from(nanos as u64)

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -70,9 +70,7 @@ pub fn quantity_to_u32(quantity: &Quantity, instrument: &InstrumentAny) -> u32 {
     if step_decimal.is_zero() {
         let value = quantity.as_f64();
         if value > u32::MAX as f64 {
-            tracing::warn!(
-                "Quantity {value} exceeds u32::MAX without instrument increment, clamping",
-            );
+            log::warn!("Quantity {value} exceeds u32::MAX without instrument increment, clamping",);
             return u32::MAX;
         }
         return value.max(0.0) as u32;
@@ -85,14 +83,14 @@ pub fn quantity_to_u32(quantity: &Quantity, instrument: &InstrumentAny) -> u32 {
     match rounded_units.to_u128() {
         Some(units) if units <= u32::MAX as u128 => units as u32,
         Some(units) => {
-            tracing::warn!(
+            log::warn!(
                 "Quantity {} converts to {units} contracts which exceeds u32::MAX, clamping",
                 quantity.as_f64(),
             );
             u32::MAX
         }
         None => {
-            tracing::warn!(
+            log::warn!(
                 "Failed to convert quantity {} to venue units, defaulting to 0",
                 quantity.as_f64(),
             );
@@ -112,10 +110,7 @@ pub fn parse_contracts_quantity(value: u64, instrument: &InstrumentAny) -> Quant
 
     let mut raw = increment_raw.saturating_mul(value_raw);
     if raw > QUANTITY_RAW_MAX {
-        tracing::warn!(
-            "Quantity value {value} exceeds QUANTITY_RAW_MAX {}, clamping",
-            QUANTITY_RAW_MAX,
-        );
+        log::warn!("Quantity value {value} exceeds QUANTITY_RAW_MAX {QUANTITY_RAW_MAX}, clamping",);
         raw = QUANTITY_RAW_MAX;
     }
 
@@ -188,7 +183,7 @@ pub fn convert_contract_quantity(
 #[must_use]
 pub fn parse_signed_contracts_quantity(value: i64, instrument: &InstrumentAny) -> Quantity {
     let abs_value = value.checked_abs().unwrap_or_else(|| {
-        tracing::warn!("Quantity value {value} overflowed when taking absolute value");
+        log::warn!("Quantity value {value} overflowed when taking absolute value");
         i64::MAX
     }) as u64;
     parse_contracts_quantity(abs_value, instrument)
@@ -198,12 +193,12 @@ pub fn parse_signed_contracts_quantity(value: i64, instrument: &InstrumentAny) -
 #[must_use]
 pub fn parse_fractional_quantity(value: f64, instrument: &InstrumentAny) -> Quantity {
     if value < 0.0 {
-        tracing::warn!("Received negative fractional quantity {value}, defaulting to 0.0");
+        log::warn!("Received negative fractional quantity {value}, defaulting to 0.0");
         return instrument.make_qty(0.0, None);
     }
 
     instrument.try_make_qty(value, None).unwrap_or_else(|err| {
-        tracing::warn!(
+        log::warn!(
             "Failed to convert fractional quantity {value} with precision {}: {err}",
             instrument.size_precision(),
         );
@@ -240,9 +235,9 @@ pub fn normalize_trade_bin_prices(
     if high < max_price || low > min_price {
         match bar_type {
             Some(bt) => {
-                tracing::warn!(symbol = %symbol, ?bt, "Adjusting BitMEX trade bin extremes");
+                log::warn!("Adjusting BitMEX trade bin extremes: symbol={symbol}, bar_type={bt:?}");
             }
-            None => tracing::warn!(symbol = %symbol, "Adjusting BitMEX trade bin extremes"),
+            None => log::warn!("Adjusting BitMEX trade bin extremes: symbol={symbol}"),
         }
         high = max_price;
         low = min_price;
@@ -258,11 +253,11 @@ pub fn normalize_trade_bin_volume(volume: Option<i64>, symbol: &Ustr) -> u64 {
     match volume {
         Some(v) if v >= 0 => v as u64,
         Some(v) => {
-            tracing::warn!(symbol = %symbol, volume = v, "Received negative volume in BitMEX trade bin");
+            log::warn!("Received negative volume in BitMEX trade bin: symbol={symbol}, volume={v}");
             0
         }
         None => {
-            tracing::warn!(symbol = %symbol, "Trade bin missing volume, defaulting to 0");
+            log::warn!("Trade bin missing volume, defaulting to 0: symbol={symbol}");
             0
         }
     }
@@ -280,7 +275,7 @@ pub fn parse_optional_datetime_to_unix_nanos(
     value
         .map(|dt| {
             UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or_else(|| {
-                tracing::error!(field = field, timestamp = ?dt, "Invalid timestamp - out of range");
+                log::error!("Invalid timestamp - out of range: field={field}, timestamp={dt:?}");
                 0
             }) as u64)
         })
@@ -346,7 +341,7 @@ pub fn parse_account_state(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<AccountState> {
-    tracing::debug!(
+    log::debug!(
         "Parsing margin: currency={}, wallet_balance={:?}, available_margin={:?}, init_margin={:?}, maint_margin={:?}, foreign_margin_balance={:?}, foreign_requirement={:?}",
         margin.currency,
         margin.wallet_balance,
@@ -363,12 +358,12 @@ pub fn parse_account_state(
         Some(c) => c,
         None => {
             // Create a default crypto currency for unknown codes to avoid disrupting flows
-            tracing::warn!(
+            log::warn!(
                 "Unknown currency '{currency_str}' in margin message, creating default crypto currency"
             );
             let currency = Currency::new(&currency_str, 8, 0, &currency_str, CurrencyType::Crypto);
             if let Err(e) = Currency::register(currency, false) {
-                tracing::error!("Failed to register currency '{currency_str}': {e}");
+                log::error!("Failed to register currency '{currency_str}': {e}");
             }
             currency
         }

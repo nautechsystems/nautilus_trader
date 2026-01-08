@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -227,7 +227,7 @@ class TestBarBuilder:
                 open=Price.from_str(f"1.0000{i}"),
                 high=Price.from_str(f"1.0001{i}"),
                 low=Price.from_str(f"1.0000{i}"),
-                close=Price.from_str(f"1.0000{i+1}"),
+                close=Price.from_str(f"1.0000{i + 1}"),
                 volume=Quantity.from_int(1),
                 ts_event=1_000 * (i + 1),
                 ts_init=1_000 * (i + 1),
@@ -3524,7 +3524,7 @@ class TestTimeBarAggregator:
         bar_spec = BarSpecification(2, BarAggregation.SECOND, PriceType.LAST)
         bar_type = BarType(instrument_id, bar_spec, AggregationSource.INTERNAL)
 
-        # Start exactly at a 2-second boundary (2024-12-01 00:00:00)
+        # Act - process ticks and advance time to trigger bars
         start_time_ns = dt_to_unix_nanos(pd.Timestamp("2024-12-01 00:00:00", tz="UTC"))
         clock.set_time(start_time_ns)
 
@@ -3538,6 +3538,10 @@ class TestTimeBarAggregator:
         )
         aggregator.start_timer()
 
+        events = clock.advance_time(start_time_ns)
+        for event in events:
+            event.handle()
+
         # Create trade ticks at 0.5 second intervals
         tick1 = TradeTick(
             instrument_id=instrument_id,
@@ -3549,6 +3553,9 @@ class TestTimeBarAggregator:
             ts_init=start_time_ns + 500_000_000,
         )
 
+        aggregator.handle_trade_tick(tick1)
+        clock.set_time(tick1.ts_event)
+
         tick2 = TradeTick(
             instrument_id=instrument_id,
             price=Price.from_str("1.00002"),
@@ -3558,6 +3565,9 @@ class TestTimeBarAggregator:
             ts_event=start_time_ns + 1_000_000_000,  # 1 second after start
             ts_init=start_time_ns + 1_000_000_000,
         )
+
+        aggregator.handle_trade_tick(tick2)
+        clock.set_time(tick2.ts_event)
 
         tick3 = TradeTick(
             instrument_id=instrument_id,
@@ -3569,25 +3579,18 @@ class TestTimeBarAggregator:
             ts_init=start_time_ns + 1_500_000_000,
         )
 
-        # Act - process ticks and advance time to trigger first bar
-        aggregator.handle_trade_tick(tick1)
-        clock.set_time(tick1.ts_event)
-
-        aggregator.handle_trade_tick(tick2)
-        clock.set_time(tick2.ts_event)
-
         aggregator.handle_trade_tick(tick3)
         clock.set_time(tick3.ts_event)
 
         # Advance to exactly 2 seconds to trigger the first bar
         events = clock.advance_time(start_time_ns + 2_000_000_000)
-        if events:
-            events[0].handle()
+        for event in events:
+            event.handle()
 
         # Assert - we should have received the first bar since we had data for the full period
         assert len(handler) == 1, f"Expected 1 bar but got {len(handler)} bars"
-        # The bar closes at start_time (00:00:00) because fire_immediately=True
-        assert handler[0].ts_event == start_time_ns
+
+        assert handler[0].ts_event == start_time_ns + 2_000_000_000
         assert handler[0].open == Price.from_str("1.00001")
         assert handler[0].close == Price.from_str("1.00003")
         assert handler[0].volume == Quantity.from_int(300000)
@@ -4035,7 +4038,7 @@ class TestTimeBarAggregator:
             clock,
         )
         aggregator.start_timer()
-        timer_name = str(bar_type.standard())
+        timer_name = f"time_bar_{bar_type.standard()}"
         composite_bar_type = bar_type.composite()
 
         bar1 = Bar(
@@ -5240,7 +5243,7 @@ class TestSpreadQuoteAggregator:
         futures_spread_id = new_generic_spread_id(
             [
                 (future1.id, -1),  # Short front month
-                (future2.id, 1),   # Long back month
+                (future2.id, 1),  # Long back month
             ],
         )
 
@@ -5470,7 +5473,7 @@ class TestSpreadQuoteAggregator:
             bid_price=Price.from_str("97.00"),
             ask_price=Price.from_str("98.00"),
             bid_size=Quantity.from_int(100),  # Large bid size
-            ask_size=Quantity.from_int(50),   # Smaller ask size
+            ask_size=Quantity.from_int(50),  # Smaller ask size
             ts_event=self.clock.timestamp_ns(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -5823,10 +5826,13 @@ class TestSpreadQuoteAggregatorHistoricalMode:
 
         # Create spread instrument
         from nautilus_trader.model.identifiers import new_generic_spread_id
-        self.spread_instrument_id = new_generic_spread_id([
-            (self.option1.id, 1),
-            (self.option2.id, -1),
-        ])
+
+        self.spread_instrument_id = new_generic_spread_id(
+            [
+                (self.option1.id, 1),
+                (self.option2.id, -1),
+            ],
+        )
 
         self.spread_instrument = OptionSpread(
             instrument_id=self.spread_instrument_id,
@@ -6188,7 +6194,7 @@ class TestSpreadQuoteAggregatorHistoricalMode:
         futures_spread_id = new_generic_spread_id(
             [
                 (future1_id, -1),  # Short ESM4
-                (future2_id, 1),   # Long ES future (using ES instead of NQM4 for simplicity)
+                (future2_id, 1),  # Long ES future (using ES instead of NQM4 for simplicity)
             ],
         )
 

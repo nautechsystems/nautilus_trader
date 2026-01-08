@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,7 +29,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class TestFuzzyCandlesticks:
-
     def setup(self):
         # Fixture Setup
         self.fc = FuzzyCandlesticks(10, 0.5, 1.0, 2.0, 3.0)
@@ -238,9 +237,9 @@ class TestFuzzyCandlesticks:
         result_vector = self.fc.vector
 
         # Assert: If _lengths[0] is used, the small candle will be misclassified as large
-        assert (
-            result_candle.size != CandleSize.SIZE_LARGE
-        ), f"Length indexing bug exposed, vector={result_vector}"
+        assert result_candle.size != CandleSize.SIZE_LARGE, (
+            f"Length indexing bug exposed, vector={result_vector}"
+        )
 
     def test_doji_bar_body_zero_issue(self):
         """
@@ -252,6 +251,6 @@ class TestFuzzyCandlesticks:
         result_vector = self.fc.vector
 
         # Assert: If body_percent != 0, it will be incorrectly classified as non-Doji
-        assert (
-            result_candle.body_size == CandleBodySize.BODY_NONE
-        ), f"Doji body detection failed, vector={result_vector}"
+        assert result_candle.body_size == CandleBodySize.BODY_NONE, (
+            f"Doji body detection failed, vector={result_vector}"
+        )

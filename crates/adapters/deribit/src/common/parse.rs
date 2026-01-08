@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,15 +18,22 @@
 use std::str::FromStr;
 
 use anyhow::Context;
-use nautilus_core::{datetime::NANOSECONDS_IN_MICROSECOND, nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{
+    datetime::{NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND},
+    nanos::UnixNanos,
+    uuid::UUID4,
+};
 use nautilus_model::{
-    data::TradeTick,
-    enums::{AccountType, AggressorSide, AssetClass, CurrencyType, OptionKind},
+    data::{Bar, BarType, BookOrder, TradeTick},
+    enums::{
+        AccountType, AggressorSide, AssetClass, BookType, CurrencyType, OptionKind, OrderSide,
+    },
     events::AccountState,
     identifiers::{AccountId, InstrumentId, Symbol, TradeId, Venue},
     instruments::{
         CryptoFuture, CryptoPerpetual, CurrencyPair, OptionContract, any::InstrumentAny,
     },
+    orderbook::OrderBook,
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
@@ -35,9 +42,63 @@ use crate::{
     common::consts::DERIBIT_VENUE,
     http::models::{
         DeribitAccountSummary, DeribitInstrument, DeribitInstrumentKind, DeribitOptionType,
-        DeribitPublicTrade,
+        DeribitOrderBook, DeribitPublicTrade, DeribitTradingViewChartData,
     },
 };
+
+/// Parses a Deribit instrument ID into kind and currency for WebSocket channel subscription.
+///
+/// Deribit instrument naming conventions (per Deribit docs):
+/// - **Future**: `{CURRENCY}-{DMMMYY}` (e.g., "BTC-25MAR23", "BTC-5AUG23")
+/// - **Perpetual**: `{CURRENCY}-PERPETUAL` (e.g., "BTC-PERPETUAL")
+/// - **Option**: `{CURRENCY}-{DMMMYY}-{STRIKE}-{C|P}` (e.g., "BTC-25MAR23-420-C", "BTC-5AUG23-580-P")
+/// - **Linear Option**: `{BASE}_{QUOTE}-{DMMMYY}-{STRIKE}-{C|P}` (e.g., "XRP_USDC-30JUN23-0d625-C")
+///   - Note: `d` is used as decimal point for decimal strikes (0d625 = 0.625)
+/// - **Spot**: `{BASE}_{QUOTE}` (e.g., "BTC_USDC")
+///
+/// Returns `(kind, currency)` tuple for `instrument.state.{kind}.{currency}` channel.
+///
+/// Valid kinds: `future`, `option`, `spot`, `future_combo`, `option_combo`, `any`
+/// Valid currencies: `BTC`, `ETH`, `USDC`, `USDT`, `EURR`, `any`
+#[must_use]
+pub fn parse_instrument_kind_currency(instrument_id: &InstrumentId) -> (String, String) {
+    let symbol = instrument_id.symbol.as_str();
+
+    // Determine kind from instrument name pattern
+    // Order matters: check most specific patterns first
+    let kind = if symbol.contains("PERPETUAL") {
+        "future" // Perpetuals are treated as futures in Deribit API
+    } else if symbol.ends_with("-C") || symbol.ends_with("-P") {
+        // Options end with -C (call) or -P (put)
+        "option"
+    } else if symbol.contains('_') && !symbol.contains('-') {
+        // Spot pairs have underscore but no dash (e.g., "BTC_USDC")
+        "spot"
+    } else {
+        // Default to future for expiry dates like "BTC-25MAR23"
+        "future"
+    };
+
+    // Extract currency (first part before '-' or '_')
+    // For most instruments, currency is the first segment
+    let currency = if let Some(idx) = symbol.find('-') {
+        // Futures, perpetuals, options: "BTC-..." → "BTC"
+        // Linear options: "XRP_USDC-..." → extract base currency "XRP"
+        let first_part = &symbol[..idx];
+        if let Some(underscore_idx) = first_part.find('_') {
+            first_part[..underscore_idx].to_string()
+        } else {
+            first_part.to_string()
+        }
+    } else if let Some(idx) = symbol.find('_') {
+        // Spot: "BTC_USDC" → "BTC"
+        symbol[..idx].to_string()
+    } else {
+        "any".to_string()
+    };
+
+    (kind.to_string(), currency)
+}
 
 /// Extracts server timestamp from response and converts to UnixNanos.
 ///
@@ -409,10 +470,7 @@ pub fn parse_account_state(
 
         // Skip balances with empty currency codes
         if ccy_str.is_empty() {
-            tracing::debug!(
-                "Skipping balance detail with empty currency code | raw_data={:?}",
-                summary
-            );
+            log::debug!("Skipping balance detail with empty currency code | raw_data={summary:?}");
             continue;
         }
 
@@ -500,7 +558,7 @@ pub fn parse_trade_tick(
     };
     let price = Price::new(trade.price, price_precision);
     let size = Quantity::new(trade.amount, size_precision);
-    let ts_event = UnixNanos::from((trade.timestamp as u64) * 1_000_000);
+    let ts_event = UnixNanos::from((trade.timestamp as u64) * NANOSECONDS_IN_MILLISECOND);
     let trade_id = TradeId::new(&trade.trade_id);
 
     Ok(TradeTick::new(
@@ -512,6 +570,165 @@ pub fn parse_trade_tick(
         ts_event,
         ts_init,
     ))
+}
+
+/// Parses Deribit TradingView chart data into Nautilus [`Bar`]s.
+///
+/// Converts OHLCV arrays from the `public/get_tradingview_chart_data` endpoint
+/// into a vector of [`Bar`] objects.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The status is not "ok"
+/// - Array lengths are inconsistent
+/// - No data points are present
+pub fn parse_bars(
+    chart_data: &DeribitTradingViewChartData,
+    bar_type: BarType,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Vec<Bar>> {
+    // Check status
+    if chart_data.status != "ok" {
+        anyhow::bail!(
+            "Chart data status is '{}', expected 'ok'",
+            chart_data.status
+        );
+    }
+
+    let num_bars = chart_data.ticks.len();
+
+    // Verify array lengths match
+    anyhow::ensure!(
+        chart_data.open.len() == num_bars
+            && chart_data.high.len() == num_bars
+            && chart_data.low.len() == num_bars
+            && chart_data.close.len() == num_bars
+            && chart_data.volume.len() == num_bars,
+        "Inconsistent array lengths in chart data"
+    );
+
+    if num_bars == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut bars = Vec::with_capacity(num_bars);
+
+    for i in 0..num_bars {
+        let open = Price::new_checked(chart_data.open[i], price_precision)
+            .with_context(|| format!("Invalid open price at index {i}"))?;
+        let high = Price::new_checked(chart_data.high[i], price_precision)
+            .with_context(|| format!("Invalid high price at index {i}"))?;
+        let low = Price::new_checked(chart_data.low[i], price_precision)
+            .with_context(|| format!("Invalid low price at index {i}"))?;
+        let close = Price::new_checked(chart_data.close[i], price_precision)
+            .with_context(|| format!("Invalid close price at index {i}"))?;
+        let volume = Quantity::new_checked(chart_data.volume[i], size_precision)
+            .with_context(|| format!("Invalid volume at index {i}"))?;
+
+        // Convert timestamp from milliseconds to nanoseconds
+        let ts_event = UnixNanos::from((chart_data.ticks[i] as u64) * NANOSECONDS_IN_MILLISECOND);
+
+        let bar = Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init)
+            .with_context(|| format!("Invalid OHLC bar at index {i}"))?;
+        bars.push(bar);
+    }
+
+    Ok(bars)
+}
+
+/// Parses Deribit order book data into a Nautilus [`OrderBook`].
+///
+/// Converts bids and asks from the `public/get_order_book` endpoint
+/// into an L2_MBP order book.
+///
+/// # Errors
+///
+/// Returns an error if order book creation fails.
+pub fn parse_order_book(
+    order_book_data: &DeribitOrderBook,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderBook> {
+    let ts_event = UnixNanos::from((order_book_data.timestamp as u64) * NANOSECONDS_IN_MILLISECOND);
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    for (idx, [price, amount]) in order_book_data.bids.iter().enumerate() {
+        let order = BookOrder::new(
+            OrderSide::Buy,
+            Price::new(*price, price_precision),
+            Quantity::new(*amount, size_precision),
+            idx as u64,
+        );
+        book.add(order, 0, idx as u64, ts_event);
+    }
+
+    let bids_len = order_book_data.bids.len();
+    for (idx, [price, amount]) in order_book_data.asks.iter().enumerate() {
+        let order = BookOrder::new(
+            OrderSide::Sell,
+            Price::new(*price, price_precision),
+            Quantity::new(*amount, size_precision),
+            (bids_len + idx) as u64,
+        );
+        book.add(order, 0, (bids_len + idx) as u64, ts_event);
+    }
+
+    book.ts_last = ts_init;
+
+    Ok(book)
+}
+
+/// Converts a Nautilus BarType to a Deribit chart resolution.
+///
+/// Deribit resolutions: "1", "3", "5", "10", "15", "30", "60", "120", "180", "360", "720", "1D"
+pub fn bar_spec_to_resolution(bar_type: &BarType) -> String {
+    use nautilus_model::enums::BarAggregation;
+
+    let spec = bar_type.spec();
+    match spec.aggregation {
+        BarAggregation::Minute => {
+            let step = spec.step.get();
+            // Map to nearest Deribit resolution
+            match step {
+                1 => "1".to_string(),
+                2..=3 => "3".to_string(),
+                4..=5 => "5".to_string(),
+                6..=10 => "10".to_string(),
+                11..=15 => "15".to_string(),
+                16..=30 => "30".to_string(),
+                31..=60 => "60".to_string(),
+                61..=120 => "120".to_string(),
+                121..=180 => "180".to_string(),
+                181..=360 => "360".to_string(),
+                361..=720 => "720".to_string(),
+                _ => "1D".to_string(),
+            }
+        }
+        BarAggregation::Hour => {
+            let step = spec.step.get();
+            match step {
+                1 => "60".to_string(),
+                2 => "120".to_string(),
+                3 => "180".to_string(),
+                4..=6 => "360".to_string(),
+                7..=12 => "720".to_string(),
+                _ => "1D".to_string(),
+            }
+        }
+        BarAggregation::Day => "1D".to_string(),
+        _ => {
+            log::warn!(
+                "Unsupported bar aggregation {:?}, defaulting to 1 minute",
+                spec.aggregation
+            );
+            "1".to_string()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -782,5 +999,227 @@ mod tests {
         assert_eq!(trade.size, Quantity::from("106"));
         assert_eq!(trade.aggressor_side, AggressorSide::Buyer);
         assert_eq!(trade.trade_id, TradeId::new("ETH-284830854"));
+    }
+
+    #[rstest]
+    fn test_parse_bars() {
+        let json_data = load_test_json("http_get_tradingview_chart_data.json");
+        let response: DeribitJsonRpcResponse<DeribitTradingViewChartData> =
+            serde_json::from_str(&json_data).unwrap();
+        let chart_data = response.result.expect("Test data must have result");
+
+        let bar_type = BarType::from("BTC-PERPETUAL.DERIBIT-1-MINUTE-LAST-EXTERNAL");
+        let ts_init = UnixNanos::from(1766487086146245_u64 * NANOSECONDS_IN_MICROSECOND);
+
+        let bars = parse_bars(&chart_data, bar_type, 1, 8, ts_init).expect("Should parse bars");
+
+        assert_eq!(bars.len(), 5, "Should parse 5 bars");
+
+        // Verify first bar
+        let first_bar = &bars[0];
+        assert_eq!(first_bar.bar_type, bar_type);
+        assert_eq!(first_bar.open, Price::from("87451.0"));
+        assert_eq!(first_bar.high, Price::from("87456.5"));
+        assert_eq!(first_bar.low, Price::from("87451.0"));
+        assert_eq!(first_bar.close, Price::from("87456.5"));
+        assert_eq!(first_bar.volume, Quantity::from("2.94375216"));
+        assert_eq!(
+            first_bar.ts_event,
+            UnixNanos::from(1766483460000_u64 * NANOSECONDS_IN_MILLISECOND)
+        );
+        assert_eq!(first_bar.ts_init, ts_init);
+
+        // Verify last bar
+        let last_bar = &bars[4];
+        assert_eq!(last_bar.open, Price::from("87456.0"));
+        assert_eq!(last_bar.high, Price::from("87456.5"));
+        assert_eq!(last_bar.low, Price::from("87456.0"));
+        assert_eq!(last_bar.close, Price::from("87456.0"));
+        assert_eq!(last_bar.volume, Quantity::from("0.1018798"));
+        assert_eq!(
+            last_bar.ts_event,
+            UnixNanos::from(1766483700000_u64 * NANOSECONDS_IN_MILLISECOND)
+        );
+    }
+
+    #[rstest]
+    fn test_parse_order_book() {
+        let json_data = load_test_json("http_get_order_book.json");
+        let response: DeribitJsonRpcResponse<DeribitOrderBook> =
+            serde_json::from_str(&json_data).unwrap();
+        let order_book_data = response.result.expect("Test data must have result");
+
+        let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+        let ts_init = UnixNanos::from(1766554855146274_u64 * NANOSECONDS_IN_MICROSECOND);
+
+        let book = parse_order_book(&order_book_data, instrument_id, 1, 0, ts_init)
+            .expect("Should parse order book");
+
+        // Verify book metadata
+        assert_eq!(book.instrument_id, instrument_id);
+        assert_eq!(book.book_type, BookType::L2_MBP);
+        assert_eq!(book.ts_last, ts_init);
+
+        // Verify book has both sides
+        assert!(book.has_bid(), "Book should have bids");
+        assert!(book.has_ask(), "Book should have asks");
+
+        // Verify best bid using OrderBook methods
+        assert_eq!(
+            book.best_bid_price(),
+            Some(Price::from("87002.5")),
+            "Best bid price should match"
+        );
+        assert_eq!(
+            book.best_bid_size(),
+            Some(Quantity::from("199190")),
+            "Best bid size should match"
+        );
+
+        // Verify best ask using OrderBook methods
+        assert_eq!(
+            book.best_ask_price(),
+            Some(Price::from("87003.0")),
+            "Best ask price should match"
+        );
+        assert_eq!(
+            book.best_ask_size(),
+            Some(Quantity::from("125090")),
+            "Best ask size should match"
+        );
+
+        // Verify spread (best_ask - best_bid = 87003.0 - 87002.5 = 0.5)
+        let spread = book.spread().expect("Spread should exist");
+        assert!(
+            (spread - 0.5).abs() < 0.0001,
+            "Spread should be 0.5, got {spread}"
+        );
+
+        // Verify midpoint ((87003.0 + 87002.5) / 2 = 87002.75)
+        let midpoint = book.midpoint().expect("Midpoint should exist");
+        assert!(
+            (midpoint - 87002.75).abs() < 0.0001,
+            "Midpoint should be 87002.75, got {midpoint}"
+        );
+
+        // Verify level counts match input data
+        let bid_count = book.bids(None).count();
+        let ask_count = book.asks(None).count();
+        assert_eq!(
+            bid_count,
+            order_book_data.bids.len(),
+            "Bid levels count should match input data"
+        );
+        assert_eq!(
+            ask_count,
+            order_book_data.asks.len(),
+            "Ask levels count should match input data"
+        );
+        assert_eq!(bid_count, 20, "Should have 20 bid levels");
+        assert_eq!(ask_count, 20, "Should have 20 ask levels");
+
+        // Verify depth limiting works (get top 5 levels)
+        assert_eq!(
+            book.bids(Some(5)).count(),
+            5,
+            "Should limit to 5 bid levels"
+        );
+        assert_eq!(
+            book.asks(Some(5)).count(),
+            5,
+            "Should limit to 5 ask levels"
+        );
+
+        // Verify bids_as_map and asks_as_map
+        let bids_map = book.bids_as_map(None);
+        let asks_map = book.asks_as_map(None);
+        assert_eq!(bids_map.len(), 20, "Bids map should have 20 entries");
+        assert_eq!(asks_map.len(), 20, "Asks map should have 20 entries");
+
+        // Verify specific prices exist in maps
+        assert!(
+            bids_map.contains_key(&dec!(87002.5)),
+            "Bids map should contain best bid price"
+        );
+        assert!(
+            asks_map.contains_key(&dec!(87003.0)),
+            "Asks map should contain best ask price"
+        );
+
+        // Verify worst levels exist
+        assert!(
+            bids_map.contains_key(&dec!(86980.0)),
+            "Bids map should contain worst bid price"
+        );
+        assert!(
+            asks_map.contains_key(&dec!(87031.5)),
+            "Asks map should contain worst ask price"
+        );
+    }
+
+    fn make_instrument_id(symbol: &str) -> InstrumentId {
+        InstrumentId::new(Symbol::from(symbol), Venue::from("DERIBIT"))
+    }
+
+    #[rstest]
+    fn test_parse_futures_and_perpetuals() {
+        // Perpetuals are classified as "future" in Deribit API
+        let cases = [
+            ("BTC-PERPETUAL", "future", "BTC"),
+            ("ETH-PERPETUAL", "future", "ETH"),
+            ("SOL-PERPETUAL", "future", "SOL"),
+            // Futures with expiry dates
+            ("BTC-25MAR23", "future", "BTC"),
+            ("BTC-5AUG23", "future", "BTC"), // Single digit day
+            ("ETH-28MAR25", "future", "ETH"),
+        ];
+
+        for (symbol, expected_kind, expected_currency) in cases {
+            let (kind, currency) = parse_instrument_kind_currency(&make_instrument_id(symbol));
+            assert_eq!(kind, expected_kind, "kind mismatch for {symbol}");
+            assert_eq!(
+                currency, expected_currency,
+                "currency mismatch for {symbol}"
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_parse_options() {
+        let cases = [
+            // Standard options: {CURRENCY}-{DMMMYY}-{STRIKE}-{C|P}
+            ("BTC-25MAR23-420-C", "option", "BTC"),
+            ("BTC-5AUG23-580-P", "option", "BTC"),
+            ("ETH-28MAR25-4000-C", "option", "ETH"),
+            // Linear option with decimal strike (d = decimal point)
+            ("XRP_USDC-30JUN23-0d625-C", "option", "XRP"),
+        ];
+
+        for (symbol, expected_kind, expected_currency) in cases {
+            let (kind, currency) = parse_instrument_kind_currency(&make_instrument_id(symbol));
+            assert_eq!(kind, expected_kind, "kind mismatch for {symbol}");
+            assert_eq!(
+                currency, expected_currency,
+                "currency mismatch for {symbol}"
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_parse_spot() {
+        let cases = [
+            ("BTC_USDC", "spot", "BTC"),
+            ("ETH_USDT", "spot", "ETH"),
+            ("SOL_USDC", "spot", "SOL"),
+        ];
+
+        for (symbol, expected_kind, expected_currency) in cases {
+            let (kind, currency) = parse_instrument_kind_currency(&make_instrument_id(symbol));
+            assert_eq!(kind, expected_kind, "kind mismatch for {symbol}");
+            assert_eq!(
+                currency, expected_currency,
+                "currency mismatch for {symbol}"
+            );
+        }
     }
 }

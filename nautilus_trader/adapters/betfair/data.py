@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -240,11 +240,6 @@ class BetfairDataClient(LiveMarketDataClient):
 
     async def _subscribe_instrument_close(self, command: SubscribeInstrumentClose) -> None:
         pass  # Subscribed as part of orderbook
-
-    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
-        # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the
-        #  subscription message - when we have a use case
-        self._log.warning("Betfair does not support unsubscribing")
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,8 +21,12 @@ import pytest
 from ibapi.order_state import OrderState as IBOrderState
 
 from nautilus_trader.adapters.interactive_brokers.common import IBOrderTags
-from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveExecClientFactory,
+)
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
+    instrument_id_to_ib_contract,
+)
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.identifiers import PositionId

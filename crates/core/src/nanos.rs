@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -38,7 +38,8 @@
 //! `UnixNanos` can be created from and serialized to various formats:
 //!
 //! * Integer values are interpreted as nanoseconds since the UNIX epoch.
-//! * Floating-point values are interpreted as seconds since the UNIX epoch (converted to nanoseconds).
+//! * Floating-point values are interpreted as seconds since the UNIX epoch (converted to nanoseconds
+//!   using truncation, not rounding, for consistency with [`secs_to_nanos`](crate::datetime::secs_to_nanos)).
 //! * String values may be:
 //!   - A numeric string (interpreted as nanoseconds).
 //!   - A floating-point string (interpreted as seconds, converted to nanoseconds).
@@ -49,6 +50,8 @@
 //!
 //! * Negative timestamps are invalid and will result in an error.
 //! * Arithmetic operations will panic on overflow/underflow rather than wrapping.
+//! * The `as_i64()` method and `DateTime<Utc>` conversions will panic for timestamps
+//!   beyond approximately year 2262 (when nanoseconds exceed `i64::MAX`).
 
 use std::{
     cmp::Ordering,
@@ -177,7 +180,7 @@ impl UnixNanos {
                 return Err("Unix timestamp is out of range".into());
             }
 
-            let nanos = nanos_f64.round() as u64;
+            let nanos = nanos_f64.trunc() as u64;
             return Ok(Self(nanos));
         }
 
@@ -542,7 +545,7 @@ impl<'de> Deserialize<'de> for UnixNanos {
                         "Unix timestamp {value} seconds is out of range"
                     )));
                 }
-                let nanos = nanos_f64.round() as u64;
+                let nanos = nanos_f64.trunc() as u64;
                 Ok(UnixNanos(nanos))
             }
 
@@ -936,6 +939,14 @@ mod tests {
         let json = "\"1234.567\"";
         let deserialized: UnixNanos = serde_json::from_str(json).unwrap();
         assert_eq!(deserialized.as_u64(), 1_234_567_000_000);
+    }
+
+    #[rstest]
+    fn test_deserialize_float_uses_truncation() {
+        // Truncation (not rounding) for consistency with secs_to_nanos() etc
+        let json = "0.9999999999";
+        let deserialized: UnixNanos = serde_json::from_str(json).unwrap();
+        assert_eq!(deserialized.as_u64(), 999_999_999); // Truncated, not rounded to 1B
     }
 
     #[rstest]

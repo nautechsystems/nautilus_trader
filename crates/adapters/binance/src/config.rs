@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,6 +15,10 @@
 
 //! Binance adapter configuration structures.
 
+use std::any::Any;
+
+use nautilus_system::factories::ClientConfig;
+
 use crate::common::enums::{BinanceEnvironment, BinanceProductType};
 
 /// Configuration for Binance data client.
@@ -28,10 +32,14 @@ pub struct BinanceDataClientConfig {
     pub base_url_http: Option<String>,
     /// Optional base URL override for WebSocket.
     pub base_url_ws: Option<String>,
-    /// API key for authenticated endpoints.
+    /// API key for HTTP authenticated endpoints (HMAC).
     pub api_key: Option<String>,
-    /// API secret for request signing.
+    /// API secret for HTTP request signing (HMAC).
     pub api_secret: Option<String>,
+    /// Ed25519 API key for SBE WebSocket streams (required for SBE).
+    pub ed25519_api_key: Option<String>,
+    /// Ed25519 private key (base64) for SBE WebSocket streams (required for SBE).
+    pub ed25519_api_secret: Option<String>,
 }
 
 impl Default for BinanceDataClientConfig {
@@ -43,7 +51,15 @@ impl Default for BinanceDataClientConfig {
             base_url_ws: None,
             api_key: None,
             api_secret: None,
+            ed25519_api_key: None,
+            ed25519_api_secret: None,
         }
+    }
+}
+
+impl ClientConfig for BinanceDataClientConfig {
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -62,4 +78,10 @@ pub struct BinanceExecClientConfig {
     pub api_key: String,
     /// API secret for request signing (required).
     pub api_secret: String,
+}
+
+impl ClientConfig for BinanceExecClientConfig {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }

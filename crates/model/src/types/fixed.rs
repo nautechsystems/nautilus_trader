@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,7 +18,7 @@
 //! This module provides constants and functions that enforce a fixed-point precision strategy,
 //! ensuring consistent precision and scaling across various types and calculations.
 //!
-//! # Raw value requirements
+//! # Raw Value Requirements
 //!
 //! When constructing value types like [`Price`] or [`Quantity`] using `from_raw`, the raw value
 //! **must** be a valid multiple of the scale factor for the given precision. Valid raw values
@@ -31,7 +31,7 @@
 //! Raw values that are not valid multiples will cause a panic on construction in debug builds,
 //! and may result in incorrect values in release builds.
 //!
-//! # Legacy catalog data and floating-point errors
+//! # Legacy Catalog Data and Floating-Point Errors
 //!
 //! Data written to catalogs using V2 wranglers before 16th December 2025 may contain raw values with
 //! floating-point precision errors. This occurred because the wranglers used:
@@ -46,7 +46,7 @@
 //! round(value * 10^precision) * scale  # Correct
 //! ```
 //!
-//! # Raw value correction
+//! # Raw Value Correction
 //!
 //! To handle legacy data with floating-point errors, the Arrow decode path uses correction
 //! functions ([`correct_raw_i64`], [`correct_raw_i128`], etc.) to round raw values to the
@@ -256,7 +256,7 @@ fn invalid_raw_error(
 /// multiples of 10^(FIXED_PRECISION - P). Any non-zero remainder indicates data corruption
 /// or incorrect scaling upstream.
 ///
-/// # Precision limits
+/// # Precision Limits
 ///
 /// This check only validates when `precision < FIXED_PRECISION`:
 /// - When `precision == FIXED_PRECISION`, every bit of the raw value is significant and
@@ -327,7 +327,7 @@ pub fn check_fixed_raw_u64(raw: u64, precision: u8) -> anyhow::Result<()> {
 /// multiples of 10^(FIXED_PRECISION - P). Any non-zero remainder indicates data corruption
 /// or incorrect scaling upstream.
 ///
-/// # Precision limits
+/// # Precision Limits
 ///
 /// This check only validates when `precision < FIXED_PRECISION`:
 /// - When `precision == FIXED_PRECISION`, every bit of the raw value is significant and
@@ -663,7 +663,7 @@ mod tests {
         for precision in 0..=FIXED_PRECISION {
             let fixed = f64_to_fixed_i128(value, precision);
             let result = fixed_i128_to_f64(fixed);
-            assert!(approx_eq!(f64, value, result, epsilon = 0.001, ulps = 16));
+            assert!(approx_eq!(f64, value, result, epsilon = 0.001));
         }
     }
 
@@ -711,7 +711,7 @@ mod tests {
         for precision in 0..=FIXED_PRECISION {
             let fixed = f64_to_fixed_u128(value, precision);
             let result = fixed_u128_to_f64(fixed);
-            assert!(approx_eq!(f64, value, result, epsilon = 0.001, ulps = 16));
+            assert!(approx_eq!(f64, value, result, epsilon = 0.001));
         }
     }
 
@@ -1011,7 +1011,7 @@ mod tests {
         for precision in 0..=FIXED_PRECISION {
             let fixed = f64_to_fixed_i64(value, precision);
             let result = fixed_i64_to_f64(fixed);
-            assert!(approx_eq!(f64, value, result, epsilon = 0.001, ulps = 16));
+            assert!(approx_eq!(f64, value, result, epsilon = 0.001));
         }
     }
 
@@ -1049,7 +1049,7 @@ mod tests {
         for precision in 0..=FIXED_PRECISION {
             let fixed = f64_to_fixed_u64(value, precision);
             let result = fixed_u64_to_f64(fixed);
-            assert!(approx_eq!(f64, value, result, epsilon = 0.001, ulps = 16));
+            assert!(approx_eq!(f64, value, result, epsilon = 0.001));
         }
     }
 

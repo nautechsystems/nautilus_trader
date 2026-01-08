@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -133,7 +133,7 @@ impl PostgresCacheDatabase {
             tokio::select! {
                 maybe_msg = rx.recv() => {
                     if let Some(msg) = maybe_msg {
-                        tracing::debug!("Received {msg:?}");
+                        log::debug!("Received {msg:?}");
                         if matches!(msg, DatabaseQuery::Close) {
                             break;
                         }
@@ -144,7 +144,7 @@ impl PostgresCacheDatabase {
                             drain_buffer(&pool, &mut buffer).await;
                         }
                     } else {
-                        tracing::debug!("Command channel closed");
+                        log::debug!("Command channel closed");
                         break;
                     }
                 }
@@ -1076,7 +1076,7 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
         };
 
         if let Err(e) = result {
-            tracing::error!("Error on query: {e:?}");
+            log::error!("Error on query: {e:?}");
         }
     }
 }

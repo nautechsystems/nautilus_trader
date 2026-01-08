@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -91,7 +91,7 @@ cdef class DataClient(Component):
 
 cdef class MarketDataClient(DataClient):
     cdef set[InstrumentId] _subscriptions_order_book_delta
-    cdef set[InstrumentId] _subscriptions_order_book_snapshot
+    cdef set[InstrumentId] _subscriptions_order_book_depth
     cdef set[InstrumentId] _subscriptions_quote_tick
     cdef set[InstrumentId] _subscriptions_trade_tick
     cdef set[InstrumentId] _subscriptions_mark_price
@@ -108,7 +108,7 @@ cdef class MarketDataClient(DataClient):
 
     cpdef list subscribed_instruments(self)
     cpdef list subscribed_order_book_deltas(self)
-    cpdef list subscribed_order_book_snapshots(self)
+    cpdef list subscribed_order_book_depth(self)
     cpdef list subscribed_quote_ticks(self)
     cpdef list subscribed_trade_ticks(self)
     cpdef list subscribed_mark_prices(self)
@@ -121,7 +121,6 @@ cdef class MarketDataClient(DataClient):
     cpdef void subscribe_instruments(self, SubscribeInstruments command)
     cpdef void subscribe_instrument(self, SubscribeInstrument command)
     cpdef void subscribe_order_book_deltas(self, SubscribeOrderBook command)
-    cpdef void subscribe_order_book_snapshots(self, SubscribeOrderBook command)
     cpdef void subscribe_order_book_depth(self, SubscribeOrderBook command)
     cpdef void subscribe_quote_ticks(self, SubscribeQuoteTicks command)
     cpdef void subscribe_trade_ticks(self, SubscribeTradeTicks command)
@@ -134,7 +133,6 @@ cdef class MarketDataClient(DataClient):
     cpdef void unsubscribe_instruments(self, UnsubscribeInstruments command)
     cpdef void unsubscribe_instrument(self, UnsubscribeInstrument command)
     cpdef void unsubscribe_order_book_deltas(self, UnsubscribeOrderBook command)
-    cpdef void unsubscribe_order_book_snapshots(self, UnsubscribeOrderBook command)
     cpdef void unsubscribe_order_book_depth(self, UnsubscribeOrderBook command)
     cpdef void unsubscribe_quote_ticks(self, UnsubscribeQuoteTicks command)
     cpdef void unsubscribe_trade_ticks(self, UnsubscribeTradeTicks command)
@@ -147,7 +145,7 @@ cdef class MarketDataClient(DataClient):
 
     cpdef void _add_subscription_instrument(self, InstrumentId instrument_id)
     cpdef void _add_subscription_order_book_deltas(self, InstrumentId instrument_id)
-    cpdef void _add_subscription_order_book_snapshots(self, InstrumentId instrument_id)
+    cpdef void _add_subscription_order_book_depth(self, InstrumentId instrument_id)
     cpdef void _add_subscription_quote_ticks(self, InstrumentId instrument_id)
     cpdef void _add_subscription_trade_ticks(self, InstrumentId instrument_id)
     cpdef void _add_subscription_mark_prices(self, InstrumentId instrument_id)
@@ -158,7 +156,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void _add_subscription_instrument_close(self, InstrumentId instrument_id)
     cpdef void _remove_subscription_instrument(self, InstrumentId instrument_id)
     cpdef void _remove_subscription_order_book_deltas(self, InstrumentId instrument_id)
-    cpdef void _remove_subscription_order_book_snapshots(self, InstrumentId instrument_id)
+    cpdef void _remove_subscription_order_book_depth(self, InstrumentId instrument_id)
     cpdef void _remove_subscription_quote_ticks(self, InstrumentId instrument_id)
     cpdef void _remove_subscription_trade_ticks(self, InstrumentId instrument_id)
     cpdef void _remove_subscription_mark_prices(self, InstrumentId instrument_id)

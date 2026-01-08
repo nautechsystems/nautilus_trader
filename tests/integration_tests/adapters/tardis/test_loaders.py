@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -169,7 +169,9 @@ def test_tardis_load_depth10_from_snapshot5(
     for i in range(1, 5):
         assert (
             deltas[0].bids[i].price < deltas[0].bids[i - 1].price  # type: ignore
-        ), f"Bid price at level {i} ({deltas[0].bids[i].price}) should be less than level {i-1} ({deltas[0].bids[i-1].price})"
+        ), (
+            f"Bid price at level {i} ({deltas[0].bids[i].price}) should be less than level {i - 1} ({deltas[0].bids[i - 1].price})"
+        )
 
     # Verify all 10 ask levels (first 5 from data, rest are null/empty)
     assert len(deltas[0].asks) == 10
@@ -197,12 +199,16 @@ def test_tardis_load_depth10_from_snapshot5(
     for i in range(1, 5):
         assert (
             deltas[0].asks[i].price > deltas[0].asks[i - 1].price  # type: ignore
-        ), f"Ask price at level {i} ({deltas[0].asks[i].price}) should be greater than level {i-1} ({deltas[0].asks[i-1].price})"
+        ), (
+            f"Ask price at level {i} ({deltas[0].asks[i].price}) should be greater than level {i - 1} ({deltas[0].asks[i - 1].price})"
+        )
 
     # Verify bid/ask spread is positive (best ask > best bid)
     assert (
         deltas[0].asks[0].price > deltas[0].bids[0].price  # type: ignore
-    ), f"Best ask ({deltas[0].asks[0].price}) should be greater than best bid ({deltas[0].bids[0].price})"
+    ), (
+        f"Best ask ({deltas[0].asks[0].price}) should be greater than best bid ({deltas[0].bids[0].price})"
+    )
 
     # Verify bid and ask counts
     assert deltas[0].bid_counts[0] == 1
@@ -282,7 +288,9 @@ def test_tardis_load_depth10_from_snapshot25(
     for i in range(1, 10):
         assert (
             deltas[0].bids[i].price < deltas[0].bids[i - 1].price  # type: ignore
-        ), f"Bid price at level {i} ({deltas[0].bids[i].price}) should be less than level {i-1} ({deltas[0].bids[i-1].price})"
+        ), (
+            f"Bid price at level {i} ({deltas[0].bids[i].price}) should be less than level {i - 1} ({deltas[0].bids[i - 1].price})"
+        )
 
     # Verify all 10 ask levels from snapshot25 (only first 10 of 25 are used)
     assert len(deltas[0].asks) == 10
@@ -309,12 +317,16 @@ def test_tardis_load_depth10_from_snapshot25(
     for i in range(1, 10):
         assert (
             deltas[0].asks[i].price > deltas[0].asks[i - 1].price  # type: ignore
-        ), f"Ask price at level {i} ({deltas[0].asks[i].price}) should be greater than level {i-1} ({deltas[0].asks[i-1].price})"
+        ), (
+            f"Ask price at level {i} ({deltas[0].asks[i].price}) should be greater than level {i - 1} ({deltas[0].asks[i - 1].price})"
+        )
 
     # Verify bid/ask spread is positive (best ask > best bid)
     assert (
         deltas[0].asks[0].price > deltas[0].bids[0].price  # type: ignore
-    ), f"Best ask ({deltas[0].asks[0].price}) should be greater than best bid ({deltas[0].bids[0].price})"
+    ), (
+        f"Best ask ({deltas[0].asks[0].price}) should be greater than best bid ({deltas[0].bids[0].price})"
+    )
 
     # Verify bid and ask counts (all should be 1 for snapshot data)
     for i in range(10):
@@ -442,12 +454,12 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
 
         # Skip CLEAR delta (index 0) when checking precision
         for i, delta in enumerate(deltas[1:], start=1):
-            assert (
-                delta.order.price.precision == expected_price_precision
-            ), f"Delta {i} price precision should be {expected_price_precision}"
-            assert (
-                delta.order.size.precision == expected_size_precision
-            ), f"Delta {i} size precision should be {expected_size_precision}"
+            assert delta.order.price.precision == expected_price_precision, (
+                f"Delta {i} price precision should be {expected_price_precision}"
+            )
+            assert delta.order.size.precision == expected_size_precision, (
+                f"Delta {i} size precision should be {expected_size_precision}"
+            )
 
         # Performance check - should be very fast for small dataset
         assert elapsed_time < 1.0, f"Loading took too long: {elapsed_time:.3f}s"
@@ -988,9 +1000,9 @@ def _test_memory_efficiency_for_type(data_type, csv_generator):
             memory_increase = current_memory - initial_memory
 
             # Should not use excessive memory even with 500 records
-            assert (
-                memory_increase < 150
-            ), f"Memory usage too high for {data_type}: {memory_increase:.2f} MB"
+            assert memory_increase < 150, (
+                f"Memory usage too high for {data_type}: {memory_increase:.2f} MB"
+            )
 
         # For deltas, first record has is_snapshot=true so a CLEAR delta is prepended (501 total)
         expected_count = 501 if data_type == "deltas" else 500

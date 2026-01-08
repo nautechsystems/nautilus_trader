@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,6 +17,7 @@ use std::{cmp::max, collections::HashSet};
 
 use alloy::primitives::Address;
 use futures_util::StreamExt;
+use nautilus_core::formatting::Separable;
 use nautilus_model::defi::{
     SharedDex,
     amm::Pool,
@@ -24,7 +25,6 @@ use nautilus_model::defi::{
     reporting::{BlockchainSyncReportItems, BlockchainSyncReporter},
     token::Token,
 };
-use thousands::Separable;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -128,7 +128,7 @@ impl<'a> PoolDiscoveryService<'a> {
 
         // Skip sync if already up to date
         if effective_from_block > to_block {
-            tracing::info!(
+            log::info!(
                 "DEX {} already synced to block {} (current: {}), skipping sync",
                 dex.dex.name,
                 last_synced_block.unwrap_or(0).separate_with_commas(),
@@ -138,7 +138,7 @@ impl<'a> PoolDiscoveryService<'a> {
         }
 
         let total_blocks = to_block.saturating_sub(effective_from_block) + 1;
-        tracing::info!(
+        log::info!(
             "Syncing DEX exchange pools from {} to {} (total: {} blocks){}",
             effective_from_block.separate_with_commas(),
             to_block.separate_with_commas(),
@@ -152,7 +152,7 @@ impl<'a> PoolDiscoveryService<'a> {
                 String::new()
             },
         );
-        tracing::info!(
+        log::info!(
             "Syncing {} pool creation events from factory contract {} on chain {}",
             dex.dex.name,
             dex.factory,
@@ -161,7 +161,7 @@ impl<'a> PoolDiscoveryService<'a> {
 
         // Enable performance settings for sync operations
         if let Err(e) = self.cache.toggle_performance_settings(true).await {
-            tracing::warn!("Failed to enable performance settings: {e}");
+            log::warn!("Failed to enable performance settings: {e}");
         }
 
         let mut metrics = BlockchainSyncReporter::new(
@@ -204,7 +204,7 @@ impl<'a> PoolDiscoveryService<'a> {
         let cancellation_token = self.cancellation_token.clone();
         let sync_result = tokio::select! {
             () = cancellation_token.cancelled() => {
-                tracing::info!("Exchange pool sync cancelled");
+                log::info!("Exchange pool sync cancelled");
                 Err(anyhow::anyhow!("Sync cancelled"))
             }
 
@@ -317,7 +317,7 @@ impl<'a> PoolDiscoveryService<'a> {
                     .update_dex_last_synced_block(&dex.dex.name, to_block)
                     .await?;
 
-                tracing::info!(
+                log::info!(
                     "Successfully synced DEX {} pools up to block {} | Summary: discovered={}, saved={}, skipped_exists={}, skipped_invalid_tokens={}",
                     dex.dex.name,
                     to_block.separate_with_commas(),
@@ -335,7 +335,7 @@ impl<'a> PoolDiscoveryService<'a> {
 
         // Restore default safe settings after sync completion
         if let Err(e) = self.cache.toggle_performance_settings(false).await {
-            tracing::warn!("Failed to restore default settings: {e}");
+            log::warn!("Failed to restore default settings: {e}");
         }
 
         Ok(())
@@ -422,7 +422,7 @@ impl<'a> PoolDiscoveryService<'a> {
                 Some(token) => token.clone(),
                 None => {
                     if !self.cache.is_invalid_token(&pool_event.token0) {
-                        tracing::warn!(
+                        log::warn!(
                             "Skipping pool {}: Token0 {} not in cache and not marked as invalid",
                             pool_event.pool_address,
                             pool_event.token0
@@ -436,7 +436,7 @@ impl<'a> PoolDiscoveryService<'a> {
                 Some(token) => token.clone(),
                 None => {
                     if !self.cache.is_invalid_token(&pool_event.token1) {
-                        tracing::warn!(
+                        log::warn!(
                             "Skipping pool {}: Token1 {} not in cache and not marked as invalid",
                             pool_event.pool_address,
                             pool_event.token1

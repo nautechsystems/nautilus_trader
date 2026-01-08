@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,7 +26,7 @@ use nautilus_common::{
     timer::TimeEvent,
 };
 use nautilus_model::{
-    data::Data,
+    data::{Data, OrderBookDeltas, OrderBookDepth10},
     identifiers::{InstrumentId, Venue},
     instruments::Instrument,
 };
@@ -72,32 +72,52 @@ impl MessageHandler for BookUpdater {
     }
 
     fn handle(&self, message: &dyn Any) {
-        // TODO: Temporary handler implementation (this will be removed soon)
-        if let Some(data) = message.downcast_ref::<Data>()
-            && let Some(book) = self
-                .cache
-                .borrow_mut()
-                .order_book_mut(&data.instrument_id())
-        {
-            match data {
-                Data::Delta(delta) => {
-                    if let Err(e) = book.apply_delta(delta) {
-                        log::error!("Failed to apply delta: {e}");
+        let mut cache = self.cache.borrow_mut();
+
+        if let Some(data) = message.downcast_ref::<Data>() {
+            if let Some(book) = cache.order_book_mut(&data.instrument_id()) {
+                match data {
+                    Data::Delta(delta) => {
+                        if let Err(e) = book.apply_delta(delta) {
+                            log::error!("Failed to apply delta: {e}");
+                        }
                     }
-                }
-                Data::Deltas(deltas) => {
-                    if let Err(e) = book.apply_deltas(deltas) {
-                        log::error!("Failed to apply deltas: {e}");
+                    Data::Deltas(deltas) => {
+                        if let Err(e) = book.apply_deltas(deltas) {
+                            log::error!("Failed to apply deltas: {e}");
+                        }
                     }
-                }
-                Data::Depth10(depth) => {
-                    if let Err(e) = book.apply_depth(depth) {
-                        log::error!("Failed to apply depth: {e}");
+                    Data::Depth10(depth) => {
+                        if let Err(e) = book.apply_depth(depth) {
+                            log::error!("Failed to apply depth: {e}");
+                        }
                     }
+                    _ => log::error!("Invalid data type for book update, was {data:?}"),
                 }
-                _ => log::error!("Invalid data type for book update, was {data:?}"),
             }
+            return;
         }
+
+        // Handle raw types published directly by handle_deltas/handle_depth10
+        if let Some(deltas) = message.downcast_ref::<OrderBookDeltas>() {
+            if let Some(book) = cache.order_book_mut(&deltas.instrument_id)
+                && let Err(e) = book.apply_deltas(deltas)
+            {
+                log::error!("Failed to apply deltas: {e}");
+            }
+            return;
+        }
+
+        if let Some(depth) = message.downcast_ref::<OrderBookDepth10>() {
+            if let Some(book) = cache.order_book_mut(&depth.instrument_id)
+                && let Err(e) = book.apply_depth(depth)
+            {
+                log::error!("Failed to apply depth: {e}");
+            }
+            return;
+        }
+
+        log::error!("BookUpdater received unhandled message type");
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -140,6 +160,10 @@ impl BookSnapshotter {
     }
 
     pub fn snapshot(&self, _event: TimeEvent) {
+        log::debug!(
+            "BookSnapshotter.snapshot called for {}",
+            self.snap_info.instrument_id
+        );
         let cache = self.cache.borrow();
 
         if self.snap_info.is_composite {
@@ -164,9 +188,13 @@ impl BookSnapshotter {
             .unwrap_or_else(|| panic!("OrderBook for {instrument_id} was not in cache"));
 
         if book.update_count == 0 {
-            log::debug!("OrderBook for {instrument_id} not yet updated for snapshot");
+            log::debug!("OrderBook not yet updated for snapshot: {instrument_id}");
             return;
         }
+        log::debug!(
+            "Publishing OrderBook snapshot for {instrument_id} (update_count={})",
+            book.update_count
+        );
 
         msgbus::publish(topic, book as &dyn Any);
     }

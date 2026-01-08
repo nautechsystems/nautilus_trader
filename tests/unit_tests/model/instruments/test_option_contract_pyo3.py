@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,12 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pandas as pd
+import pytest
+
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.instruments import OptionContract
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
 _AAPL_OPTION = TestInstrumentProviderPyo3.aapl_option()
+
+# Databento uses u64::MAX as sentinel for undefined timestamps
+_UNDEF_TIMESTAMP = 18446744073709551615
 
 
 def test_equality():
@@ -83,3 +89,41 @@ def test_pyo3_cython_conversion():
     )
     assert option_contract_cython_dict == option_contract_pyo3_dict
     assert option_contract_pyo3 == option_contract_pyo3_back
+
+
+def test_activation_utc_with_zero_timestamp():
+    """
+    Test activation_utc returns Unix epoch when activation_ns is 0.
+
+    Databento uses 0 as fallback for undefined activation timestamps.
+
+    """
+    # Arrange
+    option_dict = _AAPL_OPTION.to_dict()
+    option_dict["activation_ns"] = 0
+    option_pyo3 = nautilus_pyo3.OptionContract.from_dict(option_dict)
+    option = OptionContract.from_pyo3(option_pyo3)
+
+    # Act
+    result = option.activation_utc
+
+    # Assert
+    assert result == pd.Timestamp("1970-01-01", tz="UTC")
+
+
+def test_activation_utc_with_sentinel_raises():
+    """
+    Test u64::MAX sentinel causes OutOfBoundsDatetime in pandas.
+
+    Documents the bug that decode_optional_timestamp prevents by converting
+    UNDEF_TIMESTAMP to 0 at decode time.
+    """
+    # Arrange
+    option_dict = _AAPL_OPTION.to_dict()
+    option_dict["activation_ns"] = _UNDEF_TIMESTAMP
+    option_pyo3 = nautilus_pyo3.OptionContract.from_dict(option_dict)
+    option = OptionContract.from_pyo3(option_pyo3)
+
+    # Act & Assert
+    with pytest.raises(pd.errors.OutOfBoundsDatetime):
+        _ = option.activation_utc

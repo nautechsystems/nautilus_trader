@@ -1,0 +1,16 @@
+{
+  "balances": [
+    {
+      "symbol": "USD",
+      "amount": "100000.50"
+    },
+    {
+      "symbol": "BTC",
+      "amount": "1.25"
+    },
+    {
+      "symbol": "ETH",
+      "amount": "15.5"
+    }
+  ]
+}

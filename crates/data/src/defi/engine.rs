@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -532,7 +532,6 @@ mod tests {
 
     use super::*;
 
-    // Test fixtures
     #[fixture]
     fn test_instrument_id() -> InstrumentId {
         InstrumentId::new(Symbol::from("ETH/USDC"), Venue::from("UNISWAPV3"))

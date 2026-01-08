@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -43,7 +43,6 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -149,7 +148,7 @@ class TestTrader:
 
     def test_initialize_trader(self) -> None:
         # Arrange, Act, Assert
-        assert self.trader.id == TraderId("TESTER-000")
+        assert self.trader.id == TestIdStubs.trader_id()
         assert self.trader.is_initialized
         assert len(self.trader.strategy_states()) == 0
 

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -303,6 +303,18 @@ pub extern "C" fn orderbook_update_trade_tick(book: &mut OrderBook_API, trade: &
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_simulate_fills(book: &OrderBook_API, order: BookOrder) -> CVec {
     book.simulate_fills(&order).into()
+}
+
+#[unsafe(no_mangle)]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
+pub extern "C" fn orderbook_get_all_crossed_levels(
+    book: &OrderBook_API,
+    order_side: OrderSide,
+    price: Price,
+    size_precision: u8,
+) -> CVec {
+    book.get_all_crossed_levels(order_side, price, size_precision)
+        .into()
 }
 
 #[unsafe(no_mangle)]

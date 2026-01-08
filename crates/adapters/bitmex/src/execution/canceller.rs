@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -239,7 +239,7 @@ struct TransportClient {
 
 impl Debug for TransportClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TransportClient")
+        f.debug_struct(stringify!(TransportClient))
             .field("client_id", &self.client_id)
             .field("healthy", &self.healthy)
             .field("cancel_count", &self.cancel_count)
@@ -291,12 +291,12 @@ impl TransportClient {
                 true
             }
             Ok(Err(e)) => {
-                tracing::warn!("Health check failed for client {}: {e:?}", self.client_id);
+                log::warn!("Health check failed for client {}: {e:?}", self.client_id);
                 self.mark_unhealthy();
                 false
             }
             Err(_) => {
-                tracing::warn!("Health check timeout for client {}", self.client_id);
+                log::warn!("Health check timeout for client {}", self.client_id);
                 self.mark_unhealthy();
                 false
             }
@@ -438,7 +438,7 @@ impl CancelBroadcaster {
                 let results = future::join_all(tasks).await;
                 let healthy_count = results.iter().filter(|&&r| r).count();
 
-                tracing::debug!(
+                log::debug!(
                     "Health check complete: {}/{} clients healthy",
                     healthy_count,
                     results.len()
@@ -448,7 +448,7 @@ impl CancelBroadcaster {
 
         *self.health_check_task.write().await = Some(task);
 
-        tracing::info!(
+        log::info!(
             "CancelBroadcaster started with {} clients",
             self.transports.len()
         );
@@ -468,7 +468,7 @@ impl CancelBroadcaster {
             task.abort();
         }
 
-        tracing::info!("CancelBroadcaster stopped");
+        log::info!("CancelBroadcaster stopped");
     }
 
     async fn run_health_checks(&self) {
@@ -481,7 +481,7 @@ impl CancelBroadcaster {
         let results = future::join_all(tasks).await;
         let healthy_count = results.iter().filter(|&&r| r).count();
 
-        tracing::debug!(
+        log::debug!(
             "Health check complete: {}/{} clients healthy",
             healthy_count,
             results.len()
@@ -531,12 +531,7 @@ impl CancelBroadcaster {
                     }
                     self.successful_cancels.fetch_add(1, Ordering::Relaxed);
 
-                    tracing::debug!(
-                        "{} broadcast succeeded [{}] {}",
-                        operation,
-                        client_id,
-                        params
-                    );
+                    log::debug!("{operation} broadcast succeeded [{client_id}] {params}");
 
                     return Ok(result);
                 }
@@ -550,7 +545,7 @@ impl CancelBroadcaster {
                         }
                         self.idempotent_successes.fetch_add(1, Ordering::Relaxed);
 
-                        tracing::debug!(
+                        log::debug!(
                             "Idempotent success [{client_id}] - {idempotent_reason}: {error_msg} {params}",
                         );
 
@@ -559,7 +554,7 @@ impl CancelBroadcaster {
 
                     if self.is_expected_reject(&error_msg) {
                         self.expected_rejects.fetch_add(1, Ordering::Relaxed);
-                        tracing::debug!(
+                        log::debug!(
                             "Expected {} rejection [{}]: {} {}",
                             operation.to_lowercase(),
                             client_id,
@@ -568,18 +563,14 @@ impl CancelBroadcaster {
                         );
                         errors.push(error_msg);
                     } else {
-                        tracing::warn!(
-                            "{} request failed [{}]: {} {}",
-                            operation,
-                            client_id,
-                            error_msg,
-                            params
+                        log::warn!(
+                            "{operation} request failed [{client_id}]: {error_msg} {params}"
                         );
                         errors.push(error_msg);
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("{} task join error: {e:?}", operation);
+                    log::warn!("{operation} task join error: {e:?}");
                     errors.push(format!("Task panicked: {e:?}"));
                 }
             }
@@ -587,7 +578,7 @@ impl CancelBroadcaster {
 
         // All tasks failed
         self.failed_cancels.fetch_add(1, Ordering::Relaxed);
-        tracing::error!(
+        log::error!(
             "All {} requests failed: {errors:?} {params}",
             operation.to_lowercase(),
         );

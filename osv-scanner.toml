@@ -16,14 +16,6 @@ id = "RUSTSEC-2025-0134"
 reason = "rustls-pemfile unmaintained, transitive via nautilus-network (not a security vulnerability)"
 
 [[IgnoredVulns]]
-id = "RUSTSEC-2024-0379"
-reason = "fast-float is transitive via hypersync-client→polars-arrow (optional dependency)"
-
-[[IgnoredVulns]]
-id = "RUSTSEC-2025-0003"
-reason = "fast-float is transitive via hypersync-client→polars-arrow (optional dependency)"
-
-[[IgnoredVulns]]
 id = "RUSTSEC-2024-0388"
 reason = "derivative crate is unmaintained, transitive dependency with no available fix"
 
@@ -37,7 +29,7 @@ reason = "unic-char-range unmaintained, transitive via pyo3-stub-gen (dev tool o
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2025-0080"
-reason = "unic-ucd-ident unmaintained, transitive via pyo3-stub-gen (dev tool only)"
+reason = "unic-common unmaintained, transitive via pyo3-stub-gen (dev tool only)"
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2025-0081"
@@ -53,9 +45,34 @@ reason = "unic-ucd-version unmaintained, transitive via pyo3-stub-gen (dev tool 
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2025-0100"
-reason = "unic-common unmaintained, transitive via pyo3-stub-gen (dev tool only)"
+reason = "unic-ucd-ident unmaintained, transitive via pyo3-stub-gen (dev tool only)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0137"
+reason = "ruint reciprocal_mg10 unsoundness, transitive via alloy, we don't use the affected function"
+
+[[IgnoredVulns]]
+id = "GHSA-9fjq-45qv-pcm7"
+reason = "ruint unsoundness in reciprocal functions, transitive via alloy, we don't use the affected functions"
 
 # Python dependencies
 [[IgnoredVulns]]
 id = "GHSA-wj6h-64fc-37mp"
 reason = "ecdsa Minerva timing attack on P-256, maintainers consider sidechannel attacks out of scope, only affects optional dYdX adapter"
+
+# Rust dependencies
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0001"
+reason = "rkyv vulnerability in transitive dependency via rust_decimal 1.39.0. rust_decimal is at latest version and hasn't updated to rkyv 0.8.x yet. Will be fixed when rust_decimal updates."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0141"
+reason = "bincode unmaintained, transitive via hypersync-client (not a security vulnerability)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0002"
+reason = "lru unsound IterMut, transitive via alloy-provider, awaiting alloy update to 0.16.3"
+
+[[IgnoredVulns]]
+id = "GHSA-rhfx-m35p-ff5j"
+reason = "lru unsound IterMut (alias of RUSTSEC-2026-0002), transitive via alloy-provider"

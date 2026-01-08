@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -126,7 +126,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     | _subscribe_instruments                 | optional    |
     | _subscribe_instrument                  | optional    |
     | _subscribe_order_book_deltas           | optional    |
-    | _subscribe_order_book_snapshots        | optional    |
+    | _subscribe_order_book_depth            | optional    |
     | _subscribe_quote_ticks                 | optional    |
     | _subscribe_trade_ticks                 | optional    |
     | _subscribe_mark_prices                 | optional    |
@@ -139,7 +139,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     | _unsubscribe_instruments               | optional    |
     | _unsubscribe_instrument                | optional    |
     | _unsubscribe_order_book_deltas         | optional    |
-    | _unsubscribe_order_book_snapshots      | optional    |
+    | _unsubscribe_order_book_depth          | optional    |
     | _unsubscribe_quote_ticks               | optional    |
     | _unsubscribe_trade_ticks               | optional    |
     | _unsubscribe_mark_prices               | optional    |
@@ -192,9 +192,9 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
             "method `_subscribe_order_book_deltas` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
+    async def _subscribe_order_book_depth(self, command: SubscribeOrderBook) -> None:
         raise NotImplementedError(
-            "method `_subscribe_order_book_snapshots` must be implemented in the subclass",
+            "method `_subscribe_order_book_depth` must be implemented in the subclass",
         )  # pragma: no cover
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
@@ -257,9 +257,9 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
             "method `_unsubscribe_order_book_deltas` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
+    async def _unsubscribe_order_book_depth(self, command: UnsubscribeOrderBook) -> None:
         raise NotImplementedError(
-            "method `_unsubscribe_order_book_snapshots` must be implemented in the subclass",
+            "method `_unsubscribe_order_book_depth` must be implemented in the subclass",
         )  # pragma: no cover
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,6 +20,7 @@ References
 https://binance-docs.github.io/apidocs/spot/en/#public-api-definitions
 
 """
+
 from enum import Enum
 from enum import unique
 
@@ -98,6 +99,7 @@ class BinanceSpotEventType(Enum):
     balanceUpdate = "balanceUpdate"
     executionReport = "executionReport"
     listStatus = "listStatus"
+    listenKeyExpired = "listenKeyExpired"
 
 
 class BinanceSpotEnumParser(BinanceEnumParser):

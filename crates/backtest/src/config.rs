@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,11 +32,9 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, TraderId},
     types::Currency,
 };
-#[cfg(feature = "streaming")]
-use nautilus_persistence::config::StreamingConfig;
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
-use nautilus_system::config::NautilusKernelConfig;
+use nautilus_system::config::{NautilusKernelConfig, StreamingConfig};
 use ustr::Ustr;
 
 /// Configuration for ``BacktestEngine`` instances.
@@ -79,7 +77,6 @@ pub struct BacktestEngineConfig {
     /// The portfolio configuration.
     pub portfolio: Option<PortfolioConfig>,
     /// The configuration for streaming to feather files.
-    #[cfg(feature = "streaming")]
     pub streaming: Option<StreamingConfig>,
     /// If logging should be bypassed.
     pub bypass_logging: bool,
@@ -111,7 +108,7 @@ impl BacktestEngineConfig {
         risk_engine: Option<RiskEngineConfig>,
         exec_engine: Option<ExecutionEngineConfig>,
         portfolio: Option<PortfolioConfig>,
-        #[cfg(feature = "streaming")] streaming: Option<StreamingConfig>,
+        streaming: Option<StreamingConfig>,
     ) -> Self {
         Self {
             environment,
@@ -132,7 +129,6 @@ impl BacktestEngineConfig {
             risk_engine,
             exec_engine,
             portfolio,
-            #[cfg(feature = "streaming")]
             streaming,
             bypass_logging: bypass_logging.unwrap_or(false),
             run_analysis: run_analysis.unwrap_or(true),
@@ -213,14 +209,8 @@ impl NautilusKernelConfig for BacktestEngineConfig {
         self.portfolio.clone()
     }
 
-    #[cfg(feature = "streaming")]
-    fn streaming(&self) -> Option<nautilus_system::StreamingConfig> {
+    fn streaming(&self) -> Option<StreamingConfig> {
         self.streaming.clone()
-    }
-
-    #[cfg(not(feature = "streaming"))]
-    fn streaming(&self) -> Option<nautilus_system::StreamingConfig> {
-        None
     }
 }
 
@@ -245,7 +235,6 @@ impl Default for BacktestEngineConfig {
             risk_engine: None,
             exec_engine: None,
             portfolio: None,
-            #[cfg(feature = "streaming")]
             streaming: None,
             bypass_logging: false,
             run_analysis: true,

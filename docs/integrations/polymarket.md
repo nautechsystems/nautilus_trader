@@ -58,7 +58,7 @@ separately depending on the use case.
 
 :::note
 Most users will define a configuration for a live trading node (as below),
-and won't need to necessarily work with these lower level components directly.
+and won't need to work with these lower-level components directly.
 :::
 
 ## USDC.e (PoS)
@@ -99,7 +99,7 @@ Ensure your wallet is funded with **USDC.e**, otherwise you will encounter the "
 ### Setting allowances for Polymarket contracts
 
 Before you can start trading, you need to ensure that your wallet has allowances set for Polymarket's smart contracts.
-You can do this by running the provided script located at `/adapters/polymarket/scripts/set_allowances.py`.
+You can do this by running the provided script located at `nautilus_trader/adapters/polymarket/scripts/set_allowances.py`.
 
 This script is adapted from a [gist](https://gist.github.com/poly-rodr/44313920481de58d5a3f6d1f8226bd5e) created by @poly-rodr.
 
@@ -114,7 +114,7 @@ Polymarket CLOB Exchange to interact with your funds.
 Before running the script, ensure the following prerequisites are met:
 
 - Install the web3 Python package: `uv pip install "web3==7.12.1"`.
-- Have a **Polygon**-compatible wallet funded with some MATIC (used for gas fees).
+- Have a **Polygon**-compatible wallet funded with some POL (used for gas fees).
 - Set the following environment variables in your shell:
   - `POLYGON_PRIVATE_KEY`: Your private key for the **Polygon**-compatible wallet.
   - `POLYGON_PUBLIC_KEY`: Your public key for the **Polygon**-compatible wallet.
@@ -150,7 +150,7 @@ The script performs the following actions:
 - Connects to the Polygon network via an RPC URL (<https://polygon-rpc.com/>).
 - Signs and sends a transaction to approve the maximum USDC allowance for Polymarket contracts.
 - Sets approval for the CTF contract to manage Conditional Tokens on your behalf.
-- Repeats the approval process for specific addresses like the Polymarket CLOB Exchange and Neg Risk Adapter.
+- Repeats the approval process for specific addresses like the Polymarket CLOB Exchange and Neg Risk adapter.
 
 This allows Polymarket to interact with your funds when executing trades and ensures smooth integration with the CLOB Exchange.
 
@@ -186,7 +186,7 @@ When setting up NautilusTrader to work with Polymarket, it’s crucial to proper
 **Key parameters**:
 
 - `private_key`: The private key for your wallet used to sign orders. The interpretation depends on your `signature_type` configuration. If not explicitly provided in the configuration, it will automatically source the `POLYMARKET_PK` environment variable.
-- `funder`: The **USDC.e** wallet address used for funding trades. If not provided, will source the `POLYMARKET_FUNDER` environment variable.
+- `funder`: The **USDC.e** funding wallet address used for funding trades. If not provided, will source the `POLYMARKET_FUNDER` environment variable.
 - API credentials: You will need to provide the following API credentials to interact with the Polymarket CLOB:
   - `api_key`: If not provided, will source the `POLYMARKET_API_KEY` environment variable.
   - `api_secret`: If not provided, will source the `POLYMARKET_API_SECRET` environment variable.
@@ -271,11 +271,11 @@ FAK (Fill and Kill) is Polymarket's terminology for Immediate or Cancel (IOC) se
 
 ### Advanced order features
 
-| Feature            | Binary Options | Notes                               |
-|--------------------|----------------|-------------------------------------|
-| Order Modification | -              | Cancellation functionality only.    |
-| Bracket/OCO Orders | -              | *Not supported by Polymarket*.      |
-| Iceberg Orders     | -              | *Not supported by Polymarket*.      |
+| Feature            | Binary Options | Notes                              |
+|--------------------|----------------|------------------------------------|
+| Order modification | -              | Cancellation functionality only.   |
+| Bracket/OCO orders | -              | *Not supported by Polymarket.*     |
+| Iceberg orders     | -              | *Not supported by Polymarket.*     |
 
 ### Batch operations
 
@@ -287,21 +287,21 @@ FAK (Fill and Kill) is Polymarket's terminology for Immediate or Cancel (IOC) se
 
 ### Position management
 
-| Feature              | Binary Options | Notes                             |
-|--------------------|----------------|-------------------------------------|
-| Query positions     | ✓              | Contract balance-based positions.  |
-| Position mode       | -              | Binary outcome positions only.     |
-| Leverage control    | -              | No leverage available.             |
-| Margin mode         | -              | No margin trading.                 |
+| Feature          | Binary Options | Notes                             |
+|------------------|----------------|-----------------------------------|
+| Query positions  | ✓              | Contract balance-based positions. |
+| Position mode    | -              | Binary outcome positions only.    |
+| Leverage control | -              | No leverage available.            |
+| Margin mode      | -              | No margin trading.                |
 
 ### Order querying
 
-| Feature              | Binary Options | Notes                             |
-|----------------------|----------------|-----------------------------------|
-| Query open orders    | ✓              | Active orders only.               |
-| Query order history  | ✓              | Limited historical data.          |
-| Order status updates | ✓              | Real-time order state changes.    |
-| Trade history        | ✓              | Execution and fill reports.       |
+| Feature              | Binary Options | Notes                          |
+|----------------------|----------------|--------------------------------|
+| Query open orders    | ✓              | Active orders only.            |
+| Query order history  | ✓              | Limited historical data.       |
+| Order status updates | ✓              | Real-time order state changes. |
+| Trade history        | ✓              | Execution and fill reports.    |
 
 ### Contingent orders
 
@@ -356,13 +356,28 @@ Once a trade is initially matched, subsequent trade status updates will be recei
 NautilusTrader records the initial trade details in the `info` field of the `OrderFilled` event,
 with additional trade events stored in the cache as JSON under a custom key to retain this information.
 
+## Fees
+
+Polymarket charges **zero fees** on most markets. The exception is **15-minute crypto markets**:
+
+| Trade Type | Fee Deducted In | Rate Range  |
+|------------|-----------------|-------------|
+| Buy        | Tokens          | 0.2% - 1.6% |
+| Sell       | USDC            | 0.8% - 3.7% |
+
+Fees are rounded to 4 decimal places (0.0001 USDC minimum). Market makers receive daily rebates from collected taker fees.
+
+:::note
+For the latest rates, see Polymarket's [Fees](https://docs.polymarket.com/polymarket-learn/trading/fees) and [Maker Rebates](https://docs.polymarket.com/polymarket-learn/trading/maker-rebates-program) documentation.
+:::
+
 ## Reconciliation
 
 The Polymarket API returns either all **active** (open) orders or specific orders when queried by the
 Polymarket order ID (`venue_order_id`). The execution reconciliation procedure for Polymarket is as follows:
 
 - Generate order reports for all instruments with active (open) orders, as reported by Polymarket.
-- Generate position reports from contract balances reported by Polymarket, *for instruments available in the cache*.
+- Generate position reports from contract balances reported by Polymarket, for instruments available in the cache.
 - Compare these reports with Nautilus execution state.
 - Generate missing orders to bring Nautilus execution state in line with positions reported by Polymarket.
 
@@ -402,11 +417,11 @@ When you attempt to subscribe to 501 or more instruments on a single WebSocket c
 - You will **not** receive the initial order book snapshot for each instrument.
 - You will only receive subsequent order book updates.
 
-To handle this limitation, NautilusTrader automatically manages WebSocket connections:
+NautilusTrader automatically manages WebSocket connections to handle this limitation:
 
-- When the subscription count exceeds 500 instruments, the adapter **automatically creates additional WebSocket connections**.
+- When the subscription count exceeds 500 instruments, the adapter automatically creates additional WebSocket connections.
 - Each connection maintains up to 500 instrument subscriptions.
-- This protection ensures you receive complete order book data (including initial snapshots) for all subscribed instruments.
+- This ensures you receive complete order book data (including initial snapshots) for all subscribed instruments.
 
 :::tip
 If you need to subscribe to a large number of instruments (e.g., 5000+), the adapter will automatically distribute these subscriptions across multiple WebSocket connections, with each connection handling up to 500 instruments.
@@ -414,7 +429,7 @@ If you need to subscribe to a large number of instruments (e.g., 5000+), the ada
 
 ## Limitations and considerations
 
-The following limitations and considerations are currently known:
+The following limitations are currently known:
 
 - Order signing via the Polymarket Python client is slow, taking around one second.
 - Post-only orders are not supported.
@@ -502,15 +517,13 @@ All data loader methods are **asynchronous** and must be called with `await`.
 
 ```python
 import asyncio
-from datetime import UTC, datetime, timedelta
 
 from nautilus_trader.adapters.polymarket import PolymarketDataLoader
 from nautilus_trader.adapters.polymarket import parse_polymarket_instrument
-from nautilus_trader.core.datetime import millis_to_nanos
 
 async def load_market_data():
     # Discovery methods are static - no instance needed
-    market = await PolymarketDataLoader.find_market_by_slug("fed-rate-hike-in-2025")
+    market = await PolymarketDataLoader.find_market_by_slug("gta-vi-released-before-june-2026")
     condition_id = market["conditionId"]
 
     market_details = await PolymarketDataLoader.fetch_market_details(condition_id)
@@ -640,12 +653,12 @@ from nautilus_trader.model.objects import Money
 
 async def run_backtest():
     # Initialize loader and fetch market data
-    loader = await PolymarketDataLoader.from_market_slug("fed-rate-hike-in-2025")
+    loader = await PolymarketDataLoader.from_market_slug("gta-vi-released-before-june-2026")
     instrument = loader.instrument
 
-    # Fetch historical data
-    start = pd.Timestamp("2025-10-30", tz="UTC")
-    end = pd.Timestamp("2025-10-31", tz="UTC")
+    # Fetch historical data (last 24 hours)
+    end = pd.Timestamp.now(tz="UTC")
+    start = end - pd.Timedelta(hours=24)
 
     deltas = await loader.load_orderbook_snapshots(
         start=start,
@@ -705,7 +718,7 @@ from nautilus_trader.adapters.polymarket import get_polymarket_instrument_id
 
 # Create NautilusTrader InstrumentId from Polymarket identifiers
 instrument_id = get_polymarket_instrument_id(
-    condition_id="0x4319532e181605cb15b1bd677759a3bc7f7394b2fdf145195b700eeaedfd5221",
-    token_id="60487116984468020978247225474488676749601001829886755968952521846780452448915"
+    condition_id="0xcccb7e7613a087c132b69cbf3a02bece3fdcb824c1da54ae79acc8d4a562d902",
+    token_id="8441400852834915183759801017793514978104486628517653995211751018945988243154"
 )
 ```

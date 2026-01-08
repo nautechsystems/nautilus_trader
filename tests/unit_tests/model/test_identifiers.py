@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -319,7 +319,7 @@ def test_exec_algorithm_id() -> None:
 def test_trade_id_maximum_length() -> None:
     # Arrange, Act, Assert
     with pytest.raises(ValueError):
-        TradeId("A" * 37)
+        TradeId("A" * 37)  # Max length is 36 characters
 
 
 def test_instrument_id_new_spread_single_positive_ratio() -> None:

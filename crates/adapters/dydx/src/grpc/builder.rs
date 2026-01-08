@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,7 +30,7 @@
 //!
 //! See <https://docs.dydx.xyz/concepts/trading/authenticators> for details.
 
-use std::fmt::{Debug, Formatter};
+use std::fmt::Debug;
 
 use cosmrs::{
     Any, Coin,
@@ -182,8 +182,8 @@ impl TxBuilder {
 }
 
 impl Debug for TxBuilder {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TxBuilder")
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(TxBuilder))
             .field("chain_id", &self.chain_id)
             .field("fee_denom", &self.fee_denom)
             .finish()

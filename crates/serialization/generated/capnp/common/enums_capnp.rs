@@ -2400,3 +2400,223 @@ pub fn get_annotation_types(child_index: Option<u16>, index: u32) -> ::capnp::in
   ::capnp::introspect::panic_invalid_annotation_indices(child_index, index)
 }
 }
+
+#[repr(u16)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ComponentState {
+  PreInitialized = 0,
+  Ready = 1,
+  Starting = 2,
+  Running = 3,
+  Stopping = 4,
+  Stopped = 5,
+  Resuming = 6,
+  Resetting = 7,
+  Disposing = 8,
+  Disposed = 9,
+  Degrading = 10,
+  Degraded = 11,
+  Faulting = 12,
+  Faulted = 13,
+}
+
+impl ::capnp::introspect::Introspect for ComponentState {
+  fn introspect() -> ::capnp::introspect::Type { ::capnp::introspect::TypeVariant::Enum(::capnp::introspect::RawEnumSchema { encoded_node: &component_state::ENCODED_NODE, annotation_types: component_state::get_annotation_types }).into() }
+}
+impl ::core::convert::From<ComponentState> for ::capnp::dynamic_value::Reader<'_> {
+  fn from(e: ComponentState) -> Self { ::capnp::dynamic_value::Enum::new(e.into(), ::capnp::introspect::RawEnumSchema { encoded_node: &component_state::ENCODED_NODE, annotation_types: component_state::get_annotation_types }.into()).into() }
+}
+impl ::core::convert::TryFrom<u16> for ComponentState {
+  type Error = ::capnp::NotInSchema;
+  fn try_from(value: u16) -> ::core::result::Result<Self, <ComponentState as ::core::convert::TryFrom<u16>>::Error> {
+    match value {
+      0 => ::core::result::Result::Ok(Self::PreInitialized),
+      1 => ::core::result::Result::Ok(Self::Ready),
+      2 => ::core::result::Result::Ok(Self::Starting),
+      3 => ::core::result::Result::Ok(Self::Running),
+      4 => ::core::result::Result::Ok(Self::Stopping),
+      5 => ::core::result::Result::Ok(Self::Stopped),
+      6 => ::core::result::Result::Ok(Self::Resuming),
+      7 => ::core::result::Result::Ok(Self::Resetting),
+      8 => ::core::result::Result::Ok(Self::Disposing),
+      9 => ::core::result::Result::Ok(Self::Disposed),
+      10 => ::core::result::Result::Ok(Self::Degrading),
+      11 => ::core::result::Result::Ok(Self::Degraded),
+      12 => ::core::result::Result::Ok(Self::Faulting),
+      13 => ::core::result::Result::Ok(Self::Faulted),
+      n => ::core::result::Result::Err(::capnp::NotInSchema(n)),
+    }
+  }
+}
+impl From<ComponentState> for u16 {
+  #[inline]
+  fn from(x: ComponentState) -> u16 { x as u16 }
+}
+impl ::capnp::traits::HasTypeId for ComponentState {
+  const TYPE_ID: u64 = 0xe61a_21eb_58b9_78c3u64;
+}
+mod component_state {
+pub static ENCODED_NODE: [::capnp::Word; 86] = [
+  ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
+  ::capnp::word(195, 120, 185, 88, 235, 33, 26, 230),
+  ::capnp::word(19, 0, 0, 0, 2, 0, 0, 0),
+  ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(37, 15, 0, 0, 49, 16, 0, 0),
+  ::capnp::word(21, 0, 0, 0, 18, 1, 0, 0),
+  ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(33, 0, 0, 0, 87, 1, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(99, 111, 109, 109, 111, 110, 47, 101),
+  ::capnp::word(110, 117, 109, 115, 46, 99, 97, 112),
+  ::capnp::word(110, 112, 58, 67, 111, 109, 112, 111),
+  ::capnp::word(110, 101, 110, 116, 83, 116, 97, 116),
+  ::capnp::word(101, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 1, 0, 1, 0),
+  ::capnp::word(56, 0, 0, 0, 1, 0, 2, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(161, 0, 0, 0, 122, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(1, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(157, 0, 0, 0, 50, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(2, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(149, 0, 0, 0, 74, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(3, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(145, 0, 0, 0, 66, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(4, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(137, 0, 0, 0, 74, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(5, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(133, 0, 0, 0, 66, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(6, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(125, 0, 0, 0, 74, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(7, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(121, 0, 0, 0, 82, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(8, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(117, 0, 0, 0, 82, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(9, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(113, 0, 0, 0, 74, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(10, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(109, 0, 0, 0, 82, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(11, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(105, 0, 0, 0, 74, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(12, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(101, 0, 0, 0, 74, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(13, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(97, 0, 0, 0, 66, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(112, 114, 101, 73, 110, 105, 116, 105),
+  ::capnp::word(97, 108, 105, 122, 101, 100, 0, 0),
+  ::capnp::word(114, 101, 97, 100, 121, 0, 0, 0),
+  ::capnp::word(115, 116, 97, 114, 116, 105, 110, 103),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(114, 117, 110, 110, 105, 110, 103, 0),
+  ::capnp::word(115, 116, 111, 112, 112, 105, 110, 103),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(115, 116, 111, 112, 112, 101, 100, 0),
+  ::capnp::word(114, 101, 115, 117, 109, 105, 110, 103),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(114, 101, 115, 101, 116, 116, 105, 110),
+  ::capnp::word(103, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(100, 105, 115, 112, 111, 115, 105, 110),
+  ::capnp::word(103, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(100, 105, 115, 112, 111, 115, 101, 100),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(100, 101, 103, 114, 97, 100, 105, 110),
+  ::capnp::word(103, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(100, 101, 103, 114, 97, 100, 101, 100),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(102, 97, 117, 108, 116, 105, 110, 103),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(102, 97, 117, 108, 116, 101, 100, 0),
+];
+pub fn get_annotation_types(child_index: Option<u16>, index: u32) -> ::capnp::introspect::Type {
+  ::capnp::introspect::panic_invalid_annotation_indices(child_index, index)
+}
+}
+
+#[repr(u16)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TradingState {
+  Active = 0,
+  Halted = 1,
+  Reducing = 2,
+}
+
+impl ::capnp::introspect::Introspect for TradingState {
+  fn introspect() -> ::capnp::introspect::Type { ::capnp::introspect::TypeVariant::Enum(::capnp::introspect::RawEnumSchema { encoded_node: &trading_state::ENCODED_NODE, annotation_types: trading_state::get_annotation_types }).into() }
+}
+impl ::core::convert::From<TradingState> for ::capnp::dynamic_value::Reader<'_> {
+  fn from(e: TradingState) -> Self { ::capnp::dynamic_value::Enum::new(e.into(), ::capnp::introspect::RawEnumSchema { encoded_node: &trading_state::ENCODED_NODE, annotation_types: trading_state::get_annotation_types }.into()).into() }
+}
+impl ::core::convert::TryFrom<u16> for TradingState {
+  type Error = ::capnp::NotInSchema;
+  fn try_from(value: u16) -> ::core::result::Result<Self, <TradingState as ::core::convert::TryFrom<u16>>::Error> {
+    match value {
+      0 => ::core::result::Result::Ok(Self::Active),
+      1 => ::core::result::Result::Ok(Self::Halted),
+      2 => ::core::result::Result::Ok(Self::Reducing),
+      n => ::core::result::Result::Err(::capnp::NotInSchema(n)),
+    }
+  }
+}
+impl From<TradingState> for u16 {
+  #[inline]
+  fn from(x: TradingState) -> u16 { x as u16 }
+}
+impl ::capnp::traits::HasTypeId for TradingState {
+  const TYPE_ID: u64 = 0xdcec_77d0_f188_921cu64;
+}
+mod trading_state {
+pub static ENCODED_NODE: [::capnp::Word; 32] = [
+  ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
+  ::capnp::word(28, 146, 136, 241, 208, 119, 236, 220),
+  ::capnp::word(19, 0, 0, 0, 2, 0, 0, 0),
+  ::capnp::word(41, 24, 7, 246, 229, 212, 195, 178),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(51, 16, 0, 0, 119, 16, 0, 0),
+  ::capnp::word(21, 0, 0, 0, 2, 1, 0, 0),
+  ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(29, 0, 0, 0, 79, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(99, 111, 109, 109, 111, 110, 47, 101),
+  ::capnp::word(110, 117, 109, 115, 46, 99, 97, 112),
+  ::capnp::word(110, 112, 58, 84, 114, 97, 100, 105),
+  ::capnp::word(110, 103, 83, 116, 97, 116, 101, 0),
+  ::capnp::word(0, 0, 0, 0, 1, 0, 1, 0),
+  ::capnp::word(12, 0, 0, 0, 1, 0, 2, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(29, 0, 0, 0, 58, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(1, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(21, 0, 0, 0, 58, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(2, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(13, 0, 0, 0, 74, 0, 0, 0),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+  ::capnp::word(97, 99, 116, 105, 118, 101, 0, 0),
+  ::capnp::word(104, 97, 108, 116, 101, 100, 0, 0),
+  ::capnp::word(114, 101, 100, 117, 99, 105, 110, 103),
+  ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+];
+pub fn get_annotation_types(child_index: Option<u16>, index: u32) -> ::capnp::introspect::Type {
+  ::capnp::introspect::panic_invalid_annotation_indices(child_index, index)
+}
+}

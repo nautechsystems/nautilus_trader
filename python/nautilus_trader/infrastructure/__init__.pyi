@@ -4,9 +4,15 @@
 import builtins
 import typing
 
-
 class PostgresConnectOptions:
-    def __init__(self, host: builtins.str, port: builtins.int, user: builtins.str, password: builtins.str, database: builtins.str) -> None:
+    def __init__(
+        self,
+        host: builtins.str,
+        port: builtins.int,
+        user: builtins.str,
+        password: builtins.str,
+        database: builtins.str,
+    ) -> None:
         r"""
         Creates a new `PostgresConnectOptions` instance.
         """

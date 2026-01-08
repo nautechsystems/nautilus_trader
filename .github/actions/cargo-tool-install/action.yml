@@ -38,7 +38,7 @@ runs:
 
     # https://github.com/actions/cache
     - name: Cache tool binary
-      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
       with:
         path: ${{ runner.tool_cache }}/${{ inputs.tool-name }}
         key: ${{ inputs.tool-name }}-bin-${{ env.TOOL_VERSION }}

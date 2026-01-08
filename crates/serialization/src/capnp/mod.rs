@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,7 +18,7 @@
 //! This module provides Cap'n Proto serialization support for Nautilus domain types.
 //! The generated schema modules are available at the crate root for proper cross-referencing.
 //!
-//! # Generated modules
+//! # Generated Modules
 //!
 //! The following modules are generated from Cap'n Proto schemas:
 //! - `crate::base_capnp` - Base types (UUID4, UnixNanos, StringMap)
@@ -32,7 +32,8 @@
 //! - `crate::account_capnp` - Account events
 //! - `crate::market_capnp` - Market data types
 
-#![cfg(feature = "capnp")]
+// Allow missing error docs for internal capnp conversion functions
+#![allow(clippy::missing_errors_doc)]
 
 pub mod conversions;
 
@@ -67,15 +68,4 @@ pub trait FromCapnp<'a> {
     fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn std::error::Error>>
     where
         Self: Sized;
-}
-
-#[cfg(test)]
-mod tests {
-    use rstest::rstest;
-
-    #[rstest]
-    fn test_capnp_feature_enabled() {
-        // This test ensures the capnp feature is properly configured
-        assert!(cfg!(feature = "capnp"));
-    }
 }

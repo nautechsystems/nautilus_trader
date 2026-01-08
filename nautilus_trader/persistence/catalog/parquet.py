@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -1795,10 +1795,10 @@ class ParquetDataCatalog(BaseDataCatalog):
         )
 
         # Ensure directory URI ends with / to be treated as a directory by some backends
-        # although DataFusion usually handles it.
         file_uri = self._build_file_uri(directory)
+        if not file_uri.endswith("/"):
+            file_uri = file_uri + "/"
         session.add_file(data_type, table, file_uri, query)
-
 
     def _build_file_uri(self, file: str) -> str:
         """
@@ -1931,7 +1931,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         identifiers: list[str] | None = None,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
-        filter_expr: str | None = None,
+        filter_expr: pds.Expression | None = None,
         files: list[str] | None = None,
         **kwargs: Any,
     ) -> list[Data]:
@@ -2052,10 +2052,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             exact_match_file_paths = [
                 file_paths[i]
                 for i, file_instrument in enumerate(file_safe_identifiers)
-                if any(
-                    safe_identifier == file_instrument
-                    for safe_identifier in safe_identifiers
-                )
+                if any(safe_identifier == file_instrument for safe_identifier in safe_identifiers)
             ]
 
             if not exact_match_file_paths and data_cls in [Bar, *Bar.__subclasses__()]:

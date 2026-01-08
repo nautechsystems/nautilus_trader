@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -1134,10 +1134,10 @@ mod tests {
             serde_json::from_str(&instruments_json).unwrap();
         let eth_def = &instruments_response.result.list[1]; // ETHUSDT is second in the list
         let fee_rate = crate::http::models::BybitFeeRate {
-            symbol: ustr::Ustr::from("ETHUSDT"),
+            symbol: Ustr::from("ETHUSDT"),
             taker_fee_rate: "0.00055".to_string(),
             maker_fee_rate: "0.0001".to_string(),
-            base_coin: Some(ustr::Ustr::from("ETH")),
+            base_coin: Some(Ustr::from("ETH")),
         };
         let instrument =
             crate::common::parse::parse_linear_instrument(eth_def, &fee_rate, TS, TS).unwrap();

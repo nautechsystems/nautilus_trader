@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,13 +18,10 @@ use nautilus_okx::{
     common::enums::{OKXInstrumentType, OKXPositionMode},
     http::client::OKXHttpClient,
 };
-use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::TRACE)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let client = OKXHttpClient::from_env().unwrap();
     let account_id = AccountId::new("OKX-001");
@@ -36,15 +33,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set position mode
     let resp = client.set_position_mode(OKXPositionMode::NetMode).await;
     match resp {
-        Ok(msg) => tracing::debug!("{:?}", msg),
-        Err(e) => tracing::error!("{e:?}"),
+        Ok(msg) => log::debug!("{msg:?}"),
+        Err(e) => log::error!("{e:?}"),
     }
 
     // Request account state
     let resp = client.request_account_state(account_id).await;
     match resp {
-        Ok(account_state) => tracing::debug!("{:?}", account_state),
-        Err(e) => tracing::error!("{e:?}"),
+        Ok(account_state) => log::debug!("{account_state:?}"),
+        Err(e) => log::error!("{e:?}"),
     }
 
     // Request orders history
@@ -62,8 +59,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .await;
     match result {
-        Ok(reports) => tracing::debug!("{:?}", reports),
-        Err(e) => tracing::error!("{e:?}"),
+        Ok(reports) => log::debug!("{reports:?}"),
+        Err(e) => log::error!("{e:?}"),
     }
 
     let instrument_type = OKXInstrumentType::Swap;
@@ -72,8 +69,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .request_position_status_reports(account_id, Some(instrument_type), None)
         .await;
     match result {
-        Ok(reports) => tracing::debug!("{:?}", reports),
-        Err(e) => tracing::error!("{e:?}"),
+        Ok(reports) => log::debug!("{reports:?}"),
+        Err(e) => log::error!("{e:?}"),
     }
 
     Ok(())
@@ -82,8 +79,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //     .symbol("XBTUSD".to_string())
     //     .build()?;
     // match client.get_orders(params).await {
-    //     Ok(resp) => tracing::debug!("{:?}", resp),
-    //     Err(e) => tracing::error!("{e:?}"),
+    //     Ok(resp) => log::debug!("{:?}", resp),
+    //     Err(e) => log::error!("{e:?}"),
     // }
     //
     // Ok(())

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -35,16 +35,39 @@ _AAPL = TestInstrumentProvider.equity("AAPL", "NASDAQ")
 _EURUSD = TestInstrumentProvider.default_fx_ccy("EUR/USD", Venue("IDEALPRO"))
 
 
-
 @pytest.mark.parametrize(
     ("expected_order_type", "expected_tif", "nautilus_order"),
     [
-        ("MKT", "GTC", TestExecStubs.market_order(instrument=_EURUSD, time_in_force=TimeInForce.GTC)),
-        ("MKT", "DAY", TestExecStubs.market_order(instrument=_EURUSD, time_in_force=TimeInForce.DAY)),
-        ("MKT", "IOC", TestExecStubs.market_order(instrument=_EURUSD, time_in_force=TimeInForce.IOC)),
-        ("MKT", "FOK", TestExecStubs.market_order(instrument=_EURUSD, time_in_force=TimeInForce.FOK)),
-        ("MKT", "OPG", TestExecStubs.market_order(instrument=_EURUSD, time_in_force=TimeInForce.AT_THE_OPEN)),
-        ("MOC", "DAY", TestExecStubs.market_order(instrument=_EURUSD, time_in_force=TimeInForce.AT_THE_CLOSE)),
+        (
+            "MKT",
+            "GTC",
+            TestExecStubs.market_order(instrument=_EURUSD, time_in_force=TimeInForce.GTC),
+        ),
+        (
+            "MKT",
+            "DAY",
+            TestExecStubs.market_order(instrument=_EURUSD, time_in_force=TimeInForce.DAY),
+        ),
+        (
+            "MKT",
+            "IOC",
+            TestExecStubs.market_order(instrument=_EURUSD, time_in_force=TimeInForce.IOC),
+        ),
+        (
+            "MKT",
+            "FOK",
+            TestExecStubs.market_order(instrument=_EURUSD, time_in_force=TimeInForce.FOK),
+        ),
+        (
+            "MKT",
+            "OPG",
+            TestExecStubs.market_order(instrument=_EURUSD, time_in_force=TimeInForce.AT_THE_OPEN),
+        ),
+        (
+            "MOC",
+            "DAY",
+            TestExecStubs.market_order(instrument=_EURUSD, time_in_force=TimeInForce.AT_THE_CLOSE),
+        ),
     ],
 )
 @pytest.mark.asyncio
@@ -61,23 +84,45 @@ async def test_transform_order_to_ib_order_market(
     ib_order = exec_client._transform_order_to_ib_order(nautilus_order)
 
     # Assert
-    assert (
-        ib_order.orderType == expected_order_type
-    ), f"{expected_order_type=}, but got {ib_order.orderType=}"
+    assert ib_order.orderType == expected_order_type, (
+        f"{expected_order_type=}, but got {ib_order.orderType=}"
+    )
     assert ib_order.tif == expected_tif, f"{expected_tif=}, but got {ib_order.tif=}"
-
-
 
 
 @pytest.mark.parametrize(
     ("expected_order_type", "expected_tif", "nautilus_order"),
     [
-        ("LMT", "GTC", TestExecStubs.limit_order(instrument=_EURUSD, time_in_force=TimeInForce.GTC)),
-        ("LMT", "DAY", TestExecStubs.limit_order(instrument=_EURUSD, time_in_force=TimeInForce.DAY)),
-        ("LMT", "IOC", TestExecStubs.limit_order(instrument=_EURUSD, time_in_force=TimeInForce.IOC)),
-        ("LMT", "FOK", TestExecStubs.limit_order(instrument=_EURUSD, time_in_force=TimeInForce.FOK)),
-        ("LMT", "OPG", TestExecStubs.limit_order(instrument=_EURUSD, time_in_force=TimeInForce.AT_THE_OPEN)),
-        ("LOC", "DAY", TestExecStubs.limit_order(instrument=_EURUSD, time_in_force=TimeInForce.AT_THE_CLOSE)),
+        (
+            "LMT",
+            "GTC",
+            TestExecStubs.limit_order(instrument=_EURUSD, time_in_force=TimeInForce.GTC),
+        ),
+        (
+            "LMT",
+            "DAY",
+            TestExecStubs.limit_order(instrument=_EURUSD, time_in_force=TimeInForce.DAY),
+        ),
+        (
+            "LMT",
+            "IOC",
+            TestExecStubs.limit_order(instrument=_EURUSD, time_in_force=TimeInForce.IOC),
+        ),
+        (
+            "LMT",
+            "FOK",
+            TestExecStubs.limit_order(instrument=_EURUSD, time_in_force=TimeInForce.FOK),
+        ),
+        (
+            "LMT",
+            "OPG",
+            TestExecStubs.limit_order(instrument=_EURUSD, time_in_force=TimeInForce.AT_THE_OPEN),
+        ),
+        (
+            "LOC",
+            "DAY",
+            TestExecStubs.limit_order(instrument=_EURUSD, time_in_force=TimeInForce.AT_THE_CLOSE),
+        ),
     ],
 )
 @pytest.mark.asyncio
@@ -94,11 +139,10 @@ async def test_transform_order_to_ib_order_limit(
     ib_order = exec_client._transform_order_to_ib_order(nautilus_order)
 
     # Assert
-    assert (
-        ib_order.orderType == expected_order_type
-    ), f"{expected_order_type=}, but got {ib_order.orderType=}"
+    assert ib_order.orderType == expected_order_type, (
+        f"{expected_order_type=}, but got {ib_order.orderType=}"
+    )
     assert ib_order.tif == expected_tif, f"{expected_tif=}, but got {ib_order.tif=}"
-
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -53,22 +53,22 @@ class TestBacktestLongRequest:
 
         # Verify bars were received through on_historical_data
         bar_messages = [msg for msg in messages_received if msg.startswith("bar_received:")]
-        assert (
-            len(bar_messages) > 0
-        ), f"Expected to receive historical bars, received messages: {messages_received}"
+        assert len(bar_messages) > 0, (
+            f"Expected to receive historical bars, received messages: {messages_received}"
+        )
         assert len(bar_messages) == 10
 
         # Verify all bars are for the correct instrument
         expected_bar_type = f"{future_symbols[0]}.XCME-1-MINUTE-LAST-EXTERNAL"
         for msg in bar_messages:
-            assert (
-                expected_bar_type in msg
-            ), f"Expected bar type {expected_bar_type} in message {msg}"
+            assert expected_bar_type in msg, (
+                f"Expected bar type {expected_bar_type} in message {msg}"
+            )
 
         # Verify messages were published
-        assert any(
-            "long request bars done" in msg for msg in messages_received
-        ), f"Expected 'long request bars done' in messages: {messages_received}"
+        assert any("long request bars done" in msg for msg in messages_received), (
+            f"Expected 'long request bars done' in messages: {messages_received}"
+        )
 
 
 def run_backtest_long_request(test_callback=None):
@@ -244,9 +244,9 @@ class TestBacktestRequestJoin:
 
         # Verify bars were received through on_historical_data
         bar_messages = [msg for msg in messages_received if msg.startswith("bar_received:")]
-        assert (
-            len(bar_messages) > 0
-        ), f"Expected to receive historical bars, received messages: {messages_received}"
+        assert len(bar_messages) > 0, (
+            f"Expected to receive historical bars, received messages: {messages_received}"
+        )
 
         # Verify bars are from both instruments
         es_bar_type = f"{future_symbols[0]}.XCME-1-MINUTE-LAST-EXTERNAL"
@@ -261,15 +261,15 @@ class TestBacktestRequestJoin:
         assert len(nq_bars) == 10
 
         # Verify messages were published
-        assert any(
-            "join bars done" in msg for msg in messages_received
-        ), f"Expected 'join bars done' in messages: {messages_received}"
-        assert any(
-            "join bars ES done" in msg for msg in messages_received
-        ), f"Expected 'join bars ES done' in messages: {messages_received}"
-        assert any(
-            "join bars NQ done" in msg for msg in messages_received
-        ), f"Expected 'join bars NQ done' in messages: {messages_received}"
+        assert any("join bars done" in msg for msg in messages_received), (
+            f"Expected 'join bars done' in messages: {messages_received}"
+        )
+        assert any("join bars ES done" in msg for msg in messages_received), (
+            f"Expected 'join bars ES done' in messages: {messages_received}"
+        )
+        assert any("join bars NQ done" in msg for msg in messages_received), (
+            f"Expected 'join bars NQ done' in messages: {messages_received}"
+        )
 
 
 def run_backtest_request_join(test_callback=None):

@@ -233,3 +233,26 @@ enum PositionAdjustmentType {
     commission @0;
     funding @1;
 }
+
+enum ComponentState {
+    preInitialized @0;
+    ready @1;
+    starting @2;
+    running @3;
+    stopping @4;
+    stopped @5;
+    resuming @6;
+    resetting @7;
+    disposing @8;
+    disposed @9;
+    degrading @10;
+    degraded @11;
+    faulting @12;
+    faulted @13;
+}
+
+enum TradingState {
+    active @0;
+    halted @1;
+    reducing @2;
+}

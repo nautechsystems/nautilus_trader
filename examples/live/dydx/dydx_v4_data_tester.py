@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,6 +31,7 @@ Usage:
 from nautilus_trader.adapters.dydx_v4 import DYDX_VENUE
 from nautilus_trader.adapters.dydx_v4 import DYDXv4DataClientConfig
 from nautilus_trader.adapters.dydx_v4 import DYDXv4LiveDataClientFactory
+from nautilus_trader.adapters.dydx_v4.constants import DYDX
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
@@ -52,16 +53,13 @@ instrument_id = InstrumentId.from_str(f"{symbol}.{DYDX_VENUE}")
 
 # Configure the trading node
 config_node = TradingNodeConfig(
-    trader_id=TraderId("DYDX-DATA-TESTER-001"),
+    trader_id=TraderId("TESTER-001"),
     logging=LoggingConfig(
         log_level="INFO",
-        log_level_file="INFO",
-        log_directory="logs",
-        log_file_format="json",
         use_pyo3=True,
     ),
     data_clients={
-        "DYDX": DYDXv4DataClientConfig(
+        DYDX: DYDXv4DataClientConfig(
             wallet_address=None,  # 'DYDX_WALLET_ADDRESS' or 'DYDX_TESTNET_WALLET_ADDRESS' env var
             instrument_provider=InstrumentProviderConfig(load_all=True),
             is_testnet=False,  # Mainnet by default; flip to True for testnet
@@ -98,7 +96,7 @@ tester = DataTester(config=config_tester)
 node.trader.add_actor(tester)
 
 # Register your client factories with the node (using v4 Rust-backed factory)
-node.add_data_client_factory("DYDX", DYDXv4LiveDataClientFactory)
+node.add_data_client_factory(DYDX, DYDXv4LiveDataClientFactory)
 node.build()
 
 

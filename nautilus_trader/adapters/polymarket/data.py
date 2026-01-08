@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -333,11 +333,6 @@ class PolymarketDataClient(LiveMarketDataClient):
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         self._log.error(
             f"Cannot unsubscribe from {command.instrument_id} order book deltas: unsubscribing not supported by Polymarket",
-        )
-
-    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
-        self._log.error(
-            f"Cannot unsubscribe from {command.instrument_id} order book snapshots: unsubscribing not supported by Polymarket",
         )
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:

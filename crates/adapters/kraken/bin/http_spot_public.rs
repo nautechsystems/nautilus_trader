@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,19 +17,15 @@ use nautilus_kraken::http::spot::client::KrakenSpotHttpClient;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::INFO)
-            .finish(),
-    )?;
+    nautilus_common::logging::ensure_logging_initialized();
 
-    tracing::info!("Kraken Spot HTTP client example (public data methods)");
+    log::info!("Kraken Spot HTTP client example (public data methods)");
 
     let _client = KrakenSpotHttpClient::default();
 
-    tracing::info!("Client created successfully");
-    tracing::info!("TODO: Implement request_instruments, request_bars, request_trades methods");
-    tracing::info!("These methods will parse Kraken responses into Nautilus domain types");
+    log::info!("Client created successfully");
+    log::info!("TODO: Implement request_instruments, request_bars, request_trades methods");
+    log::info!("These methods will parse Kraken responses into Nautilus domain types");
 
     Ok(())
 }

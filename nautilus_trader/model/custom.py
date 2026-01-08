@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -60,7 +60,7 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
 
                 time_repr = (
                     f"{', ' if has_fields else ''}ts_event={unix_nanos_to_iso8601(self._ts_event)}, "
-                     f"ts_init={unix_nanos_to_iso8601(self._ts_init)})"
+                    f"ts_init={unix_nanos_to_iso8601(self._ts_init)})"
                 )
 
                 return repr[:-1] + time_repr
@@ -87,7 +87,11 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
 
             def to_dict(self) -> dict[str, Any]:
                 # Python 3.14+ uses PEP 649 lazy annotations
-                if sys.version_info >= (3, 14) and hasattr(self.__class__, "__annotate__") and self.__class__.__annotate__:
+                if (
+                    sys.version_info >= (3, 14)
+                    and hasattr(self.__class__, "__annotate__")
+                    and self.__class__.__annotate__
+                ):
                     annotations = self.__class__.__annotate__(1)  # 1 = eval annotations
                 else:
                     annotations = getattr(self.__class__, "__annotations__", {})

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,6 +20,12 @@ import pytest
 
 from nautilus_trader.analysis.config import GridLayout
 from nautilus_trader.analysis.config import TearsheetConfig
+from nautilus_trader.analysis.config import TearsheetDistributionChart
+from nautilus_trader.analysis.config import TearsheetDrawdownChart
+from nautilus_trader.analysis.config import TearsheetEquityChart
+from nautilus_trader.analysis.config import TearsheetMonthlyReturnsChart
+from nautilus_trader.analysis.config import TearsheetRunInfoChart
+from nautilus_trader.analysis.config import TearsheetStatsTableChart
 from nautilus_trader.analysis.tearsheet import PLOTLY_AVAILABLE
 from nautilus_trader.analysis.tearsheet import _create_stats_table
 from nautilus_trader.analysis.tearsheet import _create_tearsheet_figure
@@ -397,7 +403,6 @@ def test_create_tearsheet_from_stats_saves_file(sample_returns, sample_stats, tm
     assert output_path.exists()
 
 
-
 def test_get_theme_with_valid_name():
     # Arrange
     # Act
@@ -539,7 +544,6 @@ def test_theme_normalization_handles_dark_backgrounds():
     assert normalized["colors"]["table_text"] == "#eeeeee"
 
 
-
 def test_register_chart_and_retrieve():
     # Arrange
     def custom_chart(returns, output_path=None, title="Custom", theme="plotly_white"):
@@ -587,7 +591,6 @@ def test_list_charts_returns_all_registered_charts():
     assert "yearly_returns" in charts
 
 
-
 def test_tearsheet_config_with_defaults():
     # Arrange
     # Act
@@ -605,14 +608,14 @@ def test_tearsheet_config_with_custom_values():
     # Arrange
     # Act
     config = TearsheetConfig(
-        charts=["equity", "drawdown"],
+        charts=[TearsheetEquityChart(), TearsheetDrawdownChart()],
         theme="nautilus_dark",
         height=2000,
         title="Custom Title",
     )
 
     # Assert
-    assert config.charts == ["equity", "drawdown"]
+    assert config.chart_names == ["equity", "drawdown"]
     assert config.theme == "nautilus_dark"
     assert config.height == 2000
     assert config.title == "Custom Title"
@@ -643,7 +646,12 @@ def test_tearsheet_config_with_grid_layout():
 
     # Act
     config = TearsheetConfig(
-        charts=["equity", "drawdown", "monthly_returns", "distribution"],
+        charts=[
+            TearsheetEquityChart(),
+            TearsheetDrawdownChart(),
+            TearsheetMonthlyReturnsChart(),
+            TearsheetDistributionChart(),
+        ],
         layout=layout,
     )
 
@@ -651,7 +659,6 @@ def test_tearsheet_config_with_grid_layout():
     assert config.layout is not None
     assert config.layout.rows == 2
     assert config.layout.cols == 2
-
 
 
 def test_single_currency_pnl_stats(sample_returns):
@@ -698,11 +705,14 @@ def test_multi_currency_pnl_stats(sample_returns):
     assert isinstance(html, str)
 
 
-
 def test_run_info_filtered_when_no_metadata(sample_returns):
     # Arrange
     config = TearsheetConfig(
-        charts=["run_info", "stats_table", "equity"],  # Explicitly include run_info
+        charts=[
+            TearsheetRunInfoChart(),
+            TearsheetStatsTableChart(),
+            TearsheetEquityChart(),
+        ],  # Explicitly include run_info
     )
 
     # Act - pass no run_info or account_info
@@ -725,7 +735,11 @@ def test_run_info_filtered_when_no_metadata(sample_returns):
 def test_run_info_kept_when_metadata_provided(sample_returns):
     # Arrange
     config = TearsheetConfig(
-        charts=["run_info", "stats_table", "equity"],
+        charts=[
+            TearsheetRunInfoChart(),
+            TearsheetStatsTableChart(),
+            TearsheetEquityChart(),
+        ],
     )
 
     run_info = {
@@ -753,7 +767,11 @@ def test_run_info_kept_when_metadata_provided(sample_returns):
 def test_run_info_kept_when_account_info_provided(sample_returns):
     # Arrange
     config = TearsheetConfig(
-        charts=["run_info", "stats_table", "equity"],
+        charts=[
+            TearsheetRunInfoChart(),
+            TearsheetStatsTableChart(),
+            TearsheetEquityChart(),
+        ],
     )
 
     account_info = {
@@ -778,7 +796,6 @@ def test_run_info_kept_when_account_info_provided(sample_returns):
     assert "Starting Balance" in html or "1,000,000 USD" in html
 
 
-
 def test_tearsheet_with_benchmark_overlay(sample_returns):
     # Arrange
     # Create benchmark returns
@@ -789,7 +806,7 @@ def test_tearsheet_with_benchmark_overlay(sample_returns):
     )
 
     config = TearsheetConfig(
-        charts=["equity"],
+        charts=[TearsheetEquityChart()],
         include_benchmark=True,
         benchmark_name="S&P 500",
     )
@@ -821,7 +838,12 @@ def test_tearsheet_with_custom_grid_layout(sample_returns):
     )
 
     config = TearsheetConfig(
-        charts=["stats_table", "equity", "drawdown", "distribution"],
+        charts=[
+            TearsheetStatsTableChart(),
+            TearsheetEquityChart(),
+            TearsheetDrawdownChart(),
+            TearsheetDistributionChart(),
+        ],
         layout=layout,
     )
 
@@ -874,7 +896,7 @@ def test_tearsheet_with_all_themes(sample_returns):
     # Act & Assert
     for theme in themes:
         config = TearsheetConfig(
-            charts=["equity"],
+            charts=[TearsheetEquityChart()],
             theme=theme,
         )
 

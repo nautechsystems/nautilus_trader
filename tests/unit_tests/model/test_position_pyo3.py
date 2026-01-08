@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,7 +26,7 @@ from nautilus_trader.core.nautilus_pyo3 import OrderSide
 from nautilus_trader.core.nautilus_pyo3 import OrderType
 from nautilus_trader.core.nautilus_pyo3 import Position
 from nautilus_trader.core.nautilus_pyo3 import PositionAdjusted
-from nautilus_trader.core.nautilus_pyo3 import PositionAdjustmentType as AdjustmentType  # type: ignore[attr-defined]
+from nautilus_trader.core.nautilus_pyo3 import PositionAdjustmentType
 from nautilus_trader.core.nautilus_pyo3 import PositionId
 from nautilus_trader.core.nautilus_pyo3 import PositionSide
 from nautilus_trader.core.nautilus_pyo3 import PositionSnapshot
@@ -1170,7 +1170,7 @@ def test_position_adjustment_creation_and_serialization() -> None:
         instrument_id=TestIdProviderPyo3.audusd_id(),
         position_id=PositionId("P-123456"),
         account_id=TestIdProviderPyo3.account_id(),
-        adjustment_type=AdjustmentType.COMMISSION,
+        adjustment_type=PositionAdjustmentType.COMMISSION,
         quantity_change=float(Decimal("-0.001")),
         pnl_change=None,
         reason="test_order_id",
@@ -1216,7 +1216,7 @@ def test_position_with_adjustments_tracking() -> None:
         instrument_id=instrument.id,
         position_id=TestIdProviderPyo3.position_id(),
         account_id=TestIdProviderPyo3.account_id(),
-        adjustment_type=AdjustmentType.COMMISSION,
+        adjustment_type=PositionAdjustmentType.COMMISSION,
         quantity_change=float(Decimal("-0.001")),
         pnl_change=None,
         reason="commission_adjustment",
@@ -1228,7 +1228,7 @@ def test_position_with_adjustments_tracking() -> None:
 
     # Assert
     assert len(position.adjustments) == 1
-    assert position.adjustments[0].adjustment_type == AdjustmentType.COMMISSION
+    assert position.adjustments[0].adjustment_type == PositionAdjustmentType.COMMISSION
     assert position.adjustments[0].quantity_change == Decimal("-0.001")
     assert position.quantity == Quantity.from_str("0.999")
 
@@ -1244,7 +1244,7 @@ def test_position_adjustment_funding_only_no_quantity_change() -> None:
         instrument_id=TestIdProviderPyo3.btcusdt_binance_id(),
         position_id=PositionId("P-123456"),
         account_id=TestIdProviderPyo3.account_id(),
-        adjustment_type=AdjustmentType.FUNDING,
+        adjustment_type=PositionAdjustmentType.FUNDING,
         quantity_change=None,  # Funding-only adjustment
         pnl_change=Money(5.50, USD),
         reason="funding_2024_01_15",
@@ -1254,7 +1254,7 @@ def test_position_adjustment_funding_only_no_quantity_change() -> None:
     )
 
     # Assert
-    assert adjustment.adjustment_type == AdjustmentType.FUNDING
+    assert adjustment.adjustment_type == PositionAdjustmentType.FUNDING
     assert adjustment.quantity_change is None
     assert adjustment.pnl_change == Money(5.50, USD)
     assert adjustment.reason == "funding_2024_01_15"
@@ -1273,7 +1273,7 @@ def test_position_adjustment_json_serialization_round_trip() -> None:
         instrument_id=TestIdProviderPyo3.audusd_id(),
         position_id=PositionId("P-123456"),
         account_id=TestIdProviderPyo3.account_id(),
-        adjustment_type=AdjustmentType.COMMISSION,
+        adjustment_type=PositionAdjustmentType.COMMISSION,
         quantity_change=float(Decimal("-0.001")),
         pnl_change=None,
         reason="test_commission",
@@ -1289,7 +1289,7 @@ def test_position_adjustment_json_serialization_round_trip() -> None:
     reconstructed = PositionAdjusted.from_dict(parsed_dict)
 
     # Assert
-    assert reconstructed.adjustment_type == AdjustmentType.COMMISSION
+    assert reconstructed.adjustment_type == PositionAdjustmentType.COMMISSION
     assert reconstructed.quantity_change == Decimal("-0.001")
     assert reconstructed.pnl_change is None
     assert parsed_dict["adjustment_type"] == "COMMISSION"  # Must be string not enum
@@ -1308,7 +1308,7 @@ def test_position_adjustment_funding_json_serialization() -> None:
         instrument_id=TestIdProviderPyo3.btcusdt_binance_id(),
         position_id=PositionId("P-123456"),
         account_id=TestIdProviderPyo3.account_id(),
-        adjustment_type=AdjustmentType.FUNDING,
+        adjustment_type=PositionAdjustmentType.FUNDING,
         quantity_change=None,
         pnl_change=Money(-5.50, USD),
         reason="funding_payment",
@@ -1324,7 +1324,7 @@ def test_position_adjustment_funding_json_serialization() -> None:
     reconstructed = PositionAdjusted.from_dict(parsed_dict)
 
     # Assert
-    assert reconstructed.adjustment_type == AdjustmentType.FUNDING
+    assert reconstructed.adjustment_type == PositionAdjustmentType.FUNDING
     assert reconstructed.quantity_change is None  # Must preserve None
     assert reconstructed.pnl_change == Money(-5.50, USD)
     assert parsed_dict["quantity_change"] is None
@@ -1720,6 +1720,7 @@ def test_position_flattens_with_base_currency_commission_on_close() -> None:
     assert position.adjustments[0].quantity_change == Decimal("-0.001")
     assert position.adjustments[1].quantity_change == Decimal("-0.000999")
 
+
 def test_position_flip_short_to_long_applies_full_commission() -> None:
     """
     Test that when flipping from SHORT to LONG, the full commission is applied to the
@@ -1790,7 +1791,7 @@ def test_position_flip_short_to_long_applies_full_commission() -> None:
 
     # Should have 1 adjustment from the flip (full commission applied to opening)
     assert len(position.adjustments) == 1
-    assert position.adjustments[0].adjustment_type == AdjustmentType.COMMISSION
+    assert position.adjustments[0].adjustment_type == PositionAdjustmentType.COMMISSION
     assert position.adjustments[0].quantity_change == Decimal("-0.001")
 
 
@@ -1865,5 +1866,5 @@ def test_position_flip_long_to_short_applies_full_commission() -> None:
 
     # Should have 1 adjustment from the flip (full commission applied to opening)
     assert len(position.adjustments) == 1
-    assert position.adjustments[0].adjustment_type == AdjustmentType.COMMISSION
+    assert position.adjustments[0].adjustment_type == PositionAdjustmentType.COMMISSION
     assert position.adjustments[0].quantity_change == Decimal("-0.001")

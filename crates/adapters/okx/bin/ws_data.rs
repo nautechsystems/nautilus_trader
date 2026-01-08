@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,13 +19,10 @@ use nautilus_okx::{
     common::enums::OKXInstrumentType, http::client::OKXHttpClient, websocket::OKXWebSocketClient,
 };
 use tokio::{pin, signal};
-use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::TRACE)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let http_client = OKXHttpClient::from_env().unwrap();
     let instruments = http_client
@@ -80,10 +77,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         tokio::select! {
             Some(data) = stream.next() => {
-                tracing::debug!("{data:?}");
+                log::debug!("{data:?}");
             }
             _ = &mut sigint => {
-                tracing::info!("Received SIGINT, closing connection...");
+                log::info!("Received SIGINT, closing connection...");
                 ws_client.close().await?;
                 break;
             }

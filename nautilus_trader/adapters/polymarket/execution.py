@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -40,6 +40,7 @@ from nautilus_trader.adapters.polymarket.common.conversion import usdce_from_uni
 from nautilus_trader.adapters.polymarket.common.credentials import PolymarketWebSocketAuth
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketEventType
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStatus
+from nautilus_trader.adapters.polymarket.common.parsing import calculate_commission
 from nautilus_trader.adapters.polymarket.common.parsing import validate_ethereum_address
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_condition_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
@@ -66,7 +67,6 @@ from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
-from nautilus_trader.core.stats import basis_points_as_percentage
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
@@ -317,7 +317,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
         )
 
     async def _fetch_user_positions(
-        self, *, limit: int = 100, size_threshold: int = 0,
+        self,
+        *,
+        limit: int = 100,
+        size_threshold: int = 0,
     ) -> list[dict[str, Any]]:
         """
         Fetch all current positions for the configured user using the Polymarket Data
@@ -611,9 +614,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
         params = TradeParams()
         if command.instrument_id:
             condition_id = get_polymarket_condition_id(command.instrument_id)
-            asset_id = get_polymarket_token_id(command.instrument_id)
             params.market = condition_id
-            params.asset_id = asset_id
+            # Note: We intentionally don't filter by asset_id here because the API
+            # filters by TAKER's asset_id, which would miss maker fills from cross-asset
+            # matches (e.g., YES maker matched against NO taker)
 
         if command.start is not None:
             params.after = int(command.start.timestamp())
@@ -706,23 +710,27 @@ class PolymarketExecutionClient(LiveExecutionClient):
         raw = msgspec.json.encode(json_obj)
         polymarket_trade = self._decoder_trade_report.decode(raw)
 
-        instrument_id = get_polymarket_instrument_id(
-            polymarket_trade.market,
-            polymarket_trade.asset_id,
-        )
-        instrument = self._cache.instrument(instrument_id)
-        if instrument is None:
-            self._log.warning(
-                f"Cannot handle trade report: instrument {instrument_id} not found "
-                f"(market={polymarket_trade.market}, asset_id={polymarket_trade.asset_id})",
-            )
-            return
-
         filled_user_order_ids = polymarket_trade.get_filled_user_order_ids(
             self._wallet_address,
             self._api_key,
         )
+
         for order_id in filled_user_order_ids:
+            asset_id = polymarket_trade.get_asset_id(order_id)
+            instrument_id = get_polymarket_instrument_id(polymarket_trade.market, asset_id)
+
+            # Filter by instrument_id if specified in command
+            if command.instrument_id is not None and instrument_id != command.instrument_id:
+                continue
+
+            instrument = self._cache.instrument(instrument_id)
+            if instrument is None:
+                self._log.warning(
+                    f"Cannot handle trade report: instrument {instrument_id} not found "
+                    f"(market={polymarket_trade.market}, asset_id={asset_id})",
+                )
+                continue
+
             venue_order_id = polymarket_trade.venue_order_id(order_id)
 
             if command.venue_order_id is not None and venue_order_id != command.venue_order_id:
@@ -807,7 +815,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 params,
             )
             quantities[instrument_id] = Quantity.from_raw(
-                usdce_from_units(int(response["balance"])).raw, precision=USDC_POS.precision,
+                usdce_from_units(int(response["balance"])).raw,
+                precision=USDC_POS.precision,
             )
 
         return quantities
@@ -1304,9 +1313,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         match msg.type:
             case PolymarketEventType.PLACEMENT:
-                # Check if order is already accepted to avoid duplicate accepted events
                 order = self._cache.order(client_order_id) if client_order_id else None
-                if order is None or not order.is_open:
+                if order is None or order.status == OrderStatus.SUBMITTED:
                     self.generate_order_accepted(
                         strategy_id=strategy_id,
                         instrument_id=instrument_id,
@@ -1316,9 +1324,17 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     )
                 else:
                     self._log.debug(
-                        f"Order {client_order_id!r} already accepted - skipping duplicate placement event",
+                        f"Order {client_order_id!r} in state {order.status_string()} - "
+                        "skipping placement event",
                     )
             case PolymarketEventType.CANCELLATION:
+                order = self._cache.order(client_order_id) if client_order_id else None
+                if order is not None and order.status == OrderStatus.CANCELED:
+                    self._log.debug(
+                        f"Order {client_order_id!r} already canceled - "
+                        "skipping duplicate cancellation event",
+                    )
+                    return
                 self.generate_order_canceled(
                     strategy_id=strategy_id,
                     instrument_id=instrument_id,
@@ -1459,9 +1475,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         last_qty = instrument.make_qty(msg.last_qty(order_id))
         last_px = instrument.make_price(msg.last_px(order_id))
-        commission = float(last_qty * last_px) * basis_points_as_percentage(
-            float(msg.get_fee_rate_bps(order_id)),
-        )
+        commission = calculate_commission(last_qty, last_px, msg.get_fee_rate_bps(order_id))
         ts_event = secs_to_nanos(int(msg.match_time))
 
         self.generate_order_filled(

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,7 +15,6 @@
 """
 Define websocket message of the dYdX venue.
 """
-
 
 import datetime
 from decimal import Decimal
@@ -35,7 +34,9 @@ from nautilus_trader.adapters.dydx.common.enums import DYDXPositionSide
 from nautilus_trader.adapters.dydx.common.enums import DYDXTimeInForce
 from nautilus_trader.adapters.dydx.common.enums import DYDXTransferType
 from nautilus_trader.adapters.dydx.common.symbol import DYDXSymbol
-from nautilus_trader.adapters.dydx.endpoints.market.instruments_info import DYDXListPerpetualMarketsResponse
+from nautilus_trader.adapters.dydx.endpoints.market.instruments_info import (
+    DYDXListPerpetualMarketsResponse,
+)
 from nautilus_trader.adapters.dydx.schemas.account.address import DYDXSubaccount
 from nautilus_trader.adapters.dydx.schemas.account.orders import DYDXOrderResponse
 from nautilus_trader.core.datetime import dt_to_unix_nanos

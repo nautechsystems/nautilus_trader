@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -66,12 +66,12 @@ macro_rules! log_trace {
         log::trace!(component = $component, color = $color as u8; $fmt, $($args),+);
     };
 
-    // Default (no color or component)
+    // Default (no color or component - auto-capture module path)
     ($msg:literal) => {
-        log::trace!(color = $crate::enums::LogColor::Normal as u8; $msg);
+        log::trace!(component = module_path!(), color = $crate::enums::LogColor::Normal as u8; $msg);
     };
     ($fmt:literal, $($args:expr),+) => {
-        log::trace!(color = $crate::enums::LogColor::Normal as u8; $fmt, $($args),+);
+        log::trace!(component = module_path!(), color = $crate::enums::LogColor::Normal as u8; $fmt, $($args),+);
     };
 }
 
@@ -126,12 +126,12 @@ macro_rules! log_debug {
         log::debug!(component = $component, color = $color as u8; $fmt, $($args),+);
     };
 
-    // Default (no color or component)
+    // Default (no color or component - auto-capture module path)
     ($msg:literal) => {
-        log::debug!(color = $crate::enums::LogColor::Normal as u8; $msg);
+        log::debug!(component = module_path!(), color = $crate::enums::LogColor::Normal as u8; $msg);
     };
     ($fmt:literal, $($args:expr),+) => {
-        log::debug!(color = $crate::enums::LogColor::Normal as u8; $fmt, $($args),+);
+        log::debug!(component = module_path!(), color = $crate::enums::LogColor::Normal as u8; $fmt, $($args),+);
     };
 }
 
@@ -201,12 +201,12 @@ macro_rules! log_info {
         log::info!(color = $color as u8; $fmt, $arg1, $arg2, $arg3);
     };
 
-    // Default (no color or component)
+    // Default (no color or component - auto-capture module path)
     ($msg:literal) => {
-        log::info!(color = $crate::enums::LogColor::Normal as u8; $msg);
+        log::info!(component = module_path!(), color = $crate::enums::LogColor::Normal as u8; $msg);
     };
     ($fmt:literal, $($args:expr),+) => {
-        log::info!(color = $crate::enums::LogColor::Normal as u8; $fmt, $($args),+);
+        log::info!(component = module_path!(), color = $crate::enums::LogColor::Normal as u8; $fmt, $($args),+);
     };
 }
 
@@ -276,12 +276,12 @@ macro_rules! log_warn {
         log::warn!(color = $color as u8; $fmt, $arg1, $arg2, $arg3);
     };
 
-    // Default (automatic yellow color, no component)
+    // Default (automatic yellow color, no component - auto-capture module path)
     ($msg:literal) => {
-        log::warn!(color = $crate::enums::LogColor::Yellow as u8; $msg);
+        log::warn!(component = module_path!(), color = $crate::enums::LogColor::Yellow as u8; $msg);
     };
     ($fmt:literal, $($args:expr),+) => {
-        log::warn!(color = $crate::enums::LogColor::Yellow as u8; $fmt, $($args),+);
+        log::warn!(component = module_path!(), color = $crate::enums::LogColor::Yellow as u8; $fmt, $($args),+);
     };
 }
 
@@ -351,12 +351,12 @@ macro_rules! log_error {
         log::error!(color = $color as u8; $fmt, $arg1, $arg2, $arg3);
     };
 
-    // Default (automatic red color, no component)
+    // Default (automatic red color, no component - auto-capture module path)
     ($msg:literal) => {
-        log::error!(color = $crate::enums::LogColor::Red as u8; $msg);
+        log::error!(component = module_path!(), color = $crate::enums::LogColor::Red as u8; $msg);
     };
     ($fmt:literal, $($args:expr),+) => {
-        log::error!(color = $crate::enums::LogColor::Red as u8; $fmt, $($args),+);
+        log::error!(component = module_path!(), color = $crate::enums::LogColor::Red as u8; $fmt, $($args),+);
     };
 }
 
@@ -486,5 +486,81 @@ mod tests {
         assert!(log_contents.contains("Component test"));
         assert!(log_contents.contains("Component warning"));
         assert!(log_contents.contains("Color then component"));
+    }
+
+    #[rstest]
+    fn test_default_macro_captures_module_path() {
+        // This test verifies that log macros without explicit component
+        // auto-capture module_path!() as the component.
+        //
+        // The module path for this test is: nautilus_common::logging::macros::tests
+        // We configure a module filter and verify the log is filtered/passed accordingly.
+
+        let config = LoggerConfig::from_spec(
+            "stdout=Off;fileout=Trace;nautilus_common::logging::macros=Debug",
+        )
+        .unwrap();
+
+        let temp_dir = tempdir().expect("Failed to create temporary directory");
+        let file_config = FileWriterConfig {
+            directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+            ..Default::default()
+        };
+
+        let log_guard = Logger::init_with_config(
+            TraderId::from("TRADER-PATH"),
+            UUID4::new(),
+            config,
+            file_config,
+        )
+        .expect("Failed to initialize logger");
+
+        logging_clock_set_static_mode();
+        logging_clock_set_static_time(1_650_000_000_000_000);
+
+        // Call macros WITHOUT explicit component - should auto-capture module_path!()
+        log_info!("Auto-captured module path message");
+        log_debug!("Debug level auto-captured");
+
+        // This trace should be filtered (module filter is Debug, Trace > Debug)
+        log_trace!("Trace should be filtered SHOULD_NOT_APPEAR");
+
+        sleep(Duration::from_millis(200));
+        drop(log_guard);
+
+        let mut log_contents = String::new();
+        wait_until(
+            || {
+                if let Some(log_file) = std::fs::read_dir(&temp_dir)
+                    .expect("Failed to read directory")
+                    .filter_map(Result::ok)
+                    .find(|entry| entry.path().is_file())
+                {
+                    log_contents =
+                        std::fs::read_to_string(log_file.path()).expect("Failed to read log file");
+                    !log_contents.is_empty()
+                } else {
+                    false
+                }
+            },
+            Duration::from_secs(3),
+        );
+
+        assert!(
+            log_contents.contains("nautilus_common::logging::macros"),
+            "Component should contain module path, got:\n{log_contents}"
+        );
+        assert!(
+            log_contents.contains("Auto-captured module path message"),
+            "Info message should pass"
+        );
+        assert!(
+            log_contents.contains("Debug level auto-captured"),
+            "Debug message should pass"
+        );
+        assert!(
+            !log_contents.contains("SHOULD_NOT_APPEAR"),
+            "Trace should be filtered by module filter"
+        );
     }
 }

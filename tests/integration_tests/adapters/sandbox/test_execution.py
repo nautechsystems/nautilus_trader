@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,14 +34,13 @@ from nautilus_trader.model.events import OrderPendingUpdate
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orders.list import OrderList
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 def _make_quote_tick(instrument):
@@ -116,8 +115,8 @@ async def test_submit_orders_list_success(
     # Arrange
     exec_client.connect()
     factory = OrderFactory(
-        trader_id=TraderId("TESTER-000"),
-        strategy_id=StrategyId("S-001"),
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
         clock=TestClock(),
     )
     first_order = TestExecStubs.limit_order(

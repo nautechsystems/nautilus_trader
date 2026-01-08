@@ -16,18 +16,19 @@ homepage.workspace = true
 [lints]
 workspace = true
 
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
-
 [features]
 default = []
 defi = ["dep:nautilus-blockchain", "nautilus-model/defi"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 nautilus-core = { workspace = true }
 nautilus-infrastructure = { workspace = true, features = ["postgres"] }
 nautilus-model = { workspace = true }
+
 nautilus-blockchain = { workspace = true, features = [
   "hypersync",
 ], optional = true }
@@ -35,7 +36,6 @@ nautilus-blockchain = { workspace = true, features = [
 anyhow = { workspace = true }
 clap = { workspace = true }
 dotenvy = { workspace = true }
-futures-util = { workspace = true }
 log = { workspace = true }
 simple_logger = { workspace = true }
 tokio = { workspace = true }
@@ -45,3 +45,4 @@ ustr = { workspace = true }
 [[bin]]
 name = "nautilus"
 path = "src/bin/cli.rs"
+doc = false

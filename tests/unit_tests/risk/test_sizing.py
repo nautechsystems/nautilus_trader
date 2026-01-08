@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -211,3 +211,19 @@ class TestFixedRiskSizer:
 
         # Assert
         assert result == Quantity.from_int(3_578_000)
+
+    def test_calculate_for_futures_contract_without_max_quantity(self):
+        # Arrange
+        instrument = TestInstrumentProvider.future()
+        sizer = FixedRiskSizer(instrument)
+
+        # Act
+        result = sizer.calculate(
+            entry=Price.from_str("4500.00"),
+            stop_loss=Price.from_str("4400.00"),
+            equity=Money(100_000, USD),
+            risk=Decimal("0.01"),
+        )
+
+        # Assert
+        assert result.as_decimal() > 0

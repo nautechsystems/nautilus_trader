@@ -22,13 +22,13 @@ jobs:
         language: ['python', 'rust']
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -49,7 +49,7 @@ jobs:
 
       - name: Initialize CodeQL
         # https://github.com/github/codeql-action
-        uses: github/codeql-action/init@f443b600d91635bebf5b0d9ebc620189c0d6fba5 # v4.30.8
+        uses: github/codeql-action/init@9c4840c028605570a7b5023740fdfcf9a8f745e7 # v4.31.8
         with:
           languages: ${{ matrix.language }}
           # If you wish to specify custom queries, you can do so here or in a config file.
@@ -60,8 +60,8 @@ jobs:
       # https://github.com/github/codeql-action
       - name: Autobuild
         if: matrix.language == 'rust'
-        uses: github/codeql-action/autobuild@f443b600d91635bebf5b0d9ebc620189c0d6fba5 # v4.30.8
+        uses: github/codeql-action/autobuild@9c4840c028605570a7b5023740fdfcf9a8f745e7 # v4.31.8
 
       - name: Perform CodeQL Analysis
         # https://github.com/github/codeql-action
-        uses: github/codeql-action/analyze@f443b600d91635bebf5b0d9ebc620189c0d6fba5 # v4.30.8
+        uses: github/codeql-action/analyze@9c4840c028605570a7b5023740fdfcf9a8f745e7 # v4.31.8

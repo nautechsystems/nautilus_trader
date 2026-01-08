@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,17 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-/// Logs that a task has started using `tracing::debug!`.
+/// Logs that a task has started using `log::debug!`.
 pub fn log_task_started(task_name: &str) {
-    tracing::debug!("Started task '{task_name}'");
+    log::debug!("Started task '{task_name}'");
 }
 
-/// Logs that a task has stopped using `tracing::debug!`.
+/// Logs that a task has stopped using `log::debug!`.
 pub fn log_task_stopped(task_name: &str) {
-    tracing::debug!("Stopped task '{task_name}'");
+    log::debug!("Stopped task '{task_name}'");
 }
 
-/// Logs that a task was aborted using `tracing::debug!`.
+/// Logs that a task was aborted using `log::debug!`.
 pub fn log_task_aborted(task_name: &str) {
-    tracing::debug!("Aborted task '{task_name}'");
+    log::debug!("Aborted task '{task_name}'");
 }

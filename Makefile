@@ -64,7 +64,7 @@ FAIL_FAST_FLAG := --no-fail-fast
 endif
 
 # EXTRA_FEATURES allows adding optional features to cargo builds/tests.
-# Can be set directly: make cargo-test EXTRA_FEATURES="capnp hypersync"
+# Can be set directly: make cargo-test EXTRA_FEATURES="capnp,hypersync"
 # Or use convenience flags below for backwards compatibility.
 EXTRA_FEATURES ?=
 
@@ -75,8 +75,14 @@ ifeq ($(HYPERSYNC),true)
 EXTRA_FEATURES += hypersync
 endif
 
-# Base cargo features (always included)
+# DEFI controls whether defi feature is included (default: true).
+# Can be disabled: make cargo-test-core DEFI=false
+DEFI ?= true
+ifeq ($(DEFI),true)
 BASE_FEATURES := ffi,python,high-precision,defi
+else
+BASE_FEATURES := ffi,python,high-precision
+endif
 
 # Combine base features with extra features
 ifneq ($(strip $(EXTRA_FEATURES)),)
@@ -84,6 +90,13 @@ CARGO_FEATURES := $(BASE_FEATURES),$(EXTRA_FEATURES)
 else
 CARGO_FEATURES := $(BASE_FEATURES)
 endif
+
+# Core crates (excludes adapters/*, nautilus-pyo3, nautilus-cli)
+CORE_CRATES := nautilus-analysis nautilus-backtest nautilus-common nautilus-core \
+    nautilus-cryptography nautilus-data nautilus-execution nautilus-indicators \
+    nautilus-infrastructure nautilus-live nautilus-model nautilus-network \
+    nautilus-persistence nautilus-portfolio nautilus-risk nautilus-serialization \
+    nautilus-system nautilus-testkit nautilus-trading
 
 # > Colors
 # Use ANSI escape codes directly for cross-platform compatibility (Git Bash on Windows doesn't have tput)
@@ -209,8 +222,9 @@ distclean: clean  #-- Nuclear clean - remove all untracked files (requires FORCE
 #== Code Quality
 
 .PHONY: format
-format:  #-- Format Rust code using nightly formatter
+format:  #-- Format Rust (with nightly) and Python code
 	cargo +nightly fmt
+	uv run --active --no-sync ruff format .
 
 .PHONY: pre-commit
 pre-commit:  #-- Run all pre-commit hooks on all files
@@ -227,7 +241,7 @@ check-code:  #-- Run clippy, and ruff --fix (use HYPERSYNC=true to include hyper
 
 .PHONY: pre-flight
 pre-flight: export CARGO_TARGET_DIR=$(TARGET_DIR)
-pre-flight:  #-- Run comprehensive pre-flight checks (format, check-code, cargo-test, build-debug, pytest)
+pre-flight:  #-- Run comprehensive pre-flight checks (format, check-code, cargo-test, build-debug, pytest, security-audit)
 	$(info $(M) Running pre-flight checks...)
 	@if ! git diff --quiet; then \
 		printf "$(RED)ERROR: You have unstaged changes$(RESET)\n"; \
@@ -235,10 +249,11 @@ pre-flight:  #-- Run comprehensive pre-flight checks (format, check-code, cargo-
 		exit 1; \
 	fi
 	@$(MAKE) --no-print-directory format
-	@$(MAKE) --no-print-directory check-code
-	@$(MAKE) --no-print-directory cargo-test
+	@$(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync"
+	@$(MAKE) --no-print-directory cargo-test-extras
 	@$(MAKE) --no-print-directory build-debug
 	@$(MAKE) --no-print-directory pytest
+	@$(MAKE) --no-print-directory security-audit
 	@printf "$(GREEN)All pre-flight checks passed$(RESET)\n"
 
 .PHONY: ruff
@@ -301,11 +316,16 @@ install-tools:  #-- Install required development tools (Rust tools from Cargo.to
 #== Security
 
 .PHONY: security-audit
-security-audit: check-audit-installed  #-- Run security audit for Rust dependencies (osv-scanner runs via pre-commit)
-	$(info $(M) Running security audit for Rust dependencies...)
-	@printf "$(CYAN)Checking Rust dependencies for known vulnerabilities...$(RESET)\n"
+security-audit: check-audit-installed check-deny-installed check-vet-installed check-osv-scanner-installed  #-- Run comprehensive security audit (cargo-audit, cargo-deny, cargo-vet, osv-scanner)
+	$(info $(M) Running security audit...)
+	@printf "$(CYAN)Running cargo audit...$(RESET)\n"
 	cargo audit --color never || true
-	@printf "\n$(CYAN)Note: Python dependency scanning (osv-scanner) runs via pre-commit hooks$(RESET)\n"
+	@printf "\n$(CYAN)Running cargo deny (advisories check)...$(RESET)\n"
+	cargo deny --all-features check advisories
+	@printf "\n$(CYAN)Running cargo vet (supply chain audit)...$(RESET)\n"
+	cargo vet
+	@printf "\n$(CYAN)Running osv-scanner (Cargo.lock + uv.lock)...$(RESET)\n"
+	osv-scanner --config=osv-scanner.toml --lockfile=Cargo.lock --lockfile=uv.lock
 
 .PHONY: cargo-deny
 cargo-deny: check-deny-installed  #-- Run cargo-deny checks (advisories, sources, bans, licenses)
@@ -323,7 +343,7 @@ docs: docs-python docs-rust  #-- Build all documentation (Python and Rust)
 .PHONY: docs-python
 docs-python: export BUILD_MODE=debug
 docs-python:  #-- Build Python documentation with Sphinx
-	uv run --active sphinx-build -M markdown ./docs/api_reference ./api_reference
+	uv run --active --no-sync sphinx-build -M markdown ./docs/api_reference ./api_reference
 
 .PHONY: docs-rust
 docs-rust: export RUSTDOCFLAGS=--enable-index-page -Zunstable-options
@@ -365,13 +385,13 @@ cargo-update:  #-- Update Rust dependencies (versions from Cargo.toml)
 cargo-check:  #-- Check Rust code without building
 	cargo check --workspace --all-features
 
+# Security tool checks
 .PHONY: check-audit-installed
 check-audit-installed:  #-- Verify cargo-audit is installed
 	@if ! cargo audit --version >/dev/null 2>&1; then \
 		echo "cargo-audit is not installed. You can install it using 'cargo install cargo-audit'"; \
 		exit 1; \
 	fi
-
 
 .PHONY: check-deny-installed
 check-deny-installed:  #-- Verify cargo-deny is installed
@@ -380,6 +400,21 @@ check-deny-installed:  #-- Verify cargo-deny is installed
 		exit 1; \
 	fi
 
+.PHONY: check-vet-installed
+check-vet-installed:  #-- Verify cargo-vet is installed
+	@if ! cargo vet --version >/dev/null 2>&1; then \
+		echo "cargo-vet is not installed. You can install it using 'cargo install cargo-vet'"; \
+		exit 1; \
+	fi
+
+.PHONY: check-osv-scanner-installed
+check-osv-scanner-installed:  #-- Verify osv-scanner is installed
+	@if ! osv-scanner --version >/dev/null 2>&1; then \
+		echo "osv-scanner is not installed. See https://google.github.io/osv-scanner/installation/"; \
+		exit 1; \
+	fi
+
+# Testing tool checks
 .PHONY: check-nextest-installed
 check-nextest-installed:  #-- Verify cargo-nextest is installed
 	@if ! cargo nextest --version >/dev/null 2>&1; then \
@@ -394,17 +429,11 @@ check-llvm-cov-installed:  #-- Verify cargo-llvm-cov is installed
 		exit 1; \
 	fi
 
+# Cargo utility checks
 .PHONY: check-hack-installed
 check-hack-installed:  #-- Verify cargo-hack is installed
 	@if ! cargo hack --version >/dev/null 2>&1; then \
 		echo "cargo-hack is not installed. You can install it using 'cargo install cargo-hack'"; \
-		exit 1; \
-	fi
-
-.PHONY: check-vet-installed
-check-vet-installed:  #-- Verify cargo-vet is installed
-	@if ! cargo vet --version >/dev/null 2>&1; then \
-		echo "cargo-vet is not installed. You can install it using 'cargo install cargo-vet'"; \
 		exit 1; \
 	fi
 
@@ -415,8 +444,8 @@ check-edit-installed:  #-- Verify cargo-edit is installed
 		exit 1; \
 	fi
 
-.PHONY: check-features  #-- Verify crate feature combinations compile correctly
-check-features: check-hack-installed
+.PHONY: check-features
+check-features: check-hack-installed  #-- Verify crate feature combinations compile correctly
 	cargo hack check --each-feature
 
 .PHONY: check-capnp-schemas  #-- Verify Cap'n Proto schemas are up-to-date
@@ -456,6 +485,24 @@ endif
 cargo-test-extras:  #-- Run all Rust tests with capnp and hypersync features (convenience shortcut)
 	$(MAKE) cargo-test EXTRA_FEATURES="capnp,hypersync"
 
+.PHONY: cargo-test-core
+cargo-test-core: export RUST_BACKTRACE=1
+cargo-test-core: check-nextest-installed
+cargo-test-core:  #-- Run Rust tests for core crates only (excludes adapters)
+ifeq ($(VERBOSE),true)
+	$(info $(M) Running Rust tests for core crates...)
+	cargo nextest run $(foreach crate,$(CORE_CRATES),-p $(crate)) --features "$(CARGO_FEATURES)" $(FAIL_FAST_FLAG) --cargo-profile nextest --verbose
+else
+	$(info $(M) Running Rust tests for core crates (showing summary and failures only)...)
+	cargo nextest run $(foreach crate,$(CORE_CRATES),-p $(crate)) --features "$(CARGO_FEATURES)" $(FAIL_FAST_FLAG) --cargo-profile nextest --status-level fail --final-status-level flaky
+endif
+
+.PHONY: cargo-test-core-debug
+cargo-test-core-debug: export RUST_BACKTRACE=1
+cargo-test-core-debug: check-nextest-installed
+cargo-test-core-debug:  #-- Run Rust tests for core crates (debug profile)
+	cargo nextest run $(foreach crate,$(CORE_CRATES),-p $(crate)) --features "$(CARGO_FEATURES)" $(FAIL_FAST_FLAG)
+
 .PHONY: cargo-test-lib
 cargo-test-lib: export RUST_BACKTRACE=1
 cargo-test-lib: check-nextest-installed
@@ -465,19 +512,19 @@ cargo-test-lib:  #-- Run Rust library tests only with high precision
 .PHONY: cargo-test-standard-precision
 cargo-test-standard-precision: export RUST_BACKTRACE=1
 cargo-test-standard-precision: check-nextest-installed
-cargo-test-standard-precision:  #-- Run Rust tests in debug mode with standard precision (64-bit)
-	cargo nextest run --workspace --features "ffi,python"
+cargo-test-standard-precision:  #-- Run Rust tests with standard precision (debug profile)
+	cargo nextest run --workspace --features "ffi,python" $(FAIL_FAST_FLAG)
 
 .PHONY: cargo-test-debug
 cargo-test-debug: export RUST_BACKTRACE=1
 cargo-test-debug: check-nextest-installed
-cargo-test-debug:  #-- Run Rust tests in debug mode with high precision
+cargo-test-debug:  #-- Run Rust tests with high precision (debug profile)
 	cargo nextest run --workspace --features "ffi,python,high-precision,defi" $(FAIL_FAST_FLAG)
 
 .PHONY: cargo-test-coverage
 cargo-test-coverage: check-nextest-installed check-llvm-cov-installed
 cargo-test-coverage:  #-- Run Rust tests with coverage reporting
-	cargo llvm-cov nextest run --workspace
+	cargo llvm-cov nextest run --workspace --features "$(CARGO_FEATURES)"
 
 # -----------------------------------------------------------------------------
 # Library tests for a single crate

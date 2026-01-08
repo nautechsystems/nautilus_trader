@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -57,7 +57,7 @@ pub type QueryResult = KMerge<EagerStream<std::vec::IntoIter<Data>>, Data, TsIni
 /// a Vec of data by types that implement [`DecodeDataFromRecordBatch`].
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.persistence")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.persistence", unsendable)
 )]
 pub struct DataBackendSession {
     pub chunk_size: usize,
@@ -242,12 +242,6 @@ impl DataBackendSession {
     }
 }
 
-// SAFETY: DataBackendSession contains non-Send types but implements Send to satisfy
-// PyO3 trait bounds. It must only be used on a single Python thread.
-// WARNING: Actually sending this type across threads is undefined behavior.
-#[allow(unsafe_code)]
-unsafe impl Send for DataBackendSession {}
-
 #[must_use]
 pub fn build_query(
     table: &str,
@@ -366,9 +360,3 @@ impl Drop for DataQueryResult {
         self.result.clear();
     }
 }
-
-// SAFETY: DataQueryResult contains non-Send types but implements Send to satisfy
-// PyO3 trait bounds. It must only be used on a single Python thread.
-// WARNING: Actually sending this type across threads is undefined behavior.
-#[allow(unsafe_code)]
-unsafe impl Send for DataQueryResult {}

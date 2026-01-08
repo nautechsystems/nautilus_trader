@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -51,9 +51,7 @@ pub fn parse_tardis_ws_message(
             if msg.bids.is_empty() && msg.asks.is_empty() {
                 let exchange = msg.exchange;
                 let symbol = &msg.symbol;
-                tracing::error!(
-                    "Invalid book change for {exchange} {symbol} (empty bids and asks)"
-                );
+                log::error!("Invalid book change for {exchange} {symbol} (empty bids and asks)");
                 return None;
             }
 
@@ -65,7 +63,7 @@ pub fn parse_tardis_ws_message(
             ) {
                 Ok(deltas) => Some(Data::Deltas(deltas)),
                 Err(e) => {
-                    tracing::error!("Failed to parse book change message: {e}");
+                    log::error!("Failed to parse book change message: {e}");
                     None
                 }
             }
@@ -80,7 +78,7 @@ pub fn parse_tardis_ws_message(
                 ) {
                     Ok(quote) => Some(Data::Quote(quote)),
                     Err(e) => {
-                        tracing::error!("Failed to parse book snapshot quote message: {e}");
+                        log::error!("Failed to parse book snapshot quote message: {e}");
                         None
                     }
                 }
@@ -95,7 +93,7 @@ pub fn parse_tardis_ws_message(
                     ) {
                         Ok(depth10) => Some(Data::Depth10(Box::new(depth10))),
                         Err(e) => {
-                            tracing::error!("Failed to parse book snapshot as depth10: {e}");
+                            log::error!("Failed to parse book snapshot as depth10: {e}");
                             None
                         }
                     }
@@ -109,7 +107,7 @@ pub fn parse_tardis_ws_message(
                     ) {
                         Ok(deltas) => Some(Data::Deltas(deltas)),
                         Err(e) => {
-                            tracing::error!("Failed to parse book snapshot as deltas: {e}");
+                            log::error!("Failed to parse book snapshot as deltas: {e}");
                             None
                         }
                     }
@@ -125,7 +123,7 @@ pub fn parse_tardis_ws_message(
             ) {
                 Ok(trade) => Some(Data::Trade(trade)),
                 Err(e) => {
-                    tracing::error!("Failed to parse trade message: {e}");
+                    log::error!("Failed to parse trade message: {e}");
                     None
                 }
             }
@@ -139,7 +137,7 @@ pub fn parse_tardis_ws_message(
             ) {
                 Ok(bar) => Some(Data::Bar(bar)),
                 Err(e) => {
-                    tracing::error!("Failed to parse bar message: {e}");
+                    log::error!("Failed to parse bar message: {e}");
                     None
                 }
             }
@@ -163,9 +161,7 @@ pub fn parse_tardis_ws_message_funding_rate(
             match parse_derivative_ticker_msg(msg, info.instrument_id) {
                 Ok(funding_rate) => funding_rate,
                 Err(e) => {
-                    tracing::error!(
-                        "Failed to parse derivative ticker message for funding rate: {e}"
-                    );
+                    log::error!("Failed to parse derivative ticker message for funding rate: {e}");
                     None
                 }
             }
@@ -348,7 +344,7 @@ pub fn parse_book_msg_as_deltas(
             ts_init,
         ) {
             Ok(delta) => deltas.push(delta),
-            Err(e) => tracing::warn!("Skipping invalid bid level for {instrument_id}: {e}"),
+            Err(e) => log::warn!("Skipping invalid bid level for {instrument_id}: {e}"),
         }
     }
 
@@ -364,7 +360,7 @@ pub fn parse_book_msg_as_deltas(
             ts_init,
         ) {
             Ok(delta) => deltas.push(delta),
-            Err(e) => tracing::warn!("Skipping invalid ask level for {instrument_id}: {e}"),
+            Err(e) => log::warn!("Skipping invalid ask level for {instrument_id}: {e}"),
         }
     }
 

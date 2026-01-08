@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -27,10 +27,10 @@
 //!   - isBuyerMaker: u8
 //! - symbol: varString8
 
-use super::{
-    GroupSizeEncoding, MessageHeader, StreamDecodeError, decode_var_string8, read_i8, read_i64_le,
-    read_u8,
-};
+use ustr::Ustr;
+
+use super::{MessageHeader, StreamDecodeError};
+use crate::common::sbe::{cursor::SbeCursor, error::SbeDecodeError};
 
 /// Individual trade within a trades stream event.
 #[derive(Debug, Clone, Copy)]
@@ -49,24 +49,17 @@ impl Trade {
     /// Encoded length per trade entry.
     pub const ENCODED_LENGTH: usize = 25;
 
-    /// Decode a single trade from buffer.
+    /// Decode a single trade from cursor.
     ///
     /// # Errors
     ///
     /// Returns error if buffer is too short.
-    fn decode(buf: &[u8]) -> Result<Self, StreamDecodeError> {
-        if buf.len() < Self::ENCODED_LENGTH {
-            return Err(StreamDecodeError::BufferTooShort {
-                expected: Self::ENCODED_LENGTH,
-                actual: buf.len(),
-            });
-        }
-
+    fn decode(cursor: &mut SbeCursor<'_>) -> Result<Self, SbeDecodeError> {
         Ok(Self {
-            id: read_i64_le(buf, 0)?,
-            price_mantissa: read_i64_le(buf, 8)?,
-            qty_mantissa: read_i64_le(buf, 16)?,
-            is_buyer_maker: read_u8(buf, 24)? != 0,
+            id: cursor.read_i64_le()?,
+            price_mantissa: cursor.read_i64_le()?,
+            qty_mantissa: cursor.read_i64_le()?,
+            is_buyer_maker: cursor.read_u8()? != 0,
         })
     }
 }
@@ -85,7 +78,7 @@ pub struct TradesStreamEvent {
     /// Trades in this event.
     pub trades: Vec<Trade>,
     /// Trading symbol.
-    pub symbol: String,
+    pub symbol: Ustr,
 }
 
 impl TradesStreamEvent {
@@ -102,47 +95,17 @@ impl TradesStreamEvent {
         let header = MessageHeader::decode(buf)?;
         header.validate_schema()?;
 
-        let body = &buf[MessageHeader::ENCODED_LENGTH..];
+        let mut cursor = SbeCursor::new_at(buf, MessageHeader::ENCODED_LENGTH);
 
-        let min_body_size = Self::BLOCK_LENGTH + GroupSizeEncoding::ENCODED_LENGTH;
-        if body.len() < min_body_size {
-            return Err(StreamDecodeError::BufferTooShort {
-                expected: MessageHeader::ENCODED_LENGTH + min_body_size,
-                actual: buf.len(),
-            });
-        }
+        let event_time_us = cursor.read_i64_le()?;
+        let transact_time_us = cursor.read_i64_le()?;
+        let price_exponent = cursor.read_i8()?;
+        let qty_exponent = cursor.read_i8()?;
 
-        let event_time_us = read_i64_le(body, 0)?;
-        let transact_time_us = read_i64_le(body, 8)?;
-        let price_exponent = read_i8(body, 16)?;
-        let qty_exponent = read_i8(body, 17)?;
+        let (block_length, num_in_group) = cursor.read_group_header()?;
+        let trades = cursor.read_group(block_length, num_in_group, Trade::decode)?;
 
-        // Group size limit enforced inside GroupSizeEncoding::decode
-        let group_start = Self::BLOCK_LENGTH;
-        let group_size = GroupSizeEncoding::decode(&body[group_start..])?;
-        let num_trades = group_size.num_in_group as usize;
-        let trade_block_length = group_size.block_length as usize;
-
-        let trades_data_start = group_start + GroupSizeEncoding::ENCODED_LENGTH;
-        let trades_data_size = num_trades * trade_block_length;
-        let required_size = trades_data_start + trades_data_size + 1; // +1 for symbol length byte
-
-        if body.len() < required_size {
-            return Err(StreamDecodeError::BufferTooShort {
-                expected: MessageHeader::ENCODED_LENGTH + required_size,
-                actual: buf.len(),
-            });
-        }
-
-        let mut trades = Vec::with_capacity(num_trades);
-        let mut offset = trades_data_start;
-
-        for _ in 0..num_trades {
-            trades.push(Trade::decode(&body[offset..])?);
-            offset += trade_block_length;
-        }
-
-        let (symbol, _) = decode_var_string8(&body[offset..])?;
+        let symbol_str = cursor.read_var_string8()?;
 
         Ok(Self {
             event_time_us,
@@ -150,7 +113,7 @@ impl TradesStreamEvent {
             price_exponent,
             qty_exponent,
             trades,
-            symbol,
+            symbol: Ustr::from(&symbol_str),
         })
     }
 

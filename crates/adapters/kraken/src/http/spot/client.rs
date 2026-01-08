@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,7 +17,7 @@
 
 use std::{
     collections::HashMap,
-    fmt::{Debug, Formatter},
+    fmt::Debug,
     num::NonZeroU32,
     sync::{
         Arc, RwLock,
@@ -137,7 +137,7 @@ impl Default for KrakenSpotRawHttpClient {
 }
 
 impl Debug for KrakenSpotRawHttpClient {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(KrakenSpotRawHttpClient))
             .field("base_url", &self.base_url)
             .field("has_credentials", &self.credential.is_some())
@@ -353,7 +353,7 @@ impl KrakenSpotRawHttpClient {
 
                 let final_body = if authenticate {
                     let nonce = self.generate_nonce();
-                    tracing::debug!("Generated nonce {nonce} for {endpoint}");
+                    log::debug!("Generated nonce {nonce} for {endpoint}");
 
                     let params: HashMap<String, String> = if let Some(ref body_bytes) = body {
                         let body_str = std::str::from_utf8(body_bytes).map_err(|e| {
@@ -426,7 +426,7 @@ impl KrakenSpotRawHttpClient {
                     })?;
 
                 if !kraken_response.error.is_empty() {
-                    return Err(KrakenHttpError::ApiError(kraken_response.error.clone()));
+                    return Err(KrakenHttpError::ApiError(kraken_response.error));
                 }
 
                 Ok(kraken_response)
@@ -942,10 +942,6 @@ impl KrakenSpotRawHttpClient {
     }
 }
 
-// =============================================================================
-// Domain Client
-// =============================================================================
-
 /// High-level HTTP client for the Kraken Spot REST API.
 ///
 /// This client wraps the raw client and provides Nautilus domain types.
@@ -992,7 +988,7 @@ impl Default for KrakenSpotHttpClient {
 }
 
 impl Debug for KrakenSpotHttpClient {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(KrakenSpotHttpClient))
             .field("inner", &self.inner)
             .finish()
@@ -1185,7 +1181,7 @@ impl KrakenSpotHttpClient {
                 match parse_spot_instrument(pair_name, definition, ts_init, ts_init) {
                     Ok(instrument) => Some(instrument),
                     Err(e) => {
-                        tracing::warn!("Failed to parse instrument {pair_name}: {e}");
+                        log::warn!("Failed to parse instrument {pair_name}: {e}");
                         None
                     }
                 }
@@ -1239,7 +1235,7 @@ impl KrakenSpotHttpClient {
                         }
                     }
                     Err(e) => {
-                        tracing::warn!("Failed to parse trade tick: {e}");
+                        log::warn!("Failed to parse trade tick: {e}");
                     }
                 }
             }
@@ -1284,7 +1280,7 @@ impl KrakenSpotHttpClient {
             for ohlc_array in ohlc_arrays {
                 if ohlc_array.len() < 8 {
                     let len = ohlc_array.len();
-                    tracing::warn!("OHLC array too short: {len}");
+                    log::warn!("OHLC array too short: {len}");
                     continue;
                 }
 
@@ -1315,7 +1311,7 @@ impl KrakenSpotHttpClient {
                         }
                     }
                     Err(e) => {
-                        tracing::warn!("Failed to parse bar: {e}");
+                        log::warn!("Failed to parse bar: {e}");
                     }
                 }
             }
@@ -1405,7 +1401,7 @@ impl KrakenSpotHttpClient {
                 match parse_order_status_report(order_id, order, &instrument, account_id, ts_init) {
                     Ok(report) => all_reports.push(report),
                     Err(e) => {
-                        tracing::warn!("Failed to parse order {order_id}: {e}");
+                        log::warn!("Failed to parse order {order_id}: {e}");
                     }
                 }
             }
@@ -1454,7 +1450,7 @@ impl KrakenSpotHttpClient {
                     ) {
                         Ok(report) => all_reports.push(report),
                         Err(e) => {
-                            tracing::warn!("Failed to parse order {order_id}: {e}");
+                            log::warn!("Failed to parse order {order_id}: {e}");
                         }
                     }
                 }
@@ -1508,7 +1504,7 @@ impl KrakenSpotHttpClient {
                     match parse_fill_report(trade_id, trade, &instrument, account_id, ts_init) {
                         Ok(report) => all_reports.push(report),
                         Err(e) => {
-                            tracing::warn!("Failed to parse trade {trade_id}: {e}");
+                            log::warn!("Failed to parse trade {trade_id}: {e}");
                         }
                     }
                 }
@@ -1551,7 +1547,7 @@ impl KrakenSpotHttpClient {
         let ts_init = self.generate_ts_init();
         let mut wallet_by_coin: HashMap<Ustr, f64> = HashMap::new();
 
-        for (currency_code, amount_str) in balances_raw.iter() {
+        for (currency_code, amount_str) in &balances_raw {
             let balance = match amount_str.parse::<f64>() {
                 Ok(b) => b,
                 Err(_) => continue,
@@ -1629,7 +1625,7 @@ impl KrakenSpotHttpClient {
                     continue;
                 }
 
-                tracing::debug!(
+                log::debug!(
                     "Spot position: {} {} (quote: {})",
                     quantity,
                     base_currency.code,
@@ -1720,7 +1716,7 @@ impl KrakenSpotHttpClient {
         }
 
         if reduce_only {
-            tracing::warn!("reduce_only is not supported by Kraken Spot API, ignoring");
+            log::warn!("reduce_only is not supported by Kraken Spot API, ignoring");
         }
 
         let mut builder = KrakenSpotAddOrderParamsBuilder::default();

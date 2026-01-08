@@ -19,11 +19,6 @@
 
 #define DEPTH10_LEN 10
 
-/**
- * The maximum length of ASCII characters for a `TradeId` string value (including null terminator).
- */
-#define TRADE_ID_LEN 37
-
 #if defined(HIGH_PRECISION)
 /**
  * The maximum fixed-point precision.
@@ -1216,10 +1211,7 @@ typedef struct QuoteTick_t {
  * Maximum length is 36 characters.
  */
 typedef struct TradeId_t {
-    /**
-     * The trade match ID value as a fixed-length C string byte array (includes null terminator).
-     */
-    uint8_t value[TRADE_ID_LEN];
+    StackStr _0;
 } TradeId_t;
 
 /**
@@ -3152,6 +3144,11 @@ void orderbook_update_quote_tick(struct OrderBook_API *book, const struct QuoteT
 void orderbook_update_trade_tick(struct OrderBook_API *book, const struct TradeTick_t *trade);
 
 CVec orderbook_simulate_fills(const struct OrderBook_API *book, struct BookOrder_t order);
+
+CVec orderbook_get_all_crossed_levels(const struct OrderBook_API *book,
+                                      enum OrderSide order_side,
+                                      struct Price_t price,
+                                      uint8_t size_precision);
 
 uint8_t orderbook_check_integrity(const struct OrderBook_API *book);
 

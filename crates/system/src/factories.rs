@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,9 +16,11 @@
 use std::{any::Any, cell::RefCell, fmt::Debug, rc::Rc};
 
 use ahash::AHashMap;
-use nautilus_common::{cache::Cache, clock::Clock};
-use nautilus_data::client::DataClient;
-use nautilus_execution::client::ExecutionClient;
+use nautilus_common::{
+    cache::Cache,
+    clients::{DataClient, ExecutionClient},
+    clock::Clock,
+};
 
 /// Configuration for creating client instances.
 ///

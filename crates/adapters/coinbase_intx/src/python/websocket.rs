@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -43,7 +43,9 @@
 
 use futures_util::StreamExt;
 use nautilus_common::live::get_runtime;
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::python::{
+    IntoPyObjectNautilusExt, call_python, to_pyruntime_err, to_pyvalue_err,
+};
 use nautilus_model::{
     data::BarType,
     identifiers::InstrumentId,
@@ -441,11 +443,5 @@ impl CoinbaseIntxWebSocketClient {
             }
             Ok(())
         })
-    }
-}
-
-pub fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
-    if let Err(e) = callback.call1(py, (py_obj,)) {
-        tracing::error!("Error calling Python: {e}");
     }
 }

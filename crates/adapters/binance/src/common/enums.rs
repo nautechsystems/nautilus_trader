@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,6 +15,9 @@
 
 //! Binance enumeration types for product types and environments.
 
+use std::fmt::Display;
+
+use nautilus_model::enums::{OrderSide, TimeInForce};
 use serde::{Deserialize, Serialize};
 
 /// Binance product type identifier.
@@ -23,6 +26,10 @@ use serde::{Deserialize, Serialize};
 /// has distinct trading rules and instrument specifications.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", eq)
+)]
 pub enum BinanceProductType {
     /// Spot trading (api.binance.com).
     #[default]
@@ -93,7 +100,7 @@ impl BinanceProductType {
     }
 }
 
-impl std::fmt::Display for BinanceProductType {
+impl Display for BinanceProductType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
     }
@@ -101,6 +108,10 @@ impl std::fmt::Display for BinanceProductType {
 
 /// Binance environment type.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", eq)
+)]
 pub enum BinanceEnvironment {
     /// Production/mainnet environment.
     #[default]
@@ -125,6 +136,18 @@ pub enum BinanceSide {
     Buy,
     /// Sell side.
     Sell,
+}
+
+impl TryFrom<OrderSide> for BinanceSide {
+    type Error = anyhow::Error;
+
+    fn try_from(value: OrderSide) -> Result<Self, Self::Error> {
+        match value {
+            OrderSide::Buy => Ok(Self::Buy),
+            OrderSide::Sell => Ok(Self::Sell),
+            _ => anyhow::bail!("Unsupported `OrderSide` for Binance: {value:?}"),
+        }
+    }
 }
 
 /// Position side for dual-side position mode.
@@ -237,6 +260,20 @@ pub enum BinanceTimeInForce {
     /// Unknown or undocumented value.
     #[serde(other)]
     Unknown,
+}
+
+impl TryFrom<TimeInForce> for BinanceTimeInForce {
+    type Error = anyhow::Error;
+
+    fn try_from(value: TimeInForce) -> Result<Self, Self::Error> {
+        match value {
+            TimeInForce::Gtc => Ok(Self::Gtc),
+            TimeInForce::Ioc => Ok(Self::Ioc),
+            TimeInForce::Fok => Ok(Self::Fok),
+            TimeInForce::Gtd => Ok(Self::Gtd),
+            _ => anyhow::bail!("Unsupported `TimeInForce` for Binance: {value:?}"),
+        }
+    }
 }
 
 /// Income type for account income history.
@@ -352,6 +389,74 @@ pub enum BinanceContractStatus {
     Unknown,
 }
 
+/// WebSocket stream event types.
+///
+/// These are the "e" field values in WebSocket JSON messages.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BinanceWsEventType {
+    /// Aggregate trade event.
+    AggTrade,
+    /// Individual trade event.
+    Trade,
+    /// Book ticker (best bid/ask) event.
+    BookTicker,
+    /// Depth update (order book delta) event.
+    DepthUpdate,
+    /// Mark price update event.
+    MarkPriceUpdate,
+    /// Kline/candlestick event.
+    Kline,
+    /// Forced liquidation order event.
+    ForceOrder,
+    /// 24-hour rolling ticker event.
+    #[serde(rename = "24hrTicker")]
+    Ticker24Hr,
+    /// 24-hour rolling mini ticker event.
+    #[serde(rename = "24hrMiniTicker")]
+    MiniTicker24Hr,
+    /// Unknown or undocumented event type.
+    #[serde(other)]
+    Unknown,
+}
+
+impl BinanceWsEventType {
+    /// Returns the wire format string for this event type.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AggTrade => "aggTrade",
+            Self::Trade => "trade",
+            Self::BookTicker => "bookTicker",
+            Self::DepthUpdate => "depthUpdate",
+            Self::MarkPriceUpdate => "markPriceUpdate",
+            Self::Kline => "kline",
+            Self::ForceOrder => "forceOrder",
+            Self::Ticker24Hr => "24hrTicker",
+            Self::MiniTicker24Hr => "24hrMiniTicker",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+impl Display for BinanceWsEventType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+/// WebSocket request method (operation type).
+///
+/// Used for subscription requests on both Spot and Futures WebSocket APIs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum BinanceWsMethod {
+    /// Subscribe to streams.
+    Subscribe,
+    /// Unsubscribe from streams.
+    Unsubscribe,
+}
+
 /// Filter type identifiers returned in exchange info.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -377,11 +482,108 @@ pub enum BinanceFilterType {
     Unknown,
 }
 
-impl std::fmt::Display for BinanceEnvironment {
+impl Display for BinanceEnvironment {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Mainnet => write!(f, "Mainnet"),
             Self::Testnet => write!(f, "Testnet"),
+        }
+    }
+}
+
+/// Rate limit type for API request quotas.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum BinanceRateLimitType {
+    RequestWeight,
+    Orders,
+}
+
+/// Rate limit time interval.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum BinanceRateLimitInterval {
+    Second,
+    Minute,
+    Day,
+}
+
+/// Kline (candlestick) interval.
+///
+/// # References
+/// - <https://developers.binance.com/docs/binance-spot-api-docs/rest-api/market-data-endpoints>
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum BinanceKlineInterval {
+    /// 1 second (only for spot).
+    #[serde(rename = "1s")]
+    Second1,
+    /// 1 minute.
+    #[default]
+    #[serde(rename = "1m")]
+    Minute1,
+    /// 3 minutes.
+    #[serde(rename = "3m")]
+    Minute3,
+    /// 5 minutes.
+    #[serde(rename = "5m")]
+    Minute5,
+    /// 15 minutes.
+    #[serde(rename = "15m")]
+    Minute15,
+    /// 30 minutes.
+    #[serde(rename = "30m")]
+    Minute30,
+    /// 1 hour.
+    #[serde(rename = "1h")]
+    Hour1,
+    /// 2 hours.
+    #[serde(rename = "2h")]
+    Hour2,
+    /// 4 hours.
+    #[serde(rename = "4h")]
+    Hour4,
+    /// 6 hours.
+    #[serde(rename = "6h")]
+    Hour6,
+    /// 8 hours.
+    #[serde(rename = "8h")]
+    Hour8,
+    /// 12 hours.
+    #[serde(rename = "12h")]
+    Hour12,
+    /// 1 day.
+    #[serde(rename = "1d")]
+    Day1,
+    /// 3 days.
+    #[serde(rename = "3d")]
+    Day3,
+    /// 1 week.
+    #[serde(rename = "1w")]
+    Week1,
+    /// 1 month.
+    #[serde(rename = "1M")]
+    Month1,
+}
+
+impl BinanceKlineInterval {
+    /// Returns the string representation used by Binance API.
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Second1 => "1s",
+            Self::Minute1 => "1m",
+            Self::Minute3 => "3m",
+            Self::Minute5 => "5m",
+            Self::Minute15 => "15m",
+            Self::Minute30 => "30m",
+            Self::Hour1 => "1h",
+            Self::Hour2 => "2h",
+            Self::Hour4 => "4h",
+            Self::Hour6 => "6h",
+            Self::Hour8 => "8h",
+            Self::Hour12 => "12h",
+            Self::Day1 => "1d",
+            Self::Day3 => "3d",
+            Self::Week1 => "1w",
+            Self::Month1 => "1M",
         }
     }
 }

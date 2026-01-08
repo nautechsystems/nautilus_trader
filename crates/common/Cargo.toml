@@ -68,9 +68,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
 sysinfo = { workspace = true }
-thousands = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 ustr = { workspace = true }
 
 alloy-primitives = { workspace = true, optional = true }
@@ -83,6 +80,7 @@ tokio = { workspace = true, optional = true }
 [dev-dependencies]
 capnp = { workspace = true }
 criterion = { workspace = true }
+futures = { workspace = true, features = ["executor"] }
 proptest = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }

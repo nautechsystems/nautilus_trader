@@ -8,6 +8,7 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 
 ## Composite actions (`.github/actions`)
 
+- **cargo-tool-install**: installs cargo tools (cargo-deny, cargo-vet) with caching.
 - **common-setup**: prepares the environment (OS packages, Rust toolchain, Python, sccache, pre-commit).
 - **common-test-data**: caches large test data under `tests/test_data/large`.
 - **common-wheel-build**: builds and installs Python wheels across Linux, macOS, and Windows for multiple Python versions.
@@ -47,7 +48,7 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 
 - **Build attestations**: All published artifacts include cryptographic SLSA build provenance attestations, linking each artifact to a specific commit SHA. Verify via `gh attestation verify`.
 - **Immutable action pinning**: All third-party GitHub Actions are pinned to specific commit SHAs.
-- **Docker image pinning**: Base images in Dockerfiles are pinned to SHA256 digests to prevent supply-chain attacks via tag mutation.
+- **Docker image pinning**: Base images in Dockerfiles and service containers in workflows are pinned to SHA256 digests to prevent supply-chain attacks via tag mutation.
 - **Caching**: Caches for sccache, pip/site-packages, pre-commit, and test data speed up workflows while preserving hermetic (reproducible) builds.
 
 ### Runtime hardening

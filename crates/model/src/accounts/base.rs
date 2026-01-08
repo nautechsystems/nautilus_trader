@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -181,6 +181,23 @@ impl BaseAccount {
 
         self.commissions
             .insert(currency, total_commissions + commission.as_f64());
+    }
+
+    /// Returns the total commission for the specified currency.
+    #[must_use]
+    pub fn commission(&self, currency: &Currency) -> Option<Money> {
+        self.commissions
+            .get(currency)
+            .map(|&amount| Money::new(amount, *currency))
+    }
+
+    /// Returns a map of all commissions by currency.
+    #[must_use]
+    pub fn commissions(&self) -> AHashMap<Currency, Money> {
+        self.commissions
+            .iter()
+            .map(|(currency, &amount)| (*currency, Money::new(amount, *currency)))
+            .collect()
     }
 
     pub fn base_apply(&mut self, event: AccountState) {

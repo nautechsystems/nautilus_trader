@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,7 +17,7 @@
 
 use std::{
     ffi::CStr,
-    fmt::{Debug, Display, Formatter},
+    fmt::{Debug, Display},
     hash::Hash,
     io::{Cursor, Write},
     str::FromStr,
@@ -125,6 +125,16 @@ impl UUID4 {
         );
     }
 
+    fn try_validate_v4(uuid: &Uuid) -> Result<(), String> {
+        if uuid.get_version() != Some(uuid::Version::Random) {
+            return Err("UUID is not version 4".to_string());
+        }
+        if uuid.get_variant() != uuid::Variant::RFC4122 {
+            return Err("UUID is not RFC 4122 variant".to_string());
+        }
+        Ok(())
+    }
+
     fn from_validated_uuid(uuid: &Uuid) -> Self {
         let mut value = [0; UUID4_LEN];
         let uuid_str = uuid.to_string();
@@ -135,18 +145,18 @@ impl UUID4 {
 }
 
 impl FromStr for UUID4 {
-    type Err = uuid::Error;
+    type Err = String;
 
     /// Attempts to create a [`UUID4`] from a string representation.
     ///
     /// The string should be a valid UUID in the standard format (e.g., "2d89666b-1a1e-4a75-b193-4eb3b454c757").
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the `value` is not a valid UUID version 4 RFC 4122.
+    /// Returns an error if the `value` is not a valid UUID version 4 RFC 4122.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let uuid = Uuid::try_parse(value)?;
-        Self::validate_v4(&uuid);
+        let uuid = Uuid::try_parse(value).map_err(|e| e.to_string())?;
+        Self::try_validate_v4(&uuid)?;
         Ok(Self::from_validated_uuid(&uuid))
     }
 }
@@ -204,13 +214,13 @@ impl Default for UUID4 {
 }
 
 impl Debug for UUID4 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}({})", stringify!(UUID4), self)
     }
 }
 
 impl Display for UUID4 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_cstr().to_string_lossy())
     }
 }
@@ -230,8 +240,7 @@ impl<'de> Deserialize<'de> for UUID4 {
         D: Deserializer<'de>,
     {
         let uuid4_str: &str = Deserialize::deserialize(deserializer)?;
-        let uuid4: Self = uuid4_str.into();
-        Ok(uuid4)
+        uuid4_str.parse().map_err(serde::de::Error::custom)
     }
 }
 
@@ -459,5 +468,14 @@ mod tests {
         let uuid2 = UUID4::from(Uuid::from_bytes(bytes));
 
         assert_eq!(uuid1, uuid2);
+    }
+
+    #[rstest]
+    #[case("\"not-a-uuid\"")] // Invalid format
+    #[case("\"6ba7b810-9dad-11d1-80b4-00c04fd430c8\"")] // v1 UUID (wrong version)
+    #[case("\"\"")] // Empty string
+    fn test_deserialize_invalid_uuid_returns_error(#[case] json: &str) {
+        let result: Result<UUID4, _> = serde_json::from_str(json);
+        assert!(result.is_err());
     }
 }

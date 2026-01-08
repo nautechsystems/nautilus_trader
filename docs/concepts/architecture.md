@@ -69,7 +69,7 @@ graceful shutdown paths.
 Key principles:
 
 - **Unified recovery path** - Startup and crash recovery share the same code path, ensuring it is well-tested.
-- **Externalized state** - Critical state is persisted externally (database, message bus) so crashes do not lose data.
+- **Externalized state** - Critical state is meant to be persisted externally when configured, reducing data-loss risk; durability depends on the backing store.
 - **Fast restart** - The system is designed to restart quickly after a crash, minimizing downtime.
 - **Idempotent operations** - Operations are designed to be safely retried after restart.
 - **Fail-fast for unrecoverable errors** - Data corruption or invariant violations trigger immediate termination rather than attempting to continue in a compromised state.
@@ -116,12 +116,12 @@ can cascade through the system, resulting in:
 - Backtests producing misleading results.
 - Silent financial losses.
 
-By crashing immediately on invalid data, NautilusTrader ensures:
+By crashing immediately on invalid data, NautilusTrader aims to provide:
 
-1. **No silent corruption** - Invalid data never propagates through the system.
+1. **No silent corruption** - The fail-fast policy is intended to prevent invalid data from propagating; this relies on checks covering the inputs.
 2. **Immediate feedback** - Issues are discovered during development and testing, not in production.
 3. **Audit trail** - Crash logs clearly identify the source of invalid data.
-4. **Deterministic behavior** - The same invalid input always produces the same failure.
+4. **Deterministic behavior** - With deterministic ordering and configuration, the same invalid input should trigger the same failure; nondeterministic sources can vary outcomes.
 
 #### When fail-fast applies
 
@@ -152,7 +152,7 @@ let total_ns = timestamp1.checked_add(timestamp2)?; // Returns Option<UnixNanos>
 ```
 
 This policy is implemented throughout the core types (`UnixNanos`, `Price`, `Quantity`, etc.)
-and ensures that NautilusTrader maintains the highest standards of data correctness for production trading.
+and helps NautilusTrader maintain strong data correctness for production trading.
 
 In production deployments, the system is typically configured with `panic = abort` in release builds,
 ensuring that any panic results in a clean process termination that can be handled by process supervisors
@@ -426,8 +426,8 @@ Within a node, the *kernel* consumes and dispatches messages on a single thread.
 - Risk engine checks and execution coordination.
 - Cache reads and writes.
 
-This single-threaded core ensures deterministic event processing and maintains backtest-live parity—strategies
-behave identically whether running against historical data or live markets. Components consume messages
+This single-threaded core provides deterministic event ordering and helps maintain backtest-live parity,
+though live inputs and latency can still cause behavioral differences. Components consume messages
 synchronously in a pattern *similar* to the [actor model](https://en.wikipedia.org/wiki/Actor_model).
 
 :::note
@@ -494,7 +494,7 @@ flowchart TB
     subgraph trader["nautilus_trader<br/>Python / Cython"]
     end
 
-    subgraph core["nautilus_core<br/>Rust"]
+    subgraph core["crates<br/>Rust"]
     end
 
     trader -->|"C API"| core
@@ -591,8 +591,10 @@ Rust or Cython to be installed at runtime.
 
 The design of the platform prioritizes software correctness and safety at the highest level.
 
-The Rust codebase in `nautilus_core` is always type safe and memory safe as guaranteed by the `rustc` compiler,
-and so is *correct by construction* (unless explicitly marked `unsafe`, see the Rust section of the [Developer Guide](../developer_guide/rust.md)).
+The Rust codebase under `crates/` relies on the `rustc` compiler's guarantees for safe code.
+Any `unsafe` blocks are explicit opt-outs where we must uphold the required invariants ourselves
+(see the Rust section of the [Developer Guide](../developer_guide/rust.md)); overall memory and type safety
+depend on those invariants holding.
 
 Cython provides type safety at the C level at both compile time, and runtime:
 

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,16 +16,22 @@
 //! Binance SBE (Simple Binary Encoding) codec implementations.
 //!
 //! This module contains:
-//! - `spot`: Generated codecs for the Spot REST/WebSocket API (schema 3:1)
-//! - `stream`: Hand-written codecs for market data streams (schema 1:0)
+//! - `cursor`: Zero-copy byte cursor for SBE decoding.
+//! - `error`: Unified decode error type.
+//! - `spot`: Generated codecs for the Spot REST/WebSocket API (schema 3:2).
+//! - `stream`: Hand-written codecs for market data streams (schema 1:0).
 //!
 //! The spot codecs are generated from Binance's official SBE schema using
 //! Real Logic's SBE generator. The stream codecs are hand-written for the
 //! 4 market data stream message types.
 
+pub mod cursor;
+pub mod error;
 pub mod spot;
 pub mod stream;
 
+pub use cursor::SbeCursor;
+pub use error::{MAX_GROUP_SIZE, SbeDecodeError};
 pub use spot::{
     ReadBuf, SBE_SCHEMA_ID, SBE_SCHEMA_VERSION, SbeErr, SbeResult,
     message_header_codec::MessageHeaderDecoder,

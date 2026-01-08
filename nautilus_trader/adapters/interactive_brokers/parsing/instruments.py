@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -235,7 +235,7 @@ VENUES_FUT = [
 VENUES_CASH = ["IDEALPRO"]
 VENUES_CRYPTO = ["PAXOS"]
 VENUES_OPT = ["SMART"]
-VENUES_CFD = ["IBCFD"] # self named, in fact mapping to "SMART" when parsing
+VENUES_CFD = ["IBCFD"]  # self named, in fact mapping to "SMART" when parsing
 VENUES_CMDTY = ["IBCMDTY"]  # self named, in fact mapping to "SMART" when parsing
 
 RE_CASH = re.compile(r"^(?P<symbol>[A-Z]{3})\/(?P<currency>[A-Z]{3})$")  # "EUR/USD"
@@ -314,7 +314,10 @@ def parse_instrument(  # noqa: C901
     elif security_type == "IND":
         return parse_index_contract(contract_details=contract_details, instrument_id=instrument_id)
     elif security_type in ("FUT", "CONTFUT"):
-        return parse_futures_contract(contract_details=contract_details, instrument_id=instrument_id)
+        return parse_futures_contract(
+            contract_details=contract_details,
+            instrument_id=instrument_id,
+        )
     elif security_type in ("OPT", "FOP"):
         return parse_option_contract(contract_details=contract_details, instrument_id=instrument_id)
     elif security_type == "CASH":
@@ -324,12 +327,21 @@ def parse_instrument(  # noqa: C901
     elif security_type == "CFD":
         return parse_cfd_contract(contract_details=contract_details, instrument_id=instrument_id)
     elif security_type == "CMDTY":
-        return parse_commodity_contract(contract_details=contract_details, instrument_id=instrument_id)
+        return parse_commodity_contract(
+            contract_details=contract_details,
+            instrument_id=instrument_id,
+        )
     elif security_type == "BAG":
         if _has_futures(contract_details.contract, contract_details_map):
-            return parse_futures_spread(contract_details=contract_details, instrument_id=instrument_id)
+            return parse_futures_spread(
+                contract_details=contract_details,
+                instrument_id=instrument_id,
+            )
         else:
-            return parse_option_spread(contract_details=contract_details, instrument_id=instrument_id)
+            return parse_option_spread(
+                contract_details=contract_details,
+                instrument_id=instrument_id,
+            )
     else:
         raise ValueError(f"Unknown {security_type=}")
 
@@ -654,7 +666,9 @@ def parse_option_spread(
 
     # Determine asset class from underlying security type
     asset_class = (
-        sec_type_to_asset_class(contract_details.underSecType) if contract_details.underSecType else AssetClass.EQUITY
+        sec_type_to_asset_class(contract_details.underSecType)
+        if contract_details.underSecType
+        else AssetClass.EQUITY
     )
 
     # For options, the multiplier represents the lot size (e.g., 100 shares per contract)
@@ -662,7 +676,9 @@ def parse_option_spread(
 
     return OptionSpread(
         instrument_id=instrument_id,
-        raw_symbol=Symbol(contract_details.contract.localSymbol or contract_details.contract.symbol),
+        raw_symbol=Symbol(
+            contract_details.contract.localSymbol or contract_details.contract.symbol,
+        ),
         asset_class=asset_class,
         currency=Currency.from_str(contract_details.contract.currency),
         price_precision=price_precision,
@@ -815,7 +831,9 @@ def parse_futures_spread(
 
     # Determine asset class from underlying security type
     asset_class = (
-        sec_type_to_asset_class(contract_details.underSecType) if contract_details.underSecType else AssetClass.INDEX
+        sec_type_to_asset_class(contract_details.underSecType)
+        if contract_details.underSecType
+        else AssetClass.INDEX
     )
 
     # For futures, the multiplier is typically 1 or the contract multiplier
@@ -823,7 +841,9 @@ def parse_futures_spread(
 
     return FuturesSpread(
         instrument_id=instrument_id,
-        raw_symbol=Symbol(contract_details.contract.localSymbol or contract_details.contract.symbol),
+        raw_symbol=Symbol(
+            contract_details.contract.localSymbol or contract_details.contract.symbol,
+        ),
         asset_class=asset_class,
         currency=Currency.from_str(contract_details.contract.currency),
         price_precision=price_precision,
@@ -933,7 +953,10 @@ def parse_futures_spread_instrument_id(
             info=info,
         )
     except Exception as e:
-        raise ValueError(f"Failed to parse futures spread instrument ID {instrument_id}: {e}") from e
+        raise ValueError(
+            f"Failed to parse futures spread instrument ID {instrument_id}: {e}",
+        ) from e
+
 
 def contract_details_to_dict(contract_details: IBContractDetails) -> dict:
     dict_details = contract_details.dict().copy()
@@ -1027,7 +1050,9 @@ def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too comple
         symbol = contract.symbol
     elif security_type == "FUT" and (m := RE_FUT_ORIGINAL.match(contract.localSymbol)):
         symbol = f"{m['symbol']}{m['month']}{m['year']}"
-    elif (security_type == "FUT" and (m := RE_FUT2_ORIGINAL.match(contract.localSymbol))) or (security_type == "FUT" and (m := RE_FUT3_ORIGINAL.match(contract.localSymbol))):
+    elif (security_type == "FUT" and (m := RE_FUT2_ORIGINAL.match(contract.localSymbol))) or (
+        security_type == "FUT" and (m := RE_FUT3_ORIGINAL.match(contract.localSymbol))
+    ):
         symbol = f"{m['symbol']}{FUTURES_MONTH_TO_CODE[m['month']]}{m['year'][-1]}"
     elif security_type == "FOP" and (m := RE_FOP_ORIGINAL.match(contract.localSymbol)):
         symbol = f"{m['symbol']}{m['month']}{m['year']} {m['right']}{m['strike']}"

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -565,6 +565,7 @@ def calculate_reconciliation_price(
 
     return instrument.make_price(result)
 
+
 def adjust_fills_for_partial_window_single(
     mass_status: ExecutionMassStatus,
     instrument: Instrument,
@@ -580,7 +581,10 @@ def adjust_fills_for_partial_window(
     mass_status: ExecutionMassStatus,
     instruments: list[Instrument],
     logger: Logger | None = None,
-) -> dict[InstrumentId, tuple[dict[VenueOrderId, OrderStatusReport], dict[VenueOrderId, list[FillReport]]]]:
+) -> dict[
+    InstrumentId,
+    tuple[dict[VenueOrderId, OrderStatusReport], dict[VenueOrderId, list[FillReport]]],
+]:
     """
     Adjust fills to account for incomplete position lifecycle at window start.
 
@@ -620,7 +624,10 @@ def adjust_fills_for_partial_window(
     pyo3_mass_status = mass_status.to_pyo3()
 
     pyo3_instruments = [transform_instrument_to_pyo3(instrument) for instrument in instruments]
-    results: dict[InstrumentId, tuple[dict[VenueOrderId, OrderStatusReport], dict[VenueOrderId, list[FillReport]]]] = {}
+    results: dict[
+        InstrumentId,
+        tuple[dict[VenueOrderId, OrderStatusReport], dict[VenueOrderId, list[FillReport]]],
+    ] = {}
 
     for instrument, pyo3_instrument in zip(instruments, pyo3_instruments, strict=False):
         assert instrument.id.value == pyo3_instrument.id.value
@@ -648,7 +655,9 @@ def adjust_fills_for_partial_window(
             fills[venue_order_id] = reports
 
             if logger:
-                logger.debug(f"Adjusted fills for {instrument.id}: {len(orders)} orders, {len(fills)} fills")
+                logger.debug(
+                    f"Adjusted fills for {instrument.id}: {len(orders)} orders, {len(fills)} fills",
+                )
 
         results[instrument.id] = (orders, fills)
 

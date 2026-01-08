@@ -1,0 +1,13 @@
+{
+  "t": "c",
+  "symbol": "BTCUSD-PERP",
+  "ts": 123456789,
+  "open": "49500.00",
+  "low": "49000.00",
+  "high": "50500.00",
+  "close": "50000.00",
+  "volume": 5000,
+  "buy_volume": 3000,
+  "sell_volume": 2000,
+  "width": "1m"
+}

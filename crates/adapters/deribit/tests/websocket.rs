@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -154,6 +154,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
     let book_delta_payload = load_json("ws_book_delta.json");
     let ticker_payload = load_json("ws_ticker.json");
     let quote_payload = load_json("ws_quote.json");
+    let chart_payload = load_json("ws_chart.json");
 
     while let Some(message) = socket.recv().await {
         let Ok(message) = message else { break };
@@ -243,6 +244,8 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                     Some(&ticker_payload)
                                 } else if channel.starts_with("quote.") {
                                     Some(&quote_payload)
+                                } else if channel.starts_with("chart.trades.") {
+                                    Some(&chart_payload)
                                 } else {
                                     None
                                 };
@@ -495,10 +498,6 @@ fn create_test_client(ws_url: &str) -> DeribitWebSocketClient {
     .expect("failed to construct deribit websocket client")
 }
 
-// ================================================================================================
-// Connection Tests
-// ================================================================================================
-
 #[tokio::test]
 async fn test_websocket_connection() {
     let state = Arc::new(TestServerState::default());
@@ -588,10 +587,6 @@ async fn test_is_active_and_is_closed_states() {
 
     assert!(client.is_closed());
 }
-
-// ================================================================================================
-// Subscription Tests
-// ================================================================================================
 
 #[tokio::test]
 async fn test_trades_subscription_flow() {
@@ -818,6 +813,62 @@ async fn test_quote_subscription_flow() {
 }
 
 #[tokio::test]
+async fn test_chart_subscription_flow() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/api/v2");
+
+    let instruments = load_test_instruments();
+
+    let mut client = create_test_client(&ws_url);
+    client.cache_instruments(instruments);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+    client
+        .subscribe_chart(instrument_id, "1")
+        .await
+        .expect("subscribe failed");
+
+    // Verify subscription event recorded
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscription_events()
+                    .await
+                    .iter()
+                    .any(|(ch, ok)| ch.starts_with("chart.trades.") && *ok)
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    // Receive bar data from stream
+    let stream = client.stream();
+    pin_mut!(stream);
+    let message = tokio::time::timeout(Duration::from_secs(2), stream.next())
+        .await
+        .expect("no message received")
+        .expect("stream ended unexpectedly");
+
+    match message {
+        NautilusWsMessage::Data(data) => {
+            assert!(!data.is_empty(), "expected bar payload");
+        }
+        other => panic!("unexpected message: {other:?}"),
+    }
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
 async fn test_multiple_subscriptions() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
@@ -927,10 +978,6 @@ async fn test_unsubscribe() {
     client.close().await.expect("close failed");
 }
 
-// ================================================================================================
-// Heartbeat Tests
-// ================================================================================================
-
 #[tokio::test]
 async fn test_heartbeat_enable() {
     let state = Arc::new(TestServerState::default());
@@ -1026,10 +1073,6 @@ async fn test_heartbeat_test_request_response() {
     client.close().await.expect("close failed");
 }
 
-// ================================================================================================
-// Error Handling Tests
-// ================================================================================================
-
 #[tokio::test]
 async fn test_subscription_failure_handling() {
     let state = Arc::new(TestServerState::default());
@@ -1075,10 +1118,6 @@ async fn test_subscription_failure_handling() {
 
     client.close().await.expect("close failed");
 }
-
-// ================================================================================================
-// Reconnection Tests
-// ================================================================================================
 
 #[tokio::test]
 async fn test_reconnection_after_disconnect() {
@@ -1137,10 +1176,6 @@ async fn test_reconnection_after_disconnect() {
 
     client.close().await.expect("close failed");
 }
-
-// ================================================================================================
-// Instrument Cache Tests
-// ================================================================================================
 
 #[tokio::test]
 async fn test_instrument_cache_usage() {
@@ -1458,10 +1493,6 @@ async fn test_100ms_subscription_without_authentication() {
 
     client.close().await.expect("close failed");
 }
-
-// ================================================================================================
-// Reconnection with Authentication Tests
-// ================================================================================================
 
 #[tokio::test]
 async fn test_reconnection_with_reauthentication() {

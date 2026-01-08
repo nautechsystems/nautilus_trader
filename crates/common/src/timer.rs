@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -137,7 +137,7 @@ impl Ord for ScheduledTimeEvent {
 /// - `Rust`: Thread-safe callbacks using `Arc`. Use when the closure is `Send + Sync`.
 /// - `RustLocal`: Single-threaded callbacks using `Rc`. Use when capturing `Rc<RefCell<...>>`.
 ///
-/// # Choosing between `Rust` and `RustLocal`
+/// # Choosing Between `Rust` and `RustLocal`
 ///
 /// Use `Rust` (thread-safe) when:
 /// - The callback doesn't capture `Rc<RefCell<...>>` or other non-`Send` types.
@@ -151,7 +151,7 @@ impl Ord for ScheduledTimeEvent {
 /// with `LiveClock` because callbacks are sent through a channel and executed on the
 /// originating thread's event loop - they never actually cross thread boundaries.
 ///
-/// # Automatic conversion
+/// # Automatic Conversion
 ///
 /// - Closures that are `Fn + Send + Sync + 'static` automatically convert to `Rust`.
 /// - `Rc<dyn Fn(TimeEvent)>` converts to `RustLocal`.
@@ -206,15 +206,15 @@ impl TimeEventCallback {
 
     /// Invokes the callback for the given `TimeEvent`.
     ///
-    /// # Panics
-    ///
-    /// Panics if the underlying Python callback invocation fails (e.g., raises an exception).
+    /// For Python callbacks, exceptions are logged as errors rather than panicking.
     pub fn call(&self, event: TimeEvent) {
         match self {
             #[cfg(feature = "python")]
             Self::Python(callback) => {
                 Python::attach(|py| {
-                    callback.call1(py, (event,)).unwrap();
+                    if let Err(e) = callback.call1(py, (event,)) {
+                        log::error!("Python time event callback raised exception: {e}");
+                    }
                 });
             }
             Self::Rust(callback) => callback(event),
@@ -252,11 +252,20 @@ impl From<Py<PyAny>> for TimeEventCallback {
 }
 
 // SAFETY: TimeEventCallback is Send + Sync with the following invariants:
+//
 // - Python variant: Py<PyAny> is inherently Send + Sync (GIL acquired when needed).
+//
 // - Rust variant: Arc<dyn Fn + Send + Sync> is inherently Send + Sync.
-// - RustLocal variant: Uses Rc<dyn Fn> which is NOT Send/Sync. This is safe because
-//   callbacks are never shared across threads - they are sent through a channel and
-//   executed on the originating thread's event loop.
+//
+// - RustLocal variant: Uses Rc<dyn Fn> which is NOT Send/Sync. This is safe because:
+//   1. RustLocal callbacks are created and executed on the same thread
+//   2. They are sent through a channel but execution happens on the originating thread's
+//      event loop (see LiveClock/TestClock usage patterns)
+//   3. The Rc is never cloned across thread boundaries
+//
+//   INVARIANT: RustLocal callbacks must only be called from the thread that created them.
+//   Violating this invariant causes undefined behavior (data races on Rc's reference count).
+//   Use the Rust variant (with Arc) if cross-thread execution is needed.
 #[allow(unsafe_code)]
 unsafe impl Send for TimeEventCallback {}
 #[allow(unsafe_code)]
@@ -268,15 +277,15 @@ unsafe impl Sync for TimeEventCallback {}
 ///
 /// `TimeEventHandler` associates a `TimeEvent` with a callback function that is triggered
 /// when the event's timestamp is reached.
-pub struct TimeEventHandlerV2 {
+pub struct TimeEventHandler {
     /// The time event.
     pub event: TimeEvent,
     /// The callable handler for the event.
     pub callback: TimeEventCallback,
 }
 
-impl TimeEventHandlerV2 {
-    /// Creates a new [`TimeEventHandlerV2`] instance.
+impl TimeEventHandler {
+    /// Creates a new [`TimeEventHandler`] instance.
     #[must_use]
     pub const fn new(event: TimeEvent, callback: TimeEventCallback) -> Self {
         Self { event, callback }
@@ -293,21 +302,21 @@ impl TimeEventHandlerV2 {
     }
 }
 
-impl PartialOrd for TimeEventHandlerV2 {
+impl PartialOrd for TimeEventHandler {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl PartialEq for TimeEventHandlerV2 {
+impl PartialEq for TimeEventHandler {
     fn eq(&self, other: &Self) -> bool {
         self.event.ts_event == other.event.ts_event
     }
 }
 
-impl Eq for TimeEventHandlerV2 {}
+impl Eq for TimeEventHandler {}
 
-impl Ord for TimeEventHandlerV2 {
+impl Ord for TimeEventHandler {
     fn cmp(&self, other: &Self) -> Ordering {
         self.event.ts_event.cmp(&other.event.ts_event)
     }
@@ -400,7 +409,8 @@ impl TestTimer {
     pub fn advance(&mut self, to_time_ns: UnixNanos) -> impl Iterator<Item = TimeEvent> + '_ {
         // Calculate how many events should fire up to and including to_time_ns
         let advances = if self.next_time_ns <= to_time_ns {
-            (to_time_ns.as_u64() - self.next_time_ns.as_u64()) / self.interval_ns.get() + 1
+            ((to_time_ns.as_u64() - self.next_time_ns.as_u64()) / self.interval_ns.get())
+                .saturating_add(1)
         } else {
             0
         };

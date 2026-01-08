@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -50,27 +50,21 @@ use nautilus_model::{
     identifiers::InstrumentId,
 };
 use tokio::{pin, signal};
-use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let log_level = env::var("LOG_LEVEL")
-        .unwrap_or_else(|_| "INFO".to_string())
-        .parse::<LevelFilter>()
-        .unwrap_or(LevelFilter::INFO);
-
-    tracing_subscriber::fmt().with_max_level(log_level).init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let args: Vec<String> = env::args().collect();
     let subscription_type = args.get(1).map_or("all", String::as_str);
     let symbol = args.get(2).map_or("BTC-USD", String::as_str);
     let testnet = args.get(3).is_none_or(|s| s == "testnet");
 
-    tracing::info!("Starting dYdX WebSocket test");
-    tracing::info!("Subscription type: {subscription_type}");
-    tracing::info!("Symbol: {symbol}");
-    tracing::info!("Testnet: {testnet}");
-    tracing::info!("");
+    log::info!("Starting dYdX WebSocket test");
+    log::info!("Subscription type: {subscription_type}");
+    log::info!("Symbol: {symbol}");
+    log::info!("Testnet: {testnet}");
+    log::info!("");
 
     let (http_url, ws_url) = if testnet {
         (
@@ -86,40 +80,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let is_testnet = http_url.contains("testnet") || ws_url.contains("testnet");
 
-    tracing::info!("Connecting to dYdX HTTP API: {http_url}");
-    tracing::info!("Connecting to dYdX WebSocket: {ws_url}");
-    tracing::info!(
+    log::info!("Connecting to dYdX HTTP API: {http_url}");
+    log::info!("Connecting to dYdX WebSocket: {ws_url}");
+    log::info!(
         "Environment: {}",
         if is_testnet { "TESTNET" } else { "MAINNET" }
     );
-    tracing::info!("");
+    log::info!("");
 
     let http_client = DydxHttpClient::new(Some(http_url), Some(30), None, is_testnet, None)?;
     let instruments = http_client.request_instruments(None, None, None).await?;
 
-    tracing::info!("Fetched {} instruments from HTTP", instruments.len());
+    log::info!("Fetched {} instruments from HTTP", instruments.len());
 
     let instrument_id = InstrumentId::from(format!("{symbol}-PERP.DYDX").as_str());
 
-    tracing::info!("Using instrument: {instrument_id}");
-    tracing::info!("");
+    log::info!("Using instrument: {instrument_id}");
+    log::info!("");
 
     let mut ws_client = DydxWebSocketClient::new_public(ws_url, Some(30));
     ws_client.cache_instruments(instruments);
 
     ws_client.connect().await?;
-    tracing::info!("WebSocket connected");
-    tracing::info!("");
+    log::info!("WebSocket connected");
+    log::info!("");
 
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     match subscription_type {
         "trades" => {
-            tracing::info!("Subscribing to trades for {instrument_id}");
+            log::info!("Subscribing to trades for {instrument_id}");
             ws_client.subscribe_trades(instrument_id).await?;
         }
         "orderbook" | "book" => {
-            tracing::info!("Subscribing to orderbook for {instrument_id}");
+            log::info!("Subscribing to orderbook for {instrument_id}");
             ws_client.subscribe_orderbook(instrument_id).await?;
         }
         "candles" | "bars" => {
@@ -134,27 +128,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             ws_client.send_command(HandlerCommand::RegisterBarType { topic, bar_type })?;
 
-            tracing::info!("Subscribing to 1-minute candles for {instrument_id}");
+            log::info!("Subscribing to 1-minute candles for {instrument_id}");
             ws_client.subscribe_candles(instrument_id, "1MIN").await?;
         }
         "all" => {
-            tracing::info!("Subscribing to all available data types for {instrument_id}");
-            tracing::info!("");
+            log::info!("Subscribing to all available data types for {instrument_id}");
+            log::info!("");
 
-            tracing::info!("- Subscribing to trades");
+            log::info!("- Subscribing to trades");
             if let Err(e) = ws_client.subscribe_trades(instrument_id).await {
-                tracing::error!("Failed to subscribe to trades: {e}");
+                log::error!("Failed to subscribe to trades: {e}");
             } else {
-                tracing::info!("  Trades subscription successful");
+                log::info!("  Trades subscription successful");
             }
 
             tokio::time::sleep(Duration::from_millis(100)).await;
 
-            tracing::info!("- Subscribing to orderbook");
+            log::info!("- Subscribing to orderbook");
             if let Err(e) = ws_client.subscribe_orderbook(instrument_id).await {
-                tracing::error!("Failed to subscribe to orderbook: {e}");
+                log::error!("Failed to subscribe to orderbook: {e}");
             } else {
-                tracing::info!("  Orderbook subscription successful");
+                log::info!("  Orderbook subscription successful");
             }
 
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -170,27 +164,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             ws_client.send_command(HandlerCommand::RegisterBarType { topic, bar_type })?;
 
-            tracing::info!("- Subscribing to 1-minute candles");
+            log::info!("- Subscribing to 1-minute candles");
             if let Err(e) = ws_client.subscribe_candles(instrument_id, "1MIN").await {
-                tracing::error!("Failed to subscribe to candles: {e}");
+                log::error!("Failed to subscribe to candles: {e}");
             } else {
-                tracing::info!("  Candles subscription successful");
+                log::info!("  Candles subscription successful");
             }
         }
         _ => {
-            tracing::error!("Unknown subscription type: {subscription_type}");
-            tracing::info!("Available types: trades, orderbook, candles, all");
+            log::error!("Unknown subscription type: {subscription_type}");
+            log::info!("Available types: trades, orderbook, candles, all");
             return Ok(());
         }
     }
 
-    tracing::info!("");
-    tracing::info!("Subscriptions completed, waiting for data...");
-    tracing::info!("Press CTRL+C to stop");
-    tracing::info!("");
+    log::info!("");
+    log::info!("Subscriptions completed, waiting for data...");
+    log::info!("Press CTRL+C to stop");
+    log::info!("");
 
     let Some(mut rx) = ws_client.take_receiver() else {
-        tracing::warn!("No inbound WebSocket receiver available; exiting");
+        log::warn!("No inbound WebSocket receiver available; exiting");
         return Ok(());
     };
 
@@ -203,7 +197,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         tokio::select! {
             _ = &mut sigint => {
-                tracing::info!("Received SIGINT, closing connection...");
+                log::info!("Received SIGINT, closing connection...");
                 should_close = true;
                 break;
             }
@@ -211,10 +205,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 match maybe_msg {
                     Some(msg) => {
                         message_count += 1;
-                        tracing::info!("[Message #{message_count}] {msg:?}");
+                        log::info!("[Message #{message_count}] {msg:?}");
                     }
                     None => {
-                        tracing::info!("WebSocket message stream closed");
+                        log::info!("WebSocket message stream closed");
                         break;
                     }
                 }
@@ -223,10 +217,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if should_close {
-        tracing::info!("");
-        tracing::info!("Total messages received: {message_count}");
+        log::info!("");
+        log::info!("Total messages received: {message_count}");
         ws_client.disconnect().await?;
-        tracing::info!("Connection closed successfully");
+        log::info!("Connection closed successfully");
     }
 
     Ok(())

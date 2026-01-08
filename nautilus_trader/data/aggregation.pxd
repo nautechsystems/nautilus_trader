@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -149,6 +149,7 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef readonly uint64_t interval_ns
     cdef readonly uint64_t next_close_ns
     cdef readonly uint64_t stored_open_ns
+    cdef readonly uint64_t first_close_ns
 
     cdef str _timer_name
     cdef bint _is_left_open
@@ -175,6 +176,7 @@ cdef class SpreadQuoteAggregator:
     cdef readonly list _legs
     cdef readonly GreeksCalculator _greeks_calculator
     cdef readonly object _update_interval_seconds
+    cdef readonly int _quote_build_delay
     cdef readonly str _timer_name
     cdef readonly list _leg_ids
     cdef readonly int _n_legs
@@ -202,7 +204,7 @@ cdef class SpreadQuoteAggregator:
 
     cpdef void start_timer(self)
     cpdef void stop_timer(self)
-    cpdef void set_historical_mode(self, bint historical_mode, handler)
+    cpdef void set_historical_mode(self, bint historical_mode, handler, GreeksCalculator greeks_calculator)
     cpdef void set_running(self, bint is_running)
     cpdef void set_clock(self, Clock clock)
     cpdef void handle_quote_tick(self, QuoteTick tick)

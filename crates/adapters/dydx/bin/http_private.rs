@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -39,15 +39,12 @@ use std::env;
 use nautilus_dydx::{
     common::consts::DYDX_TESTNET_HTTP_URL, grpc::wallet::Wallet, http::client::DydxHttpClient,
 };
-use tracing::level_filters::LevelFilter;
 
 const DEFAULT_SUBACCOUNT: u32 = 0;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::INFO)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let args: Vec<String> = env::args().collect();
     let is_mainnet = args.iter().any(|a| a == "--mainnet");
@@ -72,26 +69,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         env::var("DYDX_HTTP_URL").unwrap_or_else(|_| DYDX_TESTNET_HTTP_URL.to_string())
     };
 
-    tracing::info!("Connecting to dYdX HTTP API: {}", http_url);
-    tracing::info!(
+    log::info!("Connecting to dYdX HTTP API: {http_url}");
+    log::info!(
         "Environment: {}",
         if is_mainnet { "MAINNET" } else { "TESTNET" }
     );
-    tracing::info!("Subaccount: {}", subaccount_number);
+    log::info!("Subaccount: {subaccount_number}");
     if let Some(market) = market_filter {
-        tracing::info!("Market filter: {}", market);
+        log::info!("Market filter: {market}");
     }
-    tracing::info!("");
+    log::info!("");
 
     let wallet = Wallet::from_mnemonic(&mnemonic)?;
     let account = wallet.account_offline(subaccount_number)?;
     let wallet_address = account.address.clone();
-    tracing::info!("Wallet address: {}", wallet_address);
-    tracing::info!("");
+    log::info!("Wallet address: {wallet_address}");
+    log::info!("");
 
     let client = DydxHttpClient::new(Some(http_url), Some(30), None, !is_mainnet, None)?;
 
-    tracing::info!("Fetching subaccount info...");
+    log::info!("Fetching subaccount info...");
     let start = std::time::Instant::now();
     let subaccount = client
         .raw_client()
@@ -99,22 +96,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     let elapsed = start.elapsed();
 
-    tracing::info!(
+    log::info!(
         "SUCCESS: Fetched subaccount data in {:.2}s",
         elapsed.as_secs_f64()
     );
-    tracing::info!(
+    log::info!(
         "   Subaccount: {}/{}",
         subaccount.subaccount.address,
         subaccount.subaccount.subaccount_number
     );
-    tracing::info!("   Equity: {}", subaccount.subaccount.equity);
-    tracing::info!(
+    log::info!("   Equity: {}", subaccount.subaccount.equity);
+    log::info!(
         "   Free collateral: {}",
         subaccount.subaccount.free_collateral
     );
     if !subaccount.subaccount.open_perpetual_positions.is_empty() {
-        tracing::info!(
+        log::info!(
             "   Open positions: {}",
             subaccount.subaccount.open_perpetual_positions.len()
         );
@@ -124,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .values()
             .take(5)
         {
-            tracing::info!(
+            log::info!(
                 "     - {}: size={}, entry_price={}, unrealized_pnl={}",
                 pos.market,
                 pos.size,
@@ -133,11 +130,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
     } else {
-        tracing::info!("   Open positions: 0");
+        log::info!("   Open positions: 0");
     }
-    tracing::info!("");
+    log::info!("");
 
-    tracing::info!("Fetching open orders...");
+    log::info!("Fetching open orders...");
     let start = std::time::Instant::now();
     let orders = client
         .raw_client()
@@ -145,15 +142,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     let elapsed = start.elapsed();
 
-    tracing::info!(
+    log::info!(
         "SUCCESS: Fetched {} open orders in {:.2}s",
         orders.len(),
         elapsed.as_secs_f64()
     );
     if !orders.is_empty() {
-        tracing::info!("   Sample orders:");
+        log::info!("   Sample orders:");
         for order in orders.iter().take(5) {
-            tracing::info!(
+            log::info!(
                 "   - {}: {} {} @ {} ({})",
                 order.id,
                 order.side,
@@ -163,12 +160,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
         if orders.len() > 5 {
-            tracing::info!("   ... and {} more", orders.len() - 5);
+            log::info!("   ... and {} more", orders.len() - 5);
         }
     }
-    tracing::info!("");
+    log::info!("");
 
-    tracing::info!("Fetching recent fills...");
+    log::info!("Fetching recent fills...");
     let start = std::time::Instant::now();
     let fills = client
         .raw_client()
@@ -176,15 +173,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     let elapsed = start.elapsed();
 
-    tracing::info!(
+    log::info!(
         "SUCCESS: Fetched {} fills in {:.2}s",
         fills.fills.len(),
         elapsed.as_secs_f64()
     );
     if !fills.fills.is_empty() {
-        tracing::info!("   Recent fills:");
+        log::info!("   Recent fills:");
         for fill in fills.fills.iter().take(5) {
-            tracing::info!(
+            log::info!(
                 "   - {}: {} {} @ {} (fee: {})",
                 fill.market_type,
                 fill.side,
@@ -194,21 +191,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
         if fills.fills.len() > 5 {
-            tracing::info!("   ... and {} more", fills.fills.len() - 5);
+            log::info!("   ... and {} more", fills.fills.len() - 5);
         }
     }
-    tracing::info!("");
+    log::info!("");
 
-    tracing::info!("ALL TESTS COMPLETED SUCCESSFULLY");
-    tracing::info!("");
-    tracing::info!("Summary:");
-    tracing::info!(
+    log::info!("ALL TESTS COMPLETED SUCCESSFULLY");
+    log::info!("");
+    log::info!("Summary:");
+    log::info!(
         "  [PASS] get_subaccount: Equity={}, Positions={}",
         subaccount.subaccount.equity,
         subaccount.subaccount.open_perpetual_positions.len()
     );
-    tracing::info!("  [PASS] get_orders: {} open orders", orders.len());
-    tracing::info!("  [PASS] get_fills: {} fills fetched", fills.fills.len());
+    log::info!("  [PASS] get_orders: {} open orders", orders.len());
+    log::info!("  [PASS] get_fills: {} fills fetched", fills.fills.len());
 
     Ok(())
 }

@@ -30,10 +30,16 @@ from nautilus_trader.adapters.interactive_brokers.common import IBOrderTags
 from nautilus_trader.adapters.interactive_brokers.config import IBMarketDataTypeEnum
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
+from nautilus_trader.adapters.interactive_brokers.config import (
+    InteractiveBrokersInstrumentProviderConfig,
+)
 from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
-from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
-from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveDataClientFactory,
+)
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveExecClientFactory,
+)
 from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 
@@ -85,7 +91,10 @@ class Strat_mre(Strategy):
                 self.clock.set_time_alert(
                     "sl",
                     self.clock.utc_now() + pd.Timedelta(seconds=10),
-                    lambda event, instrument=instrument: self.modify_sl(instrument.id, instrument.make_price(6600)),
+                    lambda event, instrument=instrument: self.modify_sl(
+                        instrument.id,
+                        instrument.make_price(6600),
+                    ),
                 )
 
     def buy_bracket(self, instrument_id, low):

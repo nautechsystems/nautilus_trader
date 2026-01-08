@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -49,7 +49,7 @@ fn main() {
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=../Cargo.toml");
 
-    let nautilus_version = "1.222.0"; // Hardcode to avoid including pyproject.toml in package
+    let nautilus_version = "1.223.0"; // Hardcode to avoid including pyproject.toml in package
 
     // Verify the hardcoded version matches the version from the top-level pyproject.toml
     if let Some(pyproject_version) = try_read_pyproject_version() {

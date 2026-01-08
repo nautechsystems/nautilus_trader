@@ -261,7 +261,12 @@ Each of these methods takes the primary (original) `Order` as the first argument
 quantity will be reduced by the `quantity` passed in (becoming the spawned orders quantity).
 
 :::warning
-There must be enough primary order quantity remaining (this is validated).
+The spawned quantity must not exceed the primary order's `leaves_qty` (remaining unfilled quantity).
+:::
+
+:::note
+If a spawned order is denied or rejected before acceptance, the deducted quantity is automatically
+restored to the primary order. Once accepted by the venue, the reduction is considered committed.
 :::
 
 Once the desired number of secondary orders have been spawned, and the execution routine is over,

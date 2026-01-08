@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,7 +20,7 @@
 //! and system control messages.
 
 use nautilus_model::{
-    data::Data,
+    data::{Data, FundingRateUpdate},
     events::{AccountState, OrderEventAny},
     instruments::InstrumentAny,
 };
@@ -44,6 +44,7 @@ pub enum DataEvent {
     Response(DataResponse),
     Data(Data),
     Instrument(InstrumentAny), // TODO: Eventually this can be `Data` once Cython is gone
+    FundingRate(FundingRateUpdate),
     // nautilus-import-ok: conditional compilation import
     #[cfg(feature = "defi")]
     DeFi(nautilus_model::defi::data::DefiData),

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,7 +32,7 @@ use nautilus_model::{
     data::{Bar, BarType, BookOrder, TradeTick, stubs::OrderBookDeltaTestBuilder},
     enums::{
         AccountType, AggressorSide, BookAction, BookType, ContingencyType, LiquiditySide, OmsType,
-        OrderSide, OrderType, TimeInForce, TrailingOffsetType,
+        OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{
         OrderEventAny, OrderEventType, OrderFilled, OrderRejected,
@@ -50,6 +50,7 @@ use nautilus_model::{
         Order, OrderAny, OrderTestBuilder,
         stubs::{TestOrderEventStubs, TestOrderStubs},
     },
+    stubs::TestDefault,
     types::{Price, Quantity},
 };
 use rstest::{fixture, rstest};
@@ -151,6 +152,8 @@ fn instrument_es() -> InstrumentAny {
 fn engine_config() -> OrderMatchingEngineConfig {
     OrderMatchingEngineConfig {
         bar_execution: false,
+        trade_execution: false,
+        liquidity_consumption: false,
         reject_stop_orders: false,
         support_gtd_orders: false,
         support_contingent_orders: true,
@@ -1379,17 +1382,16 @@ fn test_process_cancel_command_valid(
         .build();
     // Create cancel command for limit order above
     let cancel_command = CancelOrder::new(
-        TraderId::from("TRADER-001"),
-        ClientId::from("CLIENT-001"),
-        StrategyId::from("STRATEGY-001"),
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
         instrument_eth_usdt.id(),
         client_order_id,
-        VenueOrderId::from("V1"),
+        Some(VenueOrderId::from("V1")),
         UUID4::new(),
         UnixNanos::default(),
         None,
-    )
-    .unwrap();
+    );
 
     engine_l2
         .process_order_book_delta(&orderbook_delta_sell)
@@ -1431,17 +1433,16 @@ fn test_process_cancel_command_order_not_found(
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
     let account_id = AccountId::from("ACCOUNT-001");
     let cancel_command = CancelOrder::new(
-        TraderId::from("TRADER-001"),
-        ClientId::from("CLIENT-001"),
-        StrategyId::from("STRATEGY-001"),
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
         instrument_eth_usdt.id(),
         client_order_id,
-        VenueOrderId::from("V1"),
+        Some(VenueOrderId::from("V1")),
         UUID4::new(),
         UnixNanos::default(),
         None,
-    )
-    .unwrap();
+    );
 
     // Process cancel command for order which doesn't exists
     engine_l2.process_cancel(&cancel_command, account_id);
@@ -1548,16 +1549,15 @@ fn test_process_cancel_all_command(
 
     // Create cancel all order which related to only ETHUSDT-PERP.BINANCE instrument
     let cancel_all_command = CancelAllOrders::new(
-        TraderId::from("TRADER-001"),
-        ClientId::from("CLIENT-001"),
-        StrategyId::from("STRATEGY-001"),
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
         instrument_eth_usdt.id(),
         OrderSide::Buy,
         UUID4::new(),
         UnixNanos::default(),
         None,
-    )
-    .unwrap();
+    );
     engine_l2.process_cancel_all(&cancel_all_command, account_id);
 
     // Check we have received 3 OrderAccepted and 2 OrderCanceled events
@@ -1652,40 +1652,37 @@ fn test_process_batch_cancel_command(
     engine_l2.process_order(&mut limit_order_2, account_id);
 
     let cancel_1 = CancelOrder::new(
-        TraderId::from("TRADER-001"),
-        ClientId::from("CLIENT-001"),
-        StrategyId::from("STRATEGY-001"),
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
         instrument_eth_usdt.id(),
         client_order_id_1,
-        VenueOrderId::from("V1"),
+        Some(VenueOrderId::from("V1")),
         UUID4::new(),
         UnixNanos::default(),
         None,
-    )
-    .unwrap();
+    );
     let cancel_2 = CancelOrder::new(
-        TraderId::from("TRADER-001"),
-        ClientId::from("CLIENT-001"),
-        StrategyId::from("STRATEGY-001"),
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
         instrument_eth_usdt.id(),
         client_order_id_2,
-        VenueOrderId::from("V2"),
+        Some(VenueOrderId::from("V2")),
         UUID4::new(),
         UnixNanos::default(),
         None,
-    )
-    .unwrap();
+    );
     let batch_cancel_command = BatchCancelOrders::new(
-        TraderId::from("TRADER-001"),
-        ClientId::from("CLIENT-001"),
-        StrategyId::from("STRATEGY-001"),
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
         instrument_eth_usdt.id(),
         vec![cancel_1, cancel_2],
         UUID4::new(),
         UnixNanos::default(),
         None,
-    )
-    .unwrap();
+    );
 
     engine_l2.process_batch_cancel(&batch_cancel_command, account_id);
 
@@ -1824,20 +1821,19 @@ fn test_process_modify_order_rejected_not_found(
     // Create modify order command with client order id that didn't pass through the engine
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
     let modify_order_command = ModifyOrder::new(
-        TraderId::from("TRADER-001"),
-        ClientId::from("CLIENT-001"),
-        StrategyId::from("STRATEGY-001"),
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
         instrument_eth_usdt.id(),
         client_order_id,
-        VenueOrderId::from("V1"),
+        Some(VenueOrderId::from("V1")),
         None,
         None,
         None,
         UUID4::new(),
         UnixNanos::default(),
         None,
-    )
-    .unwrap();
+    );
     engine_l2.process_modify(&modify_order_command, account_id);
 
     // Check if we have received OrderModifyRejected event
@@ -1894,20 +1890,19 @@ fn test_update_limit_order_post_only_matched(
 
     // Create ModifyOrder command to update price of the order to be matched
     let modify_order_command = ModifyOrder::new(
-        TraderId::from("TRADER-001"),
-        ClientId::from("CLIENT-001"),
-        StrategyId::from("STRATEGY-001"),
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
         instrument_eth_usdt.id(),
         client_order_id,
-        VenueOrderId::from("V1"),
+        Some(VenueOrderId::from("V1")),
         None,
         Some(Price::from("1500.00")), // Set price which will be matched
         None,
         UUID4::new(),
         UnixNanos::default(),
         None,
-    )
-    .unwrap();
+    );
     engine_l2.process_modify(&modify_order_command, account_id);
 
     // Check that we have received OrderAccepted and then OrderModifyRejected event because of post only
@@ -1976,20 +1971,19 @@ fn test_update_limit_order_valid(
     // Create ModifyOrder command to update price to 1500.00 where it will be matched immediately
     let new_limit_price = Price::from("1500.00");
     let modify_order_command = ModifyOrder::new(
-        TraderId::from("TRADER-001"),
-        ClientId::from("CLIENT-001"),
-        StrategyId::from("STRATEGY-001"),
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
         instrument_eth_usdt.id(),
         client_order_id,
-        VenueOrderId::from("V1"),
+        Some(VenueOrderId::from("V1")),
         None,
         Some(new_limit_price),
         None,
         UUID4::new(),
         UnixNanos::default(),
         None,
-    )
-    .unwrap();
+    );
     engine_l2.process_modify(&modify_order_command, account_id);
 
     // Check that we have received OrderAccepted and then OrderUpdated
@@ -2063,12 +2057,12 @@ fn test_update_stop_market_order_valid(
     //  as ask is at 1500.00 and order will be correctly updated
     let new_trigger_price = Price::from("1501.00");
     let modify_order_command = ModifyOrder::new(
-        TraderId::from("TRADER-001"),
-        ClientId::from("CLIENT-001"),
-        StrategyId::from("STRATEGY-001"),
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
         instrument_eth_usdt.id(),
         client_order_id,
-        VenueOrderId::from("V1"),
+        Some(VenueOrderId::from("V1")),
         None,
         None,
         Some(new_trigger_price),
@@ -2076,7 +2070,7 @@ fn test_update_stop_market_order_valid(
         UnixNanos::default(),
         None,
     );
-    engine_l2.process_modify(&modify_order_command.unwrap(), account_id);
+    engine_l2.process_modify(&modify_order_command, account_id);
 
     // Check that we have received OrderAccepted and then OrderUpdated
     let saved_messages = get_order_event_handler_messages(order_event_handler);
@@ -2127,12 +2121,12 @@ fn test_update_stop_limit_order_valid_update_not_triggered(
     // as ask is at 1500.00 and order will be correctly updated
     let new_trigger_price = Price::from("1501.00");
     let modify_order_command = ModifyOrder::new(
-        TraderId::from("TRADER-001"),
-        ClientId::from("CLIENT-001"),
-        StrategyId::from("STRATEGY-001"),
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
         instrument_eth_usdt.id(),
         client_order_id,
-        VenueOrderId::from("V1"),
+        Some(VenueOrderId::from("V1")),
         None,
         None,
         Some(new_trigger_price),
@@ -2140,7 +2134,7 @@ fn test_update_stop_limit_order_valid_update_not_triggered(
         UnixNanos::default(),
         None,
     );
-    engine_l2.process_modify(&modify_order_command.unwrap(), account_id);
+    engine_l2.process_modify(&modify_order_command, account_id);
 
     // Check that we have received OrderAccepted and then OrderUpdated
     let saved_messages = get_order_event_handler_messages(order_event_handler);
@@ -2243,12 +2237,12 @@ fn test_update_market_if_touched_order_valid(
     // as ask is at 1500.00 and order will be correctly updated
     let new_trigger_price = Price::from("1501.00");
     let modify_order_command = ModifyOrder::new(
-        TraderId::from("TRADER-001"),
-        ClientId::from("CLIENT-001"),
-        StrategyId::from("STRATEGY-001"),
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
         instrument_eth_usdt.id(),
         client_order_id,
-        VenueOrderId::from("V1"),
+        Some(VenueOrderId::from("V1")),
         None,
         None,
         Some(new_trigger_price),
@@ -2256,7 +2250,7 @@ fn test_update_market_if_touched_order_valid(
         UnixNanos::default(),
         None,
     );
-    engine_l2.process_modify(&modify_order_command.unwrap(), account_id);
+    engine_l2.process_modify(&modify_order_command, account_id);
 
     // Check that we have received OrderAccepted and then OrderUpdated
     let saved_messages = get_order_event_handler_messages(order_event_handler);
@@ -2390,12 +2384,12 @@ fn test_update_limit_if_touched_order_valid(
     // as ask is at 1500.00 and order will be correctly updated
     let new_trigger_price = Price::from("1499.00");
     let modify_order_command = ModifyOrder::new(
-        TraderId::from("TRADER-001"),
-        ClientId::from("CLIENT-001"),
-        StrategyId::from("STRATEGY-001"),
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
         instrument_eth_usdt.id(),
         client_order_id,
-        VenueOrderId::from("V1"),
+        Some(VenueOrderId::from("V1")),
         None,
         None,
         Some(new_trigger_price),
@@ -2403,7 +2397,7 @@ fn test_update_limit_if_touched_order_valid(
         UnixNanos::default(),
         None,
     );
-    engine_l2.process_modify(&modify_order_command.unwrap(), account_id);
+    engine_l2.process_modify(&modify_order_command, account_id);
 
     // Check that we have received OrderAccepted and then OrderUpdated
     let saved_messages = get_order_event_handler_messages(order_event_handler);
@@ -2616,6 +2610,10 @@ fn test_updating_of_trailing_stop_market_order_with_no_trigger_price_set(
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id)
         .trigger_price(Price::from("1505.00"))
+        // Explicitly use LAST_PRICE here because this test drives the trailing update via TradeTicks.
+        // TriggerType::Default is documented to behave like BID_ASK (quote-based) and will not update
+        // from last-trade-only data.
+        .trigger_type(TriggerType::LastPrice)
         .trailing_offset(dec!(1))
         .limit_offset(dec!(1))
         .trailing_offset_type(TrailingOffsetType::Price)
@@ -2733,12 +2731,12 @@ fn test_updating_of_contingent_orders(
     // Modify primary order quantity to 2.000 which will trigger the contingent order
     // update of the same quantity
     let modify_order_command = ModifyOrder::new(
-        TraderId::from("TRADER-001"),
-        ClientId::from("CLIENT-001"),
-        StrategyId::from("STRATEGY-001"),
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
         instrument_eth_usdt.id(),
         client_order_id_primary,
-        VenueOrderId::from("V1"),
+        Some(VenueOrderId::from("V1")),
         Some(Quantity::from("2.000")),
         None,
         None,
@@ -2746,7 +2744,7 @@ fn test_updating_of_contingent_orders(
         UnixNanos::default(),
         None,
     );
-    engine_l2.process_modify(&modify_order_command.unwrap(), account_id);
+    engine_l2.process_modify(&modify_order_command, account_id);
 
     // Check that we have received following sequence of events
     // 1. OrderAccepted for primary limit order
@@ -2848,8 +2846,10 @@ fn test_process_market_orders_with_protection_rejeceted_and_valid(
         order_event_handler.clone(),
     );
 
-    let config = OrderMatchingEngineConfig::new(false, false, false, false, false, false, false)
-        .with_price_protection_points(Some(600));
+    let config = OrderMatchingEngineConfig::new(
+        false, false, false, false, false, false, false, false, false,
+    )
+    .with_price_protection_points(Some(600));
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
@@ -2937,8 +2937,10 @@ fn test_process_stop_orders_with_protection_rejeceted_and_valid(
         order_event_handler.clone(),
     );
 
-    let config = OrderMatchingEngineConfig::new(false, false, false, false, false, false, false)
-        .with_price_protection_points(Some(600));
+    let config = OrderMatchingEngineConfig::new(
+        false, false, false, false, false, false, false, false, false,
+    )
+    .with_price_protection_points(Some(600));
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
@@ -3131,20 +3133,19 @@ fn test_modify_partially_filled_order_quantity_below_filled_rejected(
 
     // Attempt to modify quantity to 0.4, which is below filled_qty of 0.5
     let modify_order_command = ModifyOrder::new(
-        TraderId::from("TRADER-001"),
-        ClientId::from("CLIENT-001"),
-        StrategyId::from("STRATEGY-001"),
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
         instrument_eth_usdt.id(),
         client_order_id,
-        VenueOrderId::from("V1"),
+        Some(VenueOrderId::from("V1")),
         Some(Quantity::from("0.400")), // Below filled quantity
         None,
         None,
         UUID4::new(),
         UnixNanos::default(),
         None,
-    )
-    .unwrap();
+    );
     engine_l2.process_modify(&modify_order_command, account_id);
 
     // Should receive OrderModifyRejected
@@ -3261,20 +3262,19 @@ fn test_ouo_child_cancelled_when_parent_leaves_zero(
     // This makes leaves_qty = 0.6 - 0.6 = 0
     // Contingent should be cancelled because parent has no remaining quantity
     let modify_order_command = ModifyOrder::new(
-        TraderId::from("TRADER-001"),
-        ClientId::from("CLIENT-001"),
-        StrategyId::from("STRATEGY-001"),
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
         instrument_eth_usdt.id(),
         client_order_id_primary,
-        VenueOrderId::from("V1"),
+        Some(VenueOrderId::from("V1")),
         Some(Quantity::from("0.600")),
         None,
         None,
         UUID4::new(),
         UnixNanos::default(),
         None,
-    )
-    .unwrap();
+    );
     engine_l2.process_modify(&modify_order_command, account_id);
 
     // Expected events:
@@ -3308,3 +3308,595 @@ fn test_ouo_child_cancelled_when_parent_leaves_zero(
     };
     assert_eq!(cancelled_primary.client_order_id, client_order_id_primary);
 }
+
+#[rstest]
+#[case(OrderSide::Buy)]
+#[case(OrderSide::Sell)]
+fn test_liquidity_consumption_tracks_fills_at_price_level(
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+    #[case] order_side: OrderSide,
+) {
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
+
+    let config = OrderMatchingEngineConfig {
+        liquidity_consumption: true,
+        ..Default::default()
+    };
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
+
+    let orderbook_delta_buy = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Buy,
+            Price::from("900.00"),
+            Quantity::from("100.000"),
+            100,
+        ))
+        .build();
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_buy)
+        .unwrap();
+
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1000.00"),
+            Quantity::from("100.000"),
+            1,
+        ))
+        .build();
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
+
+    // 3 orders request 130 total but only 100 available
+    let mut order1 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(order_side)
+        .quantity(Quantity::from("30.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut order1, account_id);
+
+    let mut order2 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(order_side)
+        .quantity(Quantity::from("50.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-2"))
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut order2, account_id);
+
+    let mut order3 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(order_side)
+        .quantity(Quantity::from("50.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-3"))
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut order3, account_id);
+
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    let filled_events: Vec<_> = saved_messages
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(filled_events.len(), 3);
+    assert_eq!(filled_events[0].last_qty, Quantity::from("30.000"));
+    assert_eq!(filled_events[1].last_qty, Quantity::from("50.000"));
+    assert_eq!(filled_events[2].last_qty, Quantity::from("20.000"));
+}
+
+#[rstest]
+#[case(OrderSide::Buy, OrderSide::Sell)]
+#[case(OrderSide::Sell, OrderSide::Buy)]
+fn test_liquidity_consumption_resets_on_fresh_data(
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+    #[case] order_side: OrderSide,
+    #[case] book_side: OrderSide,
+) {
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
+
+    let config = OrderMatchingEngineConfig {
+        liquidity_consumption: true,
+        ..Default::default()
+    };
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
+
+    let liquidity_price = if book_side == OrderSide::Sell {
+        Price::from("1000.00")
+    } else {
+        Price::from("900.00")
+    };
+
+    // Opposite side liquidity for valid spread
+    let opposite_price = if book_side == OrderSide::Sell {
+        Price::from("900.00")
+    } else {
+        Price::from("1000.00")
+    };
+
+    let orderbook_delta_opposite = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            if book_side == OrderSide::Sell {
+                OrderSide::Buy
+            } else {
+                OrderSide::Sell
+            },
+            opposite_price,
+            Quantity::from("100.000"),
+            100,
+        ))
+        .build();
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_opposite)
+        .unwrap();
+
+    let orderbook_delta_target = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            book_side,
+            liquidity_price,
+            Quantity::from("50.000"),
+            1,
+        ))
+        .build();
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_target)
+        .unwrap();
+
+    let mut order1 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(order_side)
+        .quantity(Quantity::from("50.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut order1, account_id);
+
+    // Update triggers consumption reset
+    let orderbook_delta_update = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Update)
+        .book_order(BookOrder::new(
+            book_side,
+            liquidity_price,
+            Quantity::from("80.000"),
+            1,
+        ))
+        .build();
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_update)
+        .unwrap();
+
+    let mut order2 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(order_side)
+        .quantity(Quantity::from("60.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-2"))
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut order2, account_id);
+
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    let filled_events: Vec<_> = saved_messages
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(filled_events.len(), 2);
+    assert_eq!(filled_events[0].last_qty, Quantity::from("50.000"));
+    assert_eq!(filled_events[1].last_qty, Quantity::from("60.000"));
+}
+
+#[rstest]
+#[case(OrderSide::Buy)]
+#[case(OrderSide::Sell)]
+fn test_liquidity_consumption_off_allows_repeated_fills(
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+    #[case] order_side: OrderSide,
+) {
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
+
+    let config = OrderMatchingEngineConfig {
+        liquidity_consumption: false,
+        ..Default::default()
+    };
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
+
+    let orderbook_delta_buy = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Buy,
+            Price::from("900.00"),
+            Quantity::from("50.000"),
+            100,
+        ))
+        .build();
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_buy)
+        .unwrap();
+
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1000.00"),
+            Quantity::from("50.000"),
+            1,
+        ))
+        .build();
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
+
+    // Both orders fill 50 each despite only 50 displayed (no consumption tracking)
+    let mut order1 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(order_side)
+        .quantity(Quantity::from("50.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut order1, account_id);
+
+    let mut order2 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(order_side)
+        .quantity(Quantity::from("50.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-2"))
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut order2, account_id);
+
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    let filled_events: Vec<_> = saved_messages
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(filled_events.len(), 2);
+    assert_eq!(filled_events[0].last_qty, Quantity::from("50.000"));
+    assert_eq!(filled_events[1].last_qty, Quantity::from("50.000"));
+}
+
+/// Regression test for stop-limit double-accept bug.
+/// When a stop-limit order triggers but doesn't immediately fill, it should only be
+/// accepted once, not twice.
+#[rstest]
+fn test_stop_limit_triggered_not_filled_single_accept(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+) {
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
+
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+
+    // Add sell order at 1500
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+
+    // Create stop-limit order: triggers at 1495 (below ask 1500), limit 1490 (not immediately filled)
+    let mut stop_order = OrderTestBuilder::new(OrderType::StopLimit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1495.00"))
+        .price(Price::from("1490.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+
+    engine_l2.process_order(&mut stop_order, account_id);
+
+    // Verify: should have exactly 1 Accepted event and 1 Triggered event
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    let accepted_count = saved_messages
+        .iter()
+        .filter(|e| matches!(e, OrderEventAny::Accepted(_)))
+        .count();
+
+    assert_eq!(
+        accepted_count, 1,
+        "Expected exactly 1 Accepted event, got {accepted_count} (double-accept bug)"
+    );
+    assert_eq!(
+        saved_messages.len(),
+        2,
+        "Expected Accepted + Triggered events"
+    );
+
+    // Verify order exists in core exactly once
+    let orders = engine_l2.core.get_orders();
+    let matching_order_count = orders
+        .iter()
+        .filter(|o| o.client_order_id() == client_order_id)
+        .count();
+    assert_eq!(
+        matching_order_count, 1,
+        "Order should exist exactly once in core"
+    );
+}
+
+/// Regression test for order modify persistence bug.
+/// When an order is modified, the new price should persist to the core
+/// and be used for subsequent matching.
+#[rstest]
+fn test_modify_limit_order_price_persists_to_core(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+) {
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
+
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+
+    // Add sell order at 1500
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+
+    // Create limit buy at 1490 (below ask, won't fill)
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1490.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+
+    engine_l2.process_order(&mut limit_order, account_id);
+
+    // Verify order is in core at original price
+    let order_in_core = engine_l2.core.get_order(client_order_id).unwrap();
+    assert_eq!(order_in_core.price(), Some(Price::from("1490.00")));
+
+    clear_order_event_handler_messages(order_event_handler);
+
+    // Modify order to new price 1495 (still below ask, won't fill)
+    let modify_command = ModifyOrder::new(
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
+        instrument_eth_usdt.id(),
+        client_order_id,
+        Some(VenueOrderId::from("V1")),
+        Some(Quantity::from("1.000")),
+        Some(Price::from("1495.00")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    engine_l2.process_modify(&modify_command, account_id);
+
+    // Verify: order in core should have new price
+    let order_in_core = engine_l2.core.get_order(client_order_id).unwrap();
+    assert_eq!(
+        order_in_core.price(),
+        Some(Price::from("1495.00")),
+        "Modified price should persist to core"
+    );
+}
+
+/// Regression test for rejected modify not changing book priority.
+/// When a modify is rejected (e.g., invalid precision), the order should remain
+/// unchanged in the book without affecting its time priority.
+#[rstest]
+fn test_rejected_modify_does_not_change_book_priority(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+) {
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
+
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+
+    // Add sell order at 1500
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+
+    // Create limit buy at 1490 (below ask, won't fill)
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1490.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+
+    engine_l2.process_order(&mut limit_order, account_id);
+
+    // Get initial order count in core
+    let initial_order_count = engine_l2.core.get_orders().len();
+
+    clear_order_event_handler_messages(order_event_handler.clone());
+
+    // Try to modify with invalid precision (instrument has 2 decimal places for price)
+    let modify_command = ModifyOrder::new(
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
+        instrument_eth_usdt.id(),
+        client_order_id,
+        Some(VenueOrderId::from("V1")),
+        Some(Quantity::from("1.000")),
+        Some(Price::from("1495.12345")), // Invalid precision
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    engine_l2.process_modify(&modify_command, account_id);
+
+    // Verify: modify should be rejected
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    let rejected_count = saved_messages
+        .iter()
+        .filter(|e| matches!(e, OrderEventAny::ModifyRejected(_)))
+        .count();
+    assert_eq!(rejected_count, 1, "Modify should be rejected");
+
+    // Verify: order should still be in core with original price
+    let order_in_core = engine_l2.core.get_order(client_order_id).unwrap();
+    assert_eq!(
+        order_in_core.price(),
+        Some(Price::from("1490.00")),
+        "Order price should be unchanged after rejected modify"
+    );
+
+    // Verify: order count unchanged (not deleted and re-added)
+    let final_order_count = engine_l2.core.get_orders().len();
+    assert_eq!(
+        initial_order_count, final_order_count,
+        "Order count should be unchanged"
+    );
+}
+
+/// Regression test for netting mode position ID.
+/// In netting mode, fills should not have a venue_position_id.
+#[rstest]
+fn test_netting_mode_fills_have_no_position_id(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: ShareableMessageHandler,
+    account_id: AccountId,
+) {
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_process(),
+        order_event_handler.clone(),
+    );
+
+    // Create engine in netting mode (default)
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+
+    // Add sell order at 1500
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+
+    // Create market buy that will fill
+    let mut market_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+
+    engine_l2.process_order(&mut market_order, account_id);
+
+    // Get fill event
+    let saved_messages = get_order_event_handler_messages(order_event_handler);
+    let fill_event = saved_messages
+        .iter()
+        .find_map(|e| match e {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .expect("Expected a fill event");
+
+    // In netting mode, position_id should be None
+    assert!(
+        fill_event.position_id.is_none(),
+        "Netting mode fills should have position_id = None"
+    );
+}
+
+// NOTE: Trade consumption tests are in Python (test_matching_engine.py) because the Rust
+// matching engine's handler mechanism for filling resting orders via iteration is not yet
+// implemented (marked TBD in engine.rs). The trade consumption tracking code in
+// determine_limit_price_and_volume is ready but can't be exercised until handlers are wired up.

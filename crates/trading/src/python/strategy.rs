@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -175,7 +175,7 @@ pub struct PyStrategyInner {
 
 impl Debug for PyStrategyInner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PyStrategyInner")
+        f.debug_struct(stringify!(PyStrategyInner))
             .field("core", &self.core)
             .field("py_self", &self.py_self.as_ref().map(|_| "<Py<PyAny>>"))
             .field("clock", &self.clock)
@@ -733,7 +733,7 @@ pub struct PyStrategy {
 
 impl Debug for PyStrategy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PyStrategy")
+        f.debug_struct(stringify!(PyStrategy))
             .field("inner", &self.inner())
             .finish()
     }

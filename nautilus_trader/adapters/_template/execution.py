@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,6 +24,7 @@ from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
+from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
@@ -62,6 +63,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
     | generate_order_status_reports              | required    |
     | generate_fill_reports                      | required    |
     | generate_position_status_reports           | required    |
+    | generate_mass_status                       | required    |
     +--------------------------------------------+-------------+
 
     """
@@ -108,6 +110,14 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
     ) -> list[PositionStatusReport]:
         raise NotImplementedError(
             "method `generate_position_status_reports` must be implemented in the subclass",
+        )  # pragma: no cover
+
+    async def generate_mass_status(
+        self,
+        lookback_mins: int | None = None,
+    ) -> ExecutionMassStatus | None:
+        raise NotImplementedError(
+            "method `generate_mass_status` must be implemented in the subclass",
         )  # pragma: no cover
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------

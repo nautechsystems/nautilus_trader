@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -288,25 +288,6 @@ class OKXDataClient(LiveMarketDataClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_book_with_depth(pyo3_instrument_id, command.depth)
 
-    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
-        if command.book_type != BookType.L2_MBP:
-            self._log.warning(
-                f"Book type {book_type_to_str(command.book_type)} not supported by OKX, skipping subscription",
-            )
-            return
-
-        if command.depth not in (0, 5):
-            self._log.error(
-                "Cannot subscribe to order book snapshots: "
-                f"invalid `depth`, was {command.depth}; "
-                "valid depths are 0 (default 5), or 5",
-            )
-            return
-
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-
-        await self._ws_client.subscribe_book_depth5(pyo3_instrument_id)
-
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_quotes(pyo3_instrument_id)
@@ -361,13 +342,6 @@ class OKXDataClient(LiveMarketDataClient):
 
         if tasks:
             await asyncio.gather(*tasks)
-
-    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        active_channels = self._ws_client.get_subscriptions(pyo3_instrument_id)
-
-        if "books5" in active_channels:
-            await self._ws_client.unsubscribe_book_depth5(pyo3_instrument_id)
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)

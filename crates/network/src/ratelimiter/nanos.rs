@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -107,6 +107,16 @@ impl Nanos {
     #[inline]
     pub const fn saturating_sub(self, rhs: Self) -> Self {
         Self(self.0.saturating_sub(rhs.0))
+    }
+
+    #[inline]
+    pub const fn saturating_add(self, rhs: Self) -> Self {
+        Self(self.0.saturating_add(rhs.0))
+    }
+
+    #[inline]
+    pub const fn saturating_mul(self, rhs: u64) -> Self {
+        Self(self.0.saturating_mul(rhs))
     }
 }
 

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,7 +15,7 @@
 
 //! Represents a valid strategy ID.
 
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Display};
 
 use nautilus_core::correctness::{FAILED, check_string_contains, check_valid_string_ascii};
 use ustr::Ustr;
@@ -46,16 +46,26 @@ impl StrategyId {
     ///
     /// # Errors
     ///
-    /// Returns an error if `value` is not a valid strategy format or missing '-' separator.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `value` is not a valid string, or does not contain a hyphen '-' separator.
+    /// Returns an error if:
+    /// - `value` is not a valid ASCII string.
+    /// - `value` is not "EXTERNAL" and does not contain a hyphen '-' separator.
+    /// - Either the name or tag part (before/after the hyphen) is empty.
     pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
         let value = value.as_ref();
         check_valid_string_ascii(value, stringify!(value))?;
         if value != EXTERNAL_STRATEGY_ID {
             check_string_contains(value, "-", stringify!(value))?;
+
+            if let Some((name, tag)) = value.rsplit_once('-') {
+                anyhow::ensure!(
+                    !name.is_empty(),
+                    "`value` name part (before '-') cannot be empty"
+                );
+                anyhow::ensure!(
+                    !tag.is_empty(),
+                    "`value` tag part (after '-') cannot be empty"
+                );
+            }
         }
         Ok(Self(Ustr::from(value)))
     }
@@ -100,24 +110,23 @@ impl StrategyId {
 
     /// Returns the numerical tag portion of the strategy ID.
     ///
-    /// # Panics
-    ///
-    /// Panics if the internal ID does not contain a '-' separator.
+    /// For external strategy IDs (no separator), returns the full ID string.
     #[must_use]
     pub fn get_tag(&self) -> &str {
-        // SAFETY: Unwrap safe as value previously validated
-        self.0.split('-').next_back().unwrap()
+        self.0
+            .rsplit_once('-')
+            .map_or(self.0.as_str(), |(_, tag)| tag)
     }
 }
 
 impl Debug for StrategyId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.0)
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "\"{}\"", self.0)
     }
 }
 
 impl Display for StrategyId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
@@ -148,5 +157,32 @@ mod tests {
     #[rstest]
     fn test_get_tag(strategy_id_ema_cross: StrategyId) {
         assert_eq!(strategy_id_ema_cross.get_tag(), "001");
+    }
+
+    #[rstest]
+    fn test_get_tag_external() {
+        assert_eq!(StrategyId::external().get_tag(), "EXTERNAL");
+    }
+
+    #[rstest]
+    #[should_panic(expected = "name part (before '-') cannot be empty")]
+    fn test_new_with_empty_name_panics() {
+        let _ = StrategyId::new("-001");
+    }
+
+    #[rstest]
+    #[should_panic(expected = "tag part (after '-') cannot be empty")]
+    fn test_new_with_empty_tag_panics() {
+        let _ = StrategyId::new("EMACross-");
+    }
+
+    #[rstest]
+    fn test_new_checked_with_empty_name_returns_error() {
+        assert!(StrategyId::new_checked("-001").is_err());
+    }
+
+    #[rstest]
+    fn test_new_checked_with_empty_tag_returns_error() {
+        assert!(StrategyId::new_checked("EMACross-").is_err());
     }
 }

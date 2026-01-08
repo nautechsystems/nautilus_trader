@@ -1,11 +1,9 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
-//
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
 //  You may not use this file except in compliance with the License.
 //  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-//
 //  Unless required by applicable law or agreed to in writing, software
 //  distributed under the License is distributed on an "AS IS" BASIS,
 //  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -140,7 +138,7 @@ pub struct PyDataActorInner {
 
 impl Debug for PyDataActorInner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PyDataActorInner")
+        f.debug_struct(stringify!(PyDataActorInner))
             .field("core", &self.core)
             .field("py_self", &self.py_self.as_ref().map(|_| "<Py<PyAny>>"))
             .field("clock", &self.clock)
@@ -495,7 +493,7 @@ pub struct PyDataActor {
 
 impl Debug for PyDataActor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PyDataActor")
+        f.debug_struct(stringify!(PyDataActor))
             .field("inner", &self.inner())
             .finish()
     }
@@ -2691,13 +2689,6 @@ mod tests {
         // We test on_block since PoolLiquidityUpdate construction is complex
         assert!(rust_actor.inner_mut().on_block(&block).is_ok());
     }
-
-    // ========================================================================
-    // Python dispatch verification tests
-    //
-    // These tests verify that when py_self is set, the Rust trait methods
-    // correctly dispatch to the Python instance's overridden methods.
-    // ========================================================================
 
     const TRACKING_ACTOR_CODE: &std::ffi::CStr = c_str!(
         r#"

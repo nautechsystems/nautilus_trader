@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,7 +18,7 @@
 //! Handles up to 16 decimals of precision.
 
 use std::{
-    fmt::{Debug, Display, Formatter},
+    fmt::{Debug, Display},
     hash::{Hash, Hasher},
     str::FromStr,
 };
@@ -185,7 +185,7 @@ impl Currency {
             let currency = Self::new(code_str, 8, 0, code_str, CurrencyType::Crypto);
 
             if let Err(e) = Self::register(currency, false) {
-                tracing::error!("Failed to register currency '{code_str}': {e}");
+                log::error!("Failed to register currency '{code_str}': {e}");
             }
 
             currency
@@ -214,7 +214,7 @@ impl Currency {
         let ctx = context.unwrap_or("unknown");
 
         if trimmed.is_empty() {
-            tracing::warn!(
+            log::warn!(
                 "get_or_create_crypto_with_context called with empty code (context: {ctx}), using USDT as fallback"
             );
             return Self::USDT();
@@ -237,7 +237,7 @@ impl Hash for Currency {
 }
 
 impl Debug for Currency {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}(code='{}', precision={}, iso4217={}, name='{}', currency_type={})",
@@ -252,7 +252,7 @@ impl Debug for Currency {
 }
 
 impl Display for Currency {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.code)
     }
 }

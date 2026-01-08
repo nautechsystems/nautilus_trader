@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,7 +30,7 @@ use nautilus_core::{
 #[cfg(feature = "python")]
 use pyo3::{ffi, prelude::*};
 
-use super::timer::TimeEventHandler;
+use super::timer::TimeEventHandler_API;
 use crate::{
     clock::{Clock, TestClock},
     live::clock::LiveClock,
@@ -46,8 +46,8 @@ use crate::{
 /// dereferenced to `TestClock`, providing access to `TestClock`'s methods without
 /// having to manually access the underlying `TestClock` instance.
 #[repr(C)]
-#[allow(non_camel_case_types)]
 #[derive(Debug)]
+#[allow(non_camel_case_types)]
 pub struct TestClock_API(Box<TestClock>);
 
 impl Deref for TestClock_API {
@@ -232,7 +232,7 @@ pub unsafe extern "C" fn test_clock_advance_time(
     set_time: u8,
 ) -> CVec {
     let events: Vec<TimeEvent> = clock.advance_time(to_time_ns.into(), u8_as_bool(set_time));
-    let t: Vec<TimeEventHandler> = clock
+    let t: Vec<TimeEventHandler_API> = clock
         .match_handlers(events)
         .into_iter()
         .map(Into::into)
@@ -242,7 +242,7 @@ pub unsafe extern "C" fn test_clock_advance_time(
 
 // TODO: This drop helper may leak Python callbacks when handlers own Python objects.
 //       We need to mirror the `ffi::timer` registry so reference counts are decremented properly.
-/// Drops a `CVec` of `TimeEventHandler` values.
+/// Drops a `CVec` of `TimeEventHandler_API` values.
 ///
 /// # Panics
 ///
@@ -261,8 +261,8 @@ pub extern "C" fn vec_time_event_handlers_drop(v: CVec) {
         "vec_time_event_handlers_drop: null ptr with non-zero len ({len}) - memory corruption or wrong drop helper"
     );
 
-    let data: Vec<TimeEventHandler> =
-        unsafe { Vec::from_raw_parts(ptr.cast::<TimeEventHandler>(), len, cap) };
+    let data: Vec<TimeEventHandler_API> =
+        unsafe { Vec::from_raw_parts(ptr.cast::<TimeEventHandler_API>(), len, cap) };
     drop(data); // Memory freed here
 }
 
@@ -305,8 +305,8 @@ pub extern "C" fn test_clock_cancel_timers(clock: &mut TestClock_API) {
 /// having to manually access the underlying `LiveClock` instance. This includes
 /// both mutable and immutable access.
 #[repr(C)]
-#[allow(non_camel_case_types)]
 #[derive(Debug)]
+#[allow(non_camel_case_types)]
 pub struct LiveClock_API(Box<LiveClock>);
 
 impl Deref for LiveClock_API {

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,8 +30,6 @@ from nautilus_trader.core import nautilus_pyo3
 
 
 async def main():
-    # Setup logging (to see Rust logs run `export RUST_LOG=debug,h2=off`)
-    nautilus_pyo3.init_tracing()
     _guard = init_logging(level_stdout=LogLevel.TRACE)
     logger = Logger("okx-sandbox")
 

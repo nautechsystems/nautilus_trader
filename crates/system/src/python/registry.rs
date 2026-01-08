@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -92,6 +92,7 @@ impl FactoryRegistry {
         if extractors.contains_key(&type_name) {
             anyhow::bail!("Config extractor '{type_name}' is already registered");
         }
+
         extractors.insert(type_name, extractor);
         Ok(())
     }

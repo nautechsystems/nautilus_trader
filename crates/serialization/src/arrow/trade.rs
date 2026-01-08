@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -28,12 +28,12 @@ use nautilus_model::{
     data::TradeTick,
     enums::AggressorSide,
     identifiers::{InstrumentId, TradeId},
-    types::{Price, Quantity, fixed::PRECISION_BYTES},
+    types::fixed::PRECISION_BYTES,
 };
 
 use super::{
     DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
-    KEY_SIZE_PRECISION, extract_column, get_corrected_raw_price, get_corrected_raw_quantity,
+    KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -169,26 +169,29 @@ impl DecodeFromRecordBatch for TradeTick {
         {
             extract_column::<StringViewArray>(cols, "trade_id", 3, DataType::Utf8View)?
                 .iter()
-                .map(|id| TradeId::from(id.unwrap()))
-                .collect()
+                .enumerate()
+                .map(|(i, id)| {
+                    id.map(TradeId::from).ok_or_else(|| {
+                        EncodingError::ParseError("trade_id", format!("NULL value at row {i}"))
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?
         } else {
             extract_column::<StringArray>(cols, "trade_id", 3, DataType::Utf8)?
                 .iter()
-                .map(|id| TradeId::from(id.unwrap()))
-                .collect()
+                .enumerate()
+                .map(|(i, id)| {
+                    id.map(TradeId::from).ok_or_else(|| {
+                        EncodingError::ParseError("trade_id", format!("NULL value at row {i}"))
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?
         };
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {
-                // Use corrected raw values to handle floating-point precision errors in stored data
-                let price = Price::from_raw(
-                    get_corrected_raw_price(price_values.value(i), price_precision),
-                    price_precision,
-                );
-                let size = Quantity::from_raw(
-                    get_corrected_raw_quantity(size_values.value(i), size_precision),
-                    size_precision,
-                );
+                let price = decode_price(price_values.value(i), price_precision, "price", i)?;
+                let size = decode_quantity(size_values.value(i), size_precision, "size", i)?;
                 let aggressor_side_value = aggressor_side_values.value(i);
                 let aggressor_side = AggressorSide::from_repr(aggressor_side_value as usize)
                     .ok_or_else(|| {
@@ -235,7 +238,9 @@ mod tests {
         array::{Array, FixedSizeBinaryArray, UInt8Array, UInt64Array},
         record_batch::RecordBatch,
     };
-    use nautilus_model::types::{fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw};
+    use nautilus_model::types::{
+        Price, Quantity, fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw,
+    };
     use rstest::rstest;
 
     use super::*;
@@ -402,5 +407,287 @@ mod tests {
         assert_eq!(decoded_data.len(), 2);
         assert_eq!(decoded_data[0].price, Price::from_raw(raw_price1, 2));
         assert_eq!(decoded_data[1].price, Price::from_raw(raw_price2, 2));
+    }
+
+    #[rstest]
+    fn test_decode_batch_null_trade_id_returns_error() {
+        use arrow::datatypes::Field;
+
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
+
+        let raw_price = (100.00 * FIXED_SCALAR) as PriceRaw;
+        let price = FixedSizeBinaryArray::from(vec![&raw_price.to_le_bytes()]);
+        let size = FixedSizeBinaryArray::from(vec![
+            &((1000.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
+        let aggressor_side = UInt8Array::from(vec![0]);
+
+        let trade_id: StringArray = vec![None::<&str>].into();
+        let ts_event = UInt64Array::from(vec![1]);
+        let ts_init = UInt64Array::from(vec![2]);
+
+        // Create schema with nullable trade_id to simulate external data source
+        let fields = vec![
+            Field::new("price", DataType::FixedSizeBinary(PRECISION_BYTES), false),
+            Field::new("size", DataType::FixedSizeBinary(PRECISION_BYTES), false),
+            Field::new("aggressor_side", DataType::UInt8, false),
+            Field::new("trade_id", DataType::Utf8, true), // nullable
+            Field::new("ts_event", DataType::UInt64, false),
+            Field::new("ts_init", DataType::UInt64, false),
+        ];
+        let schema = Schema::new_with_metadata(fields, metadata.clone());
+
+        let record_batch = RecordBatch::try_new(
+            schema.into(),
+            vec![
+                Arc::new(price),
+                Arc::new(size),
+                Arc::new(aggressor_side),
+                Arc::new(trade_id),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        let result = TradeTick::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("NULL value at row 0"),
+            "Expected NULL error, got: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_batch_invalid_price_returns_error() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
+
+        let invalid_price: PriceRaw = PriceRaw::MAX - 1000;
+        let price = FixedSizeBinaryArray::from(vec![&invalid_price.to_le_bytes()]);
+        let size = FixedSizeBinaryArray::from(vec![
+            &((1000.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
+        let aggressor_side = UInt8Array::from(vec![0]);
+        let trade_id = StringArray::from(vec!["1"]);
+        let ts_event = UInt64Array::from(vec![1]);
+        let ts_init = UInt64Array::from(vec![2]);
+
+        let record_batch = RecordBatch::try_new(
+            TradeTick::get_schema(Some(metadata.clone())).into(),
+            vec![
+                Arc::new(price),
+                Arc::new(size),
+                Arc::new(aggressor_side),
+                Arc::new(trade_id),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        let result = TradeTick::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("price") && err.to_string().contains("row 0"),
+            "Expected price error at row 0, got: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_batch_invalid_size_returns_error() {
+        use nautilus_model::types::quantity::QUANTITY_RAW_MAX;
+
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
+
+        let raw_price = (100.00 * FIXED_SCALAR) as PriceRaw;
+        let price = FixedSizeBinaryArray::from(vec![&raw_price.to_le_bytes()]);
+
+        let invalid_size = QUANTITY_RAW_MAX + 1;
+        let size = FixedSizeBinaryArray::from(vec![&invalid_size.to_le_bytes()]);
+        let aggressor_side = UInt8Array::from(vec![0]);
+        let trade_id = StringArray::from(vec!["1"]);
+        let ts_event = UInt64Array::from(vec![1]);
+        let ts_init = UInt64Array::from(vec![2]);
+
+        let record_batch = RecordBatch::try_new(
+            TradeTick::get_schema(Some(metadata.clone())).into(),
+            vec![
+                Arc::new(price),
+                Arc::new(size),
+                Arc::new(aggressor_side),
+                Arc::new(trade_id),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        let result = TradeTick::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("size") && err.to_string().contains("row 0"),
+            "Expected size error at row 0, got: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_batch_invalid_aggressor_side_returns_error() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
+
+        let raw_price = (100.00 * FIXED_SCALAR) as PriceRaw;
+        let price = FixedSizeBinaryArray::from(vec![&raw_price.to_le_bytes()]);
+        let size = FixedSizeBinaryArray::from(vec![
+            &((1000.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
+
+        let aggressor_side = UInt8Array::from(vec![99]);
+        let trade_id = StringArray::from(vec!["1"]);
+        let ts_event = UInt64Array::from(vec![1]);
+        let ts_init = UInt64Array::from(vec![2]);
+
+        let record_batch = RecordBatch::try_new(
+            TradeTick::get_schema(Some(metadata.clone())).into(),
+            vec![
+                Arc::new(price),
+                Arc::new(size),
+                Arc::new(aggressor_side),
+                Arc::new(trade_id),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        let result = TradeTick::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("AggressorSide"),
+            "Expected AggressorSide error, got: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_batch_missing_instrument_id_returns_error() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
+        metadata.remove(KEY_INSTRUMENT_ID);
+
+        let raw_price = (100.00 * FIXED_SCALAR) as PriceRaw;
+        let price = FixedSizeBinaryArray::from(vec![&raw_price.to_le_bytes()]);
+        let size = FixedSizeBinaryArray::from(vec![
+            &((1000.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
+        let aggressor_side = UInt8Array::from(vec![0]);
+        let trade_id = StringArray::from(vec!["1"]);
+        let ts_event = UInt64Array::from(vec![1]);
+        let ts_init = UInt64Array::from(vec![2]);
+
+        let record_batch = RecordBatch::try_new(
+            TradeTick::get_schema(Some(metadata.clone())).into(),
+            vec![
+                Arc::new(price),
+                Arc::new(size),
+                Arc::new(aggressor_side),
+                Arc::new(trade_id),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        let result = TradeTick::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("instrument_id"),
+            "Expected missing instrument_id error, got: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_batch_missing_price_precision_returns_error() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
+        metadata.remove(KEY_PRICE_PRECISION);
+
+        let raw_price = (100.00 * FIXED_SCALAR) as PriceRaw;
+        let price = FixedSizeBinaryArray::from(vec![&raw_price.to_le_bytes()]);
+        let size = FixedSizeBinaryArray::from(vec![
+            &((1000.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
+        let aggressor_side = UInt8Array::from(vec![0]);
+        let trade_id = StringArray::from(vec!["1"]);
+        let ts_event = UInt64Array::from(vec![1]);
+        let ts_init = UInt64Array::from(vec![2]);
+
+        let record_batch = RecordBatch::try_new(
+            TradeTick::get_schema(Some(metadata.clone())).into(),
+            vec![
+                Arc::new(price),
+                Arc::new(size),
+                Arc::new(aggressor_side),
+                Arc::new(trade_id),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        let result = TradeTick::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("price_precision"),
+            "Expected missing price_precision error, got: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_encode_decode_round_trip() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
+
+        let tick1 = TradeTick {
+            instrument_id,
+            price: Price::from("100.10"),
+            size: Quantity::from(1000),
+            aggressor_side: AggressorSide::Buyer,
+            trade_id: TradeId::new("trade-123"),
+            ts_event: 1_000_000_000.into(),
+            ts_init: 1_000_000_001.into(),
+        };
+
+        let tick2 = TradeTick {
+            instrument_id,
+            price: Price::from("100.50"),
+            size: Quantity::from(500),
+            aggressor_side: AggressorSide::Seller,
+            trade_id: TradeId::new("trade-456"),
+            ts_event: 2_000_000_000.into(),
+            ts_init: 2_000_000_001.into(),
+        };
+
+        let original = vec![tick1, tick2];
+        let record_batch = TradeTick::encode_batch(&metadata, &original).unwrap();
+        let decoded = TradeTick::decode_batch(&metadata, record_batch).unwrap();
+
+        assert_eq!(decoded.len(), original.len());
+        for (orig, dec) in original.iter().zip(decoded.iter()) {
+            assert_eq!(dec.instrument_id, orig.instrument_id);
+            assert_eq!(dec.price, orig.price);
+            assert_eq!(dec.size, orig.size);
+            assert_eq!(dec.aggressor_side, orig.aggressor_side);
+            assert_eq!(dec.trade_id, orig.trade_id);
+            assert_eq!(dec.ts_event, orig.ts_event);
+            assert_eq!(dec.ts_init, orig.ts_init);
+        }
     }
 }

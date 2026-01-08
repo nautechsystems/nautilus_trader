@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -171,7 +171,9 @@ def databento_data(
     definition_file = used_path / definition_file_name
     if not definition_file.exists():
         if client is None:
-            raise ValueError("Databento client not initialized. Call init_databento_client() first.")
+            raise ValueError(
+                "Databento client not initialized. Call init_databento_client() first.",
+            )
 
         definition = client.timeseries.get_range(
             schema="definition",
@@ -194,7 +196,9 @@ def databento_data(
     if schema != "definition":
         if not data_file.exists():
             if client is None:
-                raise ValueError("Databento client not initialized. Call init_databento_client() first.")
+                raise ValueError(
+                    "Databento client not initialized. Call init_databento_client() first.",
+                )
 
             data = client.timeseries.get_range(
                 schema=schema,
@@ -469,7 +473,9 @@ def query_catalog(
     elif data_type == "custom":
         return catalog.custom_data(**kwargs)
     else:
-        raise ValueError(f"Invalid data_type: {data_type}. Must be one of 'bars', 'ticks', 'instruments', 'custom'")
+        raise ValueError(
+            f"Invalid data_type: {data_type}. Must be one of 'bars', 'ticks', 'instruments', 'custom'",
+        )
 
 
 def load_databento_data(file: Path | str) -> Any:

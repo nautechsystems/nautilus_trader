@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,12 +17,24 @@
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
-use nautilus_common::{cache::Cache, clock::Clock};
-use nautilus_data::client::DataClient;
-use nautilus_model::identifiers::ClientId;
-use nautilus_system::factories::{ClientConfig, DataClientFactory};
+use nautilus_common::{
+    cache::Cache,
+    clients::{DataClient, ExecutionClient},
+    clock::Clock,
+};
+use nautilus_live::ExecutionClientCore;
+use nautilus_model::{
+    enums::{AccountType, OmsType},
+    identifiers::ClientId,
+};
+use nautilus_system::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 
-use crate::{config::DeribitDataClientConfig, data::DeribitDataClient};
+use crate::{
+    common::consts::DERIBIT_VENUE,
+    config::{DeribitDataClientConfig, DeribitExecClientConfig},
+    data::DeribitDataClient,
+    execution::DeribitExecutionClient,
+};
 
 impl ClientConfig for DeribitDataClientConfig {
     fn as_any(&self) -> &dyn Any {
@@ -77,6 +89,80 @@ impl DataClientFactory for DeribitDataClientFactory {
 
     fn config_type(&self) -> &'static str {
         "DeribitDataClientConfig"
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
+
+impl ClientConfig for DeribitExecClientConfig {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Factory for creating Deribit execution clients.
+#[derive(Debug)]
+pub struct DeribitExecutionClientFactory;
+
+impl DeribitExecutionClientFactory {
+    /// Creates a new [`DeribitExecutionClientFactory`] instance.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for DeribitExecutionClientFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ExecutionClientFactory for DeribitExecutionClientFactory {
+    fn create(
+        &self,
+        name: &str,
+        config: &dyn ClientConfig,
+        cache: Rc<RefCell<Cache>>,
+        clock: Rc<RefCell<dyn Clock>>,
+    ) -> anyhow::Result<Box<dyn ExecutionClient>> {
+        let deribit_config = config
+            .as_any()
+            .downcast_ref::<DeribitExecClientConfig>()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Invalid config type for DeribitExecutionClientFactory. Expected DeribitExecClientConfig, was {config:?}",
+                )
+            })?
+            .clone();
+
+        // Deribit uses netting (derivatives only, no hedging)
+        let oms_type = OmsType::Netting;
+        let account_type = AccountType::Margin;
+
+        let client_id = ClientId::from(name);
+        let core = ExecutionClientCore::new(
+            deribit_config.trader_id,
+            client_id,
+            *DERIBIT_VENUE,
+            oms_type,
+            deribit_config.account_id,
+            account_type,
+            None, // base_currency
+            clock,
+            cache,
+        );
+
+        let client = DeribitExecutionClient::new(core, deribit_config)?;
+        Ok(Box::new(client))
+    }
+
+    fn name(&self) -> &'static str {
+        "DERIBIT"
+    }
+
+    fn config_type(&self) -> &'static str {
+        "DeribitExecClientConfig"
     }
 }
 

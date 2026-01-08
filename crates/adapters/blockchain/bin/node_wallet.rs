@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,22 +21,24 @@ use nautilus_blockchain::{
 };
 use nautilus_common::{
     cache::Cache,
+    clients::ExecutionClient,
     live::{clock::LiveClock, runtime::get_runtime},
     logging::{init_logging, logger::LoggerConfig, writer::FileWriterConfig},
 };
 use nautilus_core::UUID4;
-use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
+use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     defi::chain::chains,
     enums::{AccountType, OmsType},
     identifiers::{AccountId, ClientId, TraderId},
+    stubs::TestDefault,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
-    let trader_id = TraderId::default();
-    let account = AccountId::default();
+    let trader_id = TraderId::test_default();
+    let account = AccountId::test_default();
     let arbitrum = chains::ARBITRUM.clone();
     let ethereum = chains::ETHEREUM.clone();
 
@@ -81,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let core_execution_client = ExecutionClientCore::new(
         trader_id,
-        ClientId::default(),
+        ClientId::new("BLOCKCHAIN"),
         *BLOCKCHAIN_VENUE,
         OmsType::Netting,
         account,

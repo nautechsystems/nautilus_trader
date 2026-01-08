@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -39,9 +39,9 @@ class DataEngineConfig(NautilusConfig, frozen=True):
     time_bars_origin_offset : dict[BarAggregation, pd.Timedelta | pd.DateOffset], optional
         A dictionary mapping time bar aggregations to their origin time offsets.
     time_bars_build_delay : int, default 0
-        The time delay (microseconds) before building and emitting a composite bar type.
-        15 microseconds can be useful in a backtest context, when aggregating internal bars
-        from internal bars several times so all messages are processed before a timer triggers.
+        The time delay (microseconds) before building and emitting a bar.
+        This can be useful in a backtest context to ensure data at bar boundary
+        timestamps is processed before the bar close timer fires.
     validate_data_sequence : bool, default False
         If data objects timestamp sequencing will be validated and handled.
     buffer_deltas : bool, default False

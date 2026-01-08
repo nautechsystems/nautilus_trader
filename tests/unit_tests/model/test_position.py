@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -3095,7 +3095,8 @@ class TestPosition:
 
         # Verify funding adjustment is preserved
         has_funding = any(
-            adj.adjustment_type == PositionAdjustmentType.FUNDING and adj.pnl_change == Money(10.0, USDT)
+            adj.adjustment_type == PositionAdjustmentType.FUNDING
+            and adj.pnl_change == Money(10.0, USDT)
             for adj in position.adjustments
         )
         assert has_funding

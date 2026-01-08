@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -1206,6 +1206,15 @@ cdef class Order:
         cdef Money commissions = self._commissions.get(currency)
         cdef double total_commissions = commissions.as_f64_c() if commissions is not None else 0.0
         self._commissions[currency] = Money(total_commissions + fill.commission.as_f64_c(), currency)
+
+    cdef void _update_quantity(self, Quantity quantity):
+        self.quantity = quantity
+
+        # Saturating subtraction to prevent underflow (clamps to zero)
+        self.leaves_qty = Quantity.from_raw_c(
+            self.quantity._mem.raw - min(self.quantity._mem.raw, self.filled_qty._mem.raw),
+            self.quantity._mem.precision,
+        )
 
     cdef double _calculate_avg_px(self, double last_qty, double last_px):
         if self.avg_px == 0.0:

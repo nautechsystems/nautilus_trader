@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    fmt::{Debug, Display, Formatter},
+    fmt::{Debug, Display},
     hash::{Hash, Hasher},
     str::FromStr,
 };
@@ -252,7 +252,7 @@ impl Hash for PoolIdentifier {
 }
 
 impl Display for PoolIdentifier {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Address(s) | Self::PoolId(s) => write!(f, "{s}"),
         }
@@ -260,7 +260,7 @@ impl Display for PoolIdentifier {
 }
 
 impl Debug for PoolIdentifier {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Address(s) => write!(f, "Address({s:?})"),
             Self::PoolId(s) => write!(f, "PoolId({s:?})"),

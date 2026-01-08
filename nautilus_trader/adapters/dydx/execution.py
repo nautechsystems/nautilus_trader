@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -249,7 +249,6 @@ class DYDXExecutionClient(LiveExecutionClient):
         )
         self._set_account_id(account_id)
         self._connect_account_timeout_secs = 10
-
 
         # WebSocket API
         self._ws_client = DYDXWebsocketClient(
@@ -857,12 +856,12 @@ class DYDXExecutionClient(LiveExecutionClient):
                     oracle_price=self._oracle_prices.get(instrument.id),
                 )
 
-                initial_margins[
-                    margin_balance.initial.currency
-                ] += margin_balance.initial.as_decimal()
-                maintenance_margins[
-                    margin_balance.maintenance.currency
-                ] += margin_balance.maintenance.as_decimal()
+                initial_margins[margin_balance.initial.currency] += (
+                    margin_balance.initial.as_decimal()
+                )
+                maintenance_margins[margin_balance.maintenance.currency] += (
+                    margin_balance.maintenance.as_decimal()
+                )
 
             margins = []
 
@@ -910,7 +909,9 @@ class DYDXExecutionClient(LiveExecutionClient):
         client_order_id: ClientOrderId,
         good_til_block: int,
     ):
-        self._log.info(f"Tracking order cancellation for {client_order_id} until block {good_til_block}...")
+        self._log.info(
+            f"Tracking order cancellation for {client_order_id} until block {good_til_block}...",
+        )
 
         start = self._clock.timestamp_ns()
 
@@ -922,11 +923,15 @@ class DYDXExecutionClient(LiveExecutionClient):
                 break
 
             if order.status != OrderStatus.ACCEPTED:
-                self._log.info(f"Order {client_order_id} status changed to {order.status}. Stopping tracking.")
+                self._log.info(
+                    f"Order {client_order_id} status changed to {order.status}. Stopping tracking.",
+                )
                 break
 
             if self._block_height >= int(good_til_block):
-                self._log.info(f"Order {client_order_id} reached good til block {good_til_block} at block height {self._block_height}. Sending cancel event...")
+                self._log.info(
+                    f"Order {client_order_id} reached good til block {good_til_block} at block height {self._block_height}. Sending cancel event...",
+                )
 
                 self.generate_order_canceled(
                     strategy_id=order.strategy_id,
@@ -984,8 +989,6 @@ class DYDXExecutionClient(LiveExecutionClient):
             self._log.error(f"Cannot handle order event: order {report.client_order_id} not found")
             return
 
-
-
         if order_msg.status in (
             DYDXOrderStatus.BEST_EFFORT_OPENED,
             DYDXOrderStatus.OPEN,
@@ -1014,7 +1017,9 @@ class DYDXExecutionClient(LiveExecutionClient):
 
         elif order_msg.status in (DYDXOrderStatus.FILLED,):
             if order.status == OrderStatus.SUBMITTED:
-                self._log.warning(f"Received a fill message for a submitted order {order.client_order_id}. Generating an inferred OrderAccepted.")
+                self._log.warning(
+                    f"Received a fill message for a submitted order {order.client_order_id}. Generating an inferred OrderAccepted.",
+                )
                 self.generate_order_accepted(
                     strategy_id=strategy_id,
                     instrument_id=report.instrument_id,
@@ -1029,7 +1034,9 @@ class DYDXExecutionClient(LiveExecutionClient):
                 # Skip order filled message and best effort canceled message. The _handle_fill_message generates
                 # a fill report.
                 # Best effort canceled is not a terminal state. Hence, we keep the state at accepted.
-                self._log.info(f"Skip order message: {order_msg}, for order with status {order.status}")
+                self._log.info(
+                    f"Skip order message: {order_msg}, for order with status {order.status}",
+                )
         else:
             message = f"Unknown order status `{order_msg.status}`"
             self._log.error(message)
@@ -1051,7 +1058,6 @@ class DYDXExecutionClient(LiveExecutionClient):
         venue_order_id = VenueOrderId(fill_msg.orderId)
         client_order_id = self._cache.client_order_id(venue_order_id)
 
-
         if client_order_id is None:
             self._log.error(
                 f"Cannot process order execution for {venue_order_id!r}: no `ClientOrderId` found (most likely due to being an external order)",
@@ -1072,7 +1078,6 @@ class DYDXExecutionClient(LiveExecutionClient):
         )
 
         trade_id = TradeId(fill_msg.id)
-
 
         if order.status != OrderStatus.FILLED:
             self.generate_order_filled(
@@ -1185,7 +1190,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
-        await self._broadcast_order(order=order,instrument=instrument)
+        await self._broadcast_order(order=order, instrument=instrument)
 
     async def _broadcast_order(self, order: Order, instrument: Instrument) -> None:
         retry_manager = await self._retry_manager_pool.acquire()

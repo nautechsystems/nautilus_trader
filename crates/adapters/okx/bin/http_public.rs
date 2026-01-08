@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,13 +15,10 @@
 
 use nautilus_model::{data::BarType, identifiers::InstrumentId};
 use nautilus_okx::{common::enums::OKXInstrumentType, http::client::OKXHttpClient};
-use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::TRACE)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let client = OKXHttpClient::from_env().unwrap();
 
@@ -39,8 +36,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let resp = client.request_mark_price(instrument_id).await;
     match resp {
-        Ok(resp) => tracing::debug!("{:?}", resp),
-        Err(e) => tracing::error!("{e:?}"),
+        Ok(resp) => log::debug!("{resp:?}"),
+        Err(e) => log::error!("{e:?}"),
     }
 
     // Request index price
@@ -48,15 +45,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let resp = client.request_index_price(instrument_id).await;
     match resp {
-        Ok(resp) => tracing::debug!("{:?}", resp),
-        Err(e) => tracing::error!("{e:?}"),
+        Ok(resp) => log::debug!("{resp:?}"),
+        Err(e) => log::error!("{e:?}"),
     }
 
     // Request trades
     let resp = client.request_trades(instrument_id, None, None, None).await;
     match resp {
-        Ok(resp) => tracing::debug!("{:?}", resp),
-        Err(e) => tracing::error!("{e:?}"),
+        Ok(resp) => log::debug!("{resp:?}"),
+        Err(e) => log::error!("{e:?}"),
     }
 
     // Request bars
@@ -64,8 +61,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let resp = client.request_bars(bar_type, None, None, None).await;
     match resp {
-        Ok(resp) => tracing::debug!("{:?}", resp),
-        Err(e) => tracing::error!("{e:?}"),
+        Ok(resp) => log::debug!("{resp:?}"),
+        Err(e) => log::error!("{e:?}"),
     }
 
     // let params = GetPositionTiersParamsBuilder::default()
@@ -74,8 +71,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //     .instrument_family("BTC-USD")
     //     .build()?;
     // match client.http_get_position_tiers(params).await {
-    //     Ok(resp) => tracing::debug!("{:?}", resp),
-    //     Err(e) => tracing::error!("{e:?}"),
+    //     Ok(resp) => log::debug!("{:?}", resp),
+    //     Err(e) => log::error!("{e:?}"),
     // }
     //
 
@@ -84,16 +81,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //     .instrument_type(OKXInstrumentType::Swap)
     //     .build()?;
     // match client.http_get_positions(params).await {
-    //     Ok(resp) => tracing::debug!("{:?}", resp),
-    //     Err(e) => tracing::error!("{e:?}"),
+    //     Ok(resp) => log::debug!("{:?}", resp),
+    //     Err(e) => log::error!("{e:?}"),
     // }
     //
     // let params = GetPositionsHistoryParamsBuilder::default()
     //     .instrument_type(OKXInstrumentType::Swap)
     //     .build()?;
     // match client.http_get_position_history(params).await {
-    //     Ok(resp) => tracing::debug!("{:?}", resp),
-    //     Err(e) => tracing::error!("{e:?}"),
+    //     Ok(resp) => log::debug!("{:?}", resp),
+    //     Err(e) => log::error!("{e:?}"),
     // }
 
     Ok(())

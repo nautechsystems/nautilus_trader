@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -281,7 +281,7 @@ fn binary_search_for_size(
             {
                 high *= U256::from(2);
                 expansions += 1;
-                tracing::debug!(
+                log::debug!(
                     "Expanding upper bound (expansion {}/{}): new high={}",
                     expansions,
                     config.max_bound_expansions,
@@ -294,9 +294,8 @@ fn binary_search_for_size(
     }
 
     if iterations >= config.max_iterations {
-        tracing::warn!(
-            "Binary search did not converge after {} iterations, returning conservative estimate",
-            iterations
+        log::warn!(
+            "Binary search did not converge after {iterations} iterations, returning conservative estimate"
         );
     }
 

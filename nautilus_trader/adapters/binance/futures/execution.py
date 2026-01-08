@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -53,6 +53,7 @@ from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
@@ -184,6 +185,17 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             margins=account_info.parse_to_margin_balances(),
             reported=True,
             ts_event=millis_to_nanos(account_info.updateTime),
+            info={
+                "total_wallet_balance": account_info.totalWalletBalance,
+                "total_margin_balance": account_info.totalMarginBalance,
+                "total_initial_margin": account_info.totalInitialMargin,
+                "total_maint_margin": account_info.totalMaintMargin,
+                "total_unrealized_profit": account_info.totalUnrealizedProfit,
+                "total_cross_wallet_balance": account_info.totalCrossWalletBalance,
+                "total_cross_unpnl": account_info.totalCrossUnPnl,
+                "available_balance": account_info.availableBalance,
+                "max_withdraw_amount": account_info.maxWithdrawAmount,
+            },
         )
 
         await self._await_account_registered(log_registered=False)
@@ -276,6 +288,47 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             # Add active symbol
             active_symbols.add(position.symbol)
         return active_symbols
+
+    async def generate_order_status_report(
+        self,
+        command: GenerateOrderStatusReport,
+    ) -> OrderStatusReport | None:
+        report = await super().generate_order_status_report(command)
+        if report is not None:
+            return report
+
+        client_order_id = command.client_order_id.value if command.client_order_id else None
+        venue_order_id = int(command.venue_order_id.value) if command.venue_order_id else None
+
+        if client_order_id is None and venue_order_id is None:
+            return None
+
+        try:
+            algo_order = await self._futures_http_account.query_algo_order(
+                algo_id=venue_order_id,
+                client_algo_id=client_order_id,
+            )
+        except BinanceError as e:
+            self._log.debug(f"Algo order query also failed: {e.message}")
+            return None
+
+        if algo_order is None:
+            return None
+
+        try:
+            report = algo_order.parse_to_order_status_report(
+                account_id=self.account_id,
+                instrument_id=self._get_cached_instrument_id(algo_order.symbol),
+                report_id=UUID4(),
+                enum_parser=self._futures_enum_parser,
+                ts_init=self._clock.timestamp_ns(),
+            )
+        except ValueError as e:
+            self._log.warning(f"Cannot parse algo order: {e}")
+            return None
+
+        self._log.debug(f"Received algo {report}")
+        return report
 
     async def generate_order_status_reports(
         self,

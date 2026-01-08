@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,8 +32,7 @@ macro_rules! impl_serialization_for_identifier {
                 D: Deserializer<'de>,
             {
                 let value_str: &str = Deserialize::deserialize(deserializer)?;
-                let value: $ty = value_str.into();
-                Ok(value)
+                Self::new_checked(value_str).map_err(serde::de::Error::custom)
             }
         }
     };

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,7 +21,9 @@ from py_clob_client.client import ClobClient
 
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
 from nautilus_trader.adapters.polymarket.common.gamma_markets import list_markets
-from nautilus_trader.adapters.polymarket.common.gamma_markets import normalize_gamma_market_to_clob_format
+from nautilus_trader.adapters.polymarket.common.gamma_markets import (
+    normalize_gamma_market_to_clob_format,
+)
 from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_condition_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
@@ -113,11 +115,17 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         # Create a copy to avoid mutating the caller's filters
         filters = filters.copy() if filters is not None else {}
 
-        if len(condition_ids) <= 100:  # We can filter directly by condition_id, but there is an API limit of max 100 condition_ids in the query string
-            self._log.info(f"Loading {len(instrument_ids)} instruments from {len(condition_ids)} markets, using direct condition_id filtering")
+        if (
+            len(condition_ids) <= 100
+        ):  # We can filter directly by condition_id, but there is an API limit of max 100 condition_ids in the query string
+            self._log.info(
+                f"Loading {len(instrument_ids)} instruments from {len(condition_ids)} markets, using direct condition_id filtering",
+            )
             filters["condition_ids"] = condition_ids
         else:
-            self._log.info(f"Loading {len(instrument_ids)} instruments from {len(condition_ids)} markets, using bulk load of all markets")
+            self._log.info(
+                f"Loading {len(instrument_ids)} instruments from {len(condition_ids)} markets, using bulk load of all markets",
+            )
 
         markets = await list_markets(http_client=self._http_client, filters=filters)
         self._log.info(f"Loaded {len(markets)} markets using Gamma API")

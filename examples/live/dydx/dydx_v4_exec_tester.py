@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -52,6 +52,7 @@ from nautilus_trader.adapters.dydx_v4 import DYDXv4DataClientConfig
 from nautilus_trader.adapters.dydx_v4 import DYDXv4ExecClientConfig
 from nautilus_trader.adapters.dydx_v4 import DYDXv4LiveDataClientFactory
 from nautilus_trader.adapters.dydx_v4 import DYDXv4LiveExecClientFactory
+from nautilus_trader.adapters.dydx_v4.constants import DYDX
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -101,7 +102,7 @@ config_node = TradingNodeConfig(
     risk_engine=LiveRiskEngineConfig(bypass=True),
     portfolio=PortfolioConfig(min_account_state_logging_interval_ms=1_000),
     data_clients={
-        "DYDX": DYDXv4DataClientConfig(
+        DYDX: DYDXv4DataClientConfig(
             wallet_address=None,  # 'DYDX_WALLET_ADDRESS' or 'DYDX_TESTNET_WALLET_ADDRESS' env var
             instrument_provider=InstrumentProviderConfig(
                 load_all=False,
@@ -111,7 +112,7 @@ config_node = TradingNodeConfig(
         ),
     },
     exec_clients={
-        "DYDX": DYDXv4ExecClientConfig(
+        DYDX: DYDXv4ExecClientConfig(
             wallet_address=None,  # 'DYDX_WALLET_ADDRESS' or 'DYDX_TESTNET_WALLET_ADDRESS' env var
             mnemonic=None,  # 'DYDX_MNEMONIC' or 'DYDX_TESTNET_MNEMONIC' env var
             subaccount=0,  # Default subaccount (created after first deposit/trade)
@@ -166,8 +167,8 @@ tester = ExecTester(config=config_tester)
 node.trader.add_strategy(tester)
 
 # Register your client factories with the node (using v4 Rust-backed factories)
-node.add_data_client_factory("DYDX", DYDXv4LiveDataClientFactory)
-node.add_exec_client_factory("DYDX", DYDXv4LiveExecClientFactory)
+node.add_data_client_factory(DYDX, DYDXv4LiveDataClientFactory)
+node.add_exec_client_factory(DYDX, DYDXv4LiveExecClientFactory)
 node.build()
 
 

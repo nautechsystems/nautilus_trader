@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,7 +19,8 @@ Deribit data client tester example.
 This example demonstrates how to use the Deribit data adapter to:
 - Connect to Deribit (testnet by default)
 - Load instruments for all currencies
-- Subscribe to market data (trades, quotes, order book)
+- Subscribe to market data (trades, quotes, order book, bars)
+- Subscribe to 1-minute OHLCV bars for BTC and ETH perpetuals
 
 Environment variables (for testnet):
 - DERIBIT_TESTNET_API_KEY: Your Deribit testnet API key
@@ -30,6 +31,7 @@ For production, use:
 - DERIBIT_API_SECRET: Your Deribit API secret
 
 """
+
 import os
 
 from nautilus_trader.adapters.deribit import DERIBIT
@@ -41,6 +43,7 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core.nautilus_pyo3 import DeribitInstrumentKind
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.test_kit.strategies.tester_data import DataTester
@@ -63,6 +66,12 @@ instrument_kinds: tuple[DeribitInstrumentKind, ...] | None = (
 # Define instruments to subscribe to
 # BTC-PERPETUAL is a popular perpetual futures contract
 perpetual_id = InstrumentId.from_str(f"BTC-PERPETUAL.{DERIBIT}")
+
+# Define bar types for live subscriptions (1-minute bars)
+bar_types = [
+    BarType.from_str(f"BTC-PERPETUAL.{DERIBIT}-1-MINUTE-LAST-EXTERNAL"),
+    BarType.from_str(f"ETH-PERPETUAL.{DERIBIT}-1-MINUTE-LAST-EXTERNAL"),
+]
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -97,10 +106,9 @@ node = TradingNode(config=config_node)
 # Configure and initialize the tester
 config_tester = DataTesterConfig(
     instrument_ids=[perpetual_id],
-    subscribe_quotes=True,
-    subscribe_trades=True,
-    subscribe_book_deltas=True,
-    # subscribe_book_deltas=True,
+    subscribe_bars=True,
+    bar_types=bar_types,
+    log_data=True,
 )
 tester = DataTester(config=config_tester)
 

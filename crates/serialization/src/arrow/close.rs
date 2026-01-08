@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,12 +25,12 @@ use nautilus_model::{
     data::close::InstrumentClose,
     enums::{FromU8, InstrumentCloseType},
     identifiers::InstrumentId,
-    types::{Price, fixed::PRECISION_BYTES},
+    types::fixed::PRECISION_BYTES,
 };
 
 use super::{
-    DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
-    extract_column, get_corrected_raw_price,
+    DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, decode_price,
+    extract_column,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -138,6 +138,12 @@ impl DecodeFromRecordBatch for InstrumentClose {
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|row| {
+                let close_price = decode_price(
+                    close_price_values.value(row),
+                    price_precision,
+                    "close_price",
+                    row,
+                )?;
                 let close_type_value = close_type_values.value(row);
                 let close_type =
                     InstrumentCloseType::from_u8(close_type_value).ok_or_else(|| {
@@ -146,14 +152,9 @@ impl DecodeFromRecordBatch for InstrumentClose {
                             format!("Invalid enum value, was {close_type_value}"),
                         )
                     })?;
-
-                // Use corrected raw value to handle floating-point precision errors in stored data
                 Ok(Self {
                     instrument_id,
-                    close_price: Price::from_raw(
-                        get_corrected_raw_price(close_price_values.value(row), price_precision),
-                        price_precision,
-                    ),
+                    close_price,
                     close_type,
                     ts_event: ts_event_values.value(row).into(),
                     ts_init: ts_init_values.value(row).into(),
@@ -180,7 +181,7 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::{array::Array, record_batch::RecordBatch};
-    use nautilus_model::types::{fixed::FIXED_SCALAR, price::PriceRaw};
+    use nautilus_model::types::{Price, fixed::FIXED_SCALAR, price::PriceRaw};
     use rstest::rstest;
 
     use super::*;
@@ -336,5 +337,147 @@ mod tests {
         );
         assert_eq!(decoded_data[1].ts_event.as_u64(), 2);
         assert_eq!(decoded_data[1].ts_init.as_u64(), 4);
+    }
+
+    #[rstest]
+    fn test_decode_batch_invalid_close_price_returns_error() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let metadata = HashMap::from([
+            (KEY_INSTRUMENT_ID.to_string(), instrument_id.to_string()),
+            (KEY_PRICE_PRECISION.to_string(), "2".to_string()),
+        ]);
+
+        let invalid_price: PriceRaw = PriceRaw::MAX - 1000;
+        let close_price = FixedSizeBinaryArray::from(vec![&invalid_price.to_le_bytes()]);
+        let close_type = UInt8Array::from(vec![InstrumentCloseType::EndOfSession as u8]);
+        let ts_event = UInt64Array::from(vec![1]);
+        let ts_init = UInt64Array::from(vec![2]);
+
+        let record_batch = RecordBatch::try_new(
+            InstrumentClose::get_schema(Some(metadata.clone())).into(),
+            vec![
+                Arc::new(close_price),
+                Arc::new(close_type),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        let result = InstrumentClose::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("close_price") && err.to_string().contains("row 0"),
+            "Expected close_price error at row 0, got: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_batch_invalid_close_type_returns_error() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let metadata = HashMap::from([
+            (KEY_INSTRUMENT_ID.to_string(), instrument_id.to_string()),
+            (KEY_PRICE_PRECISION.to_string(), "2".to_string()),
+        ]);
+
+        let raw_price = (150.50 * FIXED_SCALAR) as PriceRaw;
+        let close_price = FixedSizeBinaryArray::from(vec![&raw_price.to_le_bytes()]);
+        let close_type = UInt8Array::from(vec![99]);
+        let ts_event = UInt64Array::from(vec![1]);
+        let ts_init = UInt64Array::from(vec![2]);
+
+        let record_batch = RecordBatch::try_new(
+            InstrumentClose::get_schema(Some(metadata.clone())).into(),
+            vec![
+                Arc::new(close_price),
+                Arc::new(close_type),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        let result = InstrumentClose::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("InstrumentCloseType"),
+            "Expected InstrumentCloseType error, got: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_batch_missing_instrument_id_returns_error() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut metadata = HashMap::from([
+            (KEY_INSTRUMENT_ID.to_string(), instrument_id.to_string()),
+            (KEY_PRICE_PRECISION.to_string(), "2".to_string()),
+        ]);
+
+        let raw_price = (150.50 * FIXED_SCALAR) as PriceRaw;
+        let close_price = FixedSizeBinaryArray::from(vec![&raw_price.to_le_bytes()]);
+        let close_type = UInt8Array::from(vec![InstrumentCloseType::EndOfSession as u8]);
+        let ts_event = UInt64Array::from(vec![1]);
+        let ts_init = UInt64Array::from(vec![2]);
+
+        let record_batch = RecordBatch::try_new(
+            InstrumentClose::get_schema(Some(metadata.clone())).into(),
+            vec![
+                Arc::new(close_price),
+                Arc::new(close_type),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        metadata.remove(KEY_INSTRUMENT_ID);
+
+        let result = InstrumentClose::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("instrument_id"),
+            "Expected missing instrument_id error, got: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_encode_decode_round_trip() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let metadata = HashMap::from([
+            (KEY_INSTRUMENT_ID.to_string(), instrument_id.to_string()),
+            (KEY_PRICE_PRECISION.to_string(), "2".to_string()),
+        ]);
+
+        let close1 = InstrumentClose {
+            instrument_id,
+            close_price: Price::from("150.50"),
+            close_type: InstrumentCloseType::EndOfSession,
+            ts_event: 1_000_000_000.into(),
+            ts_init: 1_000_000_001.into(),
+        };
+
+        let close2 = InstrumentClose {
+            instrument_id,
+            close_price: Price::from("151.25"),
+            close_type: InstrumentCloseType::ContractExpired,
+            ts_event: 2_000_000_000.into(),
+            ts_init: 2_000_000_001.into(),
+        };
+
+        let original = vec![close1, close2];
+        let record_batch = InstrumentClose::encode_batch(&metadata, &original).unwrap();
+        let decoded = InstrumentClose::decode_batch(&metadata, record_batch).unwrap();
+
+        assert_eq!(decoded.len(), original.len());
+        for (orig, dec) in original.iter().zip(decoded.iter()) {
+            assert_eq!(dec.instrument_id, orig.instrument_id);
+            assert_eq!(dec.close_price, orig.close_price);
+            assert_eq!(dec.close_type, orig.close_type);
+            assert_eq!(dec.ts_event, orig.ts_event);
+            assert_eq!(dec.ts_init, orig.ts_init);
+        }
     }
 }

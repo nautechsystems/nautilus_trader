@@ -303,25 +303,23 @@ if __name__ == "__main__":
 To run a replay in Rust, create a binary similar to the following:
 
 ```rust
-use std::{env, path::PathBuf};
+use std::path::PathBuf;
 
 use nautilus_adapters::tardis::replay::run_tardis_machine_replay_from_config;
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let config_filepath = PathBuf::from("YOUR_CONFIG_FILEPATH");
     run_tardis_machine_replay_from_config(&config_filepath).await;
 }
 ```
 
-Make sure to enable Rust logging by exporting the following environment variable:
+Logging defaults to INFO level. To enable debug logging, export the following environment variable:
 
 ```bash
-export RUST_LOG=debug
+export NAUTILUS_LOG=debug
 ```
 
 A working example binary can be found [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/tardis/bin/example_replay.rs).
@@ -577,9 +575,7 @@ use nautilus_adapters::tardis::{enums::Exchange, http::client::TardisHttpClient}
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let client = TardisHttpClient::new(None, None, None).unwrap();
 

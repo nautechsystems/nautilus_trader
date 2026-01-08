@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -173,8 +173,6 @@ mod tests {
         serde_json::from_value(log_json).expect("Failed to deserialize RPC log")
     }
 
-    // ========== HyperSync parser tests ==========
-
     #[rstest]
     fn test_parse_pair_created_hypersync(hypersync_log_weth_usdt: HypersyncLog) {
         let event =
@@ -196,8 +194,6 @@ mod tests {
         assert_eq!(event.fee, None);
         assert_eq!(event.tick_spacing, None);
     }
-
-    // ========== RPC parser tests ==========
 
     #[rstest]
     fn test_parse_pair_created_rpc(rpc_log_weth_usdt: RpcLog) {

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -130,11 +130,8 @@ impl OrderSubmitter {
         quantity: Quantity,
         block_height: u32,
     ) -> Result<(), DydxError> {
-        tracing::info!(
-            "Submitting market order: client_id={}, side={:?}, quantity={}",
-            client_order_id,
-            side,
-            quantity
+        log::info!(
+            "Submitting market order: client_id={client_order_id}, side={side:?}, quantity={quantity}"
         );
 
         // Get market params from instrument cache
@@ -190,15 +187,8 @@ impl OrderSubmitter {
         block_height: u32,
         expire_time: Option<i64>,
     ) -> Result<(), DydxError> {
-        tracing::info!(
-            "Submitting limit order: client_id={}, side={:?}, price={}, quantity={}, tif={:?}, post_only={}, reduce_only={}",
-            client_order_id,
-            side,
-            price,
-            quantity,
-            time_in_force,
-            post_only,
-            reduce_only
+        log::info!(
+            "Submitting limit order: client_id={client_order_id}, side={side:?}, price={price}, quantity={quantity}, tif={time_in_force:?}, post_only={post_only}, reduce_only={reduce_only}"
         );
 
         // Get market params from instrument cache
@@ -268,11 +258,7 @@ impl OrderSubmitter {
         client_order_id: u32,
         block_height: u32,
     ) -> Result<(), DydxError> {
-        tracing::info!(
-            "Cancelling order: client_id={}, instrument={}",
-            client_order_id,
-            instrument_id
-        );
+        log::info!("Cancelling order: client_id={client_order_id}, instrument={instrument_id}");
 
         // Get market params to retrieve clob_pair_id
         let market_params = self.get_market_params(instrument_id)?;
@@ -324,7 +310,7 @@ impl OrderSubmitter {
             return Ok(());
         }
 
-        tracing::info!(
+        log::info!(
             "Batch cancelling {} orders in single transaction",
             orders.len()
         );
@@ -399,12 +385,8 @@ impl OrderSubmitter {
         // Apply order-type-specific builder method
         builder = match order_type {
             ConditionalOrderType::StopMarket => {
-                tracing::info!(
-                    "Submitting stop market order: client_id={}, side={:?}, trigger={}, qty={}",
-                    client_order_id,
-                    side,
-                    trigger_price,
-                    quantity
+                log::info!(
+                    "Submitting stop market order: client_id={client_order_id}, side={side:?}, trigger={trigger_price}, qty={quantity}"
                 );
                 builder.stop_market(proto_side, trigger_decimal, size_decimal)
             }
@@ -412,13 +394,8 @@ impl OrderSubmitter {
                 let limit = limit_price.ok_or_else(|| {
                     DydxError::Order("StopLimit requires limit_price".to_string())
                 })?;
-                tracing::info!(
-                    "Submitting stop limit order: client_id={}, side={:?}, trigger={}, limit={}, qty={}",
-                    client_order_id,
-                    side,
-                    trigger_price,
-                    limit,
-                    quantity
+                log::info!(
+                    "Submitting stop limit order: client_id={client_order_id}, side={side:?}, trigger={trigger_price}, limit={limit}, qty={quantity}"
                 );
                 builder.stop_limit(
                     proto_side,
@@ -428,12 +405,8 @@ impl OrderSubmitter {
                 )
             }
             ConditionalOrderType::TakeProfitMarket => {
-                tracing::info!(
-                    "Submitting take profit market order: client_id={}, side={:?}, trigger={}, qty={}",
-                    client_order_id,
-                    side,
-                    trigger_price,
-                    quantity
+                log::info!(
+                    "Submitting take profit market order: client_id={client_order_id}, side={side:?}, trigger={trigger_price}, qty={quantity}"
                 );
                 builder.take_profit_market(proto_side, trigger_decimal, size_decimal)
             }
@@ -441,13 +414,8 @@ impl OrderSubmitter {
                 let limit = limit_price.ok_or_else(|| {
                     DydxError::Order("TakeProfitLimit requires limit_price".to_string())
                 })?;
-                tracing::info!(
-                    "Submitting take profit limit order: client_id={}, side={:?}, trigger={}, limit={}, qty={}",
-                    client_order_id,
-                    side,
-                    trigger_price,
-                    limit,
-                    quantity
+                log::info!(
+                    "Submitting take profit limit order: client_id={client_order_id}, side={side:?}, trigger={trigger_price}, limit={limit}, qty={quantity}"
                 );
                 builder.take_profit_limit(
                     proto_side,
@@ -726,7 +694,7 @@ impl OrderSubmitter {
             ))))
         })?;
 
-        tracing::debug!(
+        log::debug!(
             "Broadcasting {} with {} bytes, account_seq={}",
             operation,
             tx_bytes.len(),
@@ -735,13 +703,13 @@ impl OrderSubmitter {
 
         let mut grpc_client = self.grpc_client.clone();
         let tx_hash = grpc_client.broadcast_tx(tx_bytes).await.map_err(|e| {
-            tracing::error!("gRPC broadcast failed for {}: {}", operation, e);
+            log::error!("gRPC broadcast failed for {operation}: {e}");
             DydxError::Grpc(Box::new(tonic::Status::internal(format!(
                 "Broadcast failed: {e}"
             ))))
         })?;
 
-        tracing::info!("{} successfully: tx_hash={}", operation, tx_hash);
+        log::info!("{operation} successfully: tx_hash={tx_hash}");
         Ok(())
     }
 
@@ -827,7 +795,7 @@ impl OrderSubmitter {
             ))))
         })?;
 
-        tracing::info!("Batch cancelled {} orders: tx_hash={}", count, tx_hash);
+        log::info!("Batch cancelled {count} orders: tx_hash={tx_hash}");
         Ok(())
     }
 }

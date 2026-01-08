@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -321,7 +321,7 @@ impl WebSocketClientInner {
         let connector = crate::net::RealTcpConnector;
         let tcp_stream = connector.connect(&addr).await?;
         if let Err(e) = tcp_stream.set_nodelay(true) {
-            tracing::warn!("Failed to enable TCP_NODELAY for socket client: {e:?}");
+            log::warn!("Failed to enable TCP_NODELAY for socket client: {e:?}");
         }
 
         // Wrap stream appropriately based on scheme
@@ -370,10 +370,10 @@ impl WebSocketClientInner {
     /// - The reconnection attempt times out.
     /// - The connection to the server fails.
     pub async fn reconnect(&mut self) -> Result<(), Error> {
-        tracing::debug!("Reconnecting");
+        log::debug!("Reconnecting");
 
         if self.is_stream_mode {
-            tracing::warn!(
+            log::warn!(
                 "Auto-reconnect disabled for stream-based WebSocket client; \
                 stream users must manually reconnect by creating a new connection"
             );
@@ -384,7 +384,7 @@ impl WebSocketClientInner {
         }
 
         if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
-            tracing::debug!("Reconnect aborted due to disconnect state");
+            log::debug!("Reconnect aborted due to disconnect state");
             return Ok(());
         }
 
@@ -394,7 +394,7 @@ impl WebSocketClientInner {
                 Self::connect_with_server(&self.config.url, self.config.headers.clone()).await?;
 
             if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
-                tracing::debug!("Reconnect aborted mid-flight (after connect)");
+                log::debug!("Reconnect aborted mid-flight (after connect)");
                 return Ok(());
             }
 
@@ -403,7 +403,7 @@ impl WebSocketClientInner {
             // to prevent silent message loss if the new connection drops immediately.
             let (tx, rx) = tokio::sync::oneshot::channel();
             if let Err(e) = self.writer_tx.send(WriterCommand::Update(new_writer, tx)) {
-                tracing::error!("{e}");
+                log::error!("{e}");
                 return Err(Error::Io(std::io::Error::new(
                     std::io::ErrorKind::BrokenPipe,
                     format!("Failed to send update command: {e}"),
@@ -412,16 +412,16 @@ impl WebSocketClientInner {
 
             // Wait for writer to confirm it has drained the buffer
             match rx.await {
-                Ok(true) => tracing::debug!("Writer confirmed buffer drain success"),
+                Ok(true) => log::debug!("Writer confirmed buffer drain success"),
                 Ok(false) => {
-                    tracing::warn!("Writer failed to drain buffer, aborting reconnect");
+                    log::warn!("Writer failed to drain buffer, aborting reconnect");
                     // Return error to trigger retry logic in controller
                     return Err(Error::Io(std::io::Error::other(
                         "Failed to drain reconnection buffer",
                     )));
                 }
                 Err(e) => {
-                    tracing::error!("Writer dropped update channel: {e}");
+                    log::error!("Writer dropped update channel: {e}");
                     return Err(Error::Io(std::io::Error::new(
                         std::io::ErrorKind::BrokenPipe,
                         "Writer task dropped response channel",
@@ -433,7 +433,7 @@ impl WebSocketClientInner {
             tokio::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS)).await;
 
             if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
-                tracing::debug!("Reconnect aborted mid-flight (after delay)");
+                log::debug!("Reconnect aborted mid-flight (after delay)");
                 return Ok(());
             }
 
@@ -456,7 +456,7 @@ impl WebSocketClientInner {
                 )
                 .is_err()
             {
-                tracing::debug!("Reconnect aborted (state changed during reconnect)");
+                log::debug!("Reconnect aborted (state changed during reconnect)");
                 return Ok(());
             }
 
@@ -471,7 +471,7 @@ impl WebSocketClientInner {
                 None
             };
 
-            tracing::debug!("Reconnect succeeded");
+            log::debug!("Reconnect succeeded");
             Ok(())
         })
         .await
@@ -508,7 +508,7 @@ impl WebSocketClientInner {
         message_handler: Option<&MessageHandler>,
         ping_handler: Option<&PingHandler>,
     ) -> tokio::task::JoinHandle<()> {
-        tracing::debug!("Started message handler task 'read'");
+        log::debug!("Started message handler task 'read'");
 
         let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
 
@@ -524,37 +524,37 @@ impl WebSocketClientInner {
 
                 match tokio::time::timeout(check_interval, reader.next()).await {
                     Ok(Some(Ok(Message::Binary(data)))) => {
-                        tracing::trace!("Received message <binary> {} bytes", data.len());
+                        log::trace!("Received message <binary> {} bytes", data.len());
                         if let Some(ref handler) = message_handler {
                             handler(Message::Binary(data));
                         }
                     }
                     Ok(Some(Ok(Message::Text(data)))) => {
-                        tracing::trace!("Received message: {data}");
+                        log::trace!("Received message: {data}");
                         if let Some(ref handler) = message_handler {
                             handler(Message::Text(data));
                         }
                     }
                     Ok(Some(Ok(Message::Ping(ping_data)))) => {
-                        tracing::trace!("Received ping: {ping_data:?}");
+                        log::trace!("Received ping: {ping_data:?}");
                         if let Some(ref handler) = ping_handler {
                             handler(ping_data.to_vec());
                         }
                     }
                     Ok(Some(Ok(Message::Pong(_)))) => {
-                        tracing::trace!("Received pong");
+                        log::trace!("Received pong");
                     }
                     Ok(Some(Ok(Message::Close(_)))) => {
-                        tracing::debug!("Received close message - terminating");
+                        log::debug!("Received close message - terminating");
                         break;
                     }
                     Ok(Some(Ok(_))) => (),
                     Ok(Some(Err(e))) => {
-                        tracing::error!("Received error message - terminating: {e}");
+                        log::error!("Received error message - terminating: {e}");
                         break;
                     }
                     Ok(None) => {
-                        tracing::debug!("No message received - terminating");
+                        log::debug!("No message received - terminating");
                         break;
                     }
                     Err(_) => {
@@ -579,10 +579,7 @@ impl WebSocketClientInner {
         }
 
         let initial_buffer_len = buffer.len();
-        tracing::info!(
-            "Sending {} buffered messages after reconnection",
-            initial_buffer_len
-        );
+        log::info!("Sending {initial_buffer_len} buffered messages after reconnection");
 
         let mut send_error_occurred = false;
 
@@ -591,7 +588,7 @@ impl WebSocketClientInner {
             let msg_to_send = buffered_msg.clone();
 
             if let Err(e) = writer.send(msg_to_send).await {
-                tracing::error!(
+                log::error!(
                     "Failed to send buffered message after reconnection: {e}, {} messages remain in buffer",
                     buffer.len()
                 );
@@ -604,10 +601,7 @@ impl WebSocketClientInner {
         }
 
         if buffer.is_empty() {
-            tracing::info!(
-                "Successfully sent all {} buffered messages",
-                initial_buffer_len
-            );
+            log::info!("Successfully sent all {initial_buffer_len} buffered messages");
         }
 
         send_error_occurred
@@ -634,7 +628,7 @@ impl WebSocketClientInner {
                     ConnectionMode::Disconnect => {
                         // Log any buffered messages that will be lost
                         if !reconnect_buffer.is_empty() {
-                            tracing::warn!(
+                            log::warn!(
                                 "Discarding {} buffered messages due to disconnect",
                                 reconnect_buffer.len()
                             );
@@ -653,7 +647,7 @@ impl WebSocketClientInner {
                     ConnectionMode::Closed => {
                         // Log any buffered messages that will be lost
                         if !reconnect_buffer.is_empty() {
-                            tracing::warn!(
+                            log::warn!(
                                 "Discarding {} buffered messages due to closed connection",
                                 reconnect_buffer.len()
                             );
@@ -674,7 +668,7 @@ impl WebSocketClientInner {
 
                         match msg {
                             WriterCommand::Update(new_writer, tx) => {
-                                tracing::debug!("Received new writer");
+                                log::debug!("Received new writer");
 
                                 // Delay before closing connection
                                 tokio::time::sleep(Duration::from_millis(100)).await;
@@ -688,7 +682,7 @@ impl WebSocketClientInner {
                                 .await;
 
                                 active_writer = new_writer;
-                                tracing::debug!("Updated writer");
+                                log::debug!("Updated writer");
 
                                 let send_error = Self::drain_reconnect_buffer(
                                     &mut reconnect_buffer,
@@ -697,14 +691,14 @@ impl WebSocketClientInner {
                                 .await;
 
                                 if let Err(e) = tx.send(!send_error) {
-                                    tracing::error!(
+                                    log::error!(
                                         "Failed to report drain status to controller: {e:?}"
                                     );
                                 }
                             }
                             WriterCommand::Send(msg) if mode.is_reconnect() => {
                                 // Buffer messages during reconnection instead of dropping them
-                                tracing::debug!(
+                                log::debug!(
                                     "Buffering message during reconnection (buffer size: {})",
                                     reconnect_buffer.len() + 1
                                 );
@@ -712,8 +706,8 @@ impl WebSocketClientInner {
                             }
                             WriterCommand::Send(msg) => {
                                 if let Err(e) = active_writer.send(msg.clone()).await {
-                                    tracing::error!("Failed to send message: {e}");
-                                    tracing::warn!("Writer triggering reconnect");
+                                    log::error!("Failed to send message: {e}");
+                                    log::warn!("Writer triggering reconnect");
                                     reconnect_buffer.push_back(msg);
                                     connection_state
                                         .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
@@ -723,7 +717,7 @@ impl WebSocketClientInner {
                     }
                     Ok(None) => {
                         // Channel closed - writer task should terminate
-                        tracing::debug!("Writer channel closed, terminating writer task");
+                        log::debug!("Writer channel closed, terminating writer task");
                         break;
                     }
                     Err(_) => {
@@ -767,9 +761,9 @@ impl WebSocketClientInner {
                         };
 
                         match writer_tx.send(msg) {
-                            Ok(()) => tracing::trace!("Sent heartbeat to writer task"),
+                            Ok(()) => log::trace!("Sent heartbeat to writer task"),
                             Err(e) => {
-                                tracing::error!("Failed to send heartbeat to writer task: {e}");
+                                log::error!("Failed to send heartbeat to writer task: {e}");
                             }
                         }
                     }
@@ -820,7 +814,7 @@ impl CleanDrop for WebSocketClientInner {
 
 impl Debug for WebSocketClientInner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("WebSocketClientInner")
+        f.debug_struct(stringify!(WebSocketClientInner))
             .field("config", &self.config)
             .field(
                 "connection_mode",
@@ -939,7 +933,7 @@ impl WebSocketClient {
             )));
         }
 
-        tracing::debug!("Connecting");
+        log::debug!("Connecting");
         let inner =
             WebSocketClientInner::connect_url(config, message_handler, ping_handler).await?;
         let connection_mode = inner.connection_mode.clone();
@@ -1033,7 +1027,7 @@ impl WebSocketClient {
         let check_interval = Duration::from_millis(SEND_OPERATION_CHECK_INTERVAL_MS);
 
         if !self.is_active() {
-            tracing::debug!("Waiting for client to become ACTIVE before sending...");
+            log::debug!("Waiting for client to become ACTIVE before sending...");
 
             let inner = tokio::time::timeout(timeout, async {
                 loop {
@@ -1062,7 +1056,7 @@ impl WebSocketClient {
     /// Controller task will periodically check the disconnect mode
     /// and shutdown the client if it is alive
     pub async fn disconnect(&self) {
-        tracing::debug!("Disconnecting");
+        log::debug!("Disconnecting");
         self.connection_mode
             .store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
 
@@ -1080,9 +1074,9 @@ impl WebSocketClient {
             })
             .await
         {
-            tracing::debug!("Controller task finished");
+            log::debug!("Controller task finished");
         } else {
-            tracing::error!("Timeout waiting for controller task to finish");
+            log::error!("Timeout waiting for controller task to finish");
             if !self.controller_task.is_finished() {
                 self.controller_task.abort();
                 log_task_aborted("controller");
@@ -1109,7 +1103,7 @@ impl WebSocketClient {
         self.rate_limiter.await_keys_ready(keys).await;
         self.wait_for_active().await?;
 
-        tracing::trace!("Sending text: {data:?}");
+        log::trace!("Sending text: {data:?}");
 
         let msg = Message::Text(data.into());
         self.writer_tx
@@ -1125,7 +1119,7 @@ impl WebSocketClient {
     pub async fn send_pong(&self, data: Vec<u8>) -> Result<(), SendError> {
         self.wait_for_active().await?;
 
-        tracing::trace!("Sending pong frame ({} bytes)", data.len());
+        log::trace!("Sending pong frame ({} bytes)", data.len());
 
         let msg = Message::Pong(data.into());
         self.writer_tx
@@ -1152,7 +1146,7 @@ impl WebSocketClient {
         self.rate_limiter.await_keys_ready(keys).await;
         self.wait_for_active().await?;
 
-        tracing::trace!("Sending bytes: {data:?}");
+        log::trace!("Sending bytes: {data:?}");
 
         let msg = Message::Binary(data.into());
         self.writer_tx
@@ -1189,7 +1183,7 @@ impl WebSocketClient {
                 let mut mode = ConnectionMode::from_atomic(&connection_mode);
 
                 if mode.is_disconnect() {
-                    tracing::debug!("Disconnecting");
+                    log::debug!("Disconnecting");
 
                     let timeout = Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS);
                     if tokio::time::timeout(timeout, async {
@@ -1213,11 +1207,16 @@ impl WebSocketClient {
                     .await
                     .is_err()
                     {
-                        tracing::error!("Shutdown timed out after {}s", timeout.as_secs());
+                        log::error!("Shutdown timed out after {}s", timeout.as_secs());
                     }
 
-                    tracing::debug!("Closed");
+                    log::debug!("Closed");
                     break; // Controller finished
+                }
+
+                if mode.is_closed() {
+                    log::debug!("Connection closed");
+                    break;
                 }
 
                 if mode.is_active() && !inner.is_alive() {
@@ -1230,7 +1229,7 @@ impl WebSocketClient {
                         )
                         .is_ok()
                     {
-                        tracing::debug!("Detected dead read task, transitioning to RECONNECT");
+                        log::debug!("Detected dead read task, transitioning to RECONNECT");
                     }
                     mode = ConnectionMode::from_atomic(&connection_mode);
                 }
@@ -1240,16 +1239,15 @@ impl WebSocketClient {
                     if let Some(max_attempts) = inner.reconnect_max_attempts
                         && inner.reconnection_attempt_count >= max_attempts
                     {
-                        tracing::error!(
-                            "Max reconnection attempts ({}) exceeded, transitioning to CLOSED",
-                            max_attempts
+                        log::error!(
+                            "Max reconnection attempts ({max_attempts}) exceeded, transitioning to CLOSED"
                         );
                         connection_mode.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
                         break;
                     }
 
                     inner.reconnection_attempt_count += 1;
-                    tracing::debug!(
+                    log::debug!(
                         "Reconnection attempt {} of {}",
                         inner.reconnection_attempt_count,
                         inner
@@ -1268,30 +1266,30 @@ impl WebSocketClient {
                                     let reconnected_msg =
                                         Message::Text(RECONNECTED.to_string().into());
                                     handler(reconnected_msg);
-                                    tracing::debug!("Sent reconnected message to handler");
+                                    log::debug!("Sent reconnected message to handler");
                                 }
 
                                 // TODO: Retain this legacy callback for use from Python
                                 if let Some(ref callback) = post_reconnection {
                                     callback();
-                                    tracing::debug!("Called `post_reconnection` handler");
+                                    log::debug!("Called `post_reconnection` handler");
                                 }
 
-                                tracing::debug!("Reconnected successfully");
+                                log::debug!("Reconnected successfully");
                             } else {
-                                tracing::debug!(
+                                log::debug!(
                                     "Skipping post_reconnection handlers due to disconnect state"
                                 );
                             }
                         }
                         Err(e) => {
                             let duration = inner.backoff.next_duration();
-                            tracing::warn!(
+                            log::warn!(
                                 "Reconnect attempt {} failed: {e}",
                                 inner.reconnection_attempt_count
                             );
                             if !duration.is_zero() {
-                                tracing::warn!("Backing off for {}s...", duration.as_secs_f64());
+                                log::warn!("Backing off for {}s...", duration.as_secs_f64());
                             }
                             tokio::time::sleep(duration).await;
                         }
@@ -1398,7 +1396,7 @@ mod tests {
                                 tokio_tungstenite::tungstenite::protocol::Message::Text(txt)
                                     if txt == "close-now" =>
                                 {
-                                    tracing::debug!("Forcibly closing from server side");
+                                    log::debug!("Forcibly closing from server side");
                                     // This sends a close frame, then stops reading
                                     let _ = websocket.close(None).await;
                                     break;

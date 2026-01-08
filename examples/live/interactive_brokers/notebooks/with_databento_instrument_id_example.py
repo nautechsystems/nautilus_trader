@@ -27,10 +27,16 @@ from nautilus_trader.adapters.interactive_brokers.common import IB
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
+from nautilus_trader.adapters.interactive_brokers.config import (
+    InteractiveBrokersInstrumentProviderConfig,
+)
 from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
-from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
-from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveDataClientFactory,
+)
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveExecClientFactory,
+)
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import DatabaseConfig

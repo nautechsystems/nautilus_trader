@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -62,8 +62,8 @@ class BinanceSpotUserMsgWrapper(msgspec.Struct, frozen=True):
     Provides a wrapper for execution WebSocket messages from Binance.
     """
 
-    stream: str
-    data: BinanceSpotUserMsgData
+    data: BinanceSpotUserMsgData | None = None
+    stream: str | None = None
 
 
 class BinanceSpotBalance(msgspec.Struct, frozen=True):

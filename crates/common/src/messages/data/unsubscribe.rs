@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,17 +29,20 @@ pub struct UnsubscribeCustomData {
     pub data_type: DataType,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub correlation_id: Option<UUID4>,
     pub params: Option<IndexMap<String, String>>,
 }
 
 impl UnsubscribeCustomData {
     /// Creates a new [`UnsubscribeCustomData`] instance.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         client_id: Option<ClientId>,
         venue: Option<Venue>,
         data_type: DataType,
         command_id: UUID4,
         ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
@@ -49,6 +52,7 @@ impl UnsubscribeCustomData {
             data_type,
             command_id,
             ts_init,
+            correlation_id,
             params,
         }
     }
@@ -61,17 +65,20 @@ pub struct UnsubscribeInstrument {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub correlation_id: Option<UUID4>,
     pub params: Option<IndexMap<String, String>>,
 }
 
 impl UnsubscribeInstrument {
     /// Creates a new [`UnsubscribeInstrument`] instance.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
@@ -81,6 +88,7 @@ impl UnsubscribeInstrument {
             venue,
             command_id,
             ts_init,
+            correlation_id,
             params,
         }
     }
@@ -92,6 +100,7 @@ pub struct UnsubscribeInstruments {
     pub venue: Venue,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub correlation_id: Option<UUID4>,
     pub params: Option<IndexMap<String, String>>,
 }
 
@@ -102,6 +111,7 @@ impl UnsubscribeInstruments {
         venue: Venue,
         command_id: UUID4,
         ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
         Self {
@@ -109,6 +119,7 @@ impl UnsubscribeInstruments {
             venue,
             command_id,
             ts_init,
+            correlation_id,
             params,
         }
     }
@@ -121,6 +132,7 @@ pub struct UnsubscribeBookDeltas {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub correlation_id: Option<UUID4>,
     pub params: Option<IndexMap<String, String>>,
 }
 
@@ -133,6 +145,7 @@ impl UnsubscribeBookDeltas {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
@@ -142,6 +155,7 @@ impl UnsubscribeBookDeltas {
             venue,
             command_id,
             ts_init,
+            correlation_id,
             params,
         }
     }
@@ -154,6 +168,7 @@ pub struct UnsubscribeBookDepth10 {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub correlation_id: Option<UUID4>,
     pub params: Option<IndexMap<String, String>>,
 }
 
@@ -166,6 +181,7 @@ impl UnsubscribeBookDepth10 {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
@@ -175,6 +191,7 @@ impl UnsubscribeBookDepth10 {
             venue,
             command_id,
             ts_init,
+            correlation_id,
             params,
         }
     }
@@ -187,6 +204,7 @@ pub struct UnsubscribeBookSnapshots {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub correlation_id: Option<UUID4>,
     pub params: Option<IndexMap<String, String>>,
 }
 
@@ -199,6 +217,7 @@ impl UnsubscribeBookSnapshots {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
@@ -208,6 +227,7 @@ impl UnsubscribeBookSnapshots {
             venue,
             command_id,
             ts_init,
+            correlation_id,
             params,
         }
     }
@@ -220,6 +240,7 @@ pub struct UnsubscribeQuotes {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub correlation_id: Option<UUID4>,
     pub params: Option<IndexMap<String, String>>,
 }
 
@@ -232,6 +253,7 @@ impl UnsubscribeQuotes {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
@@ -241,6 +263,7 @@ impl UnsubscribeQuotes {
             venue,
             command_id,
             ts_init,
+            correlation_id,
             params,
         }
     }
@@ -253,6 +276,7 @@ pub struct UnsubscribeTrades {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub correlation_id: Option<UUID4>,
     pub params: Option<IndexMap<String, String>>,
 }
 
@@ -265,6 +289,7 @@ impl UnsubscribeTrades {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
@@ -274,6 +299,7 @@ impl UnsubscribeTrades {
             venue,
             command_id,
             ts_init,
+            correlation_id,
             params,
         }
     }
@@ -286,6 +312,7 @@ pub struct UnsubscribeBars {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub correlation_id: Option<UUID4>,
     pub params: Option<IndexMap<String, String>>,
 }
 
@@ -298,6 +325,7 @@ impl UnsubscribeBars {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
@@ -307,6 +335,7 @@ impl UnsubscribeBars {
             venue,
             command_id,
             ts_init,
+            correlation_id,
             params,
         }
     }
@@ -319,6 +348,7 @@ pub struct UnsubscribeMarkPrices {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub correlation_id: Option<UUID4>,
     pub params: Option<IndexMap<String, String>>,
 }
 
@@ -331,6 +361,7 @@ impl UnsubscribeMarkPrices {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
@@ -340,6 +371,7 @@ impl UnsubscribeMarkPrices {
             venue,
             command_id,
             ts_init,
+            correlation_id,
             params,
         }
     }
@@ -352,6 +384,7 @@ pub struct UnsubscribeIndexPrices {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub correlation_id: Option<UUID4>,
     pub params: Option<IndexMap<String, String>>,
 }
 
@@ -364,6 +397,7 @@ impl UnsubscribeIndexPrices {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
@@ -373,6 +407,7 @@ impl UnsubscribeIndexPrices {
             venue,
             command_id,
             ts_init,
+            correlation_id,
             params,
         }
     }
@@ -385,6 +420,7 @@ pub struct UnsubscribeFundingRates {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub correlation_id: Option<UUID4>,
     pub params: Option<IndexMap<String, String>>,
 }
 
@@ -397,6 +433,7 @@ impl UnsubscribeFundingRates {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
@@ -406,6 +443,7 @@ impl UnsubscribeFundingRates {
             venue,
             command_id,
             ts_init,
+            correlation_id,
             params,
         }
     }
@@ -418,6 +456,7 @@ pub struct UnsubscribeInstrumentStatus {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub correlation_id: Option<UUID4>,
     pub params: Option<IndexMap<String, String>>,
 }
 
@@ -430,6 +469,7 @@ impl UnsubscribeInstrumentStatus {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
@@ -439,6 +479,7 @@ impl UnsubscribeInstrumentStatus {
             venue,
             command_id,
             ts_init,
+            correlation_id,
             params,
         }
     }
@@ -451,6 +492,7 @@ pub struct UnsubscribeInstrumentClose {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub correlation_id: Option<UUID4>,
     pub params: Option<IndexMap<String, String>>,
 }
 
@@ -463,6 +505,7 @@ impl UnsubscribeInstrumentClose {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
@@ -472,6 +515,7 @@ impl UnsubscribeInstrumentClose {
             venue,
             command_id,
             ts_init,
+            correlation_id,
             params,
         }
     }

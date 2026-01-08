@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -47,19 +47,16 @@ use nautilus_deribit::{
 };
 use nautilus_model::identifiers::InstrumentId;
 use tokio::{pin, signal};
-use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::DEBUG)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let args: Vec<String> = env::args().collect();
     let is_testnet = args.iter().any(|a| a == "--testnet");
     let use_raw = args.iter().any(|a| a == "--raw");
 
-    tracing::info!(
+    log::info!(
         "Starting Deribit WebSocket data example ({}, {})",
         if is_testnet { "testnet" } else { "mainnet" },
         if use_raw { "raw" } else { "100ms" }
@@ -74,31 +71,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None, // retry_delay_max_ms
         None, // proxy_url
     )?;
-    tracing::info!("Fetching BTC instruments from Deribit...");
+    log::info!("Fetching BTC instruments from Deribit...");
     let instruments = http_client
         .request_instruments(DeribitCurrency::BTC, None)
         .await?;
-    tracing::info!("Fetched {} instruments", instruments.len());
+    log::info!("Fetched {} instruments", instruments.len());
 
     // Create WebSocket client based on whether raw streams are requested
     let mut ws_client = if use_raw {
-        tracing::info!("Creating authenticated client for raw streams");
+        log::info!("Creating authenticated client for raw streams");
         DeribitWebSocketClient::with_credentials(is_testnet)?
     } else {
-        tracing::info!("Creating public client for 100ms streams");
+        log::info!("Creating public client for 100ms streams");
         DeribitWebSocketClient::new_public(is_testnet)?
     };
 
     ws_client.cache_instruments(instruments);
-    tracing::info!("Connecting to Deribit WebSocket...");
+    log::info!("Connecting to Deribit WebSocket...");
     ws_client.connect().await?;
-    tracing::info!("Connected to Deribit WebSocket");
+    log::info!("Connected to Deribit WebSocket");
 
     // Authenticate if using raw streams
     if use_raw {
-        tracing::info!("Authenticating WebSocket connection for raw streams...");
+        log::info!("Authenticating WebSocket connection for raw streams...");
         ws_client.authenticate_session().await?;
-        tracing::info!("Authentication successful");
+        log::info!("Authentication successful");
     }
 
     // Set interval based on mode
@@ -110,7 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Subscribe to trades for BTC-PERPETUAL
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
-    tracing::info!(
+    log::info!(
         "Subscribing to trades for {instrument_id} (interval: {})",
         interval.map_or("100ms", |i| i.as_str())
     );
@@ -128,15 +125,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let stream = ws_client.stream();
     tokio::pin!(stream);
 
-    tracing::info!("Listening for market data... Press Ctrl+C to exit");
+    log::info!("Listening for market data... Press Ctrl+C to exit");
 
     loop {
         tokio::select! {
             Some(msg) = stream.next() => {
-                tracing::info!("{msg:?}");
+                log::info!("{msg:?}");
             }
             _ = &mut sigint => {
-                tracing::info!("Received SIGINT, closing connection...");
+                log::info!("Received SIGINT, closing connection...");
                 ws_client.close().await?;
                 break;
             }
@@ -144,6 +141,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    tracing::info!("Deribit WebSocket example finished");
+    log::info!("Deribit WebSocket example finished");
     Ok(())
 }

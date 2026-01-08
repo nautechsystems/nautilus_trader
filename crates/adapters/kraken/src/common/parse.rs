@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -654,11 +654,7 @@ fn compute_avg_px(order: &SpotOrder) -> Option<Decimal> {
             if let Ok(v) = &vol_exec
                 && *v > dec!(0)
             {
-                tracing::warn!(
-                    "Cannot compute avg_px: cost={:?}, vol_exec={:?}",
-                    cost,
-                    vol_exec
-                );
+                log::warn!("Cannot compute avg_px: cost={cost:?}, vol_exec={vol_exec:?}");
             }
             None
         }

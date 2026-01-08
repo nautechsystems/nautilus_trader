@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,13 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-    fmt::Debug,
-    rc::Rc,
-};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
+use ahash::{AHashMap, AHashSet};
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
@@ -49,11 +45,11 @@ pub struct OrderEmulator {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     manager: OrderManager,
-    matching_cores: HashMap<InstrumentId, OrderMatchingCore>,
-    subscribed_quotes: HashSet<InstrumentId>,
-    subscribed_trades: HashSet<InstrumentId>,
-    subscribed_strategies: HashSet<StrategyId>,
-    monitored_positions: HashSet<PositionId>,
+    matching_cores: AHashMap<InstrumentId, OrderMatchingCore>,
+    subscribed_quotes: AHashSet<InstrumentId>,
+    subscribed_trades: AHashSet<InstrumentId>,
+    subscribed_strategies: AHashSet<StrategyId>,
+    monitored_positions: AHashSet<PositionId>,
     on_event_handler: Option<ShareableMessageHandler>,
 }
 
@@ -78,11 +74,11 @@ impl OrderEmulator {
             clock,
             cache,
             manager,
-            matching_cores: HashMap::new(),
-            subscribed_quotes: HashSet::new(),
-            subscribed_trades: HashSet::new(),
-            subscribed_strategies: HashSet::new(),
-            monitored_positions: HashSet::new(),
+            matching_cores: AHashMap::new(),
+            subscribed_quotes: AHashSet::new(),
+            subscribed_trades: AHashSet::new(),
+            subscribed_strategies: AHashSet::new(),
+            monitored_positions: AHashSet::new(),
             on_event_handler: None,
         }
     }
@@ -119,7 +115,7 @@ impl OrderEmulator {
     }
 
     #[must_use]
-    pub fn get_submit_order_commands(&self) -> HashMap<ClientOrderId, SubmitOrder> {
+    pub fn get_submit_order_commands(&self) -> AHashMap<ClientOrderId, SubmitOrder> {
         self.manager.get_submit_order_commands()
     }
 
@@ -196,18 +192,16 @@ impl OrderEmulator {
 
             let command = SubmitOrder::new(
                 order.trader_id(),
-                client_id.unwrap(),
+                client_id,
                 order.strategy_id(),
                 order.instrument_id(),
-                order.client_order_id(),
-                order.venue_order_id().unwrap(),
                 order.clone(),
                 order.exec_algorithm_id(),
                 position_id,
                 None, // params
                 UUID4::new(),
                 self.clock.borrow().timestamp_ns(),
-            )?;
+            );
 
             self.handle_submit_order(command);
         }
@@ -469,11 +463,10 @@ impl OrderEmulator {
                 }
             }
 
-            if let Err(e) = self.manager.create_new_submit_order(
-                order,
-                command.position_id,
-                Some(command.client_id),
-            ) {
+            if let Err(e) =
+                self.manager
+                    .create_new_submit_order(order, command.position_id, command.client_id)
+            {
                 log::error!("Error creating new submit order: {e}");
             }
         }
@@ -927,7 +920,7 @@ impl OrderEmulator {
             if let Err(e) = self.cache.borrow_mut().add_order(
                 OrderAny::Limit(transformed.clone()),
                 command.position_id,
-                Some(command.client_id),
+                command.client_id,
                 true,
             ) {
                 log::error!("Failed to add order: {e}");
@@ -1054,7 +1047,7 @@ impl OrderEmulator {
             if let Err(e) = self.cache.borrow_mut().add_order(
                 OrderAny::Market(transformed.clone()),
                 command.position_id,
-                Some(command.client_id),
+                command.client_id,
                 true,
             ) {
                 log::error!("Failed to add order: {e}");

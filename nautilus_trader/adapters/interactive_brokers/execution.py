@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -46,11 +46,19 @@ from nautilus_trader.adapters.interactive_brokers.parsing.execution import MAP_O
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import MAP_ORDER_TYPE
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import MAP_TIME_IN_FORCE
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import MAP_TRIGGER_METHOD
-from nautilus_trader.adapters.interactive_brokers.parsing.execution import ORDER_SIDE_TO_ORDER_ACTION
+from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
+    ORDER_SIDE_TO_ORDER_ACTION,
+)
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import timestring_to_timestamp
-from nautilus_trader.adapters.interactive_brokers.parsing.price_conversion import ib_price_to_nautilus_price
-from nautilus_trader.adapters.interactive_brokers.parsing.price_conversion import nautilus_price_to_ib_price
-from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
+from nautilus_trader.adapters.interactive_brokers.parsing.price_conversion import (
+    ib_price_to_nautilus_price,
+)
+from nautilus_trader.adapters.interactive_brokers.parsing.price_conversion import (
+    nautilus_price_to_ib_price,
+)
+from nautilus_trader.adapters.interactive_brokers.providers import (
+    InteractiveBrokersInstrumentProvider,
+)
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -950,18 +958,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 oca_type_from_tags = tags[tag]
             elif tag == "smartComboRoutingParams":
                 ib_order.smartComboRoutingParams = [
-                    TagValue(tag=param["tag"], value=param["value"])
-                    for param in tags[tag]
+                    TagValue(tag=param["tag"], value=param["value"]) for param in tags[tag]
                 ]
             elif tag == "algoParams":
                 ib_order.algoParams = [
-                    TagValue(tag=param["tag"], value=param["value"])
-                    for param in tags[tag]
+                    TagValue(tag=param["tag"], value=param["value"]) for param in tags[tag]
                 ]
             elif tag == "orderMiscOptions":
                 ib_order.orderMiscOptions = [
-                    TagValue(tag=param["tag"], value=param["value"])
-                    for param in tags[tag]
+                    TagValue(tag=param["tag"], value=param["value"]) for param in tags[tag]
                 ]
             else:
                 setattr(ib_order, tag, tags[tag])
@@ -1604,7 +1609,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
             # Combo commission scaled to the number of legs of the combo
             combo_commission = (
-                commission_report.commission * generic_spread_id_n_legs(nautilus_order.instrument_id) / abs(ratio)
+                commission_report.commission
+                * generic_spread_id_n_legs(nautilus_order.instrument_id)
+                / abs(ratio)
             )
             commission = Money(combo_commission, Currency.from_str(commission_report.currency))
 
@@ -1671,7 +1678,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             )
 
             # Unique trade ID for leg fills to avoid conflicts with combo fills
-            spread_legs = generic_spread_id_to_list(nautilus_order.instrument_id)  # [(instrument_id, ratio), ...]
+            spread_legs = generic_spread_id_to_list(
+                nautilus_order.instrument_id,
+            )  # [(instrument_id, ratio), ...]
             spread_instrument_ids = [leg[0] for leg in spread_legs]
             leg_position = (
                 spread_instrument_ids.index(leg_instrument_id)

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -1946,10 +1946,6 @@ async fn test_request_order_status_reports_with_time_filtering() {
         "Should have called history endpoint at least twice (one per settle coin)"
     );
 }
-
-// =====================================================
-// Tests for request_tickers
-// =====================================================
 
 #[tokio::test]
 #[ignore] // Requires real Bybit API access

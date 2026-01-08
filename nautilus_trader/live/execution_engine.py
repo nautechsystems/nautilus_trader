@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -1845,25 +1845,6 @@ class LiveExecutionEngine(ExecutionEngine):
         reconciled_trades: set[TradeId] = set()
 
         # Reconcile all reported orders
-        total_ethusdt_fills = 0
-        for venue_order_id, order_report in mass_status.order_reports.items():
-            trades = mass_status.fill_reports.get(venue_order_id, [])
-            if (
-                order_report.instrument_id == InstrumentId.from_str("ETHUSDT-LINEAR.BYBIT")
-                and trades
-            ):
-                total_ethusdt_fills += len(trades)
-                for trade in trades:
-                    self._log.debug(
-                        f"Reconciling order {venue_order_id}: trade_id={trade.trade_id}, last_px={trade.last_px}",
-                    )
-
-        if total_ethusdt_fills > 0:
-            self._log.info(
-                f"Total ETHUSDT fills being reconciled: {total_ethusdt_fills}",
-                LogColor.BLUE,
-            )
-
         for venue_order_id, order_report in mass_status.order_reports.items():
             trades = mass_status.fill_reports.get(venue_order_id, [])
 
@@ -2917,7 +2898,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
             if client_order_id is None:
                 # Generate external client order ID
-                client_order_id = ClientOrderId(f"O-{UUID4().value}")
+                client_order_id = ClientOrderId(UUID4().value)
 
             # Assign to report
             report.client_order_id = client_order_id
@@ -3091,22 +3072,18 @@ class LiveExecutionEngine(ExecutionEngine):
         Check if order should be updated based on quantity, price, or trigger price
         differences from the report.
         """
-        if report.quantity != order.quantity:
-            return True
+        if report.quantity != order.quantity and report.quantity >= order.filled_qty:
+            return True  # Valid quantity update
 
-        if order.order_type == OrderType.LIMIT and report.price != order.price:
-            return True
-
-        if (
-            order.order_type in [OrderType.STOP_MARKET, OrderType.TRAILING_STOP_MARKET]
-            and report.trigger_price != order.trigger_price
-        ):
-            return True
-
-        return bool(
-            order.order_type in [OrderType.STOP_LIMIT, OrderType.TRAILING_STOP_LIMIT]
-            and (report.trigger_price != order.trigger_price or report.price != order.price),
-        )
+        match order.order_type:
+            case OrderType.LIMIT:
+                return report.price != order.price
+            case OrderType.STOP_MARKET | OrderType.TRAILING_STOP_MARKET:
+                return report.trigger_price != order.trigger_price
+            case OrderType.STOP_LIMIT | OrderType.TRAILING_STOP_LIMIT:
+                return report.trigger_price != order.trigger_price or report.price != order.price
+            case _:
+                return False
 
     def _reconcile_fill_report(
         self,

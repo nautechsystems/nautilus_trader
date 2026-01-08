@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -162,7 +162,7 @@ impl DatabentoFeedHandler {
     /// Returns an error if any client operation or message handling fails.
     #[allow(clippy::blocks_in_conditions)]
     pub async fn run(&mut self) -> anyhow::Result<()> {
-        tracing::debug!("Running feed handler");
+        log::debug!("Running feed handler");
 
         let mut reconnect_start: Option<Instant> = None;
         let mut attempt = 0;
@@ -173,13 +173,13 @@ impl DatabentoFeedHandler {
             match self.run_session(attempt).await {
                 Ok(ran_successfully) => {
                     if ran_successfully {
-                        tracing::info!("Resetting reconnection cycle after successful session");
+                        log::info!("Resetting reconnection cycle after successful session");
                         reconnect_start = None;
                         attempt = 0;
                         self.backoff.reset();
                         continue;
                     } else {
-                        tracing::info!("Session ended normally");
+                        log::info!("Session ended normally");
                         break Ok(());
                     }
                 }
@@ -191,10 +191,7 @@ impl DatabentoFeedHandler {
                         let timeout = Duration::from_secs(timeout_mins * 60);
 
                         if elapsed >= timeout {
-                            tracing::error!(
-                                "Giving up reconnection after {} minutes",
-                                timeout_mins
-                            );
+                            log::error!("Giving up reconnection after {timeout_mins} minutes");
                             self.send_msg(LiveMessage::Error(anyhow::anyhow!(
                                 "Reconnection timeout after {timeout_mins} minutes: {e}"
                             )))
@@ -205,7 +202,7 @@ impl DatabentoFeedHandler {
 
                     let delay = self.backoff.next_duration();
 
-                    tracing::warn!(
+                    log::warn!(
                         "Connection lost (attempt {}): {}. Reconnecting in {}s...",
                         attempt,
                         e,
@@ -217,15 +214,15 @@ impl DatabentoFeedHandler {
                         cmd = self.cmd_rx.recv() => {
                             match cmd {
                                 Some(LiveCommand::Close) => {
-                                    tracing::info!("Close received during backoff");
+                                    log::info!("Close received during backoff");
                                     return Ok(());
                                 }
                                 None => {
-                                    tracing::debug!("Command channel closed during backoff");
+                                    log::debug!("Command channel closed during backoff");
                                     return Ok(());
                                 }
                                 Some(cmd) => {
-                                    tracing::debug!("Buffering command received during backoff: {:?}", cmd);
+                                    log::debug!("Buffering command received during backoff: {cmd:?}");
                                     self.buffered_commands.push(cmd);
                                 }
                             }
@@ -246,7 +243,7 @@ impl DatabentoFeedHandler {
     /// Returns an error if connection fails, subscription fails, or data streaming encounters an error.
     async fn run_session(&mut self, attempt: usize) -> anyhow::Result<bool> {
         if attempt > 1 {
-            tracing::info!("Reconnecting (attempt {})...", attempt);
+            log::info!("Reconnecting (attempt {attempt})...");
         }
 
         let session_start = Instant::now();
@@ -272,9 +269,9 @@ impl DatabentoFeedHandler {
         let mut client = match result {
             Ok(client) => {
                 if attempt > 1 {
-                    tracing::info!("Reconnected successfully");
+                    log::info!("Reconnected successfully");
                 } else {
-                    tracing::info!("Connected");
+                    log::info!("Connected");
                 }
                 client
             }
@@ -286,7 +283,7 @@ impl DatabentoFeedHandler {
         // Process any commands buffered during reconnection backoff
         let mut start_buffered = false;
         if !self.buffered_commands.is_empty() {
-            tracing::info!(
+            log::info!(
                 "Processing {} buffered commands",
                 self.buffered_commands.len()
             );
@@ -302,7 +299,7 @@ impl DatabentoFeedHandler {
                         start_buffered = true;
                     }
                     LiveCommand::Close => {
-                        tracing::warn!("Close command was buffered, shutting down");
+                        log::warn!("Close command was buffered, shutting down");
                         return Ok(false);
                     }
                 }
@@ -313,7 +310,7 @@ impl DatabentoFeedHandler {
         let mut running = false;
 
         if !self.subscriptions.is_empty() {
-            tracing::info!(
+            log::info!(
                 "Resubscribing to {} subscriptions",
                 self.subscriptions.len()
             );
@@ -326,9 +323,9 @@ impl DatabentoFeedHandler {
             }
             client.start().await?;
             running = true;
-            tracing::info!("Resubscription complete");
+            log::info!("Resubscription complete");
         } else if start_buffered {
-            tracing::info!("Starting session from buffered Start command");
+            log::info!("Starting session from buffered Start command");
             buffering_start = if self.replay {
                 Some(clock.get_time_ns())
             } else {
@@ -340,13 +337,13 @@ impl DatabentoFeedHandler {
 
         loop {
             if self.msg_tx.is_closed() {
-                tracing::debug!("Message channel was closed: stopping");
+                log::debug!("Message channel was closed: stopping");
                 return Ok(false);
             }
 
             match self.cmd_rx.try_recv() {
                 Ok(cmd) => {
-                    tracing::debug!("Received command: {cmd:?}");
+                    log::debug!("Received command: {cmd:?}");
                     match cmd {
                         LiveCommand::Subscribe(sub) => {
                             if !self.replay && sub.start.is_some() {
@@ -366,13 +363,13 @@ impl DatabentoFeedHandler {
                             };
                             client.start().await?;
                             running = true;
-                            tracing::debug!("Started");
+                            log::debug!("Started");
                         }
                         LiveCommand::Close => {
                             self.msg_tx.send(LiveMessage::Close).await?;
                             if running {
                                 client.close().await?;
-                                tracing::debug!("Closed inner client");
+                                log::debug!("Closed inner client");
                             }
                             return Ok(false);
                         }
@@ -380,7 +377,7 @@ impl DatabentoFeedHandler {
                 }
                 Err(TryRecvError::Empty) => {}
                 Err(TryRecvError::Disconnected) => {
-                    tracing::debug!("Command channel disconnected");
+                    log::debug!("Command channel disconnected");
                     return Ok(false);
                 }
             }
@@ -400,7 +397,7 @@ impl DatabentoFeedHandler {
                 Ok(None) => {
                     const SUCCESS_THRESHOLD: Duration = Duration::from_secs(60);
                     if session_start.elapsed() >= SUCCESS_THRESHOLD {
-                        tracing::info!("Session ended after successful run");
+                        log::info!("Session ended after successful run");
                         return Ok(true);
                     }
                     anyhow::bail!("Session ended by gateway");
@@ -408,7 +405,7 @@ impl DatabentoFeedHandler {
                 Err(e) => {
                     const SUCCESS_THRESHOLD: Duration = Duration::from_secs(60);
                     if session_start.elapsed() >= SUCCESS_THRESHOLD {
-                        tracing::info!("Connection error after successful run: {e}");
+                        log::info!("Connection error after successful run: {e}");
                         return Ok(true);
                     }
                     anyhow::bail!("Connection error: {e}");
@@ -514,7 +511,7 @@ impl DatabentoFeedHandler {
                 let (mut data1, data2) = match res {
                     Ok(decoded) => decoded,
                     Err(e) => {
-                        tracing::error!("Error decoding record: {e}");
+                        log::error!("Error decoding record: {e}");
                         continue;
                     }
                 };
@@ -531,7 +528,7 @@ impl DatabentoFeedHandler {
                         let buffer = buffered_deltas.entry(delta.instrument_id).or_default();
                         buffer.push(*delta);
 
-                        tracing::trace!(
+                        log::trace!(
                             "Buffering delta: {} {buffering_start:?} flags={}",
                             delta.ts_event,
                             msg.flags.raw(),
@@ -584,10 +581,10 @@ impl DatabentoFeedHandler {
 
     /// Sends a message to the message processing task.
     async fn send_msg(&mut self, msg: LiveMessage) {
-        tracing::trace!("Sending {msg:?}");
+        log::trace!("Sending {msg:?}");
         match self.msg_tx.send(msg).await {
             Ok(()) => {}
-            Err(e) => tracing::error!("Error sending message: {e}"),
+            Err(e) => log::error!("Error sending message: {e}"),
         }
     }
 
@@ -641,7 +638,7 @@ impl DatabentoFeedHandler {
 
 /// Handles Databento error messages by logging them.
 fn handle_error_msg(msg: &dbn::ErrorMsg) {
-    tracing::error!("{msg:?}");
+    log::error!("{msg:?}");
 }
 
 /// Handles Databento system messages, returning a subscription ack event if applicable.
@@ -649,7 +646,7 @@ fn handle_system_msg(msg: &dbn::SystemMsg, ts_received: UnixNanos) -> Option<Sub
     match msg.code() {
         Ok(dbn::SystemCode::SubscriptionAck) => {
             let message = msg.msg().unwrap_or("<invalid utf-8>");
-            tracing::info!("Subscription acknowledged: {message}");
+            log::info!("Subscription acknowledged: {message}");
 
             let schema = parse_ack_message(message);
 
@@ -660,21 +657,21 @@ fn handle_system_msg(msg: &dbn::SystemMsg, ts_received: UnixNanos) -> Option<Sub
             })
         }
         Ok(dbn::SystemCode::Heartbeat) => {
-            tracing::trace!("Heartbeat received");
+            log::trace!("Heartbeat received");
             None
         }
         Ok(dbn::SystemCode::SlowReaderWarning) => {
             let message = msg.msg().unwrap_or("<invalid utf-8>");
-            tracing::warn!("Slow reader warning: {message}");
+            log::warn!("Slow reader warning: {message}");
             None
         }
         Ok(dbn::SystemCode::ReplayCompleted) => {
             let message = msg.msg().unwrap_or("<invalid utf-8>");
-            tracing::info!("Replay completed: {message}");
+            log::info!("Replay completed: {message}");
             None
         }
         _ => {
-            tracing::debug!("{msg:?}");
+            log::debug!("{msg:?}");
             None
         }
     }
@@ -683,15 +680,12 @@ fn handle_system_msg(msg: &dbn::SystemMsg, ts_received: UnixNanos) -> Option<Sub
 /// Parses a subscription ack message to extract the schema.
 fn parse_ack_message(message: &str) -> String {
     // Format: "Subscription request N for <schema> data succeeded"
-    if let Some(rest) = message.strip_prefix("Subscription request ") {
-        if let Some((_, after_num)) = rest.split_once(" for ") {
-            if let Some(schema) = after_num.strip_suffix(" data succeeded") {
-                return schema.trim().to_string();
-            }
-        }
-    }
-
-    String::new()
+    message
+        .strip_prefix("Subscription request ")
+        .and_then(|rest| rest.split_once(" for "))
+        .and_then(|(_, after_num)| after_num.strip_suffix(" data succeeded"))
+        .map(|schema| schema.trim().to_string())
+        .unwrap_or_default()
 }
 
 /// Handles symbol mapping messages and updates the instrument ID map.

@@ -21,7 +21,7 @@ name = "nautilus_tardis"
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = ["replay"]
+default = ["replay", "high-precision"]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
@@ -41,13 +41,14 @@ python = [
   "replay",
 ]
 replay = []
+high-precision = ["nautilus-model/high-precision"]
 
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-common = { workspace = true }
+nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-cryptography = { workspace = true }
 nautilus-model = { workspace = true, features = ["python"] }
@@ -73,11 +74,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
-thousands = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 urlencoding = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
@@ -89,22 +87,25 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
 rstest = { workspace = true }
-tracing-test = { workspace = true }
 
 [[bin]]
 name = "tardis-csv"
 path = "bin/example_csv.rs"
+doc = false
 
 [[bin]]
 name = "tardis-http"
 path = "bin/example_http.rs"
+doc = false
 
 [[bin]]
 name = "tardis-replay"
 path = "bin/example_replay.rs"
 required-features = ["replay"]
+doc = false
 
 # Run with `cargo run --bin stream_deltas_bench --profile bench`
 [[bin]]
 name = "stream_deltas_bench"
 path = "bin/stream_deltas_bench.rs"
+doc = false

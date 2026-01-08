@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -27,16 +27,16 @@ use ahash::AHashMap;
 use anyhow::Context;
 use futures_util::StreamExt;
 use nautilus_common::{
+    clients::DataClient,
     live::{runner::get_data_event_sender, runtime::get_runtime},
     messages::{
         DataEvent,
         data::{
             BarsResponse, DataResponse, InstrumentResponse, InstrumentsResponse, RequestBars,
             RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
-            SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
-            SubscribeFundingRates, SubscribeIndexPrices, SubscribeMarkPrices, SubscribeQuotes,
-            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-            UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeFundingRates,
+            SubscribeBookDeltas, SubscribeBookDepth10, SubscribeFundingRates, SubscribeIndexPrices,
+            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
+            UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeFundingRates,
             UnsubscribeIndexPrices, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
@@ -45,7 +45,6 @@ use nautilus_core::{
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_data::client::DataClient;
 use nautilus_model::{
     data::Data,
     enums::BookType,
@@ -145,7 +144,7 @@ impl BitmexDataClient {
 
     fn send_data(sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>, data: Data) {
         if let Err(e) = sender.send(DataEvent::Data(data)) {
-            tracing::error!("Failed to emit data event: {e}");
+            log::error!("Failed to emit data event: {e}");
         }
     }
 
@@ -155,7 +154,7 @@ impl BitmexDataClient {
     {
         get_runtime().spawn(async move {
             if let Err(e) = fut.await {
-                tracing::error!("{context}: {e:?}");
+                log::error!("{context}: {e:?}");
             }
         });
     }
@@ -177,13 +176,13 @@ impl BitmexDataClient {
                         match maybe_msg {
                             Some(msg) => Self::handle_ws_message(msg, &data_sender, &instruments),
                             None => {
-                                tracing::debug!("BitMEX websocket stream ended");
+                                log::debug!("BitMEX websocket stream ended");
                                 break;
                             }
                         }
                     }
                     _ = cancellation.cancelled() => {
-                        tracing::debug!("BitMEX websocket stream task cancelled");
+                        log::debug!("BitMEX websocket stream task cancelled");
                         break;
                     }
                 }
@@ -216,10 +215,10 @@ impl BitmexDataClient {
             }
             NautilusWsMessage::FundingRateUpdates(updates) => {
                 for update in updates {
-                    tracing::debug!(
-                        instrument = %update.instrument_id,
-                        rate = %update.rate,
-                        "Funding rate update received (not forwarded)",
+                    log::debug!(
+                        "Funding rate update received (not forwarded): instrument={}, rate={}",
+                        update.instrument_id,
+                        update.rate,
                     );
                 }
             }
@@ -228,13 +227,13 @@ impl BitmexDataClient {
             | NautilusWsMessage::FillReports(_)
             | NautilusWsMessage::PositionStatusReport(_)
             | NautilusWsMessage::AccountState(_) => {
-                tracing::debug!("Ignoring trading message on data client");
+                log::debug!("Ignoring trading message on data client");
             }
             NautilusWsMessage::Reconnected => {
-                tracing::info!("BitMEX websocket reconnected");
+                log::info!("BitMEX websocket reconnected");
             }
             NautilusWsMessage::Authenticated => {
-                tracing::debug!("BitMEX websocket authenticated");
+                log::debug!("BitMEX websocket authenticated");
             }
         }
     }
@@ -302,7 +301,7 @@ impl BitmexDataClient {
                 tokio::pin!(sleep);
                 tokio::select! {
                     _ = cancellation.cancelled() => {
-                        tracing::debug!("BitMEX instrument refresh task cancelled");
+                        log::debug!("BitMEX instrument refresh task cancelled");
                         break;
                     }
                     _ = &mut sleep => {
@@ -324,10 +323,10 @@ impl BitmexDataClient {
                                     http_client.cache_instrument(instrument);
                                 }
 
-                                tracing::debug!(client_id=%client_id, "BitMEX instruments refreshed");
+                                log::debug!("BitMEX instruments refreshed: client_id={client_id}");
                             }
                             Err(e) => {
-                                tracing::warn!(client_id=%client_id, error=?e, "Failed to refresh BitMEX instruments");
+                                log::warn!("Failed to refresh BitMEX instruments: client_id={client_id}, error={e:?}");
                             }
                         }
                     }
@@ -352,18 +351,18 @@ impl DataClient for BitmexDataClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
-        tracing::info!(
-            client_id = %self.client_id,
-            use_testnet = self.config.use_testnet,
-            http_proxy_url = ?self.config.http_proxy_url,
-            ws_proxy_url = ?self.config.ws_proxy_url,
-            "Starting BitMEX data client"
+        log::info!(
+            "Starting BitMEX data client: client_id={}, use_testnet={}, http_proxy_url={:?}, ws_proxy_url={:?}",
+            self.client_id,
+            self.config.use_testnet,
+            self.config.http_proxy_url,
+            self.config.ws_proxy_url,
         );
         Ok(())
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
-        tracing::info!("Stopping BitMEX data client {id}", id = self.client_id);
+        log::info!("Stopping BitMEX data client {id}", id = self.client_id);
         self.cancellation_token.cancel();
         self.is_connected.store(false, Ordering::Relaxed);
         self.instrument_refresh_active = false;
@@ -371,7 +370,7 @@ impl DataClient for BitmexDataClient {
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
-        tracing::debug!("Resetting BitMEX data client {id}", id = self.client_id);
+        log::debug!("Resetting BitMEX data client {id}", id = self.client_id);
         self.is_connected.store(false, Ordering::Relaxed);
         self.cancellation_token = CancellationToken::new();
         self.tasks.clear();
@@ -422,7 +421,7 @@ impl DataClient for BitmexDataClient {
         self.maybe_spawn_instrument_refresh()?;
 
         self.is_connected.store(true, Ordering::Relaxed);
-        tracing::info!("Connected");
+        log::info!("Connected");
         Ok(())
     }
 
@@ -436,12 +435,12 @@ impl DataClient for BitmexDataClient {
         if let Some(ws) = self.ws_client.as_mut()
             && let Err(e) = ws.close().await
         {
-            tracing::warn!("Error while closing BitMEX websocket: {e:?}");
+            log::warn!("Error while closing BitMEX websocket: {e:?}");
         }
 
         for handle in self.tasks.drain(..) {
             if let Err(e) = handle.await {
-                tracing::error!("Error joining websocket task: {e:?}");
+                log::error!("Error joining websocket task: {e:?}");
             }
         }
 
@@ -453,7 +452,7 @@ impl DataClient for BitmexDataClient {
             .clear();
         self.instrument_refresh_active = false;
 
-        tracing::info!("Disconnected");
+        log::info!("Disconnected");
         Ok(())
     }
 
@@ -523,36 +522,6 @@ impl DataClient for BitmexDataClient {
                 Ok(())
             },
             "BitMEX book depth10 subscription",
-        );
-        Ok(())
-    }
-
-    fn subscribe_book_snapshots(&mut self, cmd: &SubscribeBookSnapshots) -> anyhow::Result<()> {
-        if cmd.book_type != BookType::L2_MBP {
-            anyhow::bail!("BitMEX only supports L2_MBP order book snapshots");
-        }
-
-        let depth = cmd.depth.map_or(10, |d| d.get());
-        if depth != 10 {
-            tracing::warn!("BitMEX orderBook10 provides 10 levels; requested depth={depth}");
-        }
-
-        let instrument_id = cmd.instrument_id;
-        let ws = self.ws_client()?.clone();
-        let book_channels = Arc::clone(&self.book_channels);
-
-        self.spawn_ws(
-            async move {
-                ws.subscribe_book_depth10(instrument_id)
-                    .await
-                    .map_err(|err| anyhow::anyhow!(err))?;
-                book_channels
-                    .write()
-                    .expect("book channel cache lock poisoned")
-                    .insert(instrument_id, BitmexBookChannel::OrderBook10);
-                Ok(())
-            },
-            "BitMEX book snapshot subscription",
         );
         Ok(())
     }
@@ -700,26 +669,6 @@ impl DataClient for BitmexDataClient {
         Ok(())
     }
 
-    fn unsubscribe_book_snapshots(&mut self, cmd: &UnsubscribeBookSnapshots) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let ws = self.ws_client()?.clone();
-        let book_channels = Arc::clone(&self.book_channels);
-
-        self.spawn_ws(
-            async move {
-                book_channels
-                    .write()
-                    .expect("book channel cache lock poisoned")
-                    .remove(&instrument_id);
-                ws.unsubscribe_book_depth10(instrument_id)
-                    .await
-                    .map_err(|err| anyhow::anyhow!(err))
-            },
-            "BitMEX book snapshot unsubscribe",
-        );
-        Ok(())
-    }
-
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         let ws = self.ws_client()?.clone();
@@ -815,7 +764,7 @@ impl DataClient for BitmexDataClient {
         if let Some(req_venue) = request.venue
             && req_venue != self.venue()
         {
-            tracing::warn!("Ignoring mismatched venue in instruments request: {req_venue}");
+            log::warn!("Ignoring mismatched venue in instruments request: {req_venue}");
         }
 
         let http = self.http_client.clone();
@@ -859,10 +808,10 @@ impl DataClient for BitmexDataClient {
                         params,
                     ));
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
-                        tracing::error!("Failed to send instruments response: {e}");
+                        log::error!("Failed to send instruments response: {e}");
                     }
                 }
-                Err(e) => tracing::error!("Instrument request failed: {e:?}"),
+                Err(e) => log::error!("Instrument request failed: {e:?}"),
             }
         });
 
@@ -888,7 +837,7 @@ impl DataClient for BitmexDataClient {
                 request.params.clone(),
             )));
             if let Err(e) = self.data_sender.send(DataEvent::Response(response)) {
-                tracing::error!("Failed to send instrument response: {e}");
+                log::error!("Failed to send instrument response: {e}");
             }
             return Ok(());
         }
@@ -930,11 +879,11 @@ impl DataClient for BitmexDataClient {
                         params,
                     )));
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
-                        tracing::error!("Failed to send instrument response: {e}");
+                        log::error!("Failed to send instrument response: {e}");
                     }
                 }
-                Ok(None) => tracing::warn!("BitMEX instrument {instrument_id} not found"),
-                Err(e) => tracing::error!("Instrument request failed: {e:?}"),
+                Ok(None) => log::warn!("BitMEX instrument {instrument_id} not found"),
+                Err(e) => log::error!("Instrument request failed: {e:?}"),
             }
         });
 
@@ -973,10 +922,10 @@ impl DataClient for BitmexDataClient {
                         params,
                     ));
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
-                        tracing::error!("Failed to send trades response: {e}");
+                        log::error!("Failed to send trades response: {e}");
                     }
                 }
-                Err(e) => tracing::error!("Trade request failed: {e:?}"),
+                Err(e) => log::error!("Trade request failed: {e:?}"),
             }
         });
 
@@ -1015,10 +964,10 @@ impl DataClient for BitmexDataClient {
                         params,
                     ));
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
-                        tracing::error!("Failed to send bars response: {e}");
+                        log::error!("Failed to send bars response: {e}");
                     }
                 }
-                Err(e) => tracing::error!("Bar request failed: {e:?}"),
+                Err(e) => log::error!("Bar request failed: {e:?}"),
             }
         });
 

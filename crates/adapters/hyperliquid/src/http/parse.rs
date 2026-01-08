@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -203,7 +203,7 @@ pub fn get_currency(code: &str) -> Currency {
     Currency::try_from_str(code).unwrap_or_else(|| {
         let currency = Currency::new(code, 8, 0, code, CurrencyType::Crypto);
         if let Err(e) = Currency::register(currency, false) {
-            tracing::error!("Failed to register currency '{code}': {e}");
+            log::error!("Failed to register currency '{code}': {e}");
         }
         currency
     })
@@ -467,7 +467,7 @@ pub fn parse_fill_report(
 
     // Construct trade_id from hash and time
     let trade_id_str = format!("{}-{}", fill.hash, fill.time);
-    tracing::debug!(
+    log::debug!(
         "Parsing fill: hash={}, time={}, trade_id_str='{}', len={}",
         fill.hash,
         fill.time,

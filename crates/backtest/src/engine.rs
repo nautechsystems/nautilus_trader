@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,12 +22,13 @@
 use std::{
     any::Any,
     cell::RefCell,
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashSet, VecDeque},
     fmt::Debug,
     rc::Rc,
 };
 
-use nautilus_common::timer::TimeEventHandlerV2;
+use ahash::AHashMap;
+use nautilus_common::timer::TimeEventHandler;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::models::{fee::FeeModelAny, fill::FillModel, latency::LatencyModel};
@@ -66,7 +67,7 @@ pub struct BacktestEngine {
     accumulator: TimeEventAccumulator,
     run_config_id: Option<UUID4>,
     run_id: Option<UUID4>,
-    venues: HashMap<Venue, Rc<RefCell<SimulatedExchange>>>,
+    venues: AHashMap<Venue, Rc<RefCell<SimulatedExchange>>>,
     has_data: HashSet<InstrumentId>,
     has_book_data: HashSet<InstrumentId>,
     data: VecDeque<Data>,
@@ -104,7 +105,7 @@ impl BacktestEngine {
             kernel,
             run_config_id: None,
             run_id: None,
-            venues: HashMap::new(),
+            venues: AHashMap::new(),
             has_data: HashSet::new(),
             has_book_data: HashSet::new(),
             data: VecDeque::new(),
@@ -130,11 +131,11 @@ impl BacktestEngine {
         starting_balances: Vec<Money>,
         base_currency: Option<Currency>,
         default_leverage: Option<Decimal>,
-        leverages: HashMap<InstrumentId, Decimal>,
+        leverages: AHashMap<InstrumentId, Decimal>,
         modules: Vec<Box<dyn SimulationModule>>,
         fill_model: FillModel,
         fee_model: FeeModelAny,
-        latency_model: Option<LatencyModel>,
+        latency_model: Option<Box<dyn LatencyModel>>,
         routing: Option<bool>,
         reject_stop_orders: Option<bool>,
         support_gtd_orders: Option<bool>,
@@ -174,6 +175,8 @@ impl BacktestEngine {
             book_type,
             latency_model,
             bar_execution,
+            trade_execution,
+            None, // liquidity_consumption - use default (true)
             reject_stop_orders,
             support_gtd_orders,
             support_contingent_orders,
@@ -387,14 +390,14 @@ impl BacktestEngine {
         self.data.pop_front();
     }
 
-    pub fn advance_time(&mut self, _ts_now: UnixNanos) -> Vec<TimeEventHandlerV2> {
+    pub fn advance_time(&mut self, _ts_now: UnixNanos) -> Vec<TimeEventHandler> {
         // TODO: integrate TestClock advancement when kernel clocks are exposed.
         self.accumulator.drain()
     }
 
     pub fn process_raw_time_event_handlers(
         &mut self,
-        handlers: Vec<TimeEventHandlerV2>,
+        handlers: Vec<TimeEventHandler>,
         ts_now: UnixNanos,
         only_now: bool,
         as_of_now: bool,
@@ -507,8 +510,7 @@ impl BacktestEngine {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
+    use ahash::AHashMap;
     use nautilus_execution::models::{fee::FeeModelAny, fill::FillModel};
     use nautilus_model::{
         enums::{AccountType, BookType, OmsType},
@@ -535,7 +537,7 @@ mod tests {
                 vec![Money::from("1_000_000 USD")],
                 None,
                 None,
-                HashMap::new(),
+                AHashMap::new(),
                 vec![],
                 FillModel::default(),
                 FeeModelAny::default(),

@@ -107,9 +107,10 @@ else
     SED_INPLACE=(-i)
   fi
 
-  # Escape all regex metacharacters for literal sed replacement
+  # Escape sed metacharacters for literal replacement (basic regex mode)
+  # Note: () are literal in basic sed regex, so don't escape them
   escape_sed() {
-    printf '%s' "$1" | sed 's/[][$^.*+?(){}|/\\&]/\\&/g'
+    printf '%s' "$1" | sed 's/[][$^.*+?{}|/\\&]/\\&/g'
   }
 
   ESCAPED_PATTERN=$(escape_sed "$PATTERN")

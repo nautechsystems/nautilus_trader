@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,7 +23,9 @@ from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_to_duration_str
-from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
+from nautilus_trader.adapters.interactive_brokers.providers import (
+    InteractiveBrokersInstrumentProvider,
+)
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -192,11 +194,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             is_smart_depth=is_smart_depth,
         )
 
-    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
-        raise NotImplementedError(  # pragma: no cover
-            "implement the `_subscribe_order_book_snapshots` coroutine",  # pragma: no cover
-        )
-
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         contract = self.instrument_provider.contract.get(command.instrument_id)
         if not contract:
@@ -293,11 +290,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         await self._client.unsubscribe_order_book(
             instrument_id=command.instrument_id,
             is_smart_depth=is_smart_depth,
-        )
-
-    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
-        raise NotImplementedError(  # pragma: no cover
-            "implement the `_unsubscribe_order_book_snapshots` coroutine",  # pragma: no cover
         )
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
@@ -698,7 +690,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 f"with duration '{segment_duration}'",
             )
 
-            bars = await self._client.get_historical_bars( # Changed self.get_historical_bars to self._client.get_historical_bars
+            bars = await self._client.get_historical_bars(  # Changed self.get_historical_bars to self._client.get_historical_bars
                 bar_type,
                 contract,
                 use_rth,
@@ -757,8 +749,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         subsecond = (
             1
             if delta.components.milliseconds > 0
-               or delta.components.microseconds > 0
-               or delta.components.nanoseconds > 0
+            or delta.components.microseconds > 0
+            or delta.components.nanoseconds > 0
             else 0
         )
         seconds = (

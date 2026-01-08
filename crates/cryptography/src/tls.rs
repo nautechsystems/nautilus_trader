@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,7 +24,7 @@ use webpki_roots;
 ///
 /// Panics if the configuration fails to load.
 pub fn create_tls_config() -> Arc<ClientConfig> {
-    tracing::debug!("Loading certificates");
+    log::debug!("Loading certificates");
 
     let mut root_store = RootCertStore::empty();
     root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());

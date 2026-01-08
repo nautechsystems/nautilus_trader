@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -103,7 +103,6 @@ def fetch_instruments(
 
 
 def bench_data_streaming_iterators():
-
     start_time = time.perf_counter()
 
     date = pd.Timestamp("2025-02-28", tz="UTC")
@@ -182,9 +181,9 @@ def bench_data_streaming_iterators():
     engine.end()
 
     total_time = time.perf_counter() - start_time
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("PERFORMANCE RESULTS")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"Total time (including setup): {total_time:.2f}s")
     print(f"Backtest execution time:      {backtest_time:.2f}s")
     print(f"Setup overhead:               {total_time - backtest_time:.2f}s")

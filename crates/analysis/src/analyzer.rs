@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -465,6 +465,7 @@ mod tests {
             stubs::{instrument_id_aud_usd_sim, strategy_id_ema_cross, trader_id},
         },
         instruments::InstrumentAny,
+        stubs::TestDefault,
         types::{AccountBalance, Money, Price, Quantity},
     };
     use rstest::rstest;
@@ -519,7 +520,7 @@ mod tests {
             instrument_id: instrument_id_aud_usd_sim(),
             id: PositionId::new(&id),
             account_id: AccountId::new("test-account"),
-            opening_order_id: ClientOrderId::default(),
+            opening_order_id: ClientOrderId::test_default(),
             closing_order_id: None,
             entry: OrderSide::NoOrderSide,
             side: PositionSide::NoPositionSide,

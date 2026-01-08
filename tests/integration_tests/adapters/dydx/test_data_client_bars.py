@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -43,13 +43,13 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.mocks.cache_database import MockCacheDatabase
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestDYDXDataClientBarPartitioning:
@@ -64,7 +64,7 @@ class TestDYDXDataClientBarPartitioning:
         self.loop = session_event_loop
         self.clock = LiveClock()
         self.msgbus = MessageBus(
-            trader_id=TraderId("TESTER-000"),
+            trader_id=TestIdStubs.trader_id(),
             clock=self.clock,
         )
         self.cache = Cache(database=MockCacheDatabase())
@@ -234,13 +234,13 @@ class TestDYDXDataClientBarPartitioning:
 
             # Assert
             if expected_bars > 1000:
-                assert (
-                    should_partition is True
-                ), f"Should partition for {timeframe} with {expected_bars} bars"
+                assert should_partition is True, (
+                    f"Should partition for {timeframe} with {expected_bars} bars"
+                )
             else:
-                assert (
-                    should_partition is False
-                ), f"Should not partition for {timeframe} with {expected_bars} bars"
+                assert should_partition is False, (
+                    f"Should not partition for {timeframe} with {expected_bars} bars"
+                )
 
     # =====================================================================================
     # REQUEST SIZE HANDLING TESTS

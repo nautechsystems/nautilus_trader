@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -38,6 +38,7 @@ use crate::{
         stop_market::StopMarketOrder, trailing_stop_limit::TrailingStopLimitOrder,
         trailing_stop_market::TrailingStopMarketOrder,
     },
+    stubs::TestDefault,
     types::{Currency, Price, Quantity},
 };
 
@@ -141,7 +142,7 @@ impl OrderTestBuilder {
     }
 
     fn get_trader_id(&self) -> TraderId {
-        self.trader_id.unwrap_or_default()
+        self.trader_id.unwrap_or_else(TraderId::test_default)
     }
 
     // ----------- StrategyId ----------
@@ -151,7 +152,7 @@ impl OrderTestBuilder {
     }
 
     fn get_strategy_id(&self) -> StrategyId {
-        self.strategy_id.unwrap_or_default()
+        self.strategy_id.unwrap_or_else(StrategyId::test_default)
     }
 
     // ----------- InstrumentId ----------
@@ -171,7 +172,8 @@ impl OrderTestBuilder {
     }
 
     fn get_client_order_id(&self) -> ClientOrderId {
-        self.client_order_id.unwrap_or_default()
+        self.client_order_id
+            .unwrap_or_else(ClientOrderId::test_default)
     }
 
     // ----------- TradeId ----------
@@ -181,7 +183,7 @@ impl OrderTestBuilder {
     }
 
     fn get_trade_id(&self) -> TradeId {
-        self.trade_id.unwrap_or_default()
+        self.trade_id.unwrap_or_else(TradeId::test_default)
     }
 
     // ----------- Currency ----------

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -39,8 +39,6 @@ cdef class FillModel:
     ----------
     prob_fill_on_limit : double
         The probability of limit order filling if the market rests on its price.
-    prob_fill_on_stop : double
-        The probability of stop orders filling if the market rests on its price.
     prob_slippage : double
         The probability of order fill prices slipping by one tick.
     random_seed : int, optional
@@ -59,7 +57,6 @@ cdef class FillModel:
     def __init__(
         self,
         double prob_fill_on_limit = 1.0,
-        double prob_fill_on_stop = 1.0,
         double prob_slippage = 0.0,
         random_seed: int | None = None,
         config = None,
@@ -67,12 +64,10 @@ cdef class FillModel:
         if config is not None:
             # Initialize from config
             prob_fill_on_limit = config.prob_fill_on_limit
-            prob_fill_on_stop = config.prob_fill_on_stop
             prob_slippage = config.prob_slippage
             random_seed = config.random_seed
 
         Condition.in_range(prob_fill_on_limit, 0.0, 1.0, "prob_fill_on_limit")
-        Condition.in_range(prob_fill_on_stop, 0.0, 1.0, "prob_fill_on_stop")
         Condition.in_range(prob_slippage, 0.0, 1.0, "prob_slippage")
         if random_seed is not None:
             Condition.type(random_seed, int, "random_seed")
@@ -81,7 +76,6 @@ cdef class FillModel:
             random.seed()
 
         self.prob_fill_on_limit = prob_fill_on_limit
-        self.prob_fill_on_stop = prob_fill_on_stop
         self.prob_slippage = prob_slippage
 
     cpdef bint is_limit_filled(self):
@@ -94,17 +88,6 @@ cdef class FillModel:
 
         """
         return self._event_success(self.prob_fill_on_limit)
-
-    cpdef bint is_stop_filled(self):
-        """
-        Return a value indicating whether a ``STOP-MARKET`` order filled.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self._event_success(self.prob_fill_on_stop)
 
     cpdef bint is_slipped(self):
         """
@@ -669,11 +652,10 @@ cdef class MarketHoursFillModel(FillModel):
     def __init__(
         self,
         double prob_fill_on_limit = 1.0,
-        double prob_fill_on_stop = 1.0,
         double prob_slippage = 0.0,
         random_seed = None,
     ):
-        super().__init__(prob_fill_on_limit, prob_fill_on_stop, prob_slippage, random_seed)
+        super().__init__(prob_fill_on_limit, prob_slippage, random_seed)
         # In a real implementation, you would track market hours
         self._is_low_liquidity = False  # Simplified for example
 
@@ -760,11 +742,10 @@ cdef class VolumeSensitiveFillModel(FillModel):
     def __init__(
         self,
         double prob_fill_on_limit = 1.0,
-        double prob_fill_on_stop = 1.0,
         double prob_slippage = 0.0,
         random_seed = None,
     ):
-        super().__init__(prob_fill_on_limit, prob_fill_on_stop, prob_slippage, random_seed)
+        super().__init__(prob_fill_on_limit, prob_slippage, random_seed)
         self._recent_volume = 1000.0  # Default volume for demo
 
     cpdef void set_recent_volume(self, double volume):
@@ -847,12 +828,11 @@ cdef class CompetitionAwareFillModel(FillModel):
     def __init__(
         self,
         double prob_fill_on_limit = 1.0,
-        double prob_fill_on_stop = 1.0,
         double prob_slippage = 0.0,
         random_seed = None,
         double liquidity_factor = 0.3,
     ):
-        super().__init__(prob_fill_on_limit, prob_fill_on_stop, prob_slippage, random_seed)
+        super().__init__(prob_fill_on_limit, prob_slippage, random_seed)
         self.liquidity_factor = liquidity_factor
 
     cpdef OrderBook get_orderbook_for_fill_simulation(

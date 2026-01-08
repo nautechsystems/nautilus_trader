@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -372,7 +372,7 @@ class TestSimulatedExchange:
             instrument=USDJPY_SIM,
             bid_price=12.0,
             ask_price=13.0,
-            bid_size=100_000,  # <-- Size enough to fill remaining quantity
+            bid_size=150_000,  # <-- Different size to trigger change detection
             ask_size=200_000,
         )
         self.exchange.process_quote_tick(tick)

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,7 +30,7 @@ from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.core.rust.backtest cimport TimeEventAccumulatorAPI
+from nautilus_trader.core.rust.backtest cimport TimeEventAccumulator_API
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport AggressorSide
@@ -39,7 +39,9 @@ from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport MarketStatus
 from nautilus_trader.core.rust.model cimport MarketStatusAction
 from nautilus_trader.core.rust.model cimport OmsType
+from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PriceRaw
+from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.engine cimport DataEngine
@@ -93,7 +95,7 @@ cdef class BacktestEngine:
     cdef object _config
     cdef Clock _clock
     cdef Logger _log
-    cdef TimeEventAccumulatorAPI _accumulator
+    cdef TimeEventAccumulator_API _accumulator
 
     cdef object _kernel
     cdef UUID4 _instance_id
@@ -122,6 +124,7 @@ cdef class BacktestEngine:
     cdef list _response_data
 
     cdef CVec _advance_time(self, uint64_t ts_now)
+    cdef void _flush_accumulator_events(self, uint64_t ts_now)
     cdef void _process_raw_time_event_handlers(
         self,
         CVec raw_handlers,
@@ -251,6 +254,8 @@ cdef class SimulatedExchange:
     """If the processing order of bar prices is adaptive based on a heuristic.\n\n:returns: `bool`"""
     cdef readonly bint trade_execution
     """If trades should be processed by the matching engine(s) (and move the market).\n\n:returns: `bool`"""
+    cdef readonly bint liquidity_consumption
+    """If liquidity consumption is tracked per price level.\n\n:returns: `bool`"""
     cdef readonly uint32_t price_protection_points
     """Defines an exchange-calculated price boundary (in points) to prevent marketable orders from executing at excessively aggressive prices.\n\n:returns: `int`"""
     cdef readonly list modules
@@ -344,6 +349,7 @@ cdef class OrderMatchingEngine:
     cdef bint _bar_execution
     cdef bint _bar_adaptive_high_low_ordering
     cdef bint _trade_execution
+    cdef bint _liquidity_consumption
     cdef uint32_t _price_protection_points
     cdef dict _account_ids
     cdef dict _execution_bar_types
@@ -380,6 +386,9 @@ cdef class OrderMatchingEngine:
     cdef Bar _last_ask_bar
     cdef Quantity _last_trade_size
     cdef bint _fill_at_market
+    cdef dict[PriceRaw, tuple[QuantityRaw, QuantityRaw]] _bid_consumption
+    cdef dict[PriceRaw, tuple[QuantityRaw, QuantityRaw]] _ask_consumption
+    cdef QuantityRaw _trade_consumption
 
     cdef int _position_count
     cdef int _order_count
@@ -452,6 +461,7 @@ cdef class OrderMatchingEngine:
     cpdef list determine_market_price_and_volume(self, Order order)
     cdef list determine_market_fills_with_simulation(self, Order order)
     cdef list determine_limit_fills_with_simulation(self, Order order)
+    cdef list _apply_liquidity_consumption(self, list fills, OrderSide order_side, QuantityRaw max_qty_raw=*)
     cdef Quantity determine_trade_fill_qty(self, Order order)
     cpdef void fill_market_order(self, Order order)
     cpdef void fill_limit_order(self, Order order)

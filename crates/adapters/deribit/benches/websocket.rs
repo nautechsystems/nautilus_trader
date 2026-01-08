@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,10 +30,6 @@ const TEST_REQUEST: &str = include_str!("../test_data/ws_test_request.json");
 const SUBSCRIBE_RESPONSE: &str = include_str!("../test_data/ws_subscribe_response.json");
 const ERROR: &str = include_str!("../test_data/ws_error.json");
 
-// =============================================================================
-// RAW MESSAGE PARSING BENCHMARKS
-// =============================================================================
-
 /// Benchmarks the main `parse_raw_message` function for all message types.
 fn bench_parse_raw_message(c: &mut Criterion) {
     let mut group = c.benchmark_group("Deribit parse_raw_message");
@@ -61,10 +57,6 @@ fn bench_parse_raw_message(c: &mut Criterion) {
     group.finish();
 }
 
-// =============================================================================
-// JSON VALUE PARSING BENCHMARKS (Baseline Comparison)
-// =============================================================================
-
 /// Benchmarks raw serde_json::Value parsing for comparison with struct parsing.
 fn bench_json_value_parsing(c: &mut Criterion) {
     let mut group = c.benchmark_group("Deribit JSON Value Parsing");
@@ -90,10 +82,6 @@ fn bench_json_value_parsing(c: &mut Criterion) {
 
     group.finish();
 }
-
-// =============================================================================
-// JSON-RPC METHOD DETECTION BENCHMARKS
-// =============================================================================
 
 /// Benchmarks the JSON-RPC method field detection (key discriminator in parse_raw_message).
 fn bench_jsonrpc_method_detection(c: &mut Criterion) {
@@ -132,10 +120,6 @@ fn bench_jsonrpc_method_detection(c: &mut Criterion) {
 
     group.finish();
 }
-
-// =============================================================================
-// BATCH PROCESSING BENCHMARKS
-// =============================================================================
 
 /// Benchmarks batch processing of mixed message types.
 fn bench_batch_processing(c: &mut Criterion) {
@@ -193,10 +177,6 @@ fn bench_book_deltas_batch(c: &mut Criterion) {
     group.finish();
 }
 
-// =============================================================================
-// MESSAGE TYPE ROUTING BENCHMARKS
-// =============================================================================
-
 /// Benchmarks variant matching after parsing (simulates handler routing).
 fn bench_message_routing(c: &mut Criterion) {
     let mut group = c.benchmark_group("Deribit Message Routing");
@@ -233,10 +213,6 @@ fn bench_message_routing(c: &mut Criterion) {
     group.finish();
 }
 
-// =============================================================================
-// TUNGSTENITE MESSAGE ACCESS BENCHMARKS
-// =============================================================================
-
 /// Benchmarks WebSocket message text extraction patterns.
 fn bench_tungstenite_message_access(c: &mut Criterion) {
     let mut group = c.benchmark_group("Deribit Message Access");
@@ -264,10 +240,6 @@ fn bench_tungstenite_message_access(c: &mut Criterion) {
 
     group.finish();
 }
-
-// =============================================================================
-// PARSING COMPARISON BENCHMARKS
-// =============================================================================
 
 /// Direct comparison of parse_raw_message vs raw Value parsing.
 fn bench_parsing_comparison(c: &mut Criterion) {

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,6 +32,8 @@ use redis::{AsyncCommands, aio::ConnectionManager};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use ustr::Ustr;
+
+use super::get_index_key;
 
 // Collection keys
 const INDEX: &str = "index";
@@ -247,7 +249,7 @@ impl DatabaseQueries {
     ) -> anyhow::Result<AHashMap<Ustr, Currency>> {
         let mut currencies = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{CURRENCIES}*");
-        tracing::debug!("Loading {pattern}");
+        log::debug!("Loading {pattern}");
 
         let mut con = con.clone();
         let keys = Self::scan_keys(&mut con, pattern).await?;
@@ -282,7 +284,7 @@ impl DatabaseQueries {
             }
         }
 
-        tracing::debug!("Loaded {} currencies(s)", currencies.len());
+        log::debug!("Loaded {} currencies(s)", currencies.len());
 
         Ok(currencies)
     }
@@ -304,7 +306,7 @@ impl DatabaseQueries {
     ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
         let mut instruments = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{INSTRUMENTS}*");
-        tracing::debug!("Loading {pattern}");
+        log::debug!("Loading {pattern}");
 
         let mut con = con.clone();
         let keys = Self::scan_keys(&mut con, pattern).await?;
@@ -351,7 +353,7 @@ impl DatabaseQueries {
 
         // Insert all Instrument_id (key) and Instrument (value) into the HashMap, filtering out None values.
         instruments.extend(join_all(futures).await.into_iter().flatten());
-        tracing::debug!("Loaded {} instruments(s)", instruments.len());
+        log::debug!("Loaded {} instruments(s)", instruments.len());
 
         Ok(instruments)
     }
@@ -373,7 +375,7 @@ impl DatabaseQueries {
     ) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>> {
         let mut synthetics = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{SYNTHETICS}*");
-        tracing::debug!("Loading {pattern}");
+        log::debug!("Loading {pattern}");
 
         let mut con = con.clone();
         let keys = Self::scan_keys(&mut con, pattern).await?;
@@ -420,7 +422,7 @@ impl DatabaseQueries {
 
         // Insert all Instrument_id (key) and Synthetic (value) into the HashMap, filtering out None values.
         synthetics.extend(join_all(futures).await.into_iter().flatten());
-        tracing::debug!("Loaded {} synthetics(s)", synthetics.len());
+        log::debug!("Loaded {} synthetics(s)", synthetics.len());
 
         Ok(synthetics)
     }
@@ -442,7 +444,7 @@ impl DatabaseQueries {
     ) -> anyhow::Result<AHashMap<AccountId, AccountAny>> {
         let mut accounts = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{ACCOUNTS}*");
-        tracing::debug!("Loading {pattern}");
+        log::debug!("Loading {pattern}");
 
         let mut con = con.clone();
         let keys = Self::scan_keys(&mut con, pattern).await?;
@@ -476,7 +478,7 @@ impl DatabaseQueries {
 
         // Insert all Account_id (key) and Account (value) into the HashMap, filtering out None values.
         accounts.extend(join_all(futures).await.into_iter().flatten());
-        tracing::debug!("Loaded {} accounts(s)", accounts.len());
+        log::debug!("Loaded {} accounts(s)", accounts.len());
 
         Ok(accounts)
     }
@@ -498,7 +500,7 @@ impl DatabaseQueries {
     ) -> anyhow::Result<AHashMap<ClientOrderId, OrderAny>> {
         let mut orders = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{ORDERS}*");
-        tracing::debug!("Loading {pattern}");
+        log::debug!("Loading {pattern}");
 
         let mut con = con.clone();
         let keys = Self::scan_keys(&mut con, pattern).await?;
@@ -532,7 +534,7 @@ impl DatabaseQueries {
 
         // Insert all Client-Order-Id (key) and Order (value) into the HashMap, filtering out None values.
         orders.extend(join_all(futures).await.into_iter().flatten());
-        tracing::debug!("Loaded {} order(s)", orders.len());
+        log::debug!("Loaded {} order(s)", orders.len());
 
         Ok(orders)
     }
@@ -554,7 +556,7 @@ impl DatabaseQueries {
     ) -> anyhow::Result<AHashMap<PositionId, Position>> {
         let mut positions = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{POSITIONS}*");
-        tracing::debug!("Loading {pattern}");
+        log::debug!("Loading {pattern}");
 
         let mut con = con.clone();
         let keys = Self::scan_keys(&mut con, pattern).await?;
@@ -588,7 +590,7 @@ impl DatabaseQueries {
 
         // Insert all Position_id (key) and Position (value) into the HashMap, filtering out None values.
         positions.extend(join_all(futures).await.into_iter().flatten());
-        tracing::debug!("Loaded {} position(s)", positions.len());
+        log::debug!("Loaded {} position(s)", positions.len());
 
         Ok(positions)
     }
@@ -729,7 +731,7 @@ impl DatabaseQueries {
     }
 
     async fn read_index(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
-        let index_key = Self::get_index_key(key)?;
+        let index_key = get_index_key(key)?;
         match index_key {
             INDEX_ORDER_IDS => Self::read_set(conn, key).await,
             INDEX_ORDER_POSITION => Self::read_hset(conn, key).await,
@@ -770,14 +772,6 @@ impl DatabaseQueries {
     async fn read_list(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
         let result: Vec<Bytes> = conn.lrange(key, 0, -1).await?;
         Ok(result)
-    }
-
-    fn get_index_key(key: &str) -> anyhow::Result<&str> {
-        key.split_once(REDIS_DELIMITER)
-            .map(|(_, index_key)| index_key)
-            .ok_or_else(|| {
-                anyhow::anyhow!("Invalid `key`, missing a '{REDIS_DELIMITER}' delimiter, was {key}")
-            })
     }
 }
 

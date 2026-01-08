@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -3864,12 +3864,12 @@ class TestExecutionEngine:
         # Assert
         own_book = cache.own_order_book(instrument.id)
         assert order.status == OrderStatus.FILLED
-        assert (
-            len(own_book.bids_to_dict()) == 0
-        ), "Order should be removed from own book despite overfill"
-        assert (
-            cache.own_bid_orders(instrument.id) == {}
-        ), "Own book cache should be empty after overfill"
+        assert len(own_book.bids_to_dict()) == 0, (
+            "Order should be removed from own book despite overfill"
+        )
+        assert cache.own_bid_orders(instrument.id) == {}, (
+            "Own book cache should be empty after overfill"
+        )
 
     def test_own_book_order_denied_removes_from_book(self) -> None:
         # Arrange

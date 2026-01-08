@@ -6,6 +6,8 @@ The following integrations are currently supported:
 
 | Name                                                                         | ID                    | Type                    | Status                                                  | Docs                      |
 | :--------------------------------------------------------------------------- | :-------------------- | :---------------------- | :------------------------------------------------------ | :------------------------ |
+| [AX Exchange](https://architect.exchange)                                    | `AX`                  | Perpetuals Exchange     | ![status](https://img.shields.io/badge/building-orange) | [Guide](architect_ax.md)  |
+| [Architect](https://architect.co)                                            | `ARCHITECT`           | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/planned-gray)    | -                         |
 | [Betfair](https://betfair.com)                                               | `BETFAIR`             | Sports Betting Exchange | ![status](https://img.shields.io/badge/stable-green)    | [Guide](betfair.md)       |
 | [Binance](https://binance.com)                                               | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](binance.md)       |
 | [BitMEX](https://www.bitmex.com)                                             | `BITMEX`              | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](bitmex.md)        |
@@ -27,6 +29,7 @@ The following integrations are currently supported:
 
 ## Status
 
+- `planned`: Planned for future development.
 - `building`: Under construction and likely not in a usable state.
 - `beta`: Completed to a minimally working state and in a 'beta' testing phase.
 - `stable`: Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain).

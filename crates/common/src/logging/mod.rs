@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,6 +31,7 @@
 //! The system supports a maximum of 255 concurrent `LogGuard` instances. Attempting to create
 //! more will cause a panic.
 
+pub mod config;
 pub mod headers;
 pub mod logger;
 pub mod macros;
@@ -40,15 +41,18 @@ use std::{
     collections::HashMap,
     env,
     str::FromStr,
-    sync::atomic::{AtomicBool, AtomicU8, Ordering},
+    sync::{
+        OnceLock,
+        atomic::{AtomicBool, AtomicU8, Ordering},
+    },
 };
 
+use ahash::AHashMap;
 use log::LevelFilter;
 // Re-exports
 pub use macros::{log_debug, log_error, log_info, log_trace, log_warn};
 use nautilus_core::{UUID4, time::get_atomic_clock_static};
 use nautilus_model::identifiers::TraderId;
-use tracing_subscriber::EnvFilter;
 use ustr::Ustr;
 
 use self::{
@@ -71,10 +75,43 @@ static LOGGING_BYPASSED: AtomicBool = AtomicBool::new(false);
 static LOGGING_REALTIME: AtomicBool = AtomicBool::new(true);
 static LOGGING_COLORED: AtomicBool = AtomicBool::new(true);
 static LOGGING_GUARDS_ACTIVE: AtomicU8 = AtomicU8::new(0);
+static LAZY_GUARD: OnceLock<Option<LogGuard>> = OnceLock::new();
 
 /// Returns whether the core logger is enabled.
 pub fn logging_is_initialized() -> bool {
     LOGGING_INITIALIZED.load(Ordering::Relaxed)
+}
+
+/// Ensures logging is initialized on first use.
+///
+/// If `NAUTILUS_LOG` is set, initializes the logger with the specified config.
+/// Otherwise, initializes with INFO level to stdout. This enables lazy
+/// initialization for Rust-only binaries that don't go through the Python
+/// kernel initialization.
+///
+/// Returns `true` if logging is available (either already initialized or
+/// successfully lazy-initialized), `false` otherwise.
+pub fn ensure_logging_initialized() -> bool {
+    if LOGGING_INITIALIZED.load(Ordering::SeqCst) {
+        return true;
+    }
+
+    LAZY_GUARD.get_or_init(|| {
+        let config = env::var("NAUTILUS_LOG")
+            .ok()
+            .and_then(|spec| LoggerConfig::from_spec(&spec).ok())
+            .unwrap_or_default();
+
+        Logger::init_with_config(
+            TraderId::default(),
+            UUID4::default(),
+            config,
+            FileWriterConfig::default(),
+        )
+        .ok()
+    });
+
+    LOGGING_INITIALIZED.load(Ordering::SeqCst)
 }
 
 /// Sets the logging subsystem to bypass mode.
@@ -110,36 +147,6 @@ pub fn logging_clock_set_static_time(time_ns: u64) {
     clock.set_time(time_ns.into());
 }
 
-/// Initialize tracing.
-///
-/// Tracing is meant to be used to trace/debug async Rust code. It can be
-/// configured to filter modules and write up to a specific level by passing
-/// a configuration using the `RUST_LOG` environment variable.
-///
-/// # Safety
-///
-/// Should only be called once during an applications run, ideally at the
-/// beginning of the run.
-///
-/// # Errors
-///
-/// Returns an error if tracing subscriber fails to initialize.
-pub fn init_tracing() -> anyhow::Result<()> {
-    // Skip tracing initialization if `RUST_LOG` is not set
-    if let Ok(v) = env::var("RUST_LOG") {
-        let env_filter = EnvFilter::new(v.clone());
-
-        if tracing_subscriber::fmt()
-            .with_env_filter(env_filter)
-            .try_init()
-            .is_ok()
-        {
-            println!("Initialized tracing logs with RUST_LOG={v}");
-        }
-    }
-    Ok(())
-}
-
 /// Initialize logging.
 ///
 /// Logging should be used for Python and sync Rust logic which is most of
@@ -165,15 +172,7 @@ pub fn init_logging(
     config: LoggerConfig,
     file_config: FileWriterConfig,
 ) -> anyhow::Result<LogGuard> {
-    // Only set these after successful initialization
-    let is_colored = config.is_colored;
-    let guard = Logger::init_with_config(trader_id, instance_id, config, file_config)?;
-
-    // Set flags only after successful initialization
-    LOGGING_INITIALIZED.store(true, Ordering::Relaxed);
-    LOGGING_COLORED.store(is_colored, Ordering::Relaxed);
-
-    Ok(guard)
+    Logger::init_with_config(trader_id, instance_id, config, file_config)
 }
 
 #[must_use]
@@ -209,10 +208,10 @@ pub fn parse_level_filter_str(s: &str) -> anyhow::Result<LevelFilter> {
 /// Returns an error if a JSON value in the map is not a string or is not a valid log level.
 pub fn parse_component_levels(
     original_map: Option<HashMap<String, serde_json::Value>>,
-) -> anyhow::Result<HashMap<Ustr, LevelFilter>> {
+) -> anyhow::Result<AHashMap<Ustr, LevelFilter>> {
     match original_map {
         Some(map) => {
-            let mut new_map = HashMap::new();
+            let mut new_map = AHashMap::new();
             for (key, value) in map {
                 let ustr_key = Ustr::from(&key);
                 let s = value.as_str().ok_or_else(|| {
@@ -225,33 +224,33 @@ pub fn parse_component_levels(
             }
             Ok(new_map)
         }
-        None => Ok(HashMap::new()),
+        None => Ok(AHashMap::new()),
     }
 }
 
-/// Logs that a task has started using `tracing::debug!`.
+/// Logs that a task has started.
 pub fn log_task_started(task_name: &str) {
-    tracing::debug!("Started task '{task_name}'");
+    log::debug!("Started task '{task_name}'");
 }
 
-/// Logs that a task has stopped using `tracing::debug!`.
+/// Logs that a task has stopped.
 pub fn log_task_stopped(task_name: &str) {
-    tracing::debug!("Stopped task '{task_name}'");
+    log::debug!("Stopped task '{task_name}'");
 }
 
-/// Logs that a task is being awaited using `tracing::debug!`.
+/// Logs that a task is being awaited.
 pub fn log_task_awaiting(task_name: &str) {
-    tracing::debug!("Awaiting task '{task_name}'");
+    log::debug!("Awaiting task '{task_name}'");
 }
 
-/// Logs that a task was aborted using `tracing::debug!`.
+/// Logs that a task was aborted.
 pub fn log_task_aborted(task_name: &str) {
-    tracing::debug!("Aborted task '{task_name}'");
+    log::debug!("Aborted task '{task_name}'");
 }
 
-/// Logs that there was an error in a task `tracing::error!`.
+/// Logs that there was an error in a task.
 pub fn log_task_error(task_name: &str, e: &anyhow::Error) {
-    tracing::error!("Error in task '{task_name}': {e}");
+    log::error!("Error in task '{task_name}': {e}");
 }
 
 #[cfg(test)]
@@ -359,5 +358,82 @@ mod tests {
     fn test_parse_component_levels_none_returns_empty() {
         let result = parse_component_levels(None).unwrap();
         assert_eq!(result.len(), 0);
+    }
+
+    #[rstest]
+    fn test_logging_clock_set_static_mode() {
+        logging_clock_set_static_mode();
+        assert!(!LOGGING_REALTIME.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    fn test_logging_clock_set_realtime_mode() {
+        logging_clock_set_realtime_mode();
+        assert!(LOGGING_REALTIME.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    fn test_logging_clock_set_static_time() {
+        let test_time: u64 = 1_700_000_000_000_000_000;
+        logging_clock_set_static_time(test_time);
+        let clock = get_atomic_clock_static();
+        assert_eq!(clock.get_time_ns(), test_time);
+    }
+
+    #[rstest]
+    fn test_logging_set_bypass() {
+        logging_set_bypass();
+        assert!(LOGGING_BYPASSED.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    fn test_map_log_level_to_filter() {
+        assert_eq!(map_log_level_to_filter(LogLevel::Off), LevelFilter::Off);
+        assert_eq!(map_log_level_to_filter(LogLevel::Trace), LevelFilter::Trace);
+        assert_eq!(map_log_level_to_filter(LogLevel::Debug), LevelFilter::Debug);
+        assert_eq!(map_log_level_to_filter(LogLevel::Info), LevelFilter::Info);
+        assert_eq!(
+            map_log_level_to_filter(LogLevel::Warning),
+            LevelFilter::Warn
+        );
+        assert_eq!(map_log_level_to_filter(LogLevel::Error), LevelFilter::Error);
+    }
+
+    #[rstest]
+    fn test_ensure_logging_initialized_returns_consistent_value() {
+        // This test verifies ensure_logging_initialized() can be called safely.
+        // Due to Once semantics, we can only test one code path per process.
+        //
+        // With nextest (process isolation per test):
+        // - If NAUTILUS_LOG is unset, this returns false.
+        // - If NAUTILUS_LOG is set externally, it may return true.
+        //
+        // The key invariant: multiple calls return the same value.
+        let first_call = ensure_logging_initialized();
+        let second_call = ensure_logging_initialized();
+
+        assert_eq!(
+            first_call, second_call,
+            "ensure_logging_initialized must be idempotent"
+        );
+        assert_eq!(
+            first_call,
+            logging_is_initialized(),
+            "ensure_logging_initialized return value must match logging_is_initialized()"
+        );
+    }
+
+    #[rstest]
+    fn test_ensure_logging_initialized_fast_path() {
+        // If logging is already initialized, the fast path returns true immediately.
+        // This test documents the expected behavior.
+        if logging_is_initialized() {
+            assert!(
+                ensure_logging_initialized(),
+                "Fast path should return true when already initialized"
+            );
+        }
+        // If not initialized, we can't test the initialization path here
+        // without side effects that affect other tests.
     }
 }

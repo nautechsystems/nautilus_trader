@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,28 +19,32 @@ use std::path::PathBuf;
 
 /// Returns the workspace root directory path.
 ///
+/// This is the directory containing the top-level `Cargo.toml` with the
+/// `[workspace]` section, typically where `pyproject.toml` and `docs/` are located.
+///
 /// # Panics
 ///
-/// Panics if the `CARGO_MANIFEST_DIR` environment variable is not set or its parent directory cannot be determined.
+/// Panics if the `CARGO_MANIFEST_DIR` environment variable is not set or
+/// the parent directories cannot be determined.
 #[must_use]
 pub fn get_workspace_root_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("Failed to get project root")
+        .parent() // crates/core -> crates/
+        .and_then(|p| p.parent()) // crates/ -> nautilus_trader/
+        .expect("Failed to get workspace root")
         .to_path_buf()
 }
 
 /// Returns the project root directory path.
 ///
+/// For this monorepo, the project root is the same as the workspace root.
+///
 /// # Panics
 ///
-/// Panics if the workspace root path cannot be determined or its parent directory is missing.
+/// Panics if the workspace root path cannot be determined.
 #[must_use]
 pub fn get_project_root_path() -> PathBuf {
     get_workspace_root_path()
-        .parent()
-        .expect("Failed to get workspace root")
-        .to_path_buf()
 }
 
 /// Returns the tests root directory path.
@@ -58,5 +62,44 @@ pub fn get_test_data_path() -> PathBuf {
             .join("test_data")
     } else {
         get_project_root_path().join("tests").join("test_data")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_workspace_root_contains_pyproject() {
+        let root = get_workspace_root_path();
+        assert!(
+            root.join("pyproject.toml").exists(),
+            "Workspace root should contain pyproject.toml, got: {root:?}"
+        );
+    }
+
+    #[rstest]
+    fn test_workspace_root_contains_crates_dir() {
+        let root = get_workspace_root_path();
+        assert!(
+            root.join("crates").is_dir(),
+            "Workspace root should contain crates/ directory, got: {root:?}"
+        );
+    }
+
+    #[rstest]
+    fn test_project_root_equals_workspace_root() {
+        assert_eq!(get_project_root_path(), get_workspace_root_path());
+    }
+
+    #[rstest]
+    fn test_tests_root_path() {
+        let tests_root = get_tests_root_path();
+        assert!(
+            tests_root.ends_with("tests"),
+            "Tests root should end with 'tests', got: {tests_root:?}"
+        );
     }
 }

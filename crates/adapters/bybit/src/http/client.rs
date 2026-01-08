@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,7 +19,7 @@
 
 use std::{
     collections::HashMap,
-    fmt::{Debug, Formatter},
+    fmt::Debug,
     num::NonZeroU32,
     sync::{
         Arc, LazyLock,
@@ -145,8 +145,8 @@ impl Default for BybitRawHttpClient {
 }
 
 impl Debug for BybitRawHttpClient {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BybitRawHttpClient")
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(BybitRawHttpClient))
             .field("base_url", &self.base_url)
             .field("has_credentials", &self.credential.is_some())
             .field("recv_window_ms", &self.recv_window_ms)
@@ -1034,7 +1034,7 @@ impl BybitRawHttpClient {
 
         // TODO: Logging for visibility during development
         if let Ok(params_json) = serde_json::to_string(&params) {
-            tracing::debug!("Repay request params: {params_json}");
+            log::debug!("Repay request params: {params_json}");
         }
 
         let body = serde_json::to_vec(&params)?;
@@ -1052,7 +1052,7 @@ impl BybitRawHttpClient {
         if let Err(ref e) = result
             && let Ok(params_json) = serde_json::to_string(&params)
         {
-            tracing::error!("Repay request failed with params {params_json}: {e}");
+            log::error!("Repay request failed with params {params_json}: {e}");
         }
 
         result
@@ -1166,8 +1166,8 @@ impl Default for BybitHttpClient {
 }
 
 impl Debug for BybitHttpClient {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BybitHttpClient")
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(BybitHttpClient))
             .field("inner", &self.inner)
             .finish()
     }
@@ -2215,9 +2215,9 @@ impl BybitHttpClient {
             .zip(client_order_ids.iter().zip(venue_order_ids.iter()))
         {
             let Ok(instrument) = self.instrument_from_cache(&instrument_id.symbol) else {
-                tracing::debug!(
-                    symbol = %instrument_id.symbol,
-                    "Skipping cancelled order report for instrument not in cache"
+                log::debug!(
+                    "Skipping cancelled order report for instrument not in cache: symbol={}",
+                    instrument_id.symbol
                 );
                 continue;
             };
@@ -2423,7 +2423,7 @@ impl BybitHttpClient {
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        tracing::debug!(
+        log::debug!(
             "query_order: instrument_id={instrument_id}, client_order_id={client_order_id:?}, venue_order_id={venue_order_id:?}"
         );
 
@@ -2449,7 +2449,7 @@ impl BybitHttpClient {
             .await?;
 
         if response.result.list.is_empty() {
-            tracing::debug!("Order not found in open orders, trying with StopOrder filter");
+            log::debug!("Order not found in open orders, trying with StopOrder filter");
 
             let mut stop_params = BybitOpenOrdersParamsBuilder::default();
             stop_params.category(product_type);
@@ -2477,7 +2477,7 @@ impl BybitHttpClient {
 
         // If not found in open orders, check order history
         if response.result.list.is_empty() {
-            tracing::debug!("Order not found in open orders, checking order history");
+            log::debug!("Order not found in open orders, checking order history");
 
             let mut history_params = BybitOrderHistoryParamsBuilder::default();
             history_params.category(product_type);
@@ -2503,7 +2503,7 @@ impl BybitHttpClient {
                 .await?;
 
             if history_response.result.list.is_empty() {
-                tracing::debug!("Order not found in order history, trying with StopOrder filter");
+                log::debug!("Order not found in order history, trying with StopOrder filter");
 
                 let mut stop_history_params = BybitOrderHistoryParamsBuilder::default();
                 stop_history_params.category(product_type);
@@ -2532,9 +2532,7 @@ impl BybitHttpClient {
                     .await?;
 
                 if history_response.result.list.is_empty() {
-                    tracing::debug!(
-                        "Order not found in order history with StopOrder filter either"
-                    );
+                    log::debug!("Order not found in order history with StopOrder filter either");
                     return Ok(None);
                 }
             }
@@ -2546,7 +2544,7 @@ impl BybitHttpClient {
         let order = &response.result.list[0];
         let ts_init = self.generate_ts_init();
 
-        tracing::debug!(
+        log::debug!(
             "Query order response: symbol={}, order_id={}, order_link_id={}",
             order.symbol.as_str(),
             order.order_id.as_str(),
@@ -2556,7 +2554,7 @@ impl BybitHttpClient {
         let instrument = self
             .instrument_from_cache(&instrument_id.symbol)
             .map_err(|e| {
-                tracing::error!(
+                log::error!(
                     "Instrument cache miss for symbol '{}': {}",
                     instrument_id.symbol.as_str(),
                     e
@@ -2572,11 +2570,11 @@ impl BybitHttpClient {
                 )
             })?;
 
-        tracing::debug!("Retrieved instrument from cache: id={}", instrument.id());
+        log::debug!("Retrieved instrument from cache: id={}", instrument.id());
 
         let report =
             parse_order_status_report(order, &instrument, account_id, ts_init).map_err(|e| {
-                tracing::error!(
+                log::error!(
                     "Failed to parse order status report for {}: {}",
                     order.order_link_id.as_str(),
                     e
@@ -2584,7 +2582,7 @@ impl BybitHttpClient {
                 e
             })?;
 
-        tracing::debug!(
+        log::debug!(
             "Successfully created OrderStatusReport for {}",
             order.order_link_id.as_str()
         );
@@ -2628,7 +2626,7 @@ impl BybitHttpClient {
                                 .map(|f| (f.symbol, f))
                                 .collect(),
                             Err(BybitHttpError::MissingCredentials) => {
-                                tracing::warn!("Missing credentials for fee rates, using defaults");
+                                log::warn!("Missing credentials for fee rates, using defaults");
                                 AHashMap::new()
                             }
                             Err(e) => return Err(e.into()),
@@ -2685,7 +2683,7 @@ impl BybitHttpClient {
                                 .map(|f| (f.symbol, f))
                                 .collect(),
                             Err(BybitHttpError::MissingCredentials) => {
-                                tracing::warn!("Missing credentials for fee rates, using defaults");
+                                log::warn!("Missing credentials for fee rates, using defaults");
                                 AHashMap::new()
                             }
                             Err(e) => return Err(e.into()),
@@ -2742,7 +2740,7 @@ impl BybitHttpClient {
                                 .map(|f| (f.symbol, f))
                                 .collect(),
                             Err(BybitHttpError::MissingCredentials) => {
-                                tracing::warn!("Missing credentials for fee rates, using defaults");
+                                log::warn!("Missing credentials for fee rates, using defaults");
                                 AHashMap::new()
                             }
                             Err(e) => return Err(e.into()),
@@ -3387,10 +3385,10 @@ impl BybitHttpClient {
                         Symbol::from_ustr_unchecked(make_bybit_symbol(order.symbol, product_type));
 
                     let Ok(instrument) = self.instrument_from_cache(&symbol_with_product) else {
-                        tracing::debug!(
-                            symbol = %order.symbol,
-                            full_symbol = %symbol_with_product,
-                            "Skipping order report for instrument not in cache"
+                        log::debug!(
+                            "Skipping order report for instrument not in cache: symbol={}, full_symbol={}",
+                            order.symbol,
+                            symbol_with_product
                         );
                         continue;
                     };
@@ -3398,7 +3396,7 @@ impl BybitHttpClient {
                     match parse_order_status_report(&order, &instrument, account_id, ts_init) {
                         Ok(report) => reports.push(report),
                         Err(e) => {
-                            tracing::error!("Failed to parse order status report: {e}");
+                            log::error!("Failed to parse order status report: {e}");
                         }
                     }
                 }
@@ -3491,10 +3489,10 @@ impl BybitHttpClient {
                 Symbol::from_ustr_unchecked(make_bybit_symbol(execution.symbol, product_type));
 
             let Ok(instrument) = self.instrument_from_cache(&symbol_with_product) else {
-                tracing::debug!(
-                    symbol = %execution.symbol,
-                    full_symbol = %symbol_with_product,
-                    "Skipping fill report for instrument not in cache"
+                log::debug!(
+                    "Skipping fill report for instrument not in cache: symbol={}, full_symbol={}",
+                    execution.symbol,
+                    symbol_with_product
                 );
                 continue;
             };
@@ -3502,7 +3500,7 @@ impl BybitHttpClient {
             match parse_fill_report(&execution, account_id, &instrument, ts_init) {
                 Ok(report) => reports.push(report),
                 Err(e) => {
-                    tracing::error!("Failed to parse fill report: {e}");
+                    log::error!("Failed to parse fill report: {e}");
                 }
             }
         }
@@ -3586,10 +3584,10 @@ impl BybitHttpClient {
 
                         let Ok(instrument) = self.instrument_from_cache(&symbol_with_product)
                         else {
-                            tracing::debug!(
-                                symbol = %position.symbol,
-                                full_symbol = %symbol_with_product,
-                                "Skipping position report for instrument not in cache"
+                            log::debug!(
+                                "Skipping position report for instrument not in cache: symbol={}, full_symbol={}",
+                                position.symbol,
+                                symbol_with_product
                             );
                             continue;
                         };
@@ -3602,7 +3600,7 @@ impl BybitHttpClient {
                         ) {
                             Ok(report) => reports.push(report),
                             Err(e) => {
-                                tracing::error!("Failed to parse position status report: {e}");
+                                log::error!("Failed to parse position status report: {e}");
                             }
                         }
                     }
@@ -3641,10 +3639,10 @@ impl BybitHttpClient {
                     ));
 
                     let Ok(instrument) = self.instrument_from_cache(&symbol_with_product) else {
-                        tracing::debug!(
-                            symbol = %position.symbol,
-                            full_symbol = %symbol_with_product,
-                            "Skipping position report for instrument not in cache"
+                        log::debug!(
+                            "Skipping position report for instrument not in cache: symbol={}, full_symbol={}",
+                            position.symbol,
+                            symbol_with_product
                         );
                         continue;
                     };
@@ -3653,7 +3651,7 @@ impl BybitHttpClient {
                     {
                         Ok(report) => reports.push(report),
                         Err(e) => {
-                            tracing::error!("Failed to parse position status report: {e}");
+                            log::error!("Failed to parse position status report: {e}");
                         }
                     }
                 }

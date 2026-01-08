@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -857,16 +857,17 @@ class KrakenExecutionClient(LiveExecutionClient):
             # Check if venue order ID changed (Futures editorder can return new ID)
             new_venue_order_id_obj = VenueOrderId(new_venue_order_id.value)
             venue_order_id_modified = (
-                order.venue_order_id is not None
-                and new_venue_order_id_obj != order.venue_order_id
+                order.venue_order_id is not None and new_venue_order_id_obj != order.venue_order_id
             )
 
             # Generate OrderUpdated event
             # Use command values if provided, otherwise fall back to order values
             # Note: StopMarketOrder doesn't have a price attribute, only trigger_price
             price = command.price if command.price else (order.price if order.has_price else None)
-            trigger_price = command.trigger_price if command.trigger_price else (
-                order.trigger_price if order.has_trigger_price else None
+            trigger_price = (
+                command.trigger_price
+                if command.trigger_price
+                else (order.trigger_price if order.has_trigger_price else None)
             )
 
             self.generate_order_updated(
@@ -1029,7 +1030,11 @@ class KrakenExecutionClient(LiveExecutionClient):
         if self._http_client_spot is not None:
             await self._execute_batch_cancel(self._http_client_spot, spot_venue_ids, "spot")
         if self._http_client_futures is not None:
-            await self._execute_batch_cancel(self._http_client_futures, futures_venue_ids, "futures")
+            await self._execute_batch_cancel(
+                self._http_client_futures,
+                futures_venue_ids,
+                "futures",
+            )
 
     def _handle_msg(self, msg: Any) -> None:  # noqa: C901 (too complex)
         try:
@@ -1126,12 +1131,7 @@ class KrakenExecutionClient(LiveExecutionClient):
                 ts_event=report.ts_last,
             )
         elif report.order_status == OrderStatus.ACCEPTED:
-            if order.status in (
-                OrderStatus.ACCEPTED,
-                OrderStatus.FILLED,
-                OrderStatus.CANCELED,
-                OrderStatus.EXPIRED,
-            ):
+            if order.status != OrderStatus.SUBMITTED:
                 return
             self.generate_order_accepted(
                 strategy_id=order.strategy_id,

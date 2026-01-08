@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,16 +31,28 @@ from ibapi.errors import BAD_LENGTH
 from ibapi.execution import Execution
 from ibapi.utils import current_fn_name
 
-from nautilus_trader.adapters.interactive_brokers.client.account import InteractiveBrokersClientAccountMixin
+from nautilus_trader.adapters.interactive_brokers.client.account import (
+    InteractiveBrokersClientAccountMixin,
+)
 from nautilus_trader.adapters.interactive_brokers.client.common import AccountOrderRef
 from nautilus_trader.adapters.interactive_brokers.client.common import Request
 from nautilus_trader.adapters.interactive_brokers.client.common import Requests
 from nautilus_trader.adapters.interactive_brokers.client.common import Subscriptions
-from nautilus_trader.adapters.interactive_brokers.client.connection import InteractiveBrokersClientConnectionMixin
-from nautilus_trader.adapters.interactive_brokers.client.contract import InteractiveBrokersClientContractMixin
-from nautilus_trader.adapters.interactive_brokers.client.error import InteractiveBrokersClientErrorMixin
-from nautilus_trader.adapters.interactive_brokers.client.market_data import InteractiveBrokersClientMarketDataMixin
-from nautilus_trader.adapters.interactive_brokers.client.order import InteractiveBrokersClientOrderMixin
+from nautilus_trader.adapters.interactive_brokers.client.connection import (
+    InteractiveBrokersClientConnectionMixin,
+)
+from nautilus_trader.adapters.interactive_brokers.client.contract import (
+    InteractiveBrokersClientContractMixin,
+)
+from nautilus_trader.adapters.interactive_brokers.client.error import (
+    InteractiveBrokersClientErrorMixin,
+)
+from nautilus_trader.adapters.interactive_brokers.client.market_data import (
+    InteractiveBrokersClientMarketDataMixin,
+)
+from nautilus_trader.adapters.interactive_brokers.client.order import (
+    InteractiveBrokersClientOrderMixin,
+)
 from nautilus_trader.adapters.interactive_brokers.client.wrapper import InteractiveBrokersEWrapper
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.cache.cache import Cache
@@ -140,7 +152,10 @@ class InteractiveBrokersClient(
 
         # MarketDataMixin
         self._bar_type_to_last_bar: dict[str, BarData | None] = {}
-        self._bar_timeout_tasks: dict[str, asyncio.Task] = {}  # Track timeout tasks for each bar type
+        self._bar_timeout_tasks: dict[
+            str,
+            asyncio.Task,
+        ] = {}  # Track timeout tasks for each bar type
         self._subscription_tick_data: dict[int, dict] = {}  # Store tick data by req_id
         self._subscription_start_times: dict[int, int] = {}  # Store start_ns for bar filtering
 
@@ -178,7 +193,10 @@ class InteractiveBrokersClient(
         while not self._is_ib_connected.is_set():
             try:
                 self._connection_attempts += 1
-                if not self._indefinite_reconnect and self._connection_attempts > self._max_connection_attempts:
+                if (
+                    not self._indefinite_reconnect
+                    and self._connection_attempts > self._max_connection_attempts
+                ):
                     self._log.error("Max connection attempts reached, connection failed")
                     self._stop()
                     break
@@ -605,7 +623,9 @@ class InteractiveBrokersClient(
         self._log.debug("Client internal message queue processor started")
 
         try:
-            while (self._eclient.conn and self._eclient.conn.isConnected()) or not self._internal_msg_queue.empty():
+            while (
+                self._eclient.conn and self._eclient.conn.isConnected()
+            ) or not self._internal_msg_queue.empty():
                 msg = await self._internal_msg_queue.get()
 
                 if not await self._process_message(msg):

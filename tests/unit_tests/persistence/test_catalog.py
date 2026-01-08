@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -75,7 +75,9 @@ def test_catalog_query_filtered(
     trades = catalog_betfair.trade_ticks(start=1576875378384999936)
     assert len(trades) == 121
 
-    trades = catalog_betfair.trade_ticks(start=datetime.datetime(2019, 12, 20, 20, 56, 18, tzinfo=datetime.UTC))
+    trades = catalog_betfair.trade_ticks(
+        start=datetime.datetime(2019, 12, 20, 20, 56, 18, tzinfo=datetime.UTC),
+    )
     assert len(trades) == 121
 
     deltas = catalog_betfair.order_book_deltas()
@@ -1071,7 +1073,8 @@ class TestConsolidateDataByPeriod:
         # Verify data values are preserved
         for original_bar, retrieved_bar in zip(
             sorted(test_bars, key=lambda x: x.ts_init),
-            sorted(all_bars, key=lambda x: x.ts_init), strict=False,
+            sorted(all_bars, key=lambda x: x.ts_init),
+            strict=False,
         ):
             assert original_bar.open == retrieved_bar.open
             assert original_bar.high == retrieved_bar.high
@@ -1115,7 +1118,9 @@ class TestConsolidateDataByPeriod:
         retrieved_sorted = sorted(all_bars, key=lambda x: x.ts_init)
 
         # Verify each bar's timestamp is exactly preserved
-        for i, (original, retrieved) in enumerate(zip(original_sorted, retrieved_sorted, strict=False)):
+        for i, (original, retrieved) in enumerate(
+            zip(original_sorted, retrieved_sorted, strict=False),
+        ):
             assert original.ts_init == retrieved.ts_init, f"Timestamp mismatch at index {i}"
 
     def test_consolidate_mixed_data_types_integration(self):
@@ -1737,9 +1742,9 @@ def test_delete_data_range_cross_file_split(catalog: ParquetDataCatalog) -> None
     remaining_timestamps.sort()
 
     expected_remaining = [1_000_000_000, 2_000_000_000, 3_000_000_000]
-    assert (
-        remaining_timestamps == expected_remaining
-    ), f"Expected {expected_remaining}, was {remaining_timestamps}"
+    assert remaining_timestamps == expected_remaining, (
+        f"Expected {expected_remaining}, was {remaining_timestamps}"
+    )
 
     # Verify file structure - should have 1 file remaining
     final_intervals = catalog.get_intervals(QuoteTick, "AUD/USD.SIM")
@@ -1748,12 +1753,12 @@ def test_delete_data_range_cross_file_split(catalog: ParquetDataCatalog) -> None
     # Verify the remaining file covers the correct range (should end just before deletion start)
     expected_start = 1_000_000_000
     expected_end = 4_000_000_000 - 1  # Just before deletion range starts (one nanosecond before)
-    assert (
-        final_intervals[0][0] == expected_start
-    ), f"Expected start {expected_start}, was {final_intervals[0][0]}"
-    assert (
-        final_intervals[0][1] == expected_end
-    ), f"Expected end {expected_end}, was {final_intervals[0][1]}"
+    assert final_intervals[0][0] == expected_start, (
+        f"Expected start {expected_start}, was {final_intervals[0][0]}"
+    )
+    assert final_intervals[0][1] == expected_end, (
+        f"Expected end {expected_end}, was {final_intervals[0][1]}"
+    )
 
     # Verify we can query the remaining data correctly
     queried_quotes = catalog.query(
@@ -1765,9 +1770,9 @@ def test_delete_data_range_cross_file_split(catalog: ParquetDataCatalog) -> None
     queried_timestamps = [q.ts_init for q in queried_quotes]
     queried_timestamps.sort()
 
-    assert (
-        queried_timestamps == expected_remaining
-    ), f"Query result should be {expected_remaining}, was {queried_timestamps}"
+    assert queried_timestamps == expected_remaining, (
+        f"Query result should be {expected_remaining}, was {queried_timestamps}"
+    )
 
 
 def test_delete_data_range_cross_file_split_keep_end(catalog: ParquetDataCatalog) -> None:
@@ -1833,9 +1838,9 @@ def test_delete_data_range_cross_file_split_keep_end(catalog: ParquetDataCatalog
     remaining_timestamps.sort()
 
     expected_remaining = [8_000_000_000, 9_000_000_000, 10_000_000_000]
-    assert (
-        remaining_timestamps == expected_remaining
-    ), f"Expected {expected_remaining}, was {remaining_timestamps}"
+    assert remaining_timestamps == expected_remaining, (
+        f"Expected {expected_remaining}, was {remaining_timestamps}"
+    )
 
     # Verify file structure - should have 2 files remaining (split file 2 + intact file 3)
     final_intervals = catalog.get_intervals(QuoteTick, "AUD/USD.SIM")
@@ -1851,9 +1856,9 @@ def test_delete_data_range_cross_file_split_keep_end(catalog: ParquetDataCatalog
     queried_timestamps = [q.ts_init for q in queried_quotes]
     queried_timestamps.sort()
 
-    assert (
-        queried_timestamps == expected_remaining
-    ), f"Query result should be {expected_remaining}, was {queried_timestamps}"
+    assert queried_timestamps == expected_remaining, (
+        f"Query result should be {expected_remaining}, was {queried_timestamps}"
+    )
 
 
 def test_delete_catalog_range_partial_overlap(catalog: ParquetDataCatalog) -> None:
@@ -2204,9 +2209,7 @@ def test_backend_session_table_naming_multiple_instruments(catalog: ParquetDataC
         "ADABTC-1m-2021-11-27.csv",
         bar_type1,
         instrument1,
-    )[
-        :5
-    ]  # Use fewer bars for faster test
+    )[:5]  # Use fewer bars for faster test
 
     bar_type2 = TestDataStubs.bartype_btcusdt_binance_100tick_last()
     instrument2 = TestInstrumentProvider.btcusdt_binance()
@@ -2214,9 +2217,7 @@ def test_backend_session_table_naming_multiple_instruments(catalog: ParquetDataC
         "ADABTC-1m-2021-11-27.csv",  # Reuse same CSV data but with different bar_type
         bar_type2,
         instrument2,
-    )[
-        :5
-    ]  # Use fewer bars for faster test
+    )[:5]  # Use fewer bars for faster test
 
     # Write data for both instruments
     catalog.write_data(bars1)

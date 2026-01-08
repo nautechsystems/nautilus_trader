@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -68,6 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_name(node_name)
         .add_data_client(None, Box::new(data_factory), Box::new(data_config))?
         .add_exec_client(None, Box::new(exec_factory), Box::new(exec_config))?
+        .with_reconciliation(true)
         .with_delay_post_stop_secs(5)
         .build()?;
 
@@ -77,14 +78,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         client_id,
         Quantity::from("0.01"),
     )
-    .with_log_data(false);
+    .with_log_data(false)
+    .with_close_positions_on_stop(false);
 
     // Use UUIDs for unique client order IDs across restarts
     tester_config.base.use_uuid_client_order_ids = true;
     // OKX doesn't allow hyphens in client order IDs
     tester_config.base.use_hyphens_in_client_order_ids = false;
-    // Use post-only for limit orders
+
+    tester_config.base.external_order_claims = Some(vec![instrument_id]);
     tester_config.use_post_only = true;
+    // tester_config.cancel_orders_on_stop = false;
+    // tester_config.close_positions_on_stop = false;
 
     let tester = ExecTester::new(tester_config);
 

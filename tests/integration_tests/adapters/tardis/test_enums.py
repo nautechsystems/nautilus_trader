@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -98,7 +98,9 @@ def test_exchange_to_venue_mapping():
                     f"but expected '{expected_venue}'"
                 )
         except ValueError:
-            raise AssertionError(f"Tardis exchange '{exchange_str}' maps to invalid Nautilus venue '{venue_str}'")
+            raise AssertionError(
+                f"Tardis exchange '{exchange_str}' maps to invalid Nautilus venue '{venue_str}'",
+            )
 
 
 def test_venue_to_exchange_mapping_bidirectional():

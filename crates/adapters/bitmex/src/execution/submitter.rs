@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -241,7 +241,7 @@ struct TransportClient {
 
 impl Debug for TransportClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TransportClient")
+        f.debug_struct(stringify!(TransportClient))
             .field("client_id", &self.client_id)
             .field("healthy", &self.healthy)
             .field("submit_count", &self.submit_count)
@@ -293,12 +293,12 @@ impl TransportClient {
                 true
             }
             Ok(Err(e)) => {
-                tracing::warn!("Health check failed for client {}: {e:?}", self.client_id);
+                log::warn!("Health check failed for client {}: {e:?}", self.client_id);
                 self.mark_unhealthy();
                 false
             }
             Err(_) => {
-                tracing::warn!("Health check timeout for client {}", self.client_id);
+                log::warn!("Health check timeout for client {}", self.client_id);
                 self.mark_unhealthy();
                 false
             }
@@ -465,7 +465,7 @@ impl SubmitBroadcaster {
                 let results = future::join_all(tasks).await;
                 let healthy_count = results.iter().filter(|&&r| r).count();
 
-                tracing::debug!(
+                log::debug!(
                     "Health check complete: {healthy_count}/{} clients healthy",
                     results.len()
                 );
@@ -474,7 +474,7 @@ impl SubmitBroadcaster {
 
         *self.health_check_task.write().await = Some(task);
 
-        tracing::info!(
+        log::info!(
             "SubmitBroadcaster started with {} clients",
             self.transports.len()
         );
@@ -494,7 +494,7 @@ impl SubmitBroadcaster {
             task.abort();
         }
 
-        tracing::info!("SubmitBroadcaster stopped");
+        log::info!("SubmitBroadcaster stopped");
     }
 
     async fn run_health_checks(&self) {
@@ -507,7 +507,7 @@ impl SubmitBroadcaster {
         let results = future::join_all(tasks).await;
         let healthy_count = results.iter().filter(|&&r| r).count();
 
-        tracing::debug!(
+        log::debug!(
             "Health check complete: {healthy_count}/{} clients healthy",
             results.len()
         );
@@ -546,7 +546,7 @@ impl SubmitBroadcaster {
                         handle.abort();
                     }
                     self.successful_submits.fetch_add(1, Ordering::Relaxed);
-                    tracing::debug!("{} broadcast succeeded [{client_id}] {params}", operation,);
+                    log::debug!("{operation} broadcast succeeded [{client_id}] {params}",);
                     return Ok(result);
                 }
                 Ok((client_id, Err(e))) => {
@@ -554,21 +554,20 @@ impl SubmitBroadcaster {
 
                     if self.is_expected_reject(&error_msg) {
                         self.expected_rejects.fetch_add(1, Ordering::Relaxed);
-                        tracing::debug!(
+                        log::debug!(
                             "Expected {} rejection [{client_id}]: {error_msg} {params}",
                             operation.to_lowercase(),
                         );
                         errors.push(error_msg);
                     } else {
-                        tracing::warn!(
-                            "{} request failed [{client_id}]: {error_msg} {params}",
-                            operation,
+                        log::warn!(
+                            "{operation} request failed [{client_id}]: {error_msg} {params}",
                         );
                         errors.push(error_msg);
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("{} task join error: {e:?}", operation);
+                    log::warn!("{operation} task join error: {e:?}");
                     errors.push(format!("Task panicked: {e:?}"));
                 }
             }
@@ -576,7 +575,7 @@ impl SubmitBroadcaster {
 
         // All tasks failed
         self.failed_submits.fetch_add(1, Ordering::Relaxed);
-        tracing::error!(
+        log::error!(
             "All {} requests failed: {errors:?} {params}",
             operation.to_lowercase(),
         );
@@ -629,7 +628,7 @@ impl SubmitBroadcaster {
             pool_size
         };
 
-        tracing::debug!(
+        log::debug!(
             "Submit broadcast requested for client_order_id={client_order_id} (tries={actual_tries}/{pool_size})",
         );
 
@@ -646,7 +645,7 @@ impl SubmitBroadcaster {
             anyhow::bail!("No healthy transport clients available");
         }
 
-        tracing::debug!(
+        log::debug!(
             "Broadcasting submit to {} clients: client_order_id={client_order_id}, instrument_id={instrument_id}",
             healthy_transports.len(),
         );
@@ -1569,6 +1568,7 @@ mod tests {
         #[derive(Clone)]
         struct CaptureAndFailExecutor {
             captured_ids: Arc<Mutex<Vec<String>>>,
+            barrier: Arc<tokio::sync::Barrier>,
             should_succeed: bool,
         }
 
@@ -1603,8 +1603,12 @@ mod tests {
                     .lock()
                     .unwrap()
                     .push(client_order_id.as_str().to_string());
+                let barrier = Arc::clone(&self.barrier);
                 let should_succeed = self.should_succeed;
+                // Wait for all tasks to capture their IDs before any completes
+                // (with concurrent execution, first success aborts others)
                 Box::pin(async move {
+                    barrier.wait().await;
                     if should_succeed {
                         Ok(create_test_report("ORDER-1"))
                     } else {
@@ -1617,11 +1621,13 @@ mod tests {
         }
 
         let captured_ids = Arc::new(Mutex::new(Vec::new()));
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
 
         let transports = vec![
             TransportClient::new(
                 CaptureAndFailExecutor {
                     captured_ids: Arc::clone(&captured_ids),
+                    barrier: Arc::clone(&barrier),
                     should_succeed: false,
                 },
                 "client-0".to_string(),
@@ -1629,6 +1635,7 @@ mod tests {
             TransportClient::new(
                 CaptureAndFailExecutor {
                     captured_ids: Arc::clone(&captured_ids),
+                    barrier: Arc::clone(&barrier),
                     should_succeed: true,
                 },
                 "client-1".to_string(),
@@ -1661,12 +1668,11 @@ mod tests {
 
         assert!(result.is_ok());
 
-        // Check that both clients received unique client_order_ids
-        // Order is non-deterministic due to concurrent execution
+        // Check captured client_order_ids (order is non-deterministic with concurrent execution)
         let ids = captured_ids.lock().unwrap();
         assert_eq!(ids.len(), 2);
-        assert!(ids.contains(&"O-456".to_string()));
-        assert!(ids.contains(&"O-456-1".to_string()));
+        assert!(ids.contains(&"O-456".to_string())); // First client gets original ID
+        assert!(ids.contains(&"O-456-1".to_string())); // Second client gets suffix -1
     }
 
     #[tokio::test]

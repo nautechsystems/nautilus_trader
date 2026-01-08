@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,6 +23,7 @@ For convenience, the most commonly used symbols are re-exported at the subpackag
 top level, so downstream code can simply import from ``nautilus_trader.adapters.tardis``.
 
 """
+
 from nautilus_trader.adapters.tardis.config import TardisDataClientConfig
 from nautilus_trader.adapters.tardis.constants import TARDIS
 from nautilus_trader.adapters.tardis.constants import TARDIS_CLIENT_ID

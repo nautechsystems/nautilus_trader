@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -606,7 +606,7 @@ def test_loader_ohlcv_1s() -> None:
 @pytest.mark.parametrize(
     ("bars_timestamp_on_close", "expected_ts_event"),
     [
-        (True, 1609160460000000000),   # Close time (default)
+        (True, 1609160460000000000),  # Close time (default)
         (False, 1609160400000000000),  # Open time
     ],
 )

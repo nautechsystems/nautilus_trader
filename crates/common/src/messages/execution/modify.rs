@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,16 +24,15 @@ use nautilus_model::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
-#[builder(default)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Builder)]
 #[serde(tag = "type")]
 pub struct ModifyOrder {
     pub trader_id: TraderId,
-    pub client_id: ClientId,
+    pub client_id: Option<ClientId>,
     pub strategy_id: StrategyId,
     pub instrument_id: InstrumentId,
     pub client_order_id: ClientOrderId,
-    pub venue_order_id: VenueOrderId,
+    pub venue_order_id: Option<VenueOrderId>,
     pub quantity: Option<Quantity>,
     pub price: Option<Price>,
     pub trigger_price: Option<Price>,
@@ -44,26 +43,23 @@ pub struct ModifyOrder {
 
 impl ModifyOrder {
     /// Creates a new [`ModifyOrder`] instance.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if parameters are invalid.
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         trader_id: TraderId,
-        client_id: ClientId,
+        client_id: Option<ClientId>,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
-        venue_order_id: VenueOrderId,
+        venue_order_id: Option<VenueOrderId>,
         quantity: Option<Quantity>,
         price: Option<Price>,
         trigger_price: Option<Price>,
         command_id: UUID4,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             trader_id,
             client_id,
             strategy_id,
@@ -76,7 +72,7 @@ impl ModifyOrder {
             command_id,
             ts_init,
             params,
-        })
+        }
     }
 }
 
@@ -84,7 +80,7 @@ impl Display for ModifyOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "ModifyOrder(instrument_id={}, client_order_id={}, venue_order_id={}, quantity={}, price={}, trigger_price={})",
+            "ModifyOrder(instrument_id={}, client_order_id={}, venue_order_id={:?}, quantity={}, price={}, trigger_price={})",
             self.instrument_id,
             self.client_order_id,
             self.venue_order_id,

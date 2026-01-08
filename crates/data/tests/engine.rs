@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -38,12 +38,12 @@ use nautilus_common::{
     messages::data::{
         DataCommand, RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCommand,
         RequestCustomData, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
-        SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
-        SubscribeCommand, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
-        SubscribeInstrument, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
-        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookSnapshots, UnsubscribeCommand,
-        UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-        UnsubscribeInstrument, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+        SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCommand,
+        SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
+        SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
+        UnsubscribeBookDeltas, UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates,
+        UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeMarkPrices, UnsubscribeQuotes,
+        UnsubscribeTrades,
     },
     msgbus::{
         self, MessageBus,
@@ -54,6 +54,8 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::{client::DataClientAdapter, engine::DataEngine};
+#[cfg(feature = "defi")]
+use nautilus_model::defi::tick_map::tick_math::get_tick_at_sqrt_ratio;
 #[cfg(feature = "defi")]
 use nautilus_model::defi::{AmmType, Dex, DexType, chain::chains};
 #[cfg(feature = "defi")]
@@ -69,22 +71,22 @@ use nautilus_model::{
         OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
         stubs::{stub_delta, stub_deltas, stub_depth10},
     },
-    defi::tick_map::tick_math::get_tick_at_sqrt_ratio,
     enums::{BookType, PriceType},
     identifiers::{ClientId, TraderId, Venue},
     instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
+    stubs::TestDefault,
     types::Price,
 };
 use rstest::*;
 
 #[fixture]
 fn client_id() -> ClientId {
-    ClientId::default()
+    ClientId::test_default()
 }
 
 #[fixture]
 fn venue() -> Venue {
-    Venue::default()
+    Venue::test_default()
 }
 
 #[fixture]
@@ -99,7 +101,7 @@ fn cache() -> Rc<RefCell<Cache>> {
 
 #[fixture]
 fn stub_msgbus() -> Rc<RefCell<MessageBus>> {
-    MessageBus::new(TraderId::default(), UUID4::new(), None, None).register_message_bus()
+    MessageBus::new(TraderId::test_default(), UUID4::new(), None, None).register_message_bus()
 }
 
 #[fixture]
@@ -176,7 +178,7 @@ fn test_register_default_client_twice_panics(
             clock.clone(),
             cache.clone(),
             client_id,
-            Some(Venue::default()),
+            Some(Venue::test_default()),
         )),
     );
     let data_client2 = DataClientAdapter::new(
@@ -188,7 +190,7 @@ fn test_register_default_client_twice_panics(
             clock,
             cache,
             client_id,
-            Some(Venue::default()),
+            Some(Venue::test_default()),
         )),
     );
 
@@ -206,7 +208,7 @@ fn test_register_client_duplicate_id_panics(
     let mut data_engine = data_engine.borrow_mut();
 
     let client_id = ClientId::new("DUPLICATE");
-    let venue = Venue::default();
+    let venue = Venue::test_default();
 
     let data_client1 = DataClientAdapter::new(
         client_id,
@@ -217,7 +219,7 @@ fn test_register_client_duplicate_id_panics(
             clock.clone(),
             cache.clone(),
             client_id,
-            Some(Venue::default()),
+            Some(Venue::test_default()),
         )),
     );
     let data_client2 = DataClientAdapter::new(
@@ -229,7 +231,7 @@ fn test_register_client_duplicate_id_panics(
             clock,
             cache,
             client_id,
-            Some(Venue::default()),
+            Some(Venue::test_default()),
         )),
     );
 
@@ -246,7 +248,7 @@ fn test_register_and_deregister_client(
     let mut data_engine = data_engine.borrow_mut();
 
     let client_id1 = ClientId::new("C1");
-    let venue1 = Venue::default();
+    let venue1 = Venue::test_default();
 
     let data_client1 = DataClientAdapter::new(
         client_id1,
@@ -306,7 +308,7 @@ fn test_register_default_client(
             clock,
             cache,
             default_id,
-            Some(Venue::default()),
+            Some(Venue::test_default()),
         )),
     );
     data_engine.register_default_client(default_client);
@@ -350,6 +352,7 @@ fn test_execute_subscribe_custom_data(
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None,
     );
     let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Data(sub));
     data_engine.execute(&sub_cmd);
@@ -365,6 +368,7 @@ fn test_execute_subscribe_custom_data(
         data_type.clone(),
         UUID4::new(),
         UnixNanos::default(),
+        None,
         None,
     );
     let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Data(unsub));
@@ -405,6 +409,7 @@ fn test_execute_subscribe_book_deltas(
         None,
         true,
         None,
+        None,
     )));
     data_engine.execute(&sub_cmd);
 
@@ -425,78 +430,13 @@ fn test_execute_subscribe_book_deltas(
             UUID4::new(),
             UnixNanos::default(),
             None,
+            None,
         )));
     data_engine.execute(&unsub_cmd);
 
     assert!(
         !data_engine
             .subscribed_book_deltas()
-            .contains(&audusd_sim.id)
-    );
-    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
-}
-
-#[rstest]
-fn test_execute_subscribe_book_snapshots(
-    audusd_sim: CurrencyPair,
-    data_engine: Rc<RefCell<DataEngine>>,
-    clock: Rc<RefCell<TestClock>>,
-    cache: Rc<RefCell<Cache>>,
-    client_id: ClientId,
-    venue: Venue,
-) {
-    let mut data_engine = data_engine.borrow_mut();
-    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
-    register_mock_client(
-        clock,
-        cache,
-        client_id,
-        venue,
-        None,
-        &recorder,
-        &mut data_engine,
-    );
-
-    let inst_any = InstrumentAny::CurrencyPair(audusd_sim);
-    data_engine.process(&inst_any as &dyn Any);
-
-    let sub = SubscribeBookSnapshots::new(
-        audusd_sim.id,
-        BookType::L2_MBP,
-        Some(client_id),
-        Some(venue),
-        UUID4::new(),
-        UnixNanos::default(),
-        None,
-        NonZeroUsize::new(1_000).unwrap(),
-        None,
-    );
-    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::BookSnapshots(sub));
-    data_engine.execute(&sub_cmd);
-
-    assert!(
-        data_engine
-            .subscribed_book_snapshots()
-            .contains(&audusd_sim.id)
-    );
-    {
-        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
-    }
-
-    let unsub = UnsubscribeBookSnapshots::new(
-        audusd_sim.id,
-        Some(client_id),
-        Some(venue),
-        UUID4::new(),
-        UnixNanos::default(),
-        None,
-    );
-    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::BookSnapshots(unsub));
-    data_engine.execute(&unsub_cmd);
-
-    assert!(
-        !data_engine
-            .subscribed_book_snapshots()
             .contains(&audusd_sim.id)
     );
     assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
@@ -530,6 +470,7 @@ fn test_execute_subscribe_instrument(
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None,
     );
     let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Instrument(sub));
     data_engine.execute(&sub_cmd);
@@ -549,6 +490,7 @@ fn test_execute_subscribe_instrument(
         Some(venue),
         UUID4::new(),
         UnixNanos::default(),
+        None,
         None,
     );
     let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Instrument(unsub));
@@ -590,6 +532,7 @@ fn test_execute_subscribe_quotes(
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None,
     );
     let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Quotes(sub));
     data_engine.execute(&sub_cmd);
@@ -605,6 +548,7 @@ fn test_execute_subscribe_quotes(
         Some(venue),
         UUID4::new(),
         UnixNanos::default(),
+        None,
         None,
     );
     let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(unsub));
@@ -642,6 +586,7 @@ fn test_execute_subscribe_trades(
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None,
     );
     let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Trades(sub));
     data_engine.execute(&sub_cmd);
@@ -657,6 +602,7 @@ fn test_execute_subscribe_trades(
         Some(venue),
         UUID4::new(),
         UnixNanos::default(),
+        None,
         None,
     );
     let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Trades(ubsub));
@@ -699,6 +645,7 @@ fn test_execute_subscribe_bars(
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None,
     );
     let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Bars(sub));
     data_engine.execute(&sub_cmd);
@@ -714,6 +661,7 @@ fn test_execute_subscribe_bars(
         Some(venue),
         UUID4::new(),
         UnixNanos::default(),
+        None,
         None,
     );
     let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Bars(unsub));
@@ -752,6 +700,7 @@ fn test_execute_subscribe_mark_prices(
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None,
     );
     let sub_cmd = DataCommand::Subscribe(SubscribeCommand::MarkPrices(sub));
     data_engine.execute(&sub_cmd);
@@ -771,6 +720,7 @@ fn test_execute_subscribe_mark_prices(
         Some(venue),
         UUID4::new(),
         UnixNanos::default(),
+        None,
         None,
     );
     let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::MarkPrices(unsub));
@@ -812,6 +762,7 @@ fn test_execute_subscribe_index_prices(
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None,
     )));
     data_engine.execute(&sub_cmd);
 
@@ -831,6 +782,7 @@ fn test_execute_subscribe_index_prices(
             Some(venue),
             UUID4::new(),
             UnixNanos::default(),
+            None,
             None,
         ),
     ));
@@ -874,6 +826,7 @@ fn test_execute_subscribe_funding_rates(
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None,
     );
     let sub_cmd = DataCommand::Subscribe(SubscribeCommand::FundingRates(sub));
     data_engine.execute(&sub_cmd);
@@ -893,6 +846,7 @@ fn test_execute_subscribe_funding_rates(
         Some(venue),
         UUID4::new(),
         UnixNanos::default(),
+        None,
         None,
     );
     let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::FundingRates(unsub));
@@ -1223,6 +1177,7 @@ fn test_process_instrument(
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None,
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::Instrument(sub));
 
@@ -1266,6 +1221,7 @@ fn test_process_book_delta(
         None,
         true,
         None,
+        None,
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub));
 
@@ -1304,6 +1260,7 @@ fn test_process_book_deltas(
         UnixNanos::default(),
         None,
         true,
+        None,
         None,
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub));
@@ -1346,6 +1303,7 @@ fn test_process_book_depth10(
         None,
         true,
         None,
+        None,
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::BookDepth10(sub));
 
@@ -1382,6 +1340,7 @@ fn test_process_quote_tick(
         venue,
         UUID4::new(),
         UnixNanos::default(),
+        None,
         None,
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::Quotes(sub));
@@ -1421,6 +1380,7 @@ fn test_process_trade_tick(
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None,
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::Trades(sub));
 
@@ -1458,6 +1418,7 @@ fn test_process_mark_price(
         venue,
         UUID4::new(),
         UnixNanos::default(),
+        None,
         None,
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::MarkPrices(sub));
@@ -1513,6 +1474,7 @@ fn test_process_index_price(
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None,
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::IndexPrices(sub));
 
@@ -1563,6 +1525,7 @@ fn test_process_funding_rate_through_any(
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None,
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::FundingRates(sub));
 
@@ -1611,6 +1574,7 @@ fn test_process_funding_rate(
         UUID4::new(),
         UnixNanos::default(),
         None,
+        None,
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::FundingRates(sub));
 
@@ -1657,6 +1621,7 @@ fn test_process_funding_rate_updates_existing(
         venue,
         UUID4::new(),
         UnixNanos::default(),
+        None,
         None,
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::FundingRates(sub));
@@ -1706,6 +1671,7 @@ fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClien
         venue,
         UUID4::new(),
         UnixNanos::default(),
+        None,
         None,
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::Bars(sub));

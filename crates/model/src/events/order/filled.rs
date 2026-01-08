@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -36,8 +36,8 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Builder)]
-#[builder(default)]
 #[serde(tag = "type")]
+#[cfg_attr(any(test, feature = "stubs"), builder(default))]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -145,33 +145,6 @@ impl OrderFilled {
     }
 }
 
-impl Default for OrderFilled {
-    /// Creates a new default [`OrderFilled`] instance for testing.
-    fn default() -> Self {
-        Self {
-            trader_id: TraderId::default(),
-            strategy_id: StrategyId::default(),
-            instrument_id: InstrumentId::default(),
-            client_order_id: ClientOrderId::default(),
-            venue_order_id: VenueOrderId::default(),
-            account_id: AccountId::default(),
-            trade_id: TradeId::default(),
-            position_id: None,
-            order_side: OrderSide::Buy,
-            order_type: OrderType::Market,
-            last_qty: Quantity::new(100_000.0, 0),
-            last_px: Price::from("1.00000"),
-            currency: Currency::USD(),
-            commission: None,
-            liquidity_side: LiquiditySide::Taker,
-            event_id: Default::default(),
-            ts_event: Default::default(),
-            ts_init: Default::default(),
-            reconciliation: Default::default(),
-        }
-    }
-}
-
 impl Debug for OrderFilled {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let position_id_str = match self.position_id {
@@ -249,7 +222,8 @@ impl Display for OrderFilled {
             self.venue_order_id,
             self.account_id,
             self.trade_id,
-            self.position_id.unwrap_or_default(),
+            self.position_id
+                .map_or("None".to_string(), |id| id.to_string()),
             self.order_side,
             self.order_type,
             self.last_qty.to_formatted_string(),
@@ -445,6 +419,7 @@ mod tests {
             AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
             VenueOrderId,
         },
+        stubs::TestDefault,
         types::{Currency, Money, Price, Quantity},
     };
 
@@ -506,7 +481,7 @@ mod tests {
         assert_eq!(
             display,
             "OrderFilled(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, \
-            venue_order_id=123456, account_id=SIM-001, trade_id=1, position_id=P-001, \
+            venue_order_id=123456, account_id=SIM-001, trade_id=1, position_id=None, \
             order_side=BUY, order_type=LIMIT, last_qty=0.561, last_px=22_000 USDT, \
             commission=12.20000000 USDT, liquidity_side=TAKER, ts_event=0)"
         );
@@ -541,13 +516,13 @@ mod tests {
     fn test_order_filled_default() {
         let order_filled = OrderFilled::default();
 
-        assert_eq!(order_filled.trader_id, TraderId::default());
-        assert_eq!(order_filled.strategy_id, StrategyId::default());
-        assert_eq!(order_filled.instrument_id, InstrumentId::default());
-        assert_eq!(order_filled.client_order_id, ClientOrderId::default());
-        assert_eq!(order_filled.venue_order_id, VenueOrderId::default());
-        assert_eq!(order_filled.account_id, AccountId::default());
-        assert_eq!(order_filled.trade_id, TradeId::default());
+        assert_eq!(order_filled.trader_id, TraderId::test_default());
+        assert_eq!(order_filled.strategy_id, StrategyId::test_default());
+        assert_eq!(order_filled.instrument_id, InstrumentId::test_default());
+        assert_eq!(order_filled.client_order_id, ClientOrderId::test_default());
+        assert_eq!(order_filled.venue_order_id, VenueOrderId::test_default());
+        assert_eq!(order_filled.account_id, AccountId::test_default());
+        assert_eq!(order_filled.trade_id, TradeId::test_default());
         assert_eq!(order_filled.order_side, OrderSide::Buy);
         assert_eq!(order_filled.order_type, OrderType::Market);
         assert_eq!(order_filled.currency, Currency::USD());

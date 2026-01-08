@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,7 +18,7 @@ use std::{hint::black_box, sync::Arc};
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_common::{
     messages::{DataEvent, data::DataCommand},
-    timer::TimeEventHandlerV2,
+    timer::TimeEventHandler,
 };
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -78,7 +78,7 @@ fn bench_channel_operations(c: &mut Criterion) {
     group.bench_function("channel_creation", |b| {
         b.iter(|| {
             let (_tx1, _rx1) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-            let (_tx2, _rx2) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandlerV2>();
+            let (_tx2, _rx2) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
             let (_tx3, _rx3) = tokio::sync::mpsc::unbounded_channel::<()>();
         });
     });
@@ -95,7 +95,7 @@ fn bench_runner_components(c: &mut Criterion) {
             // Simulate what AsyncRunner::new() does without the global state
             let (_data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
             let (_cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
-            let (_time_tx, _time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandlerV2>();
+            let (_time_tx, _time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
             let (_signal_tx, _signal_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
         });
     });
@@ -272,7 +272,7 @@ fn bench_select_pattern(c: &mut Criterion) {
         b.iter(|| {
             let (data_tx, mut data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
             let (_time_tx, mut time_rx) =
-                tokio::sync::mpsc::unbounded_channel::<TimeEventHandlerV2>();
+                tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
             let (_signal_tx, mut signal_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
 
             // Send a data event

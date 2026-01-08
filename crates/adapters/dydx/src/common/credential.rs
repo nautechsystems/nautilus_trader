@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,7 +20,7 @@
 
 #![allow(unused_assignments)] // Fields are accessed externally, false positive from nightly
 
-use std::fmt::{Debug, Formatter};
+use std::fmt::Debug;
 
 use anyhow::Context;
 use cosmrs::{AccountId, crypto::secp256k1::SigningKey, tx::SignDoc};
@@ -30,8 +30,11 @@ use crate::common::consts::DYDX_BECH32_PREFIX;
 /// dYdX wallet credentials for signing blockchain transactions.
 ///
 /// Uses secp256k1 for signing as per Cosmos SDK specifications.
-/// The underlying `SigningKey` from `cosmrs` (backed by `k256`) implements
-/// `Zeroize`, ensuring private key material is securely cleared from memory on drop.
+///
+/// # Security
+///
+/// The underlying `SigningKey` from cosmrs (backed by k256) securely zeroizes
+/// private key material from memory on drop.
 pub struct DydxCredential {
     /// The secp256k1 signing key.
     signing_key: SigningKey,
@@ -42,7 +45,7 @@ pub struct DydxCredential {
 }
 
 impl Debug for DydxCredential {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(DydxCredential))
             .field("address", &self.address)
             .field("authenticator_ids", &self.authenticator_ids)
@@ -67,6 +70,7 @@ impl DydxCredential {
         use bip32::{DerivationPath, Language, Mnemonic};
 
         // Derive seed from mnemonic
+        // Note: Both Mnemonic and Seed implement Drop for secure cleanup
         let mnemonic =
             Mnemonic::new(mnemonic_phrase, Language::English).context("Invalid mnemonic phrase")?;
         let seed = mnemonic.to_seed("");
@@ -76,7 +80,6 @@ impl DydxCredential {
         let derivation_path = format!("m/44'/118'/0'/0/{account_index}");
         let path = DerivationPath::from_str(&derivation_path).context("Invalid derivation path")?;
 
-        // Derive signing key
         let signing_key =
             SigningKey::derive_from_path(&seed, &path).context("Failed to derive signing key")?;
 

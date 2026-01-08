@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -506,12 +506,13 @@ impl Cache {
             return None;
         };
 
+        // Use exit price for mark-to-market: longs exit at bid, shorts exit at ask
         let last = match position.side {
             PositionSide::Flat | PositionSide::NoPositionSide => {
                 return Some(Money::new(0.0, position.settlement_currency));
             }
-            PositionSide::Long => quote.ask_price,
-            PositionSide::Short => quote.bid_price,
+            PositionSide::Long => quote.bid_price,
+            PositionSide::Short => quote.ask_price,
         };
 
         Some(position.unrealized_pnl(last))
@@ -869,7 +870,7 @@ impl Cache {
         // Check for any open orders
         for order in self.orders_open(None, None, None, None) {
             residuals = true;
-            log::warn!("Residual {order:?}");
+            log::warn!("Residual {order}");
         }
 
         // Check for any open positions
@@ -2717,12 +2718,13 @@ impl Cache {
         let mut total_quantity: Option<Quantity> = None;
 
         for spawn_order in exec_spawn_orders {
-            if !active_only || !spawn_order.is_closed() {
-                if let Some(mut total_quantity) = total_quantity {
-                    total_quantity += spawn_order.quantity();
-                }
-            } else {
-                total_quantity = Some(spawn_order.quantity());
+            if active_only && spawn_order.is_closed() {
+                continue;
+            }
+
+            match total_quantity.as_mut() {
+                Some(total) => *total += spawn_order.quantity(),
+                None => total_quantity = Some(spawn_order.quantity()),
             }
         }
 
@@ -2741,12 +2743,13 @@ impl Cache {
         let mut total_quantity: Option<Quantity> = None;
 
         for spawn_order in exec_spawn_orders {
-            if !active_only || !spawn_order.is_closed() {
-                if let Some(mut total_quantity) = total_quantity {
-                    total_quantity += spawn_order.filled_qty();
-                }
-            } else {
-                total_quantity = Some(spawn_order.filled_qty());
+            if active_only && spawn_order.is_closed() {
+                continue;
+            }
+
+            match total_quantity.as_mut() {
+                Some(total) => *total += spawn_order.filled_qty(),
+                None => total_quantity = Some(spawn_order.filled_qty()),
             }
         }
 
@@ -2765,12 +2768,13 @@ impl Cache {
         let mut total_quantity: Option<Quantity> = None;
 
         for spawn_order in exec_spawn_orders {
-            if !active_only || !spawn_order.is_closed() {
-                if let Some(mut total_quantity) = total_quantity {
-                    total_quantity += spawn_order.leaves_qty();
-                }
-            } else {
-                total_quantity = Some(spawn_order.leaves_qty());
+            if active_only && spawn_order.is_closed() {
+                continue;
+            }
+
+            match total_quantity.as_mut() {
+                Some(total) => *total += spawn_order.leaves_qty(),
+                None => total_quantity = Some(spawn_order.leaves_qty()),
             }
         }
 

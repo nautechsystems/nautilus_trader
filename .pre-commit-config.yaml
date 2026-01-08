@@ -59,7 +59,7 @@ repos:
         description: Lint Dockerfiles for best practices and errors
 
   - repo: https://github.com/crate-ci/typos
-    rev: v1.39.0 # v1.39.0 (pinned for security; autoupdate bumps to moving v1)
+    rev: v1.40.0 # Pinned to 1.40.0 for security (autoupdate bumps to moving v1 tag)
     hooks:
       - id: typos
         description: Checks for common typos
@@ -81,26 +81,18 @@ repos:
         description: Detects hard-coded secrets prior to commit
         args: ["--staged", "--redact"]
 
-  - repo: https://github.com/google/osv-scanner
-    rev: v2.3.1
-    hooks:
-      - id: osv-scanner
-        name: osv-scanner (dependency vulnerabilities)
-        description: Scans Cargo.lock and uv.lock for known vulnerabilities (defense-in-depth)
-        args: ["--config=osv-scanner.toml", "--lockfile=Cargo.lock", "--lockfile=uv.lock"]
-
   ##############################################################################
   #  GitHub Actions linting (complementary tools covering different aspects)
   ##############################################################################
   - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.9
+    rev: v1.7.10
     hooks:
       - id: actionlint
         name: actionlint (syntax/structure)
         description: Checks GitHub Actions workflow syntax and structural correctness
 
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.19.0
+    rev: v1.20.0
     hooks:
       - id: zizmor
         name: zizmor (security)
@@ -163,23 +155,6 @@ repos:
   ##############################################################################
   #  Rust formatting and linting
   ##############################################################################
-  - repo: https://github.com/EmbarkStudios/cargo-deny
-    rev: 0.18.9
-    hooks:
-      - id: cargo-deny
-        name: cargo deny (dependency vulnerabilities)
-        args: ["--all-features", "check"]
-
-  - repo: local
-    hooks:
-      - id: cargo-vet
-        name: cargo vet (supply chain audit)
-        description: Run cargo-vet supply chain audit if installed
-        entry: .pre-commit-hooks/cargo_vet.sh
-        language: script
-        files: '^Cargo\.(toml|lock)$|^supply-chain/'
-        pass_filenames: false
-
   - repo: local
     hooks:
       - id: check-anyhow-usage
@@ -228,6 +203,14 @@ repos:
         entry: .pre-commit-hooks/check_nautilus_conventions.sh
         language: script
         files: '\.rs$'
+        pass_filenames: false
+
+      - id: check-cargo-conventions
+        name: check cargo conventions
+        description: Enforces Cargo.toml dependency ordering conventions
+        entry: .pre-commit-hooks/check_cargo_conventions.sh
+        language: script
+        files: 'Cargo\.toml$'
         pass_filenames: false
 
       - id: fmt
@@ -295,13 +278,15 @@ repos:
       - id: ruff
         name: ruff
         args: ["--fix"]
+      - id: ruff-format
+        name: ruff-format
 
   - repo: https://github.com/pycqa/isort
     rev: 7.0.0
     hooks:
       - id: isort
-        name: isort
-        types_or: [python, pyi, cython]
+        name: isort (cython)
+        types: [cython]
         entry: "isort"
         args: ["--settings-file", "pyproject.toml"]
 
@@ -341,7 +326,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.9.18 # Must match uv-version file
+    rev: 0.9.22 # Must match uv-version file
     hooks:
       - id: uv-lock
         files: ^python/uv\.lock$

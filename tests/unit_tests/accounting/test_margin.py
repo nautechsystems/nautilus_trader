@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,17 +17,22 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -140,6 +145,86 @@ class TestMarginAccount:
         # Assert
         assert account.margin_maint(AUDUSD_SIM.id) == margin
         assert account.margins_maint() == {AUDUSD_SIM.id: margin}
+
+    def test_recalculate_balance_uses_raw_and_clamps(self):
+        # Arrange
+        raw_total = 5_000_000_000_000  # large raw value to guard against float drift
+        total_money = Money.from_raw(raw_total, USD)
+        event = AccountState(
+            account_id=AccountId("RAW-MARGIN"),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    total_money,
+                    Money.from_raw(0, USD),
+                    Money.from_raw(raw_total, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        account = MarginAccount(event)
+        instrument = AUDUSD_SIM
+
+        # Act/Assert: non-clamp path (margin == total)
+        account.update_margin_init(instrument.id, Money.from_raw(raw_total, USD))
+        balance = account.balance(USD)
+        assert balance.total.raw - balance.locked.raw == balance.free.raw
+        assert balance.locked.raw == raw_total
+        assert balance.free.raw == 0
+
+        # Act/Assert: clamp path (margin > total)
+        account.update_margin_init(instrument.id, Money.from_raw(raw_total + 12345, USD))
+        balance = account.balance(USD)
+        assert balance.total.raw - balance.locked.raw == balance.free.raw
+        assert balance.locked.raw == raw_total
+        assert balance.free.raw == 0
+
+    def test_recalculate_balance_uses_raw_and_clamps_with_maintenance_margin(self):
+        # Arrange
+        raw_total = 5_000_000_000_000  # large raw value to guard against float drift
+        total_money = Money.from_raw(raw_total, USD)
+        event = AccountState(
+            account_id=AccountId("RAW-MARGIN-MAINT"),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    total_money,
+                    Money.from_raw(0, USD),
+                    Money.from_raw(raw_total, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        account = MarginAccount(event)
+        instrument = AUDUSD_SIM
+
+        # Act/Assert: non-clamp path (maintenance == total)
+        account.update_margin_maint(instrument.id, Money.from_raw(raw_total, USD))
+        balance = account.balance(USD)
+        assert balance.total.raw - balance.locked.raw == balance.free.raw
+        assert balance.locked.raw == raw_total
+        assert balance.free.raw == 0
+
+        # Act/Assert: clamp path (maintenance > total)
+        account.update_margin_maint(instrument.id, Money.from_raw(raw_total + 12345, USD))
+        balance = account.balance(USD)
+        assert balance.total.raw - balance.locked.raw == balance.free.raw
+        assert balance.locked.raw == raw_total
+        assert balance.free.raw == 0
 
     def test_calculate_margin_init_with_leverage(self):
         # Arrange

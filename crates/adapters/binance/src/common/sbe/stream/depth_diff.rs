@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,10 +29,10 @@
 //!   - qty: i64 (mantissa)
 //! - symbol: varString8
 
-use super::{
-    GroupSize16Encoding, MessageHeader, PriceLevel, StreamDecodeError, decode_var_string8, read_i8,
-    read_i64_le,
-};
+use ustr::Ustr;
+
+use super::{MessageHeader, PriceLevel, StreamDecodeError};
+use crate::common::sbe::cursor::SbeCursor;
 
 /// Depth diff stream event (incremental order book updates).
 #[derive(Debug, Clone)]
@@ -52,7 +52,7 @@ pub struct DepthDiffStreamEvent {
     /// Ask level updates (qty=0 means remove level).
     pub asks: Vec<PriceLevel>,
     /// Trading symbol.
-    pub symbol: String,
+    pub symbol: Ustr,
 }
 
 impl DepthDiffStreamEvent {
@@ -69,67 +69,21 @@ impl DepthDiffStreamEvent {
         let header = MessageHeader::decode(buf)?;
         header.validate_schema()?;
 
-        let body = &buf[MessageHeader::ENCODED_LENGTH..];
+        let mut cursor = SbeCursor::new_at(buf, MessageHeader::ENCODED_LENGTH);
 
-        let min_body_size = Self::BLOCK_LENGTH + GroupSize16Encoding::ENCODED_LENGTH;
-        if body.len() < min_body_size {
-            return Err(StreamDecodeError::BufferTooShort {
-                expected: MessageHeader::ENCODED_LENGTH + min_body_size,
-                actual: buf.len(),
-            });
-        }
+        let event_time_us = cursor.read_i64_le()?;
+        let first_book_update_id = cursor.read_i64_le()?;
+        let last_book_update_id = cursor.read_i64_le()?;
+        let price_exponent = cursor.read_i8()?;
+        let qty_exponent = cursor.read_i8()?;
 
-        let event_time_us = read_i64_le(body, 0)?;
-        let first_book_update_id = read_i64_le(body, 8)?;
-        let last_book_update_id = read_i64_le(body, 16)?;
-        let price_exponent = read_i8(body, 24)?;
-        let qty_exponent = read_i8(body, 25)?;
+        let (bid_block_length, num_bids) = cursor.read_group_header_16()?;
+        let bids = cursor.read_group(bid_block_length, u32::from(num_bids), PriceLevel::decode)?;
 
-        let mut offset = Self::BLOCK_LENGTH;
+        let (ask_block_length, num_asks) = cursor.read_group_header_16()?;
+        let asks = cursor.read_group(ask_block_length, u32::from(num_asks), PriceLevel::decode)?;
 
-        // Group size limit enforced inside GroupSize16Encoding::decode
-        let bids_group = GroupSize16Encoding::decode(&body[offset..])?;
-        let num_bids = bids_group.num_in_group as usize;
-        let bid_block_length = bids_group.block_length as usize;
-        offset += GroupSize16Encoding::ENCODED_LENGTH;
-
-        let bids_data_size = num_bids * bid_block_length;
-        if body.len() < offset + bids_data_size + GroupSize16Encoding::ENCODED_LENGTH {
-            return Err(StreamDecodeError::BufferTooShort {
-                expected: MessageHeader::ENCODED_LENGTH
-                    + offset
-                    + bids_data_size
-                    + GroupSize16Encoding::ENCODED_LENGTH,
-                actual: buf.len(),
-            });
-        }
-
-        let mut bids = Vec::with_capacity(num_bids);
-        for _ in 0..num_bids {
-            bids.push(PriceLevel::decode(&body[offset..])?);
-            offset += bid_block_length;
-        }
-
-        let asks_group = GroupSize16Encoding::decode(&body[offset..])?;
-        let num_asks = asks_group.num_in_group as usize;
-        let ask_block_length = asks_group.block_length as usize;
-        offset += GroupSize16Encoding::ENCODED_LENGTH;
-
-        let asks_data_size = num_asks * ask_block_length;
-        if body.len() < offset + asks_data_size + 1 {
-            return Err(StreamDecodeError::BufferTooShort {
-                expected: MessageHeader::ENCODED_LENGTH + offset + asks_data_size + 1,
-                actual: buf.len(),
-            });
-        }
-
-        let mut asks = Vec::with_capacity(num_asks);
-        for _ in 0..num_asks {
-            asks.push(PriceLevel::decode(&body[offset..])?);
-            offset += ask_block_length;
-        }
-
-        let (symbol, _) = decode_var_string8(&body[offset..])?;
+        let symbol_str = cursor.read_var_string8()?;
 
         Ok(Self {
             event_time_us,
@@ -139,7 +93,7 @@ impl DepthDiffStreamEvent {
             qty_exponent,
             bids,
             asks,
-            symbol,
+            symbol: Ustr::from(&symbol_str),
         })
     }
 

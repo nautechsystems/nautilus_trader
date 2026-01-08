@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -2421,8 +2421,7 @@ class TestReconciliationEdgeCases:
 
         # Verify generated order uses EXTERNAL strategy ID
         generated_orders = [
-            o for o in self.cache.orders()
-            if o.client_order_id == order_report.client_order_id
+            o for o in self.cache.orders() if o.client_order_id == order_report.client_order_id
         ]
         assert len(generated_orders) == 1
 
@@ -3308,7 +3307,11 @@ async def test_query_position_status_reports_handles_exceptions(live_exec_engine
 
 
 @pytest.mark.asyncio
-async def test_query_position_status_reports_multiple_instruments(live_exec_engine, exec_client, account_id):
+async def test_query_position_status_reports_multiple_instruments(
+    live_exec_engine,
+    exec_client,
+    account_id,
+):
     """
     Test _query_position_status_reports handles multiple instruments.
     """
@@ -3352,7 +3355,12 @@ async def test_query_position_status_reports_multiple_instruments(live_exec_engi
 
 
 @pytest.mark.asyncio
-async def test_query_and_find_missing_fills_finds_missing(live_exec_engine, exec_client, cache, account_id):
+async def test_query_and_find_missing_fills_finds_missing(
+    live_exec_engine,
+    exec_client,
+    cache,
+    account_id,
+):
     """
     Test _query_and_find_missing_fills identifies fills not in cache.
     """
@@ -3458,7 +3466,12 @@ async def test_query_and_find_missing_fills_handles_exceptions(live_exec_engine,
 
 
 @pytest.mark.asyncio
-async def test_query_and_find_missing_fills_no_missing(live_exec_engine, exec_client, cache, account_id):
+async def test_query_and_find_missing_fills_no_missing(
+    live_exec_engine,
+    exec_client,
+    cache,
+    account_id,
+):
     """
     Test _query_and_find_missing_fills returns empty when all fills are cached.
     """
@@ -4096,13 +4109,137 @@ async def test_handle_order_status_transitions_returns_none_for_fill_reconciliat
     assert result is None  # Should return None to continue with fill reconciliation
 
 
+@pytest.mark.asyncio
+async def test_should_update_returns_false_when_report_quantity_less_than_filled(
+    live_exec_engine,
+    cache,
+    account_id,
+):
+    """
+    Test _should_update returns False when report.quantity < order.filled_qty.
+
+    This prevents generating OrderUpdated events that would cause underflow
+    when computing leaves_qty = quantity - filled_qty.
+
+    Regression test for GitHub issue #3380.
+
+    """
+    # Arrange
+    if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
+        cache.add_instrument(AUDUSD_SIM)
+
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id)
+    order.apply(submitted)
+
+    accepted = TestEventStubs.order_accepted(order, account_id=account_id)
+    order.apply(accepted)
+
+    # Fill the order with quantity 100
+    filled = TestEventStubs.order_filled(
+        order,
+        instrument=AUDUSD_SIM,
+        last_qty=Quantity.from_int(100),
+    )
+    order.apply(filled)
+
+    # Create report with quantity less than filled_qty (simulating synthetic order scenario)
+    report = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("V-1"),
+        order_side=order.side,
+        order_type=order.order_type,
+        time_in_force=TimeInForce.GTC,
+        order_status=OrderStatus.FILLED,
+        price=order.price,
+        quantity=Quantity.from_int(50),  # Less than filled_qty (100)
+        filled_qty=Quantity.from_int(50),
+        avg_px=Decimal("1.00000"),
+        report_id=UUID4(),
+        ts_accepted=0,
+        ts_last=0,
+        ts_init=0,
+    )
+
+    # Act
+    result = live_exec_engine._should_update(order, report)
+
+    # Assert
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_should_update_returns_true_when_report_quantity_greater_than_filled(
+    live_exec_engine,
+    cache,
+    account_id,
+):
+    """
+    Test _should_update returns True when report.quantity > order.filled_qty.
+    """
+    # Arrange
+    if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
+        cache.add_instrument(AUDUSD_SIM)
+
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id)
+    order.apply(submitted)
+
+    accepted = TestEventStubs.order_accepted(order, account_id=account_id)
+    order.apply(accepted)
+
+    # Fill the order partially with quantity 50
+    filled = TestEventStubs.order_filled(
+        order,
+        instrument=AUDUSD_SIM,
+        last_qty=Quantity.from_int(50),
+    )
+    order.apply(filled)
+
+    # Create report with different quantity but greater than filled_qty
+    report = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("V-1"),
+        order_side=order.side,
+        order_type=order.order_type,
+        time_in_force=TimeInForce.GTC,
+        order_status=OrderStatus.PARTIALLY_FILLED,
+        price=order.price,
+        quantity=Quantity.from_int(200),  # Different and greater than filled_qty (50)
+        filled_qty=Quantity.from_int(50),
+        avg_px=Decimal("1.00000"),
+        report_id=UUID4(),
+        ts_accepted=0,
+        ts_last=0,
+        ts_init=0,
+    )
+
+    # Act
+    result = live_exec_engine._should_update(order, report)
+
+    # Assert
+    assert result is True
+
+
 # =============================================================================
 # TESTS FOR _handle_fill_quantity_mismatch
 # =============================================================================
 
 
 @pytest.mark.asyncio
-async def test_handle_fill_quantity_mismatch_report_less_than_cache(live_exec_engine, cache, account_id):
+async def test_handle_fill_quantity_mismatch_report_less_than_cache(
+    live_exec_engine,
+    cache,
+    account_id,
+):
     """
     Test _handle_fill_quantity_mismatch logs error when report.filled_qty <
     order.filled_qty.
@@ -4165,7 +4302,11 @@ async def test_handle_fill_quantity_mismatch_report_less_than_cache(live_exec_en
 
 
 @pytest.mark.asyncio
-async def test_handle_fill_quantity_mismatch_generates_inferred_fill(live_exec_engine, cache, account_id):
+async def test_handle_fill_quantity_mismatch_generates_inferred_fill(
+    live_exec_engine,
+    cache,
+    account_id,
+):
     """
     Test _handle_fill_quantity_mismatch generates inferred fill when report > cache.
     """
@@ -4245,7 +4386,11 @@ async def test_handle_fill_quantity_mismatch_generates_inferred_fill(live_exec_e
 
 
 @pytest.mark.asyncio
-async def test_handle_fill_quantity_mismatch_closed_order_within_tolerance(live_exec_engine, cache, account_id):
+async def test_handle_fill_quantity_mismatch_closed_order_within_tolerance(
+    live_exec_engine,
+    cache,
+    account_id,
+):
     """
     Test _handle_fill_quantity_mismatch handles closed orders within tolerance.
 

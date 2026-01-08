@@ -90,8 +90,8 @@ custom visualizations using the extensible chart registry.
 ## [Live Trading](live.md)
 
 Live trading in NautilusTrader enables traders to deploy their backtested strategies in real-time
-without any code changes. This seamless transition ensures consistency and reliability, though there
-are key differences between backtesting and live trading.
+without code changes. This transition aims to maintain consistency, though there are key differences
+between backtesting and live trading.
 
 ## [Adapters](adapters.md)
 

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -38,7 +38,7 @@
 //! correctness and safety at the highest level, with the aim of supporting mission-critical
 //! trading system backtesting and live deployment workloads.
 //!
-//! # Feature flags
+//! # Feature Flags
 //!
 //! This crate provides feature flags to control source code inclusion during compilation,
 //! depending on the intended use case (Rust-only builds vs. Python bindings through PyO3).
@@ -61,9 +61,9 @@
 pub mod common;
 pub mod config;
 pub mod data;
-pub mod error;
 pub mod execution;
-pub mod http;
+pub mod factories;
+pub mod futures;
 pub mod spot;
 pub mod websocket;
 

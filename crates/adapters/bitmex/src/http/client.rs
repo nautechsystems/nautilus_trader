@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -1063,23 +1063,23 @@ impl BitmexHttpClient {
                         report.parent_order_id = None;
                     }
 
-                    tracing::trace!(
-                        client_order_id = ?client_order_id,
-                        order_list_id = ?order_list_id,
-                        contingency_type = ?report.contingency_type,
-                        linked_order_ids = ?linked,
-                        "BitMEX linked ids sourced from order list id",
+                    log::trace!(
+                        "BitMEX linked ids sourced from order list id: client_order_id={:?}, order_list_id={:?}, contingency_type={:?}, linked_order_ids={:?}",
+                        client_order_id,
+                        order_list_id,
+                        report.contingency_type,
+                        linked,
                     );
                     report.linked_order_ids = Some(linked);
                     continue;
                 }
 
-                tracing::trace!(
-                    client_order_id = ?client_order_id,
-                    order_list_id = ?order_list_id,
-                    contingency_type = ?report.contingency_type,
-                    order_list_group = ?group,
-                    "BitMEX order list id group had no peers",
+                log::trace!(
+                    "BitMEX order list id group had no peers: client_order_id={:?}, order_list_id={:?}, contingency_type={:?}, order_list_group={:?}",
+                    client_order_id,
+                    order_list_id,
+                    report.contingency_type,
+                    group,
                 );
                 report.parent_order_id = None;
             } else if report.order_list_id.is_none() {
@@ -1107,23 +1107,23 @@ impl BitmexHttpClient {
                         report.parent_order_id = None;
                     }
 
-                    tracing::trace!(
-                        client_order_id = ?client_order_id,
-                        contingency_type = ?report.contingency_type,
-                        base = base,
-                        linked_order_ids = ?linked,
-                        "BitMEX linked ids constructed from client order id prefix",
+                    log::trace!(
+                        "BitMEX linked ids constructed from client order id prefix: client_order_id={:?}, contingency_type={:?}, base={}, linked_order_ids={:?}",
+                        client_order_id,
+                        report.contingency_type,
+                        base,
+                        linked,
                     );
                     report.linked_order_ids = Some(linked);
                     continue;
                 }
 
-                tracing::trace!(
-                    client_order_id = ?client_order_id,
-                    contingency_type = ?report.contingency_type,
-                    base = base,
-                    prefix_group = ?group,
-                    "BitMEX client order id prefix group had no peers",
+                log::trace!(
+                    "BitMEX client order id prefix group had no peers: client_order_id={:?}, contingency_type={:?}, base={}, prefix_group={:?}",
+                    client_order_id,
+                    report.contingency_type,
+                    base,
+                    group,
                 );
                 report.parent_order_id = None;
             } else if client_order_id.as_str().contains('-') {
@@ -1131,11 +1131,11 @@ impl BitmexHttpClient {
             }
 
             if Self::is_contingent_order(report.contingency_type) {
-                tracing::warn!(
-                    client_order_id = ?report.client_order_id,
-                    order_list_id = ?report.order_list_id,
-                    contingency_type = ?report.contingency_type,
-                    "BitMEX order status report missing linked ids after grouping",
+                log::warn!(
+                    "BitMEX order status report missing linked ids after grouping: client_order_id={:?}, order_list_id={:?}, contingency_type={:?}",
+                    report.client_order_id,
+                    report.order_list_id,
+                    report.contingency_type,
                 );
                 report.contingency_type = ContingencyType::NoContingency;
                 report.parent_order_id = None;
@@ -1200,13 +1200,13 @@ impl BitmexHttpClient {
                 symbol,
                 instrument_type,
             } => {
-                tracing::debug!(
+                log::debug!(
                     "Instrument {symbol} has unsupported type {instrument_type:?}, returning None"
                 );
                 Ok(None)
             }
             InstrumentParseResult::Inactive { symbol, state } => {
-                tracing::debug!("Instrument {symbol} is inactive (state={state}), returning None");
+                log::debug!("Instrument {symbol} is inactive (state={state}), returning None");
                 Ok(None)
             }
             InstrumentParseResult::Failed {
@@ -1214,7 +1214,7 @@ impl BitmexHttpClient {
                 instrument_type,
                 error,
             } => {
-                tracing::error!(
+                log::error!(
                     "Failed to parse instrument {symbol} (type={instrument_type:?}): {error}"
                 );
                 Ok(None)
@@ -1250,13 +1250,13 @@ impl BitmexHttpClient {
                     instrument_type,
                 } => {
                     skipped_count += 1;
-                    tracing::debug!(
+                    log::debug!(
                         "Skipping unsupported instrument type: symbol={symbol}, type={instrument_type:?}"
                     );
                 }
                 InstrumentParseResult::Inactive { symbol, state } => {
                     inactive_count += 1;
-                    tracing::debug!("Skipping inactive instrument: symbol={symbol}, state={state}");
+                    log::debug!("Skipping inactive instrument: symbol={symbol}, state={state}");
                 }
                 InstrumentParseResult::Failed {
                     symbol,
@@ -1264,7 +1264,7 @@ impl BitmexHttpClient {
                     error,
                 } => {
                     failed_count += 1;
-                    tracing::error!(
+                    log::error!(
                         "Failed to parse instrument: symbol={symbol}, type={instrument_type:?}, error={error}"
                     );
                 }
@@ -1272,19 +1272,19 @@ impl BitmexHttpClient {
         }
 
         if skipped_count > 0 {
-            tracing::info!(
+            log::info!(
                 "Skipped {skipped_count} unsupported instrument type(s) out of {total_count} total"
             );
         }
 
         if inactive_count > 0 {
-            tracing::info!(
+            log::info!(
                 "Skipped {inactive_count} inactive instrument(s) out of {total_count} total"
             );
         }
 
         if failed_count > 0 {
-            tracing::error!(
+            log::error!(
                 "Instrument parse failures: {failed_count} failed out of {total_count} total ({} successfully parsed)",
                 parsed_instruments.len()
             );
@@ -1876,21 +1876,18 @@ impl BitmexHttpClient {
         for order in response {
             // Skip orders without symbol (can happen with query responses)
             let Some(symbol) = order.symbol else {
-                tracing::warn!("Order response missing symbol, skipping");
+                log::warn!("Order response missing symbol, skipping");
                 continue;
             };
 
             let Ok(instrument) = self.instrument_from_cache(symbol) else {
-                tracing::debug!(
-                    symbol = %symbol,
-                    "Skipping order report for instrument not in cache"
-                );
+                log::debug!("Skipping order report for instrument not in cache: symbol={symbol}");
                 continue;
             };
 
             match parse_order_status_report(&order, &instrument, ts_init) {
                 Ok(report) => reports.push(report),
-                Err(e) => tracing::error!("Failed to parse order status report: {e}"),
+                Err(e) => log::error!("Failed to parse order status report: {e}"),
             }
         }
 
@@ -1932,10 +1929,8 @@ impl BitmexHttpClient {
         if let Some(limit) = limit {
             let clamped_limit = limit.min(1000);
             if limit > 1000 {
-                tracing::warn!(
-                    limit,
-                    clamped_limit,
-                    "BitMEX trade request limit exceeds venue maximum; clamping",
+                log::warn!(
+                    "BitMEX trade request limit exceeds venue maximum; clamping: limit={limit}, clamped_limit={clamped_limit}",
                 );
             }
             params.count(i32::try_from(clamped_limit).unwrap_or(1000));
@@ -1966,7 +1961,7 @@ impl BitmexHttpClient {
 
             match parse_trade(trade, price_precision, ts_init) {
                 Ok(trade) => parsed_trades.push(trade),
-                Err(e) => tracing::error!("Failed to parse trade: {e}"),
+                Err(e) => log::error!("Failed to parse trade: {e}"),
             }
         }
 
@@ -2036,10 +2031,8 @@ impl BitmexHttpClient {
         if let Some(limit) = limit {
             let clamped_limit = limit.min(1000);
             if limit > 1000 {
-                tracing::warn!(
-                    limit,
-                    clamped_limit,
-                    "BitMEX bar request limit exceeds venue maximum; clamping",
+                log::warn!(
+                    "BitMEX bar request limit exceeds venue maximum; clamping: limit={limit}, clamped_limit={clamped_limit}",
                 );
             }
             params.count(i32::try_from(clamped_limit).unwrap_or(1000));
@@ -2063,17 +2056,17 @@ impl BitmexHttpClient {
                 continue;
             }
             if bin.symbol != instrument_id.symbol.inner() {
-                tracing::warn!(
-                    symbol = %bin.symbol,
-                    expected = %instrument_id.symbol,
-                    "Skipping trade bin for unexpected symbol",
+                log::warn!(
+                    "Skipping trade bin for unexpected symbol: symbol={}, expected={}",
+                    bin.symbol,
+                    instrument_id.symbol,
                 );
                 continue;
             }
 
             match parse_trade_bin(bin, &instrument, &bar_type, ts_init) {
                 Ok(bar) => bars.push(bar),
-                Err(e) => tracing::warn!("Failed to parse trade bin: {e}"),
+                Err(e) => log::warn!("Failed to parse trade bin: {e}"),
             }
         }
 
@@ -2112,7 +2105,7 @@ impl BitmexHttpClient {
         for exec in response {
             // Skip executions without symbol (e.g., CancelReject)
             let Some(symbol) = exec.symbol else {
-                tracing::debug!("Skipping execution without symbol: {:?}", exec.exec_type);
+                log::debug!("Skipping execution without symbol: {:?}", exec.exec_type);
                 continue;
             };
             let symbol_str = symbol.to_string();
@@ -2120,7 +2113,9 @@ impl BitmexHttpClient {
             let instrument = match self.instrument_from_cache(symbol) {
                 Ok(instrument) => instrument,
                 Err(e) => {
-                    tracing::error!(symbol = %symbol_str, "Instrument not found in cache for execution parsing: {e}");
+                    log::error!(
+                        "Instrument not found in cache for execution parsing: symbol={symbol_str}, {e}"
+                    );
                     continue;
                 }
             };
@@ -2133,9 +2128,9 @@ impl BitmexHttpClient {
                     if error_msg.starts_with("Skipping non-trade execution")
                         || error_msg.starts_with("Skipping execution without order_id")
                     {
-                        tracing::debug!("{e}");
+                        log::debug!("{e}");
                     } else {
-                        tracing::error!("Failed to parse fill report: {e}");
+                        log::error!("Failed to parse fill report: {e}");
                     }
                 }
             }
@@ -2168,9 +2163,9 @@ impl BitmexHttpClient {
             let instrument = match self.instrument_from_cache(symbol) {
                 Ok(instrument) => instrument,
                 Err(e) => {
-                    tracing::error!(
-                        symbol = pos.symbol.as_str(),
-                        "Instrument not found in cache for position parsing: {e}"
+                    log::error!(
+                        "Instrument not found in cache for position parsing: symbol={}, {e}",
+                        pos.symbol.as_str(),
                     );
                     continue;
                 }
@@ -2178,7 +2173,7 @@ impl BitmexHttpClient {
 
             match parse_position_report(pos, &instrument, ts_init) {
                 Ok(report) => reports.push(report),
-                Err(e) => tracing::error!("Failed to parse position report: {e}"),
+                Err(e) => log::error!("Failed to parse position report: {e}"),
             }
         }
 

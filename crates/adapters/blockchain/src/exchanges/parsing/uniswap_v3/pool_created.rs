@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -131,7 +131,7 @@ mod tests {
 
     use super::*;
 
-    // ========== Block 185 fixtures ==========
+    // Block 185 fixtures
     // Pool: 0xB9Fc136980D98C034a529AadbD5651c087365D5f
     // token0: 0x2E5353426C89F4eCD52D1036DA822D47E73376C4
     // token1: 0x838930cFE7502dd36B0b1ebbef8001fbF94f3bFb
@@ -182,7 +182,7 @@ mod tests {
         }
     }
 
-    // ========== Block 540 fixtures ==========
+    // Block 540 fixtures
     // Pool: 0x7d25DE0bB3e4E4d5F7b399db5A0BCa9F60dD66e4
     // token0: 0x8dd7c686B11c115FfAbA245CBfc418B371087F68
     // token1: 0xBE5381d826375492E55E05039a541eb2CB978e76
@@ -233,8 +233,6 @@ mod tests {
         }
     }
 
-    // ========== HyperSync parser tests ==========
-
     #[rstest]
     fn test_parse_pool_created_hypersync_block_185(hypersync_log_block_185: HypersyncLog) {
         let event =
@@ -279,8 +277,6 @@ mod tests {
         assert_eq!(event.tick_spacing, Some(10));
     }
 
-    // ========== RPC parser tests ==========
-
     #[rstest]
     fn test_parse_pool_created_rpc_block_185(rpc_log_block_185: RpcLog) {
         let event = parse_pool_created_event_rpc(&rpc_log_block_185).expect("Failed to parse");
@@ -322,8 +318,6 @@ mod tests {
         assert_eq!(event.fee, Some(500));
         assert_eq!(event.tick_spacing, Some(10));
     }
-
-    // ========== Cross-validation tests ==========
 
     #[rstest]
     fn test_hypersync_rpc_match_block_185(

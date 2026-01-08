@@ -482,6 +482,46 @@ config = TradingNodeConfig(
 Ed25519 keys must be provided in base64-encoded ASN.1/DER format. The implementation automatically extracts the 32-byte seed from the DER structure.
 :::
 
+#### Generating Ed25519 keys
+
+Ed25519 is required for Binance SBE (Simple Binary Encoding) streams and recommended for all API access due to better performance and security.
+
+**Option 1: OpenSSL (recommended)**
+
+```bash
+# Generate private key (PKCS#8 PEM format)
+openssl genpkey -algorithm ed25519 -out binance_ed25519_private.pem
+
+# Extract public key
+openssl pkey -in binance_ed25519_private.pem -pubout -out binance_ed25519_public.pem
+```
+
+**Option 2: Binance Key Generator**
+
+Download the [Binance Asymmetric Key Generator](https://github.com/binance/asymmetric-key-generator) from the releases page and run it to generate a keypair.
+
+**Registering with Binance**
+
+1. Log in to Binance and go to **Profile** → **API Management**
+2. Click **Create API** and select **Self-generated**
+3. Paste the contents of your public key file (including the `-----BEGIN PUBLIC KEY-----` header/footer)
+4. Configure permissions (Enable Spot & Margin Trading, etc.)
+
+**Using with NautilusTrader**
+
+Set the private key as your API secret:
+
+```bash
+export BINANCE_API_KEY="your-api-key-from-binance"
+export BINANCE_API_SECRET="$(cat binance_ed25519_private.pem)"
+```
+
+Or pass the PEM content directly in your configuration.
+
+:::warning
+Keep your private key secure. Never share it or commit it to version control.
+:::
+
 ### API credentials
 
 There are multiple options for supplying your credentials to the Binance clients.

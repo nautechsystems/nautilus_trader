@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,7 +22,7 @@
 //! Tokio task within the lock-free I/O boundary.
 
 use std::{
-    fmt::{Debug, Formatter},
+    fmt::Debug,
     str::FromStr,
     sync::{
         Arc,
@@ -110,8 +110,8 @@ pub struct FeedHandler {
 }
 
 impl Debug for FeedHandler {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FeedHandler")
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(FeedHandler))
             .field("account_id", &self.account_id)
             .field("instruments_count", &self.instruments.len())
             .field("bar_types_count", &self.bar_types.len())
@@ -184,19 +184,19 @@ impl FeedHandler {
                     if let Some(nautilus_msg) = self.process_raw_message(msg).await
                         && self.out_tx.send(nautilus_msg).is_err()
                     {
-                        tracing::debug!("Receiver dropped, stopping handler");
+                        log::debug!("Receiver dropped, stopping handler");
                         break;
                     }
                 }
 
                 else => {
-                    tracing::debug!("Handler shutting down: channels closed");
+                    log::debug!("Handler shutting down: channels closed");
                     break;
                 }
             }
 
             if self.signal.load(Ordering::Relaxed) {
-                tracing::debug!("Handler received stop signal");
+                log::debug!("Handler received stop signal");
                 break;
             }
         }
@@ -208,7 +208,7 @@ impl FeedHandler {
             Message::Text(txt) => {
                 if txt == RECONNECTED {
                     if let Err(e) = self.replay_subscriptions().await {
-                        tracing::error!("Failed to replay subscriptions after reconnect: {e}");
+                        log::error!("Failed to replay subscriptions after reconnect: {e}");
                     }
                     return Some(NautilusWsMessage::Reconnected);
                 }
@@ -241,7 +241,7 @@ impl FeedHandler {
                                             )
                                             .map(DydxWsMessage::SubaccountsSubscribed)
                                             .or_else(|e| {
-                                                tracing::debug!(
+                                                log::debug!(
                                                     "Failed to parse subaccounts subscription (fallback to standard): {e}. Raw: {}",
                                                     serde_json::to_string(&val_clone)
                                                         .unwrap_or_else(|_| "<invalid json>".into())
@@ -262,7 +262,7 @@ impl FeedHandler {
                                     serde_json::from_value::<DydxWebSocketError>(val)
                                         .map(DydxWsMessage::Error)
                                 } else if meta.is_unknown() {
-                                    tracing::warn!(
+                                    log::warn!(
                                         "Received unknown WebSocket message type: {}",
                                         serde_json::to_string(&val_clone)
                                             .unwrap_or_else(|_| "<invalid json>".into())
@@ -275,7 +275,7 @@ impl FeedHandler {
                                 match result {
                                     Ok(dydx_msg) => self.handle_dydx_message(dydx_msg).await,
                                     Err(e) => {
-                                        tracing::error!(
+                                        log::error!(
                                             "Failed to parse WebSocket message: {e}. Message type: {:?}, Channel: {:?}. Raw: {}",
                                             meta.msg_type,
                                             meta.channel,
@@ -289,9 +289,8 @@ impl FeedHandler {
                             Err(e) => {
                                 let raw_json = serde_json::to_string_pretty(&val_clone)
                                     .unwrap_or_else(|_| format!("{val_clone:?}"));
-                                tracing::error!(
-                                    "Failed to parse WebSocket message envelope (DydxWsGenericMsg): {e}\nRaw JSON:\n{}",
-                                    raw_json
+                                log::error!(
+                                    "Failed to parse WebSocket message envelope (DydxWsGenericMsg): {e}\nRaw JSON:\n{raw_json}"
                                 );
                                 None
                             }
@@ -307,7 +306,7 @@ impl FeedHandler {
             Message::Ping(_data) => None,  // Handled by lower layers
             Message::Binary(_bin) => None, // dYdX uses text frames
             Message::Close(_frame) => {
-                tracing::info!("WebSocket close frame received");
+                log::info!("WebSocket close frame received");
                 None
             }
             Message::Frame(_) => None,
@@ -319,7 +318,7 @@ impl FeedHandler {
         match self.handle_message(msg).await {
             Ok(opt_msg) => opt_msg,
             Err(e) => {
-                tracing::error!("Error handling message: {e}");
+                log::error!("Error handling message: {e}");
                 None
             }
         }
@@ -391,7 +390,7 @@ impl FeedHandler {
                     match data.contents.height.parse::<u64>() {
                         Ok(height) => Some(NautilusWsMessage::BlockHeight(height)),
                         Err(e) => {
-                            tracing::warn!("Failed to parse block height from subscription: {e}");
+                            log::warn!("Failed to parse block height from subscription: {e}");
                             None
                         }
                     }
@@ -401,7 +400,7 @@ impl FeedHandler {
                     match data.contents.block_height.parse::<u64>() {
                         Ok(height) => Some(NautilusWsMessage::BlockHeight(height)),
                         Err(e) => {
-                            tracing::warn!("Failed to parse block height from channel data: {e}");
+                            log::warn!("Failed to parse block height from channel data: {e}");
                             None
                         }
                     }
@@ -437,7 +436,7 @@ impl FeedHandler {
                     )
                     .await
                 {
-                    tracing::error!("Failed to send WebSocket text after retries: {e}");
+                    log::error!("Failed to send WebSocket text after retries: {e}");
                 }
             }
         }
@@ -486,7 +485,7 @@ impl FeedHandler {
             let Some(subscription) =
                 self.subscription_from_topic(&topic, super::enums::DydxWsOperation::Subscribe)
             else {
-                tracing::warn!("Failed to reconstruct subscription from topic: {topic}");
+                log::warn!("Failed to reconstruct subscription from topic: {topic}");
                 continue;
             };
 
@@ -520,23 +519,23 @@ impl FeedHandler {
     ) -> DydxWsResult<Option<NautilusWsMessage>> {
         match msg {
             DydxWsMessage::Connected(_) => {
-                tracing::info!("dYdX WebSocket connected");
+                log::info!("dYdX WebSocket connected");
                 Ok(None)
             }
             DydxWsMessage::Subscribed(sub) => {
-                tracing::debug!("Subscribed to {} (id: {:?})", sub.channel, sub.id);
+                log::debug!("Subscribed to {} (id: {:?})", sub.channel, sub.id);
                 let topic = self.topic_from_msg(&sub.channel, &sub.id);
                 self.subscriptions.confirm_subscribe(&topic);
                 Ok(None)
             }
             DydxWsMessage::SubaccountsSubscribed(msg) => {
-                tracing::debug!("Subaccounts subscribed with initial state");
+                log::debug!("Subaccounts subscribed with initial state");
                 let topic = self.topic_from_msg(&msg.channel, &Some(msg.id.clone()));
                 self.subscriptions.confirm_subscribe(&topic);
                 self.parse_subaccounts_subscribed(&msg)
             }
             DydxWsMessage::Unsubscribed(unsub) => {
-                tracing::debug!("Unsubscribed from {} (id: {:?})", unsub.channel, unsub.id);
+                log::debug!("Unsubscribed from {} (id: {:?})", unsub.channel, unsub.id);
                 let topic = self.topic_from_msg(&unsub.channel, &unsub.id);
                 self.subscriptions.confirm_unsubscribe(&topic);
                 Ok(None)
@@ -547,7 +546,7 @@ impl FeedHandler {
             DydxWsMessage::Error(err) => Ok(Some(NautilusWsMessage::Error(err))),
             DydxWsMessage::Reconnected => {
                 if let Err(e) = self.replay_subscriptions().await {
-                    tracing::error!("Failed to replay subscriptions after reconnect message: {e}");
+                    log::error!("Failed to replay subscriptions after reconnect message: {e}");
                 }
                 Ok(Some(NautilusWsMessage::Reconnected))
             }
@@ -570,7 +569,7 @@ impl FeedHandler {
             }
             DydxWsChannel::BlockHeight => self.parse_block_height(&data),
             DydxWsChannel::Unknown => {
-                tracing::warn!(
+                log::warn!(
                     "Unknown channel data received: id={:?}, msg_type={:?}",
                     data.id,
                     data.msg_type
@@ -587,7 +586,7 @@ impl FeedHandler {
         match data.channel {
             DydxWsChannel::Orderbook => self.parse_orderbook_batch(&data),
             _ => {
-                tracing::warn!(
+                log::warn!(
                     "Unexpected batch data for channel: {:?}, id={:?}",
                     data.channel,
                     data.id
@@ -1032,7 +1031,7 @@ impl FeedHandler {
         // Markets channel provides oracle price updates needed for margin calculations
         // Forward to execution client to update oracle_prices map
         if let Some(oracle_prices) = contents.oracle_prices {
-            tracing::debug!(
+            log::debug!(
                 "Forwarding oracle price updates for {} markets to execution client",
                 oracle_prices.len()
             );
@@ -1057,7 +1056,7 @@ impl FeedHandler {
         if has_orders || has_fills {
             // Forward raw channel data to execution client for parsing
             // The execution client has the clob_pair_id and instrument mappings needed
-            tracing::debug!(
+            log::debug!(
                 "Received {} order(s), {} fill(s) - forwarding to execution client",
                 contents.orders.as_ref().map_or(0, |o| o.len()),
                 contents.fills.as_ref().map_or(0, |f| f.len())
@@ -1087,7 +1086,7 @@ impl FeedHandler {
     ) -> DydxWsResult<Option<NautilusWsMessage>> {
         // Pass raw subaccount subscription to execution client for parsing
         // The execution client has access to instruments and oracle prices needed for margin calculations
-        tracing::debug!("Forwarding subaccount subscription to execution client");
+        log::debug!("Forwarding subaccount subscription to execution client");
         Ok(Some(NautilusWsMessage::SubaccountSubscribed(Box::new(
             msg.clone(),
         ))))

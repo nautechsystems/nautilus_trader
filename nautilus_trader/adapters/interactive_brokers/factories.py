@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,11 +21,15 @@ from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
+from nautilus_trader.adapters.interactive_brokers.config import (
+    InteractiveBrokersInstrumentProviderConfig,
+)
 from nautilus_trader.adapters.interactive_brokers.data import InteractiveBrokersDataClient
 from nautilus_trader.adapters.interactive_brokers.execution import InteractiveBrokersExecutionClient
 from nautilus_trader.adapters.interactive_brokers.gateway import DockerizedIBGateway
-from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
+from nautilus_trader.adapters.interactive_brokers.providers import (
+    InteractiveBrokersInstrumentProvider,
+)
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -300,9 +304,9 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
 
         # Set account ID
         ib_account = config.account_id or os.environ.get("TWS_ACCOUNT")
-        assert (
-            ib_account
-        ), f"Must pass `{config.__class__.__name__}.account_id` or set `TWS_ACCOUNT` env var."
+        assert ib_account, (
+            f"Must pass `{config.__class__.__name__}.account_id` or set `TWS_ACCOUNT` env var."
+        )
 
         account_id = AccountId(f"{name or IB_VENUE.value}-{ib_account}")
 

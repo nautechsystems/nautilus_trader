@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -70,6 +70,7 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 cdef class ExecAlgorithm(Actor):
     cdef dict[ClientOrderId, int] _exec_spawn_ids
     cdef set[StrategyId] _subscribed_strategies
+    cdef dict[ClientOrderId, Quantity] _pending_spawn_reductions
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -86,6 +87,7 @@ cdef class ExecAlgorithm(Actor):
 
     cdef ClientOrderId _spawn_client_order_id(self, Order primary)
     cdef void _reduce_primary_order(self, Order primary, Quantity spawn_qty)
+    cdef void _restore_primary_order_quantity(self, Order order)
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 

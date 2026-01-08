@@ -1,6 +1,118 @@
 
 # cargo-vet imports lock
 
+[[unpublished.nautilus-analysis]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-backtest]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-bitmex]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-blockchain]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-bybit]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-cli]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-coinbase-intx]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-common]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-core]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-cryptography]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-data]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-databento]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-execution]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-indicators]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-infrastructure]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-kraken]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-live]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-model]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-network]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-okx]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-persistence]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-portfolio]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-risk]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-serialization]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-system]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-tardis]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-testkit]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-trading]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
 [[publisher.bumpalo]]
 version = "3.19.1"
 when = "2025-12-16"
@@ -167,10 +279,22 @@ who = "Pat Hickey <phickey@fastly.com>"
 criteria = "safe-to-deploy"
 version = "0.2.0"
 
+[[audits.bytecode-alliance.audits.constant_time_eq]]
+who = "Nick Fitzgerald <fitzgen@gmail.com>"
+criteria = "safe-to-deploy"
+version = "0.2.4"
+notes = "A few tiny blocks of `unsafe` but each of them is very obviously correct."
+
 [[audits.bytecode-alliance.audits.crypto-common]]
 who = "Benjamin Bouvier <public@benj.me>"
 criteria = "safe-to-deploy"
 version = "0.1.3"
+
+[[audits.bytecode-alliance.audits.der]]
+who = "Chris Fallin <chris@cfallin.org>"
+criteria = "safe-to-deploy"
+version = "0.7.10"
+notes = "No unsafe code aside from transmutes for transparent newtypes."
 
 [[audits.bytecode-alliance.audits.digest]]
 who = "Benjamin Bouvier <public@benj.me>"
@@ -326,17 +450,6 @@ Lots of new iterators and shuffling some things around. Some new unsafe code but
 it's well-documented and well-tested. Nothing suspicious.
 """
 
-[[audits.bytecode-alliance.audits.matchers]]
-who = "Pat Hickey <phickey@fastly.com>"
-criteria = "safe-to-deploy"
-version = "0.1.0"
-
-[[audits.bytecode-alliance.audits.matchers]]
-who = "Alex Crichton <alex@alexcrichton.com>"
-criteria = "safe-to-deploy"
-delta = "0.1.0 -> 0.2.0"
-notes = "Some unsafe code, but not more than before. Nothing awry."
-
 [[audits.bytecode-alliance.audits.miniz_oxide]]
 who = "Alex Crichton <alex@alexcrichton.com>"
 criteria = "safe-to-deploy"
@@ -373,23 +486,11 @@ criteria = "safe-to-deploy"
 delta = "0.8.5 -> 0.8.9"
 notes = "No new unsafe code, just refactorings."
 
-[[audits.bytecode-alliance.audits.nu-ansi-term]]
-who = "Pat Hickey <phickey@fastly.com>"
+[[audits.bytecode-alliance.audits.pem-rfc7468]]
+who = "Chris Fallin <chris@cfallin.org>"
 criteria = "safe-to-deploy"
-version = "0.46.0"
-notes = "one use of unsafe to call windows specific api to get console handle."
-
-[[audits.bytecode-alliance.audits.nu-ansi-term]]
-who = "Alex Crichton <alex@alexcrichton.com>"
-criteria = "safe-to-deploy"
-delta = "0.46.0 -> 0.50.1"
-notes = "Lots of stylistic/rust-related chanegs, plus new features, but nothing out of the ordrinary."
-
-[[audits.bytecode-alliance.audits.nu-ansi-term]]
-who = "Alex Crichton <alex@alexcrichton.com>"
-criteria = "safe-to-deploy"
-delta = "0.50.1 -> 0.50.3"
-notes = "CI changes, Rust changes, nothing out of the ordinary."
+version = "0.7.0"
+notes = "Only `unsafe` around a `from_utf8_unchecked`, and no IO."
 
 [[audits.bytecode-alliance.audits.percent-encoding]]
 who = "Alex Crichton <alex@alexcrichton.com>"
@@ -406,17 +507,31 @@ who = "Pat Hickey <phickey@fastly.com>"
 criteria = "safe-to-deploy"
 version = "0.1.0"
 
+[[audits.bytecode-alliance.audits.pkg-config]]
+who = "Pat Hickey <phickey@fastly.com>"
+criteria = "safe-to-deploy"
+version = "0.3.25"
+notes = "This crate shells out to the pkg-config executable, but it appears to sanitize inputs reasonably."
+
+[[audits.bytecode-alliance.audits.pkg-config]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "0.3.26 -> 0.3.29"
+notes = """
+No `unsafe` additions or anything outside of the purview of the crate in this
+change.
+"""
+
+[[audits.bytecode-alliance.audits.pkg-config]]
+who = "Chris Fallin <chris@cfallin.org>"
+criteria = "safe-to-deploy"
+delta = "0.3.29 -> 0.3.32"
+
 [[audits.bytecode-alliance.audits.sha1]]
 who = "Andrew Brown <andrew.brown@intel.com>"
 criteria = "safe-to-deploy"
 delta = "0.10.5 -> 0.10.6"
 notes = "Only new code is some loongarch64 additions which include assembly code for that platform."
-
-[[audits.bytecode-alliance.audits.sharded-slab]]
-who = "Pat Hickey <phickey@fastly.com>"
-criteria = "safe-to-deploy"
-version = "0.1.4"
-notes = "I always really enjoy reading eliza's code, she left perfect comments at every use of unsafe."
 
 [[audits.bytecode-alliance.audits.shlex]]
 who = "Alex Crichton <alex@alexcrichton.com>"
@@ -424,32 +539,17 @@ criteria = "safe-to-deploy"
 version = "1.1.0"
 notes = "Only minor `unsafe` code blocks which look valid and otherwise does what it says on the tin."
 
-[[audits.bytecode-alliance.audits.thread_local]]
-who = "Pat Hickey <phickey@fastly.com>"
-criteria = "safe-to-deploy"
-version = "1.1.4"
-notes = "uses unsafe to implement thread local storage of objects"
-
-[[audits.bytecode-alliance.audits.tracing-log]]
-who = "Alex Crichton <alex@alexcrichton.com>"
-criteria = "safe-to-deploy"
-version = "0.1.3"
-notes = """
-This is a standard adapter between the `log` ecosystem and the `tracing`
-ecosystem. There's one `unsafe` block in this crate and it's well-scoped.
-"""
-
-[[audits.bytecode-alliance.audits.tracing-log]]
-who = "Alex Crichton <alex@alexcrichton.com>"
-criteria = "safe-to-deploy"
-delta = "0.1.3 -> 0.2.0"
-notes = "Nothing out of the ordinary, a typical major version update and nothing awry."
-
 [[audits.bytecode-alliance.audits.try-lock]]
 who = "Pat Hickey <phickey@fastly.com>"
 criteria = "safe-to-deploy"
 version = "0.2.4"
 notes = "Implements a concurrency primitive with atomics, and is not obviously incorrect"
+
+[[audits.bytecode-alliance.audits.utf-8]]
+who = "Chris Fallin <chris@cfallin.org>"
+criteria = "safe-to-deploy"
+version = "0.7.6"
+notes = "Small library that uses `unsafe` only around `str::from_utf8_unchecked` after explicitly verifying UTF-8."
 
 [[audits.bytecode-alliance.audits.vcpkg]]
 who = "Pat Hickey <phickey@fastly.com>"
@@ -497,6 +597,55 @@ who = "Johan Andersson <opensource@embark-studios.com>"
 criteria = "safe-to-deploy"
 delta = "0.3.0 -> 0.4.0"
 notes = "No unsafe usage or ambient capabilities"
+
+[[audits.embark-studios.audits.jni]]
+who = "Robert Bragg <opensource@embark-studios.com>"
+criteria = "safe-to-deploy"
+version = "0.21.1"
+notes = """
+Aims to provide a safe JNI (Java Native Interface) API over the
+unsafe `jni_sys` crate.
+
+This is a very general FFI abstraction for Java VMs with a lot of unsafe code
+throughout the API. There are almost certainly some edge cases with its design
+that could lead to unsound behaviour but it should still be considerably safer
+than working with JNI directly.
+
+A lot of the unsafe usage relates to quite-simple use of `from_raw` APIs to
+construct or cast wrapper types (around JNI pointers) which are fairly
+straight-forward to verify/trust in context.
+
+Some unsafe code has good `// # Safety` documentation (this has been enforced for
+newer code) but a lot of unsafe code doesn't document invariants that are
+being relied on.
+
+The design depends on non-trivial named lifetimes across many APIs to associate
+Java local references with JNI stack frames.
+
+The crate is not very actively maintained and was practically unmaintained for
+over a year before the 0.20 release.
+
+Robert Bragg who now works at Embark Studios became the maintainer of this
+crate in October 2022.
+
+In the process of working on the `jni` crate since becoming maintainer it's
+worth noting that I came across multiple APIs that I found needed to be
+re-worked to address safety issues, including ensuring that APIs that are not
+implemented safely are correctly declared as `unsafe`.
+
+There has been a focus on improving safety in the last two release.
+
+The jni crate has been used in production with the Signal messaging application
+for over two years:
+https://github.com/signalapp/libsignal/blob/main/rust/bridge/jni/Cargo.toml
+
+# Some Notable Open Issues
+- https://github.com/jni-rs/jni-rs/issues/422 - questions soundness of linking
+  multiple versions of jni crate into an application, considering the use
+  of (separately scoped) thread-local-storage to track thread attachments
+- https://github.com/jni-rs/jni-rs/issues/405 - discusses the ease with which
+  code may expose the JVM to invalid booleans with undefined behaviour
+"""
 
 [[audits.embark-studios.audits.nohash-hasher]]
 who = "Johan Andersson <opensource@embark-studios.com>"
@@ -1280,20 +1429,6 @@ criteria = "safe-to-deploy"
 version = "0.1.0"
 aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
 
-[[audits.google.audits.tokio-stream]]
-who = "David Koloski <dkoloski@google.com>"
-criteria = "safe-to-deploy"
-version = "0.1.11"
-notes = "Reviewed on https://fxrev.dev/804724"
-aggregated-from = "https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/third_party/rust_crates/supply-chain/audits.toml?format=TEXT"
-
-[[audits.google.audits.tokio-stream]]
-who = "David Koloski <dkoloski@google.com>"
-criteria = "safe-to-deploy"
-delta = "0.1.11 -> 0.1.14"
-notes = "Reviewed on https://fxrev.dev/907732."
-aggregated-from = "https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/third_party/rust_crates/supply-chain/audits.toml?format=TEXT"
-
 [[audits.google.audits.unicode-bidi]]
 who = "Manish Goregaokar <manishearth@google.com>"
 criteria = "safe-to-deploy"
@@ -2029,6 +2164,12 @@ Only functional change is to work around a bug in the negative_impls feature
 """
 aggregated-from = "https://raw.githubusercontent.com/mozilla/cargo-vet/main/supply-chain/audits.toml"
 
+[[audits.mozilla.audits.pkg-config]]
+who = "Mike Hommey <mh+mozilla@glandium.org>"
+criteria = "safe-to-deploy"
+delta = "0.3.25 -> 0.3.26"
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
 [[audits.mozilla.audits.powerfmt]]
 who = "Alex Franchuk <afranchuk@mozilla.com>"
 criteria = "safe-to-deploy"
@@ -2111,23 +2252,6 @@ criteria = "safe-to-deploy"
 delta = "1.5.3 -> 1.6.1"
 aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
 
-[[audits.mozilla.audits.rmp]]
-who = "Ben Dean-Kawamura <bdk@mozilla.com>"
-criteria = "safe-to-deploy"
-version = "0.8.14"
-notes = """
-Very popular crate. 1 instance of unsafe code, which is used to adjust a slice to work around
-lifetime issues. No network or file access.
-"""
-aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
-
-[[audits.mozilla.audits.rmp-serde]]
-who = "Ben Dean-Kawamura <bdk@mozilla.com>"
-criteria = "safe-to-deploy"
-version = "1.3.0"
-notes = "Very popular crate. No unsafe code, network or file access."
-aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
-
 [[audits.mozilla.audits.rustc-hash]]
 who = "Bobby Holley <bobbyholley@gmail.com>"
 criteria = "safe-to-deploy"
@@ -2185,12 +2309,6 @@ The bulk of this is https://github.com/RustCrypto/hashes/pull/490 which adds aar
 I didn't check the implementation thoroughly but there wasn't anything obviously nefarious. 0.10.8 has been out for more than a year
 which suggests no one else has found anything either.
 """
-aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
-
-[[audits.mozilla.audits.sharded-slab]]
-who = "Mark Hammond <mhammond@skippinet.com.au>"
-criteria = "safe-to-deploy"
-delta = "0.1.4 -> 0.1.7"
 aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
 
 [[audits.mozilla.audits.shlex]]
@@ -2313,42 +2431,6 @@ criteria = "safe-to-deploy"
 version = "0.9.0"
 aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
 
-[[audits.mozilla.audits.url]]
-who = "Valentin Gosu <valentin.gosu@gmail.com>"
-criteria = "safe-to-deploy"
-version = "2.4.0"
-aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
-
-[[audits.mozilla.audits.url]]
-who = "Valentin Gosu <valentin.gosu@gmail.com>"
-criteria = "safe-to-deploy"
-delta = "2.4.0 -> 2.4.1"
-aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
-
-[[audits.mozilla.audits.url]]
-who = "Valentin Gosu <valentin.gosu@gmail.com>"
-criteria = "safe-to-deploy"
-delta = "2.4.1 -> 2.5.0"
-aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
-
-[[audits.mozilla.audits.url]]
-who = "Henri Sivonen <hsivonen@hsivonen.fi>"
-criteria = "safe-to-deploy"
-delta = "2.5.0 -> 2.5.1"
-aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
-
-[[audits.mozilla.audits.url]]
-who = "Valentin Gosu <valentin.gosu@gmail.com>"
-criteria = "safe-to-deploy"
-delta = "2.5.1 -> 2.5.4"
-aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
-
-[[audits.mozilla.audits.url]]
-who = "edgul <ed.guloien@gmail.com>"
-criteria = "safe-to-deploy"
-delta = "2.5.4 -> 2.5.7"
-aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
-
 [[audits.mozilla.audits.utf8parse]]
 who = "Nika Layzell <nika@thelayzells.com>"
 criteria = "safe-to-deploy"
@@ -2376,12 +2458,6 @@ notes = """
 This code DOES contain unsafe code required to internally call volatiles
 for deleting data. This is expected and documented behavior.
 """
-aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
-
-[[audits.mozilla.audits.zeroize_derive]]
-who = "Benjamin Beurdouche <beurdouche@mozilla.com>"
-criteria = "safe-to-deploy"
-version = "1.4.2"
 aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
 
 [[audits.mozilla.audits.zerovec-derive]]
@@ -2457,6 +2533,32 @@ who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
 delta = "0.2.0 -> 0.2.2"
 aggregated-from = "https://raw.githubusercontent.com/zcash/librustzcash/main/supply-chain/audits.toml"
+
+[[audits.zcash.audits.constant_time_eq]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.2.4 -> 0.2.5"
+notes = "No code changes."
+aggregated-from = "https://raw.githubusercontent.com/zcash/zcash/master/qa/supply-chain/audits.toml"
+
+[[audits.zcash.audits.constant_time_eq]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.2.5 -> 0.2.6"
+aggregated-from = "https://raw.githubusercontent.com/zcash/zcash/master/qa/supply-chain/audits.toml"
+
+[[audits.zcash.audits.constant_time_eq]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.2.6 -> 0.3.0"
+notes = "Replaces some `unsafe` code by bumping MSRV to 1.66 (to access `core::hint::black_box`)."
+aggregated-from = "https://raw.githubusercontent.com/zcash/zcash/master/qa/supply-chain/audits.toml"
+
+[[audits.zcash.audits.constant_time_eq]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.3.0 -> 0.3.1"
+aggregated-from = "https://raw.githubusercontent.com/zcash/zcash/master/qa/supply-chain/audits.toml"
 
 [[audits.zcash.audits.crunchy]]
 who = "Jack Grigg <jack@electriccoin.co>"
@@ -2643,49 +2745,6 @@ aggregated-from = "https://raw.githubusercontent.com/zcash/librustzcash/main/sup
 who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
 delta = "0.27.1 -> 0.27.2"
-aggregated-from = "https://raw.githubusercontent.com/zcash/librustzcash/main/supply-chain/audits.toml"
-
-[[audits.zcash.audits.thread_local]]
-who = "Jack Grigg <jack@z.cash>"
-criteria = "safe-to-deploy"
-delta = "1.1.4 -> 1.1.7"
-notes = """
-New `unsafe` usage:
-- An extra `deallocate_bucket`, to replace a `Mutex::lock` with a `compare_exchange`.
-- Setting and getting a `#[thread_local] static mut Option<Thread>` on nightly.
-"""
-aggregated-from = "https://raw.githubusercontent.com/zcash/zcash/master/qa/supply-chain/audits.toml"
-
-[[audits.zcash.audits.thread_local]]
-who = "Daira-Emma Hopwood <daira@jacaranda.org>"
-criteria = "safe-to-deploy"
-delta = "1.1.7 -> 1.1.8"
-notes = """
-Adds `unsafe` code that makes an assumption that `ptr::null_mut::<Entry<T>>()` is a valid representation
-of an `AtomicPtr<Entry<T>>`, but this is likely a correct assumption.
-"""
-aggregated-from = "https://raw.githubusercontent.com/zcash/zcash/master/qa/supply-chain/audits.toml"
-
-[[audits.zcash.audits.thread_local]]
-who = "Jack Grigg <jack@electriccoin.co>"
-criteria = "safe-to-deploy"
-delta = "1.1.8 -> 1.1.9"
-aggregated-from = "https://raw.githubusercontent.com/zcash/zcash/master/qa/supply-chain/audits.toml"
-
-[[audits.zcash.audits.tokio-stream]]
-who = "Daira-Emma Hopwood <daira@jacaranda.org>"
-criteria = "safe-to-deploy"
-delta = "0.1.14 -> 0.1.15"
-aggregated-from = "https://raw.githubusercontent.com/zcash/librustzcash/main/supply-chain/audits.toml"
-
-[[audits.zcash.audits.tokio-stream]]
-who = "Jack Grigg <jack@electriccoin.co>"
-criteria = "safe-to-deploy"
-delta = "0.1.15 -> 0.1.17"
-notes = """
-No new `unsafe` code or powerful imports. The new async polling logic added as
-`StreamMap::poll_next_many` looks plausible.
-"""
 aggregated-from = "https://raw.githubusercontent.com/zcash/librustzcash/main/supply-chain/audits.toml"
 
 [[audits.zcash.audits.try-lock]]

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,11 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Conversion helpers that translate Bybit API schemas into Nautilus instruments.
+//! Conversion functions that translate Bybit API schemas into Nautilus instruments.
 
 use std::{convert::TryFrom, str::FromStr};
 
 use anyhow::Context;
+pub use nautilus_core::serialization::{
+    deserialize_decimal_or_zero, deserialize_optional_decimal,
+    deserialize_optional_decimal_or_zero, deserialize_string_to_u8,
+};
 use nautilus_core::{UUID4, datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
@@ -36,7 +40,6 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
-use serde::{Deserialize, Deserializer};
 use ustr::Ustr;
 
 use crate::{
@@ -57,62 +60,6 @@ use crate::{
 
 const BYBIT_MINUTE_INTERVALS: &[u64] = &[1, 3, 5, 15, 30, 60, 120, 240, 360, 720];
 const BYBIT_HOUR_INTERVALS: &[u64] = &[1, 2, 4, 6, 12];
-
-/// Deserializes an optional Decimal from a string field.
-/// Returns `None` if the string is empty or "0", otherwise parses to `Decimal`.
-pub fn deserialize_optional_decimal<'de, D>(deserializer: D) -> Result<Option<Decimal>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s: String = Deserialize::deserialize(deserializer)?;
-    if s.is_empty() || s == "0" {
-        Ok(None)
-    } else {
-        Decimal::from_str(&s)
-            .map(Some)
-            .map_err(serde::de::Error::custom)
-    }
-}
-
-/// Deserializes a Decimal from an optional string field, defaulting to zero.
-/// Handles Bybit's edge cases: None, empty string "", or "0" all become Decimal::ZERO.
-pub fn deserialize_optional_decimal_or_zero<'de, D>(deserializer: D) -> Result<Decimal, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let opt: Option<String> = Deserialize::deserialize(deserializer)?;
-    match opt {
-        None => Ok(Decimal::ZERO),
-        Some(s) if s.is_empty() || s == "0" => Ok(Decimal::ZERO),
-        Some(s) => Decimal::from_str(&s).map_err(serde::de::Error::custom),
-    }
-}
-
-/// Deserializes a Decimal from a string field that might be empty.
-/// Handles Bybit's edge case where empty string "" becomes Decimal::ZERO.
-pub fn deserialize_decimal_or_zero<'de, D>(deserializer: D) -> Result<Decimal, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s: String = Deserialize::deserialize(deserializer)?;
-    if s.is_empty() || s == "0" {
-        Ok(Decimal::ZERO)
-    } else {
-        Decimal::from_str(&s).map_err(serde::de::Error::custom)
-    }
-}
-
-/// Deserializes a u8 from a string field.
-pub fn deserialize_string_to_u8<'de, D>(deserializer: D) -> Result<u8, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s: String = Deserialize::deserialize(deserializer)?;
-    if s.is_empty() {
-        return Ok(0);
-    }
-    s.parse::<u8>().map_err(serde::de::Error::custom)
-}
 
 /// Extracts the raw symbol from a Bybit symbol by removing the product type suffix.
 #[must_use]

@@ -44,6 +44,7 @@ nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-network = { workspace = true }
+nautilus-portfolio = { workspace = true }
 nautilus-trading = { workspace = true }
 
 ahash = { workspace = true }
@@ -51,6 +52,7 @@ anyhow = { workspace = true }
 aws-lc-rs = { workspace = true }
 chrono = { workspace = true }
 hex = { workspace = true }
+indexmap = { workspace = true }
 log = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }

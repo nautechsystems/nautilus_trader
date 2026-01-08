@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,10 +23,12 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::{FAILED, check_in_range_inclusive_f64, check_predicate_true};
+use nautilus_core::{
+    correctness::{FAILED, check_in_range_inclusive_f64, check_predicate_true},
+    formatting::Separable,
+};
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Deserializer, Serialize};
-use thousands::Separable;
 
 #[cfg(not(any(feature = "defi", feature = "high-precision")))]
 use super::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};

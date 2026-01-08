@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -36,7 +36,7 @@
 //! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
 //! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
 //!
-//! # Feature flags
+//! # Feature Flags
 //!
 //! This crate provides feature flags to control source code inclusion during compilation,
 //! depending on the intended use case, i.e. whether to provide Python bindings
@@ -69,13 +69,27 @@ pub mod capnp;
 macro_rules! include_capnp_module {
     ($name:ident, $path:expr) => {
         #[cfg(all(feature = "capnp", not(docs_rs)))]
-        #[allow(clippy::all, warnings, dead_code, missing_debug_implementations)]
+        #[allow(
+            clippy::all,
+            clippy::missing_errors_doc,
+            clippy::missing_panics_doc,
+            warnings,
+            dead_code,
+            missing_debug_implementations
+        )]
         pub mod $name {
             include!(concat!(env!("OUT_DIR"), $path));
         }
 
         #[cfg(all(feature = "capnp", docs_rs))]
-        #[allow(clippy::all, warnings, dead_code, missing_debug_implementations)]
+        #[allow(
+            clippy::all,
+            clippy::missing_errors_doc,
+            clippy::missing_panics_doc,
+            warnings,
+            dead_code,
+            missing_debug_implementations
+        )]
         pub mod $name {
             include!(concat!(
                 env!("CARGO_MANIFEST_DIR"),

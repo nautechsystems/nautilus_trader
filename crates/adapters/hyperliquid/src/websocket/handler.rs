@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -183,11 +183,11 @@ impl FeedHandler {
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
                         HandlerCommand::SetClient(client) => {
-                            tracing::debug!("Setting WebSocket client in handler");
+                            log::debug!("Setting WebSocket client in handler");
                             self.client = Some(client);
                         }
                         HandlerCommand::Disconnect => {
-                            tracing::debug!("Handler received disconnect command");
+                            log::debug!("Handler received disconnect command");
                             if let Some(ref client) = self.client {
                                 client.disconnect().await;
                             }
@@ -202,14 +202,14 @@ impl FeedHandler {
                                 let request = HyperliquidWsRequest::Subscribe { subscription };
                                 match serde_json::to_string(&request) {
                                     Ok(payload) => {
-                                        tracing::debug!("Sending subscribe payload: {payload}");
+                                        log::debug!("Sending subscribe payload: {payload}");
                                         if let Err(e) = self.send_with_retry(payload).await {
-                                            tracing::error!("Error subscribing to {key}: {e}");
+                                            log::error!("Error subscribing to {key}: {e}");
                                             self.subscriptions.mark_failure(&key);
                                         }
                                     }
                                     Err(e) => {
-                                        tracing::error!("Error serializing subscription for {key}: {e}");
+                                        log::error!("Error serializing subscription for {key}: {e}");
                                         self.subscriptions.mark_failure(&key);
                                     }
                                 }
@@ -223,13 +223,13 @@ impl FeedHandler {
                                 let request = HyperliquidWsRequest::Unsubscribe { subscription };
                                 match serde_json::to_string(&request) {
                                     Ok(payload) => {
-                                        tracing::debug!("Sending unsubscribe payload: {payload}");
+                                        log::debug!("Sending unsubscribe payload: {payload}");
                                         if let Err(e) = self.send_with_retry(payload).await {
-                                            tracing::error!("Error unsubscribing from {key}: {e}");
+                                            log::error!("Error unsubscribing from {key}: {e}");
                                         }
                                     }
                                     Err(e) => {
-                                        tracing::error!("Error serializing unsubscription for {key}: {e}");
+                                        log::error!("Error serializing unsubscription for {key}: {e}");
                                     }
                                 }
                             }
@@ -272,7 +272,7 @@ impl FeedHandler {
                     match raw_msg {
                         Message::Text(text) => {
                             if text == RECONNECTED {
-                                tracing::info!("Received RECONNECTED sentinel");
+                                log::info!("Received RECONNECTED sentinel");
                                 return Some(NautilusWsMessage::Reconnected);
                             }
 
@@ -301,18 +301,18 @@ impl FeedHandler {
                                     }
                                 }
                                 Err(e) => {
-                                    tracing::error!("Error parsing WebSocket message: {e}, text: {text}");
+                                    log::error!("Error parsing WebSocket message: {e}, text: {text}");
                                 }
                             }
                         }
                         Message::Ping(data) => {
                             if let Some(ref client) = self.client
                                 && let Err(e) = client.send_pong(data.to_vec()).await {
-                                tracing::error!("Error sending pong: {e}");
+                                log::error!("Error sending pong: {e}");
                             }
                         }
                         Message::Close(_) => {
-                            tracing::info!("Received WebSocket close frame");
+                            log::info!("Received WebSocket close frame");
                             return None;
                         }
                         _ => {}
@@ -320,7 +320,7 @@ impl FeedHandler {
                 }
 
                 else => {
-                    tracing::debug!("Handler shutting down: stream ended or command channel closed");
+                    log::debug!("Handler shutting down: stream ended or command channel closed");
                     return None;
                 }
             }
@@ -395,7 +395,7 @@ impl FeedHandler {
                 ));
             }
             HyperliquidWsMessage::Error { data } => {
-                tracing::warn!("Received error from Hyperliquid WebSocket: {data}");
+                log::warn!("Received error from Hyperliquid WebSocket: {data}");
             }
             // Ignore other message types (subscription confirmations, etc)
             _ => {}
@@ -419,11 +419,11 @@ impl FeedHandler {
                         exec_reports.push(ExecutionReport::Order(report));
                     }
                     Err(e) => {
-                        tracing::error!("Error parsing order update: {e}");
+                        log::error!("Error parsing order update: {e}");
                     }
                 }
             } else {
-                tracing::debug!("No instrument found for coin: {}", order_update.order.coin);
+                log::debug!("No instrument found for coin: {}", order_update.order.coin);
             }
         }
 
@@ -449,11 +449,11 @@ impl FeedHandler {
                         exec_reports.push(ExecutionReport::Fill(report));
                     }
                     Err(e) => {
-                        tracing::error!("Error parsing fill: {e}");
+                        log::error!("Error parsing fill: {e}");
                     }
                 }
             } else {
-                tracing::debug!("No instrument found for coin: {}", fill.coin);
+                log::debug!("No instrument found for coin: {}", fill.coin);
             }
         }
 
@@ -476,11 +476,11 @@ impl FeedHandler {
                 match parse_ws_trade_tick(trade, instrument, ts_init) {
                     Ok(tick) => trade_ticks.push(tick),
                     Err(e) => {
-                        tracing::error!("Error parsing trade tick: {e}");
+                        log::error!("Error parsing trade tick: {e}");
                     }
                 }
             } else {
-                tracing::debug!("No instrument found for coin: {}", trade.coin);
+                log::debug!("No instrument found for coin: {}", trade.coin);
             }
         }
 
@@ -500,12 +500,12 @@ impl FeedHandler {
             match parse_ws_quote_tick(data, instrument, ts_init) {
                 Ok(quote_tick) => Some(NautilusWsMessage::Quote(quote_tick)),
                 Err(e) => {
-                    tracing::error!("Error parsing quote tick: {e}");
+                    log::error!("Error parsing quote tick: {e}");
                     None
                 }
             }
         } else {
-            tracing::debug!("No instrument found for coin: {}", data.coin);
+            log::debug!("No instrument found for coin: {}", data.coin);
             None
         }
     }
@@ -519,12 +519,12 @@ impl FeedHandler {
             match parse_ws_order_book_deltas(data, instrument, ts_init) {
                 Ok(deltas) => Some(NautilusWsMessage::Deltas(deltas)),
                 Err(e) => {
-                    tracing::error!("Error parsing order book deltas: {e}");
+                    log::error!("Error parsing order book deltas: {e}");
                     None
                 }
             }
         } else {
-            tracing::debug!("No instrument found for coin: {}", data.coin);
+            log::debug!("No instrument found for coin: {}", data.coin);
             None
         }
     }
@@ -542,7 +542,7 @@ impl FeedHandler {
         if let Some(cached) = bar_cache.get(&key) {
             // Emit cached bar when close_time changes, indicating the previous period closed
             if cached.close_time != data.close_time {
-                tracing::debug!(
+                log::debug!(
                     "Bar period changed for {}: prev_close_time={}, new_close_time={}",
                     data.s,
                     cached.close_time,
@@ -560,14 +560,14 @@ impl FeedHandler {
                     match parse_ws_candle(&closed_data, instrument, bar_type, ts_init) {
                         Ok(bar) => return Some(NautilusWsMessage::Candle(bar)),
                         Err(e) => {
-                            tracing::error!("Error parsing closed candle: {e}");
+                            log::error!("Error parsing closed candle: {e}");
                         }
                     }
                 } else {
-                    tracing::debug!("No instrument found for coin: {}", data.s);
+                    log::debug!("No instrument found for coin: {}", data.s);
                 }
             } else {
-                tracing::debug!("No bar type found for key: {key}");
+                log::debug!("No bar type found for key: {key}");
             }
         }
 
@@ -641,12 +641,12 @@ impl FeedHandler {
                         }
                     }
                     Err(e) => {
-                        tracing::error!("Error parsing asset context: {e}");
+                        log::error!("Error parsing asset context: {e}");
                     }
                 }
             }
         } else {
-            tracing::debug!("No instrument found for coin: {coin}");
+            log::debug!("No instrument found for coin: {coin}");
         }
 
         result

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,16 +23,11 @@ use nautilus_kraken::{
 };
 use tokio::{pin, signal};
 use tokio_util::sync::CancellationToken;
-use tracing::level_filters::LevelFilter;
 use ustr::Ustr;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::INFO)
-        .with_target(false)
-        .compact()
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let config = KrakenDataClientConfig::default();
     let token = CancellationToken::new();
@@ -54,15 +49,15 @@ async fn main() -> anyhow::Result<()> {
     pin!(stream);
     pin!(shutdown);
 
-    tracing::info!("Streaming Kraken market data; press Ctrl+C to exit");
+    log::info!("Streaming Kraken market data; press Ctrl+C to exit");
 
     loop {
         tokio::select! {
             Some(msg) = stream.next() => {
-                tracing::info!("Received: {:#?}", msg);
+                log::info!("Received: {msg:#?}");
             }
             _ = &mut shutdown => {
-                tracing::info!("Received Ctrl+C, closing connection");
+                log::info!("Received Ctrl+C, closing connection");
                 client.disconnect().await?;
                 break;
             }

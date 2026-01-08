@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -41,15 +41,12 @@ use nautilus_dydx::{
     http::client::DydxHttpClient,
     websocket::{NautilusWsMessage, client::DydxWebSocketClient},
 };
-use tracing::level_filters::LevelFilter;
 
 const DEFAULT_SUBACCOUNT: u32 = 0;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::DEBUG)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let args: Vec<String> = env::args().collect();
     let is_mainnet = args.iter().any(|a| a == "--mainnet");
@@ -74,26 +71,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         env::var("DYDX_HTTP_URL").unwrap_or_else(|_| DYDX_TESTNET_HTTP_URL.to_string())
     };
 
-    tracing::info!("Connecting to dYdX WebSocket API: {}", ws_url);
-    tracing::info!(
+    log::info!("Connecting to dYdX WebSocket API: {ws_url}");
+    log::info!(
         "Environment: {}",
         if is_mainnet { "MAINNET" } else { "TESTNET" }
     );
-    tracing::info!("Subaccount: {}", subaccount_number);
-    tracing::info!("");
+    log::info!("Subaccount: {subaccount_number}");
+    log::info!("");
 
     let wallet = Wallet::from_mnemonic(&mnemonic)?;
     let account = wallet.account_offline(subaccount_number)?;
     let wallet_address = account.address.clone();
-    tracing::info!("Wallet address: {}", wallet_address);
-    tracing::info!("");
+    log::info!("Wallet address: {wallet_address}");
+    log::info!("");
 
     let http_client =
         DydxHttpClient::new(Some(http_url.clone()), Some(30), None, !is_mainnet, None)?;
 
-    tracing::info!("Fetching instruments from HTTP API...");
+    log::info!("Fetching instruments from HTTP API...");
     let instruments = http_client.request_instruments(None, None, None).await?;
-    tracing::info!("Fetched {} instruments", instruments.len());
+    log::info!("Fetched {} instruments", instruments.len());
 
     let mut ws_client = DydxWebSocketClient::new_public(ws_url, Some(30));
     ws_client.cache_instruments(instruments);
@@ -101,17 +98,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tokio::time::sleep(Duration::from_millis(500)).await;
 
-    tracing::info!(
-        "Subscribing to subaccount: {}/{}",
-        wallet_address,
-        subaccount_number
-    );
+    log::info!("Subscribing to subaccount: {wallet_address}/{subaccount_number}");
     ws_client
         .subscribe_subaccount(&wallet_address, subaccount_number)
         .await?;
 
     let Some(mut rx) = ws_client.take_receiver() else {
-        tracing::warn!("No inbound WebSocket receiver available; exiting");
+        log::warn!("No inbound WebSocket receiver available; exiting");
         return Ok(());
     };
 
@@ -119,8 +112,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::pin!(sigint);
 
     let mut event_count = 0;
-    tracing::info!("Listening for subaccount updates (press Ctrl+C to stop)...");
-    tracing::info!("");
+    log::info!("Listening for subaccount updates (press Ctrl+C to stop)...");
+    log::info!("");
 
     loop {
         tokio::select! {
@@ -128,29 +121,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 match maybe_event {
                     Some(event) => {
                         event_count += 1;
-                        tracing::debug!("[Event #{}] {:?}", event_count, event);
+                        log::debug!("[Event #{event_count}] {event:?}");
 
                         match event {
                             NautilusWsMessage::Order(_) => {
-                                tracing::info!("[Event #{}] Order status update received", event_count);
+                                log::info!("[Event #{event_count}] Order status update received");
                             }
                             NautilusWsMessage::Fill(_) => {
-                                tracing::info!("[Event #{}] Fill update received", event_count);
+                                log::info!("[Event #{event_count}] Fill update received");
                             }
                             NautilusWsMessage::Position(_) => {
-                                tracing::info!("[Event #{}] Position update received", event_count);
+                                log::info!("[Event #{event_count}] Position update received");
                             }
                             _ => {}
                         }
                     }
                     None => {
-                        tracing::info!("WebSocket message stream closed");
+                        log::info!("WebSocket message stream closed");
                         break;
                     }
                 }
             }
             _ = &mut sigint => {
-                tracing::info!("Received SIGINT, closing connection...");
+                log::info!("Received SIGINT, closing connection...");
                 ws_client.disconnect().await?;
                 break;
             }
@@ -158,9 +151,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    tracing::info!("");
-    tracing::info!("WebSocket execution test completed");
-    tracing::info!("Total events received: {}", event_count);
+    log::info!("");
+    log::info!("WebSocket execution test completed");
+    log::info!("Total events received: {event_count}");
 
     Ok(())
 }

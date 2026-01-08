@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,6 +24,7 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc};
 use async_trait::async_trait;
 use nautilus_common::{
     cache::Cache,
+    clients::ExecutionClient,
     clock::Clock,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
@@ -31,7 +32,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{SharedCell, UnixNanos, WeakCell};
-use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
+use nautilus_execution::client::base::ExecutionClientCore;
 use nautilus_model::{
     accounts::AccountAny,
     enums::OmsType,
@@ -162,7 +163,7 @@ impl ExecutionClient for BacktestExecutionClient {
         self.core.generate_order_submitted(
             cmd.strategy_id,
             cmd.instrument_id,
-            cmd.client_order_id,
+            cmd.client_order_id(),
             self.clock.borrow().timestamp_ns(),
         );
 

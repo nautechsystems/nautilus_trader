@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,12 +23,20 @@ from nautilus_trader.adapters.interactive_brokers.common import ComboLeg
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
 from nautilus_trader.adapters.interactive_brokers.common import dict_to_contract_details
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
+from nautilus_trader.adapters.interactive_brokers.config import (
+    InteractiveBrokersInstrumentProviderConfig,
+)
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUE_MEMBERS
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_futures_spread_instrument_id
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
+    instrument_id_to_ib_contract,
+)
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
+    parse_futures_spread_instrument_id,
+)
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_option_spread_instrument_id
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
+    parse_option_spread_instrument_id,
+)
 from nautilus_trader.common.component import Clock
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import resolve_path
@@ -323,7 +331,9 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             self._log.error(f"Expected InstrumentId or IBContract, received {instrument_id}")
             return None
 
-        force_instrument_update = filters.get("force_instrument_update", False) if filters else False
+        force_instrument_update = (
+            filters.get("force_instrument_update", False) if filters else False
+        )
         if contract_details:
             return self._process_contract_details(contract_details, venue, force_instrument_update)
         else:
@@ -347,12 +357,17 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             return await self._fetch_spread_instrument(instrument_id, filters)
 
         venue = instrument_id.venue.value
-        force_instrument_update = filters.get("force_instrument_update", False) if filters else False
+        force_instrument_update = (
+            filters.get("force_instrument_update", False) if filters else False
+        )
 
         # We try to quickly build the contract details if they are already present in an instrument
         if (
-            instrument := self._client._cache.instrument(instrument_id)
-        ) and not force_instrument_update and instrument.info and instrument.info.get("contract"):
+            (instrument := self._client._cache.instrument(instrument_id))
+            and not force_instrument_update
+            and instrument.info
+            and instrument.info.get("contract")
+        ):
             converted_contract_details = dict_to_contract_details(instrument.info)
             processed_ids = self._process_contract_details([converted_contract_details], venue)
 
@@ -679,7 +694,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
         return option_details
 
-    def determine_venue_from_contract(self, contract: IBContract) -> str: # noqa: C901
+    def determine_venue_from_contract(self, contract: IBContract) -> str:  # noqa: C901
         """
         Determine the venue for a contract using the instrument provider configuration
         logic.

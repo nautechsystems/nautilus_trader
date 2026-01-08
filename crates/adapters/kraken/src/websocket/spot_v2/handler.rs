@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -165,7 +165,7 @@ impl SpotFeedHandler {
             .collect();
 
         if !bars.is_empty() {
-            tracing::debug!("Flushing {} buffered OHLC bars on stream end", bars.len());
+            log::debug!("Flushing {} buffered OHLC bars on stream end", bars.len());
             self.pending_messages
                 .push_back(NautilusWsMessage::Data(bars));
         }
@@ -187,11 +187,11 @@ impl SpotFeedHandler {
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
                         SpotHandlerCommand::SetClient(client) => {
-                            tracing::debug!("WebSocketClient received by handler");
+                            log::debug!("WebSocketClient received by handler");
                             self.client = Some(client);
                         }
                         SpotHandlerCommand::Disconnect => {
-                            tracing::debug!("Disconnect command received");
+                            log::debug!("Disconnect command received");
                             if let Some(client) = self.client.take() {
                                 client.disconnect().await;
                             }
@@ -200,7 +200,7 @@ impl SpotFeedHandler {
                             if let Some(client) = &self.client
                                 && let Err(e) = client.send_text(payload.clone(), None).await
                             {
-                                tracing::error!(error = %e, "Failed to send text");
+                                log::error!("Failed to send text: {e}");
                             }
                         }
                         SpotHandlerCommand::InitializeInstruments(instruments) => {
@@ -214,7 +214,7 @@ impl SpotFeedHandler {
                             self.instruments_cache.insert(inst.symbol().inner(), inst);
                         }
                         SpotHandlerCommand::SetAccountId(account_id) => {
-                            tracing::debug!(%account_id, "Account ID set for execution reports");
+                            log::debug!("Account ID set for execution reports: {account_id}");
                             self.account_id = Some(account_id);
                         }
                         SpotHandlerCommand::CacheClientOrder {
@@ -223,10 +223,9 @@ impl SpotFeedHandler {
                             trader_id,
                             strategy_id,
                         } => {
-                            tracing::debug!(
-                                %client_order_id,
-                                %instrument_id,
-                                "Cached client order info"
+                            log::debug!(
+                                "Cached client order info: \
+                                client_order_id={client_order_id}, instrument_id={instrument_id}"
                             );
                             self.client_order_cache.insert(
                                 client_order_id.to_string(),
@@ -245,24 +244,24 @@ impl SpotFeedHandler {
                     let msg = match msg {
                         Some(msg) => msg,
                         None => {
-                            tracing::debug!("WebSocket stream closed");
+                            log::debug!("WebSocket stream closed");
                             self.flush_ohlc_buffer();
                             return self.pending_messages.pop_front();
                         }
                     };
 
                     if let Message::Ping(data) = &msg {
-                        tracing::trace!("Received ping frame with {} bytes", data.len());
+                        log::trace!("Received ping frame with {} bytes", data.len());
                         if let Some(client) = &self.client
                             && let Err(e) = client.send_pong(data.to_vec()).await
                         {
-                            tracing::warn!(error = %e, "Failed to send pong frame");
+                            log::warn!("Failed to send pong frame: {e}");
                         }
                         continue;
                     }
 
                     if self.signal.load(Ordering::Relaxed) {
-                        tracing::debug!("Stop signal received");
+                        log::debug!("Stop signal received");
                         self.flush_ohlc_buffer();
                         return self.pending_messages.pop_front();
                     }
@@ -273,29 +272,29 @@ impl SpotFeedHandler {
                             match String::from_utf8(data.to_vec()) {
                                 Ok(text) => text,
                                 Err(e) => {
-                                    tracing::warn!("Failed to decode binary message: {e}");
+                                    log::warn!("Failed to decode binary message: {e}");
                                     continue;
                                 }
                             }
                         }
                         Message::Pong(_) => {
-                            tracing::trace!("Received pong");
+                            log::trace!("Received pong");
                             continue;
                         }
                         Message::Close(_) => {
-                            tracing::info!("WebSocket connection closed");
+                            log::info!("WebSocket connection closed");
                             self.flush_ohlc_buffer();
                             return self.pending_messages.pop_front();
                         }
                         Message::Frame(_) => {
-                            tracing::trace!("Received raw frame");
+                            log::trace!("Received raw frame");
                             continue;
                         }
                         _ => continue,
                     };
 
                     if text == RECONNECTED {
-                        tracing::info!("Received WebSocket reconnected signal");
+                        log::info!("Received WebSocket reconnected signal");
                         self.quote_cache.clear();
                         return Some(NautilusWsMessage::Reconnected);
                     }
@@ -317,11 +316,11 @@ impl SpotFeedHandler {
         // Heartbeats and status messages are short and share common prefix
         if text.len() < 50 && text.starts_with("{\"channel\":\"") {
             if text.contains("heartbeat") {
-                tracing::trace!("Received heartbeat");
+                log::trace!("Received heartbeat");
                 return None;
             }
             if text.contains("status") {
-                tracing::debug!("Received status message");
+                log::debug!("Received status message");
                 return None;
             }
         }
@@ -329,7 +328,7 @@ impl SpotFeedHandler {
         let value: Value = match serde_json::from_str(text) {
             Ok(v) => v,
             Err(e) => {
-                tracing::warn!("Failed to parse message: {e}");
+                log::warn!("Failed to parse message: {e}");
                 return None;
             }
         };
@@ -345,13 +344,13 @@ impl SpotFeedHandler {
             match serde_json::from_value::<KrakenWsMessage>(value) {
                 Ok(msg) => return self.handle_data_message(msg, ts_init),
                 Err(e) => {
-                    tracing::debug!("Failed to parse data message: {e}");
+                    log::debug!("Failed to parse data message: {e}");
                     return None;
                 }
             }
         }
 
-        tracing::debug!("Unhandled message structure: {text}");
+        log::debug!("Unhandled message structure: {text}");
         None
     }
 
@@ -361,42 +360,42 @@ impl SpotFeedHandler {
                 KrakenWsResponse::Subscribe(sub) => {
                     if sub.success {
                         if let Some(result) = &sub.result {
-                            tracing::debug!(
-                                channel = ?result.channel,
-                                req_id = ?sub.req_id,
-                                "Subscription confirmed"
+                            log::debug!(
+                                "Subscription confirmed: channel={:?}, req_id={:?}",
+                                result.channel,
+                                sub.req_id
                             );
                         } else {
-                            tracing::debug!(req_id = ?sub.req_id, "Subscription confirmed");
+                            log::debug!("Subscription confirmed: req_id={:?}", sub.req_id);
                         }
                     } else {
-                        tracing::warn!(
-                            error = ?sub.error,
-                            req_id = ?sub.req_id,
-                            "Subscription failed"
+                        log::warn!(
+                            "Subscription failed: error={:?}, req_id={:?}",
+                            sub.error,
+                            sub.req_id
                         );
                     }
                 }
                 KrakenWsResponse::Unsubscribe(unsub) => {
                     if unsub.success {
-                        tracing::debug!(req_id = ?unsub.req_id, "Unsubscription confirmed");
+                        log::debug!("Unsubscription confirmed: req_id={:?}", unsub.req_id);
                     } else {
-                        tracing::warn!(
-                            error = ?unsub.error,
-                            req_id = ?unsub.req_id,
-                            "Unsubscription failed"
+                        log::warn!(
+                            "Unsubscription failed: error={:?}, req_id={:?}",
+                            unsub.error,
+                            unsub.req_id
                         );
                     }
                 }
                 KrakenWsResponse::Pong(pong) => {
-                    tracing::trace!(req_id = ?pong.req_id, "Received pong");
+                    log::trace!("Received pong: req_id={:?}", pong.req_id);
                 }
                 KrakenWsResponse::Other => {
-                    tracing::debug!("Received unknown control response");
+                    log::debug!("Received unknown control response");
                 }
             },
             Err(_) => {
-                tracing::debug!("Received control message (failed to parse details)");
+                log::debug!("Received control message (failed to parse details)");
             }
         }
     }
@@ -413,7 +412,7 @@ impl SpotFeedHandler {
             KrakenWsChannel::Ohlc => self.handle_ohlc_message(msg, ts_init),
             KrakenWsChannel::Executions => self.handle_executions_message(msg, ts_init),
             _ => {
-                tracing::warn!("Unhandled channel: {:?}", msg.channel);
+                log::warn!("Unhandled channel: {:?}", msg.channel);
                 None
             }
         }
@@ -474,13 +473,13 @@ impl SpotFeedHandler {
                                 all_deltas.append(&mut deltas);
                             }
                             Err(e) => {
-                                tracing::error!("Failed to parse book deltas: {e}");
+                                log::error!("Failed to parse book deltas: {e}");
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Failed to deserialize book data: {e}");
+                    log::error!("Failed to deserialize book data: {e}");
                 }
             }
         }
@@ -511,12 +510,12 @@ impl SpotFeedHandler {
                     match parse_quote_tick(&ticker_data, &instrument, ts_init) {
                         Ok(quote) => quotes.push(Data::Quote(quote)),
                         Err(e) => {
-                            tracing::error!("Failed to parse quote tick: {e}");
+                            log::error!("Failed to parse quote tick: {e}");
                         }
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Failed to deserialize ticker data: {e}");
+                    log::error!("Failed to deserialize ticker data: {e}");
                 }
             }
         }
@@ -543,12 +542,12 @@ impl SpotFeedHandler {
                     match parse_trade_tick(&trade_data, &instrument, ts_init) {
                         Ok(trade) => trades.push(Data::Trade(trade)),
                         Err(e) => {
-                            tracing::error!("Failed to parse trade tick: {e}");
+                            log::error!("Failed to parse trade tick: {e}");
                         }
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Failed to deserialize trade data: {e}");
+                    log::error!("Failed to deserialize trade data: {e}");
                 }
             }
         }
@@ -593,12 +592,12 @@ impl SpotFeedHandler {
                             self.ohlc_buffer.insert(key, (new_bar, new_interval_begin));
                         }
                         Err(e) => {
-                            tracing::error!("Failed to parse bar: {e}");
+                            log::error!("Failed to parse bar: {e}");
                         }
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Failed to deserialize OHLC data: {e}");
+                    log::error!("Failed to deserialize OHLC data: {e}");
                 }
             }
         }
@@ -616,7 +615,7 @@ impl SpotFeedHandler {
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
         let Some(account_id) = self.account_id else {
-            tracing::warn!("Cannot process execution message: account_id not set");
+            log::warn!("Cannot process execution message: account_id not set");
             return None;
         };
 
@@ -624,14 +623,15 @@ impl SpotFeedHandler {
         for data in msg.data {
             match serde_json::from_value::<KrakenWsExecutionData>(data) {
                 Ok(exec_data) => {
-                    tracing::debug!(
-                        exec_type = ?exec_data.exec_type,
-                        order_id = %exec_data.order_id,
-                        order_status = ?exec_data.order_status,
-                        order_qty = ?exec_data.order_qty,
-                        cum_qty = ?exec_data.cum_qty,
-                        last_qty = ?exec_data.last_qty,
-                        "Received execution message"
+                    log::debug!(
+                        "Received execution message: exec_type={:?}, order_id={}, \
+                        order_status={:?}, order_qty={:?}, cum_qty={:?}, last_qty={:?}",
+                        exec_data.exec_type,
+                        exec_data.order_id,
+                        exec_data.order_status,
+                        exec_data.order_qty,
+                        exec_data.cum_qty,
+                        exec_data.last_qty
                     );
 
                     // Cache order_qty for subsequent messages that may not include it
@@ -644,10 +644,9 @@ impl SpotFeedHandler {
                         let symbol_ustr = Ustr::from(symbol.as_str());
                         let inst = self.instruments_cache.get(&symbol_ustr).cloned();
                         if inst.is_none() {
-                            tracing::warn!(
-                                symbol = %symbol,
-                                order_id = %exec_data.order_id,
-                                "No instrument found for symbol"
+                            log::warn!(
+                                "No instrument found for symbol: symbol={symbol}, order_id={}",
+                                exec_data.order_id
                             );
                         }
                         let cached = exec_data
@@ -669,11 +668,12 @@ impl SpotFeedHandler {
                     };
 
                     let Some(instrument) = instrument else {
-                        tracing::debug!(
-                            order_id = %exec_data.order_id,
-                            cl_ord_id = ?exec_data.cl_ord_id,
-                            exec_type = ?exec_data.exec_type,
-                            "Execution missing symbol and order not in cache (external order)"
+                        log::debug!(
+                            "Execution missing symbol and order not in cache (external order): \
+                            order_id={}, cl_ord_id={:?}, exec_type={:?}",
+                            exec_data.order_id,
+                            exec_data.cl_ord_id,
+                            exec_data.exec_type
                         );
                         continue;
                     };
@@ -925,7 +925,7 @@ impl SpotFeedHandler {
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Failed to deserialize execution data: {e}");
+                    log::error!("Failed to deserialize execution data: {e}");
                 }
             }
         }

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -125,7 +125,7 @@ impl WebSocketClient {
                 };
 
                 if let Err(e) = call_soon_clone.call1(py, (&handler_clone, py_bytes)) {
-                    tracing::error!("Error scheduling message handler on event loop: {e}");
+                    log::error!("Error scheduling message handler on event loop: {e}");
                 }
             });
         });
@@ -138,7 +138,7 @@ impl WebSocketClient {
                 Python::attach(|py| {
                     let py_bytes = PyBytes::new(py, &data);
                     if let Err(e) = call_soon_clone.call1(py, (&ping_handler_clone, py_bytes)) {
-                        tracing::error!("Error scheduling ping handler on event loop: {e}");
+                        log::error!("Error scheduling ping handler on event loop: {e}");
                     }
                 });
             });
@@ -150,7 +150,7 @@ impl WebSocketClient {
             Arc::new(move || {
                 Python::attach(|py| {
                     if let Err(e) = callback_clone.call0(py) {
-                        tracing::error!("Error calling post_reconnection handler: {e}");
+                        log::error!("Error calling post_reconnection handler: {e}");
                     }
                 });
             }) as std::sync::Arc<dyn Fn() + Send + Sync>
@@ -183,15 +183,15 @@ impl WebSocketClient {
     fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let connection_mode = slf.connection_mode.clone();
         let mode = ConnectionMode::from_atomic(&connection_mode);
-        tracing::debug!("Close from mode {mode}");
+        log::debug!("Close from mode {mode}");
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             match ConnectionMode::from_atomic(&connection_mode) {
                 ConnectionMode::Closed => {
-                    tracing::debug!("WebSocket already closed");
+                    log::debug!("WebSocket already closed");
                 }
                 ConnectionMode::Disconnect => {
-                    tracing::debug!("WebSocket already disconnecting");
+                    log::debug!("WebSocket already disconnecting");
                 }
                 _ => {
                     connection_mode.store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
@@ -254,14 +254,14 @@ impl WebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if !ConnectionMode::from_atomic(&mode).is_active() {
                 let msg = "Cannot send data: connection not active".to_string();
-                tracing::error!("{msg}");
+                log::error!("{msg}");
                 return Err(to_pyruntime_err(std::io::Error::new(
                     std::io::ErrorKind::NotConnected,
                     msg,
                 )));
             }
             rate_limiter.await_keys_ready(keys).await;
-            tracing::trace!("Sending binary: {data:?}");
+            log::trace!("Sending binary: {data:?}");
 
             let msg = Message::Binary(data.into());
             writer_tx
@@ -306,7 +306,7 @@ impl WebSocketClient {
                 return Err(to_pyruntime_err(e));
             }
             rate_limiter.await_keys_ready(keys).await;
-            tracing::trace!("Sending text: {data}");
+            log::trace!("Sending text: {data}");
 
             let msg = Message::Text(data);
             writer_tx
@@ -338,7 +338,7 @@ impl WebSocketClient {
                 );
                 return Err(to_pyruntime_err(e));
             }
-            tracing::trace!("Sending pong frame ({data_len} bytes)");
+            log::trace!("Sending pong frame ({data_len} bytes)");
 
             let msg = Message::Pong(data.into());
             writer_tx
@@ -369,7 +369,6 @@ mod tests {
             http::HeaderValue,
         },
     };
-    use tracing_test::traced_test;
 
     use crate::websocket::{MessageHandler, WebSocketClient, WebSocketConfig};
 
@@ -428,7 +427,7 @@ mod tests {
                                 tokio_tungstenite::tungstenite::protocol::Message::Text(txt)
                                     if txt == "close-now" =>
                                 {
-                                    tracing::debug!("Forcibly closing from server side");
+                                    log::debug!("Forcibly closing from server side");
                                     // This sends a close frame, then stops reading
                                     let _ = websocket.close(None).await;
                                     break;
@@ -505,7 +504,6 @@ counter = Counter()
     }
 
     #[tokio::test]
-    #[traced_test]
     async fn basic_client_test() {
         Python::initialize();
 
@@ -541,7 +539,7 @@ counter = Counter()
                 };
                 let py_bytes = PyBytes::new(py, &data);
                 if let Err(e) = handler_clone.call1(py, (py_bytes,)) {
-                    tracing::error!("Error calling handler: {e}");
+                    log::error!("Error calling handler: {e}");
                 }
             });
         });
@@ -596,7 +594,6 @@ counter = Counter()
     }
 
     #[tokio::test]
-    #[traced_test]
     async fn message_ping_test() {
         Python::initialize();
 
@@ -630,7 +627,7 @@ counter = Counter()
                 };
                 let py_bytes = PyBytes::new(py, &data);
                 if let Err(e) = handler_clone.call1(py, (py_bytes,)) {
-                    tracing::error!("Error calling handler: {e}");
+                    log::error!("Error calling handler: {e}");
                 }
             });
         });

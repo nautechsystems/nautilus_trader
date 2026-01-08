@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -27,18 +27,10 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
+use nautilus_core::serialization::deserialize_empty_string_as_none;
 use nautilus_model::enums::OrderSide;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-
-/// Deserializes an empty string as None, otherwise as Some(String).
-fn deserialize_empty_string_as_none<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let s: Option<String> = Option::deserialize(deserializer)?;
-    Ok(s.filter(|s| !s.is_empty()))
-}
 use serde_with::{DisplayFromStr, serde_as};
 use ustr::Ustr;
 

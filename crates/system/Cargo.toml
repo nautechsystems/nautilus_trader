@@ -44,8 +44,8 @@ nautilus-trading = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
-hostname = { workspace = true }
 log = { workspace = true }
+sysinfo = { workspace = true }
 ustr = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -125,7 +125,7 @@ pub fn parse_book_msg_vec(
                 ts_init,
             )));
         } else {
-            tracing::error!(
+            log::error!(
                 "Instrument cache miss: book delta dropped for symbol={}",
                 msg.symbol
             );
@@ -155,7 +155,7 @@ pub fn parse_book10_msg_vec(
                 ts_init,
             ))));
         } else {
-            tracing::error!(
+            log::error!(
                 "Instrument cache miss: depth10 message dropped for symbol={}",
                 msg.symbol
             );
@@ -185,7 +185,7 @@ pub fn parse_trade_msg_vec(
                 ts_init,
             )));
         } else {
-            tracing::error!(
+            log::error!(
                 "Instrument cache miss: trade message dropped for symbol={}",
                 msg.symbol
             );
@@ -217,7 +217,7 @@ pub fn parse_trade_bin_msg_vec(
                 ts_init,
             )));
         } else {
-            tracing::error!(
+            log::error!(
                 "Instrument cache miss: trade bin (bar) dropped for symbol={}",
                 msg.symbol
             );
@@ -311,13 +311,13 @@ pub fn parse_book10_msg(
     let bids: [BookOrder; DEPTH10_LEN] = bids
         .try_into()
         .inspect_err(|v: &Vec<BookOrder>| {
-            tracing::error!("Bids length mismatch: expected 10, was {}", v.len());
+            log::error!("Bids length mismatch: expected 10, was {}", v.len());
         })
         .expect("BitMEX orderBook10 should always have exactly 10 bid levels");
     let asks: [BookOrder; DEPTH10_LEN] = asks
         .try_into()
         .inspect_err(|v: &Vec<BookOrder>| {
-            tracing::error!("Asks length mismatch: expected 10, was {}", v.len());
+            log::error!("Asks length mismatch: expected 10, was {}", v.len());
         })
         .expect("BitMEX orderBook10 should always have exactly 10 ask levels");
 
@@ -449,7 +449,7 @@ pub fn bar_spec_from_topic(topic: &BitmexWsTopic) -> BarSpecification {
         BitmexWsTopic::TradeBin1h => BAR_SPEC_1_HOUR,
         BitmexWsTopic::TradeBin1d => BAR_SPEC_1_DAY,
         _ => {
-            tracing::error!(topic = ?topic, "Bar specification not supported");
+            log::error!("Bar specification not supported: topic={topic:?}");
             BAR_SPEC_1_MINUTE
         }
     }
@@ -468,7 +468,7 @@ pub fn topic_from_bar_spec(spec: BarSpecification) -> BitmexWsTopic {
         BAR_SPEC_1_HOUR => BitmexWsTopic::TradeBin1h,
         BAR_SPEC_1_DAY => BitmexWsTopic::TradeBin1d,
         _ => {
-            tracing::error!(spec = ?spec, "Bar specification not supported");
+            log::error!("Bar specification not supported: spec={spec:?}");
             BitmexWsTopic::TradeBin1m
         }
     }
@@ -616,21 +616,21 @@ pub fn parse_order_msg(
     // Extract rejection reason for rejected orders
     if order_status == OrderStatus::Rejected {
         if let Some(reason_str) = msg.ord_rej_reason.or(msg.text) {
-            tracing::debug!(
-                order_id = ?venue_order_id,
-                client_order_id = ?msg.cl_ord_id,
-                reason = ?reason_str,
-                "Order rejected with reason"
+            log::debug!(
+                "Order rejected with reason: order_id={:?}, client_order_id={:?}, reason={:?}",
+                venue_order_id,
+                msg.cl_ord_id,
+                reason_str,
             );
             report = report.with_cancel_reason(clean_reason(reason_str.as_ref()));
         } else {
-            tracing::debug!(
-                order_id = ?venue_order_id,
-                client_order_id = ?msg.cl_ord_id,
-                ord_status = ?msg.ord_status,
-                ord_rej_reason = ?msg.ord_rej_reason,
-                text = ?msg.text,
-                "Order rejected without reason from BitMEX"
+            log::debug!(
+                "Order rejected without reason from BitMEX: order_id={:?}, client_order_id={:?}, ord_status={:?}, ord_rej_reason={:?}, text={:?}",
+                venue_order_id,
+                msg.cl_ord_id,
+                msg.ord_status,
+                msg.ord_rej_reason,
+                msg.text,
             );
         }
     }
@@ -656,11 +656,13 @@ pub fn parse_order_update_msg(
 ) -> Option<OrderUpdated> {
     // For BitMEX updates, we don't have trader_id or strategy_id from the exchange
     // These will be populated by the execution engine when it matches the venue_order_id
-    let trader_id = TraderId::default();
-    let strategy_id = StrategyId::default();
+    let trader_id = TraderId::external();
+    let strategy_id = StrategyId::external();
     let instrument_id = parse_instrument_id(msg.symbol);
     let venue_order_id = Some(VenueOrderId::new(msg.order_id.to_string()));
-    let client_order_id = msg.cl_ord_id.map(ClientOrderId::new).unwrap_or_default();
+    let client_order_id = msg
+        .cl_ord_id
+        .map_or_else(ClientOrderId::external, ClientOrderId::new);
     let quantity = Quantity::zero(instrument.size_precision());
     let price = msg
         .price
@@ -721,59 +723,53 @@ pub fn parse_execution_msg(
         // Position-affecting executions that generate fills
         BitmexExecType::Trade | BitmexExecType::Liquidation => {}
         BitmexExecType::Bankruptcy => {
-            tracing::warn!(
-                exec_type = ?exec_type,
-                order_id = ?msg.order_id,
-                symbol = ?msg.symbol,
-                "Processing bankruptcy execution as fill"
+            log::warn!(
+                "Processing bankruptcy execution as fill: exec_type={exec_type:?}, order_id={:?}, symbol={:?}",
+                msg.order_id,
+                msg.symbol,
             );
         }
 
         // Settlement executions are mark-to-market events, not fills
         BitmexExecType::Settlement => {
-            tracing::debug!(
-                exec_type = ?exec_type,
-                order_id = ?msg.order_id,
-                symbol = ?msg.symbol,
-                "Settlement execution skipped (not a fill): applies quanto conversion/PnL transfer on contract settlement"
+            log::debug!(
+                "Settlement execution skipped (not a fill): applies quanto conversion/PnL transfer on contract settlement: exec_type={exec_type:?}, order_id={:?}, symbol={:?}",
+                msg.order_id,
+                msg.symbol,
             );
             return None;
         }
         BitmexExecType::TrialFill => {
-            tracing::warn!(
-                exec_type = ?exec_type,
-                order_id = ?msg.order_id,
-                symbol = ?msg.symbol,
-                "Trial fill execution received (testnet only), not processed as fill"
+            log::warn!(
+                "Trial fill execution received (testnet only), not processed as fill: exec_type={exec_type:?}, order_id={:?}, symbol={:?}",
+                msg.order_id,
+                msg.symbol,
             );
             return None;
         }
 
         // Expected non-fill executions
         BitmexExecType::Funding => {
-            tracing::debug!(
-                exec_type = ?exec_type,
-                order_id = ?msg.order_id,
-                symbol = ?msg.symbol,
-                "Funding execution skipped (not a fill)"
+            log::debug!(
+                "Funding execution skipped (not a fill): exec_type={exec_type:?}, order_id={:?}, symbol={:?}",
+                msg.order_id,
+                msg.symbol,
             );
             return None;
         }
         BitmexExecType::Insurance => {
-            tracing::debug!(
-                exec_type = ?exec_type,
-                order_id = ?msg.order_id,
-                symbol = ?msg.symbol,
-                "Insurance execution skipped (not a fill)"
+            log::debug!(
+                "Insurance execution skipped (not a fill): exec_type={exec_type:?}, order_id={:?}, symbol={:?}",
+                msg.order_id,
+                msg.symbol,
             );
             return None;
         }
         BitmexExecType::Rebalance => {
-            tracing::debug!(
-                exec_type = ?exec_type,
-                order_id = ?msg.order_id,
-                symbol = ?msg.symbol,
-                "Rebalance execution skipped (not a fill)"
+            log::debug!(
+                "Rebalance execution skipped (not a fill): exec_type={exec_type:?}, order_id={:?}, symbol={:?}",
+                msg.order_id,
+                msg.symbol,
             );
             return None;
         }
@@ -788,10 +784,9 @@ pub fn parse_execution_msg(
         | BitmexExecType::Suspended
         | BitmexExecType::Released
         | BitmexExecType::TriggeredOrActivatedBySystem => {
-            tracing::debug!(
-                exec_type = ?exec_type,
-                order_id = ?msg.order_id,
-                "Execution message skipped (order state change, not a fill)"
+            log::debug!(
+                "Execution message skipped (order state change, not a fill): exec_type={exec_type:?}, order_id={:?}",
+                msg.order_id,
             );
             return None;
         }
@@ -914,12 +909,12 @@ pub fn parse_instrument_msg(
             // but we only cache instruments that are explicitly requested.
             // Index instruments (starting with '.') are not loaded via regular API endpoints.
             if is_index {
-                tracing::trace!(
+                log::trace!(
                     "Index instrument {} not in cache, skipping update",
                     msg.symbol
                 );
             } else {
-                tracing::debug!("Instrument {} not in cache, skipping update", msg.symbol);
+                log::debug!("Instrument {} not in cache, skipping update", msg.symbol);
             }
             return updates;
         }
@@ -964,7 +959,7 @@ pub fn parse_funding_msg(msg: BitmexFundingMsg, ts_init: UnixNanos) -> Option<Fu
     let rate = match Decimal::try_from(msg.funding_rate) {
         Ok(rate) => rate,
         Err(e) => {
-            tracing::error!("Failed to parse funding rate: {e}");
+            log::error!("Failed to parse funding rate: {e}");
             return None;
         }
     };

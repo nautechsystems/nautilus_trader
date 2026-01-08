@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,11 +15,7 @@
 
 //! Basic structures for representing on-chain blocks and transactions in DeFi integrations.
 
-use std::{
-    fmt::{Display, Formatter},
-    str::FromStr,
-    sync::Arc,
-};
+use std::{fmt::Display, str::FromStr, sync::Arc};
 
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString};
@@ -386,7 +382,7 @@ impl Chain {
 }
 
 impl Display for Chain {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Chain(name={}, id={})", self.name, self.chain_id)
     }
 }

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use ahash::AHashMap;
 use log::LevelFilter;
 use nautilus_core::{UUID4, python::to_pyvalue_err};
 use nautilus_model::identifiers::TraderId;
@@ -60,26 +61,6 @@ impl FileWriterConfig {
     }
 }
 
-/// Initialize tracing.
-///
-/// Tracing is meant to be used to trace/debug async Rust code. It can be
-/// configured to filter modules and write up to a specific level only using
-/// by passing a configuration using the `RUST_LOG` environment variable.
-///
-/// # Safety
-///
-/// Should only be called once during an applications run, ideally at the
-/// beginning of the run.
-///
-/// # Errors
-///
-/// Returns an error if tracing subscriber fails to initialize.
-#[pyfunction()]
-#[pyo3(name = "init_tracing")]
-pub fn py_init_tracing() -> PyResult<()> {
-    logging::init_tracing().map_err(to_pyvalue_err)
-}
-
 /// Initialize logging.
 ///
 /// Logging should be used for Python and sync Rust logic which is most of
@@ -123,6 +104,7 @@ pub fn py_init_logging(
         map_log_level_to_filter(level_stdout),
         level_file,
         component_levels,
+        AHashMap::new(), // module_level - not exposed to Python
         log_components_only.unwrap_or(false),
         is_colored.unwrap_or(true),
         print_config.unwrap_or(false),
@@ -145,10 +127,10 @@ pub fn py_logger_flush() {
 
 fn parse_component_levels(
     original_map: Option<std::collections::HashMap<String, String>>,
-) -> anyhow::Result<std::collections::HashMap<Ustr, LevelFilter>> {
+) -> anyhow::Result<AHashMap<Ustr, LevelFilter>> {
     match original_map {
         Some(map) => {
-            let mut new_map = std::collections::HashMap::new();
+            let mut new_map = AHashMap::new();
             for (key, value) in map {
                 let ustr_key = Ustr::from(&key);
                 let level = parse_level_filter_str(&value)?;
@@ -156,7 +138,7 @@ fn parse_component_levels(
             }
             Ok(new_map)
         }
-        None => Ok(std::collections::HashMap::new()),
+        None => Ok(AHashMap::new()),
     }
 }
 

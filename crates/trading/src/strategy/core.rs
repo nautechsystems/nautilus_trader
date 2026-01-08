@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -58,7 +58,7 @@ pub struct StrategyCore {
 
 impl Debug for StrategyCore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("StrategyCore")
+        f.debug_struct(stringify!(StrategyCore))
             .field("actor", &self.actor)
             .field("config", &self.config)
             .field("order_manager", &self.order_manager)

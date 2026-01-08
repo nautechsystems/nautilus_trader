@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -126,7 +126,7 @@ impl RiskEngine {
                 let reason = "REJECTED BY THROTTLER";
                 log::warn!(
                     "SubmitOrder for {} DENIED: {}",
-                    submit_order.client_order_id,
+                    submit_order.client_order_id(),
                     reason
                 );
 
@@ -198,7 +198,7 @@ impl RiskEngine {
 
     fn handle_submit_order_cache(cache: &Rc<RefCell<Cache>>, submit_order: &SubmitOrder) {
         let mut cache = cache.borrow_mut();
-        if !cache.order_exists(&submit_order.client_order_id) {
+        if !cache.order_exists(&submit_order.client_order_id()) {
             cache
                 .add_order(submit_order.order.clone(), None, None, false)
                 .map_err(|e| {
@@ -231,7 +231,7 @@ impl RiskEngine {
             submit_order.trader_id,
             submit_order.strategy_id,
             submit_order.instrument_id,
-            submit_order.client_order_id,
+            submit_order.client_order_id(),
             reason.into(),
             UUID4::new(),
             timestamp,

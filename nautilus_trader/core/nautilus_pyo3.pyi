@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,7 +29,6 @@ from typing import Union
 import numpy as np
 
 from nautilus_trader.core.data import Data
-
 
 # Python interface type hints
 # ---------------------------
@@ -85,7 +84,6 @@ def get_exchange_rate(
 
 class LogGuard: ...
 
-def init_tracing() -> None: ...
 def init_logging(
     trader_id: TraderId,
     instance_id: UUID4,
@@ -1171,10 +1169,6 @@ class AggressorSide(Enum):
     BUYER = "BUYER"
     SELLER = "SELLER"
 
-class AdjustmentType(Enum):
-    COMMISSION = "COMMISSION"
-    FUNDING = "FUNDING"
-
 class AssetClass(Enum):
     FX = "FX"
     EQUITY = "EQUITY"
@@ -1351,6 +1345,10 @@ class OrderType(Enum):
     LIMIT_IF_TOUCHED = "LIMIT_IF_TOUCHED"
     TRAILING_STOP_MARKET = "TRAILING_STOP_MARKET"
     TRAILING_STOP_LIMIT = "TRAILING_STOP_LIMIT"
+
+class PositionAdjustmentType(Enum):
+    COMMISSION = "COMMISSION"
+    FUNDING = "FUNDING"
 
 class PositionSide(Enum):
     FLAT = "FLAT"
@@ -3729,7 +3727,7 @@ class PositionAdjusted:
         instrument_id: InstrumentId,
         position_id: PositionId,
         account_id: AccountId,
-        adjustment_type: AdjustmentType,
+        adjustment_type: PositionAdjustmentType,
         quantity_change: float | None,
         pnl_change: Money | None,
         reason: str | None,
@@ -3751,7 +3749,7 @@ class PositionAdjusted:
     @property
     def account_id(self) -> AccountId: ...
     @property
-    def adjustment_type(self) -> AdjustmentType: ...
+    def adjustment_type(self) -> PositionAdjustmentType: ...
     @property
     def quantity_change(self) -> float | None: ...
     @property
@@ -5734,6 +5732,63 @@ class BookImbalanceRatio:
 # Adapters
 ###################################################################################################
 
+# AX Exchange
+
+class AxEnvironment(Enum):
+    SANDBOX = "Sandbox"
+    PRODUCTION = "Production"
+
+class AxMarketDataLevel(Enum):
+    LEVEL_1 = "Level1"
+    LEVEL_2 = "Level2"
+    LEVEL_3 = "Level3"
+
+class AxHttpClient:
+    def __init__(
+        self,
+        base_url: str | None = None,
+        orders_base_url: str | None = None,
+        timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        proxy_url: str | None = None,
+    ) -> None: ...
+    @staticmethod
+    def with_credentials(
+        api_key: str,
+        api_secret: str,
+        base_url: str | None = None,
+        orders_base_url: str | None = None,
+        timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        proxy_url: str | None = None,
+    ) -> AxHttpClient: ...
+    @property
+    def base_url(self) -> str: ...
+    def cancel_all_requests(self) -> None: ...
+    def set_session_token(self, token: str) -> None: ...
+
+class AxMdWebSocketClient:
+    def __init__(
+        self,
+        url: str,
+        auth_token: str,
+        heartbeat: int | None = None,
+    ) -> None: ...
+    @property
+    def url(self) -> str: ...
+    def is_active(self) -> bool: ...
+    def is_closed(self) -> bool: ...
+    def subscription_count(self) -> int: ...
+    async def connect(self) -> None: ...
+    async def subscribe(self, symbol: str, level: AxMarketDataLevel) -> None: ...
+    async def unsubscribe(self, symbol: str) -> None: ...
+    async def disconnect(self) -> None: ...
+    async def close(self) -> None: ...
+
 # Bybit
 
 BYBIT_NAUTILUS_BROKER_ID: Final[str]
@@ -6574,6 +6629,14 @@ class DatabentoStatistics:
     @property
     def ts_init(self) -> int: ...
 
+class DatabentoSubscriptionAck:
+    @property
+    def schema(self) -> str: ...
+    @property
+    def message(self) -> str: ...
+    @property
+    def ts_received(self) -> int: ...
+
 class DatabentoDataLoader:
     def __init__(
         self,
@@ -6869,6 +6932,18 @@ class DeribitHttpClient:
         end: dt.datetime | None = None,
         limit: int | None = None,
     ) -> list[TradeTick]: ...
+    async def request_bars(
+        self,
+        bar_type: BarType,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
+        limit: int | None = None,
+    ) -> list[Bar]: ...
+    async def request_book_snapshot(
+        self,
+        instrument_id: InstrumentId,
+        depth: int | None = None,
+    ) -> OrderBook: ...
     async def request_account_state(self, account_id: AccountId) -> AccountState: ...
 
 class DeribitWebSocketClient:
@@ -6926,6 +7001,20 @@ class DeribitWebSocketClient:
         instrument_id: InstrumentId,
         interval: DeribitUpdateInterval | None = None,
     ) -> None: ...
+    async def subscribe_book_grouped(
+        self,
+        instrument_id: InstrumentId,
+        group: str,
+        depth: int,
+        interval: DeribitUpdateInterval | None = None,
+    ) -> None: ...
+    async def unsubscribe_book_grouped(
+        self,
+        instrument_id: InstrumentId,
+        group: str,
+        depth: int,
+        interval: DeribitUpdateInterval | None = None,
+    ) -> None: ...
     async def subscribe_ticker(
         self,
         instrument_id: InstrumentId,
@@ -6941,6 +7030,28 @@ class DeribitWebSocketClient:
     async def unsubscribe_quotes(self, instrument_id: InstrumentId) -> None: ...
     async def subscribe(self, channels: list[str]) -> None: ...
     async def unsubscribe(self, channels: list[str]) -> None: ...
+    async def subscribe_instrument_state(self, kind: str, currency: str) -> None: ...
+    async def unsubscribe_instrument_state(self, kind: str, currency: str) -> None: ...
+    async def subscribe_perpetual_interest_rates(
+        self,
+        instrument_id: InstrumentId,
+        interval: DeribitUpdateInterval | None = None,
+    ) -> None: ...
+    async def unsubscribe_perpetual_interest_rates(
+        self,
+        instrument_id: InstrumentId,
+        interval: DeribitUpdateInterval | None = None,
+    ) -> None: ...
+    async def subscribe_chart(
+        self,
+        instrument_id: InstrumentId,
+        resolution: str,
+    ) -> None: ...
+    async def unsubscribe_chart(
+        self,
+        instrument_id: InstrumentId,
+        resolution: str,
+    ) -> None: ...
 
 def get_deribit_http_base_url(is_testnet: bool) -> str: ...
 def get_deribit_ws_url(is_testnet: bool) -> str: ...
@@ -6968,6 +7079,9 @@ class DeribitUpdateInterval(Enum):
     RAW = "RAW"
     MS100 = "MS100"
     AGG2 = "AGG2"
+
+    @classmethod
+    def from_str(cls, value: str) -> DeribitUpdateInterval: ...
 
 class DeribitWsChannel(Enum):
     TRADES = "TRADES"
@@ -8379,19 +8493,11 @@ class BlackScholesGreeksResult:
     vega: float
     theta: float
 
-class ImplyVolAndGreeksResult:
-    vol: float
-    price: float
-    delta: float
-    gamma: float
-    vega: float
-    theta: float
-
 def black_scholes_greeks(
     s: float,
     r: float,
     b: float,
-    sigma: float,
+    vol: float,
     is_call: bool,
     k: float,
     t: float,
@@ -8408,7 +8514,7 @@ def black_scholes_greeks(
         The risk-free interest rate.
     b : float
         The cost of carry of the underlying asset.
-    sigma : float
+    vol : float
         The volatility of the underlying asset.
     is_call : bool
         Whether the option is a call (True) or a put (False).
@@ -8471,7 +8577,7 @@ def imply_vol_and_greeks(
     t: float,
     price: float,
     multiplier: float,
-) -> ImplyVolAndGreeksResult:
+) -> BlackScholesGreeksResult:
     """
     Calculate the implied volatility and Greeks for an option contract.
 
@@ -8496,8 +8602,52 @@ def imply_vol_and_greeks(
 
     Returns
     -------
-    ImplyVolAndGreeksResult
-        A named tuple containing the calculated implied volatility, option price, delta, gamma, vega, and theta
+    BlackScholesGreeksResult
+        A result containing the calculated implied volatility, option price, delta, gamma, vega, and theta
+    """
+
+def refine_vol_and_greeks(
+    s: float,
+    r: float,
+    b: float,
+    is_call: bool,
+    k: float,
+    t: float,
+    target_price: float,
+    initial_vol: float,
+    multiplier: float,
+) -> BlackScholesGreeksResult:
+    """
+    Refine implied volatility using an initial guess and compute greeks.
+
+    This function uses compute_iv_and_greeks which performs a Halley iteration
+    to refine the volatility estimate from an initial guess.
+
+    Parameters
+    ----------
+    s : float
+        The current price of the underlying asset.
+    r : float
+        The risk-free interest rate.
+    b : float
+        The cost of carry of the underlying asset.
+    is_call : bool
+        Whether the option is a call (True) or a put (False).
+    k : float
+        The strike price of the option.
+    t : float
+        The time to expiration of the option in years.
+    target_price : float
+        The target market price of the option.
+    initial_vol : float
+        The initial guess for the volatility.
+    multiplier : float
+        The multiplier for the option contract.
+
+    Returns
+    -------
+    BlackScholesGreeksResult
+        A result containing the calculated implied volatility, option price, delta, gamma, vega, and theta
     """
 
 class GreeksData(Data):

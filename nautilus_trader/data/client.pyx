@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -270,7 +270,7 @@ cdef class MarketDataClient(DataClient):
 
         # Subscriptions
         self._subscriptions_order_book_delta = set()     # type: set[InstrumentId]
-        self._subscriptions_order_book_snapshot = set()  # type: set[InstrumentId]
+        self._subscriptions_order_book_depth = set()    # type: set[InstrumentId]
         self._subscriptions_quote_tick = set()           # type: set[InstrumentId]
         self._subscriptions_trade_tick = set()           # type: set[InstrumentId]
         self._subscriptions_mark_price = set()           # type: set[InstrumentId]
@@ -319,16 +319,16 @@ cdef class MarketDataClient(DataClient):
         """
         return sorted(list(self._subscriptions_order_book_delta))
 
-    cpdef list subscribed_order_book_snapshots(self):
+    cpdef list subscribed_order_book_depth(self):
         """
-        Return the order book snapshot instruments subscribed to.
+        Return the order book depth instruments subscribed to.
 
         Returns
         -------
         list[InstrumentId]
 
         """
-        return sorted(list(self._subscriptions_order_book_snapshot))
+        return sorted(list(self._subscriptions_order_book_depth))
 
     cpdef list subscribed_quote_ticks(self):
         """
@@ -489,28 +489,6 @@ cdef class MarketDataClient(DataClient):
             f"You can implement by overriding the `subscribe_order_book_deltas` method for this client",  # pragma: no cover
         )
         raise NotImplementedError("method `subscribe_order_book_deltas` must be implemented in the subclass")
-
-    cpdef void subscribe_order_book_snapshots(self, SubscribeOrderBook command):
-        """
-        Subscribe to `OrderBook` snapshots data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The order book instrument to subscribe to.
-        book_type : BookType {``L1_MBP``, ``L2_MBP``, ``L3_MBO``}
-            The order book level.
-        depth : int, optional
-            The maximum depth for the order book. A depth of 0 is maximum depth.
-        params : dict[str, Any], optional
-            Additional params for the subscription.
-
-        """
-        self._log.error(  # pragma: no cover
-            f"Cannot subscribe to `OrderBook` snapshots data for {command.instrument_id}: not implemented. "  # pragma: no cover
-            f"You can implement by overriding the `subscribe_order_book_snapshots` method for this client",  # pragma: no cover
-        )
-        raise NotImplementedError("method `subscribe_order_book_snapshots` must be implemented in the subclass")
 
     cpdef void subscribe_order_book_depth(self, SubscribeOrderBook command):
         """
@@ -745,24 +723,6 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `unsubscribe_order_book_deltas` must be implemented in the subclass")
 
-    cpdef void unsubscribe_order_book_snapshots(self, UnsubscribeOrderBook command):
-        """
-        Unsubscribe from `OrderBook` snapshots data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The order book instrument to unsubscribe from.
-        params : dict[str, Any], optional
-            Additional params for the subscription.
-
-        """
-        self._log.error(  # pragma: no cover
-            f"Cannot unsubscribe from `OrderBook` snapshot data for {command.instrument_id}: not implemented. "  # pragma: no cover
-            f"You can implement by overriding the `unsubscribe_order_book_snapshots` method for this client",  # pragma: no cover
-        )
-        raise NotImplementedError("method `unsubscribe_order_book_snapshots` must be implemented in the subclass")
-
     cpdef void unsubscribe_order_book_depth(self, UnsubscribeOrderBook command):
         """
         Unsubscribe from `OrderBookDepth10` data for the given instrument ID.
@@ -940,10 +900,10 @@ cdef class MarketDataClient(DataClient):
 
         self._subscriptions_order_book_delta.add(instrument_id)
 
-    cpdef void _add_subscription_order_book_snapshots(self, InstrumentId instrument_id):
+    cpdef void _add_subscription_order_book_depth(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
-        self._subscriptions_order_book_snapshot.add(instrument_id)
+        self._subscriptions_order_book_depth.add(instrument_id)
 
     cpdef void _add_subscription_quote_ticks(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
@@ -1000,10 +960,10 @@ cdef class MarketDataClient(DataClient):
 
         self._subscriptions_order_book_delta.discard(instrument_id)
 
-    cpdef void _remove_subscription_order_book_snapshots(self, InstrumentId instrument_id):
+    cpdef void _remove_subscription_order_book_depth(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
-        self._subscriptions_order_book_snapshot.discard(instrument_id)
+        self._subscriptions_order_book_depth.discard(instrument_id)
 
     cpdef void _remove_subscription_quote_ticks(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")

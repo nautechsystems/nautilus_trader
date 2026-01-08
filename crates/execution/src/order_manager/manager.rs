@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,8 +17,9 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
+use ahash::AHashMap;
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
@@ -50,7 +51,7 @@ pub struct OrderManager {
     // submit_order_handler: Option<SubmitOrderHandlerAny>,
     // cancel_order_handler: Option<CancelOrderHandlerAny>,
     // modify_order_handler: Option<ModifyOrderHandlerAny>,
-    submit_order_commands: HashMap<ClientOrderId, SubmitOrder>,
+    submit_order_commands: AHashMap<ClientOrderId, SubmitOrder>,
 }
 
 impl Debug for OrderManager {
@@ -78,7 +79,7 @@ impl OrderManager {
             // submit_order_handler,
             // cancel_order_handler,
             // modify_order_handler,
-            submit_order_commands: HashMap::new(),
+            submit_order_commands: AHashMap::new(),
         }
     }
 
@@ -96,7 +97,7 @@ impl OrderManager {
 
     #[must_use]
     /// Returns a copy of all cached submit order commands.
-    pub fn get_submit_order_commands(&self) -> HashMap<ClientOrderId, SubmitOrder> {
+    pub fn get_submit_order_commands(&self) -> AHashMap<ClientOrderId, SubmitOrder> {
         self.submit_order_commands.clone()
     }
 
@@ -157,25 +158,18 @@ impl OrderManager {
         position_id: Option<PositionId>,
         client_id: Option<ClientId>,
     ) -> anyhow::Result<()> {
-        let client_id = client_id.ok_or_else(|| anyhow::anyhow!("Client ID is required"))?;
-        let venue_order_id = order
-            .venue_order_id()
-            .ok_or_else(|| anyhow::anyhow!("Venue order ID is required"))?;
-
         let submit = SubmitOrder::new(
             order.trader_id(),
             client_id,
             order.strategy_id(),
             order.instrument_id(),
-            order.client_order_id(),
-            venue_order_id,
             order.clone(),
             order.exec_algorithm_id(),
             position_id,
             None, // params
             UUID4::new(),
             self.clock.borrow().timestamp_ns(),
-        )?;
+        );
 
         if order.emulation_trigger() == Some(TriggerType::NoTrigger) {
             self.cache_submit_order_command(submit.clone());

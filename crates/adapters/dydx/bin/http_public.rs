@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -48,9 +48,7 @@ use ustr::Ustr;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let args: Vec<String> = env::args().collect();
     let is_mainnet = args.iter().any(|a| a == "--mainnet");
@@ -68,12 +66,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let is_testnet = !is_mainnet;
 
-    tracing::info!("Connecting to dYdX HTTP API: {}", base_url);
-    tracing::info!(
+    log::info!("Connecting to dYdX HTTP API: {base_url}");
+    log::info!(
         "Environment: {}",
         if is_testnet { "TESTNET" } else { "MAINNET" }
     );
-    tracing::info!("");
+    log::info!("");
 
     let client = DydxHttpClient::new(Some(base_url), Some(30), None, is_testnet, None)?;
 
@@ -81,7 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let instruments = client.request_instruments(None, None, None).await?;
     let elapsed = start.elapsed();
 
-    tracing::info!(
+    log::info!(
         "SUCCESS: Fetched {} instruments in {:.2}s",
         instruments.len(),
         elapsed.as_secs_f64()
@@ -92,18 +90,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if !instruments.is_empty() {
-        tracing::info!("   Sample instruments:");
+        log::info!("   Sample instruments:");
         for inst in instruments.iter().take(5) {
-            tracing::info!("   - {} ({})", inst.id().symbol, inst.instrument_class());
+            log::info!("   - {} ({})", inst.id().symbol, inst.instrument_class());
         }
         if instruments.len() > 5 {
-            tracing::info!("   ... and {} more", instruments.len() - 5);
+            log::info!("   ... and {} more", instruments.len() - 5);
         }
     }
 
     client.cache_instruments(instruments.clone());
-    tracing::info!("Cached {} instruments", instruments.len());
-    tracing::info!("Cached {} instruments", instruments.len());
+    log::info!("Cached {} instruments", instruments.len());
+    log::info!("Cached {} instruments", instruments.len());
 
     let query_symbol = Ustr::from(symbol);
     let start = std::time::Instant::now();
@@ -112,17 +110,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match instrument {
         Some(inst) => {
-            tracing::info!(
+            log::info!(
                 "SUCCESS: Found {} in cache in {:.4}ms",
                 inst.id(),
                 elapsed.as_micros() as f64 / 1000.0
             );
-            tracing::info!("   Type: {}", inst.instrument_class());
-            tracing::info!("   Price precision: {}", inst.price_precision());
-            tracing::info!("   Size precision: {}", inst.size_precision());
+            log::info!("   Type: {}", inst.instrument_class());
+            log::info!("   Price precision: {}", inst.price_precision());
+            log::info!("   Size precision: {}", inst.size_precision());
         }
         None => {
-            tracing::warn!("FAILED: Instrument {} not found in cache", query_symbol);
+            log::warn!("FAILED: Instrument {query_symbol} not found in cache");
         }
     }
 
@@ -132,7 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let trades = client.request_trades(symbol, limit).await?;
     let elapsed = start.elapsed();
 
-    tracing::info!(
+    log::info!(
         "SUCCESS: Fetched {} trades for {} in {:.2}s",
         trades.trades.len(),
         symbol,
@@ -142,19 +140,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !trades.trades.is_empty() {
         let first = &trades.trades[0];
         let last = &trades.trades[trades.trades.len() - 1];
-        tracing::info!(
+        log::info!(
             "   First trade: {} @ {} ({})",
             first.size,
             first.price,
             first.side
         );
-        tracing::info!(
+        log::info!(
             "   Last trade:  {} @ {} ({})",
             last.size,
             last.price,
             last.side
         );
-        tracing::info!("   Time range: {} to {}", first.created_at, last.created_at);
+        log::info!("   Time range: {} to {}", first.created_at, last.created_at);
     }
 
     let resolution = DydxCandleResolution::OneMinute;
@@ -167,7 +165,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     let elapsed = start.elapsed();
 
-    tracing::info!(
+    log::info!(
         "SUCCESS: Fetched {} candles for {} ({:?}) in {:.2}s",
         candles.candles.len(),
         symbol,
@@ -178,7 +176,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !candles.candles.is_empty() {
         let first = &candles.candles[0];
         let last = &candles.candles[candles.candles.len() - 1];
-        tracing::info!(
+        log::info!(
             "   First candle: O={} H={} L={} C={} V={}",
             first.open,
             first.high,
@@ -186,7 +184,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             first.close,
             first.base_token_volume
         );
-        tracing::info!(
+        log::info!(
             "   Last candle:  O={} H={} L={} C={} V={}",
             last.open,
             last.high,
@@ -194,18 +192,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             last.close,
             last.base_token_volume
         );
-        tracing::info!("   Time range: {} to {}", first.started_at, last.started_at);
+        log::info!("   Time range: {} to {}", first.started_at, last.started_at);
     }
 
     let end_time = Utc::now();
     let start_time = end_time - Duration::days(7); // 7 days
 
-    tracing::info!(
-        "   Requesting {:?} bars from {} to {}",
-        resolution,
-        start_time,
-        end_time
-    );
+    log::info!("   Requesting {resolution:?} bars from {start_time} to {end_time}");
 
     let start = std::time::Instant::now();
     let candles_large = client
@@ -216,7 +209,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let expected_bars_large = ((end_time - start_time).num_minutes() as usize).min(10_080);
     let coverage_large = (candles_large.candles.len() as f64 / expected_bars_large as f64) * 100.0;
 
-    tracing::info!(
+    log::info!(
         "SUCCESS: Fetched {} candles in {:.2}s ({:.0} bars/sec)",
         candles_large.candles.len(),
         elapsed.as_secs_f64(),
@@ -224,32 +217,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     if !candles_large.candles.is_empty() {
-        tracing::info!("   Coverage: {:.1}% of expected bars", coverage_large);
-        tracing::info!(
+        log::info!("   Coverage: {coverage_large:.1}% of expected bars");
+        log::info!(
             "   Time range: {} to {}",
             candles_large.candles[0].started_at,
             candles_large.candles[candles_large.candles.len() - 1].started_at
         );
     }
-    tracing::info!("");
+    log::info!("");
 
-    tracing::info!("ALL TESTS COMPLETED SUCCESSFULLY");
-    tracing::info!("");
-    tracing::info!("Summary:");
-    tracing::info!(
+    log::info!("ALL TESTS COMPLETED SUCCESSFULLY");
+    log::info!("");
+    log::info!("Summary:");
+    log::info!(
         "  [PASS] request_instruments: {} instruments",
         instruments.len()
     );
-    tracing::info!("  [PASS] get_instrument: Cache lookup works");
-    tracing::info!(
+    log::info!("  [PASS] get_instrument: Cache lookup works");
+    log::info!(
         "  [PASS] get_trades: {} trades fetched",
         trades.trades.len()
     );
-    tracing::info!(
+    log::info!(
         "  [PASS] get_candles (small): {} candles",
         candles.candles.len()
     );
-    tracing::info!(
+    log::info!(
         "  [PASS] get_candles (large): {} candles with {:.1}% coverage",
         candles_large.candles.len(),
         coverage_large
@@ -277,29 +270,29 @@ fn print_instrument_summary(instruments: &[InstrumentAny]) {
         *by_base.entry(base).or_insert(0) += 1;
     }
 
-    tracing::info!("");
-    tracing::info!("=== Instruments by Type ===");
+    log::info!("");
+    log::info!("=== Instruments by Type ===");
     let mut types: Vec<_> = by_type.iter().collect();
     types.sort_by_key(|(name, _)| *name);
     for (type_name, count) in types {
-        tracing::info!("  {:20} : {:4} instruments", type_name, count);
+        log::info!("  {type_name:20} : {count:4} instruments");
     }
-    tracing::info!("");
+    log::info!("");
 
-    tracing::info!("=== Instruments by Base Asset (Top 20) ===");
+    log::info!("=== Instruments by Base Asset (Top 20) ===");
     let mut bases: Vec<_> = by_base.iter().collect();
     bases.sort_by(|a, b| b.1.cmp(a.1));
     for (base, count) in bases.iter().take(20) {
-        tracing::info!("  {:10} : {:4} instruments", base, count);
+        log::info!("  {base:10} : {count:4} instruments");
     }
     if bases.len() > 20 {
-        tracing::info!("  ... and {} more base assets", bases.len() - 20);
+        log::info!("  ... and {} more base assets", bases.len() - 20);
     }
-    tracing::info!("");
+    log::info!("");
 
-    tracing::info!("=== Sample Instruments ===");
+    log::info!("=== Sample Instruments ===");
     for inst in instruments.iter().take(5) {
-        tracing::info!(
+        log::info!(
             "  {} ({}) - price_prec={} size_prec={}",
             inst.id(),
             inst.instrument_class(),
@@ -308,9 +301,9 @@ fn print_instrument_summary(instruments: &[InstrumentAny]) {
         );
     }
     if instruments.len() > 5 {
-        tracing::info!("  ... and {} more", instruments.len() - 5);
+        log::info!("  ... and {} more", instruments.len() - 5);
     }
-    tracing::info!("");
+    log::info!("");
 
-    tracing::info!("Summary complete");
+    log::info!("Summary complete");
 }

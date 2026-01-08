@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,15 +19,13 @@ use std::sync::LazyLock;
 
 use nautilus_model::identifiers::Venue;
 
+use super::enums::{BinanceRateLimitInterval, BinanceRateLimitType};
+
 /// The Binance venue identifier string.
 pub const BINANCE: &str = "BINANCE";
 
 /// Static venue instance for Binance.
 pub static BINANCE_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(BINANCE));
-
-// ------------------------------------------------------------------------------------------------
-// HTTP Base URLs - Mainnet
-// ------------------------------------------------------------------------------------------------
 
 /// Binance Spot API base URL (mainnet).
 pub const BINANCE_SPOT_HTTP_URL: &str = "https://api.binance.com";
@@ -41,10 +39,6 @@ pub const BINANCE_FUTURES_COIN_HTTP_URL: &str = "https://dapi.binance.com";
 /// Binance European Options API base URL (mainnet).
 pub const BINANCE_OPTIONS_HTTP_URL: &str = "https://eapi.binance.com";
 
-// ------------------------------------------------------------------------------------------------
-// HTTP Base URLs - Testnet
-// ------------------------------------------------------------------------------------------------
-
 /// Binance Spot API base URL (testnet).
 pub const BINANCE_SPOT_TESTNET_HTTP_URL: &str = "https://testnet.binance.vision";
 
@@ -53,12 +47,6 @@ pub const BINANCE_FUTURES_USD_TESTNET_HTTP_URL: &str = "https://testnet.binancef
 
 /// Binance COIN-M Futures API base URL (testnet).
 pub const BINANCE_FUTURES_COIN_TESTNET_HTTP_URL: &str = "https://testnet.binancefuture.com";
-
-// Note: Binance Options testnet is not publicly available
-
-// ------------------------------------------------------------------------------------------------
-// WebSocket URLs - Mainnet
-// ------------------------------------------------------------------------------------------------
 
 /// Binance Spot WebSocket base URL (mainnet).
 pub const BINANCE_SPOT_WS_URL: &str = "wss://stream.binance.com:9443/ws";
@@ -72,9 +60,16 @@ pub const BINANCE_FUTURES_COIN_WS_URL: &str = "wss://dstream.binance.com/ws";
 /// Binance European Options WebSocket base URL (mainnet).
 pub const BINANCE_OPTIONS_WS_URL: &str = "wss://nbstream.binance.com/eoptions";
 
-// ------------------------------------------------------------------------------------------------
-// WebSocket URLs - Testnet
-// ------------------------------------------------------------------------------------------------
+/// Binance Spot SBE WebSocket stream URL (mainnet).
+pub const BINANCE_SPOT_SBE_WS_URL: &str = "wss://stream-sbe.binance.com/ws";
+
+/// Binance Spot SBE WebSocket API URL (mainnet).
+pub const BINANCE_SPOT_SBE_WS_API_URL: &str =
+    "wss://ws-api.binance.com:443/ws-api/v3?responseFormat=sbe&sbeSchemaId=3&sbeSchemaVersion=2";
+
+/// Binance Spot SBE WebSocket API URL (testnet).
+pub const BINANCE_SPOT_SBE_WS_API_TESTNET_URL: &str =
+    "wss://testnet.binance.vision/ws-api/v3?responseFormat=sbe&sbeSchemaId=3&sbeSchemaVersion=2";
 
 /// Binance Spot WebSocket base URL (testnet).
 pub const BINANCE_SPOT_TESTNET_WS_URL: &str = "wss://testnet.binance.vision/ws";
@@ -84,10 +79,6 @@ pub const BINANCE_FUTURES_USD_TESTNET_WS_URL: &str = "wss://stream.binancefuture
 
 /// Binance COIN-M Futures WebSocket base URL (testnet).
 pub const BINANCE_FUTURES_COIN_TESTNET_WS_URL: &str = "wss://dstream.binancefuture.com/ws";
-
-// ------------------------------------------------------------------------------------------------
-// API Paths
-// ------------------------------------------------------------------------------------------------
 
 /// Binance Spot API version path.
 pub const BINANCE_SPOT_API_PATH: &str = "/api/v3";
@@ -101,17 +92,13 @@ pub const BINANCE_DAPI_PATH: &str = "/dapi/v1";
 /// Binance European Options API version path.
 pub const BINANCE_EAPI_PATH: &str = "/eapi/v1";
 
-// ------------------------------------------------------------------------------------------------
-// Rate Limiting
-// ------------------------------------------------------------------------------------------------
-
 /// Describes a static rate limit quota for a product type.
 #[derive(Clone, Copy, Debug)]
 pub struct BinanceRateLimitQuota {
-    /// Rate limit type identifier (REQUEST_WEIGHT or ORDERS).
-    pub rate_limit_type: &'static str,
-    /// Time interval unit (SECOND, MINUTE, DAY).
-    pub interval: &'static str,
+    /// Rate limit type.
+    pub rate_limit_type: BinanceRateLimitType,
+    /// Time interval unit.
+    pub interval: BinanceRateLimitInterval,
     /// Number of intervals.
     pub interval_num: u32,
     /// Maximum allowed requests for the interval.
@@ -124,20 +111,20 @@ pub struct BinanceRateLimitQuota {
 /// - <https://developers.binance.com/docs/binance-spot-api-docs/limits>
 pub const BINANCE_SPOT_RATE_LIMITS: &[BinanceRateLimitQuota] = &[
     BinanceRateLimitQuota {
-        rate_limit_type: "REQUEST_WEIGHT",
-        interval: "MINUTE",
+        rate_limit_type: BinanceRateLimitType::RequestWeight,
+        interval: BinanceRateLimitInterval::Minute,
         interval_num: 1,
         limit: 1_200,
     },
     BinanceRateLimitQuota {
-        rate_limit_type: "ORDERS",
-        interval: "SECOND",
+        rate_limit_type: BinanceRateLimitType::Orders,
+        interval: BinanceRateLimitInterval::Second,
         interval_num: 1,
         limit: 10,
     },
     BinanceRateLimitQuota {
-        rate_limit_type: "ORDERS",
-        interval: "DAY",
+        rate_limit_type: BinanceRateLimitType::Orders,
+        interval: BinanceRateLimitInterval::Day,
         interval_num: 1,
         limit: 100_000,
     },
@@ -149,20 +136,20 @@ pub const BINANCE_SPOT_RATE_LIMITS: &[BinanceRateLimitQuota] = &[
 /// - <https://developers.binance.com/docs/derivatives/usds-margined-futures/general-info#limits>
 pub const BINANCE_FAPI_RATE_LIMITS: &[BinanceRateLimitQuota] = &[
     BinanceRateLimitQuota {
-        rate_limit_type: "REQUEST_WEIGHT",
-        interval: "MINUTE",
+        rate_limit_type: BinanceRateLimitType::RequestWeight,
+        interval: BinanceRateLimitInterval::Minute,
         interval_num: 1,
         limit: 2_400,
     },
     BinanceRateLimitQuota {
-        rate_limit_type: "ORDERS",
-        interval: "SECOND",
+        rate_limit_type: BinanceRateLimitType::Orders,
+        interval: BinanceRateLimitInterval::Second,
         interval_num: 1,
         limit: 50,
     },
     BinanceRateLimitQuota {
-        rate_limit_type: "ORDERS",
-        interval: "MINUTE",
+        rate_limit_type: BinanceRateLimitType::Orders,
+        interval: BinanceRateLimitInterval::Minute,
         interval_num: 1,
         limit: 1_200,
     },
@@ -174,20 +161,20 @@ pub const BINANCE_FAPI_RATE_LIMITS: &[BinanceRateLimitQuota] = &[
 /// - <https://developers.binance.com/docs/derivatives/coin-margined-futures/general-info#limits>
 pub const BINANCE_DAPI_RATE_LIMITS: &[BinanceRateLimitQuota] = &[
     BinanceRateLimitQuota {
-        rate_limit_type: "REQUEST_WEIGHT",
-        interval: "MINUTE",
+        rate_limit_type: BinanceRateLimitType::RequestWeight,
+        interval: BinanceRateLimitInterval::Minute,
         interval_num: 1,
         limit: 1_200,
     },
     BinanceRateLimitQuota {
-        rate_limit_type: "ORDERS",
-        interval: "SECOND",
+        rate_limit_type: BinanceRateLimitType::Orders,
+        interval: BinanceRateLimitInterval::Second,
         interval_num: 1,
         limit: 20,
     },
     BinanceRateLimitQuota {
-        rate_limit_type: "ORDERS",
-        interval: "MINUTE",
+        rate_limit_type: BinanceRateLimitType::Orders,
+        interval: BinanceRateLimitInterval::Minute,
         interval_num: 1,
         limit: 1_200,
     },
@@ -199,20 +186,20 @@ pub const BINANCE_DAPI_RATE_LIMITS: &[BinanceRateLimitQuota] = &[
 /// - <https://developers.binance.com/docs/derivatives/european-options/general-info#limits>
 pub const BINANCE_EAPI_RATE_LIMITS: &[BinanceRateLimitQuota] = &[
     BinanceRateLimitQuota {
-        rate_limit_type: "REQUEST_WEIGHT",
-        interval: "MINUTE",
+        rate_limit_type: BinanceRateLimitType::RequestWeight,
+        interval: BinanceRateLimitInterval::Minute,
         interval_num: 1,
         limit: 3_000,
     },
     BinanceRateLimitQuota {
-        rate_limit_type: "ORDERS",
-        interval: "SECOND",
+        rate_limit_type: BinanceRateLimitType::Orders,
+        interval: BinanceRateLimitInterval::Second,
         interval_num: 1,
         limit: 5,
     },
     BinanceRateLimitQuota {
-        rate_limit_type: "ORDERS",
-        interval: "MINUTE",
+        rate_limit_type: BinanceRateLimitType::Orders,
+        interval: BinanceRateLimitInterval::Minute,
         interval_num: 1,
         limit: 200,
     },

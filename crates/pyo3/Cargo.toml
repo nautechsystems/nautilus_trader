@@ -1,7 +1,6 @@
 [package]
 name = "nautilus-pyo3"
 readme = "README.md"
-publish = false # Do not publish to crates.io
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,13 +12,14 @@ keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+publish = false # Do not publish to crates.io (ever)
 
 [lints]
 workspace = true
 
 [lib]
 name = "nautilus_pyo3"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
@@ -27,6 +27,7 @@ cython-compat = []
 defi = ["dep:nautilus-blockchain", "nautilus-blockchain/python"]
 extension-module = [
   "nautilus-analysis/extension-module",
+  "nautilus-architect-ax/extension-module",
   "nautilus-binance/extension-module",
   "nautilus-bitmex/extension-module",
   "nautilus-blockchain?/extension-module",
@@ -62,6 +63,17 @@ ffi = [
 high-precision = [
   "nautilus-model/high-precision",
   "nautilus-serialization/high-precision",
+  "nautilus-binance/high-precision",
+  "nautilus-bitmex/high-precision",
+  "nautilus-bybit/high-precision",
+  "nautilus-coinbase-intx/high-precision",
+  "nautilus-databento/high-precision",
+  "nautilus-deribit/high-precision",
+  "nautilus-dydx/high-precision",
+  "nautilus-hyperliquid/high-precision",
+  "nautilus-kraken/high-precision",
+  "nautilus-okx/high-precision",
+  "nautilus-tardis/high-precision",
 ]
 hypersync = ["nautilus-blockchain/hypersync"]
 postgres = ["nautilus-infrastructure/postgres"]
@@ -88,6 +100,7 @@ nautilus-testkit = { workspace = true, features = ["python"] }
 nautilus-trading = { workspace = true, features = ["python"] }
 
 # Adapters
+nautilus-architect-ax = { workspace = true, features = ["python"] }
 nautilus-binance = { workspace = true, features = ["python"] }
 nautilus-bitmex = { workspace = true, features = ["python"] }
 nautilus-blockchain = { workspace = true, features = [
@@ -95,13 +108,13 @@ nautilus-blockchain = { workspace = true, features = [
 ], optional = true }
 nautilus-bybit = { workspace = true, features = ["python"] }
 nautilus-coinbase-intx = { workspace = true, features = ["python"] }
-nautilus-databento = { workspace = true, features = ["python"] }
+nautilus-databento = { workspace = true, features = ["python", "live"] }
 nautilus-deribit = { workspace = true, features = ["python"] }
 nautilus-dydx = { workspace = true, features = ["python"] }
 nautilus-hyperliquid = { workspace = true, features = ["python"] }
 nautilus-kraken = { workspace = true, features = ["python"] }
 nautilus-okx = { workspace = true, features = ["python"] }
-nautilus-tardis = { workspace = true, features = ["python"] }
+nautilus-tardis = { workspace = true, features = ["python", "replay"] }
 
 pyo3 = { workspace = true }
 pyo3-stub-gen = { workspace = true }
@@ -110,3 +123,4 @@ pyo3-stub-gen = { workspace = true }
 [[bin]]
 name = "python-stub-gen"
 path = "bin/stub_gen.rs"
+doc = false

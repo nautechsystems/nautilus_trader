@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,10 +25,12 @@ use std::{
 
 #[cfg(feature = "defi")]
 use alloy_primitives::U256;
-use nautilus_core::correctness::{FAILED, check_in_range_inclusive_f64, check_predicate_true};
+use nautilus_core::{
+    correctness::{FAILED, check_in_range_inclusive_f64, check_predicate_true},
+    formatting::Separable,
+};
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Deserializer, Serialize};
-use thousands::Separable;
 
 use super::fixed::{FIXED_PRECISION, FIXED_SCALAR, MAX_FLOAT_PRECISION, check_fixed_precision};
 #[cfg(not(feature = "high-precision"))]
@@ -177,26 +179,8 @@ impl Quantity {
     ///
     /// # Panics
     ///
-    /// Panics if a correctness check fails. See [`Quantity::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Quantity::from_raw_checked`] for more details.
     pub fn from_raw(raw: QuantityRaw, precision: u8) -> Self {
-        if raw == QUANTITY_UNDEF {
-            check_predicate_true(
-                precision == 0,
-                "`precision` must be 0 when `raw` is QUANTITY_UNDEF",
-            )
-            .expect(FAILED);
-        }
-        check_predicate_true(
-            raw == QUANTITY_UNDEF || raw <= QUANTITY_RAW_MAX,
-            &format!(
-                "Quantity::from_raw received raw={raw} (precision={precision}) exceeding QUANTITY_RAW_MAX={QUANTITY_RAW_MAX}. \
-                 Likely overflow/underflow upstream (e.g., leaves < 0 from unsigned subtraction). \
-                 Ensure fills never exceed order/position and prefer clamping/saturating deltas."
-            ),
-        )
-        .expect(FAILED);
-        check_fixed_precision(precision).expect(FAILED);
-
         // TODO: Enforce spurious bits validation in v2
         // Validate raw value has no spurious bits beyond the precision scale
         // if raw != QUANTITY_UNDEF && raw > 0 {
@@ -206,7 +190,32 @@ impl Quantity {
         //     super::fixed::check_fixed_raw_u64(raw, precision).expect(FAILED);
         // }
 
-        Self { raw, precision }
+        Self::from_raw_checked(raw, precision).expect(FAILED)
+    }
+
+    /// Creates a new [`Quantity`] instance from the given `raw` fixed-point value and `precision`
+    /// with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `precision` exceeds the maximum fixed precision.
+    /// - `precision` is not 0 when `raw` is `QUANTITY_UNDEF`.
+    /// - `raw` exceeds `QUANTITY_RAW_MAX` and is not a sentinel value.
+    pub fn from_raw_checked(raw: QuantityRaw, precision: u8) -> anyhow::Result<Self> {
+        if raw == QUANTITY_UNDEF {
+            anyhow::ensure!(
+                precision == 0,
+                "`precision` must be 0 when `raw` is QUANTITY_UNDEF"
+            );
+        }
+        anyhow::ensure!(
+            raw == QUANTITY_UNDEF || raw <= QUANTITY_RAW_MAX,
+            "raw value {raw} exceeds QUANTITY_RAW_MAX={QUANTITY_RAW_MAX}"
+        );
+        check_fixed_precision(precision)?;
+
+        Ok(Self { raw, precision })
     }
 
     /// Computes a saturating subtraction between two quantities, logging when clamped.
@@ -634,14 +643,8 @@ impl FromStr for Quantity {
                 .map_err(|e| format!("Error parsing `input` string '{value}' as Decimal: {e}"))?
         };
 
-        // Determine precision from the final decimal result
-        let decimal_str = decimal.to_string();
-        let precision = if let Some(dot_pos) = decimal_str.find('.') {
-            let decimal_part = &decimal_str[dot_pos + 1..];
-            decimal_part.len().min(u8::MAX as usize) as u8
-        } else {
-            0
-        };
+        // Use decimal scale to preserve caller-specified precision (including trailing zeros)
+        let precision = decimal.scale() as u8;
 
         Self::from_decimal_dp(decimal, precision).map_err(|e| e.to_string())
     }
@@ -1113,6 +1116,18 @@ mod tests {
         assert_eq!(normalized.scale(), 2);
         let qty_normalized = Quantity::from_decimal(normalized).unwrap();
         assert_eq!(qty_normalized.precision, 2);
+    }
+
+    #[rstest]
+    #[case("1.00", 2)]
+    #[case("1.0", 1)]
+    #[case("1.000", 3)]
+    #[case("100.00", 2)]
+    #[case("0.10", 2)]
+    #[case("0.100", 3)]
+    fn test_from_str_preserves_trailing_zeros(#[case] input: &str, #[case] expected_precision: u8) {
+        let qty = Quantity::from_str(input).unwrap();
+        assert_eq!(qty.precision, expected_precision);
     }
 
     #[rstest]

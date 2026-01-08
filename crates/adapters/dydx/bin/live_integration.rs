@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -37,6 +37,7 @@
 use std::time::Duration;
 
 use nautilus_common::{
+    clients::DataClient,
     live::runner::set_data_event_sender,
     messages::{
         DataEvent, DataResponse,
@@ -44,7 +45,6 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
-use nautilus_data::client::DataClient;
 use nautilus_dydx::{
     common::consts::{DYDX_TESTNET_HTTP_URL, DYDX_TESTNET_WS_URL, DYDX_VENUE},
     config::DydxDataClientConfig,
@@ -57,16 +57,13 @@ use nautilus_model::{
     enums::{AggregationSource, BarAggregation, BookType, PriceType},
     identifiers::{ClientId, InstrumentId},
 };
-use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::INFO)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
-    tracing::info!("===== dYdX Live Integration Tests =====");
-    tracing::info!("");
+    log::info!("===== dYdX Live Integration Tests =====");
+    log::info!("");
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
@@ -77,8 +74,8 @@ async fn main() -> anyhow::Result<()> {
     test_complete_data_flow(&mut rx).await?;
     test_crossed_orderbook_detection(&mut rx).await?;
 
-    tracing::info!("");
-    tracing::info!("===== All Live Integration Tests Passed =====");
+    log::info!("");
+    log::info!("===== All Live Integration Tests Passed =====");
 
     Ok(())
 }
@@ -116,7 +113,7 @@ async fn test_connect_and_subscribe(
     let mut data_client = DydxDataClient::new(client_id, config, http_client, Some(ws_client))?;
 
     data_client.connect().await?;
-    tracing::info!("Connected to dYdX testnet");
+    log::info!("Connected to dYdX testnet");
 
     let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
     let venue = *DYDX_VENUE;
@@ -130,9 +127,10 @@ async fn test_connect_and_subscribe(
         command_id,
         ts_init,
         None,
+        None,
     );
     data_client.subscribe_trades(&subscribe_trades)?;
-    tracing::info!("Subscribed to trades");
+    log::info!("Subscribed to trades");
 
     let subscribe_book = SubscribeBookDeltas::new(
         instrument_id,
@@ -144,9 +142,10 @@ async fn test_connect_and_subscribe(
         None,
         false,
         None,
+        None,
     );
     data_client.subscribe_book_deltas(&subscribe_book)?;
-    tracing::info!("Subscribed to order book deltas");
+    log::info!("Subscribed to order book deltas");
 
     let bar_spec = BarSpecification {
         step: std::num::NonZeroUsize::new(1).unwrap(),
@@ -161,21 +160,22 @@ async fn test_connect_and_subscribe(
         command_id,
         ts_init,
         None,
+        None,
     );
     data_client.subscribe_bars(&subscribe_bars)?;
-    tracing::info!("Subscribed to 1-minute bars");
+    log::info!("Subscribed to 1-minute bars");
 
     match tokio::time::timeout(Duration::from_secs(30), rx.recv()).await {
         Ok(Some(_)) => {
-            tracing::info!("Received data event from testnet");
+            log::info!("Received data event from testnet");
         }
         Ok(None) => anyhow::bail!("data channel closed before receiving DataEvent"),
         Err(_) => anyhow::bail!("timed out waiting for DataEvent"),
     }
 
     data_client.disconnect().await?;
-    tracing::info!("Disconnected");
-    tracing::info!("");
+    log::info!("Disconnected");
+    log::info!("");
 
     Ok(())
 }
@@ -234,7 +234,7 @@ async fn test_request_historical_bars(
         None,
     );
     data_client.request_bars(&small_request)?;
-    tracing::info!("Requested 1-hour bar range");
+    log::info!("Requested 1-hour bar range");
 
     let large_request = RequestBars::new(
         bar_type,
@@ -247,7 +247,7 @@ async fn test_request_historical_bars(
         None,
     );
     data_client.request_bars(&large_request)?;
-    tracing::info!("Requested 24-hour bar range (partitioned)");
+    log::info!("Requested 24-hour bar range (partitioned)");
 
     let mut saw_bars_response = false;
     let timeout_at = Duration::from_secs(60);
@@ -265,12 +265,12 @@ async fn test_request_historical_bars(
     }
 
     if saw_bars_response {
-        tracing::info!("Received BarsResponse");
+        log::info!("Received BarsResponse");
     } else {
         anyhow::bail!("expected at least one BarsResponse from dYdX testnet");
     }
 
-    tracing::info!("");
+    log::info!("");
 
     Ok(())
 }
@@ -325,9 +325,10 @@ async fn test_orderbook_snapshot_refresh(
         None,
         false,
         None,
+        None,
     );
     data_client.subscribe_book_deltas(&subscribe_book)?;
-    tracing::info!("Subscribed to order book with 10s refresh interval");
+    log::info!("Subscribed to order book with 10s refresh interval");
 
     let mut orderbook_updates = 0;
     let timeout_at = Duration::from_secs(30);
@@ -347,12 +348,12 @@ async fn test_orderbook_snapshot_refresh(
     data_client.disconnect().await?;
 
     if orderbook_updates >= 3 {
-        tracing::info!("Received {} orderbook updates", orderbook_updates);
+        log::info!("Received {orderbook_updates} orderbook updates");
     } else {
         anyhow::bail!("expected at least 3 orderbook updates, got {orderbook_updates}");
     }
 
-    tracing::info!("");
+    log::info!("");
 
     Ok(())
 }
@@ -403,6 +404,7 @@ async fn test_complete_data_flow(
         command_id,
         ts_init,
         None,
+        None,
     );
     data_client.subscribe_trades(&subscribe_trades)?;
 
@@ -415,6 +417,7 @@ async fn test_complete_data_flow(
         ts_init,
         None,
         false,
+        None,
         None,
     );
     data_client.subscribe_book_deltas(&subscribe_book)?;
@@ -432,6 +435,7 @@ async fn test_complete_data_flow(
         command_id,
         ts_init,
         None,
+        None,
     );
     data_client.subscribe_bars(&subscribe_bars)?;
 
@@ -447,19 +451,19 @@ async fn test_complete_data_flow(
             Ok(Some(DataEvent::Data(data))) => match data {
                 Data::Trade(_) => {
                     if !saw_trade {
-                        tracing::info!("Received trade data");
+                        log::info!("Received trade data");
                         saw_trade = true;
                     }
                 }
                 Data::Delta(_) | Data::Deltas(_) => {
                     if !saw_orderbook {
-                        tracing::info!("Received orderbook data");
+                        log::info!("Received orderbook data");
                         saw_orderbook = true;
                     }
                 }
                 Data::Bar(_) => {
                     if !saw_bar {
-                        tracing::info!("Received bar data");
+                        log::info!("Received bar data");
                         saw_bar = true;
                     }
                 }
@@ -483,7 +487,7 @@ async fn test_complete_data_flow(
         anyhow::bail!("expected to receive at least one bar");
     }
 
-    tracing::info!("");
+    log::info!("");
 
     Ok(())
 }
@@ -537,6 +541,7 @@ async fn test_crossed_orderbook_detection(
         None,
         false,
         None,
+        None,
     );
     data_client.subscribe_book_deltas(&subscribe_book)?;
 
@@ -568,13 +573,13 @@ async fn test_crossed_orderbook_detection(
     data_client.disconnect().await?;
 
     if saw_orderbook_delta {
-        tracing::info!("Monitored orderbook for crossed conditions");
-        tracing::info!("  Received {} quotes from deltas", quote_count);
+        log::info!("Monitored orderbook for crossed conditions");
+        log::info!("  Received {quote_count} quotes from deltas");
     } else {
         anyhow::bail!("Expected to receive at least one orderbook delta");
     }
 
-    tracing::info!("");
+    log::info!("");
 
     Ok(())
 }

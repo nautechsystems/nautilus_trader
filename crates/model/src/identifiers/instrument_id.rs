@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,7 @@
 //! Represents a valid instrument ID.
 
 use std::{
-    fmt::{Debug, Display, Formatter},
+    fmt::{Debug, Display},
     hash::Hash,
     str::FromStr,
 };
@@ -32,7 +32,7 @@ use crate::identifiers::{Symbol, Venue};
 ///
 /// The symbol and venue combination should uniquely identify the instrument.
 #[repr(C)]
-#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -120,7 +120,7 @@ impl From<&str> for InstrumentId {
     ///
     /// Panics if the `value` string is not valid.
     fn from(value: &str) -> Self {
-        Self::from_str(value).unwrap()
+        Self::from_str(value).expect("Invalid InstrumentId string")
     }
 }
 
@@ -136,13 +136,13 @@ impl From<String> for InstrumentId {
 }
 
 impl Debug for InstrumentId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "\"{}.{}\"", self.symbol, self.venue)
     }
 }
 
 impl Display for InstrumentId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}", self.symbol, self.venue)
     }
 }
@@ -161,8 +161,8 @@ impl<'de> Deserialize<'de> for InstrumentId {
     where
         D: Deserializer<'de>,
     {
-        let instrument_id_str = String::deserialize(deserializer)?;
-        Ok(Self::from(instrument_id_str.as_str()))
+        let instrument_id_str: &str = Deserialize::deserialize(deserializer)?;
+        Self::from_str(instrument_id_str).map_err(serde::de::Error::custom)
     }
 }
 

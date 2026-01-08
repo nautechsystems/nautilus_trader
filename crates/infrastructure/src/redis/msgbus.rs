@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -278,7 +278,7 @@ pub async fn publish_messages(
             maybe_msg = rx.recv() => {
                 if let Some(msg) = maybe_msg {
                     if msg.topic == CLOSE_TOPIC {
-                        tracing::debug!("Received close message");
+                        log::debug!("Received close message");
                         // Ensure we exit the loop after flushing any remaining messages.
                         if !buffer.is_empty() {
                             drain_buffer(
@@ -307,7 +307,7 @@ pub async fn publish_messages(
                         ).await?;
                     }
                 } else {
-                    tracing::debug!("Channel hung up");
+                    log::debug!("Channel hung up");
                     break;
                 }
             }
@@ -392,7 +392,7 @@ async fn drain_buffer(
                 .await;
 
             if let Err(e) = result {
-                tracing::error!("Error trimming stream '{stream_key}': {e}");
+                log::error!("Error trimming stream '{stream_key}': {e}");
             } else {
                 last_trim_index.insert(stream_key.clone(), unix_duration_now.as_millis() as usize);
             }
@@ -424,7 +424,7 @@ pub async fn stream_messages(
         .map(String::as_str)
         .collect::<Vec<&str>>();
 
-    tracing::debug!("Listening to streams: [{}]", stream_keys.join(", "));
+    log::debug!("Listening to streams: [{}]", stream_keys.join(", "));
 
     // Start streaming from current timestamp
     let clock = get_atomic_clock_realtime();
@@ -440,7 +440,7 @@ pub async fn stream_messages(
 
     'outer: loop {
         if stream_signal.load(Ordering::Relaxed) {
-            tracing::debug!("Received streaming terminate signal");
+            log::debug!("Received streaming terminate signal");
             break;
         }
 
@@ -467,12 +467,12 @@ pub async fn stream_messages(
                                 match decode_bus_message(array) {
                                     Ok(msg) => {
                                         if let Err(e) = tx.send(msg).await {
-                                            tracing::debug!("Channel closed: {e:?}");
+                                            log::debug!("Channel closed: {e:?}");
                                             break 'outer; // End streaming
                                         }
                                     }
                                     Err(e) => {
-                                        tracing::error!("{e:?}");
+                                        log::error!("{e:?}");
                                         continue;
                                     }
                                 }
@@ -534,7 +534,7 @@ async fn run_heartbeat(
     pub_tx: tokio::sync::mpsc::UnboundedSender<BusMessage>,
 ) {
     log_task_started("heartbeat");
-    tracing::debug!("Heartbeat at {heartbeat_interval_secs} second intervals");
+    log::debug!("Heartbeat at {heartbeat_interval_secs} second intervals");
 
     let heartbeat_interval = Duration::from_secs(u64::from(heartbeat_interval_secs));
     let heartbeat_timer = tokio::time::interval(heartbeat_interval);
@@ -547,7 +547,7 @@ async fn run_heartbeat(
 
     loop {
         if signal.load(Ordering::Relaxed) {
-            tracing::debug!("Received heartbeat terminate signal");
+            log::debug!("Received heartbeat terminate signal");
             break;
         }
 
@@ -556,7 +556,7 @@ async fn run_heartbeat(
                 let heartbeat = create_heartbeat_msg();
                 if let Err(e) = pub_tx.send(heartbeat) {
                     // We expect an error if the channel is closed during shutdown
-                    tracing::debug!("Error sending heartbeat: {e}");
+                    log::debug!("Error sending heartbeat: {e}");
                 }
             },
             _ = check_timer.tick() => {}

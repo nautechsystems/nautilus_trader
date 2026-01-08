@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,11 +24,14 @@ This adapter supports:
 """
 
 from nautilus_trader.adapters.deribit.config import DeribitDataClientConfig
+from nautilus_trader.adapters.deribit.config import DeribitExecClientConfig
 from nautilus_trader.adapters.deribit.constants import DERIBIT
 from nautilus_trader.adapters.deribit.constants import DERIBIT_CLIENT_ID
 from nautilus_trader.adapters.deribit.constants import DERIBIT_VENUE
 from nautilus_trader.adapters.deribit.data import DeribitDataClient
+from nautilus_trader.adapters.deribit.execution import DeribitExecutionClient
 from nautilus_trader.adapters.deribit.factories import DeribitLiveDataClientFactory
+from nautilus_trader.adapters.deribit.factories import DeribitLiveExecClientFactory
 from nautilus_trader.adapters.deribit.factories import get_cached_deribit_http_client
 from nautilus_trader.adapters.deribit.factories import get_cached_deribit_instrument_provider
 from nautilus_trader.adapters.deribit.providers import DeribitInstrumentProvider
@@ -48,10 +51,13 @@ __all__ = [
     "DeribitCurrency",
     "DeribitDataClient",
     "DeribitDataClientConfig",
+    "DeribitExecClientConfig",
+    "DeribitExecutionClient",
     "DeribitHttpClient",
     "DeribitInstrumentKind",
     "DeribitInstrumentProvider",
     "DeribitLiveDataClientFactory",
+    "DeribitLiveExecClientFactory",
     "DeribitOptionType",
     "DeribitUpdateInterval",
     "DeribitWebSocketClient",

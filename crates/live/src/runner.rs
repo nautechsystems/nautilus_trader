@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,7 +25,7 @@ use nautilus_common::{
         DataCommandSender, TimeEventSender, TradingCommandSender, set_data_cmd_sender,
         set_exec_cmd_sender, set_time_event_sender,
     },
-    timer::TimeEventHandlerV2,
+    timer::TimeEventHandler,
 };
 
 /// Asynchronous implementation of `DataCommandSender` for live environments.
@@ -52,12 +52,12 @@ impl DataCommandSender for AsyncDataCommandSender {
 /// Asynchronous implementation of `TimeEventSender` for live environments.
 #[derive(Debug, Clone)]
 pub struct AsyncTimeEventSender {
-    time_tx: tokio::sync::mpsc::UnboundedSender<TimeEventHandlerV2>,
+    time_tx: tokio::sync::mpsc::UnboundedSender<TimeEventHandler>,
 }
 
 impl AsyncTimeEventSender {
     #[must_use]
-    pub const fn new(time_tx: tokio::sync::mpsc::UnboundedSender<TimeEventHandlerV2>) -> Self {
+    pub const fn new(time_tx: tokio::sync::mpsc::UnboundedSender<TimeEventHandler>) -> Self {
         Self { time_tx }
     }
 
@@ -66,13 +66,13 @@ impl AsyncTimeEventSender {
     /// This allows async contexts to get a direct channel sender that
     /// can be moved into async tasks without `RefCell` borrowing issues.
     #[must_use]
-    pub fn get_channel_sender(&self) -> tokio::sync::mpsc::UnboundedSender<TimeEventHandlerV2> {
+    pub fn get_channel_sender(&self) -> tokio::sync::mpsc::UnboundedSender<TimeEventHandler> {
         self.time_tx.clone()
     }
 }
 
 impl TimeEventSender for AsyncTimeEventSender {
-    fn send(&self, handler: TimeEventHandlerV2) {
+    fn send(&self, handler: TimeEventHandler) {
         if let Err(e) = self.time_tx.send(handler) {
             log::error!("Failed to send time event handler: {e}");
         }
@@ -110,7 +110,7 @@ pub trait Runner {
 /// the event loop directly on the same thread as the msgbus endpoints.
 #[derive(Debug)]
 pub struct AsyncRunnerChannels {
-    pub time_evt_rx: tokio::sync::mpsc::UnboundedReceiver<TimeEventHandlerV2>,
+    pub time_evt_rx: tokio::sync::mpsc::UnboundedReceiver<TimeEventHandler>,
     pub data_evt_rx: tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     pub data_cmd_rx: tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
     pub exec_evt_rx: tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -156,7 +156,7 @@ impl AsyncRunner {
     pub fn new() -> Self {
         use tokio::sync::mpsc::unbounded_channel; // tokio-import-ok
 
-        let (time_evt_tx, time_evt_rx) = unbounded_channel::<TimeEventHandlerV2>();
+        let (time_evt_tx, time_evt_rx) = unbounded_channel::<TimeEventHandler>();
         let (data_cmd_tx, data_cmd_rx) = unbounded_channel::<DataCommand>();
         let (data_evt_tx, data_evt_rx) = unbounded_channel::<DataEvent>();
         let (exec_cmd_tx, exec_cmd_rx) = unbounded_channel::<TradingCommand>();
@@ -205,9 +205,19 @@ impl AsyncRunner {
     pub fn take_channels(self) -> AsyncRunnerChannels {
         self.channels
     }
-}
 
-impl AsyncRunner {
+    /// Drains all pending data events from the channel and processes them.
+    pub fn drain_pending_data_events(&mut self) {
+        let mut count = 0;
+        while let Ok(evt) = self.channels.data_evt_rx.try_recv() {
+            Self::handle_data_event(evt);
+            count += 1;
+        }
+        if count > 0 {
+            log::debug!("Drained {count} pending data events");
+        }
+    }
+
     /// Runs the async runner event loop.
     ///
     /// This method processes data events, time events, execution events, and signal events in an async loop.
@@ -218,7 +228,7 @@ impl AsyncRunner {
         loop {
             tokio::select! {
                 Some(()) = self.signal_rx.recv() => {
-                    tracing::info!("AsyncRunner received signal, shutting down");
+                    log::info!("AsyncRunner received signal, shutting down");
                     return;
                 },
                 Some(handler) = self.channels.time_evt_rx.recv() => {
@@ -237,7 +247,7 @@ impl AsyncRunner {
                     Self::handle_exec_event(evt);
                 },
                 else => {
-                    tracing::debug!("AsyncRunner all channels closed, exiting");
+                    log::debug!("AsyncRunner all channels closed, exiting");
                     return;
                 }
             };
@@ -246,7 +256,7 @@ impl AsyncRunner {
 
     /// Handles a time event by running its callback.
     #[inline]
-    pub fn handle_time_event(handler: TimeEventHandlerV2) {
+    pub fn handle_time_event(handler: TimeEventHandler) {
         handler.run();
     }
 
@@ -268,6 +278,9 @@ impl AsyncRunner {
             }
             DataEvent::Response(resp) => {
                 msgbus::send_any(MessagingSwitchboard::data_engine_response(), &resp);
+            }
+            DataEvent::FundingRate(funding_rate) => {
+                msgbus::send_any(MessagingSwitchboard::data_engine_process(), &funding_rate);
             }
             #[cfg(feature = "defi")]
             DataEvent::DeFi(data) => {
@@ -339,7 +352,7 @@ mod tests {
             data::{SubscribeCommand, SubscribeCustomData},
             execution::TradingCommand,
         },
-        timer::{TimeEvent, TimeEventCallback, TimeEventHandlerV2},
+        timer::{TimeEvent, TimeEventCallback, TimeEventHandler},
     };
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
@@ -376,7 +389,7 @@ mod tests {
 
     // Test helper to create AsyncRunner with manual channels
     fn create_test_runner(
-        time_evt_rx: tokio::sync::mpsc::UnboundedReceiver<TimeEventHandlerV2>,
+        time_evt_rx: tokio::sync::mpsc::UnboundedReceiver<TimeEventHandler>,
         data_evt_rx: tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
         data_cmd_rx: tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
         exec_evt_rx: tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -425,7 +438,7 @@ mod tests {
             UnixNanos::from(2),
         );
         let callback = TimeEventCallback::from(|_: TimeEvent| {});
-        let handler = TimeEventHandlerV2::new(event, callback);
+        let handler = TimeEventHandler::new(event, callback);
 
         assert!(channel.send(handler).is_ok());
     }
@@ -441,6 +454,7 @@ mod tests {
             data_type: DataType::new("QuoteTick", None),
             command_id: UUID4::new(),
             ts_init: UnixNanos::default(),
+            correlation_id: None,
             params: None,
         }));
 
@@ -471,7 +485,7 @@ mod tests {
             UnixNanos::from(2),
         );
         let callback = TimeEventCallback::from(|_: TimeEvent| {});
-        let handler = TimeEventHandlerV2::new(event, callback);
+        let handler = TimeEventHandler::new(event, callback);
 
         sender.send(handler);
 
@@ -483,7 +497,7 @@ mod tests {
         // Create runner with manual channels to avoid global state
         let (_data_tx, data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (_cmd_tx, data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
-        let (_time_tx, time_evt_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandlerV2>();
+        let (_time_tx, time_evt_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
         let (_exec_evt_tx, exec_evt_rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
         let (_exec_cmd_tx, exec_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
         let (signal_tx, signal_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
@@ -515,7 +529,7 @@ mod tests {
     async fn test_runner_closes_on_channel_drop() {
         let (data_tx, data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (_cmd_tx, data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
-        let (_time_tx, time_evt_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandlerV2>();
+        let (_time_tx, time_evt_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
         let (_exec_evt_tx, exec_evt_rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
         let (_exec_cmd_tx, exec_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
         let (signal_tx, signal_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
@@ -555,7 +569,7 @@ mod tests {
         let (data_evt_tx, data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (_data_cmd_tx, data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (_time_evt_tx, time_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<TimeEventHandlerV2>();
+            tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
         let (_exec_evt_tx, exec_evt_rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
         let (_exec_cmd_tx, exec_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
         let (signal_tx, signal_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
@@ -793,7 +807,7 @@ mod tests {
     async fn test_runner_stop_method() {
         let (_data_tx, data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (_cmd_tx, data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
-        let (_time_tx, time_evt_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandlerV2>();
+        let (_time_tx, time_evt_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
         let (_exec_evt_tx, exec_evt_rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
         let (_exec_cmd_tx, exec_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
         let (signal_tx, signal_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
@@ -823,8 +837,7 @@ mod tests {
     async fn test_all_event_types_integration() {
         let (data_evt_tx, data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (data_cmd_tx, data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
-        let (time_evt_tx, time_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<TimeEventHandlerV2>();
+        let (time_evt_tx, time_evt_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
         let (exec_evt_tx, exec_evt_rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
         let (_exec_cmd_tx, exec_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
         let (signal_tx, signal_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
@@ -856,6 +869,7 @@ mod tests {
             data_type: DataType::new("QuoteTick", None),
             command_id: UUID4::new(),
             ts_init: UnixNanos::default(),
+            correlation_id: None,
             params: None,
         }));
         data_cmd_tx.send(command).unwrap();
@@ -868,7 +882,7 @@ mod tests {
             UnixNanos::from(2),
         );
         let callback = TimeEventCallback::from(|_: TimeEvent| {});
-        let handler = TimeEventHandlerV2::new(event, callback);
+        let handler = TimeEventHandler::new(event, callback);
         time_evt_tx.send(handler).unwrap();
 
         // Send execution order event
@@ -983,7 +997,7 @@ mod tests {
     async fn test_runner_handle_stops_runner() {
         let (_data_tx, data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (_cmd_tx, data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
-        let (_time_tx, time_evt_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandlerV2>();
+        let (_time_tx, time_evt_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
         let (_exec_evt_tx, exec_evt_rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
         let (_exec_cmd_tx, exec_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
         let (signal_tx, signal_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
@@ -1028,7 +1042,7 @@ mod tests {
     async fn test_runner_processes_events_before_stop() {
         let (data_evt_tx, data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (_cmd_tx, data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
-        let (_time_tx, time_evt_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandlerV2>();
+        let (_time_tx, time_evt_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
         let (_exec_evt_tx, exec_evt_rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
         let (_exec_cmd_tx, exec_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
         let (signal_tx, signal_rx) = tokio::sync::mpsc::unbounded_channel::<()>();

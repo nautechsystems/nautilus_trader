@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -63,6 +63,7 @@ cdef class OrderBook(Data):
     cpdef double get_avg_px_for_quantity(self, Quantity quantity, OrderSide order_side)
     cpdef double get_quantity_for_price(self, Price price, OrderSide order_side)
     cpdef list simulate_fills(self, Order order, uint8_t price_prec, uint8_t size_prec, bint is_aggressive)
+    cpdef list get_all_crossed_levels(self, OrderSide order_side, Price price, uint8_t size_prec)
     cpdef void update_quote_tick(self, QuoteTick tick)
     cpdef void update_trade_tick(self, TradeTick tick)
     cpdef QuoteTick to_quote_tick(self)

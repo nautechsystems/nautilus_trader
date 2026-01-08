@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -186,7 +186,8 @@ cdef class SubscribeData(DataCommand):
             The converted request message.
         """
         params = self.params.copy() if self.params else {}
-        params["subscription_name"] = f"{self.data_type.type.__name__}.{self.instrument_id}"
+        subscription_id = params.get("subscription_id") or self.instrument_id
+        params["subscription_name"] = f"{self.data_type.type.__name__}.{subscription_id}"
 
         return RequestData(
             data_type=self.data_type,

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -62,7 +62,7 @@ pub struct CoreBlockchainRpcClient {
 
 impl Debug for CoreBlockchainRpcClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CoreBlockchainRpcClient")
+        f.debug_struct(stringify!(CoreBlockchainRpcClient))
             .field("chain", &self.chain)
             .field("wss_rpc_url", &self.wss_rpc_url)
             .field("request_id", &self.request_id)

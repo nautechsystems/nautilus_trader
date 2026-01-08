@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,10 +34,6 @@ const PONG: &str = r#"{"op":"pong"}"#;
 const SUBSCRIBE_SUCCESS: &str =
     r#"{"success":true,"ret_msg":"","conn_id":"abc123","req_id":"1","op":"subscribe"}"#;
 
-// =============================================================================
-// CLASSIFICATION BENCHMARKS
-// =============================================================================
-
 fn bench_classification(c: &mut Criterion) {
     let mut group = c.benchmark_group("Classification");
 
@@ -67,10 +63,6 @@ fn bench_classification(c: &mut Criterion) {
 
     group.finish();
 }
-
-// =============================================================================
-// FULL FLOW BENCHMARKS (parse JSON + classify)
-// =============================================================================
 
 fn bench_full_flow(c: &mut Criterion) {
     let mut group = c.benchmark_group("Full Flow");
@@ -102,10 +94,6 @@ fn bench_full_flow(c: &mut Criterion) {
     group.finish();
 }
 
-// =============================================================================
-// JSON PARSING BENCHMARKS
-// =============================================================================
-
 fn bench_parsing(c: &mut Criterion) {
     let mut group = c.benchmark_group("Parsing");
 
@@ -128,10 +116,6 @@ fn bench_parsing(c: &mut Criterion) {
 
     group.finish();
 }
-
-// =============================================================================
-// BATCH BENCHMARKS
-// =============================================================================
 
 fn bench_batch(c: &mut Criterion) {
     let mut group = c.benchmark_group("Batch");
@@ -169,10 +153,6 @@ fn bench_batch(c: &mut Criterion) {
     group.finish();
 }
 
-// =============================================================================
-// PREFILTER BENCHMARKS
-// =============================================================================
-
 fn bench_pong_prefilter(c: &mut Criterion) {
     let mut group = c.benchmark_group("Pong Prefilter");
 
@@ -202,10 +182,6 @@ fn bench_pong_prefilter(c: &mut Criterion) {
     group.finish();
 }
 
-// =============================================================================
-// TUNGSTENITE MESSAGE ACCESS
-// =============================================================================
-
 fn bench_tungstenite_message_access(c: &mut Criterion) {
     let mut group = c.benchmark_group("Message Access");
 
@@ -232,10 +208,6 @@ fn bench_tungstenite_message_access(c: &mut Criterion) {
 
     group.finish();
 }
-
-// =============================================================================
-// MESSAGE TYPE DISTRIBUTION
-// =============================================================================
 
 fn bench_message_type_match(c: &mut Criterion) {
     let mut group = c.benchmark_group("Message Type");

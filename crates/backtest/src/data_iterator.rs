@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,8 +16,9 @@
 #![allow(dead_code)]
 #![allow(clippy::module_name_repetitions)]
 
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::BinaryHeap;
 
+use ahash::AHashMap;
 use nautilus_core::UnixNanos;
 use nautilus_model::data::{Data, HasTsInit};
 
@@ -49,10 +50,10 @@ impl PartialOrd for HeapEntry {
 /// Multi-stream, time-ordered data iterator used by the backtest engine.
 #[derive(Debug, Default)]
 pub struct BacktestDataIterator {
-    streams: HashMap<i32, Vec<Data>>, // key: priority, value: Vec<Data>
-    names: HashMap<i32, String>,      // priority -> name
-    priorities: HashMap<String, i32>, // name -> priority
-    indices: HashMap<i32, usize>,     // cursor per stream
+    streams: AHashMap<i32, Vec<Data>>, // key: priority, value: Vec<Data>
+    names: AHashMap<i32, String>,      // priority -> name
+    priorities: AHashMap<String, i32>, // name -> priority
+    indices: AHashMap<i32, usize>,     // cursor per stream
     heap: BinaryHeap<HeapEntry>,
     single_priority: Option<i32>,
     next_priority_counter: i32, // monotonically increasing counter used to assign priorities
@@ -63,10 +64,10 @@ impl BacktestDataIterator {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            streams: HashMap::new(),
-            names: HashMap::new(),
-            priorities: HashMap::new(),
-            indices: HashMap::new(),
+            streams: AHashMap::new(),
+            names: AHashMap::new(),
+            priorities: AHashMap::new(),
+            indices: AHashMap::new(),
             heap: BinaryHeap::new(),
             single_priority: None,
             next_priority_counter: 0,

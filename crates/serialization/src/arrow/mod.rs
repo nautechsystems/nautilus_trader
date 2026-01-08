@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -42,7 +42,7 @@ use nautilus_model::{
         delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick, trade::TradeTick,
     },
     types::{
-        PRICE_ERROR, PRICE_UNDEF, QUANTITY_UNDEF,
+        PRICE_ERROR, PRICE_UNDEF, Price, QUANTITY_UNDEF, Quantity,
         fixed::{correct_price_raw, correct_quantity_raw},
         price::PriceRaw,
         quantity::QuantityRaw,
@@ -138,6 +138,74 @@ fn get_corrected_raw_quantity(bytes: &[u8], precision: u8) -> QuantityRaw {
     }
 
     correct_quantity_raw(raw, precision)
+}
+
+/// Decodes a [`Price`] from raw bytes with bounds validation.
+///
+/// Uses corrected raw values to handle floating-point precision errors in stored data.
+/// Sentinel values (`PRICE_UNDEF`, `PRICE_ERROR`) are preserved unchanged.
+fn decode_price(
+    bytes: &[u8],
+    precision: u8,
+    field: &'static str,
+    row: usize,
+) -> Result<Price, EncodingError> {
+    let raw = get_corrected_raw_price(bytes, precision);
+    Price::from_raw_checked(raw, precision)
+        .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")))
+}
+
+/// Decodes a [`Quantity`] from raw bytes with bounds validation.
+///
+/// Uses corrected raw values to handle floating-point precision errors in stored data.
+/// Sentinel values (`QUANTITY_UNDEF`) are preserved unchanged.
+fn decode_quantity(
+    bytes: &[u8],
+    precision: u8,
+    field: &'static str,
+    row: usize,
+) -> Result<Quantity, EncodingError> {
+    let raw = get_corrected_raw_quantity(bytes, precision);
+    Quantity::from_raw_checked(raw, precision)
+        .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")))
+}
+
+/// Decodes a [`Price`] from raw bytes, using precision 0 for sentinel values.
+///
+/// For order book data where sentinel values indicate empty levels.
+fn decode_price_with_sentinel(
+    bytes: &[u8],
+    precision: u8,
+    field: &'static str,
+    row: usize,
+) -> Result<Price, EncodingError> {
+    let raw = get_raw_price(bytes);
+    let (final_raw, final_precision) = if raw == PRICE_UNDEF {
+        (raw, 0)
+    } else {
+        (get_corrected_raw_price(bytes, precision), precision)
+    };
+    Price::from_raw_checked(final_raw, final_precision)
+        .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")))
+}
+
+/// Decodes a [`Quantity`] from raw bytes, using precision 0 for sentinel values.
+///
+/// For order book data where sentinel values indicate empty levels.
+fn decode_quantity_with_sentinel(
+    bytes: &[u8],
+    precision: u8,
+    field: &'static str,
+    row: usize,
+) -> Result<Quantity, EncodingError> {
+    let raw = get_raw_quantity(bytes);
+    let (final_raw, final_precision) = if raw == QUANTITY_UNDEF {
+        (raw, 0)
+    } else {
+        (get_corrected_raw_quantity(bytes, precision), precision)
+    };
+    Quantity::from_raw_checked(final_raw, final_precision)
+        .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")))
 }
 
 /// Provides Apache Arrow schema definitions for data types.

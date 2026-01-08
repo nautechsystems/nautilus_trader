@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -43,7 +43,7 @@ use crate::{decode::decode_instrument_def_msg, symbology::MetadataCache};
 
 /// A Nautilus data loader for Databento Binary Encoding (DBN) format data.
 ///
-/// # Supported schemas:
+/// # Supported Schemas
 ///  - `MBO` -> `OrderBookDelta`
 ///  - `MBP_1` -> `(QuoteTick, Option<TradeTick>)`
 ///  - `MBP_10` -> `OrderBookDepth10`

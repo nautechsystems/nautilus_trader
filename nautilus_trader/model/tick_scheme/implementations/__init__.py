@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,5 +15,9 @@
 
 # Required to register tick schemes
 
-from nautilus_trader.model.tick_scheme.implementations.fixed import FOREX_3DECIMAL_TICK_SCHEME  # noqa: F401
-from nautilus_trader.model.tick_scheme.implementations.fixed import FOREX_5DECIMAL_TICK_SCHEME  # noqa: F401
+from nautilus_trader.model.tick_scheme.implementations.fixed import (
+    FOREX_3DECIMAL_TICK_SCHEME,  # noqa: F401
+)
+from nautilus_trader.model.tick_scheme.implementations.fixed import (
+    FOREX_5DECIMAL_TICK_SCHEME,  # noqa: F401
+)

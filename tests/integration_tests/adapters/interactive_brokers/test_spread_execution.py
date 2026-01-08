@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -64,9 +64,9 @@ class TestSpreadExecutionDetection:
         for instrument_id_str, expected in test_cases:
             instrument_id = InstrumentId.from_str(instrument_id_str)
             result = self._is_spread_instrument(instrument_id)
-            assert (
-                result == expected
-            ), f"Failed for {instrument_id_str}: expected {expected}, was {result}"
+            assert result == expected, (
+                f"Failed for {instrument_id_str}: expected {expected}, was {result}"
+            )
 
     def test_is_spread_instrument_edge_cases(self):
         """
@@ -83,9 +83,9 @@ class TestSpreadExecutionDetection:
         for instrument_id_str, expected in edge_cases:
             instrument_id = InstrumentId.from_str(instrument_id_str)
             result = self._is_spread_instrument(instrument_id)
-            assert (
-                result == expected
-            ), f"Failed for {instrument_id_str}: expected {expected}, was {result}"
+            assert result == expected, (
+                f"Failed for {instrument_id_str}: expected {expected}, was {result}"
+            )
 
     def _is_spread_instrument(self, instrument_id):
         """

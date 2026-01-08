@@ -15,7 +15,7 @@ if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
   exit 0
 fi
 
-CURRENT_YEAR=$(date +%Y)
+CURRENT_YEAR=$(date -u +%Y)
 FAILED=0
 
 # Pattern to match: "Copyright (C) 2015-YYYY"

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -27,7 +27,7 @@
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.
 //!
-//! # Feature flags
+//! # Feature Flags
 //!
 //! This crate provides feature flags to control source code inclusion during compilation,
 //! depending on the intended use case, i.e. whether to provide Python bindings

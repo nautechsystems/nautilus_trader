@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -47,7 +47,7 @@ use nautilus_model::{
 use redis::{Pipeline, aio::ConnectionManager};
 use ustr::Ustr;
 
-use super::{REDIS_DELIMITER, REDIS_FLUSHDB};
+use super::{REDIS_DELIMITER, REDIS_FLUSHDB, get_index_key};
 use crate::redis::{create_redis_connection, queries::DatabaseQueries};
 
 // Task and connection names
@@ -388,7 +388,7 @@ impl RedisCacheDatabase {
         _account_id: &AccountId,
         _event_id: &str,
     ) -> anyhow::Result<()> {
-        tracing::warn!("Deleting account events currently a no-op (pending redesign)");
+        log::warn!("Deleting account events currently a no-op (pending redesign)");
         Ok(())
     }
 }
@@ -417,14 +417,14 @@ async fn process_commands(
             drain_buffer(&mut con, &trader_key, &mut buffer).await;
             last_drain = std::time::Instant::now();
         } else if let Some(cmd) = rx.recv().await {
-            tracing::trace!("Received {cmd:?}");
+            log::trace!("Received {cmd:?}");
 
             if matches!(cmd.op_type, DatabaseOperation::Close) {
                 break;
             }
             buffer.push_back(cmd);
         } else {
-            tracing::debug!("Command channel closed");
+            log::debug!("Command channel closed");
             break;
         }
     }
@@ -456,7 +456,7 @@ async fn drain_buffer(
         let collection = match get_collection_key(&key) {
             Ok(collection) => collection,
             Err(e) => {
-                tracing::error!("{e}");
+                log::error!("{e}");
                 continue; // Continue to next message
             }
         };
@@ -468,24 +468,24 @@ async fn drain_buffer(
                 if let Some(payload) = msg.payload {
                     log::debug!("Processing INSERT for collection: {collection}, key: {key}");
                     if let Err(e) = insert(&mut pipe, collection, &key, payload) {
-                        tracing::error!("{e}");
+                        log::error!("{e}");
                     }
                 } else {
-                    tracing::error!("Null `payload` for `insert`");
+                    log::error!("Null `payload` for `insert`");
                 }
             }
             DatabaseOperation::Update => {
                 if let Some(payload) = msg.payload {
                     log::debug!("Processing UPDATE for collection: {collection}, key: {key}");
                     if let Err(e) = update(&mut pipe, collection, &key, payload) {
-                        tracing::error!("{e}");
+                        log::error!("{e}");
                     }
                 } else {
-                    tracing::error!("Null `payload` for `update`");
+                    log::error!("Null `payload` for `update`");
                 }
             }
             DatabaseOperation::Delete => {
-                tracing::debug!(
+                log::debug!(
                     "Processing DELETE for collection: {}, key: {}, payload: {:?}",
                     collection,
                     key,
@@ -493,7 +493,7 @@ async fn drain_buffer(
                 );
                 // `payload` can be `None` for a delete operation
                 if let Err(e) = delete(&mut pipe, collection, &key, msg.payload) {
-                    tracing::error!("{e}");
+                    log::error!("{e}");
                 }
             }
             DatabaseOperation::Close => panic!("Close command should not be drained"),
@@ -501,7 +501,7 @@ async fn drain_buffer(
     }
 
     if let Err(e) = pipe.query_async::<()>(conn).await {
-        tracing::error!("{e}");
+        log::error!("{e}");
     }
 }
 
@@ -665,7 +665,7 @@ fn delete(
     key: &str,
     value: Option<Vec<Bytes>>,
 ) -> anyhow::Result<()> {
-    tracing::debug!(
+    log::debug!(
         "delete: collection={}, key={}, has_payload={}",
         collection,
         key,
@@ -792,14 +792,6 @@ fn get_collection_key(key: &str) -> anyhow::Result<&str> {
         })
 }
 
-fn get_index_key(key: &str) -> anyhow::Result<&str> {
-    key.split_once(REDIS_DELIMITER)
-        .map(|(_, index_key)| index_key)
-        .ok_or_else(|| {
-            anyhow::anyhow!("Invalid `key`, missing a '{REDIS_DELIMITER}' delimiter, was {key}")
-        })
-}
-
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct RedisCacheDatabaseAdapter {
@@ -822,7 +814,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     async fn load_all(&self) -> anyhow::Result<CacheMap> {
-        tracing::debug!("Loading all data");
+        log::debug!("Loading all data");
 
         let (
             currencies,
@@ -1260,17 +1252,5 @@ mod tests {
     fn test_get_collection_key_invalid() {
         let key = "no_delimiter";
         assert!(get_collection_key(key).is_err());
-    }
-
-    #[rstest]
-    fn test_get_index_key_valid() {
-        let key = "index:123";
-        assert_eq!(get_index_key(key).unwrap(), "123");
-    }
-
-    #[rstest]
-    fn test_get_index_key_invalid() {
-        let key = "no_delimiter";
-        assert!(get_index_key(key).is_err());
     }
 }

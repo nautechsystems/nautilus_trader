@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -73,10 +73,13 @@
 //! - `crates/adapters/bybit/src/common/enums.rs` - BybitStopOrderType, BybitTriggerType
 //! - `crates/adapters/bitmex/src/execution/mod.rs` - trigger_price handling
 
-use std::str::FromStr;
-
 use anyhow::Context;
 use nautilus_core::UnixNanos;
+pub use nautilus_core::serialization::{
+    deserialize_decimal_from_str, deserialize_optional_decimal_from_str,
+    deserialize_vec_decimal_from_str, serialize_decimal_as_str, serialize_optional_decimal_as_str,
+    serialize_vec_decimal_as_str,
+};
 use nautilus_model::{
     data::bar::BarType,
     enums::{AggregationSource, BarAggregation, OrderSide, OrderStatus, OrderType, TimeInForce},
@@ -85,7 +88,6 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money},
 };
 use rust_decimal::Decimal;
-use serde::{Deserialize, Deserializer, Serializer};
 use serde_json::Value;
 
 use crate::{
@@ -98,82 +100,6 @@ use crate::{
     },
     websocket::messages::TrailingOffsetType,
 };
-
-/// Serializes decimal as string (lossless, no scientific notation).
-pub fn serialize_decimal_as_str<S>(decimal: &Decimal, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(&decimal.normalize().to_string())
-}
-
-/// Deserializes decimal from string only (reject numbers to avoid precision loss).
-pub fn deserialize_decimal_from_str<'de, D>(deserializer: D) -> Result<Decimal, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    Decimal::from_str(&s).map_err(serde::de::Error::custom)
-}
-
-/// Serialize optional decimal as string.
-pub fn serialize_optional_decimal_as_str<S>(
-    decimal: &Option<Decimal>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    match decimal {
-        Some(d) => serializer.serialize_str(&d.normalize().to_string()),
-        None => serializer.serialize_none(),
-    }
-}
-
-/// Deserialize optional decimal from string.
-pub fn deserialize_optional_decimal_from_str<'de, D>(
-    deserializer: D,
-) -> Result<Option<Decimal>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let opt = Option::<String>::deserialize(deserializer)?;
-    match opt {
-        Some(s) => {
-            let decimal = Decimal::from_str(&s).map_err(serde::de::Error::custom)?;
-            Ok(Some(decimal))
-        }
-        None => Ok(None),
-    }
-}
-
-/// Serialize vector of decimals as strings.
-pub fn serialize_vec_decimal_as_str<S>(
-    decimals: &Vec<Decimal>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    use serde::ser::SerializeSeq;
-    let mut seq = serializer.serialize_seq(Some(decimals.len()))?;
-    for decimal in decimals {
-        seq.serialize_element(&decimal.normalize().to_string())?;
-    }
-    seq.end()
-}
-
-/// Deserialize vector of decimals from strings.
-pub fn deserialize_vec_decimal_from_str<'de, D>(deserializer: D) -> Result<Vec<Decimal>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let strings = Vec::<String>::deserialize(deserializer)?;
-    strings
-        .into_iter()
-        .map(|s| Decimal::from_str(&s).map_err(serde::de::Error::custom))
-        .collect()
-}
 
 /// Round price down to the nearest valid tick size.
 #[inline]
@@ -850,7 +776,10 @@ pub fn parse_account_balances_and_margins(
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use rstest::rstest;
+    use rust_decimal::Decimal;
     use serde::{Deserialize, Serialize};
 
     use super::*;
@@ -1054,10 +983,6 @@ mod tests {
             dec!(100.00)
         );
     }
-
-    // ========================================================================
-    // Conditional Order Parsing Tests
-    // ========================================================================
 
     #[rstest]
     fn test_is_conditional_order_data() {

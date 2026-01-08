@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,19 +23,18 @@ use std::{cell::RefCell, rc::Rc};
 
 use nautilus_common::{
     cache::Cache,
+    clients::DataClient,
     messages::data::{
         RequestBars, RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
         RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-        SubscribeBookSnapshots, SubscribeCustomData, SubscribeIndexPrices, SubscribeInstrument,
-        SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
-        SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
+        SubscribeCustomData, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
+        SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
         UnsubscribeCustomData, UnsubscribeIndexPrices, UnsubscribeInstrument,
         UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
         UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
     },
 };
-use nautilus_data::client::DataClient;
 use nautilus_model::identifiers::{ClientId, Venue};
 
 #[derive(Debug)]
@@ -117,10 +116,6 @@ impl DataClient for BacktestDataClient {
         Ok(())
     }
 
-    fn subscribe_book_snapshots(&mut self, _cmd: &SubscribeBookSnapshots) -> anyhow::Result<()> {
-        Ok(())
-    }
-
     fn subscribe_quotes(&mut self, _cmd: &SubscribeQuotes) -> anyhow::Result<()> {
         Ok(())
     }
@@ -172,13 +167,6 @@ impl DataClient for BacktestDataClient {
     }
 
     fn unsubscribe_book_depth10(&mut self, _cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn unsubscribe_book_snapshots(
-        &mut self,
-        _cmd: &UnsubscribeBookSnapshots,
-    ) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -246,12 +234,3 @@ impl DataClient for BacktestDataClient {
         todo!()
     }
 }
-
-// SAFETY: BacktestDataClient contains Rc<RefCell<Cache>> which is not thread-safe.
-// These implementations exist to satisfy trait bounds but the type must only be used
-// on a single thread. The backtest engine ensures single-threaded access.
-// WARNING: Actually sending this type across threads is undefined behavior.
-#[allow(unsafe_code)]
-unsafe impl Send for BacktestDataClient {}
-#[allow(unsafe_code)]
-unsafe impl Sync for BacktestDataClient {}

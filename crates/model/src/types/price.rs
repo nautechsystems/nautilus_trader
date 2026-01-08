@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,10 +23,12 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::{FAILED, check_in_range_inclusive_f64, check_predicate_true};
+use nautilus_core::{
+    correctness::{FAILED, check_in_range_inclusive_f64, check_predicate_true},
+    formatting::Separable,
+};
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Deserializer, Serialize};
-use thousands::Separable;
 
 use super::fixed::{FIXED_PRECISION, FIXED_SCALAR, check_fixed_precision};
 #[cfg(feature = "high-precision")]
@@ -183,39 +185,46 @@ impl Price {
     ///
     /// # Panics
     ///
-    /// Panics if a correctness check fails. See [`Price::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Price::from_raw_checked`] for error conditions.
     pub fn from_raw(raw: PriceRaw, precision: u8) -> Self {
-        if raw == PRICE_UNDEF {
-            check_predicate_true(
-                precision == 0,
-                "`precision` must be 0 when `raw` is PRICE_UNDEF",
-            )
-            .expect(FAILED);
-        }
-        check_predicate_true(
-            raw == PRICE_ERROR
-                || raw == PRICE_UNDEF
-                || (raw >= PRICE_RAW_MIN && raw <= PRICE_RAW_MAX),
-            &format!("raw value outside valid range, was {raw}"),
-        )
-        .expect(FAILED);
-        check_fixed_precision(precision).expect(FAILED);
-
         // TODO: Enforce spurious bits validation in v2
         // Validate raw value has no spurious bits beyond the precision scale
-        // if raw != PRICE_UNDEF
-        //     && raw != PRICE_ERROR
-        //     && raw != PRICE_RAW_MAX
-        //     && raw != PRICE_RAW_MIN
-        //     && raw != 0
-        // {
+        // if !matches!(raw, PRICE_UNDEF | PRICE_ERROR) && raw != 0 {
         //     #[cfg(feature = "high-precision")]
         //     super::fixed::check_fixed_raw_i128(raw, precision).expect(FAILED);
         //     #[cfg(not(feature = "high-precision"))]
         //     super::fixed::check_fixed_raw_i64(raw, precision).expect(FAILED);
         // }
 
-        Self { raw, precision }
+        Self::from_raw_checked(raw, precision).expect(FAILED)
+    }
+
+    /// Creates a new [`Price`] instance from the given `raw` fixed-point value and `precision`
+    /// with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `precision` exceeds the maximum fixed precision.
+    /// - `precision` is not 0 when `raw` is `PRICE_UNDEF`.
+    /// - `raw` is outside the valid range `[PRICE_RAW_MIN, PRICE_RAW_MAX]`
+    ///   and is not a sentinel value.
+    pub fn from_raw_checked(raw: PriceRaw, precision: u8) -> anyhow::Result<Self> {
+        if raw == PRICE_UNDEF {
+            anyhow::ensure!(
+                precision == 0,
+                "`precision` must be 0 when `raw` is PRICE_UNDEF"
+            );
+        }
+        anyhow::ensure!(
+            raw == PRICE_ERROR
+                || raw == PRICE_UNDEF
+                || (raw >= PRICE_RAW_MIN && raw <= PRICE_RAW_MAX),
+            "raw value {raw} outside valid range [{PRICE_RAW_MIN}, {PRICE_RAW_MAX}]"
+        );
+        check_fixed_precision(precision)?;
+
+        Ok(Self { raw, precision })
     }
 
     /// Creates a new [`Price`] instance with a value of zero with the given `precision`.
@@ -396,14 +405,8 @@ impl FromStr for Price {
                 .map_err(|e| format!("Error parsing `input` string '{value}' as Decimal: {e}"))?
         };
 
-        // Determine precision from the final decimal result
-        let decimal_str = decimal.to_string();
-        let precision = if let Some(dot_pos) = decimal_str.find('.') {
-            let decimal_part = &decimal_str[dot_pos + 1..];
-            decimal_part.len().min(u8::MAX as usize) as u8
-        } else {
-            0
-        };
+        // Use decimal scale to preserve caller-specified precision (including trailing zeros)
+        let precision = decimal.scale() as u8;
 
         Self::from_decimal_dp(decimal, precision).map_err(|e| e.to_string())
     }
@@ -490,6 +493,10 @@ impl Deref for Price {
 impl Neg for Price {
     type Output = Self;
     fn neg(self) -> Self::Output {
+        // Preserve sentinel values (negating PRICE_ERROR would also overflow)
+        if self.raw == PRICE_ERROR || self.raw == PRICE_UNDEF {
+            return self;
+        }
         Self {
             raw: -self.raw,
             precision: self.precision,
@@ -954,6 +961,18 @@ mod tests {
         assert_eq!(normalized.scale(), 2);
         let price_normalized = Price::from_decimal(normalized).unwrap();
         assert_eq!(price_normalized.precision, 2);
+    }
+
+    #[rstest]
+    #[case("1.00", 2)]
+    #[case("1.0", 1)]
+    #[case("1.000", 3)]
+    #[case("100.00", 2)]
+    #[case("0.10", 2)]
+    #[case("0.100", 3)]
+    fn test_from_str_preserves_trailing_zeros(#[case] input: &str, #[case] expected_precision: u8) {
+        let price = Price::from_str(input).unwrap();
+        assert_eq!(price.precision, expected_precision);
     }
 
     #[rstest]

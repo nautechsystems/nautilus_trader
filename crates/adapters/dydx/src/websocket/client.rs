@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -264,7 +264,7 @@ impl DydxWebSocketClient {
         if let Ok(cmd_tx) = self.cmd_tx.try_read()
             && let Err(e) = cmd_tx.send(HandlerCommand::UpdateInstrument(Box::new(instrument)))
         {
-            tracing::debug!("Failed to send UpdateInstrument command to handler: {e}");
+            log::debug!("Failed to send UpdateInstrument command to handler: {e}");
         }
     }
 
@@ -283,7 +283,7 @@ impl DydxWebSocketClient {
             && let Ok(cmd_tx) = self.cmd_tx.try_read()
             && let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(instruments))
         {
-            tracing::debug!("Failed to send InitializeInstruments command to handler: {e}");
+            log::debug!("Failed to send InitializeInstruments command to handler: {e}");
         }
     }
 
@@ -376,7 +376,7 @@ impl DydxWebSocketClient {
             if let Err(e) =
                 cmd_tx_guard.send(HandlerCommand::InitializeInstruments(cached_instruments))
             {
-                tracing::error!("Failed to replay instruments to handler: {e}");
+                log::error!("Failed to replay instruments to handler: {e}");
             }
         }
 
@@ -399,7 +399,7 @@ impl DydxWebSocketClient {
         });
 
         self.handler_task = Some(handler_task);
-        tracing::info!("Connected dYdX WebSocket: {}", self.url);
+        log::info!("Connected dYdX WebSocket: {}", self.url);
         Ok(())
     }
 
@@ -425,7 +425,7 @@ impl DydxWebSocketClient {
         // Drop receiver to stop any consumers
         self.out_rx = None;
 
-        tracing::info!("Disconnected dYdX WebSocket");
+        log::info!("Disconnected dYdX WebSocket");
         Ok(())
     }
 

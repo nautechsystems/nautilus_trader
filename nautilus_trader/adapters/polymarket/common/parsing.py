@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,6 +26,7 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderType
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTickSizeChange
+from nautilus_trader.core.stats import basis_points_as_percentage
 from nautilus_trader.model.currencies import USDC_POS
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import LiquiditySide
@@ -62,6 +63,35 @@ def parse_order_side(order_side: PolymarketOrderSide) -> OrderSide:
         case _:
             # Theoretically unreachable but retained to keep the match exhaustive
             raise ValueError(f"invalid order side, was {order_side}")
+
+
+def determine_order_side(
+    trader_side: PolymarketLiquiditySide,
+    trade_side: PolymarketOrderSide,
+    taker_asset_id: str,
+    maker_asset_id: str,
+) -> OrderSide:
+    """
+    Determine the order side for a fill based on trader role and asset matching.
+
+    Polymarket uses a unified order book where complementary tokens (YES/NO) can match
+    across assets. This means a BUY YES can match with a BUY NO (cross-asset), not just
+    with a SELL YES (same-asset).
+
+    """
+    order_side = parse_order_side(trade_side)
+    if trader_side == PolymarketLiquiditySide.TAKER:
+        return order_side
+
+    # For MAKER: determine side based on whether assets match
+    is_cross_asset = maker_asset_id != taker_asset_id
+
+    if is_cross_asset:
+        # Cross-asset match: both sides are the same
+        return order_side
+    else:
+        # Same-asset match: sides are opposite
+        return OrderSide.BUY if order_side == OrderSide.SELL else OrderSide.SELL
 
 
 def parse_liquidity_side(liquidity_side: PolymarketLiquiditySide) -> LiquiditySide:
@@ -180,3 +210,32 @@ def update_instrument(
         ts_init=ts_init,
         info=instrument.info,
     )
+
+
+def calculate_commission(
+    quantity: Decimal,
+    price: Decimal,
+    fee_rate_bps: Decimal,
+) -> float:
+    """
+    Calculate commission from trade parameters and fee rate.
+
+    Polymarket rounds fees to 4 decimal places (0.0001 USDC minimum).
+
+    Parameters
+    ----------
+    quantity : Decimal
+        The fill quantity.
+    price : Decimal
+        The fill price.
+    fee_rate_bps : Decimal
+        The fee rate in basis points.
+
+    Returns
+    -------
+    float
+        The commission amount rounded to 4 decimal places.
+
+    """
+    commission = float(quantity * price) * basis_points_as_percentage(fee_rate_bps)
+    return round(commission, 4)

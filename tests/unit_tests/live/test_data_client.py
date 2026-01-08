@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -86,7 +86,7 @@ class TestMarketDataClientImpl(LiveMarketDataClient):
     async def _subscribe_order_book_deltas(self, command):
         await asyncio.sleep(0.01)
 
-    async def _subscribe_order_book_snapshots(self, command):
+    async def _subscribe_order_book_depth(self, command):
         await asyncio.sleep(0.01)
 
     async def _subscribe_quote_ticks(self, command):
@@ -122,7 +122,7 @@ class TestMarketDataClientImpl(LiveMarketDataClient):
     async def _unsubscribe_order_book_deltas(self, command):
         await asyncio.sleep(0.01)
 
-    async def _unsubscribe_order_book_snapshots(self, command):
+    async def _unsubscribe_order_book_depth(self, command):
         await asyncio.sleep(0.01)
 
     async def _unsubscribe_quote_ticks(self, command):

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -64,6 +64,7 @@ use nautilus_common::{
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
+    UUID4,
     correctness::{
         FAILED, check_key_in_map, check_key_not_in_map, check_predicate_false, check_predicate_true,
     },
@@ -112,6 +113,7 @@ pub struct DataEngine {
     catalogs: AHashMap<Ustr, ParquetDataCatalog>,
     routing_map: IndexMap<Venue, ClientId>,
     book_intervals: AHashMap<NonZeroUsize, AHashSet<InstrumentId>>,
+    book_deltas_subs: AHashSet<InstrumentId>,
     book_updaters: AHashMap<InstrumentId, Rc<BookUpdater>>,
     book_snapshotters: AHashMap<InstrumentId, Rc<BookSnapshotter>>,
     bar_aggregators: AHashMap<BarType, Rc<RefCell<Box<dyn BarAggregator>>>>,
@@ -158,6 +160,7 @@ impl DataEngine {
             catalogs: AHashMap::new(),
             routing_map: IndexMap::new(),
             book_intervals: AHashMap::new(),
+            book_deltas_subs: AHashSet::new(),
             book_updaters: AHashMap::new(),
             book_snapshotters: AHashMap::new(),
             bar_aggregators: AHashMap::new(),
@@ -232,15 +235,15 @@ impl DataEngine {
 
         if let Some(routing) = routing {
             self.routing_map.insert(routing, client_id);
-            log::info!("Set client {client_id} routing for {routing}");
+            log::debug!("Set client {client_id} routing for {routing}");
         }
 
         if client.venue.is_none() && self.default_client.is_none() {
             self.default_client = Some(client);
-            log::info!("Registered client {client_id} for default routing");
+            log::debug!("Registered client {client_id} for default routing");
         } else {
             self.clients.insert(client_id, client);
-            log::info!("Registered client {client_id}");
+            log::debug!("Registered client {client_id}");
         }
     }
 
@@ -277,7 +280,7 @@ impl DataEngine {
         let client_id = client.client_id();
 
         self.default_client = Some(client);
-        log::info!("Registered default client {client_id}");
+        log::debug!("Registered default client {client_id}");
     }
 
     /// Starts all registered data clients.
@@ -488,7 +491,10 @@ impl DataEngine {
     /// Returns all instrument IDs for which book snapshot subscriptions exist.
     #[must_use]
     pub fn subscribed_book_snapshots(&self) -> Vec<InstrumentId> {
-        self.collect_subscriptions(|client| &client.subscriptions_book_snapshots)
+        self.book_intervals
+            .values()
+            .flat_map(|set| set.iter().copied())
+            .collect()
     }
 
     /// Returns all instrument IDs for which quote subscriptions exist.
@@ -575,7 +581,10 @@ impl DataEngine {
         match &cmd {
             SubscribeCommand::BookDeltas(cmd) => self.subscribe_book_deltas(cmd)?,
             SubscribeCommand::BookDepth10(cmd) => self.subscribe_book_depth10(cmd)?,
-            SubscribeCommand::BookSnapshots(cmd) => self.subscribe_book_snapshots(cmd)?,
+            SubscribeCommand::BookSnapshots(cmd) => {
+                // Handles client forwarding internally (forwards as BookDeltas)
+                return self.subscribe_book_snapshots(cmd);
+            }
             SubscribeCommand::Bars(cmd) => self.subscribe_bars(cmd)?,
             _ => {} // Do nothing else
         }
@@ -611,7 +620,10 @@ impl DataEngine {
         match &cmd {
             UnsubscribeCommand::BookDeltas(cmd) => self.unsubscribe_book_deltas(cmd)?,
             UnsubscribeCommand::BookDepth10(cmd) => self.unsubscribe_book_depth10(cmd)?,
-            UnsubscribeCommand::BookSnapshots(cmd) => self.unsubscribe_book_snapshots(cmd)?,
+            UnsubscribeCommand::BookSnapshots(cmd) => {
+                // Handles client forwarding internally (forwards as BookDeltas)
+                return self.unsubscribe_book_snapshots(cmd);
+            }
             UnsubscribeCommand::Bars(cmd) => self.unsubscribe_bars(cmd)?,
             _ => {} // Do nothing else
         }
@@ -730,7 +742,8 @@ impl DataEngine {
             DataResponse::Quotes(resp) => self.handle_quotes(&resp.data),
             DataResponse::Trades(resp) => self.handle_trades(&resp.data),
             DataResponse::Bars(resp) => self.handle_bars(&resp.data),
-            _ => todo!(),
+            DataResponse::Book(resp) => self.handle_book_response(&resp.data),
+            _ => todo!("Handle other response types"),
         }
 
         msgbus::send_response(resp.correlation_id(), &resp);
@@ -928,6 +941,7 @@ impl DataEngine {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
         }
 
+        self.book_deltas_subs.insert(cmd.instrument_id);
         self.setup_book_updater(&cmd.instrument_id, cmd.book_type, true, cmd.managed)?;
 
         Ok(())
@@ -944,10 +958,6 @@ impl DataEngine {
     }
 
     fn subscribe_book_snapshots(&mut self, cmd: &SubscribeBookSnapshots) -> anyhow::Result<()> {
-        if self.subscribed_book_deltas().contains(&cmd.instrument_id) {
-            return Ok(());
-        }
-
         if cmd.instrument_id.is_synthetic() {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
         }
@@ -1007,7 +1017,52 @@ impl DataEngine {
                 .expect(FAILED);
         }
 
-        self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false, true)?;
+        // Only set up book updater if not already subscribed to deltas
+        if !self.subscribed_book_deltas().contains(&cmd.instrument_id) {
+            self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false, true)?;
+        }
+
+        if let Some(client_id) = cmd.client_id.as_ref()
+            && self.external_clients.contains(client_id)
+        {
+            if self.config.debug {
+                log::debug!("Skipping subscribe command for external client {client_id}: {cmd:?}",);
+            }
+            return Ok(());
+        }
+
+        log::debug!(
+            "Forwarding BookSnapshots as BookDeltas for {}, client_id={:?}, venue={:?}",
+            cmd.instrument_id,
+            cmd.client_id,
+            cmd.venue,
+        );
+
+        if let Some(client) = self.get_client(cmd.client_id.as_ref(), cmd.venue.as_ref()) {
+            let deltas_cmd = SubscribeBookDeltas::new(
+                cmd.instrument_id,
+                cmd.book_type,
+                cmd.client_id,
+                cmd.venue,
+                UUID4::new(),
+                cmd.ts_init,
+                cmd.depth,
+                true, // managed
+                Some(cmd.command_id),
+                cmd.params.clone(),
+            );
+            log::debug!(
+                "Calling client.execute_subscribe for BookDeltas: {}",
+                cmd.instrument_id
+            );
+            client.execute_subscribe(&SubscribeCommand::BookDeltas(deltas_cmd));
+        } else {
+            log::error!(
+                "Cannot handle command: no client found for client_id={:?}, venue={:?}",
+                cmd.client_id,
+                cmd.venue,
+            );
+        }
 
         Ok(())
     }
@@ -1036,6 +1091,8 @@ impl DataEngine {
             log::warn!("Cannot unsubscribe from `OrderBookDeltas` data: not subscribed");
             return Ok(());
         }
+
+        self.book_deltas_subs.remove(&cmd.instrument_id);
 
         let topics = vec![
             switchboard::get_book_deltas_topic(cmd.instrument_id),
@@ -1068,7 +1125,12 @@ impl DataEngine {
     }
 
     fn unsubscribe_book_snapshots(&mut self, cmd: &UnsubscribeBookSnapshots) -> anyhow::Result<()> {
-        if !self.subscribed_book_deltas().contains(&cmd.instrument_id) {
+        let is_subscribed = self
+            .book_intervals
+            .values()
+            .any(|set| set.contains(&cmd.instrument_id));
+
+        if !is_subscribed {
             log::warn!("Cannot unsubscribe from `OrderBook` snapshots: not subscribed");
             return Ok(());
         }
@@ -1088,11 +1150,36 @@ impl DataEngine {
         let topics = vec![
             switchboard::get_book_deltas_topic(cmd.instrument_id),
             switchboard::get_book_depth10_topic(cmd.instrument_id),
-            // TODO: Unsubscribe from snapshots (add interval_ms to message?)
         ];
 
         self.maintain_book_updater(&cmd.instrument_id, &topics);
         self.maintain_book_snapshotter(&cmd.instrument_id);
+
+        let still_in_intervals = self
+            .book_intervals
+            .values()
+            .any(|set| set.contains(&cmd.instrument_id));
+
+        if !still_in_intervals && !self.book_deltas_subs.contains(&cmd.instrument_id) {
+            if let Some(client_id) = cmd.client_id.as_ref()
+                && self.external_clients.contains(client_id)
+            {
+                return Ok(());
+            }
+
+            if let Some(client) = self.get_client(cmd.client_id.as_ref(), cmd.venue.as_ref()) {
+                let deltas_cmd = UnsubscribeBookDeltas::new(
+                    cmd.instrument_id,
+                    cmd.client_id,
+                    cmd.venue,
+                    UUID4::new(),
+                    cmd.ts_init,
+                    Some(cmd.command_id),
+                    cmd.params.clone(),
+                );
+                client.execute_unsubscribe(&UnsubscribeCommand::BookDeltas(deltas_cmd));
+            }
+        }
 
         Ok(())
     }
@@ -1189,6 +1276,18 @@ impl DataEngine {
 
     fn handle_bars(&self, bars: &[Bar]) {
         if let Err(e) = self.cache.as_ref().borrow_mut().add_bars(bars) {
+            log_error_on_cache_insert(&e);
+        }
+    }
+
+    fn handle_book_response(&self, book: &OrderBook) {
+        log::debug!("Adding order book {} to cache", book.instrument_id);
+        if let Err(e) = self
+            .cache
+            .as_ref()
+            .borrow_mut()
+            .add_order_book(book.clone())
+        {
             log_error_on_cache_insert(&e);
         }
     }

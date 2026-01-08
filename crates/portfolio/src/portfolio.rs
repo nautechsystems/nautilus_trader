@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,6 +22,7 @@ use nautilus_analysis::analyzer::PortfolioAnalyzer;
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
+    enums::LogColor,
     msgbus::{
         self,
         handler::{ShareableMessageHandler, TypedMessageHandler},
@@ -139,6 +140,20 @@ impl Portfolio {
             cache,
             inner,
             config,
+        }
+    }
+
+    /// Creates a shallow clone of the Portfolio that shares the same internal state.
+    ///
+    /// This is useful when multiple components need to reference the same Portfolio
+    /// without creating duplicate msgbus handler registrations.
+    #[must_use]
+    pub fn clone_shallow(&self) -> Self {
+        Self {
+            clock: self.clock.clone(),
+            cache: self.cache.clone(),
+            inner: self.inner.clone(),
+            config: self.config.clone(),
         }
     }
 
@@ -793,6 +808,7 @@ impl Portfolio {
             .sum::<usize>();
 
         log::info!(
+            color = if total_orders > 0 { LogColor::Blue as u8 } else { LogColor::Normal as u8 };
             "Initialized {} open order{}",
             total_orders,
             if total_orders == 1 { "" } else { "s" }
@@ -913,6 +929,7 @@ impl Portfolio {
         let open_count = all_positions_open.len();
         self.inner.borrow_mut().initialized = initialized;
         log::info!(
+            color = if open_count > 0 { LogColor::Blue as u8 } else { LogColor::Normal as u8 };
             "Initialized {} open position{}",
             open_count,
             if open_count == 1 { "" } else { "s" }
@@ -1628,15 +1645,17 @@ fn update_instrument_id(
     let mut result_maint = None;
 
     let account = {
-        let cache_ref = cache.borrow();
-        let account = if let Some(account) = cache_ref.account_for_venue(&instrument_id.venue) {
-            account
-        } else {
-            log::error!(
-                "Cannot update tick: no account registered for {}",
-                instrument_id.venue
-            );
-            return;
+        let account = {
+            let cache_ref = cache.borrow();
+            if let Some(account) = cache_ref.account_for_venue(&instrument_id.venue) {
+                account.clone()
+            } else {
+                log::error!(
+                    "Cannot update tick: no account registered for {}",
+                    instrument_id.venue
+                );
+                return;
+            }
         };
 
         let mut cache_ref = cache.borrow_mut();
@@ -1661,13 +1680,13 @@ fn update_instrument_id(
             .collect();
 
         result_init = inner.borrow().accounts.update_orders(
-            account,
+            &account,
             instrument.clone(),
             orders_open.iter().collect(),
             clock.borrow().timestamp_ns(),
         );
 
-        if let AccountAny::Margin(margin_account) = account {
+        if let AccountAny::Margin(ref margin_account) = account {
             result_maint = inner.borrow().accounts.update_positions(
                 margin_account,
                 instrument,
@@ -1679,7 +1698,7 @@ fn update_instrument_id(
         if let Some((ref updated_account, _)) = result_init {
             cache_ref.update_account(updated_account.clone()).unwrap();
         }
-        account.clone()
+        account
     };
 
     let mut portfolio_clone = Portfolio {

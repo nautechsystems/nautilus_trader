@@ -1,0 +1,20 @@
+{
+  "t": "n",
+  "ts": 1609459200,
+  "tn": 123456789,
+  "eid": "E-01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "o": {
+    "oid": "O-01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    "u": "550e8400-e29b-41d4-a716-446655440000",
+    "s": "BTCUSD-PERP",
+    "p": "50000.00",
+    "q": 100,
+    "xq": 0,
+    "rq": 100,
+    "o": "ACCEPTED",
+    "d": "B",
+    "tif": "GTC",
+    "ts": 1609459200,
+    "tn": 0
+  }
+}

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -130,7 +130,7 @@ impl KrakenSpotWebSocketClient {
 
     /// Connects to the WebSocket server.
     pub async fn connect(&mut self) -> Result<(), KrakenWsError> {
-        tracing::debug!("Connecting to {}", self.url);
+        log::debug!("Connecting to {}", self.url);
 
         self.signal.store(false, Ordering::Relaxed);
 
@@ -193,7 +193,7 @@ impl KrakenSpotWebSocketClient {
                         if signal.load(Ordering::Relaxed) {
                             continue;
                         }
-                        tracing::info!("WebSocket reconnected, resubscribing");
+                        log::info!("WebSocket reconnected, resubscribing");
 
                         // Mark all confirmed subscriptions as failed to transition to pending
                         let confirmed_topics = subscriptions.all_topics();
@@ -203,23 +203,22 @@ impl KrakenSpotWebSocketClient {
 
                         let topics = subscriptions.all_topics();
                         if topics.is_empty() {
-                            tracing::debug!("No subscriptions to restore after reconnection");
+                            log::debug!("No subscriptions to restore after reconnection");
                         } else {
                             // Check if we need to re-authenticate (had a token before)
                             let had_auth = auth_token_for_reconnect.read().await.is_some();
 
                             if had_auth && config_for_reconnect.has_api_credentials() {
-                                tracing::debug!("Re-authenticating after reconnect");
+                                log::debug!("Re-authenticating after reconnect");
 
                                 match refresh_auth_token(&config_for_reconnect).await {
                                     Ok(new_token) => {
                                         *auth_token_for_reconnect.write().await = Some(new_token);
-                                        tracing::debug!("Re-authentication successful");
+                                        log::debug!("Re-authentication successful");
                                     }
                                     Err(e) => {
-                                        tracing::error!(
-                                            error = %e,
-                                            "Failed to re-authenticate after reconnect"
+                                        log::error!(
+                                            "Failed to re-authenticate after reconnect: {e}"
                                         );
                                         // Clear auth token since it's invalid
                                         *auth_token_for_reconnect.write().await = None;
@@ -227,10 +226,7 @@ impl KrakenSpotWebSocketClient {
                                 }
                             }
 
-                            tracing::info!(
-                                count = topics.len(),
-                                "Resubscribing after reconnection"
-                            );
+                            log::info!("Resubscribing after reconnection: count={}", topics.len());
 
                             // Replay subscriptions
                             for topic in &topics {
@@ -263,15 +259,14 @@ impl KrakenSpotWebSocketClient {
                                             && let Err(e) = cmd_tx_for_reconnect
                                                 .send(SpotHandlerCommand::SendText { payload })
                                         {
-                                            tracing::error!(
-                                                error = %e,
-                                                "Failed to send executions resubscribe"
+                                            log::error!(
+                                                "Failed to send executions resubscribe: {e}"
                                             );
                                         }
 
                                         subscriptions.mark_subscribe(topic);
                                     } else {
-                                        tracing::warn!(
+                                        log::warn!(
                                             "Cannot resubscribe to executions: no auth token"
                                         );
                                     }
@@ -281,7 +276,9 @@ impl KrakenSpotWebSocketClient {
                                 // Parse topic format: "Channel:symbol" or "Channel:symbol:interval"
                                 let parts: Vec<&str> = topic.splitn(3, ':').collect();
                                 if parts.len() < 2 {
-                                    tracing::warn!(topic, "Invalid topic format for resubscribe");
+                                    log::warn!(
+                                        "Invalid topic format for resubscribe: topic={topic}"
+                                    );
                                     continue;
                                 }
 
@@ -297,7 +294,7 @@ impl KrakenSpotWebSocketClient {
                                 };
 
                                 let Some(channel) = channel else {
-                                    tracing::warn!(topic, "Unknown channel for resubscribe");
+                                    log::warn!("Unknown channel for resubscribe: topic={topic}");
                                     continue;
                                 };
 
@@ -339,10 +336,9 @@ impl KrakenSpotWebSocketClient {
                                     && let Err(e) = cmd_tx_for_reconnect
                                         .send(SpotHandlerCommand::SendText { payload })
                                 {
-                                    tracing::error!(
-                                        error = %e,
-                                        topic,
-                                        "Failed to send resubscribe command"
+                                    log::error!(
+                                        "Failed to send resubscribe command: error={e}, \
+                                        topic={topic}"
                                     );
                                 }
 
@@ -351,40 +347,40 @@ impl KrakenSpotWebSocketClient {
                         }
 
                         if out_tx.send(NautilusWsMessage::Reconnected).is_err() {
-                            tracing::error!("Failed to send message (receiver dropped)");
+                            log::error!("Failed to send message (receiver dropped)");
                             break;
                         }
                         continue;
                     }
                     Some(msg) => {
                         if out_tx.send(msg).is_err() {
-                            tracing::error!("Failed to send message (receiver dropped)");
+                            log::error!("Failed to send message (receiver dropped)");
                             break;
                         }
                     }
                     None => {
                         if handler.is_stopped() {
-                            tracing::debug!("Stop signal received, ending message processing");
+                            log::debug!("Stop signal received, ending message processing");
                             break;
                         }
-                        tracing::warn!("WebSocket stream ended unexpectedly");
+                        log::warn!("WebSocket stream ended unexpectedly");
                         break;
                     }
                 }
             }
 
-            tracing::debug!("Handler task exiting");
+            log::debug!("Handler task exiting");
         });
 
         self.task_handle = Some(Arc::new(stream_handle));
 
-        tracing::debug!("WebSocket connected successfully");
+        log::debug!("WebSocket connected successfully");
         Ok(())
     }
 
     /// Disconnects from the WebSocket server.
     pub async fn disconnect(&mut self) -> Result<(), KrakenWsError> {
-        tracing::debug!("Disconnecting WebSocket");
+        log::debug!("Disconnecting WebSocket");
 
         self.signal.store(true, Ordering::Relaxed);
 
@@ -394,7 +390,7 @@ impl KrakenSpotWebSocketClient {
             .await
             .send(SpotHandlerCommand::Disconnect)
         {
-            tracing::debug!(
+            log::debug!(
                 "Failed to send disconnect command (handler may already be shut down): {e}"
             );
         }
@@ -402,26 +398,26 @@ impl KrakenSpotWebSocketClient {
         if let Some(task_handle) = self.task_handle.take() {
             match Arc::try_unwrap(task_handle) {
                 Ok(handle) => {
-                    tracing::debug!("Waiting for task handle to complete");
+                    log::debug!("Waiting for task handle to complete");
                     match tokio::time::timeout(tokio::time::Duration::from_secs(2), handle).await {
-                        Ok(Ok(())) => tracing::debug!("Task handle completed successfully"),
-                        Ok(Err(e)) => tracing::error!("Task handle encountered an error: {e:?}"),
+                        Ok(Ok(())) => log::debug!("Task handle completed successfully"),
+                        Ok(Err(e)) => log::error!("Task handle encountered an error: {e:?}"),
                         Err(_) => {
-                            tracing::warn!(
+                            log::warn!(
                                 "Timeout waiting for task handle, task may still be running"
                             );
                         }
                     }
                 }
                 Err(arc_handle) => {
-                    tracing::debug!(
+                    log::debug!(
                         "Cannot take ownership of task handle - other references exist, aborting task"
                     );
                     arc_handle.abort();
                 }
             }
         } else {
-            tracing::debug!("No task handle to await");
+            log::debug!("No task handle to await");
         }
 
         self.subscriptions.clear();
@@ -492,10 +488,10 @@ impl KrakenSpotWebSocketClient {
             KrakenWsError::AuthenticationError(format!("Failed to get WebSocket token: {e}"))
         })?;
 
-        tracing::debug!(
-            token_length = ws_token.token.len(),
-            expires = ws_token.expires,
-            "WebSocket authentication token received"
+        log::debug!(
+            "WebSocket authentication token received: token_length={}, expires={}",
+            ws_token.token.len(),
+            ws_token.expires
         );
 
         let mut auth_token = self.auth_token.write().await;
@@ -510,7 +506,7 @@ impl KrakenSpotWebSocketClient {
         if let Ok(cmd_tx) = self.cmd_tx.try_read()
             && let Err(e) = cmd_tx.send(SpotHandlerCommand::InitializeInstruments(instruments))
         {
-            tracing::debug!("Failed to send instruments to handler: {e}");
+            log::debug!("Failed to send instruments to handler: {e}");
         }
     }
 
@@ -520,7 +516,7 @@ impl KrakenSpotWebSocketClient {
         if let Ok(cmd_tx) = self.cmd_tx.try_read()
             && let Err(e) = cmd_tx.send(SpotHandlerCommand::UpdateInstrument(instrument))
         {
-            tracing::debug!("Failed to send instrument update to handler: {e}");
+            log::debug!("Failed to send instrument update to handler: {e}");
         }
     }
 
@@ -532,7 +528,7 @@ impl KrakenSpotWebSocketClient {
         if let Ok(cmd_tx) = self.cmd_tx.try_read()
             && let Err(e) = cmd_tx.send(SpotHandlerCommand::SetAccountId(account_id))
         {
-            tracing::debug!("Failed to send account ID to handler: {e}");
+            log::debug!("Failed to send account ID to handler: {e}");
         }
     }
 
@@ -556,7 +552,7 @@ impl KrakenSpotWebSocketClient {
                 strategy_id,
             })
         {
-            tracing::debug!("Failed to send cache client order command to handler: {e}");
+            log::debug!("Failed to send cache client order command to handler: {e}");
         }
     }
 
@@ -579,7 +575,7 @@ impl KrakenSpotWebSocketClient {
     ) -> Result<(), KrakenWsError> {
         let mut symbols_to_subscribe = Vec::new();
         for symbol in &symbols {
-            let key = format!("{:?}:{}", channel, symbol);
+            let key = format!("{channel:?}:{symbol}");
             if self.subscriptions.add_reference(&key) {
                 self.subscriptions.mark_subscribe(&key);
                 symbols_to_subscribe.push(*symbol);
@@ -624,7 +620,7 @@ impl KrakenSpotWebSocketClient {
         self.send_request(&request).await?;
 
         for symbol in &symbols_to_subscribe {
-            let key = format!("{:?}:{}", channel, symbol);
+            let key = format!("{channel:?}:{symbol}");
             self.subscriptions.confirm_subscribe(&key);
         }
 
@@ -731,15 +727,13 @@ impl KrakenSpotWebSocketClient {
     ) -> Result<(), KrakenWsError> {
         let mut symbols_to_unsubscribe = Vec::new();
         for symbol in &symbols {
-            let key = format!("{:?}:{}", channel, symbol);
+            let key = format!("{channel:?}:{symbol}");
             if self.subscriptions.remove_reference(&key) {
                 self.subscriptions.mark_unsubscribe(&key);
                 symbols_to_unsubscribe.push(*symbol);
             } else {
-                tracing::debug!(
-                    "Channel {:?} symbol {} still has active subscriptions, not unsubscribing",
-                    channel,
-                    symbol
+                log::debug!(
+                    "Channel {channel:?} symbol {symbol} still has active subscriptions, not unsubscribing"
                 );
             }
         }
@@ -782,7 +776,7 @@ impl KrakenSpotWebSocketClient {
         self.send_request(&request).await?;
 
         for symbol in &symbols_to_unsubscribe {
-            let key = format!("{:?}:{}", channel, symbol);
+            let key = format!("{channel:?}:{symbol}");
             self.subscriptions.confirm_unsubscribe(&key);
         }
 
@@ -806,7 +800,7 @@ impl KrakenSpotWebSocketClient {
         let payload =
             serde_json::to_string(request).map_err(|e| KrakenWsError::JsonError(e.to_string()))?;
 
-        tracing::trace!("Sending message: {payload}");
+        log::trace!("Sending message: {payload}");
 
         self.cmd_tx
             .read()
@@ -1062,10 +1056,10 @@ async fn refresh_auth_token(config: &KrakenDataClientConfig) -> Result<String, K
         KrakenWsError::AuthenticationError(format!("Failed to get WebSocket token: {e}"))
     })?;
 
-    tracing::debug!(
-        token_length = ws_token.token.len(),
-        expires = ws_token.expires,
-        "WebSocket authentication token refreshed"
+    log::debug!(
+        "WebSocket authentication token refreshed: token_length={}, expires={}",
+        ws_token.token.len(),
+        ws_token.expires
     );
 
     Ok(ws_token.token)

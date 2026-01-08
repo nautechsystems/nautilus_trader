@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -87,7 +87,7 @@ fn create_csv_reader<P: AsRef<Path>>(
                             "Failed to open file '{path_ref:?}' after {max_retries} attempts: {e}"
                         );
                     }
-                    tracing::warn!(
+                    log::warn!(
                         "Attempt {attempt}/{max_retries} failed to open file '{path_ref:?}': {e}. Retrying after {delay_ms}ms..."
                     );
                     std::thread::sleep(Duration::from_millis(delay_ms));
@@ -127,7 +127,7 @@ fn create_csv_reader<P: AsRef<Path>>(
                         "Failed to read gzip header from '{filepath_ref:?}' after {MAX_RETRIES} attempts: {e}"
                     );
                 }
-                tracing::warn!(
+                log::warn!(
                     "Attempt {attempt}/{MAX_RETRIES} failed to read header from '{filepath_ref:?}': {e}. Retrying after {DELAY_MS}ms..."
                 );
                 std::thread::sleep(Duration::from_millis(DELAY_MS));
@@ -148,7 +148,7 @@ fn create_csv_reader<P: AsRef<Path>>(
                         "Failed to reset file position for '{filepath_ref:?}' after {MAX_RETRIES} attempts: {e}"
                     );
                 }
-                tracing::warn!(
+                log::warn!(
                     "Attempt {attempt}/{MAX_RETRIES} failed to seek in '{filepath_ref:?}': {e}. Retrying after {DELAY_MS}ms..."
                 );
                 std::thread::sleep(Duration::from_millis(DELAY_MS));

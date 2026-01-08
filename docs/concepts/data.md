@@ -895,7 +895,6 @@ data_config = BacktestDataConfig(
     instrument_id=InstrumentId.from_str("BTC/USD.COINBASE"),
     start_time="2024-01-01T09:30:00Z",
     end_time="2024-01-01T16:00:00Z",
-    filter_expr="side == 'BUY'",  # Only buy-side deltas
 )
 ```
 

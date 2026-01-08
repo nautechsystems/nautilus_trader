@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -404,6 +404,7 @@ class BacktestNode:
                 bar_execution=venue_config.bar_execution,
                 bar_adaptive_high_low_ordering=venue_config.bar_adaptive_high_low_ordering,
                 trade_execution=venue_config.trade_execution,
+                liquidity_consumption=venue_config.liquidity_consumption,
                 allow_cash_borrowing=venue_config.allow_cash_borrowing,
                 price_protection_points=get_price_protection_points(venue_config),
             )

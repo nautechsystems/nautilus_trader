@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -313,11 +313,11 @@ impl OKXWsFeedHandler {
     pub(super) async fn send_pong(&self) -> anyhow::Result<()> {
         match self.send_with_retry(TEXT_PONG.to_string(), None).await {
             Ok(()) => {
-                tracing::trace!("Sent pong response to OKX text ping");
+                log::trace!("Sent pong response to OKX text ping");
                 Ok(())
             }
             Err(e) => {
-                tracing::warn!(error = %e, "Failed to send pong after retries");
+                log::warn!("Failed to send pong after retries: error={e}");
                 Err(anyhow::anyhow!("Failed to send pong: {e}"))
             }
         }
@@ -333,17 +333,17 @@ impl OKXWsFeedHandler {
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
                         HandlerCommand::SetClient(client) => {
-                            tracing::debug!("Handler received WebSocket client");
+                            log::debug!("Handler received WebSocket client");
                             self.inner = Some(client);
                         }
                         HandlerCommand::Disconnect => {
-                            tracing::debug!("Handler disconnecting WebSocket client");
+                            log::debug!("Handler disconnecting WebSocket client");
                             self.inner = None;
                             return None;
                         }
                         HandlerCommand::Authenticate { payload } => {
                             if let Err(e) = self.send_with_retry(payload, Some(vec![OKX_RATE_LIMIT_KEY_SUBSCRIPTION.to_string()])).await {
-                                tracing::error!(error = %e, "Failed to send authentication message after retries");
+                                log::error!("Failed to send authentication message after retries: error={e}");
                             }
                         }
                         HandlerCommand::InitializeInstruments(instruments) => {
@@ -356,12 +356,12 @@ impl OKXWsFeedHandler {
                         }
                         HandlerCommand::Subscribe { args } => {
                             if let Err(e) = self.handle_subscribe(args).await {
-                                tracing::error!(error = %e, "Failed to handle subscribe command");
+                                log::error!("Failed to handle subscribe command: error={e}");
                             }
                         }
                         HandlerCommand::Unsubscribe { args } => {
                             if let Err(e) = self.handle_unsubscribe(args).await {
-                                tracing::error!(error = %e, "Failed to handle unsubscribe command");
+                                log::error!("Failed to handle unsubscribe command: error={e}");
                             }
                         }
                         HandlerCommand::CancelOrder {
@@ -381,7 +381,7 @@ impl OKXWsFeedHandler {
                                 )
                                 .await
                             {
-                                tracing::error!(error = %e, "Failed to handle cancel order command");
+                                log::error!("Failed to handle cancel order command: error={e}");
                             }
                         }
                         HandlerCommand::CancelAlgoOrder {
@@ -401,7 +401,7 @@ impl OKXWsFeedHandler {
                                 )
                                 .await
                             {
-                                tracing::error!(error = %e, "Failed to handle cancel algo order command");
+                                log::error!("Failed to handle cancel algo order command: error={e}");
                             }
                         }
                         HandlerCommand::PlaceOrder {
@@ -421,7 +421,7 @@ impl OKXWsFeedHandler {
                                 )
                                 .await
                             {
-                                tracing::error!(error = %e, "Failed to handle place order command");
+                                log::error!("Failed to handle place order command: error={e}");
                             }
                         }
                         HandlerCommand::PlaceAlgoOrder {
@@ -441,7 +441,7 @@ impl OKXWsFeedHandler {
                                 )
                                 .await
                             {
-                                tracing::error!(error = %e, "Failed to handle place algo order command");
+                                log::error!("Failed to handle place algo order command: error={e}");
                             }
                         }
                         HandlerCommand::AmendOrder {
@@ -463,27 +463,27 @@ impl OKXWsFeedHandler {
                                 )
                                 .await
                             {
-                                tracing::error!(error = %e, "Failed to handle amend order command");
+                                log::error!("Failed to handle amend order command: error={e}");
                             }
                         }
                         HandlerCommand::MassCancel { instrument_id } => {
                             if let Err(e) = self.handle_mass_cancel(instrument_id).await {
-                                tracing::error!(error = %e, "Failed to handle mass cancel command");
+                                log::error!("Failed to handle mass cancel command: error={e}");
                             }
                         }
                         HandlerCommand::BatchCancelOrders { args, request_id } => {
                             if let Err(e) = self.handle_batch_cancel_orders(args, request_id).await {
-                                tracing::error!(error = %e, "Failed to handle batch cancel orders command");
+                                log::error!("Failed to handle batch cancel orders command: error={e}");
                             }
                         }
                         HandlerCommand::BatchPlaceOrders { args, request_id } => {
                             if let Err(e) = self.handle_batch_place_orders(args, request_id).await {
-                                tracing::error!(error = %e, "Failed to handle batch place orders command");
+                                log::error!("Failed to handle batch place orders command: error={e}");
                             }
                         }
                         HandlerCommand::BatchAmendOrders { args, request_id } => {
                             if let Err(e) = self.handle_batch_amend_orders(args, request_id).await {
-                                tracing::error!(error = %e, "Failed to handle batch amend orders command");
+                                log::error!("Failed to handle batch amend orders command: error={e}");
                             }
                         }
                     }
@@ -493,7 +493,7 @@ impl OKXWsFeedHandler {
 
                 _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
                     if self.signal.load(std::sync::atomic::Ordering::Acquire) {
-                        tracing::debug!("Stop signal received during idle period");
+                        log::debug!("Stop signal received during idle period");
                         return None;
                     }
                     continue;
@@ -506,7 +506,7 @@ impl OKXWsFeedHandler {
                             None => continue,
                         },
                         None => {
-                            tracing::debug!("WebSocket stream closed");
+                            log::debug!("WebSocket stream closed");
                             return None;
                         }
                     };
@@ -516,7 +516,7 @@ impl OKXWsFeedHandler {
             match event {
                 OKXWsMessage::Ping => {
                     if let Err(e) = self.send_pong().await {
-                        tracing::warn!(error = %e, "Failed to send pong response");
+                        log::warn!("Failed to send pong response: error={e}");
                     }
                     continue;
                 }
@@ -532,7 +532,7 @@ impl OKXWsFeedHandler {
                         return Some(NautilusWsMessage::Authenticated);
                     }
 
-                    tracing::error!(error = %msg, "WebSocket authentication failed");
+                    log::error!("WebSocket authentication failed: error={msg}");
                     self.auth_tracker.fail(msg.clone());
 
                     let error = OKXWebSocketError {
@@ -628,7 +628,7 @@ impl OKXWsFeedHandler {
                             if success {
                                 self.subscriptions_state.confirm_subscribe(&topic);
                             } else {
-                                tracing::warn!(?topic, error = ?msg, code = ?code, "Subscription failed");
+                                log::warn!("Subscription failed: topic={topic:?}, error={msg:?}, code={code:?}");
                                 self.subscriptions_state.mark_failure(&topic);
                             }
                         }
@@ -636,7 +636,7 @@ impl OKXWsFeedHandler {
                             if success {
                                 self.subscriptions_state.confirm_unsubscribe(&topic);
                             } else {
-                                tracing::warn!(?topic, error = ?msg, code = ?code, "Unsubscription failed - restoring subscription");
+                                log::warn!("Unsubscription failed - restoring subscription: topic={topic:?}, error={msg:?}, code={code:?}");
                                 // Venue rejected unsubscribe, so we're still subscribed. Restore state:
                                 self.subscriptions_state.confirm_unsubscribe(&topic); // Clear pending_unsubscribe
                                 self.subscriptions_state.mark_subscribe(&topic);      // Mark as subscribing
@@ -653,7 +653,7 @@ impl OKXWsFeedHandler {
 
                 // Handle shutdown - either channel closed or stream ended
                 else => {
-                    tracing::debug!("Handler shutting down: stream ended or command channel closed");
+                    log::debug!("Handler shutting down: stream ended or command channel closed");
                     return None;
                 }
             }
@@ -888,10 +888,10 @@ impl OKXWsFeedHandler {
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
         if code == "0" {
-            tracing::debug!("Order operation successful: id={id:?} op={op} code={code}");
+            log::debug!("Order operation successful: id={id:?} op={op} code={code}");
 
             if op == OKXWsOperation::BatchCancelOrders {
-                tracing::debug!(
+                log::debug!(
                     "Batch cancel operation successful: id={id:?} cancel_count={}",
                     data.len()
                 );
@@ -911,20 +911,13 @@ impl OKXWsFeedHandler {
                             .and_then(|v| v.as_str())
                             .filter(|s| !s.is_empty())
                         {
-                            tracing::error!(
-                                "Batch cancel partial failure for order {}: sCode={} sMsg={}",
-                                cl_ord_id_str,
-                                entry_code,
-                                entry_msg
+                            log::error!(
+                                "Batch cancel partial failure for order {cl_ord_id_str}: sCode={entry_code} sMsg={entry_msg}"
                             );
                             // TODO: Emit OrderCancelRejected for this specific order
                         } else {
-                            tracing::error!(
-                                "Batch cancel entry[{}] failed: sCode={} sMsg={} data={:?}",
-                                idx,
-                                entry_code,
-                                entry_msg,
-                                entry
+                            log::error!(
+                                "Batch cancel entry[{idx}] failed: sCode={entry_code} sMsg={entry_msg} data={entry:?}"
                             );
                         }
                     }
@@ -935,10 +928,7 @@ impl OKXWsFeedHandler {
                 && let Some(request_id) = &id
                 && let Some(instrument_id) = self.pending_mass_cancel_requests.remove(request_id)
             {
-                tracing::debug!(
-                    "Mass cancel operation successful for instrument: {}",
-                    instrument_id
-                );
+                log::debug!("Mass cancel operation successful for instrument: {instrument_id}");
             } else if op == OKXWsOperation::Order
                 && let Some(request_id) = &id
                 && let Some((params, client_order_id, trader_id, strategy_id, instrument_id)) =
@@ -990,7 +980,7 @@ impl OKXWsFeedHandler {
                                 // not base currency (ETH). We can't accurately parse the
                                 // base quantity without the fill price, so we skip the
                                 // synthetic OrderAccepted and rely on the orders channel
-                                tracing::debug!(
+                                log::debug!(
                                     "Skipping synthetic OrderAccepted for {} quote-sized order: client_order_id={client_order_id}, venue_order_id={venue_order_id:?}",
                                     if is_explicit_quote_sized {
                                         "explicit"
@@ -1002,7 +992,7 @@ impl OKXWsFeedHandler {
                             }
 
                             let Some(v_order_id) = venue_order_id else {
-                                tracing::error!(
+                                log::error!(
                                     "No venue_order_id for accepted order: client_order_id={client_order_id}"
                                 );
                                 return None;
@@ -1010,7 +1000,7 @@ impl OKXWsFeedHandler {
 
                             // Check if already emitted from orders channel push
                             if self.emitted_order_accepted.contains_key(&v_order_id) {
-                                tracing::debug!(
+                                log::debug!(
                                     "Skipping duplicate OrderAccepted from operation response for venue_order_id={v_order_id}"
                                 );
                                 return None;
@@ -1030,28 +1020,27 @@ impl OKXWsFeedHandler {
                                 false, // Not from reconciliation
                             );
 
-                            tracing::debug!(
+                            log::debug!(
                                 "Order accepted: client_order_id={client_order_id}, venue_order_id={v_order_id}"
                             );
 
                             return Some(NautilusWsMessage::OrderAccepted(accepted));
                         }
                         PendingOrderParams::Algo(_) => {
-                            tracing::debug!(
-                                "Algo order placement confirmed: client_order_id={client_order_id}, venue_order_id={:?}",
-                                venue_order_id
+                            log::debug!(
+                                "Algo order placement confirmed: client_order_id={client_order_id}, venue_order_id={venue_order_id:?}"
                             );
                         }
                     }
                 } else {
-                    tracing::error!("Instrument not found for accepted order: {instrument_id}");
+                    log::error!("Instrument not found for accepted order: {instrument_id}");
                 }
             }
 
             if let Some(first) = data.first()
                 && let Some(success_msg) = first.get("sMsg").and_then(|value| value.as_str())
             {
-                tracing::debug!("Order details: {success_msg}");
+                log::debug!("Order details: {success_msg}");
             }
 
             return None;
@@ -1065,14 +1054,14 @@ impl OKXWsFeedHandler {
             .to_string();
 
         if let Some(first) = data.first() {
-            tracing::debug!(
+            log::debug!(
                 "Error data fields: {}",
                 serde_json::to_string_pretty(first)
                     .unwrap_or_else(|_| "unable to serialize".to_string())
             );
         }
 
-        tracing::warn!("Order operation failed: id={id:?} op={op} code={code} msg={error_msg}");
+        log::warn!("Order operation failed: id={id:?} op={op} code={code} msg={error_msg}");
 
         let ts_event = self.clock.get_time_ns();
 
@@ -1204,9 +1193,8 @@ impl OKXWsFeedHandler {
                     if let Some(instrument_id) =
                         self.pending_mass_cancel_requests.remove(request_id)
                     {
-                        tracing::error!(
-                            "Mass cancel operation failed for {}: code={code} msg={error_msg}",
-                            instrument_id
+                        log::error!(
+                            "Mass cancel operation failed for {instrument_id}: code={code} msg={error_msg}"
                         );
                         let error = OKXWebSocketError {
                             code,
@@ -1216,13 +1204,11 @@ impl OKXWsFeedHandler {
                         };
                         return Some(NautilusWsMessage::Error(error));
                     } else {
-                        tracing::error!(
-                            "Mass cancel operation failed: code={code} msg={error_msg}"
-                        );
+                        log::error!("Mass cancel operation failed: code={code} msg={error_msg}");
                     }
                 }
                 OKXWsOperation::BatchCancelOrders => {
-                    tracing::warn!(
+                    log::warn!(
                         "Batch cancel operation failed: id={id:?} code={code} msg={error_msg} data_count={}",
                         data.len()
                     );
@@ -1243,21 +1229,14 @@ impl OKXWsFeedHandler {
                                 .and_then(|v| v.as_str())
                                 .filter(|s| !s.is_empty())
                             {
-                                tracing::error!(
-                                    "Batch cancel failed for order {}: sCode={} sMsg={}",
-                                    cl_ord_id_str,
-                                    entry_code,
-                                    entry_msg
+                                log::error!(
+                                    "Batch cancel failed for order {cl_ord_id_str}: sCode={entry_code} sMsg={entry_msg}"
                                 );
                                 // TODO: Emit OrderCancelRejected event once we track
                                 // batch cancel metadata (client_order_id, trader_id, etc.)
                             } else {
-                                tracing::error!(
-                                    "Batch cancel entry[{}] failed: sCode={} sMsg={} data={:?}",
-                                    idx,
-                                    entry_code,
-                                    entry_msg,
-                                    entry
+                                log::error!(
+                                    "Batch cancel entry[{idx}] failed: sCode={entry_code} sMsg={entry_msg} data={entry:?}"
                                 );
                             }
                         }
@@ -1272,7 +1251,7 @@ impl OKXWsFeedHandler {
                     };
                     return Some(NautilusWsMessage::Error(error));
                 }
-                _ => tracing::warn!("Unhandled operation type for rejection: {op}"),
+                _ => log::warn!("Unhandled operation type for rejection: {op}"),
             }
         }
 
@@ -1293,7 +1272,7 @@ impl OKXWsFeedHandler {
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
         let Some(inst_id) = arg.inst_id else {
-            tracing::error!("Instrument ID missing for book data event");
+            log::error!("Instrument ID missing for book data event");
             return None;
         };
 
@@ -1313,7 +1292,7 @@ impl OKXWsFeedHandler {
         ) {
             Ok(payloads) => Some(NautilusWsMessage::Data(payloads)),
             Err(e) => {
-                tracing::error!("Failed to parse book message: {e}");
+                log::error!("Failed to parse book message: {e}");
                 None
             }
         }
@@ -1325,7 +1304,7 @@ impl OKXWsFeedHandler {
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
         let Value::Array(arr) = data else {
-            tracing::error!("Account data is not an array");
+            log::error!("Account data is not an array");
             return None;
         };
 
@@ -1334,7 +1313,7 @@ impl OKXWsFeedHandler {
         let account: OKXAccount = match serde_json::from_value(first) {
             Ok(acc) => acc,
             Err(e) => {
-                tracing::error!("Failed to parse account data: {e}");
+                log::error!("Failed to parse account data: {e}");
                 return None;
             }
         };
@@ -1350,7 +1329,7 @@ impl OKXWsFeedHandler {
                 Some(NautilusWsMessage::AccountUpdate(account_state))
             }
             Err(e) => {
-                tracing::error!("Failed to parse account state: {e}");
+                log::error!("Failed to parse account state: {e}");
                 None
             }
         }
@@ -1359,13 +1338,13 @@ impl OKXWsFeedHandler {
     fn handle_positions_data(&mut self, data: Value, ts_init: UnixNanos) {
         match serde_json::from_value::<Vec<OKXPosition>>(data) {
             Ok(positions) => {
-                tracing::debug!("Received {} position update(s)", positions.len());
+                log::debug!("Received {} position update(s)", positions.len());
 
                 for position in positions {
                     let instrument = match self.instruments_cache.get(&position.inst_id) {
                         Some(inst) => inst,
                         None => {
-                            tracing::warn!(
+                            log::warn!(
                                 "Received position update for unknown instrument {}, skipping",
                                 position.inst_id
                             );
@@ -1388,16 +1367,15 @@ impl OKXWsFeedHandler {
                                 .push_back(NautilusWsMessage::PositionUpdate(position_report));
                         }
                         Err(e) => {
-                            tracing::error!(
-                                "Failed to parse position status report for {}: {e}",
-                                instrument_id
+                            log::error!(
+                                "Failed to parse position status report for {instrument_id}: {e}"
                             );
                         }
                     }
                 }
             }
             Err(e) => {
-                tracing::error!("Failed to parse positions data: {e}");
+                log::error!("Failed to parse positions data: {e}");
             }
         }
     }
@@ -1406,12 +1384,12 @@ impl OKXWsFeedHandler {
         let orders: Vec<OKXOrderMsg> = match serde_json::from_value(data) {
             Ok(orders) => orders,
             Err(e) => {
-                tracing::error!("Failed to deserialize orders channel payload: {e}");
+                log::error!("Failed to deserialize orders channel payload: {e}");
                 return None;
             }
         };
 
-        tracing::debug!(
+        log::debug!(
             "Received {} order message(s) from orders channel",
             orders.len()
         );
@@ -1419,7 +1397,7 @@ impl OKXWsFeedHandler {
         let mut exec_reports: Vec<ExecutionReport> = Vec::with_capacity(orders.len());
 
         for msg in orders {
-            tracing::debug!(
+            log::debug!(
                 "Processing order message: inst_id={}, cl_ord_id={}, state={:?}, exec_type={:?}",
                 msg.inst_id,
                 msg.cl_ord_id,
@@ -1441,7 +1419,7 @@ impl OKXWsFeedHandler {
                 self.register_client_order_aliases(&raw_child, &parent_from_msg);
 
             let Some(instrument) = self.instruments_cache.get(&msg.inst_id) else {
-                tracing::error!(
+                log::error!(
                     "No instrument found for inst_id: {inst_id}",
                     inst_id = msg.inst_id
                 );
@@ -1485,7 +1463,7 @@ impl OKXWsFeedHandler {
                             &mut exec_reports,
                         );
                     }
-                    Err(e) => tracing::error!("Failed to parse order event: {e}"),
+                    Err(e) => log::error!("Failed to parse order event: {e}"),
                 }
             } else {
                 // External order or not tracked - use old parse_order_msg for backward compatibility
@@ -1498,19 +1476,19 @@ impl OKXWsFeedHandler {
                     ts_init,
                 ) {
                     Ok(report) => {
-                        tracing::debug!("Parsed external order as execution report: {report:?}");
+                        log::debug!("Parsed external order as execution report: {report:?}");
                         let adjusted =
                             self.adjust_execution_report(report, &effective_client_id, &raw_child);
                         self.update_caches_with_report(&adjusted);
                         exec_reports.push(adjusted);
                     }
-                    Err(e) => tracing::error!("Failed to parse order message: {e}"),
+                    Err(e) => log::error!("Failed to parse order message: {e}"),
                 }
             }
         }
 
         if !exec_reports.is_empty() {
-            tracing::debug!(
+            log::debug!(
                 "Pushing {count} execution report(s) to message queue",
                 count = exec_reports.len()
             );
@@ -1538,7 +1516,7 @@ impl OKXWsFeedHandler {
         match event {
             ParsedOrderEvent::Accepted(accepted) => {
                 if self.emitted_order_accepted.contains_key(&venue_order_id) {
-                    tracing::debug!(
+                    log::debug!(
                         "Skipping duplicate OrderAccepted for venue_order_id={venue_order_id}"
                     );
                     return;
@@ -1664,7 +1642,7 @@ impl OKXWsFeedHandler {
         let orders: Vec<OKXAlgoOrderMsg> = match serde_json::from_value(data) {
             Ok(orders) => orders,
             Err(e) => {
-                tracing::error!("Failed to deserialize algo orders payload: {e}");
+                log::error!("Failed to deserialize algo orders payload: {e}");
                 return None;
             }
         };
@@ -1685,7 +1663,7 @@ impl OKXWsFeedHandler {
                     exec_reports.push(adjusted);
                 }
                 Err(e) => {
-                    tracing::error!("Failed to parse algo order message: {e}");
+                    log::error!("Failed to parse algo order message: {e}");
                 }
             }
         }
@@ -1705,16 +1683,12 @@ impl OKXWsFeedHandler {
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
         let Some(inst_id) = inst_id else {
-            tracing::error!("No instrument for channel {:?}", channel);
+            log::error!("No instrument for channel {channel:?}");
             return None;
         };
 
         let Some(instrument) = self.instruments_cache.get(&inst_id) else {
-            tracing::error!(
-                "No instrument for channel {:?}, inst_id {:?}",
-                channel,
-                inst_id
-            );
+            log::error!("No instrument for channel {channel:?}, inst_id {inst_id:?}");
             return None;
         };
 
@@ -1741,7 +1715,7 @@ impl OKXWsFeedHandler {
             }
             Ok(None) => None,
             Err(e) => {
-                tracing::error!("Error parsing message for channel {:?}: {e}", channel);
+                log::error!("Error parsing message for channel {channel:?}: {e}");
                 None
             }
         }
@@ -1753,24 +1727,24 @@ impl OKXWsFeedHandler {
         match msg {
             tokio_tungstenite::tungstenite::Message::Text(text) => {
                 if text == TEXT_PONG {
-                    tracing::trace!("Received pong from OKX");
+                    log::trace!("Received pong from OKX");
                     return None;
                 }
                 if text == TEXT_PING {
-                    tracing::trace!("Received ping from OKX (text)");
+                    log::trace!("Received ping from OKX (text)");
                     return Some(OKXWsMessage::Ping);
                 }
 
                 if text == RECONNECTED {
-                    tracing::debug!("Received WebSocket reconnection signal");
+                    log::debug!("Received WebSocket reconnection signal");
                     return Some(OKXWsMessage::Reconnected);
                 }
-                tracing::trace!("Received WebSocket message: {text}");
+                log::trace!("Received WebSocket message: {text}");
 
                 match serde_json::from_str(&text) {
                     Ok(ws_event) => match &ws_event {
                         OKXWsMessage::Error { code, msg } => {
-                            tracing::error!("WebSocket error: {code} - {msg}");
+                            log::error!("WebSocket error: {code} - {msg}");
                             Some(ws_event)
                         }
                         OKXWsMessage::Login {
@@ -1780,9 +1754,11 @@ impl OKXWsFeedHandler {
                             conn_id,
                         } => {
                             if code == "0" {
-                                tracing::info!(conn_id = %conn_id, "WebSocket authenticated");
+                                log::info!("WebSocket authenticated: conn_id={conn_id}");
                             } else {
-                                tracing::error!(event = %event, code = %code, error = %msg, "WebSocket authentication failed");
+                                log::error!(
+                                    "WebSocket authentication failed: event={event}, code={code}, error={msg}"
+                                );
                             }
                             Some(ws_event)
                         }
@@ -1796,7 +1772,7 @@ impl OKXWsFeedHandler {
                                 .expect("Invalid OKX websocket channel")
                                 .trim_matches('"')
                                 .to_string();
-                            tracing::debug!("{event}d: channel={channel_str}, conn_id={conn_id}");
+                            log::debug!("{event}d: channel={channel_str}, conn_id={conn_id}");
                             Some(ws_event)
                         }
                         OKXWsMessage::ChannelConnCount {
@@ -1809,13 +1785,13 @@ impl OKXWsFeedHandler {
                                 .expect("Invalid OKX websocket channel")
                                 .trim_matches('"')
                                 .to_string();
-                            tracing::debug!(
+                            log::debug!(
                                 "Channel connection status: channel={channel_str}, connections={conn_count}, conn_id={conn_id}",
                             );
                             None
                         }
                         OKXWsMessage::Ping => {
-                            tracing::trace!("Ignoring ping event parsed from text payload");
+                            log::trace!("Ignoring ping event parsed from text payload");
                             None
                         }
                         OKXWsMessage::Data { .. } => Some(ws_event),
@@ -1828,9 +1804,8 @@ impl OKXWsFeedHandler {
                             data,
                         } => {
                             if code == "0" {
-                                tracing::debug!(
-                                    "Order operation successful: id={:?}, op={op}, code={code}",
-                                    id
+                                log::debug!(
+                                    "Order operation successful: id={id:?}, op={op}, code={code}"
                                 );
 
                                 if let Some(order_data) = data.first() {
@@ -1838,41 +1813,41 @@ impl OKXWsFeedHandler {
                                         .get("sMsg")
                                         .and_then(|s| s.as_str())
                                         .unwrap_or("Order operation successful");
-                                    tracing::debug!("Order success details: {success_msg}");
+                                    log::debug!("Order success details: {success_msg}");
                                 }
                             }
                             Some(ws_event)
                         }
                         OKXWsMessage::Reconnected => {
                             // This shouldn't happen as we handle RECONNECTED string directly
-                            tracing::warn!("Unexpected Reconnected event from deserialization");
+                            log::warn!("Unexpected Reconnected event from deserialization");
                             None
                         }
                     },
                     Err(e) => {
-                        tracing::error!("Failed to parse message: {e}: {text}");
+                        log::error!("Failed to parse message: {e}: {text}");
                         None
                     }
                 }
             }
             Message::Ping(_payload) => {
-                tracing::trace!("Received binary ping frame from OKX");
+                log::trace!("Received binary ping frame from OKX");
                 Some(OKXWsMessage::Ping)
             }
             Message::Pong(payload) => {
-                tracing::trace!("Received pong frame from OKX ({} bytes)", payload.len());
+                log::trace!("Received pong frame from OKX ({} bytes)", payload.len());
                 None
             }
             Message::Binary(msg) => {
-                tracing::debug!("Raw binary: {msg:?}");
+                log::debug!("Raw binary: {msg:?}");
                 None
             }
             Message::Close(_) => {
-                tracing::debug!("Received close message");
+                log::debug!("Received close message");
                 None
             }
             msg => {
-                tracing::warn!("Unexpected message: {msg}");
+                log::warn!("Unexpected message: {msg}");
                 None
             }
         }
@@ -1956,11 +1931,11 @@ impl OKXWsFeedHandler {
             .await
         {
             Ok(()) => {
-                tracing::debug!("Sent mass cancel for {instrument_id}");
+                log::debug!("Sent mass cancel for {instrument_id}");
                 Ok(())
             }
             Err(e) => {
-                tracing::error!(error = %e, "Failed to send mass cancel after retries");
+                log::error!("Failed to send mass cancel after retries: error={e}");
 
                 self.pending_mass_cancel_requests.remove(&request_id);
 
@@ -1997,7 +1972,7 @@ impl OKXWsFeedHandler {
                 .send_text(payload, Some(vec![OKX_RATE_LIMIT_KEY_CANCEL.to_string()]))
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to send batch cancel: {e}"))?;
-            tracing::debug!("Sent batch cancel orders");
+            log::debug!("Sent batch cancel orders");
             Ok(())
         } else {
             Err(anyhow::anyhow!("No active WebSocket client"))
@@ -2024,7 +1999,7 @@ impl OKXWsFeedHandler {
                 .send_text(payload, Some(vec![OKX_RATE_LIMIT_KEY_ORDER.to_string()]))
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to send batch place: {e}"))?;
-            tracing::debug!("Sent batch place orders");
+            log::debug!("Sent batch place orders");
             Ok(())
         } else {
             Err(anyhow::anyhow!("No active WebSocket client"))
@@ -2051,7 +2026,7 @@ impl OKXWsFeedHandler {
                 .send_text(payload, Some(vec![OKX_RATE_LIMIT_KEY_AMEND.to_string()]))
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to send batch amend: {e}"))?;
-            tracing::debug!("Sent batch amend orders");
+            log::debug!("Sent batch amend orders");
             Ok(())
         } else {
             Err(anyhow::anyhow!("No active WebSocket client"))
@@ -2060,7 +2035,11 @@ impl OKXWsFeedHandler {
 
     async fn handle_subscribe(&self, args: Vec<OKXSubscriptionArg>) -> anyhow::Result<()> {
         for arg in &args {
-            tracing::debug!(channel = ?arg.channel, inst_id = ?arg.inst_id, "Subscribing to channel");
+            log::debug!(
+                "Subscribing to channel: channel={:?}, inst_id={:?}",
+                arg.channel,
+                arg.inst_id
+            );
         }
 
         let message = OKXSubscription {
@@ -2082,7 +2061,11 @@ impl OKXWsFeedHandler {
 
     async fn handle_unsubscribe(&self, args: Vec<OKXSubscriptionArg>) -> anyhow::Result<()> {
         for arg in &args {
-            tracing::debug!(channel = ?arg.channel, inst_id = ?arg.inst_id, "Unsubscribing from channel");
+            log::debug!(
+                "Unsubscribing from channel: channel={:?}, inst_id={:?}",
+                arg.channel,
+                arg.inst_id
+            );
         }
 
         let message = OKXSubscription {
@@ -2138,11 +2121,11 @@ impl OKXWsFeedHandler {
             .await
         {
             Ok(()) => {
-                tracing::debug!("Sent place order request");
+                log::debug!("Sent place order request");
                 Ok(())
             }
             Err(e) => {
-                tracing::error!(error = %e, "Failed to send place order after retries");
+                log::error!("Failed to send place order after retries: error={e}");
 
                 self.pending_place_requests.remove(&request_id);
 
@@ -2203,11 +2186,11 @@ impl OKXWsFeedHandler {
             .await
         {
             Ok(()) => {
-                tracing::debug!("Sent place algo order request");
+                log::debug!("Sent place algo order request");
                 Ok(())
             }
             Err(e) => {
-                tracing::error!(error = %e, "Failed to send place algo order after retries");
+                log::error!("Failed to send place algo order after retries: error={e}");
 
                 self.pending_place_requests.remove(&request_id);
 
@@ -2286,11 +2269,11 @@ impl OKXWsFeedHandler {
             .await
         {
             Ok(()) => {
-                tracing::debug!("Sent cancel order request");
+                log::debug!("Sent cancel order request");
                 Ok(())
             }
             Err(e) => {
-                tracing::error!(error = %e, "Failed to send cancel order after retries");
+                log::error!("Failed to send cancel order after retries: error={e}");
 
                 self.pending_cancel_requests.remove(&request_id);
 
@@ -2354,11 +2337,11 @@ impl OKXWsFeedHandler {
             .await
         {
             Ok(()) => {
-                tracing::debug!("Sent amend order request");
+                log::debug!("Sent amend order request");
                 Ok(())
             }
             Err(e) => {
-                tracing::error!(error = %e, "Failed to send amend order after retries");
+                log::error!("Failed to send amend order after retries: error={e}");
 
                 self.pending_amend_requests.remove(&request_id);
 
@@ -2431,11 +2414,11 @@ impl OKXWsFeedHandler {
             .await
         {
             Ok(()) => {
-                tracing::debug!("Sent cancel algo order request");
+                log::debug!("Sent cancel algo order request");
                 Ok(())
             }
             Err(e) => {
-                tracing::error!(error = %e, "Failed to send cancel algo order after retries");
+                log::error!("Failed to send cancel algo order after retries: error={e}");
 
                 self.pending_cancel_requests.remove(&request_id);
 
@@ -2533,6 +2516,7 @@ mod tests {
     };
     use nautilus_network::websocket::{AuthTracker, SubscriptionState};
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::{NautilusWsMessage, OKXWsFeedHandler};
     use crate::websocket::parse::OrderStateSnapshot;
@@ -2667,8 +2651,8 @@ mod tests {
         let order_state_cache: AHashMap<ClientOrderId, u32> = AHashMap::new();
         let active_orders: DashMap<ClientOrderId, ()> = DashMap::new();
         let aliases: DashMap<ClientOrderId, ClientOrderId> = DashMap::new();
-        let fee_cache: AHashMap<ustr::Ustr, f64> = AHashMap::new();
-        let filled_qty_cache: AHashMap<ustr::Ustr, f64> = AHashMap::new();
+        let fee_cache: AHashMap<Ustr, f64> = AHashMap::new();
+        let filled_qty_cache: AHashMap<Ustr, f64> = AHashMap::new();
         let canonical = ClientOrderId::new("PARENT-001");
         let child = ClientOrderId::new("CHILD-001");
         let venue_id = VenueOrderId::new("VENUE-001");
@@ -2877,10 +2861,6 @@ mod tests {
         assert!(client_id_aliases.contains_key(&child2));
         assert!(handler.fee_cache.contains_key(&venue_id2.inner()));
     }
-
-    // ==================================================================================
-    // Channel routing integration tests
-    // ==================================================================================
 
     mod channel_routing {
         use nautilus_core::nanos::UnixNanos;

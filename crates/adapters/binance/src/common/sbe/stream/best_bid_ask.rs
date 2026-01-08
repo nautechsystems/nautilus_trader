@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,7 +26,10 @@
 //! - askQty: i64 (mantissa)
 //! - symbol: varString8
 
-use super::{MessageHeader, StreamDecodeError, decode_var_string8, read_i8, read_i64_le};
+use ustr::Ustr;
+
+use super::{MessageHeader, StreamDecodeError};
+use crate::common::sbe::cursor::SbeCursor;
 
 /// Best bid/ask stream event.
 #[derive(Debug, Clone)]
@@ -48,7 +51,7 @@ pub struct BestBidAskStreamEvent {
     /// Best ask quantity mantissa.
     pub ask_qty_mantissa: i64,
     /// Trading symbol.
-    pub symbol: String,
+    pub symbol: Ustr,
 }
 
 impl BestBidAskStreamEvent {
@@ -67,25 +70,18 @@ impl BestBidAskStreamEvent {
         let header = MessageHeader::decode(buf)?;
         header.validate_schema()?;
 
-        let body = &buf[MessageHeader::ENCODED_LENGTH..];
+        let mut cursor = SbeCursor::new_at(buf, MessageHeader::ENCODED_LENGTH);
 
-        if body.len() < Self::BLOCK_LENGTH + 1 {
-            return Err(StreamDecodeError::BufferTooShort {
-                expected: Self::MIN_BUFFER_SIZE,
-                actual: buf.len(),
-            });
-        }
+        let event_time_us = cursor.read_i64_le()?;
+        let book_update_id = cursor.read_i64_le()?;
+        let price_exponent = cursor.read_i8()?;
+        let qty_exponent = cursor.read_i8()?;
+        let bid_price_mantissa = cursor.read_i64_le()?;
+        let bid_qty_mantissa = cursor.read_i64_le()?;
+        let ask_price_mantissa = cursor.read_i64_le()?;
+        let ask_qty_mantissa = cursor.read_i64_le()?;
 
-        let event_time_us = read_i64_le(body, 0)?;
-        let book_update_id = read_i64_le(body, 8)?;
-        let price_exponent = read_i8(body, 16)?;
-        let qty_exponent = read_i8(body, 17)?;
-        let bid_price_mantissa = read_i64_le(body, 18)?;
-        let bid_qty_mantissa = read_i64_le(body, 26)?;
-        let ask_price_mantissa = read_i64_le(body, 34)?;
-        let ask_qty_mantissa = read_i64_le(body, 42)?;
-
-        let (symbol, _) = decode_var_string8(&body[50..])?;
+        let symbol_str = cursor.read_var_string8()?;
 
         Ok(Self {
             event_time_us,
@@ -96,7 +92,7 @@ impl BestBidAskStreamEvent {
             bid_qty_mantissa,
             ask_price_mantissa,
             ask_qty_mantissa,
-            symbol,
+            symbol: Ustr::from(&symbol_str),
         })
     }
 

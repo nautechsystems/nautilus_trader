@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -2172,7 +2172,9 @@ async def test_position_flip_netting_mode(
         )
 
         # Wait for position to be flipped to SHORT
-        await eventually(lambda: len(cache.positions()) > 0 and cache.positions()[0].side == PositionSide.SHORT)
+        await eventually(
+            lambda: len(cache.positions()) > 0 and cache.positions()[0].side == PositionSide.SHORT,
+        )
 
         # Assert - verify position flip
         flipped_pos = cache.positions()[0]

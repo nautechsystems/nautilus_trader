@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,6 +34,181 @@ use nautilus_serialization::arrow::ArrowSchemaProvider;
 use nautilus_testkit::common::get_nautilus_test_data_file_path;
 use rstest::rstest;
 use tempfile::TempDir;
+
+fn create_temp_catalog() -> (TempDir, ParquetDataCatalog) {
+    let temp_dir = TempDir::new().unwrap();
+    let catalog = ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
+    (temp_dir, catalog)
+}
+
+fn audusd_sim_id() -> InstrumentId {
+    InstrumentId::from("AUD/USD.SIM")
+}
+
+fn ethusdt_binance_id() -> InstrumentId {
+    InstrumentId::from("ETH/USDT.BINANCE")
+}
+
+fn create_order_book_delta(ts_init: u64) -> OrderBookDelta {
+    OrderBookDelta::new(
+        ethusdt_binance_id(),
+        BookAction::Add,
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::new(10000.0, 1),
+            Quantity::new(0.1, 1),
+            0,
+        ),
+        0,
+        0,
+        UnixNanos::from(ts_init),
+        UnixNanos::from(0),
+    )
+}
+
+fn create_order_book_depth10(ts_init: u64) -> OrderBookDepth10 {
+    let mut bids: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
+    let mut asks: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
+
+    // Create bids
+    let mut price = 99.00;
+    let mut quantity = 100.0;
+    let mut order_id = 1;
+
+    #[allow(clippy::needless_range_loop)]
+    for i in 0..DEPTH10_LEN {
+        let order = BookOrder::new(
+            OrderSide::Buy,
+            Price::new(price, 2),
+            Quantity::new(quantity, 0),
+            order_id,
+        );
+
+        bids[i] = order;
+
+        price -= 1.0;
+        quantity += 100.0;
+        order_id += 1;
+    }
+
+    // Create asks
+    price = 100.00;
+    quantity = 100.0;
+    order_id = 11;
+
+    #[allow(clippy::needless_range_loop)]
+    for i in 0..DEPTH10_LEN {
+        let order = BookOrder::new(
+            OrderSide::Sell,
+            Price::new(price, 2),
+            Quantity::new(quantity, 0),
+            order_id,
+        );
+
+        asks[i] = order;
+
+        price += 1.0;
+        quantity += 100.0;
+        order_id += 1;
+    }
+
+    let bid_counts = [1_u32; DEPTH10_LEN];
+    let ask_counts = [1_u32; DEPTH10_LEN];
+
+    OrderBookDepth10::new(
+        ethusdt_binance_id(),
+        bids,
+        asks,
+        bid_counts,
+        ask_counts,
+        0,
+        0,
+        UnixNanos::from(0),
+        UnixNanos::from(ts_init),
+    )
+}
+
+fn create_quote_tick(ts_init: u64) -> QuoteTick {
+    QuoteTick::new(
+        ethusdt_binance_id(),
+        Price::new(1987.0, 1),
+        Price::new(1988.0, 1),
+        Quantity::new(100_000.0, 0),
+        Quantity::new(100_000.0, 0),
+        UnixNanos::from(0),
+        UnixNanos::from(ts_init),
+    )
+}
+
+fn create_quote_ticks_for_instrument(
+    instrument_id: &str,
+    base_ts: u64,
+    count: usize,
+) -> Vec<QuoteTick> {
+    let instrument_id = InstrumentId::from_str(instrument_id).unwrap();
+    (0..count)
+        .map(|i| {
+            QuoteTick::new(
+                instrument_id,
+                Price::from("1.0001"),
+                Price::from("1.0002"),
+                Quantity::from("100"),
+                Quantity::from("100"),
+                UnixNanos::from(base_ts + i as u64 * 1000),
+                UnixNanos::from(base_ts + i as u64 * 1000),
+            )
+        })
+        .collect()
+}
+
+fn create_trade_tick(ts_init: u64) -> TradeTick {
+    TradeTick::new(
+        ethusdt_binance_id(),
+        Price::new(1987.0, 1),
+        Quantity::new(0.1, 1),
+        AggressorSide::Buyer,
+        TradeId::from("123456"),
+        UnixNanos::from(0),
+        UnixNanos::from(ts_init),
+    )
+}
+
+fn create_mark_price_update(ts_init: u64) -> MarkPriceUpdate {
+    MarkPriceUpdate::new(
+        ethusdt_binance_id(),
+        Price::new(1000.00, 2),
+        UnixNanos::from(0),
+        UnixNanos::from(ts_init),
+    )
+}
+
+fn create_index_price_update(ts_init: u64) -> IndexPriceUpdate {
+    IndexPriceUpdate::new(
+        ethusdt_binance_id(),
+        Price::new(1000.00, 2),
+        UnixNanos::from(0),
+        UnixNanos::from(ts_init),
+    )
+}
+
+fn create_bar(ts_init: u64) -> Bar {
+    let bar_type = BarType::new(
+        audusd_sim_id(),
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Bid),
+        AggregationSource::External,
+    );
+
+    Bar::new(
+        bar_type,
+        Price::new(1.00001, 5),
+        Price::new(1.1, 1),
+        Price::new(1.00000, 5),
+        Price::new(1.00000, 5),
+        Quantity::new(100_000.0, 0),
+        UnixNanos::from(0),
+        UnixNanos::from(ts_init),
+    )
+}
 
 #[rstest]
 fn test_quote_tick_query() {
@@ -197,168 +372,6 @@ fn test_datafusion_parquet_round_trip() {
         assert_eq!(orig, loaded);
     }
 }
-
-// ================================================================================================
-// Helper functions for creating test data (equivalent to PyO3 test helpers)
-// ================================================================================================
-
-fn create_temp_catalog() -> (TempDir, ParquetDataCatalog) {
-    let temp_dir = TempDir::new().unwrap();
-    let catalog = ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
-    (temp_dir, catalog)
-}
-
-fn audusd_sim_id() -> InstrumentId {
-    InstrumentId::from("AUD/USD.SIM")
-}
-
-fn ethusdt_binance_id() -> InstrumentId {
-    InstrumentId::from("ETH/USDT.BINANCE")
-}
-
-fn create_bar(ts_init: u64) -> Bar {
-    let bar_type = BarType::new(
-        audusd_sim_id(),
-        BarSpecification::new(1, BarAggregation::Minute, PriceType::Bid),
-        AggregationSource::External,
-    );
-
-    Bar::new(
-        bar_type,
-        Price::new(1.00001, 5),
-        Price::new(1.1, 1),
-        Price::new(1.00000, 5),
-        Price::new(1.00000, 5),
-        Quantity::new(100_000.0, 0),
-        UnixNanos::from(0),
-        UnixNanos::from(ts_init),
-    )
-}
-
-fn create_quote_tick(ts_init: u64) -> QuoteTick {
-    QuoteTick::new(
-        ethusdt_binance_id(),
-        Price::new(1987.0, 1),
-        Price::new(1988.0, 1),
-        Quantity::new(100_000.0, 0),
-        Quantity::new(100_000.0, 0),
-        UnixNanos::from(0),
-        UnixNanos::from(ts_init),
-    )
-}
-
-fn create_trade_tick(ts_init: u64) -> TradeTick {
-    TradeTick::new(
-        ethusdt_binance_id(),
-        Price::new(1987.0, 1),
-        Quantity::new(0.1, 1),
-        AggressorSide::Buyer,
-        TradeId::from("123456"),
-        UnixNanos::from(0),
-        UnixNanos::from(ts_init),
-    )
-}
-
-fn create_order_book_delta(ts_init: u64) -> OrderBookDelta {
-    OrderBookDelta::new(
-        ethusdt_binance_id(),
-        BookAction::Add,
-        BookOrder::new(
-            OrderSide::Buy,
-            Price::new(10000.0, 1),
-            Quantity::new(0.1, 1),
-            0,
-        ),
-        0,
-        0,
-        UnixNanos::from(ts_init),
-        UnixNanos::from(0),
-    )
-}
-
-fn create_order_book_depth10(ts_init: u64) -> OrderBookDepth10 {
-    let mut bids: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
-    let mut asks: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
-
-    // Create bids
-    let mut price = 99.00;
-    let mut quantity = 100.0;
-    let mut order_id = 1;
-
-    #[allow(clippy::needless_range_loop)]
-    for i in 0..DEPTH10_LEN {
-        let order = BookOrder::new(
-            OrderSide::Buy,
-            Price::new(price, 2),
-            Quantity::new(quantity, 0),
-            order_id,
-        );
-
-        bids[i] = order;
-
-        price -= 1.0;
-        quantity += 100.0;
-        order_id += 1;
-    }
-
-    // Create asks
-    price = 100.00;
-    quantity = 100.0;
-    order_id = 11;
-
-    #[allow(clippy::needless_range_loop)]
-    for i in 0..DEPTH10_LEN {
-        let order = BookOrder::new(
-            OrderSide::Sell,
-            Price::new(price, 2),
-            Quantity::new(quantity, 0),
-            order_id,
-        );
-
-        asks[i] = order;
-
-        price += 1.0;
-        quantity += 100.0;
-        order_id += 1;
-    }
-
-    let bid_counts = [1_u32; DEPTH10_LEN];
-    let ask_counts = [1_u32; DEPTH10_LEN];
-
-    OrderBookDepth10::new(
-        ethusdt_binance_id(),
-        bids,
-        asks,
-        bid_counts,
-        ask_counts,
-        0,
-        0,
-        UnixNanos::from(0),
-        UnixNanos::from(ts_init),
-    )
-}
-
-fn create_mark_price_update(ts_init: u64) -> MarkPriceUpdate {
-    MarkPriceUpdate::new(
-        ethusdt_binance_id(),
-        Price::new(1000.00, 2),
-        UnixNanos::from(0),
-        UnixNanos::from(ts_init),
-    )
-}
-
-fn create_index_price_update(ts_init: u64) -> IndexPriceUpdate {
-    IndexPriceUpdate::new(
-        ethusdt_binance_id(),
-        Price::new(1000.00, 2),
-        UnixNanos::from(0),
-        UnixNanos::from(ts_init),
-    )
-}
-
-// ================================================================================================
-// Rust catalog tests (equivalent to PyO3 tests)
-// ================================================================================================
 
 #[rstest]
 fn test_rust_write_2_bars_to_catalog() {
@@ -1250,10 +1263,6 @@ fn test_generic_consolidate_data_by_period_with_time_range() {
     assert!(!intervals.is_empty());
 }
 
-// ================================================================================================
-// Integration tests for consolidation workflow
-// ================================================================================================
-
 #[rstest]
 fn test_consolidation_workflow_end_to_end() {
     let (_temp_dir, catalog) = create_temp_catalog();
@@ -1622,10 +1631,6 @@ fn test_reconstruct_full_uri_moved() {
     let expected = format!("{}/data/quotes/file.parquet", tmp.path().display());
     assert_eq!(reconstructed, expected);
 }
-
-// ================================================================================================
-// Delete functionality tests
-// ================================================================================================
 
 #[rstest]
 fn test_delete_data_range_complete_file_deletion() {
@@ -2437,23 +2442,48 @@ fn test_duplicate_table_registration() {
     assert!(is_monotonically_increasing_by_init(&data));
 }
 
-fn create_quote_ticks_for_instrument(
-    instrument_id: &str,
-    base_ts: u64,
-    count: usize,
-) -> Vec<QuoteTick> {
-    let instrument_id = InstrumentId::from_str(instrument_id).unwrap();
-    (0..count)
-        .map(|i| {
-            QuoteTick::new(
-                instrument_id,
-                Price::from("1.0001"),
-                Price::from("1.0002"),
-                Quantity::from("100"),
-                Quantity::from("100"),
-                UnixNanos::from(base_ts + i as u64 * 1000),
-                UnixNanos::from(base_ts + i as u64 * 1000),
-            )
-        })
-        .collect()
+#[rstest]
+fn test_query_typed_data_repeated_calls() {
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    let quotes = vec![create_quote_tick(1000), create_quote_tick(2000)];
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
+
+    let result1 = catalog
+        .query_typed_data::<QuoteTick>(
+            Some(vec!["ETH/USDT.BINANCE".to_string()]),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(result1.len(), 2);
+
+    // This was returning empty before the fix
+    let result2 = catalog
+        .query_typed_data::<QuoteTick>(
+            Some(vec!["ETH/USDT.BINANCE".to_string()]),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(result2.len(), 2);
+
+    let result3 = catalog
+        .query_typed_data::<QuoteTick>(
+            Some(vec!["ETH/USDT.BINANCE".to_string()]),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(result3.len(), 2);
+
+    assert_eq!(result1[0].ts_init, result2[0].ts_init);
+    assert_eq!(result1[1].ts_init, result2[1].ts_init);
+    assert_eq!(result2[0].ts_init, result3[0].ts_init);
+    assert_eq!(result2[1].ts_init, result3[1].ts_init);
 }

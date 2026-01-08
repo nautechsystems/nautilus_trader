@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -312,10 +312,6 @@ class BybitDataClient(LiveMarketDataClient):
         ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
         await ws_client.subscribe_orderbook(pyo3_instrument_id, depth)
 
-    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
-        # Bybit doesn't differentiate between snapshots and deltas at subscription level
-        await self._subscribe_order_book_deltas(command)
-
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         product_type = nautilus_pyo3.bybit_product_type_from_symbol(
@@ -381,9 +377,6 @@ class BybitDataClient(LiveMarketDataClient):
 
         # Remove from tracking
         self._depths.pop(pyo3_instrument_id, None)
-
-    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
-        await self._unsubscribe_order_book_deltas(command)
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)

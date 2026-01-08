@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -487,10 +487,6 @@ fn create_router(state: Arc<TestServerState>) -> Router {
     })
 }
 
-// =============================================================================
-// Spot Raw HTTP Client Tests (KrakenSpotRawHttpClient)
-// =============================================================================
-
 #[rstest]
 #[tokio::test]
 async fn test_spot_raw_get_server_time() {
@@ -594,10 +590,6 @@ async fn test_spot_raw_get_asset_pairs() {
     assert!(!pairs.is_empty());
     assert!(pairs.contains_key("XBTUSDT"));
 }
-
-// =============================================================================
-// Spot Domain HTTP Client Tests (KrakenSpotHttpClient)
-// =============================================================================
 
 #[rstest]
 #[tokio::test]
@@ -1004,10 +996,6 @@ async fn test_spot_domain_request_bars() {
     assert!(!bars.is_empty());
 }
 
-// =============================================================================
-// Futures Raw HTTP Client Tests (KrakenFuturesRawHttpClient)
-// =============================================================================
-
 #[rstest]
 #[tokio::test]
 async fn test_futures_raw_get_instruments() {
@@ -1266,10 +1254,6 @@ async fn test_futures_raw_get_public_executions() {
     assert!(!execution.quantity.is_empty());
 }
 
-// =============================================================================
-// Spot Raw HTTP Client Tests - Authenticated/Reconciliation
-// =============================================================================
-
 #[rstest]
 #[tokio::test]
 async fn test_spot_raw_get_open_orders() {
@@ -1394,10 +1378,6 @@ async fn test_spot_raw_get_trades_history() {
     let trades = result.unwrap();
     assert!(!trades.is_empty());
 }
-
-// =============================================================================
-// Futures Raw HTTP Client Tests - Authenticated/Reconciliation
-// =============================================================================
 
 #[rstest]
 #[tokio::test]
@@ -1578,10 +1558,6 @@ async fn test_futures_raw_get_open_positions() {
     assert_eq!(first_position.size, 8000.0);
 }
 
-// =============================================================================
-// Spot Raw HTTP Client Tests - Order Execution
-// =============================================================================
-
 #[rstest]
 #[tokio::test]
 async fn test_spot_raw_add_order() {
@@ -1669,10 +1645,6 @@ async fn test_spot_raw_cancel_order() {
     assert_eq!(response.count, 1);
 }
 
-// =============================================================================
-// Futures Raw HTTP Client Tests - Order Execution
-// =============================================================================
-
 #[rstest]
 #[tokio::test]
 async fn test_futures_raw_send_order() {
@@ -1758,10 +1730,6 @@ async fn test_futures_raw_cancel_order() {
     assert_eq!(response.result, KrakenApiResult::Success);
     assert_eq!(response.cancel_status.status, KrakenSendStatus::Cancelled);
 }
-
-// =============================================================================
-// HTTP Error Handling Tests
-// =============================================================================
 
 #[rstest]
 #[tokio::test]

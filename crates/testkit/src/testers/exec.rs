@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,15 +20,17 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use indexmap::IndexMap;
 use nautilus_common::{
     actor::{DataActor, DataActorCore},
     enums::LogColor,
     log_info, log_warn,
     timer::TimeEvent,
 };
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{Bar, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick},
-    enums::{BookType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
+    enums::{BookType, OrderSide, OrderType, TimeInForce, TriggerType},
     identifiers::{ClientId, InstrumentId, StrategyId},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
@@ -45,14 +47,16 @@ pub struct ExecTesterConfig {
     pub base: StrategyConfig,
     /// Instrument ID to test.
     pub instrument_id: InstrumentId,
-    /// Client ID to use for orders and subscriptions.
-    pub client_id: Option<ClientId>,
     /// Order quantity.
     pub order_qty: Quantity,
     /// Display quantity for iceberg orders (None for full display, Some(0) for hidden).
     pub order_display_qty: Option<Quantity>,
     /// Minutes until GTD orders expire (None for GTC).
     pub order_expire_time_delta_mins: Option<u64>,
+    /// Adapter-specific order parameters.
+    pub order_params: Option<IndexMap<String, String>>,
+    /// Client ID to use for orders and subscriptions.
+    pub client_id: Option<ClientId>,
     /// Whether to subscribe to quotes.
     pub subscribe_quotes: bool,
     /// Whether to subscribe to trades.
@@ -75,12 +79,12 @@ pub struct ExecTesterConfig {
     pub enable_limit_buys: bool,
     /// Enable limit sell orders.
     pub enable_limit_sells: bool,
-    /// Offset from TOB in price ticks for limit orders.
-    pub tob_offset_ticks: u64,
     /// Enable stop buy orders.
     pub enable_stop_buys: bool,
     /// Enable stop sell orders.
     pub enable_stop_sells: bool,
+    /// Offset from TOB in price ticks for limit orders.
+    pub tob_offset_ticks: u64,
     /// Type of stop order (STOP_MARKET, STOP_LIMIT, MARKET_IF_TOUCHED, LIMIT_IF_TOUCHED).
     pub stop_order_type: OrderType,
     /// Offset from market in price ticks for stop trigger.
@@ -89,6 +93,12 @@ pub struct ExecTesterConfig {
     pub stop_limit_offset_ticks: Option<u64>,
     /// Trigger type for stop orders.
     pub stop_trigger_type: TriggerType,
+    /// Enable bracket orders (entry with TP/SL).
+    pub enable_brackets: bool,
+    /// Entry order type for bracket orders.
+    pub bracket_entry_order_type: OrderType,
+    /// Offset in ticks for bracket TP/SL from entry price.
+    pub bracket_offset_ticks: u64,
     /// Modify limit orders to maintain TOB offset.
     pub modify_orders_to_maintain_tob_offset: bool,
     /// Modify stop orders to maintain offset.
@@ -99,6 +109,10 @@ pub struct ExecTesterConfig {
     pub cancel_replace_stop_orders_to_maintain_offset: bool,
     /// Use post-only for limit orders.
     pub use_post_only: bool,
+    /// Use quote quantity for orders.
+    pub use_quote_quantity: bool,
+    /// Emulation trigger type for orders.
+    pub emulation_trigger: Option<TriggerType>,
     /// Cancel all orders on stop.
     pub cancel_orders_on_stop: bool,
     /// Close all positions on stop.
@@ -115,6 +129,10 @@ pub struct ExecTesterConfig {
     pub dry_run: bool,
     /// Log received data.
     pub log_data: bool,
+    /// Test post-only rejection by placing orders on wrong side of spread.
+    pub test_reject_post_only: bool,
+    /// Test reduce-only rejection by setting reduce_only on open position order.
+    pub test_reject_reduce_only: bool,
     /// Whether unsubscribe is supported on stop.
     pub can_unsubscribe: bool,
 }
@@ -139,10 +157,11 @@ impl ExecTesterConfig {
                 ..Default::default()
             },
             instrument_id,
-            client_id: Some(client_id),
             order_qty,
             order_display_qty: None,
             order_expire_time_delta_mins: None,
+            order_params: None,
+            client_id: Some(client_id),
             subscribe_quotes: true,
             subscribe_trades: true,
             subscribe_book: false,
@@ -154,18 +173,23 @@ impl ExecTesterConfig {
             open_position_time_in_force: TimeInForce::Gtc,
             enable_limit_buys: true,
             enable_limit_sells: true,
-            tob_offset_ticks: 500,
             enable_stop_buys: false,
             enable_stop_sells: false,
+            tob_offset_ticks: 500,
             stop_order_type: OrderType::StopMarket,
             stop_offset_ticks: 100,
             stop_limit_offset_ticks: None,
             stop_trigger_type: TriggerType::Default,
+            enable_brackets: false,
+            bracket_entry_order_type: OrderType::Limit,
+            bracket_offset_ticks: 500,
             modify_orders_to_maintain_tob_offset: false,
             modify_stop_orders_to_maintain_offset: false,
             cancel_replace_orders_to_maintain_tob_offset: false,
             cancel_replace_stop_orders_to_maintain_offset: false,
             use_post_only: false,
+            use_quote_quantity: false,
+            emulation_trigger: None,
             cancel_orders_on_stop: true,
             close_positions_on_stop: true,
             close_positions_time_in_force: None,
@@ -174,6 +198,8 @@ impl ExecTesterConfig {
             use_batch_cancel_on_stop: false,
             dry_run: false,
             log_data: true,
+            test_reject_post_only: false,
+            test_reject_reduce_only: false,
             can_unsubscribe: true,
         }
     }
@@ -306,6 +332,54 @@ impl ExecTesterConfig {
         self.can_unsubscribe = can_unsubscribe;
         self
     }
+
+    #[must_use]
+    pub fn with_enable_brackets(mut self, enable: bool) -> Self {
+        self.enable_brackets = enable;
+        self
+    }
+
+    #[must_use]
+    pub fn with_bracket_entry_order_type(mut self, order_type: OrderType) -> Self {
+        self.bracket_entry_order_type = order_type;
+        self
+    }
+
+    #[must_use]
+    pub fn with_bracket_offset_ticks(mut self, ticks: u64) -> Self {
+        self.bracket_offset_ticks = ticks;
+        self
+    }
+
+    #[must_use]
+    pub fn with_test_reject_post_only(mut self, test: bool) -> Self {
+        self.test_reject_post_only = test;
+        self
+    }
+
+    #[must_use]
+    pub fn with_test_reject_reduce_only(mut self, test: bool) -> Self {
+        self.test_reject_reduce_only = test;
+        self
+    }
+
+    #[must_use]
+    pub fn with_emulation_trigger(mut self, trigger: Option<TriggerType>) -> Self {
+        self.emulation_trigger = trigger;
+        self
+    }
+
+    #[must_use]
+    pub fn with_use_quote_quantity(mut self, use_quote: bool) -> Self {
+        self.use_quote_quantity = use_quote;
+        self
+    }
+
+    #[must_use]
+    pub fn with_order_params(mut self, params: Option<IndexMap<String, String>>) -> Self {
+        self.order_params = params;
+        self
+    }
 }
 
 impl Default for ExecTesterConfig {
@@ -313,10 +387,11 @@ impl Default for ExecTesterConfig {
         Self {
             base: StrategyConfig::default(),
             instrument_id: InstrumentId::from("BTCUSDT-PERP.BINANCE"),
-            client_id: None,
             order_qty: Quantity::from("0.001"),
             order_display_qty: None,
             order_expire_time_delta_mins: None,
+            order_params: None,
+            client_id: None,
             subscribe_quotes: true,
             subscribe_trades: true,
             subscribe_book: false,
@@ -326,20 +401,25 @@ impl Default for ExecTesterConfig {
             book_levels_to_print: 10,
             open_position_on_start_qty: None,
             open_position_time_in_force: TimeInForce::Gtc,
-            enable_limit_buys: false,
-            enable_limit_sells: false,
-            tob_offset_ticks: 500,
+            enable_limit_buys: true,
+            enable_limit_sells: true,
             enable_stop_buys: false,
             enable_stop_sells: false,
+            tob_offset_ticks: 500,
             stop_order_type: OrderType::StopMarket,
             stop_offset_ticks: 100,
             stop_limit_offset_ticks: None,
             stop_trigger_type: TriggerType::Default,
+            enable_brackets: false,
+            bracket_entry_order_type: OrderType::Limit,
+            bracket_offset_ticks: 500,
             modify_orders_to_maintain_tob_offset: false,
             modify_stop_orders_to_maintain_offset: false,
             cancel_replace_orders_to_maintain_tob_offset: false,
             cancel_replace_stop_orders_to_maintain_offset: false,
             use_post_only: false,
+            use_quote_quantity: false,
+            emulation_trigger: None,
             cancel_orders_on_stop: true,
             close_positions_on_stop: true,
             close_positions_time_in_force: None,
@@ -348,6 +428,8 @@ impl Default for ExecTesterConfig {
             use_batch_cancel_on_stop: false,
             dry_run: false,
             log_data: true,
+            test_reject_post_only: false,
+            test_reject_reduce_only: false,
             can_unsubscribe: true,
         }
     }
@@ -586,6 +668,10 @@ impl Strategy for ExecTester {
     fn core_mut(&mut self) -> &mut StrategyCore {
         &mut self.core
     }
+
+    fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
+        self.config.base.external_order_claims.clone()
+    }
 }
 
 impl ExecTester {
@@ -644,20 +730,45 @@ impl ExecTester {
 
     /// Check if an order is still active.
     fn is_order_active(&self, order: &OrderAny) -> bool {
-        matches!(
-            order.status(),
-            OrderStatus::Initialized
-                | OrderStatus::Submitted
-                | OrderStatus::Accepted
-                | OrderStatus::PartiallyFilled
-                | OrderStatus::PendingUpdate
-                | OrderStatus::PendingCancel
-        )
+        order.is_active_local() || order.is_inflight() || order.is_open()
     }
 
     /// Get the trigger price from a stop/conditional order.
     fn get_order_trigger_price(&self, order: &OrderAny) -> Option<Price> {
         order.trigger_price()
+    }
+
+    /// Modify a stop order's trigger price and optionally limit price.
+    fn modify_stop_order(
+        &mut self,
+        order: OrderAny,
+        trigger_price: Price,
+        limit_price: Option<Price>,
+    ) -> anyhow::Result<()> {
+        let client_id = self.config.client_id;
+
+        match &order {
+            OrderAny::StopMarket(_) | OrderAny::MarketIfTouched(_) => {
+                self.modify_order(order, None, None, Some(trigger_price), client_id)
+            }
+            OrderAny::StopLimit(_) | OrderAny::LimitIfTouched(_) => {
+                self.modify_order(order, None, limit_price, Some(trigger_price), client_id)
+            }
+            _ => {
+                log_warn!("Cannot modify order of type {:?}", order.order_type());
+                Ok(())
+            }
+        }
+    }
+
+    /// Submit an order, applying order_params if configured.
+    fn submit_order_apply_params(&mut self, order: OrderAny) -> anyhow::Result<()> {
+        let client_id = self.config.client_id;
+        if let Some(params) = &self.config.order_params {
+            self.submit_order_with_params(order, None, client_id, params.clone())
+        } else {
+            self.submit_order(order, None, client_id)
+        }
     }
 
     /// Maintain orders based on current market prices.
@@ -684,7 +795,7 @@ impl ExecTester {
     }
 
     /// Maintain buy limit orders.
-    fn maintain_buy_orders(&mut self, best_bid: Price, _best_ask: Price) {
+    fn maintain_buy_orders(&mut self, best_bid: Price, best_ask: Price) {
         let Some(instrument) = &self.instrument else {
             return;
         };
@@ -692,8 +803,12 @@ impl ExecTester {
             return;
         };
 
-        let price_value = best_bid.as_f64() - price_offset;
-        let price = instrument.make_price(price_value);
+        // test_reject_post_only places order on wrong side of spread to trigger rejection
+        let price = if self.config.use_post_only && self.config.test_reject_post_only {
+            instrument.make_price(best_ask.as_f64() + price_offset)
+        } else {
+            instrument.make_price(best_bid.as_f64() - price_offset)
+        };
 
         let needs_new_order = match &self.buy_order {
             None => true,
@@ -701,13 +816,18 @@ impl ExecTester {
         };
 
         if needs_new_order {
-            if let Err(e) = self.submit_limit_order(OrderSide::Buy, price) {
-                log::error!("Failed to submit buy limit order: {e}");
+            let result = if self.config.enable_brackets {
+                self.submit_bracket_order(OrderSide::Buy, price)
+            } else {
+                self.submit_limit_order(OrderSide::Buy, price)
+            };
+            if let Err(e) = result {
+                log::error!("Failed to submit buy order: {e}");
             }
         } else if let Some(order) = &self.buy_order
             && order.venue_order_id().is_some()
-            && order.status() != OrderStatus::PendingUpdate
-            && order.status() != OrderStatus::PendingCancel
+            && !order.is_pending_update()
+            && !order.is_pending_cancel()
             && let Some(order_price) = order.price()
             && order_price < price
         {
@@ -728,7 +848,7 @@ impl ExecTester {
     }
 
     /// Maintain sell limit orders.
-    fn maintain_sell_orders(&mut self, _best_bid: Price, best_ask: Price) {
+    fn maintain_sell_orders(&mut self, best_bid: Price, best_ask: Price) {
         let Some(instrument) = &self.instrument else {
             return;
         };
@@ -736,8 +856,12 @@ impl ExecTester {
             return;
         };
 
-        let price_value = best_ask.as_f64() + price_offset;
-        let price = instrument.make_price(price_value);
+        // test_reject_post_only places order on wrong side of spread to trigger rejection
+        let price = if self.config.use_post_only && self.config.test_reject_post_only {
+            instrument.make_price(best_bid.as_f64() - price_offset)
+        } else {
+            instrument.make_price(best_ask.as_f64() + price_offset)
+        };
 
         let needs_new_order = match &self.sell_order {
             None => true,
@@ -745,13 +869,18 @@ impl ExecTester {
         };
 
         if needs_new_order {
-            if let Err(e) = self.submit_limit_order(OrderSide::Sell, price) {
-                log::error!("Failed to submit sell limit order: {e}");
+            let result = if self.config.enable_brackets {
+                self.submit_bracket_order(OrderSide::Sell, price)
+            } else {
+                self.submit_limit_order(OrderSide::Sell, price)
+            };
+            if let Err(e) = result {
+                log::error!("Failed to submit sell order: {e}");
             }
         } else if let Some(order) = &self.sell_order
             && order.venue_order_id().is_some()
-            && order.status() != OrderStatus::PendingUpdate
-            && order.status() != OrderStatus::PendingCancel
+            && !order.is_pending_update()
+            && !order.is_pending_cancel()
             && let Some(order_price) = order.price()
             && order_price > price
         {
@@ -822,13 +951,17 @@ impl ExecTester {
             }
         } else if let Some(order) = &self.buy_stop_order
             && order.venue_order_id().is_some()
-            && order.status() != OrderStatus::PendingUpdate
-            && order.status() != OrderStatus::PendingCancel
+            && !order.is_pending_update()
+            && !order.is_pending_cancel()
         {
             let current_trigger = self.get_order_trigger_price(order);
             if current_trigger.is_some() && current_trigger != Some(trigger_price) {
                 if self.config.modify_stop_orders_to_maintain_offset {
-                    log_warn!("Stop order modification not yet implemented");
+                    let order_clone = order.clone();
+                    if let Err(e) = self.modify_stop_order(order_clone, trigger_price, limit_price)
+                    {
+                        log::error!("Failed to modify buy stop order: {e}");
+                    }
                 } else if self.config.cancel_replace_stop_orders_to_maintain_offset {
                     let order_clone = order.clone();
                     let _ = self.cancel_order(order_clone, self.config.client_id);
@@ -893,13 +1026,17 @@ impl ExecTester {
             }
         } else if let Some(order) = &self.sell_stop_order
             && order.venue_order_id().is_some()
-            && order.status() != OrderStatus::PendingUpdate
-            && order.status() != OrderStatus::PendingCancel
+            && !order.is_pending_update()
+            && !order.is_pending_cancel()
         {
             let current_trigger = self.get_order_trigger_price(order);
             if current_trigger.is_some() && current_trigger != Some(trigger_price) {
                 if self.config.modify_stop_orders_to_maintain_offset {
-                    log_warn!("Stop order modification not yet implemented");
+                    let order_clone = order.clone();
+                    if let Err(e) = self.modify_stop_order(order_clone, trigger_price, limit_price)
+                    {
+                        log::error!("Failed to modify sell stop order: {e}");
+                    }
                 } else if self.config.cancel_replace_stop_orders_to_maintain_offset {
                     let order_clone = order.clone();
                     let _ = self.cancel_order(order_clone, self.config.client_id);
@@ -936,13 +1073,16 @@ impl ExecTester {
             return Ok(());
         }
 
-        let time_in_force = if self.config.order_expire_time_delta_mins.is_some() {
-            TimeInForce::Gtd
-        } else {
-            TimeInForce::Gtc
-        };
+        let (time_in_force, expire_time) =
+            if let Some(mins) = self.config.order_expire_time_delta_mins {
+                let current_ns = self.timestamp_ns();
+                let delta_ns = mins * 60 * 1_000_000_000;
+                let expire_ns = UnixNanos::from(current_ns.as_u64() + delta_ns);
+                (TimeInForce::Gtd, Some(expire_ns))
+            } else {
+                (TimeInForce::Gtc, None)
+            };
 
-        // TODO: Calculate expire_time from order_expire_time_delta_mins
         let quantity = instrument.make_qty(self.config.order_qty.as_f64(), None);
 
         let Some(factory) = &mut self.core.order_factory else {
@@ -955,12 +1095,12 @@ impl ExecTester {
             quantity,
             price,
             Some(time_in_force),
-            None, // expire_time
+            expire_time,
             Some(self.config.use_post_only),
             None, // reduce_only
-            None, // quote_quantity
+            Some(self.config.use_quote_quantity),
             self.config.order_display_qty,
-            None, // emulation_trigger
+            self.config.emulation_trigger,
             None, // trigger_instrument_id
             None, // exec_algorithm_id
             None, // exec_algorithm_params
@@ -974,7 +1114,7 @@ impl ExecTester {
             self.sell_order = Some(order.clone());
         }
 
-        self.submit_order(order, None, self.config.client_id)
+        self.submit_order_apply_params(order)
     }
 
     /// Submit a stop order.
@@ -1005,11 +1145,15 @@ impl ExecTester {
             return Ok(());
         }
 
-        let time_in_force = if self.config.order_expire_time_delta_mins.is_some() {
-            TimeInForce::Gtd
-        } else {
-            TimeInForce::Gtc
-        };
+        let (time_in_force, expire_time) =
+            if let Some(mins) = self.config.order_expire_time_delta_mins {
+                let current_ns = self.timestamp_ns();
+                let delta_ns = mins * 60 * 1_000_000_000;
+                let expire_ns = UnixNanos::from(current_ns.as_u64() + delta_ns);
+                (TimeInForce::Gtd, Some(expire_ns))
+            } else {
+                (TimeInForce::Gtc, None)
+            };
 
         // Use instrument's make_qty to ensure correct precision
         let quantity = instrument.make_qty(self.config.order_qty.as_f64(), None);
@@ -1026,11 +1170,11 @@ impl ExecTester {
                 trigger_price,
                 Some(self.config.stop_trigger_type),
                 Some(time_in_force),
-                None, // expire_time
+                expire_time,
                 None, // reduce_only
-                None, // quote_quantity
+                Some(self.config.use_quote_quantity),
                 None, // display_qty
-                None, // emulation_trigger
+                self.config.emulation_trigger,
                 None, // trigger_instrument_id
                 None, // exec_algorithm_id
                 None, // exec_algorithm_params
@@ -1049,12 +1193,12 @@ impl ExecTester {
                     trigger_price,
                     Some(self.config.stop_trigger_type),
                     Some(time_in_force),
-                    None, // expire_time
+                    expire_time,
                     None, // post_only
                     None, // reduce_only
-                    None, // quote_quantity
+                    Some(self.config.use_quote_quantity),
                     self.config.order_display_qty,
-                    None, // emulation_trigger
+                    self.config.emulation_trigger,
                     None, // trigger_instrument_id
                     None, // exec_algorithm_id
                     None, // exec_algorithm_params
@@ -1069,10 +1213,10 @@ impl ExecTester {
                 trigger_price,
                 Some(self.config.stop_trigger_type),
                 Some(time_in_force),
-                None, // expire_time
+                expire_time,
                 None, // reduce_only
-                None, // quote_quantity
-                None, // emulation_trigger
+                Some(self.config.use_quote_quantity),
+                self.config.emulation_trigger,
                 None, // trigger_instrument_id
                 None, // exec_algorithm_id
                 None, // exec_algorithm_params
@@ -1091,12 +1235,12 @@ impl ExecTester {
                     trigger_price,
                     Some(self.config.stop_trigger_type),
                     Some(time_in_force),
-                    None, // expire_time
+                    expire_time,
                     None, // post_only
                     None, // reduce_only
-                    None, // quote_quantity
+                    Some(self.config.use_quote_quantity),
                     self.config.order_display_qty,
-                    None, // emulation_trigger
+                    self.config.emulation_trigger,
                     None, // trigger_instrument_id
                     None, // exec_algorithm_id
                     None, // exec_algorithm_params
@@ -1115,7 +1259,110 @@ impl ExecTester {
             self.sell_stop_order = Some(order.clone());
         }
 
-        self.submit_order(order, None, self.config.client_id)
+        self.submit_order_apply_params(order)
+    }
+
+    /// Submit a bracket order (entry with stop-loss and take-profit).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if order creation or submission fails.
+    fn submit_bracket_order(
+        &mut self,
+        order_side: OrderSide,
+        entry_price: Price,
+    ) -> anyhow::Result<()> {
+        let Some(instrument) = &self.instrument else {
+            anyhow::bail!("No instrument loaded");
+        };
+
+        if self.config.dry_run {
+            log_warn!("Dry run, skipping create {order_side:?} bracket order");
+            return Ok(());
+        }
+
+        if self.config.bracket_entry_order_type != OrderType::Limit {
+            anyhow::bail!(
+                "Only Limit entry orders are supported for brackets, got {:?}",
+                self.config.bracket_entry_order_type
+            );
+        }
+
+        if order_side == OrderSide::Buy && !self.config.enable_limit_buys {
+            log_warn!("BUY orders not enabled, skipping bracket");
+            return Ok(());
+        } else if order_side == OrderSide::Sell && !self.config.enable_limit_sells {
+            log_warn!("SELL orders not enabled, skipping bracket");
+            return Ok(());
+        }
+
+        let (time_in_force, expire_time) =
+            if let Some(mins) = self.config.order_expire_time_delta_mins {
+                let current_ns = self.timestamp_ns();
+                let delta_ns = mins * 60 * 1_000_000_000;
+                let expire_ns = UnixNanos::from(current_ns.as_u64() + delta_ns);
+                (TimeInForce::Gtd, Some(expire_ns))
+            } else {
+                (TimeInForce::Gtc, None)
+            };
+
+        let quantity = instrument.make_qty(self.config.order_qty.as_f64(), None);
+        let price_increment = instrument.price_increment().as_f64();
+        let bracket_offset = price_increment * self.config.bracket_offset_ticks as f64;
+
+        let (tp_price, sl_trigger_price) = match order_side {
+            OrderSide::Buy => {
+                let tp = instrument.make_price(entry_price.as_f64() + bracket_offset);
+                let sl = instrument.make_price(entry_price.as_f64() - bracket_offset);
+                (tp, sl)
+            }
+            OrderSide::Sell => {
+                let tp = instrument.make_price(entry_price.as_f64() - bracket_offset);
+                let sl = instrument.make_price(entry_price.as_f64() + bracket_offset);
+                (tp, sl)
+            }
+            _ => anyhow::bail!("Invalid order side for bracket: {order_side:?}"),
+        };
+
+        let Some(factory) = &mut self.core.order_factory else {
+            anyhow::bail!("Strategy not registered: OrderFactory missing");
+        };
+
+        let order_list = factory.bracket(
+            self.config.instrument_id,
+            order_side,
+            quantity,
+            Some(entry_price),                   // entry_price
+            sl_trigger_price,                    // sl_trigger_price
+            Some(self.config.stop_trigger_type), // sl_trigger_type
+            tp_price,                            // tp_price
+            None,                                // entry_trigger_price (limit entry, no trigger)
+            Some(time_in_force),
+            expire_time,
+            Some(self.config.use_post_only),
+            None, // reduce_only
+            Some(self.config.use_quote_quantity),
+            self.config.emulation_trigger,
+            None, // trigger_instrument_id
+            None, // exec_algorithm_id
+            None, // exec_algorithm_params
+            None, // tags
+        );
+
+        if let Some(entry_order) = order_list.orders.first() {
+            if order_side == OrderSide::Buy {
+                self.buy_order = Some(entry_order.clone());
+            } else {
+                self.sell_order = Some(entry_order.clone());
+            }
+        }
+
+        let client_id = self.config.client_id;
+        if let Some(params) = &self.config.order_params {
+            self.submit_order_list_with_params(order_list, None, client_id, params.clone())
+        } else {
+            self.submit_order_list(order_list, None, client_id)
+        }
     }
 
     /// Open a position with a market order.
@@ -1145,40 +1392,75 @@ impl ExecTester {
             anyhow::bail!("Strategy not registered: OrderFactory missing");
         };
 
+        // Test reduce_only rejection by setting reduce_only on open position order
+        let reduce_only = if self.config.test_reject_reduce_only {
+            Some(true)
+        } else {
+            None
+        };
+
         let order = factory.market(
             self.config.instrument_id,
             order_side,
             quantity,
             Some(self.config.open_position_time_in_force),
-            None, // reduce_only
-            None, // quote_quantity
+            reduce_only,
+            Some(self.config.use_quote_quantity),
             None, // exec_algorithm_id
             None, // exec_algorithm_params
             None, // tags
             None, // client_order_id
         );
 
-        self.submit_order(order, None, self.config.client_id)
+        self.submit_order_apply_params(order)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::{
+        cache::Cache,
+        clock::{Clock, TestClock},
+    };
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         data::stubs::{OrderBookDeltaTestBuilder, stub_bar},
-        enums::AggressorSide,
-        identifiers::{StrategyId, TradeId},
+        enums::{AggressorSide, ContingencyType, OrderStatus},
+        identifiers::{StrategyId, TradeId, TraderId},
         instruments::stubs::crypto_perpetual_ethusdt,
         orders::LimitOrder,
+        stubs::TestDefault,
     };
+    use nautilus_portfolio::portfolio::Portfolio;
     use rstest::*;
 
     use super::*;
 
-    // =========================================================================
-    // Fixtures
-    // =========================================================================
+    /// Register an ExecTester with all required components.
+    /// This gives the tester access to OrderFactory for actual order creation.
+    fn register_exec_tester(tester: &mut ExecTester, cache: Rc<RefCell<Cache>>) {
+        let trader_id = TraderId::from("TRADER-001");
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let portfolio = Rc::new(RefCell::new(Portfolio::new(
+            cache.clone(),
+            clock.clone(),
+            None,
+        )));
+
+        tester
+            .core
+            .register(trader_id, clock, cache, portfolio)
+            .unwrap();
+    }
+
+    /// Create a cache with the test instrument pre-loaded.
+    fn create_cache_with_instrument(instrument: &InstrumentAny) -> Rc<RefCell<Cache>> {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let _ = cache.borrow_mut().add_instrument(instrument.clone());
+        cache
+    }
 
     #[fixture]
     fn config() -> ExecTesterConfig {
@@ -1196,12 +1478,8 @@ mod tests {
     }
 
     fn create_initialized_limit_order() -> OrderAny {
-        OrderAny::Limit(LimitOrder::default())
+        OrderAny::Limit(LimitOrder::test_default())
     }
-
-    // =========================================================================
-    // Config Tests
-    // =========================================================================
 
     #[rstest]
     fn test_config_creation(config: ExecTesterConfig) {
@@ -1232,8 +1510,8 @@ mod tests {
         assert!(config.base.strategy_id.is_none());
         assert!(config.subscribe_quotes);
         assert!(config.subscribe_trades);
-        assert!(!config.enable_limit_buys);
-        assert!(!config.enable_limit_sells);
+        assert!(config.enable_limit_buys);
+        assert!(config.enable_limit_sells);
         assert!(config.cancel_orders_on_stop);
         assert!(config.close_positions_on_stop);
         assert!(config.close_positions_time_in_force.is_none());
@@ -1324,10 +1602,6 @@ mod tests {
         assert_eq!(config.stop_order_type, OrderType::LimitIfTouched);
     }
 
-    // =========================================================================
-    // ExecTester Creation Tests
-    // =========================================================================
-
     #[rstest]
     fn test_exec_tester_creation(config: ExecTesterConfig) {
         let tester = ExecTester::new(config);
@@ -1339,10 +1613,6 @@ mod tests {
         assert!(tester.buy_stop_order.is_none());
         assert!(tester.sell_stop_order.is_none());
     }
-
-    // =========================================================================
-    // Price Offset Calculation Tests
-    // =========================================================================
 
     #[rstest]
     fn test_get_price_offset(config: ExecTesterConfig, instrument: InstrumentAny) {
@@ -1385,10 +1655,6 @@ mod tests {
         assert!((offset - 0.01).abs() < 1e-10);
     }
 
-    // =========================================================================
-    // Order Activity Status Tests
-    // =========================================================================
-
     #[rstest]
     fn test_is_order_active_initialized(config: ExecTesterConfig) {
         let tester = ExecTester::new(config);
@@ -1398,10 +1664,6 @@ mod tests {
         assert_eq!(order.status(), OrderStatus::Initialized);
     }
 
-    // =========================================================================
-    // Trigger Price Extraction Tests
-    // =========================================================================
-
     #[rstest]
     fn test_get_order_trigger_price_limit_order_returns_none(config: ExecTesterConfig) {
         let tester = ExecTester::new(config);
@@ -1409,10 +1671,6 @@ mod tests {
 
         assert!(tester.get_order_trigger_price(&order).is_none());
     }
-
-    // =========================================================================
-    // Data Handler Tests
-    // =========================================================================
 
     #[rstest]
     fn test_on_quote_with_logging(config: ExecTesterConfig) {
@@ -1620,10 +1878,6 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    // =========================================================================
-    // Maintain Orders - Dry Run Tests
-    // =========================================================================
-
     #[rstest]
     fn test_maintain_orders_dry_run_does_nothing(mut config: ExecTesterConfig) {
         config.dry_run = true;
@@ -1652,10 +1906,6 @@ mod tests {
         assert!(tester.buy_order.is_none());
         assert!(tester.sell_order.is_none());
     }
-
-    // =========================================================================
-    // Submit Order Error Handling Tests
-    // =========================================================================
 
     #[rstest]
     fn test_submit_limit_order_no_instrument_returns_error(config: ExecTesterConfig) {
@@ -1766,10 +2016,6 @@ mod tests {
         // Cannot actually submit without a registered OrderFactory
     }
 
-    // =========================================================================
-    // Open Position Tests
-    // =========================================================================
-
     #[rstest]
     fn test_open_position_no_instrument_returns_error(config: ExecTesterConfig) {
         let mut tester = ExecTester::new(config);
@@ -1791,5 +2037,455 @@ mod tests {
         let result = tester.open_position(Decimal::ZERO);
 
         assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_config_with_enable_brackets() {
+        let config = ExecTesterConfig::default().with_enable_brackets(true);
+        assert!(config.enable_brackets);
+    }
+
+    #[rstest]
+    fn test_config_with_bracket_offset_ticks() {
+        let config = ExecTesterConfig::default().with_bracket_offset_ticks(1000);
+        assert_eq!(config.bracket_offset_ticks, 1000);
+    }
+
+    #[rstest]
+    fn test_config_with_test_reject_post_only() {
+        let config = ExecTesterConfig::default().with_test_reject_post_only(true);
+        assert!(config.test_reject_post_only);
+    }
+
+    #[rstest]
+    fn test_config_with_test_reject_reduce_only() {
+        let config = ExecTesterConfig::default().with_test_reject_reduce_only(true);
+        assert!(config.test_reject_reduce_only);
+    }
+
+    #[rstest]
+    fn test_config_with_emulation_trigger() {
+        let config =
+            ExecTesterConfig::default().with_emulation_trigger(Some(TriggerType::LastPrice));
+        assert_eq!(config.emulation_trigger, Some(TriggerType::LastPrice));
+    }
+
+    #[rstest]
+    fn test_config_with_use_quote_quantity() {
+        let config = ExecTesterConfig::default().with_use_quote_quantity(true);
+        assert!(config.use_quote_quantity);
+    }
+
+    #[rstest]
+    fn test_config_with_order_params() {
+        let mut params = IndexMap::new();
+        params.insert("key".to_string(), "value".to_string());
+        let config = ExecTesterConfig::default().with_order_params(Some(params.clone()));
+        assert_eq!(config.order_params, Some(params));
+    }
+
+    #[rstest]
+    fn test_submit_bracket_order_no_instrument_returns_error(config: ExecTesterConfig) {
+        let mut tester = ExecTester::new(config);
+
+        let result = tester.submit_bracket_order(OrderSide::Buy, Price::from("50000.0"));
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("No instrument"));
+    }
+
+    #[rstest]
+    fn test_submit_bracket_order_dry_run_returns_ok(
+        mut config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        config.dry_run = true;
+        config.enable_brackets = true;
+        let mut tester = ExecTester::new(config);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_bracket_order(OrderSide::Buy, Price::from("50000.0"));
+
+        assert!(result.is_ok());
+        assert!(tester.buy_order.is_none());
+    }
+
+    #[rstest]
+    fn test_submit_bracket_order_unsupported_entry_type_returns_error(
+        mut config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        config.enable_brackets = true;
+        config.bracket_entry_order_type = OrderType::Market;
+        let mut tester = ExecTester::new(config);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_bracket_order(OrderSide::Buy, Price::from("50000.0"));
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Only Limit entry orders are supported")
+        );
+    }
+
+    #[rstest]
+    fn test_submit_bracket_order_buys_disabled_returns_ok(
+        mut config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        config.enable_brackets = true;
+        config.enable_limit_buys = false;
+        let mut tester = ExecTester::new(config);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_bracket_order(OrderSide::Buy, Price::from("50000.0"));
+
+        assert!(result.is_ok());
+        assert!(tester.buy_order.is_none());
+    }
+
+    #[rstest]
+    fn test_submit_bracket_order_sells_disabled_returns_ok(
+        mut config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        config.enable_brackets = true;
+        config.enable_limit_sells = false;
+        let mut tester = ExecTester::new(config);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_bracket_order(OrderSide::Sell, Price::from("50000.0"));
+
+        assert!(result.is_ok());
+        assert!(tester.sell_order.is_none());
+    }
+
+    #[rstest]
+    fn test_submit_limit_order_creates_buy_order(
+        config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        let cache = create_cache_with_instrument(&instrument);
+        let mut tester = ExecTester::new(config);
+        register_exec_tester(&mut tester, cache);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_limit_order(OrderSide::Buy, Price::from("3000.0"));
+
+        assert!(result.is_ok());
+        assert!(tester.buy_order.is_some());
+        let order = tester.buy_order.unwrap();
+        assert_eq!(order.order_side(), OrderSide::Buy);
+        assert_eq!(order.order_type(), OrderType::Limit);
+    }
+
+    #[rstest]
+    fn test_submit_limit_order_creates_sell_order(
+        config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        let cache = create_cache_with_instrument(&instrument);
+        let mut tester = ExecTester::new(config);
+        register_exec_tester(&mut tester, cache);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_limit_order(OrderSide::Sell, Price::from("3000.0"));
+
+        assert!(result.is_ok());
+        assert!(tester.sell_order.is_some());
+        let order = tester.sell_order.unwrap();
+        assert_eq!(order.order_side(), OrderSide::Sell);
+        assert_eq!(order.order_type(), OrderType::Limit);
+    }
+
+    #[rstest]
+    fn test_submit_limit_order_with_post_only(
+        mut config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        config.use_post_only = true;
+        let cache = create_cache_with_instrument(&instrument);
+        let mut tester = ExecTester::new(config);
+        register_exec_tester(&mut tester, cache);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_limit_order(OrderSide::Buy, Price::from("3000.0"));
+
+        assert!(result.is_ok());
+        let order = tester.buy_order.unwrap();
+        assert!(order.is_post_only());
+    }
+
+    #[rstest]
+    fn test_submit_limit_order_with_expire_time(
+        mut config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        config.order_expire_time_delta_mins = Some(30);
+        let cache = create_cache_with_instrument(&instrument);
+        let mut tester = ExecTester::new(config);
+        register_exec_tester(&mut tester, cache);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_limit_order(OrderSide::Buy, Price::from("3000.0"));
+
+        assert!(result.is_ok());
+        let order = tester.buy_order.unwrap();
+        assert_eq!(order.time_in_force(), TimeInForce::Gtd);
+        assert!(order.expire_time().is_some());
+    }
+
+    #[rstest]
+    fn test_submit_limit_order_with_order_params(
+        mut config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        let mut params = IndexMap::new();
+        params.insert("tdMode".to_string(), "cross".to_string());
+        config.order_params = Some(params);
+        let cache = create_cache_with_instrument(&instrument);
+        let mut tester = ExecTester::new(config);
+        register_exec_tester(&mut tester, cache);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_limit_order(OrderSide::Buy, Price::from("3000.0"));
+
+        assert!(result.is_ok());
+        assert!(tester.buy_order.is_some());
+    }
+
+    #[rstest]
+    fn test_submit_stop_market_order_creates_order(
+        mut config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        config.enable_stop_buys = true;
+        config.stop_order_type = OrderType::StopMarket;
+        let cache = create_cache_with_instrument(&instrument);
+        let mut tester = ExecTester::new(config);
+        register_exec_tester(&mut tester, cache);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_stop_order(OrderSide::Buy, Price::from("3500.0"), None);
+
+        assert!(result.is_ok());
+        assert!(tester.buy_stop_order.is_some());
+        let order = tester.buy_stop_order.unwrap();
+        assert_eq!(order.order_type(), OrderType::StopMarket);
+        assert_eq!(order.trigger_price(), Some(Price::from("3500.0")));
+    }
+
+    #[rstest]
+    fn test_submit_stop_limit_order_creates_order(
+        mut config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        config.enable_stop_sells = true;
+        config.stop_order_type = OrderType::StopLimit;
+        let cache = create_cache_with_instrument(&instrument);
+        let mut tester = ExecTester::new(config);
+        register_exec_tester(&mut tester, cache);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_stop_order(
+            OrderSide::Sell,
+            Price::from("2500.0"),
+            Some(Price::from("2490.0")),
+        );
+
+        assert!(result.is_ok());
+        assert!(tester.sell_stop_order.is_some());
+        let order = tester.sell_stop_order.unwrap();
+        assert_eq!(order.order_type(), OrderType::StopLimit);
+        assert_eq!(order.trigger_price(), Some(Price::from("2500.0")));
+        assert_eq!(order.price(), Some(Price::from("2490.0")));
+    }
+
+    #[rstest]
+    fn test_submit_market_if_touched_order_creates_order(
+        mut config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        config.enable_stop_buys = true;
+        config.stop_order_type = OrderType::MarketIfTouched;
+        let cache = create_cache_with_instrument(&instrument);
+        let mut tester = ExecTester::new(config);
+        register_exec_tester(&mut tester, cache);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_stop_order(OrderSide::Buy, Price::from("2800.0"), None);
+
+        assert!(result.is_ok());
+        assert!(tester.buy_stop_order.is_some());
+        let order = tester.buy_stop_order.unwrap();
+        assert_eq!(order.order_type(), OrderType::MarketIfTouched);
+    }
+
+    #[rstest]
+    fn test_submit_limit_if_touched_order_creates_order(
+        mut config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        config.enable_stop_sells = true;
+        config.stop_order_type = OrderType::LimitIfTouched;
+        let cache = create_cache_with_instrument(&instrument);
+        let mut tester = ExecTester::new(config);
+        register_exec_tester(&mut tester, cache);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_stop_order(
+            OrderSide::Sell,
+            Price::from("3200.0"),
+            Some(Price::from("3190.0")),
+        );
+
+        assert!(result.is_ok());
+        assert!(tester.sell_stop_order.is_some());
+        let order = tester.sell_stop_order.unwrap();
+        assert_eq!(order.order_type(), OrderType::LimitIfTouched);
+    }
+
+    #[rstest]
+    fn test_submit_stop_order_with_emulation_trigger(
+        mut config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        config.enable_stop_buys = true;
+        config.stop_order_type = OrderType::StopMarket;
+        config.emulation_trigger = Some(TriggerType::LastPrice);
+        let cache = create_cache_with_instrument(&instrument);
+        let mut tester = ExecTester::new(config);
+        register_exec_tester(&mut tester, cache);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_stop_order(OrderSide::Buy, Price::from("3500.0"), None);
+
+        assert!(result.is_ok());
+        let order = tester.buy_stop_order.unwrap();
+        assert_eq!(order.emulation_trigger(), Some(TriggerType::LastPrice));
+    }
+
+    #[rstest]
+    fn test_submit_bracket_order_creates_order_list(
+        mut config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        config.enable_brackets = true;
+        config.bracket_offset_ticks = 100;
+        let cache = create_cache_with_instrument(&instrument);
+        let mut tester = ExecTester::new(config);
+        register_exec_tester(&mut tester, cache);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_bracket_order(OrderSide::Buy, Price::from("3000.0"));
+
+        assert!(result.is_ok());
+        assert!(tester.buy_order.is_some());
+        let order = tester.buy_order.unwrap();
+        assert_eq!(order.order_side(), OrderSide::Buy);
+        assert_eq!(order.order_type(), OrderType::Limit);
+        assert_eq!(order.contingency_type(), Some(ContingencyType::Oto));
+    }
+
+    #[rstest]
+    fn test_submit_bracket_order_sell_creates_order_list(
+        mut config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        config.enable_brackets = true;
+        config.bracket_offset_ticks = 100;
+        let cache = create_cache_with_instrument(&instrument);
+        let mut tester = ExecTester::new(config);
+        register_exec_tester(&mut tester, cache);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_bracket_order(OrderSide::Sell, Price::from("3000.0"));
+
+        assert!(result.is_ok());
+        assert!(tester.sell_order.is_some());
+        let order = tester.sell_order.unwrap();
+        assert_eq!(order.order_side(), OrderSide::Sell);
+        assert_eq!(order.contingency_type(), Some(ContingencyType::Oto));
+    }
+
+    #[rstest]
+    fn test_open_position_creates_market_order(
+        config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        let cache = create_cache_with_instrument(&instrument);
+        let mut tester = ExecTester::new(config);
+        register_exec_tester(&mut tester, cache);
+        tester.instrument = Some(instrument);
+
+        let result = tester.open_position(Decimal::from(1));
+
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_open_position_with_reduce_only_rejection(
+        mut config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        config.test_reject_reduce_only = true;
+        let cache = create_cache_with_instrument(&instrument);
+        let mut tester = ExecTester::new(config);
+        register_exec_tester(&mut tester, cache);
+        tester.instrument = Some(instrument);
+
+        // Should succeed in creating order (rejection happens at exchange)
+        let result = tester.open_position(Decimal::from(1));
+
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_submit_stop_limit_without_limit_price_fails(
+        mut config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        config.enable_stop_buys = true;
+        config.stop_order_type = OrderType::StopLimit;
+        let cache = create_cache_with_instrument(&instrument);
+        let mut tester = ExecTester::new(config);
+        register_exec_tester(&mut tester, cache);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_stop_order(OrderSide::Buy, Price::from("3500.0"), None);
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("requires limit_price")
+        );
+    }
+
+    #[rstest]
+    fn test_submit_limit_if_touched_without_limit_price_fails(
+        mut config: ExecTesterConfig,
+        instrument: InstrumentAny,
+    ) {
+        config.enable_stop_sells = true;
+        config.stop_order_type = OrderType::LimitIfTouched;
+        let cache = create_cache_with_instrument(&instrument);
+        let mut tester = ExecTester::new(config);
+        register_exec_tester(&mut tester, cache);
+        tester.instrument = Some(instrument);
+
+        let result = tester.submit_stop_order(OrderSide::Sell, Price::from("3200.0"), None);
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("requires limit_price")
+        );
     }
 }

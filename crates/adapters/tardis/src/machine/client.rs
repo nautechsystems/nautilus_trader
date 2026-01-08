@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -98,13 +98,13 @@ impl TardisMachineClient {
     }
 
     pub fn close(&mut self) {
-        tracing::debug!("Closing");
+        log::debug!("Closing");
 
         // Use Release ordering to ensure visibility to Acquire loads in is_closed()
         self.replay_signal.store(true, Ordering::Release);
         self.stream_signal.store(true, Ordering::Release);
 
-        tracing::debug!("Closed");
+        log::debug!("Closed");
     }
 
     /// Connects to the Tardis Machine replay WebSocket and yields parsed `Data` items.
@@ -172,7 +172,7 @@ where
             match result {
                 Ok(msg) => {
                     if matches!(msg, WsMessage::Disconnect(_)) {
-                        tracing::debug!("Received disconnect message: {msg:?}");
+                        log::debug!("Received disconnect message: {msg:?}");
                         continue;
                     }
 
@@ -187,7 +187,7 @@ where
                             yield Ok(data);
                         }
                     } else {
-                        tracing::error!("Missing instrument info for message: {msg:?}");
+                        log::error!("Missing instrument info for message: {msg:?}");
                         yield Err(Error::ConnectionClosed {
                             reason: "Missing instrument definition info".to_string()
                         });
@@ -195,7 +195,7 @@ where
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Error in WebSocket stream: {e:?}");
+                    log::error!("Error in WebSocket stream: {e:?}");
                     yield Err(e);
                     break;
                 }
@@ -225,7 +225,7 @@ pub fn determine_instrument_info(
     if let Some(inst) = instrument_map.get(&key) {
         Some(inst.clone())
     } else {
-        tracing::error!("Instrument definition info not available for {key:?}");
+        log::error!("Instrument definition info not available for {key:?}");
         None
     }
 }

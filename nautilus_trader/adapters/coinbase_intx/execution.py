@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -249,10 +249,10 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
         active_symbols = self._get_cache_active_symbols()
 
         # Fetch active symbols from exchange
-        pyo3_position_reports: list[nautilus_pyo3.PositionStatusReport] = (
-            await self._http_client.request_position_status_reports(
-                account_id=self.pyo3_account_id,
-            )
+        pyo3_position_reports: list[
+            nautilus_pyo3.PositionStatusReport
+        ] = await self._http_client.request_position_status_reports(
+            account_id=self.pyo3_account_id,
         )
 
         for pyo3_position_report in pyo3_position_reports:
@@ -373,10 +373,10 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
                 reports.append(report)
             else:
                 self._log.debug("Requesting PositionStatusReports...")
-                pyo3_reports: list[nautilus_pyo3.PositionStatusReport] = (
-                    await self._http_client.request_position_status_reports(
-                        account_id=self.pyo3_account_id,
-                    )
+                pyo3_reports: list[
+                    nautilus_pyo3.PositionStatusReport
+                ] = await self._http_client.request_position_status_reports(
+                    account_id=self.pyo3_account_id,
                 )
 
                 for pyo3_report in pyo3_reports:

@@ -58,9 +58,7 @@ serde_json = { workspace = true }
 strum = { workspace = true }
 tabled = { workspace = true }
 thiserror = { workspace = true }
-thousands = { workspace = true }
 ustr = { workspace = true }
-tracing = { workspace = true }
 
 alloy-primitives = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
@@ -89,4 +87,14 @@ harness = false
 [[bench]]
 name = "fixed_precision_iai"
 path = "benches/fixed_precision_iai.rs"
+harness = false
+
+[[bench]]
+name = "greeks_criterion"
+path = "benches/greeks_criterion.rs"
+harness = false
+
+[[bench]]
+name = "black_scholes_simd_criterion"
+path = "benches/black_scholes_simd_criterion.rs"
 harness = false

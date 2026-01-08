@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -44,6 +44,7 @@ use nautilus_model::{
         stubs::{TestOrderEventStubs, TestOrdersGenerator},
     },
     position::Position,
+    stubs::TestDefault,
     types::{Currency, Price, Quantity},
 };
 use rstest::{fixture, rstest};
@@ -106,7 +107,7 @@ fn test_cache_orders_when_no_database(mut cache: Cache) {
 
 #[rstest]
 fn test_order_when_empty(cache: Cache) {
-    let client_order_id = ClientOrderId::default();
+    let client_order_id = ClientOrderId::test_default();
     let result = cache.order(&client_order_id);
     assert!(result.is_none());
 }
@@ -558,7 +559,7 @@ fn test_orders_for_position(mut cache: Cache, audusd_sim: CurrencyPair) {
         .quantity(Quantity::from(100_000))
         .build();
 
-    let position_id = PositionId::default();
+    let position_id = PositionId::test_default();
     cache
         .add_order(order.clone(), Some(position_id), None, false)
         .unwrap();
@@ -1202,13 +1203,13 @@ fn test_cache_add_account(mut cache: Cache) {
 
 #[rstest]
 fn test_cache_accounts_when_no_accounts_returns_empty(cache: Cache) {
-    let result = cache.accounts(&AccountId::default());
+    let result = cache.accounts(&AccountId::test_default());
     assert!(result.is_empty());
 }
 
 #[rstest]
 fn test_cache_account_for_venue_returns_empty(cache: Cache) {
-    let venue = Venue::default();
+    let venue = Venue::test_default();
     let result = cache.account_for_venue(&venue);
     assert!(result.is_none());
 }
@@ -1834,7 +1835,7 @@ fn test_purge_order_when_order_not_in_cache_still_cleans_up_indices() {
     let mut cache = Cache::default();
 
     let client_order_id = ClientOrderId::new("O-NOT-IN-CACHE");
-    let strategy_id = StrategyId::from("S-001");
+    let strategy_id = StrategyId::test_default();
 
     // Manually add to indices (simulating a corrupted state)
     cache
