@@ -33,16 +33,15 @@ class TradingConfig:
     SMA_SHORT_PERIOD: int = 50
 
     # ============== 트레이딩 자산 ==============
-    # 롱 자산: MNQ 4x (선물)
+    # 롱 자산: MNQ (Micro E-mini Nasdaq-100 선물, CONTFUT 자동 롤오버)
     # 헤지 자산: GDX (금광주 ETF)
-    USE_FUTURES: bool = True       # MNQ 선물 사용
-    LONG_SYMBOL: str = "TQQQ"      # ETF 모드 (백업용)
-    HEDGE_SYMBOL: str = "GDX"      # 헤지 자산
-
-    # MNQ 선물 설정
     MNQ_SYMBOL: str = "MNQ"
     MNQ_EXCHANGE: str = "CME"
+    HEDGE_SYMBOL: str = "GDX"
+
+    # MNQ 선물 설정
     TARGET_LEVERAGE: float = 3.0   # 3배 레버리지 (보수적)
+    MNQ_MULTIPLIER: float = 2.0    # MNQ: $2/point
 
     # ============== 거래 비용 설정 (IBKR 기준) ==============
     # MNQ 선물
@@ -73,6 +72,9 @@ class TradingConfig:
     MIN_CAPITAL_3X: float = 52_500               # 3x 최소: $52.5k (~7천만원, 4계약)
     MIN_CAPITAL_4X: float = 84_000               # 4x 최소: $84k (~1.1억원, 6계약)
 
+    # ============== 환율 설정 ==============
+    USD_KRW_RATE: float = float(os.getenv("USD_KRW_RATE", "1450"))  # 달러/원 환율
+
     # ============== Slack 알림 ==============
     SLACK_WEBHOOK_URL: str = os.getenv(
         "SLACK_WEBHOOK_URL",
@@ -95,11 +97,6 @@ class TradingConfig:
     def ibkr_port(self) -> int:
         """현재 모드에 맞는 IBKR 포트 반환"""
         return self.IBKR_PAPER_PORT if self.PAPER_TRADING else self.IBKR_LIVE_PORT
-
-    @property
-    def long_symbol(self) -> str:
-        """롱 자산 심볼 반환"""
-        return self.MNQ_SYMBOL if self.USE_FUTURES else self.LONG_SYMBOL
 
 
 # 글로벌 설정 인스턴스

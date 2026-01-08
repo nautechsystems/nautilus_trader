@@ -29,11 +29,13 @@ from nautilus_trader.core.message import Event
 from nautilus_trader.indicators import SimpleMovingAverage
 from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.model.enums import OrderSide, TimeInForce
+from nautilus_trader.model.events import PositionChanged, PositionClosed, PositionOpened
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.trading.strategy import Strategy
 
+from config import config as trading_config
 from slack_bot import SlackNotifier
 
 
@@ -85,17 +87,17 @@ class MNQDualSMAConfig(StrategyConfig, frozen=True):
     enable_dynamic_leverage: bool = False  # True면 자본 증가시 4x 자동 전환
     rebalance_band_pct: PositiveFloat = 0.15
     rebalance_min_threshold: PositiveFloat = 0.01  # 최소 1% 차이 있어야 리밸런싱
-    contract_multiplier: PositiveFloat = 2.0  # MNQ: $2/point, QQQ(ETF): 1.0
+    contract_multiplier: PositiveFloat = 2.0  # MNQ: $2/point
     close_positions_on_stop: bool = True
 
 
 class MNQDualSMAStrategy(Strategy):
     """
-    MNQ 3x/4x + 이중SMA + GDX 전략.
+    MNQ 3x + 이중SMA + GDX 전략.
 
-    동적 레버리지:
-    - 자본 < $84k: 3x 레버리지
-    - 자본 >= $84k: 4x 레버리지 (밴드 관리 가능)
+    레버리지:
+    - 기본: 3x 레버리지 (고정)
+    - 옵션: enable_dynamic_leverage=True 시 자본 >= $84k에서 4x 자동 전환
 
     검증된 NautilusTrader 패턴 기반:
     - indicators_initialized() 사용
@@ -132,6 +134,12 @@ class MNQDualSMAStrategy(Strategy):
         self._actual_long_id: InstrumentId | None = None
         self._actual_hedge_id: InstrumentId | None = None
 
+        # Actual bar types (built from actual instrument IDs)
+        # MEDIUM 수정: venue mismatch 시 바 데이터 누락 방지
+        self._actual_qqq_bar_type: BarType | None = None
+        self._actual_long_bar_type: BarType | None = None
+        self._actual_hedge_bar_type: BarType | None = None
+
         # Pending position switch tracking
         # High #1 수정: close_all_positions() 비동기 완료 대기
         self._pending_switch_target: str | None = None
@@ -142,6 +150,18 @@ class MNQDualSMAStrategy(Strategy):
         self._position_synced: bool = False
         self._sync_retry_count: int = 0
         self._sync_warn_threshold: int = 10  # 10회 이상 시 경고 로그
+        self._had_state_file: bool = self.state_file.exists()  # 시작 시 상태파일 존재 여부
+        self._strategy_start_time: pd.Timestamp | None = None  # 전략 시작 시간
+        self._received_position_event: bool = False  # 포지션 이벤트 수신 여부 (리컨실리에이션 활성화 증거)
+
+        # 리컨실리에이션 대기 설정
+        # 주의: 계좌가 완전 FLAT인 경우 포지션 이벤트가 오지 않으므로 타임아웃 폴백 사용
+        # 이 값은 IBKR Gateway 연결 및 리컨실리에이션 완료에 충분한 시간이어야 함
+        self._min_reconciliation_wait_seconds: int = 300  # FLAT 확정 최소 대기 시간 (5분)
+
+        # Pending switch timeout tracking
+        self._pending_switch_start_time: pd.Timestamp | None = None
+        self._pending_switch_timeout_seconds: int = 120  # 청산 대기 타임아웃 (2분)
 
         # Slack notifier
         self.slack = SlackNotifier()
@@ -166,6 +186,29 @@ class MNQDualSMAStrategy(Strategy):
             self.current_position = position
         except Exception:
             pass
+
+    def _get_account_balance(self) -> float:
+        """
+        계좌 총 잔고 조회.
+
+        Returns
+        -------
+        float
+            USD 총 잔고 (조회 실패 시 0.0)
+        """
+        # Long instrument의 venue에서 계좌 조회 시도
+        if self.long_instrument is not None:
+            account = self.portfolio.account(self.long_instrument.id.venue)
+            if account is not None:
+                return float(account.balance_total())
+
+        # Hedge instrument의 venue에서 계좌 조회 시도
+        if self.hedge_instrument is not None:
+            account = self.portfolio.account(self.hedge_instrument.id.venue)
+            if account is not None:
+                return float(account.balance_total())
+
+        return 0.0
 
     def _sync_position_with_portfolio(self) -> bool:
         """
@@ -208,20 +251,24 @@ class MNQDualSMAStrategy(Strategy):
             long_qty = abs(float(self.portfolio.net_position(self._actual_long_id)))
             hedge_qty = abs(float(self.portfolio.net_position(self._actual_hedge_id)))
 
-            long_bar = self.cache.bar(self.config.long_bar_type)
-            hedge_bar = self.cache.bar(self.config.hedge_bar_type)
+            # MEDIUM 수정: 실제 bar type 사용 (venue mismatch 대응)
+            long_bar_type = self._actual_long_bar_type or self.config.long_bar_type
+            hedge_bar_type = self._actual_hedge_bar_type or self.config.hedge_bar_type
+            long_bar = self.cache.bar(long_bar_type)
+            hedge_bar = self.cache.bar(hedge_bar_type)
 
-            # LOW 수정: 바 데이터 없으면 비교 불가 - 수량 기반 폴백 (경고 포함)
+            # LOW 수정: 바 데이터 없으면 포지션 판정 불가 - 동기화 거부
+            # 고정 비율 사용 시 가격 괴리에 따른 오판 위험이 있으므로 바 데이터 대기
             if long_bar is None or hedge_bar is None:
                 self.log.warning(
-                    f"Missing bar data for value comparison. Using quantity fallback. "
-                    f"Long: {long_qty}, Hedge: {hedge_qty}",
+                    f"Cannot determine position: missing bar data for value comparison. "
+                    f"Long bar: {'OK' if long_bar else 'MISSING'}, "
+                    f"Hedge bar: {'OK' if hedge_bar else 'MISSING'}. "
+                    f"Waiting for bar data...",
                     LogColor.RED,
                 )
-                # 바 없으면 수량 기반으로 판단 (부정확하지만 차선책)
-                # MNQ 1계약 ≈ $42k, GDX 1주 ≈ $35 → MNQ 계약당 ~1200배 가치
-                # 대략적 환산: long_qty * 1000 vs hedge_qty
-                actual_state = "LONG" if long_qty * 1000 > hedge_qty else "HEDGE"
+                return False  # 바 데이터 도착까지 동기화 보류
+
             else:
                 long_price = float(long_bar.close)
                 hedge_price = float(hedge_bar.close)
@@ -250,15 +297,59 @@ class MNQDualSMAStrategy(Strategy):
                 self._save_position_state(actual_state)
             elif self.state_file.exists():
                 self.state_file.unlink()  # FLAT이면 상태 파일 삭제
+                # MEDIUM 수정: 상태파일 삭제 시 "상태파일 없음" 경로 활성화
+                # 이를 통해 다음 동기화에서 이벤트/타임아웃 대기 로직을 탐
+                self._had_state_file = False
             # 포트폴리오에서 포지션을 찾았으면 동기화 완료
             # FLAT으로 불일치 보정된 경우는 재시도 필요 (리컨실리에이션 미완료 가능성)
             return actual_state is not None
         else:
+            # 상태 파일과 포트폴리오가 일치
+            # MEDIUM 수정: 상태파일 없이 시작 + 둘 다 FLAT인 경우,
+            # 포지션 이벤트 수신 OR 시간 기반 대기 필요
+            if actual_state is None and not self._had_state_file:
+                # 조건 1: 포지션 이벤트를 받았으면 리컨실리에이션 활성화 확인됨
+                if self._received_position_event:
+                    self.log.info(
+                        "FLAT confirmed: received position events, reconciliation is active",
+                        LogColor.GREEN,
+                    )
+                    # 이벤트를 받았으면 FLAT 확정 가능
+                elif self._strategy_start_time is not None:
+                    # 조건 2: 충분한 시간이 지났으면 FLAT 확정 (폴백)
+                    elapsed = (self._clock.utc_now() - self._strategy_start_time).total_seconds()
+                    if elapsed < self._min_reconciliation_wait_seconds:
+                        remaining = self._min_reconciliation_wait_seconds - elapsed
+                        self.log.info(
+                            f"No state file, no position events yet. "
+                            f"Waiting for reconciliation (elapsed: {elapsed:.0f}s, "
+                            f"remaining: {remaining:.0f}s, or until position event)...",
+                            LogColor.BLUE,
+                        )
+                        return False  # 이벤트 또는 시간 대기
+                    else:
+                        # 타임아웃 기반 FLAT 확정 - 주의 필요
+                        # 계좌가 완전 FLAT이면 포지션 이벤트가 오지 않으므로 이 경로 사용
+                        # 만약 실제 포지션이 있는데 리컨실리에이션이 늦어진 경우 중복 포지션 위험
+                        self.log.warning(
+                            f"FLAT confirmed after timeout ({elapsed:.0f}s) without position events. "
+                            f"This is expected if account is truly FLAT. "
+                            f"If positions exist but reconciliation is slow, duplicate orders may occur!",
+                            LogColor.YELLOW,
+                        )
+                        # 잔고 정보 조회
+                        balance_usd = self._get_account_balance()
+                        balance_krw = balance_usd * trading_config.USD_KRW_RATE
+                        self.slack.send(
+                            f":warning: 상태파일 없이 {elapsed:.0f}초 후 FLAT 확정.\n"
+                            f":bank: 잔고: ${balance_usd:,.0f} (₩{balance_krw:,.0f})\n"
+                            f"실제 포지션이 있다면 IBKR 리컨실리에이션 확인 필요.",
+                            ":hourglass:",
+                        )
             self.log.info(
                 f"Position state verified: {actual_state or 'FLAT'}",
                 LogColor.GREEN,
             )
-            # 상태 파일과 포트폴리오가 일치하면 동기화 완료
             return True
 
     def _get_dynamic_leverage(self, balance: float) -> float:
@@ -357,8 +448,49 @@ class MNQDualSMAStrategy(Strategy):
         )
         return result
 
+    def _create_bar_type_from_instrument(
+        self, instrument_id: InstrumentId, reference_bar_type: BarType
+    ) -> BarType:
+        """
+        실제 Instrument ID로 BarType 생성 (venue mismatch 대응).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            실제 로딩된 Instrument ID
+        reference_bar_type : BarType
+            config에서 지정한 BarType (스펙 추출용)
+
+        Returns
+        -------
+        BarType
+            실제 ID + reference 스펙으로 구성된 새 BarType
+
+        Notes
+        -----
+        reference_bar_type.spec (BarSpecification)에 포함된 속성:
+        - step: 바 간격 (예: 1)
+        - aggregation: BarAggregation (예: DAY, HOUR, MINUTE)
+        - price_type: PriceType (예: LAST, BID, ASK, MID)
+
+        aggregation_source는 별도로 복사:
+        - AggregationSource (예: EXTERNAL, INTERNAL)
+
+        현재 NautilusTrader BarType은 이 속성들만 사용하므로 완전한 복사가 됨.
+        향후 BarType에 새 속성이 추가되면 이 메서드도 업데이트 필요.
+        """
+        spec = reference_bar_type.spec
+        return BarType(
+            instrument_id=instrument_id,
+            bar_spec=spec,
+            aggregation_source=reference_bar_type.aggregation_source,
+        )
+
     def on_start(self) -> None:
         """Actions to be performed on strategy start."""
+        # 전략 시작 시간 기록 (리컨실리에이션 대기 시간 계산용)
+        self._strategy_start_time = self._clock.utc_now()
+
         # Load instruments from cache (High #2: CONTFUT 우선 매칭)
         self.qqq_instrument = self._find_instrument_by_symbol(self.config.qqq_instrument_id)
         self.long_instrument = self._find_instrument_by_symbol(self.config.long_instrument_id)
@@ -384,28 +516,61 @@ class MNQDualSMAStrategy(Strategy):
         self._actual_long_id = self.long_instrument.id
         self._actual_hedge_id = self.hedge_instrument.id
 
+        # MEDIUM 수정: 실제 ID로 BarType 생성 (venue mismatch 대응)
+        # QQQ, Long, Hedge 모두 실제 ID 기반 BarType 사용
+        self._actual_qqq_bar_type = self._create_bar_type_from_instrument(
+            self.qqq_instrument.id, self.config.qqq_bar_type
+        )
+        self._actual_long_bar_type = self._create_bar_type_from_instrument(
+            self.long_instrument.id, self.config.long_bar_type
+        )
+        self._actual_hedge_bar_type = self._create_bar_type_from_instrument(
+            self.hedge_instrument.id, self.config.hedge_bar_type
+        )
+
         self.log.info(
-            f"Actual instrument IDs - Long: {self._actual_long_id}, Hedge: {self._actual_hedge_id}",
+            f"Actual instrument IDs - QQQ: {self.qqq_instrument.id}, "
+            f"Long: {self._actual_long_id}, Hedge: {self._actual_hedge_id}",
             LogColor.CYAN,
         )
+
+        # Venue mismatch 경고
+        if self._actual_qqq_bar_type != self.config.qqq_bar_type:
+            self.log.warning(
+                f"QQQ bar type mismatch! Config: {self.config.qqq_bar_type}, "
+                f"Actual: {self._actual_qqq_bar_type}",
+                LogColor.YELLOW,
+            )
+        if self._actual_long_bar_type != self.config.long_bar_type:
+            self.log.warning(
+                f"Long bar type mismatch! Config: {self.config.long_bar_type}, "
+                f"Actual: {self._actual_long_bar_type}",
+                LogColor.YELLOW,
+            )
+        if self._actual_hedge_bar_type != self.config.hedge_bar_type:
+            self.log.warning(
+                f"Hedge bar type mismatch! Config: {self.config.hedge_bar_type}, "
+                f"Actual: {self._actual_hedge_bar_type}",
+                LogColor.YELLOW,
+            )
 
         # Medium #1 수정: 포지션 동기화는 on_bar에서 수행 (리컨실리에이션 완료 후)
         # on_start 시점에는 포트폴리오가 비어있을 수 있음
 
-        # Register indicators (검증된 패턴)
-        self.register_indicator_for_bars(self.config.qqq_bar_type, self.sma_long)
-        self.register_indicator_for_bars(self.config.qqq_bar_type, self.sma_short)
+        # Register indicators - 실제 QQQ bar type 사용
+        self.register_indicator_for_bars(self._actual_qqq_bar_type, self.sma_long)
+        self.register_indicator_for_bars(self._actual_qqq_bar_type, self.sma_short)
 
-        # Request historical bars for warmup
+        # Request historical bars for warmup - 실제 QQQ bar type 사용
         self.request_bars(
-            self.config.qqq_bar_type,
+            self._actual_qqq_bar_type,
             start=self._clock.utc_now() - pd.Timedelta(days=250),
         )
 
-        # Subscribe to bars
-        self.subscribe_bars(self.config.qqq_bar_type)
-        self.subscribe_bars(self.config.long_bar_type)
-        self.subscribe_bars(self.config.hedge_bar_type)
+        # Subscribe to bars - 실제 ID 기반 BarType 사용
+        self.subscribe_bars(self._actual_qqq_bar_type)
+        self.subscribe_bars(self._actual_long_bar_type)
+        self.subscribe_bars(self._actual_hedge_bar_type)
 
         self.log.info("=" * 60, LogColor.GREEN)
         self.log.info("MNQ 3x + 이중SMA + GDX 전략 시작", LogColor.GREEN)
@@ -426,15 +591,16 @@ class MNQDualSMAStrategy(Strategy):
 
     def on_bar(self, bar: Bar) -> None:
         """Actions to be performed when receiving a bar."""
-        # Only process QQQ bars for signal
-        if bar.bar_type != self.config.qqq_bar_type:
+        # Only process QQQ bars for signal - 실제 QQQ bar type 사용
+        qqq_bar_type = self._actual_qqq_bar_type or self.config.qqq_bar_type
+        if bar.bar_type != qqq_bar_type:
             return
 
         # 검증된 패턴: indicators_initialized() 사용
         if not self.indicators_initialized():
             self.log.info(
                 f"Waiting for indicators to warm up "
-                f"[{self.cache.bar_count(self.config.qqq_bar_type)}/{self.config.sma_long_period}]",
+                f"[{self.cache.bar_count(qqq_bar_type)}/{self.config.sma_long_period}]",
                 color=LogColor.BLUE,
             )
             return
@@ -470,8 +636,30 @@ class MNQDualSMAStrategy(Strategy):
             )
             return
 
-        # 포지션 전환 대기 중이면 신호 처리 스킵
+        # 포지션 전환 대기 중이면 타임아웃 체크 후 신호 처리 스킵
         if self._pending_switch_target is not None:
+            # MEDIUM 수정: 청산 대기 타임아웃 처리
+            if self._pending_switch_start_time is not None:
+                elapsed = (self._clock.utc_now() - self._pending_switch_start_time).total_seconds()
+                if elapsed > self._pending_switch_timeout_seconds:
+                    self.log.error(
+                        f"Position close TIMEOUT after {elapsed:.0f}s! "
+                        f"Cancelling pending switch to {self._pending_switch_target}. "
+                        f"Manual intervention may be required.",
+                        LogColor.RED,
+                    )
+                    self.slack.send(
+                        f":warning: 청산 타임아웃! {self._closing_instrument_id} 청산이 {elapsed:.0f}초 후에도 완료되지 않음. "
+                        f"수동 확인 필요.",
+                        ":rotating_light:",
+                    )
+                    # 대기 상태 리셋
+                    self._pending_switch_target = None
+                    self._closing_instrument_id = None
+                    self._pending_switch_start_time = None
+                    # 다음 바에서 신호 재처리 가능
+                    return
+
             self.log.info(
                 f"Waiting for position close to complete before switching to {self._pending_switch_target}",
                 LogColor.BLUE,
@@ -553,6 +741,7 @@ class MNQDualSMAStrategy(Strategy):
             if not self.portfolio.is_flat(self._actual_long_id):
                 self._pending_switch_target = target
                 self._closing_instrument_id = self._actual_long_id
+                self._pending_switch_start_time = self._clock.utc_now()  # 타임아웃 추적용
                 self.log.info(
                     f"Closing LONG position, will open {target} after close completes",
                     LogColor.BLUE,
@@ -564,6 +753,7 @@ class MNQDualSMAStrategy(Strategy):
             if not self.portfolio.is_flat(self._actual_hedge_id):
                 self._pending_switch_target = target
                 self._closing_instrument_id = self._actual_hedge_id
+                self._pending_switch_start_time = self._clock.utc_now()  # 타임아웃 추적용
                 self.log.info(
                     f"Closing HEDGE position, will open {target} after close completes",
                     LogColor.BLUE,
@@ -584,14 +774,27 @@ class MNQDualSMAStrategy(Strategy):
         self._save_position_state(target)
         self._pending_switch_target = None
         self._closing_instrument_id = None
+        self._pending_switch_start_time = None  # 타임아웃 리셋
 
     def on_event(self, event: Event) -> None:
         """
-        Handle events - detect position close completion.
+        Handle events - detect position close completion and track reconciliation.
 
         High #1 수정: 청산 완료 감지 후 새 포지션 진입.
+        MEDIUM 수정: 포지션 이벤트 수신 추적 (리컨실리에이션 활성화 증거).
         """
-        # 포지션 전환 대기 중이 아니면 무시
+        # MEDIUM 수정: 포지션 이벤트 수신 추적
+        # 리컨실리에이션이 활성화되었다는 증거로 사용
+        if isinstance(event, (PositionOpened, PositionChanged, PositionClosed)):
+            if not self._received_position_event:
+                self._received_position_event = True
+                self.log.info(
+                    f"Received position event: {type(event).__name__} - "
+                    f"reconciliation is active",
+                    LogColor.CYAN,
+                )
+
+        # 포지션 전환 대기 중이 아니면 종료
         if self._pending_switch_target is None:
             return
         if self._closing_instrument_id is None:
@@ -614,7 +817,9 @@ class MNQDualSMAStrategy(Strategy):
             return
 
         balance = float(account.balance_total())
-        last_bar = self.cache.bar(self.config.long_bar_type)
+        # MEDIUM 수정: 실제 bar type 사용
+        long_bar_type = self._actual_long_bar_type or self.config.long_bar_type
+        last_bar = self.cache.bar(long_bar_type)
         if last_bar is None:
             self.log.error("No price data for long instrument")
             return
@@ -624,7 +829,7 @@ class MNQDualSMAStrategy(Strategy):
             return
 
         # 계약 가치 계산: 지수가격 × 승수
-        # MNQ: $2/point (21,000 → $42,000), QQQ(ETF): 1.0
+        # MNQ: $2/point (21,000 → $42,000)
         contract_value = price * self.config.contract_multiplier
 
         # 동적 레버리지 계산 (예수금에 따라 3x 또는 4x)
@@ -670,7 +875,9 @@ class MNQDualSMAStrategy(Strategy):
             return
 
         balance = float(account.balance_total())
-        last_bar = self.cache.bar(self.config.hedge_bar_type)
+        # MEDIUM 수정: 실제 bar type 사용
+        hedge_bar_type = self._actual_hedge_bar_type or self.config.hedge_bar_type
+        last_bar = self.cache.bar(hedge_bar_type)
         if last_bar is None:
             self.log.error("No price data for hedge instrument")
             return
@@ -741,7 +948,9 @@ class MNQDualSMAStrategy(Strategy):
         if balance <= 0:
             return
 
-        last_bar = self.cache.bar(self.config.long_bar_type)
+        # MEDIUM 수정: 실제 bar type 사용
+        long_bar_type = self._actual_long_bar_type or self.config.long_bar_type
+        last_bar = self.cache.bar(long_bar_type)
         if last_bar is None:
             return
 
@@ -831,9 +1040,13 @@ class MNQDualSMAStrategy(Strategy):
             self.close_all_positions(long_id)
             self.close_all_positions(hedge_id)
 
-        self.unsubscribe_bars(self.config.qqq_bar_type)
-        self.unsubscribe_bars(self.config.long_bar_type)
-        self.unsubscribe_bars(self.config.hedge_bar_type)
+        # MEDIUM 수정: 실제 bar type으로 unsubscribe
+        if self._actual_qqq_bar_type:
+            self.unsubscribe_bars(self._actual_qqq_bar_type)
+        if self._actual_long_bar_type:
+            self.unsubscribe_bars(self._actual_long_bar_type)
+        if self._actual_hedge_bar_type:
+            self.unsubscribe_bars(self._actual_hedge_bar_type)
 
         self.log.info("Strategy stopped", LogColor.RED)
         self.slack.send("Strategy stopped", ":octagonal_sign:")
