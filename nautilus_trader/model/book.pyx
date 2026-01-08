@@ -629,7 +629,7 @@ cdef class OrderBook(Data):
             raise RuntimeError(
                 f"Invalid size precision for order leaves quantity {order.leaves_qty._mem.precision} "
                 f"when instrument size precision is {size_prec}. "
-                f"Check order quantity precision matches the {order.instrument.id} instrument"
+                f"Check order quantity precision matches the {order.instrument_id} instrument"
             )
 
         cdef Price order_price
