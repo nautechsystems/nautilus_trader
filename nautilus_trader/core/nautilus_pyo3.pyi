@@ -6958,7 +6958,10 @@ class DeribitWebSocketClient:
     @staticmethod
     def new_public(is_testnet: bool) -> DeribitWebSocketClient: ...
     @staticmethod
-    def with_credentials(is_testnet: bool) -> DeribitWebSocketClient: ...
+    def with_credentials(
+        is_testnet: bool,
+        account_id: AccountId | None = None,
+    ) -> DeribitWebSocketClient: ...
     @property
     def url(self) -> str: ...
     @property
@@ -7051,6 +7054,67 @@ class DeribitWebSocketClient:
         self,
         instrument_id: InstrumentId,
         resolution: str,
+    ) -> None: ...
+    async def buy(
+        self,
+        amount: float,
+        order_type: str,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        price: float | None = None,
+        time_in_force: str | None = None,
+        post_only: bool = False,
+        reduce_only: bool = False,
+        trigger_price: float | None = None,
+        trigger: str | None = None,
+    ) -> None: ...
+    async def sell(
+        self,
+        amount: float,
+        order_type: str,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        price: float | None = None,
+        time_in_force: str | None = None,
+        post_only: bool = False,
+        reduce_only: bool = False,
+        trigger_price: float | None = None,
+        trigger: str | None = None,
+    ) -> None: ...
+    async def edit(
+        self,
+        order_id: str,
+        amount: float,
+        price: float,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    ) -> None: ...
+    async def cancel(
+        self,
+        order_id: str,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    ) -> None: ...
+    async def cancel_all_by_instrument(
+        self,
+        instrument_id: InstrumentId,
+        order_type: str | None = None,
+    ) -> None: ...
+    async def get_order_state(
+        self,
+        order_id: str,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
     ) -> None: ...
 
 def get_deribit_http_base_url(is_testnet: bool) -> str: ...

@@ -119,8 +119,8 @@ config_tester = ExecTesterConfig(
     order_qty=order_qty,
     subscribe_quotes=True,
     subscribe_trades=True,
-    enable_limit_buys=False,  # Disable order submission (not implemented yet)
-    enable_limit_sells=False,  # Disable order submission (not implemented yet)
+    enable_limit_buys=True,  # Enable limit buy orders
+    enable_limit_sells=True,  # Enable limit sell orders
 )
 tester = ExecTester(config=config_tester)
 

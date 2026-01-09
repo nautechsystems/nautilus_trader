@@ -14,8 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from typing import Any
 
 from nautilus_trader.adapters.deribit.config import DeribitExecClientConfig
+from nautilus_trader.adapters.deribit.constants import DERIBIT_EXECUTION_SESSION_NAME
 from nautilus_trader.adapters.deribit.constants import DERIBIT_VENUE
 from nautilus_trader.adapters.deribit.providers import DeribitInstrumentProvider
 from nautilus_trader.cache.cache import Cache
@@ -33,14 +35,25 @@ from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import QueryAccount
+from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderCancelRejected
+from nautilus_trader.model.events import OrderExpired
+from nautilus_trader.model.events import OrderModifyRejected
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 
@@ -53,8 +66,10 @@ class DeribitExecutionClient(LiveExecutionClient):
     ----------
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
-    client : nautilus_pyo3.DeribitHttpClient
-        The Deribit HTTP client.
+    http_client : nautilus_pyo3.DeribitHttpClient
+        The Deribit HTTP client for REST API operations.
+    ws_client : nautilus_pyo3.DeribitWebSocketClient
+        The Deribit WebSocket client for order execution.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -73,7 +88,8 @@ class DeribitExecutionClient(LiveExecutionClient):
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
-        client: nautilus_pyo3.DeribitHttpClient,
+        http_client: nautilus_pyo3.DeribitHttpClient,
+        ws_client: nautilus_pyo3.DeribitWebSocketClient,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -113,7 +129,9 @@ class DeribitExecutionClient(LiveExecutionClient):
         self._set_account_id(account_id)
 
         self.pyo3_account_id = nautilus_pyo3.AccountId(account_id.value)
-        self._http_client = client
+        self._http_client = http_client
+        self._ws_client = ws_client
+
         if config.api_key:
             masked_key = mask_api_key(config.api_key)
             self._log.info(f"REST API key {masked_key}", LogColor.BLUE)
@@ -122,6 +140,27 @@ class DeribitExecutionClient(LiveExecutionClient):
         self._log.info("Connecting...")
         await self._instrument_provider.initialize()
 
+        # Get PyO3 instruments for WebSocket cache (needed for order routing)
+        # Must use instruments_pyo3() as the WebSocket client expects PyO3 types with type_str
+        instruments = self._instrument_provider.instruments_pyo3()
+        self._log.info(f"Caching {len(instruments)} instruments for WebSocket")
+
+        # Connect WebSocket with instruments and callback dispatch
+        self._log.info("Connecting WebSocket for execution...")
+        await self._ws_client.connect(
+            instruments=instruments,
+            callback=self._handle_ws_message,
+        )
+
+        # Authenticate for private operations (buy/sell/edit/cancel)
+        self._log.info("Authenticating WebSocket session...")
+        await self._ws_client.authenticate_session(DERIBIT_EXECUTION_SESSION_NAME)
+
+        # Wait for authentication to complete (30 second timeout)
+        await self._ws_client.wait_until_active(timeout_secs=30.0)
+        self._log.info("WebSocket authenticated", LogColor.GREEN)
+
+        # Fetch initial account state
         try:
             account_state = await self._http_client.request_account_state(
                 self.pyo3_account_id,
@@ -135,7 +174,55 @@ class DeribitExecutionClient(LiveExecutionClient):
 
     async def _disconnect(self) -> None:
         self._log.info("Disconnecting...")
+        if self._ws_client:
+            await self._ws_client.close()
         self._log.info("Disconnected", LogColor.GREEN)
+
+    def _handle_ws_message(self, msg: Any) -> None:
+        """
+        Handle incoming WebSocket messages (order events, fills, data, etc.).
+        """
+        try:
+            msg_type = type(msg).__name__
+            handler = self._get_message_handler(msg_type)
+            if handler:
+                handler(msg)
+        except Exception as e:
+            self._log.error(f"Error handling WebSocket message: {e}")
+
+    def _get_message_handler(self, msg_type: str):
+        """
+        Return the appropriate handler for a message type.
+        """
+        handlers = {
+            "OrderAccepted": self._handle_order_accepted,
+            "OrderCanceled": self._handle_order_canceled,
+            "OrderExpired": self._handle_order_expired,
+            "OrderUpdated": self._handle_order_updated,
+            "OrderCancelRejected": self._handle_order_cancel_rejected,
+            "OrderModifyRejected": self._handle_order_modify_rejected,
+            "OrderStatusReport": self._handle_order_status_report,
+            "FillReport": self._handle_fill_report,
+            "OrderRejected": self._handle_order_rejected,
+            "AccountState": self._handle_account_state,
+        }
+        return handlers.get(msg_type)
+
+    def _handle_order_status_report(self, msg: Any) -> None:
+        """
+        Handle OrderStatusReport message.
+        """
+        report = OrderStatusReport.from_pyo3(msg)
+        self._send_order_status_report(report)
+        self._log.debug(f"Received OrderStatusReport: {report.client_order_id}")
+
+    def _handle_fill_report(self, msg: Any) -> None:
+        report = FillReport.from_pyo3(msg)
+        self._send_fill_report(report)
+        self._log.debug(f"Received FillReport: {report.trade_id}")
+
+    def _handle_order_rejected(self, msg: Any) -> None:
+        self._log.warning(f"Order rejected: {msg}")
 
     def _handle_account_state(self, msg: nautilus_pyo3.AccountState) -> None:
         account_state = AccountState.from_dict(msg.to_dict())
@@ -145,6 +232,36 @@ class DeribitExecutionClient(LiveExecutionClient):
             reported=account_state.is_reported,
             ts_event=account_state.ts_event,
         )
+
+    def _handle_order_accepted(self, pyo3_event: nautilus_pyo3.OrderAccepted) -> None:
+        event = OrderAccepted.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+        self._log.debug(f"OrderAccepted: {event.client_order_id}")
+
+    def _handle_order_canceled(self, pyo3_event: nautilus_pyo3.OrderCanceled) -> None:
+        event = OrderCanceled.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+        self._log.debug(f"OrderCanceled: {event.client_order_id}")
+
+    def _handle_order_expired(self, pyo3_event: nautilus_pyo3.OrderExpired) -> None:
+        event = OrderExpired.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+        self._log.debug(f"OrderExpired: {event.client_order_id}")
+
+    def _handle_order_updated(self, pyo3_event: nautilus_pyo3.OrderUpdated) -> None:
+        event = OrderUpdated.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+        self._log.debug(f"OrderUpdated: {event.client_order_id}")
+
+    def _handle_order_cancel_rejected(self, pyo3_event: nautilus_pyo3.OrderCancelRejected) -> None:
+        event = OrderCancelRejected.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+        self._log.warning(f"OrderCancelRejected: {event.client_order_id} - {event.reason}")
+
+    def _handle_order_modify_rejected(self, pyo3_event: nautilus_pyo3.OrderModifyRejected) -> None:
+        event = OrderModifyRejected.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+        self._log.warning(f"OrderModifyRejected: {event.client_order_id} - {event.reason}")
 
     async def _query_account(self, command: QueryAccount) -> None:
         self._log.debug(f"Querying account state: {command}")
@@ -157,28 +274,348 @@ class DeribitExecutionClient(LiveExecutionClient):
             self._log.error(f"Failed to query account state: {e}")
 
     async def _submit_order(self, command: SubmitOrder) -> None:
-        self._log.warning(
-            f"submit_order not yet implemented (client_order_id={command.order.client_order_id})",
+        order = command.order
+
+        if order.is_closed:
+            self._log.warning(f"Cannot submit already closed order: {order}")
+            return
+
+        # Convert Python types to PyO3 types
+        pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
+        pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
+        pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
+
+        # Map order type to Deribit format
+        order_type_str = self._map_order_type(order.order_type)
+        time_in_force_str = (
+            self._map_time_in_force(order.time_in_force) if order.time_in_force else None
         )
 
-    async def _submit_order_list(self, command: SubmitOrder) -> None:
-        self._log.warning("submit_order_list not yet implemented")
+        price = float(order.price) if order.has_price else None
+        amount = float(order.quantity)
+
+        try:
+            self.generate_order_submitted(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                ts_event=self._clock.timestamp_ns(),
+            )
+
+            if order.side == OrderSide.BUY:
+                await self._ws_client.buy(
+                    amount=amount,
+                    order_type=order_type_str,
+                    client_order_id=pyo3_client_order_id,
+                    trader_id=pyo3_trader_id,
+                    strategy_id=pyo3_strategy_id,
+                    instrument_id=pyo3_instrument_id,
+                    price=price,
+                    time_in_force=time_in_force_str,
+                    post_only=order.is_post_only,
+                    reduce_only=order.is_reduce_only,
+                )
+            else:  # SELL
+                await self._ws_client.sell(
+                    amount=amount,
+                    order_type=order_type_str,
+                    client_order_id=pyo3_client_order_id,
+                    trader_id=pyo3_trader_id,
+                    strategy_id=pyo3_strategy_id,
+                    instrument_id=pyo3_instrument_id,
+                    price=price,
+                    time_in_force=time_in_force_str,
+                    post_only=order.is_post_only,
+                    reduce_only=order.is_reduce_only,
+                )
+        except Exception as e:
+            self._log.error(f"Failed to submit order: {e}")
+            self.generate_order_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
+
+    def _map_order_type(self, order_type: OrderType) -> str:
+        mapping = {
+            OrderType.LIMIT: "limit",
+            OrderType.MARKET: "market",
+            OrderType.STOP_MARKET: "stop_market",
+            OrderType.STOP_LIMIT: "stop_limit",
+        }
+        return mapping.get(order_type, "limit")
+
+    def _map_time_in_force(self, tif: TimeInForce) -> str:
+        mapping = {
+            TimeInForce.GTC: "good_til_cancelled",
+            TimeInForce.IOC: "immediate_or_cancel",
+            TimeInForce.FOK: "fill_or_kill",
+            TimeInForce.GTD: "good_til_date",
+        }
+        return mapping.get(tif, "good_til_cancelled")
+
+    async def _submit_order_list(self, command: SubmitOrderList) -> None:
+        order_list = command.order_list
+
+        if not order_list.orders:
+            self._log.debug("submit_order_list called with empty order list")
+            return
+
+        self._log.info(
+            f"Submitting order list {order_list.id} with {len(order_list.orders)} orders "
+            f"for instrument={command.instrument_id}",
+        )
+
+        # Deribit doesn't have native batch order submission
+        # Loop through and submit each order individually
+        for order in order_list.orders:
+            if order.is_closed:
+                self._log.warning(f"Skipping closed order: {order.client_order_id}")
+                continue
+
+            # Convert Python types to PyO3 types
+            pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
+            pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
+            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
+            pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
+
+            # Map order type to Deribit format
+            order_type_str = self._map_order_type(order.order_type)
+            time_in_force_str = (
+                self._map_time_in_force(order.time_in_force) if order.time_in_force else None
+            )
+
+            # Extract price (for limit orders)
+            price = float(order.price) if order.has_price else None
+
+            # Extract quantity as float
+            amount = float(order.quantity)
+
+            try:
+                # Generate OrderSubmitted event first
+                self.generate_order_submitted(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    ts_event=self._clock.timestamp_ns(),
+                )
+
+                self._log.info(
+                    f"Submitting order from list: {order.client_order_id} "
+                    f"({order.side.name} {amount} @ {price})",
+                )
+
+                # Call appropriate WebSocket method based on side
+                if order.side == OrderSide.BUY:
+                    await self._ws_client.buy(
+                        amount=amount,
+                        order_type=order_type_str,
+                        client_order_id=pyo3_client_order_id,
+                        trader_id=pyo3_trader_id,
+                        strategy_id=pyo3_strategy_id,
+                        instrument_id=pyo3_instrument_id,
+                        price=price,
+                        time_in_force=time_in_force_str,
+                        post_only=order.is_post_only,
+                        reduce_only=order.is_reduce_only,
+                    )
+                else:  # SELL
+                    await self._ws_client.sell(
+                        amount=amount,
+                        order_type=order_type_str,
+                        client_order_id=pyo3_client_order_id,
+                        trader_id=pyo3_trader_id,
+                        strategy_id=pyo3_strategy_id,
+                        instrument_id=pyo3_instrument_id,
+                        price=price,
+                        time_in_force=time_in_force_str,
+                        post_only=order.is_post_only,
+                        reduce_only=order.is_reduce_only,
+                    )
+            except Exception as e:
+                self._log.error(f"Failed to submit order from list: {e}")
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=str(e),
+                    ts_event=self._clock.timestamp_ns(),
+                )
 
     async def _modify_order(self, command: ModifyOrder) -> None:
-        self._log.warning(
-            f"modify_order not yet implemented (client_order_id={command.client_order_id})",
-        )
+        order = self._cache.order(command.client_order_id)
+        if order is None:
+            self._log.error(f"Order not found: {command.client_order_id}")
+            return
+
+        if order.venue_order_id is None:
+            self._log.error(
+                f"Cannot modify order without venue_order_id: {command.client_order_id}",
+            )
+            return
+
+        pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
+        pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
+        pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
+
+        price = float(command.price) if command.price else float(order.price)
+        amount = float(command.quantity) if command.quantity else float(order.quantity)
+
+        try:
+            self._log.info(
+                f"Modifying order {order.client_order_id} (venue: {order.venue_order_id}) "
+                f"to price={price} qty={amount}",
+            )
+
+            await self._ws_client.edit(
+                order_id=order.venue_order_id.value,
+                amount=amount,
+                price=price,
+                client_order_id=pyo3_client_order_id,
+                trader_id=pyo3_trader_id,
+                strategy_id=pyo3_strategy_id,
+                instrument_id=pyo3_instrument_id,
+            )
+        except Exception as e:
+            self._log.error(f"Failed to modify order: {e}")
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        self._log.warning(
-            f"cancel_order not yet implemented (client_order_id={command.client_order_id})",
-        )
+        order = self._cache.order(command.client_order_id)
+        if order is None:
+            self._log.error(f"Order not found: {command.client_order_id}")
+            return
+
+        if order.venue_order_id is None:
+            self._log.error(
+                f"Cannot cancel order without venue_order_id: {command.client_order_id}",
+            )
+            return
+
+        pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
+        pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
+        pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
+
+        try:
+            self._log.info(
+                f"Canceling order {order.client_order_id} (venue: {order.venue_order_id})",
+            )
+
+            await self._ws_client.cancel(
+                order_id=order.venue_order_id.value,
+                client_order_id=pyo3_client_order_id,
+                trader_id=pyo3_trader_id,
+                strategy_id=pyo3_strategy_id,
+                instrument_id=pyo3_instrument_id,
+            )
+        except Exception as e:
+            self._log.error(f"Failed to cancel order: {e}")
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        self._log.warning("cancel_all_orders not yet implemented")
+        # Deribit doesn't support side filtering - log warning if specified
+        if command.order_side != OrderSide.NO_ORDER_SIDE:
+            self._log.warning(
+                "Deribit cancel_all_by_instrument doesn't support order_side filtering. "
+                "Cancelling all orders for instrument regardless of side.",
+            )
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        try:
+            self._log.info(
+                f"Cancelling all orders for instrument {command.instrument_id}",
+            )
+
+            await self._ws_client.cancel_all_by_instrument(
+                instrument_id=pyo3_instrument_id,
+                order_type=None,  # Cancel all order types
+            )
+        except Exception as e:
+            self._log.error(f"Failed to cancel all orders: {e}")
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
-        self._log.warning("batch_cancel_orders not yet implemented")
+        if not command.cancels:
+            self._log.debug("batch_cancel_orders called with empty cancels list")
+            return
+
+        self._log.info(
+            f"Batch cancelling {len(command.cancels)} orders for instrument={command.instrument_id}",
+        )
+
+        # Deribit doesn't have native batch cancel by order ID
+        # Loop through and cancel each order individually
+        for cancel in command.cancels:
+            order = self._cache.order(cancel.client_order_id)
+            if order is None:
+                self._log.warning(f"Skipping cancel - order not found: {cancel.client_order_id}")
+                continue
+
+            if order.venue_order_id is None:
+                self._log.warning(
+                    f"Skipping cancel for {cancel.client_order_id} - no venue_order_id",
+                )
+                continue
+
+            # Convert Python types to PyO3 types
+            pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
+            pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
+            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
+            pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
+
+            try:
+                self._log.info(
+                    f"Batch cancel: {order.client_order_id} (venue: {order.venue_order_id})",
+                )
+
+                await self._ws_client.cancel(
+                    order_id=order.venue_order_id.value,
+                    client_order_id=pyo3_client_order_id,
+                    trader_id=pyo3_trader_id,
+                    strategy_id=pyo3_strategy_id,
+                    instrument_id=pyo3_instrument_id,
+                )
+            except Exception as e:
+                self._log.error(
+                    f"Batch cancel failed: order_id={order.venue_order_id}, "
+                    f"client_order_id={order.client_order_id}, error={e}",
+                )
+
+    async def _query_order(self, command: QueryOrder) -> None:
+        """
+        Query order state via WebSocket get_order_state.
+        """
+        order = self._cache.order(command.client_order_id)
+        if order is None:
+            self._log.error(f"Order not found: {command.client_order_id}")
+            return
+
+        if order.venue_order_id is None:
+            self._log.error(f"Cannot query order without venue_order_id: {command.client_order_id}")
+            return
+
+        pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
+        pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
+        pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
+
+        try:
+            self._log.info(
+                f"Querying order {order.client_order_id} (venue: {order.venue_order_id})",
+            )
+
+            await self._ws_client.get_order_state(
+                order_id=order.venue_order_id.value,
+                client_order_id=pyo3_client_order_id,
+                trader_id=pyo3_trader_id,
+                strategy_id=pyo3_strategy_id,
+                instrument_id=pyo3_instrument_id,
+            )
+        except Exception as e:
+            self._log.error(f"Failed to query order: {e}")
 
     async def generate_order_status_report(
         self,
