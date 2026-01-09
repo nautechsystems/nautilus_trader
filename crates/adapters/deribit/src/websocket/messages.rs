@@ -19,7 +19,12 @@ use std::fmt::Display;
 
 use nautilus_model::{
     data::{Data, FundingRateUpdate, OrderBookDeltas},
+    events::{
+        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderExpired,
+        OrderModifyRejected, OrderRejected, OrderUpdated,
+    },
     instruments::InstrumentAny,
+    reports::{FillReport, OrderStatusReport},
 };
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -364,6 +369,243 @@ pub struct DeribitChartMsg {
     pub cost: f64,
 }
 
+/// Order parameters for private/buy and private/sell requests.
+#[derive(Debug, Clone, Serialize)]
+pub struct DeribitOrderParams {
+    /// Instrument name (e.g., "BTC-PERPETUAL").
+    pub instrument_name: String,
+    /// Order amount in contracts.
+    pub amount: f64,
+    /// Order type: "limit", "market", "stop_limit", "stop_market", "take_limit", "take_market".
+    #[serde(rename = "type")]
+    pub order_type: String,
+    /// User-defined label (client order ID), max 64 chars alphanumeric.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// Limit price (required for limit orders).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price: Option<f64>,
+    /// Time in force: "good_til_cancelled", "good_til_date", "fill_or_kill", "immediate_or_cancel".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_in_force: Option<String>,
+    /// Post-only flag (rejected if would take liquidity).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub post_only: Option<bool>,
+    /// Reduce-only flag (only reduces position).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reduce_only: Option<bool>,
+    /// Trigger price for stop/take orders.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trigger_price: Option<f64>,
+    /// Trigger type: "last_price", "index_price", "mark_price".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trigger: Option<String>,
+    /// Maximum display quantity for iceberg orders.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_show: Option<f64>,
+    /// GTD expiration timestamp in milliseconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub valid_until: Option<u64>,
+}
+
+/// Cancel order parameters for private/cancel request.
+#[derive(Debug, Clone, Serialize)]
+pub struct DeribitCancelParams {
+    /// Venue order ID to cancel.
+    pub order_id: String,
+}
+
+/// Cancel all orders parameters for private/cancel_all_by_instrument request.
+#[derive(Debug, Clone, Serialize)]
+pub struct DeribitCancelAllByInstrumentParams {
+    /// Instrument name.
+    pub instrument_name: String,
+    /// Optional order type filter.
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub order_type: Option<String>,
+}
+
+/// Edit order parameters for private/edit request.
+#[derive(Debug, Clone, Serialize)]
+pub struct DeribitEditParams {
+    /// Venue order ID to modify.
+    pub order_id: String,
+    /// New amount.
+    pub amount: f64,
+    /// New price (for limit orders).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price: Option<f64>,
+    /// New trigger price (for stop orders).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trigger_price: Option<f64>,
+    /// Post-only flag.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub post_only: Option<bool>,
+    /// Reduce-only flag.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reduce_only: Option<bool>,
+}
+
+/// Get order state parameters for private/get_order_state request.
+#[derive(Debug, Clone, Serialize)]
+pub struct DeribitGetOrderStateParams {
+    /// Venue order ID.
+    pub order_id: String,
+}
+
+/// Order response from buy/sell/edit operations.
+///
+/// Contains the order details and any trades that resulted from the order.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeribitOrderResponse {
+    /// The order details.
+    pub order: DeribitOrderMsg,
+    /// Any trades executed as part of this order.
+    #[serde(default)]
+    pub trades: Vec<DeribitUserTradeMsg>,
+}
+
+/// Order message structure from Deribit.
+///
+/// Received from order responses and user.orders subscription.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeribitOrderMsg {
+    /// Unique order ID assigned by Deribit.
+    pub order_id: String,
+    /// User-defined label (client order ID).
+    pub label: Option<String>,
+    /// Instrument name.
+    pub instrument_name: Ustr,
+    /// Order direction: "buy" or "sell".
+    pub direction: String,
+    /// Order type: "limit", "market", "stop_limit", "stop_market", "take_limit", "take_market".
+    pub order_type: String,
+    /// Order state: "open", "filled", "rejected", "cancelled", "untriggered".
+    pub order_state: String,
+    /// Limit price (None for market orders).
+    pub price: Option<f64>,
+    /// Original order amount in contracts.
+    pub amount: f64,
+    /// Amount filled so far.
+    pub filled_amount: f64,
+    /// Average fill price.
+    pub average_price: Option<f64>,
+    /// Order creation timestamp in milliseconds.
+    pub creation_timestamp: u64,
+    /// Last update timestamp in milliseconds.
+    pub last_update_timestamp: u64,
+    /// Time in force setting.
+    pub time_in_force: String,
+    /// Commission paid in base currency.
+    #[serde(default)]
+    pub commission: f64,
+    /// Post-only flag.
+    #[serde(default)]
+    pub post_only: bool,
+    /// Reduce-only flag.
+    #[serde(default)]
+    pub reduce_only: bool,
+    /// Trigger price for stop/take orders.
+    pub trigger_price: Option<f64>,
+    /// Trigger type: "last_price", "index_price", "mark_price".
+    pub trigger: Option<String>,
+    /// Max show quantity for iceberg orders.
+    pub max_show: Option<f64>,
+    /// API request flag.
+    #[serde(default)]
+    pub api: bool,
+    /// Reject reason if order was rejected.
+    pub reject_reason: Option<String>,
+    /// Cancel reason if order was cancelled.
+    pub cancel_reason: Option<String>,
+}
+
+/// User trade message from Deribit.
+///
+/// Received from order responses and user.trades subscription.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeribitUserTradeMsg {
+    /// Unique trade ID.
+    pub trade_id: String,
+    /// Associated order ID.
+    pub order_id: String,
+    /// Instrument name.
+    pub instrument_name: Ustr,
+    /// Trade direction: "buy" or "sell".
+    pub direction: String,
+    /// Execution price.
+    pub price: f64,
+    /// Trade amount in contracts.
+    pub amount: f64,
+    /// Fee amount.
+    pub fee: f64,
+    /// Fee currency.
+    pub fee_currency: String,
+    /// Trade timestamp in milliseconds.
+    pub timestamp: u64,
+    /// Trade sequence number.
+    pub trade_seq: u64,
+    /// Liquidity: "M" (maker) or "T" (taker).
+    pub liquidity: String,
+    /// Order type.
+    pub order_type: String,
+    /// Index price at trade time.
+    pub index_price: f64,
+    /// Mark price at trade time.
+    pub mark_price: f64,
+    /// Tick direction (0-3).
+    pub tick_direction: i8,
+    /// Order state after this trade.
+    pub state: String,
+    /// User-defined label (client order ID).
+    pub label: Option<String>,
+    /// Reduce-only flag.
+    #[serde(default)]
+    pub reduce_only: bool,
+    /// Post-only flag.
+    #[serde(default)]
+    pub post_only: bool,
+    /// Profit/loss for this trade.
+    pub profit_loss: Option<f64>,
+}
+
+/// Portfolio/margin message from user.portfolio subscription.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeribitPortfolioMsg {
+    /// Currency (e.g., "BTC", "ETH").
+    pub currency: String,
+    /// Account equity.
+    pub equity: f64,
+    /// Available funds.
+    pub available_funds: f64,
+    /// Available withdrawal funds.
+    pub available_withdrawal_funds: f64,
+    /// Balance.
+    pub balance: f64,
+    /// Margin balance.
+    pub margin_balance: f64,
+    /// Initial margin.
+    pub initial_margin: f64,
+    /// Maintenance margin.
+    pub maintenance_margin: f64,
+    /// Total profit/loss.
+    pub total_pl: f64,
+    /// Session profit/loss.
+    pub session_pl: Option<f64>,
+    /// Unrealized profit/loss.
+    pub session_upl: Option<f64>,
+    /// Options session profit/loss.
+    pub options_session_upl: Option<f64>,
+    /// Futures session profit/loss.
+    pub futures_session_upl: Option<f64>,
+    /// Delta total.
+    pub delta_total: Option<f64>,
+    /// Options delta.
+    pub options_delta: Option<f64>,
+    /// Futures delta (position in contracts).
+    pub futures_pl: Option<f64>,
+}
+
 /// Raw Deribit WebSocket message variants.
 #[derive(Debug, Clone)]
 pub enum DeribitWsMessage {
@@ -411,6 +653,26 @@ pub enum NautilusWsMessage {
     Instrument(Box<InstrumentAny>),
     /// Funding rate updates (for perpetual instruments).
     FundingRates(Vec<FundingRateUpdate>),
+    /// Order status reports (for reconciliation, not real-time events).
+    OrderStatusReports(Vec<OrderStatusReport>),
+    /// Fill reports from user.trades subscription or order responses.
+    FillReports(Vec<FillReport>),
+    /// Order accepted by venue.
+    OrderAccepted(OrderAccepted),
+    /// Order canceled by venue or user.
+    OrderCanceled(OrderCanceled),
+    /// Order expired.
+    OrderExpired(OrderExpired),
+    /// Order rejected by venue.
+    OrderRejected(OrderRejected),
+    /// Cancel request rejected by venue.
+    OrderCancelRejected(OrderCancelRejected),
+    /// Modify request rejected by venue.
+    OrderModifyRejected(OrderModifyRejected),
+    /// Order updated (price/quantity amended).
+    OrderUpdated(OrderUpdated),
+    /// Account state update from user.portfolio subscription.
+    AccountState(AccountState),
     /// Error from venue.
     Error(DeribitWsError),
     /// Unhandled/raw message for debugging.

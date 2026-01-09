@@ -16,19 +16,23 @@
 //! Parsing functions for converting Deribit WebSocket messages to Nautilus domain types.
 
 use ahash::AHashMap;
-use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
+use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
         OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, bar::BarSpecification,
     },
     enums::{
-        AggregationSource, AggressorSide, BarAggregation, BookAction, OrderSide, PriceType,
-        RecordFlag,
+        AggregationSource, AggressorSide, BarAggregation, BookAction, LiquiditySide, OrderSide,
+        OrderStatus, OrderType, PriceType, RecordFlag, TimeInForce,
     },
-    identifiers::{InstrumentId, TradeId},
+    events::{OrderAccepted, OrderCanceled, OrderExpired, OrderUpdated},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
+    },
     instruments::{Instrument, InstrumentAny},
-    types::{Price, Quantity},
+    reports::{FillReport, OrderStatusReport},
+    types::{Currency, Money, Price, Quantity},
 };
 use rust_decimal::prelude::FromPrimitive;
 use ustr::Ustr;
@@ -36,8 +40,8 @@ use ustr::Ustr;
 use super::{
     enums::{DeribitBookAction, DeribitBookMsgType},
     messages::{
-        DeribitBookMsg, DeribitChartMsg, DeribitPerpetualMsg, DeribitQuoteMsg, DeribitTickerMsg,
-        DeribitTradeMsg,
+        DeribitBookMsg, DeribitChartMsg, DeribitOrderMsg, DeribitPerpetualMsg, DeribitQuoteMsg,
+        DeribitTickerMsg, DeribitTradeMsg, DeribitUserTradeMsg,
     },
 };
 
@@ -513,6 +517,429 @@ pub fn parse_chart_msg(
         .context("Invalid OHLC bar")
 }
 
+/// Parses a Deribit user order message into a Nautilus `OrderStatusReport`.
+///
+/// # Errors
+///
+/// Returns an error if the order data cannot be parsed.
+pub fn parse_user_order_msg(
+    msg: &DeribitOrderMsg,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderStatusReport> {
+    let instrument_id = instrument.id();
+    let venue_order_id = VenueOrderId::new(&msg.order_id);
+
+    let order_side = match msg.direction.as_str() {
+        "buy" => OrderSide::Buy,
+        "sell" => OrderSide::Sell,
+        _ => anyhow::bail!("Unknown order direction: {}", msg.direction),
+    };
+
+    // Map Deribit order type to Nautilus
+    let order_type = match msg.order_type.as_str() {
+        "limit" => OrderType::Limit,
+        "market" => OrderType::Market,
+        "stop_limit" => OrderType::StopLimit,
+        "stop_market" => OrderType::StopMarket,
+        "take_limit" => OrderType::LimitIfTouched,
+        "take_market" => OrderType::MarketIfTouched,
+        _ => OrderType::Limit, // Default to Limit for unknown types
+    };
+
+    // Map Deribit time in force to Nautilus
+    let time_in_force = match msg.time_in_force.as_str() {
+        "good_til_cancelled" | "gtc" => TimeInForce::Gtc,
+        "good_til_day" | "gtd" => TimeInForce::Gtd,
+        "fill_or_kill" | "fok" => TimeInForce::Fok,
+        "immediate_or_cancel" | "ioc" => TimeInForce::Ioc,
+        _ => TimeInForce::Gtc, // Default to GTC
+    };
+
+    // Map Deribit order state to Nautilus status
+    let order_status = match msg.order_state.as_str() {
+        "open" => {
+            if msg.filled_amount > 0.0 {
+                OrderStatus::PartiallyFilled
+            } else {
+                OrderStatus::Accepted
+            }
+        }
+        "filled" => OrderStatus::Filled,
+        "rejected" => OrderStatus::Rejected,
+        "cancelled" => OrderStatus::Canceled,
+        "untriggered" => OrderStatus::Accepted, // Pending trigger
+        _ => OrderStatus::Accepted,
+    };
+
+    let price_precision = instrument.price_precision();
+    let size_precision = instrument.size_precision();
+
+    let quantity = Quantity::new(msg.amount, size_precision);
+    let filled_qty = Quantity::new(msg.filled_amount, size_precision);
+
+    let ts_accepted = UnixNanos::new(msg.creation_timestamp * NANOSECONDS_IN_MILLISECOND);
+    let ts_last = UnixNanos::new(msg.last_update_timestamp * NANOSECONDS_IN_MILLISECOND);
+
+    let mut report = OrderStatusReport::new(
+        account_id,
+        instrument_id,
+        None, // order_list_id
+        venue_order_id,
+        order_side,
+        order_type,
+        time_in_force,
+        order_status,
+        quantity,
+        filled_qty,
+        ts_accepted,
+        ts_last,
+        ts_init,
+        Some(UUID4::new()),
+    );
+
+    // Add client order ID if present
+    if let Some(ref label) = msg.label
+        && !label.is_empty()
+    {
+        report = report.with_client_order_id(ClientOrderId::new(label));
+    }
+
+    // Add price for limit orders
+    if let Some(price_val) = msg.price
+        && price_val > 0.0
+    {
+        let price = Price::new(price_val, price_precision);
+        report = report.with_price(price);
+    }
+
+    // Add average price if filled
+    if let Some(avg_price) = msg.average_price
+        && avg_price > 0.0
+    {
+        report = report.with_avg_px(avg_price)?;
+    }
+
+    // Add trigger price for stop/take orders
+    if let Some(trigger_price) = msg.trigger_price
+        && trigger_price > 0.0
+    {
+        let trigger = Price::new(trigger_price, price_precision);
+        report = report.with_trigger_price(trigger);
+    }
+
+    if msg.post_only {
+        report = report.with_post_only(true);
+    }
+
+    if msg.reduce_only {
+        report = report.with_reduce_only(true);
+    }
+
+    // Add cancel/reject reason
+    if let Some(ref reason) = msg.reject_reason {
+        report = report.with_cancel_reason(reason.clone());
+    } else if let Some(ref reason) = msg.cancel_reason {
+        report = report.with_cancel_reason(reason.clone());
+    }
+
+    Ok(report)
+}
+
+/// Parses a Deribit user trade message into a Nautilus `FillReport`.
+///
+/// # Errors
+///
+/// Returns an error if the trade data cannot be parsed.
+pub fn parse_user_trade_msg(
+    msg: &DeribitUserTradeMsg,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<FillReport> {
+    let instrument_id = instrument.id();
+    let venue_order_id = VenueOrderId::new(&msg.order_id);
+    let trade_id = TradeId::new(&msg.trade_id);
+
+    let order_side = match msg.direction.as_str() {
+        "buy" => OrderSide::Buy,
+        "sell" => OrderSide::Sell,
+        _ => anyhow::bail!("Unknown trade direction: {}", msg.direction),
+    };
+
+    let price_precision = instrument.price_precision();
+    let size_precision = instrument.size_precision();
+
+    let last_qty = Quantity::new(msg.amount, size_precision);
+    let last_px = Price::new(msg.price, price_precision);
+
+    let liquidity_side = match msg.liquidity.as_str() {
+        "M" => LiquiditySide::Maker,
+        "T" => LiquiditySide::Taker,
+        _ => LiquiditySide::NoLiquiditySide,
+    };
+
+    // Get fee currency from the fee_currency field
+    let fee_currency = Currency::from(&msg.fee_currency);
+    let commission = Money::new(msg.fee.abs(), fee_currency);
+
+    let ts_event = UnixNanos::new(msg.timestamp * NANOSECONDS_IN_MILLISECOND);
+
+    let client_order_id = msg
+        .label
+        .as_ref()
+        .filter(|l| !l.is_empty())
+        .map(ClientOrderId::new);
+
+    Ok(FillReport::new(
+        account_id,
+        instrument_id,
+        venue_order_id,
+        trade_id,
+        order_side,
+        last_qty,
+        last_px,
+        commission,
+        liquidity_side,
+        client_order_id,
+        None, // venue_position_id
+        ts_event,
+        ts_init,
+        None, // report_id
+    ))
+}
+
+// ------------------------------------------------------------------------------------------------
+//  Order Event Parsing Functions
+// ------------------------------------------------------------------------------------------------
+
+/// Parsed order event result from a Deribit order message.
+///
+/// This enum represents the discrete order events that can be derived from
+/// Deribit order state transitions, following the same pattern as OKX.
+#[derive(Debug, Clone)]
+pub enum ParsedOrderEvent {
+    /// Order was accepted by the venue.
+    Accepted(OrderAccepted),
+    /// Order was canceled.
+    Canceled(OrderCanceled),
+    /// Order expired.
+    Expired(OrderExpired),
+    /// Order was updated (amended).
+    Updated(OrderUpdated),
+    /// No event to emit (e.g., already processed or intermediate state).
+    None,
+}
+
+/// Extracts the client order ID from a Deribit order message label.
+fn extract_client_order_id(msg: &DeribitOrderMsg) -> Option<ClientOrderId> {
+    msg.label
+        .as_ref()
+        .filter(|l| !l.is_empty())
+        .map(ClientOrderId::new)
+}
+
+/// Parses a Deribit order message into an `OrderAccepted` event.
+///
+/// This should be called when an order transitions to "open" state for the first time
+/// or when a buy/sell response is received successfully.
+#[must_use]
+pub fn parse_order_accepted(
+    msg: &DeribitOrderMsg,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    ts_init: UnixNanos,
+) -> OrderAccepted {
+    let instrument_id = instrument.id();
+    let venue_order_id = VenueOrderId::new(&msg.order_id);
+    let client_order_id = extract_client_order_id(msg).unwrap_or_else(|| {
+        // Generate a client order ID from the venue order ID if not provided
+        ClientOrderId::new(&msg.order_id)
+    });
+    let ts_event = UnixNanos::new(msg.last_update_timestamp * NANOSECONDS_IN_MILLISECOND);
+
+    OrderAccepted::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+        account_id,
+        nautilus_core::UUID4::new(),
+        ts_event,
+        ts_init,
+        false, // reconciliation
+    )
+}
+
+/// Parses a Deribit order message into an `OrderCanceled` event.
+///
+/// This should be called when an order transitions to "cancelled" state.
+#[must_use]
+pub fn parse_order_canceled(
+    msg: &DeribitOrderMsg,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    ts_init: UnixNanos,
+) -> OrderCanceled {
+    let instrument_id = instrument.id();
+    let venue_order_id = VenueOrderId::new(&msg.order_id);
+    let client_order_id =
+        extract_client_order_id(msg).unwrap_or_else(|| ClientOrderId::new(&msg.order_id));
+    let ts_event = UnixNanos::new(msg.last_update_timestamp * NANOSECONDS_IN_MILLISECOND);
+
+    OrderCanceled::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        nautilus_core::UUID4::new(),
+        ts_event,
+        ts_init,
+        false, // reconciliation
+        Some(venue_order_id),
+        Some(account_id),
+    )
+}
+
+/// Parses a Deribit order message into an `OrderExpired` event.
+///
+/// This should be called when an order transitions to "expired" state
+/// (e.g., GTD orders that reached their expiry time).
+#[must_use]
+pub fn parse_order_expired(
+    msg: &DeribitOrderMsg,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    ts_init: UnixNanos,
+) -> OrderExpired {
+    let instrument_id = instrument.id();
+    let venue_order_id = VenueOrderId::new(&msg.order_id);
+    let client_order_id =
+        extract_client_order_id(msg).unwrap_or_else(|| ClientOrderId::new(&msg.order_id));
+    let ts_event = UnixNanos::new(msg.last_update_timestamp * NANOSECONDS_IN_MILLISECOND);
+
+    OrderExpired::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        nautilus_core::UUID4::new(),
+        ts_event,
+        ts_init,
+        false, // reconciliation
+        Some(venue_order_id),
+        Some(account_id),
+    )
+}
+
+/// Parses a Deribit order message into an `OrderUpdated` event.
+///
+/// This should be called when an order is amended (price or quantity changed).
+#[must_use]
+pub fn parse_order_updated(
+    msg: &DeribitOrderMsg,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    ts_init: UnixNanos,
+) -> OrderUpdated {
+    let instrument_id = instrument.id();
+    let price_precision = instrument.price_precision();
+    let size_precision = instrument.size_precision();
+
+    let venue_order_id = VenueOrderId::new(&msg.order_id);
+    let client_order_id =
+        extract_client_order_id(msg).unwrap_or_else(|| ClientOrderId::new(&msg.order_id));
+    let quantity = Quantity::new(msg.amount, size_precision);
+    let price = msg.price.map(|p| Price::new(p, price_precision));
+    let trigger_price = msg.trigger_price.map(|p| Price::new(p, price_precision));
+    let ts_event = UnixNanos::new(msg.last_update_timestamp * NANOSECONDS_IN_MILLISECOND);
+
+    OrderUpdated::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        quantity,
+        nautilus_core::UUID4::new(),
+        ts_event,
+        ts_init,
+        false, // reconciliation
+        Some(venue_order_id),
+        Some(account_id),
+        price,
+        trigger_price,
+        None, // protection_price
+    )
+}
+
+/// Determines the appropriate order event based on the Deribit order state.
+///
+/// This function analyzes the order state and returns the corresponding event type.
+/// It's used by the handler to determine which event to emit for a given order update.
+///
+/// # Arguments
+/// * `order_state` - The Deribit order state string ("open", "filled", "cancelled", etc.)
+/// * `is_new_order` - Whether this is the first time we're seeing this order
+/// * `was_amended` - Whether this update is due to an amendment (edit) operation
+///
+/// # Returns
+/// The type of event that should be emitted, or `None` if no event should be emitted.
+#[must_use]
+pub fn determine_order_event_type(
+    order_state: &str,
+    is_new_order: bool,
+    was_amended: bool,
+) -> OrderEventType {
+    match order_state {
+        "open" | "untriggered" => {
+            if was_amended {
+                OrderEventType::Updated
+            } else if is_new_order {
+                OrderEventType::Accepted
+            } else {
+                // Order is still open, no event needed (partial fill handled separately)
+                OrderEventType::None
+            }
+        }
+        "cancelled" => OrderEventType::Canceled,
+        "expired" => OrderEventType::Expired,
+        "filled" => {
+            // Fills are handled through the user.trades channel
+            OrderEventType::None
+        }
+        "rejected" => {
+            // Rejections are handled separately via OrderRejected
+            OrderEventType::None
+        }
+        _ => OrderEventType::None,
+    }
+}
+
+/// Order event type to be emitted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrderEventType {
+    /// Emit OrderAccepted event.
+    Accepted,
+    /// Emit OrderCanceled event.
+    Canceled,
+    /// Emit OrderExpired event.
+    Expired,
+    /// Emit OrderUpdated event.
+    Updated,
+    /// No event to emit.
+    None,
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -980,5 +1407,251 @@ mod tests {
         assert_eq!(bar.close, instrument.make_price(87474.0));
         assert_eq!(bar.volume, instrument.make_qty(1.0, None)); // Rounded to 1.0 with size_precision=0
         assert_eq!(bar.ts_event, UnixNanos::new(1_767_200_040_000_000_000));
+    }
+
+    #[rstest]
+    fn test_parse_order_buy_response() {
+        let instrument = test_perpetual_instrument();
+        let json = load_test_json("ws_order_buy_response.json");
+        let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        // Parse the order from the response (buy/sell responses wrap order in {"order": ...})
+        let order_msg: DeribitOrderMsg =
+            serde_json::from_value(response["result"]["order"].clone()).unwrap();
+
+        // Verify deserialization
+        assert_eq!(order_msg.order_id, "USDC-104819327443");
+        assert_eq!(
+            order_msg.label,
+            Some("O-19700101-000000-001-001-1".to_string())
+        );
+        assert_eq!(order_msg.direction, "buy");
+        assert_eq!(order_msg.order_state, "open");
+        assert_eq!(order_msg.order_type, "limit");
+        assert_eq!(order_msg.price, Some(2973.55));
+        assert_eq!(order_msg.amount, 0.001);
+        assert_eq!(order_msg.filled_amount, 0.0);
+        assert!(order_msg.post_only);
+        assert!(!order_msg.reduce_only);
+
+        // Test parse_order_accepted
+        let account_id = AccountId::new("DERIBIT-001");
+        let trader_id = TraderId::new("TRADER-001");
+        let strategy_id = StrategyId::new("PMM-001");
+
+        let accepted = parse_order_accepted(
+            &order_msg,
+            &instrument,
+            account_id,
+            trader_id,
+            strategy_id,
+            UnixNanos::default(),
+        );
+
+        assert_eq!(
+            accepted.client_order_id.to_string(),
+            "O-19700101-000000-001-001-1"
+        );
+        assert_eq!(accepted.venue_order_id.to_string(), "USDC-104819327443");
+        assert_eq!(accepted.trader_id, trader_id);
+        assert_eq!(accepted.strategy_id, strategy_id);
+        assert_eq!(accepted.account_id, account_id);
+    }
+
+    #[rstest]
+    fn test_parse_order_sell_response() {
+        let instrument = test_perpetual_instrument();
+        let json = load_test_json("ws_order_sell_response.json");
+        let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        let order_msg: DeribitOrderMsg =
+            serde_json::from_value(response["result"]["order"].clone()).unwrap();
+
+        // Verify deserialization
+        assert_eq!(order_msg.order_id, "USDC-104819327458");
+        assert_eq!(
+            order_msg.label,
+            Some("O-19700101-000000-001-001-2".to_string())
+        );
+        assert_eq!(order_msg.direction, "sell");
+        assert_eq!(order_msg.order_state, "open");
+        assert_eq!(order_msg.price, Some(3286.7));
+        assert_eq!(order_msg.amount, 0.001);
+
+        // Test parse_order_accepted for sell order
+        let account_id = AccountId::new("DERIBIT-001");
+        let trader_id = TraderId::new("TRADER-001");
+        let strategy_id = StrategyId::new("PMM-001");
+
+        let accepted = parse_order_accepted(
+            &order_msg,
+            &instrument,
+            account_id,
+            trader_id,
+            strategy_id,
+            UnixNanos::default(),
+        );
+
+        assert_eq!(
+            accepted.client_order_id.to_string(),
+            "O-19700101-000000-001-001-2"
+        );
+        assert_eq!(accepted.venue_order_id.to_string(), "USDC-104819327458");
+        assert_eq!(accepted.trader_id, trader_id);
+        assert_eq!(accepted.strategy_id, strategy_id);
+        assert_eq!(accepted.account_id, account_id);
+    }
+
+    #[rstest]
+    fn test_parse_order_edit_response() {
+        let instrument = test_perpetual_instrument();
+        let json = load_test_json("ws_order_edit_response.json");
+        let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        let order_msg: DeribitOrderMsg =
+            serde_json::from_value(response["result"]["order"].clone()).unwrap();
+
+        // Verify deserialization - edit response has replaced=true in raw JSON
+        assert_eq!(order_msg.order_id, "USDC-104819327443");
+        assert_eq!(
+            order_msg.label,
+            Some("O-19700101-000000-001-001-1".to_string())
+        );
+        assert_eq!(order_msg.direction, "buy");
+        assert_eq!(order_msg.order_state, "open");
+        assert_eq!(order_msg.price, Some(3067.2)); // New price after edit
+
+        // Test parse_order_updated
+        let account_id = AccountId::new("DERIBIT-001");
+        let trader_id = TraderId::new("TRADER-001");
+        let strategy_id = StrategyId::new("PMM-001");
+
+        let updated = parse_order_updated(
+            &order_msg,
+            &instrument,
+            account_id,
+            trader_id,
+            strategy_id,
+            UnixNanos::default(),
+        );
+
+        assert_eq!(
+            updated.client_order_id.to_string(),
+            "O-19700101-000000-001-001-1"
+        );
+        assert_eq!(
+            updated.venue_order_id.unwrap().to_string(),
+            "USDC-104819327443"
+        );
+        // Note: 0.001 truncates to 0.0 due to BTC-PERPETUAL size_precision=0
+        assert_eq!(updated.quantity.as_f64(), 0.0);
+    }
+
+    #[rstest]
+    fn test_parse_order_cancel_response() {
+        let instrument = test_perpetual_instrument();
+        let json = load_test_json("ws_order_cancel_response.json");
+        let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        // Cancel response has order fields directly in result (not wrapped)
+        let order_msg: DeribitOrderMsg =
+            serde_json::from_value(response["result"].clone()).unwrap();
+
+        // Verify deserialization
+        assert_eq!(order_msg.order_id, "USDC-104819327443");
+        assert_eq!(
+            order_msg.label,
+            Some("O-19700101-000000-001-001-1".to_string())
+        );
+        assert_eq!(order_msg.order_state, "cancelled");
+        assert_eq!(order_msg.cancel_reason, Some("user_request".to_string()));
+
+        // Test parse_order_canceled
+        let account_id = AccountId::new("DERIBIT-001");
+        let trader_id = TraderId::new("TRADER-001");
+        let strategy_id = StrategyId::new("PMM-001");
+
+        let canceled = parse_order_canceled(
+            &order_msg,
+            &instrument,
+            account_id,
+            trader_id,
+            strategy_id,
+            UnixNanos::default(),
+        );
+
+        assert_eq!(
+            canceled.client_order_id.to_string(),
+            "O-19700101-000000-001-001-1"
+        );
+        assert_eq!(
+            canceled.venue_order_id.unwrap().to_string(),
+            "USDC-104819327443"
+        );
+        assert_eq!(canceled.trader_id, trader_id);
+        assert_eq!(canceled.strategy_id, strategy_id);
+    }
+
+    #[rstest]
+    fn test_parse_user_order_msg_to_status_report() {
+        let instrument = test_perpetual_instrument();
+        let json = load_test_json("ws_order_buy_response.json");
+        let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        let order_msg: DeribitOrderMsg =
+            serde_json::from_value(response["result"]["order"].clone()).unwrap();
+
+        let account_id = AccountId::new("DERIBIT-001");
+        let report =
+            parse_user_order_msg(&order_msg, &instrument, account_id, UnixNanos::default())
+                .unwrap();
+
+        assert_eq!(report.venue_order_id.to_string(), "USDC-104819327443");
+        assert_eq!(
+            report.client_order_id.unwrap().to_string(),
+            "O-19700101-000000-001-001-1"
+        );
+        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_type, OrderType::Limit);
+        assert_eq!(report.time_in_force, TimeInForce::Gtc);
+        assert_eq!(report.order_status, OrderStatus::Accepted);
+        // Note: 0.001 truncates to 0.0 due to BTC-PERPETUAL size_precision=0
+        assert_eq!(report.quantity.as_f64(), 0.0);
+        assert_eq!(report.filled_qty.as_f64(), 0.0);
+        assert!(report.post_only);
+        assert!(!report.reduce_only);
+    }
+
+    #[rstest]
+    fn test_determine_order_event_type() {
+        // New order -> Accepted
+        assert_eq!(
+            determine_order_event_type("open", true, false),
+            OrderEventType::Accepted
+        );
+
+        // Amended order -> Updated
+        assert_eq!(
+            determine_order_event_type("open", false, true),
+            OrderEventType::Updated
+        );
+
+        // Cancelled order -> Canceled
+        assert_eq!(
+            determine_order_event_type("cancelled", false, false),
+            OrderEventType::Canceled
+        );
+
+        // Expired order -> Expired
+        assert_eq!(
+            determine_order_event_type("expired", false, false),
+            OrderEventType::Expired
+        );
+
+        // Filled order -> None (handled via trades)
+        assert_eq!(
+            determine_order_event_type("filled", false, false),
+            OrderEventType::None
+        );
     }
 }
