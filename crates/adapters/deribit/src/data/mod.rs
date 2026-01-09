@@ -238,6 +238,58 @@ impl DeribitDataClient {
                     }
                 }
             }
+            NautilusWsMessage::OrderStatusReports(reports) => {
+                log::warn!(
+                    "Data client received OrderStatusReports message (should be handled by execution client): {} reports",
+                    reports.len()
+                );
+            }
+            NautilusWsMessage::FillReports(reports) => {
+                log::warn!(
+                    "Data client received FillReports message (should be handled by execution client): {} reports",
+                    reports.len()
+                );
+            }
+            NautilusWsMessage::OrderRejected(order) => {
+                log::warn!(
+                    "Data client received OrderRejected message (should be handled by execution client): {order:?}"
+                );
+            }
+            NautilusWsMessage::OrderAccepted(order) => {
+                log::warn!(
+                    "Data client received OrderAccepted message (should be handled by execution client): {order:?}"
+                );
+            }
+            NautilusWsMessage::OrderCanceled(order) => {
+                log::warn!(
+                    "Data client received OrderCanceled message (should be handled by execution client): {order:?}"
+                );
+            }
+            NautilusWsMessage::OrderExpired(order) => {
+                log::warn!(
+                    "Data client received OrderExpired message (should be handled by execution client): {order:?}"
+                );
+            }
+            NautilusWsMessage::OrderUpdated(order) => {
+                log::warn!(
+                    "Data client received OrderUpdated message (should be handled by execution client): {order:?}"
+                );
+            }
+            NautilusWsMessage::OrderCancelRejected(order) => {
+                log::warn!(
+                    "Data client received OrderCancelRejected message (should be handled by execution client): {order:?}"
+                );
+            }
+            NautilusWsMessage::OrderModifyRejected(order) => {
+                log::warn!(
+                    "Data client received OrderModifyRejected message (should be handled by execution client): {order:?}"
+                );
+            }
+            NautilusWsMessage::AccountState(state) => {
+                log::warn!(
+                    "Data client received AccountState message (should be handled by execution client): {state:?}"
+                );
+            }
         }
     }
 

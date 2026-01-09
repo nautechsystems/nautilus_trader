@@ -28,6 +28,8 @@ use ahash::AHashMap;
 use nautilus_core::{AtomicTime, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::Data,
+    events::{OrderCancelRejected, OrderModifyRejected, OrderRejected},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
@@ -42,14 +44,18 @@ use super::{
     enums::{DeribitHeartbeatType, DeribitWsChannel},
     error::DeribitWsError,
     messages::{
-        DeribitAuthResult, DeribitBookMsg, DeribitChartMsg, DeribitHeartbeatParams,
-        DeribitInstrumentStateMsg, DeribitJsonRpcRequest, DeribitPerpetualMsg, DeribitQuoteMsg,
-        DeribitSubscribeParams, DeribitTickerMsg, DeribitTradeMsg, DeribitWsMessage,
+        DeribitAuthResult, DeribitBookMsg, DeribitCancelAllByInstrumentParams, DeribitCancelParams,
+        DeribitChartMsg, DeribitEditParams, DeribitHeartbeatParams, DeribitInstrumentStateMsg,
+        DeribitJsonRpcRequest, DeribitOrderMsg, DeribitOrderParams, DeribitOrderResponse,
+        DeribitPerpetualMsg, DeribitPortfolioMsg, DeribitQuoteMsg, DeribitSubscribeParams,
+        DeribitTickerMsg, DeribitTradeMsg, DeribitUserTradeMsg, DeribitWsMessage,
         NautilusWsMessage, parse_raw_message,
     },
     parse::{
-        parse_book_msg, parse_chart_msg, parse_perpetual_to_funding_rate, parse_quote_msg,
-        parse_ticker_to_index_price, parse_ticker_to_mark_price, parse_trades_data,
+        OrderEventType, determine_order_event_type, parse_book_msg, parse_chart_msg,
+        parse_order_accepted, parse_order_canceled, parse_order_expired, parse_order_updated,
+        parse_perpetual_to_funding_rate, parse_quote_msg, parse_ticker_to_index_price,
+        parse_ticker_to_mark_price, parse_trades_data, parse_user_order_msg, parse_user_trade_msg,
         resolution_to_bar_type,
     },
 };
@@ -67,6 +73,43 @@ pub enum PendingRequestType {
     SetHeartbeat,
     /// Test/ping request (heartbeat response).
     Test,
+    /// Buy order request.
+    Buy {
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    },
+    /// Sell order request.
+    Sell {
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    },
+    /// Edit order request.
+    Edit {
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    },
+    /// Cancel order request.
+    Cancel {
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    },
+    /// Cancel all orders by instrument request.
+    CancelAllByInstrument { instrument_id: InstrumentId },
+    /// Get order state request.
+    GetOrderState {
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    },
 }
 
 /// Commands sent from the client to the handler.
@@ -91,6 +134,63 @@ pub enum HandlerCommand {
     Subscribe { channels: Vec<String> },
     /// Unsubscribe from channels.
     Unsubscribe { channels: Vec<String> },
+    /// Submit a buy order.
+    Buy {
+        params: DeribitOrderParams,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    },
+    /// Submit a sell order.
+    Sell {
+        params: DeribitOrderParams,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    },
+    /// Edit an existing order.
+    Edit {
+        params: DeribitEditParams,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    },
+    /// Cancel an existing order.
+    Cancel {
+        params: DeribitCancelParams,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    },
+    /// Cancel all orders by instrument.
+    CancelAllByInstrument {
+        params: DeribitCancelAllByInstrumentParams,
+        instrument_id: InstrumentId,
+    },
+    /// Get order state.
+    GetOrderState {
+        order_id: String,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    },
+}
+
+/// Context for an order submitted via this handler.
+///
+/// Stores the original trader/strategy/client IDs from the buy/sell command
+/// so they can be used when processing user.orders subscription updates.
+#[derive(Debug, Clone)]
+pub struct OrderContext {
+    pub client_order_id: ClientOrderId,
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
 }
 
 /// Deribit WebSocket feed handler.
@@ -112,6 +212,12 @@ pub struct DeribitWsFeedHandler {
     request_id_counter: AtomicU64,
     /// Pending requests awaiting response, keyed by request ID.
     pending_requests: AHashMap<u64, PendingRequestType>,
+    /// Account ID for order/fill reports.
+    account_id: Option<AccountId>,
+    /// Order contexts keyed by venue_order_id.
+    /// Stores the original trader/strategy/client IDs from buy/sell commands
+    /// so they can be used when processing user.orders subscription updates.
+    order_contexts: AHashMap<String, OrderContext>,
 }
 
 impl DeribitWsFeedHandler {
@@ -124,6 +230,7 @@ impl DeribitWsFeedHandler {
         out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
         auth_tracker: AuthTracker,
         subscriptions_state: SubscriptionState,
+        account_id: Option<AccountId>,
     ) -> Self {
         Self {
             clock: get_atomic_clock_realtime(),
@@ -138,7 +245,20 @@ impl DeribitWsFeedHandler {
             instruments_cache: AHashMap::new(),
             request_id_counter: AtomicU64::new(1),
             pending_requests: AHashMap::new(),
+            account_id,
+            order_contexts: AHashMap::new(),
         }
+    }
+
+    /// Sets the account ID for order/fill reports.
+    pub fn set_account_id(&mut self, account_id: AccountId) {
+        self.account_id = Some(account_id);
+    }
+
+    /// Returns the account ID.
+    #[must_use]
+    pub fn account_id(&self) -> Option<AccountId> {
+        self.account_id
     }
 
     /// Generates a unique request ID.
@@ -272,6 +392,196 @@ impl DeribitWsFeedHandler {
         self.send_with_retry(payload, None).await
     }
 
+    /// Handles a buy order command.
+    async fn handle_buy(
+        &mut self,
+        params: DeribitOrderParams,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    ) -> Result<(), DeribitWsError> {
+        let request_id = self.next_request_id();
+
+        self.pending_requests.insert(
+            request_id,
+            PendingRequestType::Buy {
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            },
+        );
+
+        let request = DeribitJsonRpcRequest::new(request_id, "private/buy", params);
+
+        let payload =
+            serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()))?;
+
+        log::debug!("Sending buy order: request_id={request_id}");
+        self.send_with_retry(payload, Some(vec!["order".to_string()]))
+            .await
+    }
+
+    /// Handles a sell order command.
+    async fn handle_sell(
+        &mut self,
+        params: DeribitOrderParams,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    ) -> Result<(), DeribitWsError> {
+        let request_id = self.next_request_id();
+
+        self.pending_requests.insert(
+            request_id,
+            PendingRequestType::Sell {
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            },
+        );
+
+        let request = DeribitJsonRpcRequest::new(request_id, "private/sell", params);
+
+        let payload =
+            serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()))?;
+
+        log::debug!("Sending sell order: request_id={request_id}");
+        self.send_with_retry(payload, Some(vec!["order".to_string()]))
+            .await
+    }
+
+    /// Handles an edit order command.
+    async fn handle_edit(
+        &mut self,
+        params: DeribitEditParams,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    ) -> Result<(), DeribitWsError> {
+        let request_id = self.next_request_id();
+        let order_id = params.order_id.clone();
+
+        self.pending_requests.insert(
+            request_id,
+            PendingRequestType::Edit {
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            },
+        );
+
+        let request = DeribitJsonRpcRequest::new(request_id, "private/edit", params);
+
+        let payload =
+            serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()))?;
+
+        log::debug!("Sending edit order: request_id={request_id}, order_id={order_id}");
+        self.send_with_retry(payload, Some(vec!["order".to_string()]))
+            .await
+    }
+
+    /// Handles a cancel order command.
+    async fn handle_cancel(
+        &mut self,
+        params: DeribitCancelParams,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    ) -> Result<(), DeribitWsError> {
+        let request_id = self.next_request_id();
+        let order_id = params.order_id.clone();
+
+        self.pending_requests.insert(
+            request_id,
+            PendingRequestType::Cancel {
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            },
+        );
+
+        let request = DeribitJsonRpcRequest::new(request_id, "private/cancel", params);
+
+        let payload =
+            serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()))?;
+
+        log::debug!("Sending cancel order: request_id={request_id}, order_id={order_id}");
+        self.send_with_retry(payload, Some(vec!["order".to_string()]))
+            .await
+    }
+
+    /// Handles cancel all orders by instrument command.
+    async fn handle_cancel_all_by_instrument(
+        &mut self,
+        params: DeribitCancelAllByInstrumentParams,
+        instrument_id: InstrumentId,
+    ) -> Result<(), DeribitWsError> {
+        let request_id = self.next_request_id();
+        let instrument_name = params.instrument_name.clone();
+
+        // Track this request for response correlation
+        self.pending_requests.insert(
+            request_id,
+            PendingRequestType::CancelAllByInstrument { instrument_id },
+        );
+
+        let request =
+            DeribitJsonRpcRequest::new(request_id, "private/cancel_all_by_instrument", params);
+
+        let payload =
+            serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()))?;
+
+        log::debug!(
+            "Sending cancel_all_by_instrument: request_id={request_id}, instrument={instrument_name}"
+        );
+        self.send_with_retry(payload, Some(vec!["order".to_string()]))
+            .await
+    }
+
+    /// Handles get order state command.
+    async fn handle_get_order_state(
+        &mut self,
+        order_id: String,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    ) -> Result<(), DeribitWsError> {
+        let request_id = self.next_request_id();
+
+        // Track this request for response correlation
+        self.pending_requests.insert(
+            request_id,
+            PendingRequestType::GetOrderState {
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            },
+        );
+
+        let params = serde_json::json!({
+            "order_id": order_id
+        });
+
+        let request = DeribitJsonRpcRequest::new(request_id, "private/get_order_state", params);
+
+        let payload =
+            serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()))?;
+
+        log::debug!("Sending get_order_state: request_id={request_id}, order_id={order_id}");
+        self.send_with_retry(payload, Some(vec!["order".to_string()]))
+            .await
+    }
+
     /// Processes a command from the client.
     async fn process_command(&mut self, cmd: HandlerCommand) {
         match cmd {
@@ -313,7 +623,7 @@ impl DeribitWsFeedHandler {
                 }
             }
             HandlerCommand::InitializeInstruments(instruments) => {
-                log::debug!("Initializing {} instruments", instruments.len());
+                log::info!("Handler received {} instruments", instruments.len());
                 self.instruments_cache.clear();
                 for inst in instruments {
                     self.instruments_cache
@@ -333,6 +643,117 @@ impl DeribitWsFeedHandler {
             HandlerCommand::Unsubscribe { channels } => {
                 if let Err(e) = self.handle_unsubscribe(channels).await {
                     log::error!("Unsubscribe failed: {e}");
+                }
+            }
+            HandlerCommand::Buy {
+                params,
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            } => {
+                if let Err(e) = self
+                    .handle_buy(
+                        params,
+                        client_order_id,
+                        trader_id,
+                        strategy_id,
+                        instrument_id,
+                    )
+                    .await
+                {
+                    log::error!("Buy order failed: {e}");
+                }
+            }
+            HandlerCommand::Sell {
+                params,
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            } => {
+                if let Err(e) = self
+                    .handle_sell(
+                        params,
+                        client_order_id,
+                        trader_id,
+                        strategy_id,
+                        instrument_id,
+                    )
+                    .await
+                {
+                    log::error!("Sell order failed: {e}");
+                }
+            }
+            HandlerCommand::Edit {
+                params,
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            } => {
+                if let Err(e) = self
+                    .handle_edit(
+                        params,
+                        client_order_id,
+                        trader_id,
+                        strategy_id,
+                        instrument_id,
+                    )
+                    .await
+                {
+                    log::error!("Edit order failed: {e}");
+                }
+            }
+            HandlerCommand::Cancel {
+                params,
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            } => {
+                if let Err(e) = self
+                    .handle_cancel(
+                        params,
+                        client_order_id,
+                        trader_id,
+                        strategy_id,
+                        instrument_id,
+                    )
+                    .await
+                {
+                    log::error!("Cancel order failed: {e}");
+                }
+            }
+            HandlerCommand::CancelAllByInstrument {
+                params,
+                instrument_id,
+            } => {
+                if let Err(e) = self
+                    .handle_cancel_all_by_instrument(params, instrument_id)
+                    .await
+                {
+                    log::error!("Cancel all by instrument failed: {e}");
+                }
+            }
+            HandlerCommand::GetOrderState {
+                order_id,
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            } => {
+                if let Err(e) = self
+                    .handle_get_order_state(
+                        order_id,
+                        client_order_id,
+                        trader_id,
+                        strategy_id,
+                        instrument_id,
+                    )
+                    .await
+                {
+                    log::error!("Get order state failed: {e}");
                 }
             }
         }
@@ -370,7 +791,7 @@ impl DeribitWsFeedHandler {
                                 match serde_json::from_value::<DeribitAuthResult>(result.clone()) {
                                     Ok(auth_result) => {
                                         self.auth_tracker.succeed();
-                                        log::info!(
+                                        log::debug!(
                                             "WebSocket authenticated successfully (request_id={}, scope={}, expires_in={}s)",
                                             request_id,
                                             auth_result.scope,
@@ -409,6 +830,389 @@ impl DeribitWsFeedHandler {
                         }
                         PendingRequestType::Test => {
                             log::trace!("Heartbeat test acknowledged (request_id={request_id})");
+                        }
+                        PendingRequestType::Cancel {
+                            client_order_id,
+                            trader_id,
+                            strategy_id,
+                            instrument_id,
+                        } => {
+                            if let Some(result) = &response.result {
+                                match serde_json::from_value::<DeribitOrderMsg>(result.clone()) {
+                                    Ok(order_msg) => {
+                                        let venue_order_id = order_msg.order_id.clone();
+                                        log::info!(
+                                            "Order canceled: venue_order_id={}, client_order_id={}, state={}",
+                                            venue_order_id,
+                                            client_order_id,
+                                            order_msg.order_state
+                                        );
+
+                                        self.order_contexts.remove(&venue_order_id);
+
+                                        let instrument_name_ustr =
+                                            Ustr::from(order_msg.instrument_name.as_str());
+                                        if let Some(instrument) =
+                                            self.instruments_cache.get(&instrument_name_ustr)
+                                        {
+                                            if let Some(account_id) = self.account_id {
+                                                let event = parse_order_canceled(
+                                                    &order_msg,
+                                                    instrument,
+                                                    account_id,
+                                                    trader_id,
+                                                    strategy_id,
+                                                    ts_init,
+                                                );
+                                                return Some(NautilusWsMessage::OrderCanceled(
+                                                    event,
+                                                ));
+                                            } else {
+                                                log::warn!(
+                                                    "Cannot create OrderCanceled: account_id not set"
+                                                );
+                                            }
+                                        } else {
+                                            log::warn!(
+                                                "Instrument {instrument_name_ustr} not found in cache for cancel response"
+                                            );
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::error!(
+                                            "Failed to parse cancel response: request_id={request_id}, error={e}"
+                                        );
+                                    }
+                                }
+                            } else if let Some(error) = &response.error {
+                                log::error!(
+                                    "Cancel rejected: code={}, message={}, client_order_id={}",
+                                    error.code,
+                                    error.message,
+                                    client_order_id
+                                );
+                                return Some(NautilusWsMessage::OrderCancelRejected(
+                                    OrderCancelRejected::new(
+                                        trader_id,
+                                        strategy_id,
+                                        instrument_id,
+                                        client_order_id,
+                                        ustr::ustr(&format!(
+                                            "code={}: {}",
+                                            error.code, error.message
+                                        )),
+                                        nautilus_core::UUID4::new(),
+                                        ts_init,
+                                        ts_init,
+                                        false,
+                                        None, // venue_order_id not available in error response
+                                        self.account_id,
+                                    ),
+                                ));
+                            }
+                        }
+                        PendingRequestType::CancelAllByInstrument { instrument_id } => {
+                            if let Some(result) = &response.result {
+                                match serde_json::from_value::<u64>(result.clone()) {
+                                    Ok(count) => {
+                                        log::info!(
+                                            "Cancelled {count} orders for instrument {instrument_id}"
+                                        );
+                                        // Individual order status updates come via user.orders subscription
+                                    }
+                                    Err(e) => {
+                                        log::warn!("Failed to parse cancel_all response: {e}");
+                                    }
+                                }
+                            } else if let Some(error) = &response.error {
+                                log::error!(
+                                    "Cancel all by instrument rejected: code={}, message={}, instrument_id={}",
+                                    error.code,
+                                    error.message,
+                                    instrument_id
+                                );
+                            }
+                        }
+                        PendingRequestType::Buy {
+                            client_order_id,
+                            trader_id,
+                            strategy_id,
+                            instrument_id,
+                        }
+                        | PendingRequestType::Sell {
+                            client_order_id,
+                            trader_id,
+                            strategy_id,
+                            instrument_id,
+                        } => {
+                            if let Some(result) = &response.result {
+                                match serde_json::from_value::<DeribitOrderResponse>(result.clone())
+                                {
+                                    Ok(order_response) => {
+                                        let venue_order_id = order_response.order.order_id.clone();
+                                        log::info!(
+                                            "Order accepted: venue_order_id={}, client_order_id={}, state={}",
+                                            venue_order_id,
+                                            client_order_id,
+                                            order_response.order.order_state
+                                        );
+
+                                        self.order_contexts.insert(
+                                            venue_order_id,
+                                            OrderContext {
+                                                client_order_id,
+                                                trader_id,
+                                                strategy_id,
+                                                instrument_id,
+                                            },
+                                        );
+
+                                        let instrument_name_ustr = Ustr::from(
+                                            order_response.order.instrument_name.as_str(),
+                                        );
+                                        if let Some(instrument) =
+                                            self.instruments_cache.get(&instrument_name_ustr)
+                                        {
+                                            if let Some(account_id) = self.account_id {
+                                                let event = parse_order_accepted(
+                                                    &order_response.order,
+                                                    instrument,
+                                                    account_id,
+                                                    trader_id,
+                                                    strategy_id,
+                                                    ts_init,
+                                                );
+                                                return Some(NautilusWsMessage::OrderAccepted(
+                                                    event,
+                                                ));
+                                            } else {
+                                                log::warn!(
+                                                    "Cannot create OrderAccepted: account_id not set"
+                                                );
+                                            }
+                                        } else {
+                                            log::warn!(
+                                                "Instrument {instrument_name_ustr} not found in cache for order response"
+                                            );
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::error!(
+                                            "Failed to parse order response: request_id={request_id}, error={e}"
+                                        );
+                                        return Some(NautilusWsMessage::OrderRejected(
+                                            OrderRejected::new(
+                                                trader_id,
+                                                strategy_id,
+                                                instrument_id,
+                                                client_order_id,
+                                                self.account_id
+                                                    .unwrap_or(AccountId::new("DERIBIT-UNKNOWN")),
+                                                ustr::ustr(&format!(
+                                                    "Failed to parse response: {e}"
+                                                )),
+                                                nautilus_core::UUID4::new(),
+                                                ts_init,
+                                                ts_init,
+                                                false,
+                                                false,
+                                            ),
+                                        ));
+                                    }
+                                }
+                            } else if let Some(error) = &response.error {
+                                log::error!(
+                                    "Order rejected: code={}, message={}, client_order_id={}",
+                                    error.code,
+                                    error.message,
+                                    client_order_id
+                                );
+                                return Some(NautilusWsMessage::OrderRejected(OrderRejected::new(
+                                    trader_id,
+                                    strategy_id,
+                                    instrument_id,
+                                    client_order_id,
+                                    self.account_id.unwrap_or(AccountId::new("DERIBIT-UNKNOWN")),
+                                    ustr::ustr(&format!("code={}: {}", error.code, error.message)),
+                                    nautilus_core::UUID4::new(),
+                                    ts_init,
+                                    ts_init,
+                                    false,
+                                    false,
+                                )));
+                            }
+                        }
+                        PendingRequestType::Edit {
+                            client_order_id,
+                            trader_id,
+                            strategy_id,
+                            instrument_id,
+                        } => {
+                            if let Some(result) = &response.result {
+                                match serde_json::from_value::<DeribitOrderResponse>(result.clone())
+                                {
+                                    Ok(order_response) => {
+                                        let venue_order_id = order_response.order.order_id.clone();
+                                        log::info!(
+                                            "Order updated: venue_order_id={}, client_order_id={}, state={}",
+                                            venue_order_id,
+                                            client_order_id,
+                                            order_response.order.order_state
+                                        );
+
+                                        self.order_contexts.insert(
+                                            venue_order_id,
+                                            OrderContext {
+                                                client_order_id,
+                                                trader_id,
+                                                strategy_id,
+                                                instrument_id,
+                                            },
+                                        );
+
+                                        let instrument_name_ustr = Ustr::from(
+                                            order_response.order.instrument_name.as_str(),
+                                        );
+                                        if let Some(instrument) =
+                                            self.instruments_cache.get(&instrument_name_ustr)
+                                        {
+                                            if let Some(account_id) = self.account_id {
+                                                let event = parse_order_updated(
+                                                    &order_response.order,
+                                                    instrument,
+                                                    account_id,
+                                                    trader_id,
+                                                    strategy_id,
+                                                    ts_init,
+                                                );
+                                                return Some(NautilusWsMessage::OrderUpdated(
+                                                    event,
+                                                ));
+                                            } else {
+                                                log::warn!(
+                                                    "Cannot create OrderUpdated: account_id not set"
+                                                );
+                                            }
+                                        } else {
+                                            log::warn!(
+                                                "Instrument {instrument_name_ustr} not found in cache for edit response"
+                                            );
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::error!(
+                                            "Failed to parse edit response: request_id={request_id}, error={e}"
+                                        );
+                                        return Some(NautilusWsMessage::OrderModifyRejected(
+                                            OrderModifyRejected::new(
+                                                trader_id,
+                                                strategy_id,
+                                                instrument_id,
+                                                client_order_id,
+                                                ustr::ustr(&format!(
+                                                    "Failed to parse response: {e}"
+                                                )),
+                                                nautilus_core::UUID4::new(),
+                                                ts_init,
+                                                ts_init,
+                                                false,
+                                                None, // venue_order_id not available
+                                                self.account_id,
+                                            ),
+                                        ));
+                                    }
+                                }
+                            } else if let Some(error) = &response.error {
+                                log::error!(
+                                    "Order modify rejected: code={}, message={}, client_order_id={}",
+                                    error.code,
+                                    error.message,
+                                    client_order_id
+                                );
+                                return Some(NautilusWsMessage::OrderModifyRejected(
+                                    OrderModifyRejected::new(
+                                        trader_id,
+                                        strategy_id,
+                                        instrument_id,
+                                        client_order_id,
+                                        ustr::ustr(&format!(
+                                            "code={}: {}",
+                                            error.code, error.message
+                                        )),
+                                        nautilus_core::UUID4::new(),
+                                        ts_init,
+                                        ts_init,
+                                        false,
+                                        None, // venue_order_id not available
+                                        self.account_id,
+                                    ),
+                                ));
+                            }
+                        }
+                        PendingRequestType::GetOrderState {
+                            client_order_id,
+                            trader_id: _,
+                            strategy_id: _,
+                            instrument_id: _,
+                        } => {
+                            if let Some(result) = &response.result {
+                                match serde_json::from_value::<DeribitOrderMsg>(result.clone()) {
+                                    Ok(order_msg) => {
+                                        log::info!(
+                                            "Order state received: venue_order_id={}, client_order_id={}, state={}",
+                                            order_msg.order_id,
+                                            client_order_id,
+                                            order_msg.order_state
+                                        );
+
+                                        // Convert to OrderStatusReport
+                                        let instrument_name_ustr =
+                                            Ustr::from(order_msg.instrument_name.as_str());
+                                        if let Some(instrument) =
+                                            self.instruments_cache.get(&instrument_name_ustr)
+                                        {
+                                            if let Some(account_id) = self.account_id {
+                                                match parse_user_order_msg(
+                                                    &order_msg, instrument, account_id, ts_init,
+                                                ) {
+                                                    Ok(report) => {
+                                                        return Some(
+                                                            NautilusWsMessage::OrderStatusReports(
+                                                                vec![report],
+                                                            ),
+                                                        );
+                                                    }
+                                                    Err(e) => {
+                                                        log::warn!(
+                                                            "Failed to parse get_order_state response to report: {e}"
+                                                        );
+                                                    }
+                                                }
+                                            } else {
+                                                log::warn!(
+                                                    "Cannot create OrderStatusReport: account_id not set"
+                                                );
+                                            }
+                                        } else {
+                                            log::warn!(
+                                                "Instrument {instrument_name_ustr} not found in cache for get_order_state response"
+                                            );
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::error!(
+                                            "Failed to parse get_order_state response: request_id={request_id}, error={e}"
+                                        );
+                                    }
+                                }
+                            } else if let Some(error) = &response.error {
+                                log::error!(
+                                    "Get order state failed: code={}, message={}, client_order_id={}",
+                                    error.code,
+                                    error.message,
+                                    client_order_id
+                                );
+                            }
                         }
                     }
                 }
@@ -620,6 +1424,205 @@ impl DeribitWsFeedHandler {
                                 }
                             }
                         }
+                        DeribitWsChannel::UserOrders => {
+                            match serde_json::from_value::<Vec<DeribitOrderMsg>>(data.clone()) {
+                                Ok(orders) => {
+                                    log::debug!("Received {} user order updates", orders.len());
+
+                                    // Require account_id for parsing
+                                    let Some(account_id) = self.account_id else {
+                                        log::warn!("Cannot parse user orders: account_id not set");
+                                        return Some(NautilusWsMessage::Raw(data.clone()));
+                                    };
+
+                                    // Process each order and emit appropriate events
+                                    for order in &orders {
+                                        let venue_order_id = &order.order_id;
+                                        let instrument_name =
+                                            Ustr::from(order.instrument_name.as_str());
+
+                                        let Some(instrument) =
+                                            self.instruments_cache.get(&instrument_name)
+                                        else {
+                                            log::warn!(
+                                                "Instrument {instrument_name} not found in cache"
+                                            );
+                                            continue;
+                                        };
+
+                                        // Look up OrderContext for this order
+                                        // If not found, this is an external order (not submitted via this handler)
+                                        let context = self.order_contexts.get(venue_order_id);
+                                        let is_known_order = context.is_some();
+
+                                        // Determine event type based on order state
+                                        let event_type = determine_order_event_type(
+                                            &order.order_state,
+                                            !is_known_order, // is_new if we don't know about it
+                                            false,           // not from edit response
+                                        );
+
+                                        let (trader_id, strategy_id, _client_order_id) =
+                                            if let Some(ctx) = context {
+                                                (
+                                                    ctx.trader_id,
+                                                    ctx.strategy_id,
+                                                    ctx.client_order_id,
+                                                )
+                                            } else {
+                                                // External order - use default values
+                                                // Note: These won't match any strategy, which is correct
+                                                (
+                                                    TraderId::new("EXTERNAL"),
+                                                    StrategyId::new("EXTERNAL"),
+                                                    ClientOrderId::new(venue_order_id),
+                                                )
+                                            };
+
+                                        match event_type {
+                                            OrderEventType::Accepted => {
+                                                if !is_known_order {
+                                                    let event = parse_order_accepted(
+                                                        order,
+                                                        instrument,
+                                                        account_id,
+                                                        trader_id,
+                                                        strategy_id,
+                                                        ts_init,
+                                                    );
+                                                    log::debug!(
+                                                        "Emitting OrderAccepted (external): venue_order_id={venue_order_id}"
+                                                    );
+                                                    return Some(NautilusWsMessage::OrderAccepted(
+                                                        event,
+                                                    ));
+                                                }
+                                            }
+                                            OrderEventType::Canceled => {
+                                                let event = parse_order_canceled(
+                                                    order,
+                                                    instrument,
+                                                    account_id,
+                                                    trader_id,
+                                                    strategy_id,
+                                                    ts_init,
+                                                );
+                                                log::debug!(
+                                                    "Emitting OrderCanceled: venue_order_id={venue_order_id}"
+                                                );
+                                                self.order_contexts.remove(venue_order_id);
+                                                return Some(NautilusWsMessage::OrderCanceled(
+                                                    event,
+                                                ));
+                                            }
+                                            OrderEventType::Expired => {
+                                                let event = parse_order_expired(
+                                                    order,
+                                                    instrument,
+                                                    account_id,
+                                                    trader_id,
+                                                    strategy_id,
+                                                    ts_init,
+                                                );
+                                                log::debug!(
+                                                    "Emitting OrderExpired: venue_order_id={venue_order_id}"
+                                                );
+                                                self.order_contexts.remove(venue_order_id);
+                                                return Some(NautilusWsMessage::OrderExpired(
+                                                    event,
+                                                ));
+                                            }
+                                            OrderEventType::Updated => {
+                                                // Skip - already emitted from edit response
+                                                log::trace!(
+                                                    "Skipping OrderUpdated from user.orders (already emitted from edit response): venue_order_id={venue_order_id}"
+                                                );
+                                            }
+                                            OrderEventType::None => {
+                                                // No event to emit (e.g., partial fills handled via trades)
+                                                log::trace!(
+                                                    "No event to emit for order {}, state={}",
+                                                    venue_order_id,
+                                                    order.order_state
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to deserialize user orders: {e}");
+                                }
+                            }
+                        }
+                        DeribitWsChannel::UserTrades => {
+                            match serde_json::from_value::<Vec<DeribitUserTradeMsg>>(data.clone()) {
+                                Ok(trades) => {
+                                    log::debug!("Received {} user trade updates", trades.len());
+
+                                    let Some(account_id) = self.account_id else {
+                                        log::warn!("Cannot parse user trades: account_id not set");
+                                        return Some(NautilusWsMessage::Raw(data.clone()));
+                                    };
+
+                                    let mut reports = Vec::with_capacity(trades.len());
+                                    for trade in &trades {
+                                        let instrument_name =
+                                            Ustr::from(trade.instrument_name.as_str());
+                                        if let Some(instrument) =
+                                            self.instruments_cache.get(&instrument_name)
+                                        {
+                                            match parse_user_trade_msg(
+                                                trade, instrument, account_id, ts_init,
+                                            ) {
+                                                Ok(report) => {
+                                                    log::debug!(
+                                                        "Parsed fill report: {} @ {}",
+                                                        report.trade_id,
+                                                        report.last_px
+                                                    );
+                                                    reports.push(report);
+                                                }
+                                                Err(e) => {
+                                                    log::warn!(
+                                                        "Failed to parse trade {}: {e}",
+                                                        trade.trade_id
+                                                    );
+                                                }
+                                            }
+                                        } else {
+                                            log::warn!(
+                                                "Instrument {instrument_name} not found in cache"
+                                            );
+                                        }
+                                    }
+
+                                    if !reports.is_empty() {
+                                        return Some(NautilusWsMessage::FillReports(reports));
+                                    }
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to deserialize user trades: {e}");
+                                }
+                            }
+                        }
+                        DeribitWsChannel::UserPortfolio => {
+                            match serde_json::from_value::<DeribitPortfolioMsg>(data.clone()) {
+                                Ok(portfolio) => {
+                                    log::debug!(
+                                        "Portfolio update: {} equity={} balance={} margin={}",
+                                        portfolio.currency,
+                                        portfolio.equity,
+                                        portfolio.balance,
+                                        portfolio.margin_balance
+                                    );
+                                    // TODO: Convert to AccountState
+                                    return Some(NautilusWsMessage::Raw(data.clone()));
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to deserialize portfolio: {e}");
+                                }
+                            }
+                        }
                         _ => {
                             // Unhandled channel - return raw
                             log::trace!("Unhandled channel: {channel}");
@@ -691,6 +1694,18 @@ impl DeribitWsFeedHandler {
                                         if let Err(e) = self.out_tx.send(msg_to_send) {
                                             log::error!("Failed to send funding rates: {e}");
                                         }
+                                    }
+                                    NautilusWsMessage::OrderStatusReports(_)
+                                    | NautilusWsMessage::FillReports(_)
+                                    | NautilusWsMessage::OrderAccepted(_)
+                                    | NautilusWsMessage::OrderCanceled(_)
+                                    | NautilusWsMessage::OrderExpired(_)
+                                    | NautilusWsMessage::OrderUpdated(_)
+                                    | NautilusWsMessage::OrderRejected(_)
+                                    | NautilusWsMessage::OrderCancelRejected(_)
+                                    | NautilusWsMessage::OrderModifyRejected(_)
+                                    | NautilusWsMessage::AccountState(_) => {
+                                        let _ = self.out_tx.send(nautilus_msg);
                                     }
                                     // Return messages that need client-side handling
                                     NautilusWsMessage::Reconnected
