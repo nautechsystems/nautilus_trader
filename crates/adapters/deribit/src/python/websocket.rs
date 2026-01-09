@@ -40,35 +40,28 @@ use nautilus_common::live::get_runtime;
 use nautilus_core::python::{call_python, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::{Data, OrderBookDeltas_API},
-    identifiers::InstrumentId,
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     python::{
         data::data_to_pycapsule,
         instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     },
 };
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
+use pyo3::{IntoPyObjectExt, exceptions::PyRuntimeError, prelude::*};
 
 use crate::websocket::{
-    client::DeribitWebSocketClient, enums::DeribitUpdateInterval, messages::NautilusWsMessage,
+    client::DeribitWebSocketClient,
+    enums::DeribitUpdateInterval,
+    messages::{DeribitOrderParams, NautilusWsMessage},
 };
 
 /// Helper function to call Python callback with data conversion.
-fn call_python_with_data<F>(callback: &Py<PyAny>, f: F)
+fn call_python_with_data<F>(callback: &Py<PyAny>, data_converter: F)
 where
-    F: for<'py> FnOnce(Python<'py>) -> PyResult<Py<PyAny>>,
+    F: FnOnce(Python) -> PyResult<Py<PyAny>>,
 {
-    Python::attach(|py| {
-        let result = f(py);
-        match result {
-            Ok(obj) => {
-                if let Err(e) = callback.call1(py, (obj,)) {
-                    log::error!("Error calling Python callback: {e}");
-                }
-            }
-            Err(e) => {
-                log::error!("Error converting to Python object: {e}");
-            }
-        }
+    Python::attach(|py| match data_converter(py) {
+        Ok(py_obj) => call_python(py, callback, py_obj),
+        Err(e) => log::error!("Failed to convert data to Python object: {e}"),
     });
 }
 
@@ -100,8 +93,12 @@ impl DeribitWebSocketClient {
 
     #[staticmethod]
     #[pyo3(name = "with_credentials")]
-    fn py_with_credentials(is_testnet: bool) -> PyResult<Self> {
-        Self::with_credentials(is_testnet).map_err(to_pyvalue_err)
+    fn py_with_credentials(is_testnet: bool, account_id: Option<AccountId>) -> PyResult<Self> {
+        let mut client = Self::with_credentials(is_testnet).map_err(to_pyvalue_err)?;
+        if let Some(id) = account_id {
+            client.set_account_id(id);
+        }
+        Ok(client)
     }
 
     #[getter]
@@ -179,6 +176,12 @@ impl DeribitWebSocketClient {
         Ok(())
     }
 
+    /// Sets the account ID for order/fill reports.
+    #[pyo3(name = "set_account_id")]
+    pub fn py_set_account_id(&mut self, account_id: AccountId) {
+        self.set_account_id(account_id);
+    }
+
     /// Connects to the Deribit WebSocket and starts processing messages.
     ///
     /// This is a non-blocking call that spawns a background task for message processing.
@@ -251,6 +254,47 @@ impl DeribitWebSocketClient {
                                 call_python(py, &callback, py_obj);
                             }
                         }),
+                        // Execution events - route to Python callback
+                        NautilusWsMessage::OrderStatusReports(reports) => Python::attach(|py| {
+                            for report in reports {
+                                let py_obj = Py::new(py, report)
+                                    .expect("Failed to create OrderStatusReport PyObject")
+                                    .into_any();
+                                call_python(py, &callback, py_obj);
+                            }
+                        }),
+                        NautilusWsMessage::FillReports(reports) => Python::attach(|py| {
+                            for report in reports {
+                                let py_obj = Py::new(py, report)
+                                    .expect("Failed to create FillReport PyObject")
+                                    .into_any();
+                                call_python(py, &callback, py_obj);
+                            }
+                        }),
+                        NautilusWsMessage::OrderRejected(msg) => {
+                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                        }
+                        NautilusWsMessage::OrderAccepted(msg) => {
+                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                        }
+                        NautilusWsMessage::OrderCanceled(msg) => {
+                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                        }
+                        NautilusWsMessage::OrderExpired(msg) => {
+                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                        }
+                        NautilusWsMessage::OrderUpdated(msg) => {
+                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                        }
+                        NautilusWsMessage::OrderCancelRejected(msg) => {
+                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                        }
+                        NautilusWsMessage::OrderModifyRejected(msg) => {
+                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                        }
+                        NautilusWsMessage::AccountState(msg) => {
+                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                        }
                     }
                 }
             });
@@ -776,6 +820,289 @@ impl DeribitWebSocketClient {
                 .unsubscribe_chart(instrument_id, &resolution)
                 .await
                 .map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Submits a buy order to Deribit via WebSocket.
+    ///
+    /// Requires authentication (call `authenticate_session()` first).
+    #[pyo3(name = "buy")]
+    #[pyo3(signature = (
+        amount,
+        order_type,
+        client_order_id,
+        trader_id,
+        strategy_id,
+        instrument_id,
+        price=None,
+        time_in_force=None,
+        post_only=false,
+        reduce_only=false,
+        trigger_price=None,
+        trigger=None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_buy<'py>(
+        &self,
+        py: Python<'py>,
+        amount: f64,
+        order_type: String,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        price: Option<f64>,
+        time_in_force: Option<String>,
+        post_only: bool,
+        reduce_only: bool,
+        trigger_price: Option<f64>,
+        trigger: Option<String>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let instrument_name = instrument_id.symbol.to_string();
+
+        let params = DeribitOrderParams {
+            instrument_name,
+            amount,
+            order_type,
+            label: Some(client_order_id.to_string()),
+            price,
+            time_in_force,
+            post_only: if post_only { Some(true) } else { None },
+            reduce_only: if reduce_only { Some(true) } else { None },
+            trigger_price,
+            trigger,
+            max_show: None,
+            valid_until: None,
+        };
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .buy(
+                    params,
+                    client_order_id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                )
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    /// Submits a sell order to Deribit via WebSocket.
+    ///
+    /// Requires authentication (call `authenticate_session()` first).
+    #[pyo3(name = "sell")]
+    #[pyo3(signature = (
+        amount,
+        order_type,
+        client_order_id,
+        trader_id,
+        strategy_id,
+        instrument_id,
+        price=None,
+        time_in_force=None,
+        post_only=false,
+        reduce_only=false,
+        trigger_price=None,
+        trigger=None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_sell<'py>(
+        &self,
+        py: Python<'py>,
+        amount: f64,
+        order_type: String,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        price: Option<f64>,
+        time_in_force: Option<String>,
+        post_only: bool,
+        reduce_only: bool,
+        trigger_price: Option<f64>,
+        trigger: Option<String>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let instrument_name = instrument_id.symbol.to_string();
+
+        let params = DeribitOrderParams {
+            instrument_name,
+            amount,
+            order_type,
+            label: Some(client_order_id.to_string()),
+            price,
+            time_in_force,
+            post_only: if post_only { Some(true) } else { None },
+            reduce_only: if reduce_only { Some(true) } else { None },
+            trigger_price,
+            trigger,
+            max_show: None,
+            valid_until: None,
+        };
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .sell(
+                    params,
+                    client_order_id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                )
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    /// Modifies an existing order via WebSocket.
+    ///
+    /// # Arguments
+    ///
+    /// * `order_id` - The venue order ID (Deribit order ID) to modify
+    /// * `amount` - The new order amount
+    /// * `price` - The new order price
+    /// * `client_order_id` - The client order ID for correlation
+    /// * `trader_id` - The trader ID for order tracking
+    /// * `strategy_id` - The strategy ID for order tracking
+    /// * `instrument_id` - The instrument ID for order tracking
+    #[pyo3(name = "edit")]
+    #[allow(clippy::too_many_arguments)]
+    fn py_edit<'py>(
+        &self,
+        py: Python<'py>,
+        order_id: String,
+        amount: f64,
+        price: f64,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .edit(
+                    &order_id,
+                    amount,
+                    price,
+                    client_order_id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                )
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    /// Cancels an existing order via WebSocket.
+    ///
+    /// # Arguments
+    ///
+    /// * `order_id` - The venue order ID (Deribit order ID) to cancel
+    /// * `client_order_id` - The client order ID for correlation
+    /// * `trader_id` - The trader ID for order tracking
+    /// * `strategy_id` - The strategy ID for order tracking
+    /// * `instrument_id` - The instrument ID for order tracking
+    #[pyo3(name = "cancel")]
+    fn py_cancel<'py>(
+        &self,
+        py: Python<'py>,
+        order_id: String,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .cancel(
+                    &order_id,
+                    client_order_id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                )
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    /// Cancels all orders for a specific instrument via WebSocket.
+    ///
+    /// Uses the `private/cancel_all_by_instrument` JSON-RPC method.
+    /// Requires authentication (call `authenticate_session()` first).
+    ///
+    /// # Arguments
+    ///
+    /// * `instrument_id` - The instrument to cancel all orders for
+    /// * `order_type` - Optional order type filter ("all", "limit", "stop_all", etc.)
+    #[pyo3(name = "cancel_all_by_instrument")]
+    #[pyo3(signature = (instrument_id, order_type=None))]
+    fn py_cancel_all_by_instrument<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        order_type: Option<String>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let instrument_name = instrument_id.symbol.to_string();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .cancel_all_by_instrument(&instrument_name, instrument_id, order_type)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    /// Queries the current state of an order via WebSocket.
+    ///
+    /// Uses the `private/get_order_state` JSON-RPC method.
+    /// Requires authentication (call `authenticate_session()` first).
+    ///
+    /// # Arguments
+    ///
+    /// * `order_id` - The venue order ID (Deribit order ID) to query
+    /// * `client_order_id` - The client order ID for correlation
+    /// * `trader_id` - The trader ID for order tracking
+    /// * `strategy_id` - The strategy ID for order tracking
+    /// * `instrument_id` - The instrument ID for order tracking
+    #[pyo3(name = "get_order_state")]
+    fn py_get_order_state<'py>(
+        &self,
+        py: Python<'py>,
+        order_id: String,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .get_order_state(
+                    &order_id,
+                    client_order_id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                )
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
         })
     }
 }
