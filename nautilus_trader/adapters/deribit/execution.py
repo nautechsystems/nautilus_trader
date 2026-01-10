@@ -68,8 +68,6 @@ class DeribitExecutionClient(LiveExecutionClient):
         The event loop for the client.
     http_client : nautilus_pyo3.DeribitHttpClient
         The Deribit HTTP client for REST API operations.
-    ws_client : nautilus_pyo3.DeribitWebSocketClient
-        The Deribit WebSocket client for order execution.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -89,7 +87,6 @@ class DeribitExecutionClient(LiveExecutionClient):
         self,
         loop: asyncio.AbstractEventLoop,
         http_client: nautilus_pyo3.DeribitHttpClient,
-        ws_client: nautilus_pyo3.DeribitWebSocketClient,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -130,7 +127,10 @@ class DeribitExecutionClient(LiveExecutionClient):
 
         self.pyo3_account_id = nautilus_pyo3.AccountId(account_id.value)
         self._http_client = http_client
-        self._ws_client = ws_client
+        self._ws_client = nautilus_pyo3.DeribitWebSocketClient.with_credentials(
+            is_testnet=config.is_testnet,
+            account_id=self.pyo3_account_id,
+        )
 
         if config.api_key:
             masked_key = mask_api_key(config.api_key)

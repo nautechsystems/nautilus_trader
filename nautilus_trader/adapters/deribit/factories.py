@@ -227,13 +227,6 @@ class DeribitLiveExecClientFactory(LiveExecClientFactory):
             retry_delay_max_ms=config.retry_delay_max_ms,
         )
 
-        # Create WebSocket client for order execution
-        ws_client: nautilus_pyo3.DeribitWebSocketClient = (
-            nautilus_pyo3.DeribitWebSocketClient.with_credentials(
-                is_testnet=config.is_testnet,
-            )
-        )
-
         provider = get_cached_deribit_instrument_provider(
             client=http_client,
             instrument_kinds=config.instrument_kinds,
@@ -242,7 +235,6 @@ class DeribitLiveExecClientFactory(LiveExecClientFactory):
         return DeribitExecutionClient(
             loop=loop,
             http_client=http_client,
-            ws_client=ws_client,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
