@@ -258,6 +258,42 @@ impl DeribitExecutionClient {
             return Ok(());
         }
 
+        // Validate instrument belongs to Deribit venue
+        if order.instrument_id().venue != *DERIBIT_VENUE {
+            let rejected_event = OrderRejected::new(
+                self.core.trader_id,
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                self.core.account_id,
+                format!(
+                    "Instrument {} does not belong to DERIBIT venue (got {})",
+                    order.instrument_id(),
+                    order.instrument_id().venue
+                )
+                .into(),
+                UUID4::new(),
+                ts_init,
+                get_atomic_clock_realtime().get_time_ns(),
+                false,
+                false,
+            );
+
+            if let Some(sender) = &self.exec_event_sender {
+                if let Err(e) = sender.send(ExecutionEvent::Order(OrderEventAny::Rejected(
+                    rejected_event,
+                ))) {
+                    log::warn!("Failed to send OrderRejected event: {e}");
+                }
+            }
+
+            log::error!(
+                "Cannot submit order: instrument {} does not belong to DERIBIT venue",
+                order.instrument_id()
+            );
+            return Ok(());
+        }
+
         let params = Self::build_order_params(order);
         let client_order_id = order.client_order_id();
         let trader_id = order.trader_id();
