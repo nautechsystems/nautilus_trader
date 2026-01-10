@@ -1410,6 +1410,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self.first_close_ns = 0
         self.historical_mode = False
         self._historical_events = []
+        self._historical_event_at_ts_init = None
 
         if interval_type == "left-open":
             self._is_left_open = True
@@ -1520,7 +1521,6 @@ cdef class TimeBarAggregator(BarAggregator):
                 start_time -= pd.Timedelta(weeks=step)
         elif aggregation == BarAggregation.MONTH:
             start_time = (now - pd.DateOffset(months=now.month - 1, days=now.day - 1)).floor(freq="d")
-
             if self._time_bars_origin_offset is not None:
                 start_time += self._time_bars_origin_offset
 
@@ -1576,18 +1576,24 @@ cdef class TimeBarAggregator(BarAggregator):
             )
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
+        if self.historical_mode:
+            self._pre_process_historical_events(ts_init)
+
         self._builder.update(price, size, ts_init)
 
         if self.historical_mode:
-            self._process_historical_events(ts_init)
+            self._post_process_historical_events()
 
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        if self.historical_mode:
+            self._pre_process_historical_events(ts_init)
+
         self._builder.update_bar(bar, volume, ts_init)
 
         if self.historical_mode:
-            self._process_historical_events(ts_init)
+            self._post_process_historical_events()
 
-    cdef void _process_historical_events(self, uint64_t ts_init):
+    cdef void _pre_process_historical_events(self, uint64_t ts_init):
         if self._clock.timestamp_ns() == 0:
             self._clock.set_time(ts_init)
             self.start_timer()
@@ -1595,9 +1601,19 @@ cdef class TimeBarAggregator(BarAggregator):
         # Advance this aggregator's independent clock and collect timer events
         event_handlers = self._clock.advance_time(ts_init, set_time=True)
 
-        # Process timer events after data processing
+        # Process timer events
         for event_handler in event_handlers:
+            if event_handler.event.ts_event == ts_init:
+                self._historical_event_at_ts_init = event_handler
+                continue
+
             self._build_bar(event_handler.event)
+
+    cdef void _post_process_historical_events(self):
+        # Process timer events
+        if self._historical_event_at_ts_init:
+            self._build_bar(self._historical_event_at_ts_init.event)
+            self._historical_event_at_ts_init = None
 
     cpdef void _build_bar(self, TimeEvent event):
         if not self._builder.initialized:
@@ -1830,7 +1846,6 @@ cdef class SpreadQuoteAggregator:
             self.start_timer()
 
         self._historical_events.extend(self._clock.advance_time(ts_init, set_time=True))
-
         if not self._historical_events:
             return
 

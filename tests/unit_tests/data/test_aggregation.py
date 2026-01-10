@@ -6317,3 +6317,65 @@ class TestTimeBarAggregatorHistoricalMode:
 
         # Assert
         assert aggregator.historical_mode is False
+
+    def test_historical_mode_prevents_building_bars_for_timer_events_before_last_data_update(self):
+        """
+        Test that timer events firing before the last data update timestamp do not build
+        bars.
+
+        This prevents building bars for timer events that fire before the last data
+        update we've processed. This can happen when there are gaps in a time series
+        with historical data (market closed, first new data gets built with a timer
+        close to the close before the gap).
+
+        """
+        # Arrange
+        aggregator = TimeBarAggregator(
+            instrument=AUDUSD_SIM,
+            bar_type=self.bar_type,
+            handler=self.handler.append,
+            clock=self.clock,
+            build_with_no_updates=False,
+        )
+        aggregator.set_historical_mode(True, self.handler.append)
+
+        # Time T1: 10:00:00 - first data update (starts timer)
+        ts_t1 = dt_to_unix_nanos(pd.Timestamp("2024-01-01 10:00:00", tz="UTC"))
+        tick1 = QuoteTick(
+            instrument_id=AUDUSD_SIM.id,
+            bid_price=Price.from_str("1.00001"),
+            ask_price=Price.from_str("1.00004"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=ts_t1,
+            ts_init=ts_t1,
+        )
+
+        # Time T2: 10:30:00 - second data update after gap (30 minutes gap)
+        ts_t2 = dt_to_unix_nanos(pd.Timestamp("2024-01-01 10:30:00", tz="UTC"))
+        tick2 = QuoteTick(
+            instrument_id=AUDUSD_SIM.id,
+            bid_price=Price.from_str("1.00002"),
+            ask_price=Price.from_str("1.00005"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=ts_t2,
+            ts_init=ts_t2,
+        )
+
+        # Act - process first data update (triggers timer start, ts_last = ts_t1)
+        aggregator.handle_quote_tick(tick1)
+
+        # Process second data update after gap
+        # This will:
+        # 1. Update builder with ts_init=ts_t2, setting _builder.ts_last = ts_t2
+        # 2. Process historical events: advance clock from ts_t1 to ts_t2
+        # 3. Collect timer events at 10:01:00, 10:02:00, ..., 10:30:00
+        # 4. For each timer event, call _build_bar
+        # 5. In _build_bar, timer events with ts_event < ts_t2 (10:01:00 to 10:29:00) should be skipped
+        aggregator.handle_quote_tick(tick2)
+
+        # Assert
+        assert len(self.handler) == 2
+        assert self.handler[0].ts_init == ts_t1
+        assert self.handler[1].ts_init == ts_t2

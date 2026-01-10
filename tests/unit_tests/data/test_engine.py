@@ -3983,7 +3983,7 @@ class TestDataEngine:
             Price.from_str("5528.75"),
             Price.from_str("5528.50"),
             Price.from_str("5528.75"),
-            Quantity.from_int(5777),
+            Quantity.from_int(5806),
             1719878400000000000,
             1719878400000000000,
         )
@@ -4101,10 +4101,10 @@ class TestDataEngine:
         expected_last_1_minute_bar = Bar(
             BarType.from_str("ESU4.GLBX-1-MINUTE-LAST-INTERNAL"),
             Price.from_str("5528.50"),
-            Price.from_str("5529.00"),
+            Price.from_str("5528.75"),
             Price.from_str("5528.50"),
-            Price.from_str("5529.00"),
-            Quantity.from_int(31),
+            Price.from_str("5528.75"),
+            Quantity.from_int(23),
             1719878400000000000,
             1719878400000000000,
         )
@@ -4112,10 +4112,10 @@ class TestDataEngine:
         expected_last_2_minute_bar = Bar(
             BarType.from_str("ESU4.GLBX-2-MINUTE-LAST-INTERNAL"),
             Price.from_str("5528.75"),
-            Price.from_str("5529.00"),
+            Price.from_str("5528.75"),
             Price.from_str("5528.50"),
-            Price.from_str("5529.00"),
-            Quantity.from_int(50),
+            Price.from_str("5528.75"),
+            Quantity.from_int(41),
             1719878400000000000,
             1719878400000000000,
         )
