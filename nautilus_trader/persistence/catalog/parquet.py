@@ -339,18 +339,26 @@ class ParquetDataCatalog(BaseDataCatalog):
         end = end if end else data[-1].ts_init
         filename = _timestamps_to_filename(start, end)
         parquet_file = f"{directory}/{filename}"
+
+        if self.fs.exists(parquet_file):
+            print(f"File {parquet_file} already exists, skipping write")
+            return
+
+        if not skip_disjoint_check:
+            current_intervals = self._get_directory_intervals(directory)
+            new_intervals = [*current_intervals, (start, end)]
+            if not _are_intervals_disjoint(new_intervals):
+                raise ValueError(
+                    f"Writing file {filename} with interval ({start}, {end}) would create "
+                    f"non-disjoint intervals. Existing intervals: {current_intervals}",
+                )
+
         pq.write_table(
             table,
             where=parquet_file,
             filesystem=self.fs,
             row_group_size=self.max_rows_per_group,
         )
-
-        if not skip_disjoint_check:
-            intervals = self._get_directory_intervals(directory)
-            assert _are_intervals_disjoint(
-                intervals,
-            ), "Intervals are not disjoint after writing a new file"
 
     def _objects_to_table(self, data: list[Data], data_cls: type) -> pa.Table:
         PyCondition.not_empty(data, "data")
