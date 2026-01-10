@@ -449,11 +449,27 @@ class DeribitExecutionClient(LiveExecutionClient):
         order = self._cache.order(command.client_order_id)
         if order is None:
             self._log.error(f"Order not found: {command.client_order_id}")
+            self.generate_order_modify_rejected(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=command.venue_order_id,
+                reason=f"Order not found: {command.client_order_id}",
+                ts_event=self._clock.timestamp_ns(),
+            )
             return
 
         if order.venue_order_id is None:
             self._log.error(
                 f"Cannot modify order without venue_order_id: {command.client_order_id}",
+            )
+            self.generate_order_modify_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=None,
+                reason=f"Cannot modify order without venue_order_id: {command.client_order_id}",
+                ts_event=self._clock.timestamp_ns(),
             )
             return
 
@@ -482,16 +498,40 @@ class DeribitExecutionClient(LiveExecutionClient):
             )
         except Exception as e:
             self._log.error(f"Failed to modify order: {e}")
+            self.generate_order_modify_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         order = self._cache.order(command.client_order_id)
         if order is None:
             self._log.error(f"Order not found: {command.client_order_id}")
+            self.generate_order_cancel_rejected(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=command.venue_order_id,
+                reason=f"Order not found: {command.client_order_id}",
+                ts_event=self._clock.timestamp_ns(),
+            )
             return
 
         if order.venue_order_id is None:
             self._log.error(
                 f"Cannot cancel order without venue_order_id: {command.client_order_id}",
+            )
+            self.generate_order_cancel_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=None,
+                reason=f"Cannot cancel order without venue_order_id: {command.client_order_id}",
+                ts_event=self._clock.timestamp_ns(),
             )
             return
 
@@ -514,6 +554,14 @@ class DeribitExecutionClient(LiveExecutionClient):
             )
         except Exception as e:
             self._log.error(f"Failed to cancel order: {e}")
+            self.generate_order_cancel_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         # Deribit doesn't support side filtering - log warning if specified
@@ -552,11 +600,27 @@ class DeribitExecutionClient(LiveExecutionClient):
             order = self._cache.order(cancel.client_order_id)
             if order is None:
                 self._log.warning(f"Skipping cancel - order not found: {cancel.client_order_id}")
+                self.generate_order_cancel_rejected(
+                    strategy_id=cancel.strategy_id,
+                    instrument_id=cancel.instrument_id,
+                    client_order_id=cancel.client_order_id,
+                    venue_order_id=cancel.venue_order_id,
+                    reason=f"Order not found: {cancel.client_order_id}",
+                    ts_event=self._clock.timestamp_ns(),
+                )
                 continue
 
             if order.venue_order_id is None:
                 self._log.warning(
                     f"Skipping cancel for {cancel.client_order_id} - no venue_order_id",
+                )
+                self.generate_order_cancel_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=None,
+                    reason=f"Cannot cancel order without venue_order_id: {cancel.client_order_id}",
+                    ts_event=self._clock.timestamp_ns(),
                 )
                 continue
 
@@ -582,6 +646,14 @@ class DeribitExecutionClient(LiveExecutionClient):
                 self._log.error(
                     f"Batch cancel failed: order_id={order.venue_order_id}, "
                     f"client_order_id={order.client_order_id}, error={e}",
+                )
+                self.generate_order_cancel_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    reason=str(e),
+                    ts_event=self._clock.timestamp_ns(),
                 )
 
     async def _query_order(self, command: QueryOrder) -> None:
