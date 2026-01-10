@@ -29,6 +29,7 @@ from nautilus_trader.backtest.models import TwoTierFillModel
 from nautilus_trader.backtest.models import VolumeSensitiveFillModel
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.core.rust.model import BookType
+from nautilus_trader.core.rust.model import OrderSide
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
@@ -100,6 +101,114 @@ class TestEnhancedFillModels:
         assert asks[0].price == best_ask
         assert bids[0].size() == 1_000_000  # UNLIMITED
         assert asks[0].size() == 1_000_000  # UNLIMITED
+
+    def test_best_price_fill_model_optimistic_matching(self):
+        """
+        Test BestPriceFillModel optimistic matching logic.
+        """
+        # Arrange
+        fill_model = BestPriceFillModel()
+        best_bid = Price.from_str("1.00000")
+        best_ask = Price.from_str("1.00010")
+
+        # 1. Buy order at best bid (matchable)
+        order_buy_at_bid = TestExecStubs.limit_order(
+            instrument=self.instrument,
+            price=best_bid,
+        )
+        result = fill_model.get_orderbook_for_fill_simulation(
+            self.instrument,
+            order_buy_at_bid,
+            best_bid,
+            best_ask,
+        )
+        assert result is not None
+        assert next(iter(result.asks())).price == best_bid  # Ask price pushed to order price
+
+        # 2. Buy order within spread (matchable)
+        order_buy_in_spread = TestExecStubs.limit_order(
+            instrument=self.instrument,
+            price=Price.from_str("1.00005"),
+        )
+        result = fill_model.get_orderbook_for_fill_simulation(
+            self.instrument,
+            order_buy_in_spread,
+            best_bid,
+            best_ask,
+        )
+        assert result is not None
+        assert next(iter(result.asks())).price == Price.from_str("1.00005")
+
+        # 2b. Buy order above best ask (marketable - should get price improvement)
+        order_buy_above_ask = TestExecStubs.limit_order(
+            instrument=self.instrument,
+            price=Price.from_str("1.00020"),
+        )
+        result = fill_model.get_orderbook_for_fill_simulation(
+            self.instrument,
+            order_buy_above_ask,
+            best_bid,
+            best_ask,
+        )
+        assert result is not None
+        assert next(iter(result.asks())).price == best_ask  # Should stay at best_ask, not 1.00020
+
+        # 3. Buy order below best bid (not matchable)
+        order_buy_below_bid = TestExecStubs.limit_order(
+            instrument=self.instrument,
+            price=Price.from_str("0.99995"),
+        )
+        result = fill_model.get_orderbook_for_fill_simulation(
+            self.instrument,
+            order_buy_below_bid,
+            best_bid,
+            best_ask,
+        )
+        assert result is None
+
+        # 4. Sell order at best ask (matchable)
+        order_sell_at_ask = TestExecStubs.limit_order(
+            instrument=self.instrument,
+            order_side=OrderSide.SELL,
+            price=best_ask,
+        )
+        result = fill_model.get_orderbook_for_fill_simulation(
+            self.instrument,
+            order_sell_at_ask,
+            best_bid,
+            best_ask,
+        )
+        assert result is not None
+        assert next(iter(result.bids())).price == best_ask  # Bid price pushed to order price
+
+        # 5. Sell order within spread (matchable)
+        order_sell_in_spread = TestExecStubs.limit_order(
+            instrument=self.instrument,
+            order_side=OrderSide.SELL,
+            price=Price.from_str("1.00005"),
+        )
+        result = fill_model.get_orderbook_for_fill_simulation(
+            self.instrument,
+            order_sell_in_spread,
+            best_bid,
+            best_ask,
+        )
+        assert result is not None
+        assert next(iter(result.bids())).price == Price.from_str("1.00005")
+
+        # 6. Sell order above best ask (not matchable)
+        order_sell_above_ask = TestExecStubs.limit_order(
+            instrument=self.instrument,
+            order_side=OrderSide.SELL,
+            price=Price.from_str("1.00015"),
+        )
+        result = fill_model.get_orderbook_for_fill_simulation(
+            self.instrument,
+            order_sell_above_ask,
+            best_bid,
+            best_ask,
+        )
+        assert result is None
 
     def test_one_tick_slippage_model_creates_slippage(self):
         """

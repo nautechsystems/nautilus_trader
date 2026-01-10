@@ -20,6 +20,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.model.book cimport BookOrder
 from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.functions cimport liquidity_side_to_str
@@ -166,6 +167,7 @@ cdef class BestPriceFillModel(FillModel):
     ):
         """
         Return OrderBook with unlimited liquidity at best prices.
+        Also allows execution inside the bid ask
         """
         cdef:
             uint64_t UNLIMITED = 1_000_000  # Large enough to fill any order
@@ -178,16 +180,36 @@ cdef class BestPriceFillModel(FillModel):
             book_type=BookType.L2_MBP,
         )
 
-        # Add unlimited volume at best prices
+        cdef Price bid_price = best_bid
+        cdef Price ask_price = best_ask
+
+        if order.order_type == OrderType.LIMIT:
+            if order.side == OrderSide.BUY:
+                # BUY order matchable if price >= bid (within or above spread)
+                if order.price >= best_ask:
+                    pass  # Aggressive: use best_ask for price improvement
+                elif order.price >= best_bid:
+                    ask_price = order.price  # Within spread: optimistic fill at order price
+                else:
+                    return None  # Passive: not matchable
+            elif order.side == OrderSide.SELL:
+                # SELL order matchable if price <= ask (within or below spread)
+                if order.price <= best_bid:
+                    pass  # Aggressive: use best_bid for price improvement
+                elif order.price <= best_ask:
+                    bid_price = order.price  # Within spread: optimistic fill at order price
+                else:
+                    return None  # Passive: not matchable
+
         bid_order = BookOrder(
             side=OrderSide.BUY,
-            price=best_bid,
+            price=bid_price,
             size=Quantity(UNLIMITED, instrument.size_precision),
             order_id=1,
         )
         ask_order = BookOrder(
             side=OrderSide.SELL,
-            price=best_ask,
+            price=ask_price,
             size=Quantity(UNLIMITED, instrument.size_precision),
             order_id=2,
         )

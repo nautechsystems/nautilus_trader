@@ -331,6 +331,10 @@ class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
         If logging should be bypassed.
     run_analysis : bool, default True
         If post backtest performance analysis should be run.
+    allow_immediate_quote_execution : bool, default False
+        Allows a strategy to receive quotes and pass orders before the data is
+        processed by the execution engine. Only relevant in backtesting.
+        Useful for backtests on discrete times, like every minute, hour or day.
 
     """
 
@@ -341,6 +345,7 @@ class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
     risk_engine: RiskEngineConfig | None = RiskEngineConfig()
     exec_engine: ExecEngineConfig | None = ExecEngineConfig()
     run_analysis: bool = True
+    allow_immediate_quote_execution: bool = False
 
     def __post_init__(self):
         if isinstance(self.trader_id, str):

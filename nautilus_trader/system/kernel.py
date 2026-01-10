@@ -384,11 +384,17 @@ class NautilusKernel:
                     "Try using a `LiveDataEngineConfig`.",
                 )
 
+            # Get allow_immediate_quote_execution from BacktestEngineConfig if available
+            allow_immediate_quote_execution = False
+            if hasattr(config, "allow_immediate_quote_execution"):
+                allow_immediate_quote_execution = config.allow_immediate_quote_execution
+
             self._data_engine = DataEngine(
                 msgbus=self._msgbus,
                 cache=self._cache,
                 clock=self._clock,
                 config=config.data_engine,
+                allow_immediate_quote_execution=allow_immediate_quote_execution,
             )
 
         ########################################################################

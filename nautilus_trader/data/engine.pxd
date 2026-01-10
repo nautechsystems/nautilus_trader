@@ -128,6 +128,7 @@ cdef class DataEngine(Component):
     cdef readonly bint _buffer_deltas
     cdef readonly bint _emit_quotes_from_book
     cdef readonly bint _emit_quotes_from_book_depths
+    cdef readonly bint _allow_immediate_quote_execution
 
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""

@@ -160,6 +160,10 @@ cdef class DataEngine(Component):
         The clock for the engine.
     config : DataEngineConfig, optional
         The configuration for the instance.
+    allow_immediate_quote_execution : bool, default False
+        Allows a strategy to receive quotes and pass orders before the data is
+        processed by the execution engine. Only relevant in backtesting.
+        Useful for backtests on discrete times, like every minute, hour or day.
     """
 
     def __init__(
@@ -168,6 +172,7 @@ cdef class DataEngine(Component):
         Cache cache not None,
         Clock clock not None,
         config: DataEngineConfig | None = None,
+        allow_immediate_quote_execution: bool = False,
     ) -> None:
         if config is None:
             config = DataEngineConfig()
@@ -223,6 +228,7 @@ cdef class DataEngine(Component):
         self._buffer_deltas = config.buffer_deltas
         self._emit_quotes_from_book = config.emit_quotes_from_book
         self._emit_quotes_from_book_depths = config.emit_quotes_from_book_depths
+        self._allow_immediate_quote_execution = allow_immediate_quote_execution
 
         if config.external_clients:
             self._external_clients = set(config.external_clients)
@@ -3207,8 +3213,12 @@ cdef class DataEngine(Component):
         aggregator.set_running(True)
 
     cpdef void _handle_spread_quote(self, Data quote):
-        # We send the quote to a simulated exchanged so it can be processed for execution first
-        # before being processed by the data engine, similarly to the logic in the backtest engine
+        if self._allow_immediate_quote_execution:
+            self.process(quote)
+            self._msgbus.send(endpoint=f"SimulatedExchange.spread_quote.{quote.instrument_id.venue}", msg=quote)
+            return
+
+        # Send quote to exchange first (before data engine), matching backtest engine's default logic
         self._msgbus.send(endpoint=f"SimulatedExchange.spread_quote.{quote.instrument_id.venue}", msg=quote)
         self.process(quote)
 
