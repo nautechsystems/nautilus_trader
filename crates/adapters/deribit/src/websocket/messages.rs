@@ -17,6 +17,8 @@
 
 use std::fmt::Display;
 
+use rust_decimal::Decimal;
+
 use nautilus_model::{
     data::{Data, FundingRateUpdate, OrderBookDeltas},
     events::{
@@ -375,7 +377,8 @@ pub struct DeribitOrderParams {
     /// Instrument name (e.g., "BTC-PERPETUAL").
     pub instrument_name: String,
     /// Order amount in contracts.
-    pub amount: f64,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub amount: Decimal,
     /// Order type: "limit", "market", "stop_limit", "stop_market", "take_limit", "take_market".
     #[serde(rename = "type")]
     pub order_type: String,
@@ -383,8 +386,11 @@ pub struct DeribitOrderParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     /// Limit price (required for limit orders).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub price: Option<f64>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        with = "rust_decimal::serde::float_option"
+    )]
+    pub price: Option<Decimal>,
     /// Time in force: "good_til_cancelled", "good_til_date", "fill_or_kill", "immediate_or_cancel".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time_in_force: Option<String>,
@@ -395,14 +401,20 @@ pub struct DeribitOrderParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reduce_only: Option<bool>,
     /// Trigger price for stop/take orders.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub trigger_price: Option<f64>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        with = "rust_decimal::serde::float_option"
+    )]
+    pub trigger_price: Option<Decimal>,
     /// Trigger type: "last_price", "index_price", "mark_price".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trigger: Option<String>,
     /// Maximum display quantity for iceberg orders.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_show: Option<f64>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        with = "rust_decimal::serde::float_option"
+    )]
+    pub max_show: Option<Decimal>,
     /// GTD expiration timestamp in milliseconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub valid_until: Option<u64>,
@@ -431,13 +443,20 @@ pub struct DeribitEditParams {
     /// Venue order ID to modify.
     pub order_id: String,
     /// New amount.
-    pub amount: f64,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub amount: Decimal,
     /// New price (for limit orders).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub price: Option<f64>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        with = "rust_decimal::serde::float_option"
+    )]
+    pub price: Option<Decimal>,
     /// New trigger price (for stop orders).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub trigger_price: Option<f64>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        with = "rust_decimal::serde::float_option"
+    )]
+    pub trigger_price: Option<Decimal>,
     /// Post-only flag.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub post_only: Option<bool>,

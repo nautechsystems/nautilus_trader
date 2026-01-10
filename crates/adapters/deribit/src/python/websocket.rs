@@ -40,11 +40,13 @@ use nautilus_common::live::get_runtime;
 use nautilus_core::python::{call_python, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::{Data, OrderBookDeltas_API},
+    enums::OrderType,
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     python::{
         data::data_to_pycapsule,
         instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     },
+    types::{Price, Quantity},
 };
 use pyo3::{IntoPyObjectExt, exceptions::PyRuntimeError, prelude::*};
 
@@ -92,7 +94,7 @@ impl DeribitWebSocketClient {
     }
 
     #[staticmethod]
-    #[pyo3(name = "with_credentials")]
+    #[pyo3(name = "with_credentials", signature = (is_testnet, account_id = None))]
     fn py_with_credentials(is_testnet: bool, account_id: Option<AccountId>) -> PyResult<Self> {
         let mut client = Self::with_credentials(is_testnet).map_err(to_pyvalue_err)?;
         if let Some(id) = account_id {
@@ -828,7 +830,7 @@ impl DeribitWebSocketClient {
     /// Requires authentication (call `authenticate_session()` first).
     #[pyo3(name = "buy")]
     #[pyo3(signature = (
-        amount,
+        quantity,
         order_type,
         client_order_id,
         trader_id,
@@ -845,17 +847,17 @@ impl DeribitWebSocketClient {
     fn py_buy<'py>(
         &self,
         py: Python<'py>,
-        amount: f64,
-        order_type: String,
+        quantity: Quantity,
+        order_type: OrderType,
         client_order_id: ClientOrderId,
         trader_id: TraderId,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
-        price: Option<f64>,
+        price: Option<Price>,
         time_in_force: Option<String>,
         post_only: bool,
         reduce_only: bool,
-        trigger_price: Option<f64>,
+        trigger_price: Option<Price>,
         trigger: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -863,14 +865,14 @@ impl DeribitWebSocketClient {
 
         let params = DeribitOrderParams {
             instrument_name,
-            amount,
-            order_type,
+            amount: quantity.as_decimal(),
+            order_type: order_type.to_string().to_lowercase(),
             label: Some(client_order_id.to_string()),
-            price,
+            price: price.map(|p| p.as_decimal()),
             time_in_force,
             post_only: if post_only { Some(true) } else { None },
             reduce_only: if reduce_only { Some(true) } else { None },
-            trigger_price,
+            trigger_price: trigger_price.map(|p| p.as_decimal()),
             trigger,
             max_show: None,
             valid_until: None,
@@ -896,7 +898,7 @@ impl DeribitWebSocketClient {
     /// Requires authentication (call `authenticate_session()` first).
     #[pyo3(name = "sell")]
     #[pyo3(signature = (
-        amount,
+        quantity,
         order_type,
         client_order_id,
         trader_id,
@@ -913,17 +915,17 @@ impl DeribitWebSocketClient {
     fn py_sell<'py>(
         &self,
         py: Python<'py>,
-        amount: f64,
-        order_type: String,
+        quantity: Quantity,
+        order_type: OrderType,
         client_order_id: ClientOrderId,
         trader_id: TraderId,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
-        price: Option<f64>,
+        price: Option<Price>,
         time_in_force: Option<String>,
         post_only: bool,
         reduce_only: bool,
-        trigger_price: Option<f64>,
+        trigger_price: Option<Price>,
         trigger: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -931,14 +933,14 @@ impl DeribitWebSocketClient {
 
         let params = DeribitOrderParams {
             instrument_name,
-            amount,
-            order_type,
+            amount: quantity.as_decimal(),
+            order_type: order_type.to_string().to_lowercase(),
             label: Some(client_order_id.to_string()),
-            price,
+            price: price.map(|p| p.as_decimal()),
             time_in_force,
             post_only: if post_only { Some(true) } else { None },
             reduce_only: if reduce_only { Some(true) } else { None },
-            trigger_price,
+            trigger_price: trigger_price.map(|p| p.as_decimal()),
             trigger,
             max_show: None,
             valid_until: None,
@@ -964,7 +966,7 @@ impl DeribitWebSocketClient {
     /// # Arguments
     ///
     /// * `order_id` - The venue order ID (Deribit order ID) to modify
-    /// * `amount` - The new order amount
+    /// * `quantity` - The new order quantity
     /// * `price` - The new order price
     /// * `client_order_id` - The client order ID for correlation
     /// * `trader_id` - The trader ID for order tracking
@@ -976,8 +978,8 @@ impl DeribitWebSocketClient {
         &self,
         py: Python<'py>,
         order_id: String,
-        amount: f64,
-        price: f64,
+        quantity: Quantity,
+        price: Price,
         client_order_id: ClientOrderId,
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -989,7 +991,7 @@ impl DeribitWebSocketClient {
             client
                 .edit(
                     &order_id,
-                    amount,
+                    quantity,
                     price,
                     client_order_id,
                     trader_id,

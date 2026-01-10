@@ -39,6 +39,7 @@ use nautilus_core::{
 use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     instruments::{Instrument, InstrumentAny},
+    types::{Price, Quantity},
 };
 use nautilus_network::{
     http::USER_AGENT,
@@ -1170,8 +1171,8 @@ impl DeribitWebSocketClient {
     pub async fn edit(
         &self,
         order_id: &str,
-        amount: f64,
-        price: f64,
+        quantity: Quantity,
+        price: Price,
         client_order_id: ClientOrderId,
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -1186,15 +1187,15 @@ impl DeribitWebSocketClient {
 
         let params = DeribitEditParams {
             order_id: order_id.to_string(),
-            amount,
-            price: Some(price),
+            amount: quantity.as_decimal(),
+            price: Some(price.as_decimal()),
             post_only: None,
             reduce_only: None,
             trigger_price: None,
         };
 
         log::info!(
-            "Sending edit order: order_id={order_id}, amount={amount}, price={price}, client_order_id={client_order_id}"
+            "Sending edit order: order_id={order_id}, quantity={quantity}, price={price}, client_order_id={client_order_id}"
         );
 
         self.cmd_tx

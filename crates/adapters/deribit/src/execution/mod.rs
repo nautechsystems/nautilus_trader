@@ -222,10 +222,10 @@ impl DeribitExecutionClient {
 
         DeribitOrderParams {
             instrument_name: order.instrument_id().symbol.to_string(),
-            amount: order.quantity().as_f64(),
+            amount: order.quantity().as_decimal(),
             order_type,
             label: Some(order.client_order_id().to_string()),
-            price: order.price().map(|p| p.as_f64()),
+            price: order.price().map(|p| p.as_decimal()),
             time_in_force,
             post_only: if order.is_post_only() {
                 Some(true)
@@ -237,7 +237,7 @@ impl DeribitExecutionClient {
             } else {
                 None
             },
-            trigger_price: order.trigger_price().map(|p| p.as_f64()),
+            trigger_price: order.trigger_price().map(|p| p.as_decimal()),
             trigger,
             max_show: None,
             valid_until,
@@ -279,12 +279,12 @@ impl DeribitExecutionClient {
                 false,
             );
 
-            if let Some(sender) = &self.exec_event_sender {
-                if let Err(e) = sender.send(ExecutionEvent::Order(OrderEventAny::Rejected(
+            if let Some(sender) = &self.exec_event_sender
+                && let Err(e) = sender.send(ExecutionEvent::Order(OrderEventAny::Rejected(
                     rejected_event,
-                ))) {
-                    log::warn!("Failed to send OrderRejected event: {e}");
-                }
+                )))
+            {
+                log::warn!("Failed to send OrderRejected event: {e}");
             }
 
             log::error!(
@@ -714,20 +714,19 @@ impl ExecutionClient for DeribitExecutionClient {
             .to_string();
 
         // Extract quantity - if not provided, get from order in cache
-        let amount = if let Some(qty) = cmd.quantity {
-            qty.as_f64()
+        let quantity = if let Some(qty) = cmd.quantity {
+            qty
         } else {
             // Get order from cache to use its current quantity
             let cache = self.core.cache().borrow();
             let order = cache
                 .order(&cmd.client_order_id)
                 .ok_or_else(|| anyhow::anyhow!("Order not found in cache for modify_order"))?;
-            order.quantity().as_f64()
+            order.quantity()
         };
 
         let price = cmd
             .price
-            .map(|p| p.as_f64())
             .ok_or_else(|| anyhow::anyhow!("price required for modify_order"))?;
 
         let client_order_id = cmd.client_order_id;
@@ -740,7 +739,7 @@ impl ExecutionClient for DeribitExecutionClient {
         let account_id = self.core.account_id;
 
         log::info!(
-            "Modifying order: order_id={order_id}, amount={amount}, price={price}, client_order_id={client_order_id}"
+            "Modifying order: order_id={order_id}, quantity={quantity}, price={price}, client_order_id={client_order_id}"
         );
 
         // Spawn async task to send edit via WebSocket
@@ -748,7 +747,7 @@ impl ExecutionClient for DeribitExecutionClient {
             if let Err(e) = ws_client
                 .edit(
                     &order_id,
-                    amount,
+                    quantity,
                     price,
                     client_order_id,
                     trader_id,

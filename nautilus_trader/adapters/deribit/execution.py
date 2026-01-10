@@ -45,7 +45,6 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
@@ -54,6 +53,7 @@ from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderModifyRejected
 from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.functions import order_type_to_pyo3
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 
@@ -285,15 +285,13 @@ class DeribitExecutionClient(LiveExecutionClient):
         pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
         pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
+        pyo3_order_type = order_type_to_pyo3(order.order_type)
+        pyo3_quantity = nautilus_pyo3.Quantity.from_str(str(order.quantity))
+        pyo3_price = nautilus_pyo3.Price.from_str(str(order.price)) if order.has_price else None
 
-        # Map order type to Deribit format
-        order_type_str = self._map_order_type(order.order_type)
         time_in_force_str = (
             self._map_time_in_force(order.time_in_force) if order.time_in_force else None
         )
-
-        price = float(order.price) if order.has_price else None
-        amount = float(order.quantity)
 
         try:
             self.generate_order_submitted(
@@ -305,26 +303,26 @@ class DeribitExecutionClient(LiveExecutionClient):
 
             if order.side == OrderSide.BUY:
                 await self._ws_client.buy(
-                    amount=amount,
-                    order_type=order_type_str,
+                    quantity=pyo3_quantity,
+                    order_type=pyo3_order_type,
                     client_order_id=pyo3_client_order_id,
                     trader_id=pyo3_trader_id,
                     strategy_id=pyo3_strategy_id,
                     instrument_id=pyo3_instrument_id,
-                    price=price,
+                    price=pyo3_price,
                     time_in_force=time_in_force_str,
                     post_only=order.is_post_only,
                     reduce_only=order.is_reduce_only,
                 )
             else:  # SELL
                 await self._ws_client.sell(
-                    amount=amount,
-                    order_type=order_type_str,
+                    quantity=pyo3_quantity,
+                    order_type=pyo3_order_type,
                     client_order_id=pyo3_client_order_id,
                     trader_id=pyo3_trader_id,
                     strategy_id=pyo3_strategy_id,
                     instrument_id=pyo3_instrument_id,
-                    price=price,
+                    price=pyo3_price,
                     time_in_force=time_in_force_str,
                     post_only=order.is_post_only,
                     reduce_only=order.is_reduce_only,
@@ -338,15 +336,6 @@ class DeribitExecutionClient(LiveExecutionClient):
                 reason=str(e),
                 ts_event=self._clock.timestamp_ns(),
             )
-
-    def _map_order_type(self, order_type: OrderType) -> str:
-        mapping = {
-            OrderType.LIMIT: "limit",
-            OrderType.MARKET: "market",
-            OrderType.STOP_MARKET: "stop_market",
-            OrderType.STOP_LIMIT: "stop_limit",
-        }
-        return mapping.get(order_type, "limit")
 
     def _map_time_in_force(self, tif: TimeInForce) -> str:
         mapping = {
@@ -381,18 +370,13 @@ class DeribitExecutionClient(LiveExecutionClient):
             pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
             pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
             pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
+            pyo3_order_type = order_type_to_pyo3(order.order_type)
+            pyo3_quantity = nautilus_pyo3.Quantity.from_str(str(order.quantity))
+            pyo3_price = nautilus_pyo3.Price.from_str(str(order.price)) if order.has_price else None
 
-            # Map order type to Deribit format
-            order_type_str = self._map_order_type(order.order_type)
             time_in_force_str = (
                 self._map_time_in_force(order.time_in_force) if order.time_in_force else None
             )
-
-            # Extract price (for limit orders)
-            price = float(order.price) if order.has_price else None
-
-            # Extract quantity as float
-            amount = float(order.quantity)
 
             try:
                 # Generate OrderSubmitted event first
@@ -405,32 +389,32 @@ class DeribitExecutionClient(LiveExecutionClient):
 
                 self._log.info(
                     f"Submitting order from list: {order.client_order_id} "
-                    f"({order.side.name} {amount} @ {price})",
+                    f"({order.side.name} {order.quantity} @ {order.price})",
                 )
 
                 # Call appropriate WebSocket method based on side
                 if order.side == OrderSide.BUY:
                     await self._ws_client.buy(
-                        amount=amount,
-                        order_type=order_type_str,
+                        quantity=pyo3_quantity,
+                        order_type=pyo3_order_type,
                         client_order_id=pyo3_client_order_id,
                         trader_id=pyo3_trader_id,
                         strategy_id=pyo3_strategy_id,
                         instrument_id=pyo3_instrument_id,
-                        price=price,
+                        price=pyo3_price,
                         time_in_force=time_in_force_str,
                         post_only=order.is_post_only,
                         reduce_only=order.is_reduce_only,
                     )
                 else:  # SELL
                     await self._ws_client.sell(
-                        amount=amount,
-                        order_type=order_type_str,
+                        quantity=pyo3_quantity,
+                        order_type=pyo3_order_type,
                         client_order_id=pyo3_client_order_id,
                         trader_id=pyo3_trader_id,
                         strategy_id=pyo3_strategy_id,
                         instrument_id=pyo3_instrument_id,
-                        price=price,
+                        price=pyo3_price,
                         time_in_force=time_in_force_str,
                         post_only=order.is_post_only,
                         reduce_only=order.is_reduce_only,
@@ -478,19 +462,23 @@ class DeribitExecutionClient(LiveExecutionClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
         pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
 
-        price = float(command.price) if command.price else float(order.price)
-        amount = float(command.quantity) if command.quantity else float(order.quantity)
+        # Use command values if provided, otherwise fall back to existing order values
+        price = command.price if command.price else order.price
+        quantity = command.quantity if command.quantity else order.quantity
+
+        pyo3_quantity = nautilus_pyo3.Quantity.from_str(str(quantity))
+        pyo3_price = nautilus_pyo3.Price.from_str(str(price))
 
         try:
             self._log.info(
                 f"Modifying order {order.client_order_id} (venue: {order.venue_order_id}) "
-                f"to price={price} qty={amount}",
+                f"to price={price} qty={quantity}",
             )
 
             await self._ws_client.edit(
                 order_id=order.venue_order_id.value,
-                amount=amount,
-                price=price,
+                quantity=pyo3_quantity,
+                price=pyo3_price,
                 client_order_id=pyo3_client_order_id,
                 trader_id=pyo3_trader_id,
                 strategy_id=pyo3_strategy_id,
