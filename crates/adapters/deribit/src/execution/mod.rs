@@ -317,8 +317,10 @@ impl DeribitExecutionClient {
                         )
                         .await
                 }
-                _ => {
-                    anyhow::bail!("Invalid order side: {order_side}");
+                OrderSide::NoOrderSide => {
+                    anyhow::bail!(
+                        "NoOrderSide is not allowed for order submission, must be Buy or Sell"
+                    );
                 }
             };
 
