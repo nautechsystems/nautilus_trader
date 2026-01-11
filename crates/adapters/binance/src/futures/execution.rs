@@ -33,8 +33,10 @@ use nautilus_common::{
         ExecutionEvent, ExecutionReport as NautilusExecutionReport,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-            GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+            GenerateOrderStatusReport, GenerateOrderStatusReports,
+            GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
+            GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder,
+            SubmitOrder, SubmitOrderList,
         },
     },
 };
@@ -1304,26 +1306,18 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns))
         });
 
-        let order_cmd = GenerateOrderStatusReports::new(
-            UUID4::new(),
-            ts_now,
-            true, // open_only
-            None, // instrument_id
-            start,
-            None, // end
-            None, // params
-            None, // correlation_id
-        );
+        let order_cmd = GenerateOrderStatusReportsBuilder::default()
+            .ts_init(ts_now)
+            .open_only(true)
+            .start(start)
+            .build()
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let position_cmd = GeneratePositionStatusReports::new(
-            UUID4::new(),
-            ts_now,
-            None, // instrument_id
-            start,
-            None, // end
-            None, // params
-            None, // correlation_id
-        );
+        let position_cmd = GeneratePositionStatusReportsBuilder::default()
+            .ts_init(ts_now)
+            .start(start)
+            .build()
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         let (order_reports, position_reports) = tokio::try_join!(
             self.generate_order_status_reports(&order_cmd),

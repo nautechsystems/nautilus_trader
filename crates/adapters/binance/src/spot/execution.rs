@@ -33,8 +33,10 @@ use nautilus_common::{
         ExecutionEvent, ExecutionReport as NautilusExecutionReport,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-            GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+            GenerateOrderStatusReport, GenerateOrderStatusReports,
+            GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
+            GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder,
+            SubmitOrder, SubmitOrderList,
         },
     },
 };
@@ -1032,26 +1034,18 @@ impl ExecutionClient for BinanceSpotExecutionClient {
 
         // Binance requires instrument_id for historical orders (open_only=false).
         // Use open_only=true for mass status to get all open orders across instruments.
-        let order_cmd = GenerateOrderStatusReports::new(
-            UUID4::new(),
-            ts_now,
-            true, // open_only - Binance requires instrument_id for historical orders
-            None, // instrument_id
-            start,
-            None, // end
-            None, // params
-            None, // correlation_id
-        );
+        let order_cmd = GenerateOrderStatusReportsBuilder::default()
+            .ts_init(ts_now)
+            .open_only(true)
+            .start(start)
+            .build()
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let position_cmd = GeneratePositionStatusReports::new(
-            UUID4::new(),
-            ts_now,
-            None, // instrument_id
-            start,
-            None, // end
-            None, // params
-            None, // correlation_id
-        );
+        let position_cmd = GeneratePositionStatusReportsBuilder::default()
+            .ts_init(ts_now)
+            .start(start)
+            .build()
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         let (order_reports, position_reports) = tokio::try_join!(
             self.generate_order_status_reports(&order_cmd),

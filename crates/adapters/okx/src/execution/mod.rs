@@ -35,8 +35,10 @@ use nautilus_common::{
         ExecutionEvent, ExecutionReport as NautilusExecutionReport,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-            GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+            GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
+            GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
+            GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder,
+            SubmitOrder, SubmitOrderList,
         },
     },
 };
@@ -1110,37 +1112,24 @@ impl ExecutionClient for OKXExecutionClient {
             UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns))
         });
 
-        let order_cmd = GenerateOrderStatusReports::new(
-            UUID4::new(),
-            ts_now,
-            false, // open_only - get all orders for mass status
-            None,  // instrument_id
-            start, // start
-            None,  // end
-            None,  // params
-            None,  // correlation_id
-        );
+        let order_cmd = GenerateOrderStatusReportsBuilder::default()
+            .ts_init(ts_now)
+            .open_only(false) // get all orders for mass status
+            .start(start)
+            .build()
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let fill_cmd = GenerateFillReports::new(
-            UUID4::new(),
-            ts_now,
-            None, // instrument_id
-            None, // venue_order_id
-            start,
-            None, // end
-            None, // params
-            None, // correlation_id
-        );
+        let fill_cmd = GenerateFillReportsBuilder::default()
+            .ts_init(ts_now)
+            .start(start)
+            .build()
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let position_cmd = GeneratePositionStatusReports::new(
-            UUID4::new(),
-            ts_now,
-            None, // instrument_id
-            start,
-            None, // end
-            None, // params
-            None, // correlation_id
-        );
+        let position_cmd = GeneratePositionStatusReportsBuilder::default()
+            .ts_init(ts_now)
+            .start(start)
+            .build()
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         let (order_reports, fill_reports, position_reports) = tokio::try_join!(
             self.generate_order_status_reports(&order_cmd),
