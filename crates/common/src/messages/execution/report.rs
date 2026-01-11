@@ -15,18 +15,25 @@
 
 use std::fmt::Display;
 
+use derive_builder::Builder;
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::identifiers::{ClientId, ClientOrderId, InstrumentId, TraderId, Venue};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Builder)]
 pub struct GenerateOrderStatusReport {
+    #[builder(default = "UUID4::new()")]
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    #[builder(default)]
     pub instrument_id: Option<InstrumentId>,
+    #[builder(default)]
     pub client_order_id: Option<ClientOrderId>,
+    #[builder(default)]
     pub venue_order_id: Option<ClientOrderId>,
+    #[builder(default)]
     pub params: Option<Params>,
+    #[builder(default)]
     pub correlation_id: Option<UUID4>,
 }
 
@@ -67,15 +74,21 @@ impl Display for GenerateOrderStatusReport {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Builder)]
 pub struct GenerateOrderStatusReports {
+    #[builder(default = "UUID4::new()")]
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub open_only: bool,
+    #[builder(default)]
     pub instrument_id: Option<InstrumentId>,
+    #[builder(default)]
     pub start: Option<UnixNanos>,
+    #[builder(default)]
     pub end: Option<UnixNanos>,
+    #[builder(default)]
     pub params: Option<Params>,
+    #[builder(default)]
     pub correlation_id: Option<UUID4>,
 }
 
@@ -118,15 +131,22 @@ impl Display for GenerateOrderStatusReports {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Builder)]
 pub struct GenerateFillReports {
+    #[builder(default = "UUID4::new()")]
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    #[builder(default)]
     pub instrument_id: Option<InstrumentId>,
+    #[builder(default)]
     pub venue_order_id: Option<ClientOrderId>,
+    #[builder(default)]
     pub start: Option<UnixNanos>,
+    #[builder(default)]
     pub end: Option<UnixNanos>,
+    #[builder(default)]
     pub params: Option<Params>,
+    #[builder(default)]
     pub correlation_id: Option<UUID4>,
 }
 
@@ -169,14 +189,20 @@ impl Display for GenerateFillReports {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Builder)]
 pub struct GeneratePositionStatusReports {
+    #[builder(default = "UUID4::new()")]
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    #[builder(default)]
     pub instrument_id: Option<InstrumentId>,
+    #[builder(default)]
     pub start: Option<UnixNanos>,
+    #[builder(default)]
     pub end: Option<UnixNanos>,
+    #[builder(default)]
     pub params: Option<Params>,
+    #[builder(default)]
     pub correlation_id: Option<UUID4>,
 }
 
@@ -215,14 +241,18 @@ impl Display for GeneratePositionStatusReports {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Builder)]
 pub struct GenerateExecutionMassStatus {
     pub trader_id: TraderId,
     pub client_id: ClientId,
+    #[builder(default)]
     pub venue: Option<Venue>,
+    #[builder(default = "UUID4::new()")]
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    #[builder(default)]
     pub params: Option<Params>,
+    #[builder(default)]
     pub correlation_id: Option<UUID4>,
 }
 

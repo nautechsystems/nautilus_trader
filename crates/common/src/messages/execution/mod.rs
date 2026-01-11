@@ -35,8 +35,10 @@ pub use self::{
     modify::ModifyOrder,
     query::{QueryAccount, QueryOrder},
     report::{
-        GenerateExecutionMassStatus, GenerateFillReports, GenerateOrderStatusReport,
-        GenerateOrderStatusReports, GeneratePositionStatusReports,
+        GenerateExecutionMassStatus, GenerateExecutionMassStatusBuilder, GenerateFillReports,
+        GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReportBuilder,
+        GenerateOrderStatusReports, GenerateOrderStatusReportsBuilder,
+        GeneratePositionStatusReports, GeneratePositionStatusReportsBuilder,
     },
     submit::{SubmitOrder, SubmitOrderList},
 };
