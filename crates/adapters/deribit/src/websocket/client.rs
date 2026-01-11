@@ -37,6 +37,7 @@ use nautilus_core::{
     consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
+    enums::OrderSide,
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
@@ -1062,9 +1063,9 @@ impl DeribitWebSocketClient {
         self.send_unsubscribe(channels).await
     }
 
-    /// Sends a buy order to Deribit via WebSocket.
+    /// Submits an order to Deribit via WebSocket.
     ///
-    /// The order parameters are sent using the `private/buy` JSON-RPC method.
+    /// Routes to `private/buy` or `private/sell` JSON-RPC method based on order side.
     /// Requires authentication (call `authenticate_session()` first).
     ///
     /// # Errors
@@ -1072,8 +1073,9 @@ impl DeribitWebSocketClient {
     /// Returns an error if:
     /// - The client is not authenticated
     /// - The command fails to send
-    pub async fn buy(
+    pub async fn submit_order(
         &self,
+        order_side: OrderSide,
         params: DeribitOrderParams,
         client_order_id: ClientOrderId,
         trader_id: TraderId,
@@ -1082,82 +1084,52 @@ impl DeribitWebSocketClient {
     ) -> DeribitWsResult<()> {
         if !self.is_authenticated() {
             return Err(DeribitWsError::Authentication(
-                "Buy order requires authentication. Call authenticate_session() first.".to_string(),
-            ));
-        }
-
-        log::info!(
-            "Sending buy order: instrument={}, amount={}, price={:?}, client_order_id={}",
-            params.instrument_name,
-            params.amount,
-            params.price,
-            client_order_id
-        );
-
-        self.cmd_tx
-            .read()
-            .await
-            .send(HandlerCommand::Buy {
-                params,
-                client_order_id,
-                trader_id,
-                strategy_id,
-                instrument_id,
-            })
-            .map_err(|e| DeribitWsError::Send(e.to_string()))?;
-
-        Ok(())
-    }
-
-    /// Sends a sell order to Deribit via WebSocket.
-    ///
-    /// The order parameters are sent using the `private/sell` JSON-RPC method.
-    /// Requires authentication (call `authenticate_session()` first).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The client is not authenticated
-    /// - The command fails to send
-    pub async fn sell(
-        &self,
-        params: DeribitOrderParams,
-        client_order_id: ClientOrderId,
-        trader_id: TraderId,
-        strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-    ) -> DeribitWsResult<()> {
-        if !self.is_authenticated() {
-            return Err(DeribitWsError::Authentication(
-                "Sell order requires authentication. Call authenticate_session() first."
+                "Submit order requires authentication. Call authenticate_session() first."
                     .to_string(),
             ));
         }
 
         log::info!(
-            "Sending sell order: instrument={}, amount={}, price={:?}, client_order_id={}",
+            "Sending {} order: instrument={}, amount={}, price={:?}, client_order_id={}",
+            order_side,
             params.instrument_name,
             params.amount,
             params.price,
             client_order_id
         );
 
-        self.cmd_tx
-            .read()
-            .await
-            .send(HandlerCommand::Sell {
+        let cmd = match order_side {
+            OrderSide::Buy => HandlerCommand::Buy {
                 params,
                 client_order_id,
                 trader_id,
                 strategy_id,
                 instrument_id,
-            })
+            },
+            OrderSide::Sell => HandlerCommand::Sell {
+                params,
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            },
+            _ => {
+                return Err(DeribitWsError::ClientError(format!(
+                    "Invalid order side: {order_side}"
+                )));
+            }
+        };
+
+        self.cmd_tx
+            .read()
+            .await
+            .send(cmd)
             .map_err(|e| DeribitWsError::Send(e.to_string()))?;
 
         Ok(())
     }
 
-    /// Edits an existing order on Deribit via WebSocket.
+    /// Modifies an existing order on Deribit via WebSocket.
     ///
     /// The order parameters are sent using the `private/edit` JSON-RPC method.
     /// Requires authentication (call `authenticate_session()` first).
@@ -1168,7 +1140,7 @@ impl DeribitWebSocketClient {
     /// - The client is not authenticated
     /// - The command fails to send
     #[allow(clippy::too_many_arguments)]
-    pub async fn edit(
+    pub async fn modify_order(
         &self,
         order_id: &str,
         quantity: Quantity,
@@ -1180,7 +1152,7 @@ impl DeribitWebSocketClient {
     ) -> DeribitWsResult<()> {
         if !self.is_authenticated() {
             return Err(DeribitWsError::Authentication(
-                "Edit order requires authentication. Call authenticate_session() first."
+                "Modify order requires authentication. Call authenticate_session() first."
                     .to_string(),
             ));
         }
@@ -1195,7 +1167,7 @@ impl DeribitWebSocketClient {
         };
 
         log::info!(
-            "Sending edit order: order_id={order_id}, quantity={quantity}, price={price}, client_order_id={client_order_id}"
+            "Sending modify order: order_id={order_id}, quantity={quantity}, price={price}, client_order_id={client_order_id}"
         );
 
         self.cmd_tx
@@ -1223,7 +1195,7 @@ impl DeribitWebSocketClient {
     /// Returns an error if:
     /// - The client is not authenticated
     /// - The command fails to send
-    pub async fn cancel(
+    pub async fn cancel_order(
         &self,
         order_id: &str,
         client_order_id: ClientOrderId,
@@ -1269,9 +1241,8 @@ impl DeribitWebSocketClient {
     /// Returns an error if:
     /// - The client is not authenticated
     /// - The command fails to send
-    pub async fn cancel_all_by_instrument(
+    pub async fn cancel_all_orders(
         &self,
-        instrument_name: &str,
         instrument_id: InstrumentId,
         order_type: Option<String>,
     ) -> DeribitWsResult<()> {
@@ -1282,12 +1253,13 @@ impl DeribitWebSocketClient {
             ));
         }
 
+        let instrument_name = instrument_id.symbol.to_string();
         let params = DeribitCancelAllByInstrumentParams {
-            instrument_name: instrument_name.to_string(),
+            instrument_name: instrument_name.clone(),
             order_type,
         };
 
-        log::info!("Sending cancel_all_by_instrument: instrument={instrument_name}");
+        log::info!("Sending cancel_all_orders: instrument={instrument_name}");
 
         self.cmd_tx
             .read()
@@ -1301,7 +1273,7 @@ impl DeribitWebSocketClient {
         Ok(())
     }
 
-    /// Gets the state of an order on Deribit via WebSocket.
+    /// Queries the state of an order on Deribit via WebSocket.
     ///
     /// Uses the `private/get_order_state` JSON-RPC method.
     /// Requires authentication (call `authenticate_session()` first).
@@ -1311,7 +1283,7 @@ impl DeribitWebSocketClient {
     /// Returns an error if:
     /// - The client is not authenticated
     /// - The command fails to send
-    pub async fn get_order_state(
+    pub async fn query_order(
         &self,
         order_id: &str,
         client_order_id: ClientOrderId,
@@ -1321,14 +1293,12 @@ impl DeribitWebSocketClient {
     ) -> DeribitWsResult<()> {
         if !self.is_authenticated() {
             return Err(DeribitWsError::Authentication(
-                "Get order state requires authentication. Call authenticate_session() first."
+                "Query order state requires authentication. Call authenticate_session() first."
                     .to_string(),
             ));
         }
 
-        log::info!(
-            "Sending get_order_state: order_id={order_id}, client_order_id={client_order_id}"
-        );
+        log::info!("Sending query_order: order_id={order_id}, client_order_id={client_order_id}");
 
         self.cmd_tx
             .read()

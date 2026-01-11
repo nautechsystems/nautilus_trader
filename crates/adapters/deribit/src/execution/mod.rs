@@ -330,35 +330,16 @@ impl DeribitExecutionClient {
         let account_id = self.core.account_id;
 
         self.spawn_task(task_name, async move {
-            let result = match order_side {
-                OrderSide::Buy => {
-                    ws_client
-                        .buy(
-                            params,
-                            client_order_id,
-                            trader_id,
-                            strategy_id,
-                            instrument_id,
-                        )
-                        .await
-                }
-                OrderSide::Sell => {
-                    ws_client
-                        .sell(
-                            params,
-                            client_order_id,
-                            trader_id,
-                            strategy_id,
-                            instrument_id,
-                        )
-                        .await
-                }
-                OrderSide::NoOrderSide => {
-                    anyhow::bail!(
-                        "NoOrderSide is not allowed for order submission, must be Buy or Sell"
-                    );
-                }
-            };
+            let result = ws_client
+                .submit_order(
+                    order_side,
+                    params,
+                    client_order_id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                )
+                .await;
 
             if let Err(e) = result {
                 let rejected_event = OrderRejected::new(
@@ -662,7 +643,7 @@ impl ExecutionClient for DeribitExecutionClient {
         // Response will be dispatched through the WebSocket stream handler as OrderStatusReport
         self.spawn_task("query_order", async move {
             ws_client
-                .get_order_state(
+                .query_order(
                     &order_id,
                     client_order_id,
                     trader_id,
@@ -740,10 +721,10 @@ impl ExecutionClient for DeribitExecutionClient {
             "Modifying order: order_id={order_id}, quantity={quantity}, price={price}, client_order_id={client_order_id}"
         );
 
-        // Spawn async task to send edit via WebSocket
+        // Spawn async task to send modify via WebSocket
         self.spawn_task("modify_order", async move {
             if let Err(e) = ws_client
-                .edit(
+                .modify_order(
                     &order_id,
                     quantity,
                     price,
@@ -813,7 +794,7 @@ impl ExecutionClient for DeribitExecutionClient {
         // Spawn async task to send cancel via WebSocket
         self.spawn_task("cancel_order", async move {
             if let Err(e) = ws_client
-                .cancel(
+                .cancel_order(
                     &order_id,
                     client_order_id,
                     trader_id,
@@ -877,10 +858,7 @@ impl ExecutionClient for DeribitExecutionClient {
         );
 
         self.spawn_task("cancel_all_orders", async move {
-            if let Err(e) = ws_client
-                .cancel_all_by_instrument(&instrument_name, instrument_id, None)
-                .await
-            {
+            if let Err(e) = ws_client.cancel_all_orders(instrument_id, None).await {
                 log::error!("Cancel all orders failed for instrument {instrument_id}: {e}");
                 anyhow::bail!("Cancel all orders failed: {e}");
             }
@@ -949,7 +927,7 @@ impl ExecutionClient for DeribitExecutionClient {
 
             self.spawn_task("batch_cancel_order", async move {
                 if let Err(e) = ws_client
-                    .cancel(
+                    .cancel_order(
                         &order_id,
                         client_order_id,
                         trader_id,

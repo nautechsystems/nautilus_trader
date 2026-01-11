@@ -301,32 +301,20 @@ class DeribitExecutionClient(LiveExecutionClient):
                 ts_event=self._clock.timestamp_ns(),
             )
 
-            if order.side == OrderSide.BUY:
-                await self._ws_client.buy(
-                    quantity=pyo3_quantity,
-                    order_type=pyo3_order_type,
-                    client_order_id=pyo3_client_order_id,
-                    trader_id=pyo3_trader_id,
-                    strategy_id=pyo3_strategy_id,
-                    instrument_id=pyo3_instrument_id,
-                    price=pyo3_price,
-                    time_in_force=time_in_force_str,
-                    post_only=order.is_post_only,
-                    reduce_only=order.is_reduce_only,
-                )
-            else:  # SELL
-                await self._ws_client.sell(
-                    quantity=pyo3_quantity,
-                    order_type=pyo3_order_type,
-                    client_order_id=pyo3_client_order_id,
-                    trader_id=pyo3_trader_id,
-                    strategy_id=pyo3_strategy_id,
-                    instrument_id=pyo3_instrument_id,
-                    price=pyo3_price,
-                    time_in_force=time_in_force_str,
-                    post_only=order.is_post_only,
-                    reduce_only=order.is_reduce_only,
-                )
+            pyo3_order_side = nautilus_pyo3.OrderSide.from_str(order.side.name)
+            await self._ws_client.submit_order(
+                order_side=pyo3_order_side,
+                quantity=pyo3_quantity,
+                order_type=pyo3_order_type,
+                client_order_id=pyo3_client_order_id,
+                trader_id=pyo3_trader_id,
+                strategy_id=pyo3_strategy_id,
+                instrument_id=pyo3_instrument_id,
+                price=pyo3_price,
+                time_in_force=time_in_force_str,
+                post_only=order.is_post_only,
+                reduce_only=order.is_reduce_only,
+            )
         except Exception as e:
             self._log.error(f"Failed to submit order: {e}")
             self.generate_order_rejected(
@@ -392,33 +380,20 @@ class DeribitExecutionClient(LiveExecutionClient):
                     f"({order.side.name} {order.quantity} @ {order.price})",
                 )
 
-                # Call appropriate WebSocket method based on side
-                if order.side == OrderSide.BUY:
-                    await self._ws_client.buy(
-                        quantity=pyo3_quantity,
-                        order_type=pyo3_order_type,
-                        client_order_id=pyo3_client_order_id,
-                        trader_id=pyo3_trader_id,
-                        strategy_id=pyo3_strategy_id,
-                        instrument_id=pyo3_instrument_id,
-                        price=pyo3_price,
-                        time_in_force=time_in_force_str,
-                        post_only=order.is_post_only,
-                        reduce_only=order.is_reduce_only,
-                    )
-                else:  # SELL
-                    await self._ws_client.sell(
-                        quantity=pyo3_quantity,
-                        order_type=pyo3_order_type,
-                        client_order_id=pyo3_client_order_id,
-                        trader_id=pyo3_trader_id,
-                        strategy_id=pyo3_strategy_id,
-                        instrument_id=pyo3_instrument_id,
-                        price=pyo3_price,
-                        time_in_force=time_in_force_str,
-                        post_only=order.is_post_only,
-                        reduce_only=order.is_reduce_only,
-                    )
+                pyo3_order_side = nautilus_pyo3.OrderSide.from_str(order.side.name)
+                await self._ws_client.submit_order(
+                    order_side=pyo3_order_side,
+                    quantity=pyo3_quantity,
+                    order_type=pyo3_order_type,
+                    client_order_id=pyo3_client_order_id,
+                    trader_id=pyo3_trader_id,
+                    strategy_id=pyo3_strategy_id,
+                    instrument_id=pyo3_instrument_id,
+                    price=pyo3_price,
+                    time_in_force=time_in_force_str,
+                    post_only=order.is_post_only,
+                    reduce_only=order.is_reduce_only,
+                )
             except Exception as e:
                 self._log.error(f"Failed to submit order from list: {e}")
                 self.generate_order_rejected(
@@ -475,7 +450,7 @@ class DeribitExecutionClient(LiveExecutionClient):
                 f"to price={price} qty={quantity}",
             )
 
-            await self._ws_client.edit(
+            await self._ws_client.modify_order(
                 order_id=order.venue_order_id.value,
                 quantity=pyo3_quantity,
                 price=pyo3_price,
@@ -533,7 +508,7 @@ class DeribitExecutionClient(LiveExecutionClient):
                 f"Canceling order {order.client_order_id} (venue: {order.venue_order_id})",
             )
 
-            await self._ws_client.cancel(
+            await self._ws_client.cancel_order(
                 order_id=order.venue_order_id.value,
                 client_order_id=pyo3_client_order_id,
                 trader_id=pyo3_trader_id,
@@ -566,7 +541,7 @@ class DeribitExecutionClient(LiveExecutionClient):
                 f"Cancelling all orders for instrument {command.instrument_id}",
             )
 
-            await self._ws_client.cancel_all_by_instrument(
+            await self._ws_client.cancel_all_orders(
                 instrument_id=pyo3_instrument_id,
                 order_type=None,  # Cancel all order types
             )
@@ -623,7 +598,7 @@ class DeribitExecutionClient(LiveExecutionClient):
                     f"Batch cancel: {order.client_order_id} (venue: {order.venue_order_id})",
                 )
 
-                await self._ws_client.cancel(
+                await self._ws_client.cancel_order(
                     order_id=order.venue_order_id.value,
                     client_order_id=pyo3_client_order_id,
                     trader_id=pyo3_trader_id,
@@ -667,7 +642,7 @@ class DeribitExecutionClient(LiveExecutionClient):
                 f"Querying order {order.client_order_id} (venue: {order.venue_order_id})",
             )
 
-            await self._ws_client.get_order_state(
+            await self._ws_client.query_order(
                 order_id=order.venue_order_id.value,
                 client_order_id=pyo3_client_order_id,
                 trader_id=pyo3_trader_id,
