@@ -613,7 +613,8 @@ impl LiveNode {
         pending.drain();
 
         if engines_connected {
-            // Now start trader - instruments are in cache after drain()
+            // Run reconciliation now that instruments are in cache and start trader
+            self.perform_startup_reconciliation().await?;
             self.kernel.start_trader();
         } else {
             log::error!("Not starting trader: engine client(s) not connected");
@@ -716,6 +717,7 @@ impl LiveNode {
     }
 
     /// Returns `true` if all engines connected successfully, `false` otherwise.
+    /// Note: Does NOT run reconciliation - that happens after pending events are drained.
     async fn complete_startup(&mut self) -> anyhow::Result<bool> {
         self.kernel.connect_clients().await;
 
@@ -723,7 +725,6 @@ impl LiveNode {
             return Ok(false);
         }
 
-        self.perform_startup_reconciliation().await?;
         Ok(true)
     }
 
