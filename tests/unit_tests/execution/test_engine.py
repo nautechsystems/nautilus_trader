@@ -4521,3 +4521,150 @@ class TestExecutionEngine:
         assert client.id == sim_client_id  # Should route to SIM despite account_id
         assert sim_client_id in engine.registered_clients
         assert ib_client_id in engine.registered_clients
+
+    def test_multi_account_routing_priority_comprehensive(self) -> None:
+        # Arrange - Set up three clients to test all routing priorities:
+        # 1. IB client (multi-venue broker, no venue)
+        # 2. SIM client (single-venue)
+        # 3. DEFAULT client (fallback)
+        ib_client_id = ClientId("IB")
+        sim_client_id = ClientId("SIM")
+        default_client_id = ClientId("DEFAULT")
+
+        test_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+
+        ib_client = MockExecutionClient(
+            client_id=ib_client_id,
+            venue=None,  # Multi-venue broker
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        sim_client = MockExecutionClient(
+            client_id=sim_client_id,
+            venue=Venue("SIM"),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        default_client = MockExecutionClient(
+            client_id=default_client_id,
+            venue=Venue("DEFAULT"),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        engine = ExecutionEngine(
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        engine.register_client(ib_client)
+        engine.register_client(sim_client)
+        engine.register_default_client(default_client)
+
+        # Add instrument to cache for venue-based routing
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        # Test 1: Explicit client_id takes highest priority
+        order1 = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+        )
+        order1.apply(TestEventStubs.order_submitted(order1, account_id=AccountId("IB-001")))
+
+        cmd1 = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            order=order1,
+            position_id=None,
+            client_id=sim_client_id,  # Explicit: should override account_id routing
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        client = engine._find_client_for_command(cmd1)
+        assert client.id == sim_client_id, "Explicit client_id should take priority"
+
+        # Test 2: Account ID issuer routes to matching client
+        order2 = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+        )
+        order2.apply(TestEventStubs.order_submitted(order2, account_id=AccountId("IB-002")))
+
+        cmd2 = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            order=order2,
+            position_id=None,
+            client_id=None,  # No explicit client_id
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        client = engine._find_client_for_command(cmd2)
+        assert client.id == ib_client_id, "Account issuer 'IB' should route to IB client"
+
+        # Test 3: Venue-based routing when no account_id match
+        order3 = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+        )
+        # No account_id set - should fall back to venue routing
+
+        cmd3 = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            order=order3,
+            position_id=None,
+            client_id=None,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        client = engine._find_client_for_command(cmd3)
+        assert client.id == sim_client_id, "Should route to SIM client via venue"
+
+        # Test 4: Default client fallback for unknown venue
+        unknown_instrument_id = InstrumentId.from_str("XYZ/USD.UNKNOWN")
+        order4 = self.order_factory.market(
+            instrument_id=unknown_instrument_id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+        )
+
+        cmd4 = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            order=order4,
+            position_id=None,
+            client_id=None,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        client = engine._find_client_for_command(cmd4)
+        assert client.id == default_client_id, "Should fall back to default client"
+
+        # Test 5: QueryAccount routes by account_id issuer
+        query_cmd = QueryAccount(
+            trader_id=self.trader_id,
+            account_id=AccountId("IB-003"),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=None,
+        )
+        client = engine._find_client_for_command(query_cmd)
+        assert client.id == ib_client_id, "QueryAccount should route by account_id issuer"

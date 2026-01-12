@@ -644,8 +644,7 @@ cdef class RiskEngine(Component):
 
         # Check each account group separately
         cdef list account_orders
-        for account_id, account_order in orders_by_account.items():
-            account_orders = orders_by_account[account_id]
+        for account_id, account_orders in orders_by_account.items():
             if not self._check_orders_risk_for_account(instrument, account_orders, account_id):
                 return False  # Denied
 

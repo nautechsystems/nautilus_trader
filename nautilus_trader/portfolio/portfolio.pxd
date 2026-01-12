@@ -53,13 +53,13 @@ cdef class Portfolio(PortfolioFacade):
     cdef str _log_price
     cdef str _log_xrate
 
-    cdef dict[tuple[InstrumentId, AccountId], Money] _unrealized_pnls
-    cdef dict[tuple[InstrumentId, AccountId], Money] _realized_pnls
+    cdef dict[InstrumentId, dict[AccountId, Money]] _unrealized_pnls
+    cdef dict[InstrumentId, dict[AccountId, Money]] _realized_pnls
     cdef dict[PositionId, Money] _snapshot_sum_per_position
     cdef dict[PositionId, Money] _snapshot_last_per_position
     cdef dict[PositionId, int] _snapshot_processed_counts
     cdef dict[PositionId, AccountId] _snapshot_account_ids
-    cdef dict[tuple[InstrumentId, AccountId], Decimal] _net_positions
+    cdef dict[InstrumentId, dict[AccountId, Decimal]] _net_positions
     cdef dict[PositionId, object] _bet_positions
     cdef object _index_bet_positions
     cdef set[InstrumentId] _pending_calcs

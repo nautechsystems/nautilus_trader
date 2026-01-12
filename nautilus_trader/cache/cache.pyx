@@ -16,6 +16,7 @@
 import pickle
 import time
 import uuid
+import warnings
 from collections import deque
 from decimal import Decimal
 
@@ -109,6 +110,7 @@ cdef class Cache(CacheFacade):
 
         # Configuration
         self._drop_instruments_on_reset = config.drop_instruments_on_reset
+        self._specific_venue = None
         self.has_backing = database is not None
         self.persist_account_events = config.persist_account_events
         self.tick_capacity = config.tick_capacity
@@ -176,6 +178,31 @@ cdef class Cache(CacheFacade):
         self._log.info("READY")
 
 # -- COMMANDS -------------------------------------------------------------------------------------
+
+    cpdef void set_specific_venue(self, Venue venue):
+        """
+        Set a specific venue for the cache to use for account lookups.
+
+        Primarily for Interactive Brokers, a multi-venue brokerage where account
+        updates are not tied to a single venue.
+
+        Parameters
+        ----------
+        venue : Venue
+            The specific venue to set.
+
+        """
+        Condition.not_none(venue, "venue")
+
+        warnings.warn(
+            "set_specific_venue() is deprecated and will be removed in a future version. "
+            "Use set_account_id_for_venue() for venue-to-account mapping, "
+            "or pass client_id on SubmitOrder for explicit routing.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+        self._specific_venue = venue
 
     cpdef void cache_all(self):
         """
@@ -3757,10 +3784,14 @@ cdef class Cache(CacheFacade):
             Condition.not_none(venue, "venue or account_id must be provided")
 
         cdef AccountId resolved_account_id = None
+        cdef Venue lookup_venue
+
         if account_id is not None:
             resolved_account_id = account_id
         elif venue is not None:
-            resolved_account_id = self._index_venue_account.get(venue)
+            # Use specific venue override if set (deprecated)
+            lookup_venue = self._specific_venue if self._specific_venue is not None else venue
+            resolved_account_id = self._index_venue_account.get(lookup_venue)
 
         if resolved_account_id is None:
             return None

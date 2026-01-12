@@ -160,13 +160,13 @@ cdef class Portfolio(PortfolioFacade):
             interval_ns = config.min_account_state_logging_interval_ms * NANOSECONDS_IN_MILLISECOND
             self._min_account_state_logging_interval_ns = interval_ns
 
-        self._unrealized_pnls: dict[tuple[InstrumentId, AccountId], Money] = {}
-        self._realized_pnls: dict[tuple[InstrumentId, AccountId], Money] = {}
+        self._unrealized_pnls: dict[InstrumentId, dict[AccountId, Money]] = {}
+        self._realized_pnls: dict[InstrumentId, dict[AccountId, Money]] = {}
         self._snapshot_sum_per_position: dict[PositionId, Money] = {}
         self._snapshot_last_per_position: dict[PositionId, Money] = {}
         self._snapshot_processed_counts: dict[PositionId, int] = {}
         self._snapshot_account_ids: dict[PositionId, AccountId] = {}
-        self._net_positions: dict[tuple[InstrumentId, AccountId], Decimal] = {}
+        self._net_positions: dict[InstrumentId, dict[AccountId, Decimal]] = {}
         self._bet_positions: dict[InstrumentId, object] = {}
         self._index_bet_positions: dict[InstrumentId, set[PositionId]] = defaultdict(set)
         self._pending_calcs: set[InstrumentId] = set()
@@ -337,7 +337,6 @@ cdef class Portfolio(PortfolioFacade):
             AccountId account_id
             Money realized_pnl
             Money unrealized_pnl
-            tuple cache_key
         for instrument_id in instruments:
             instrument = self._cache.instrument(instrument_id)
             if instrument is None:
@@ -600,9 +599,10 @@ cdef class Portfolio(PortfolioFacade):
         )
 
         # Invalidate cached PnLs for this instrument and account only
-        cdef tuple cache_key = (event.instrument_id, event.account_id)
-        self._realized_pnls.pop(cache_key, None)
-        self._unrealized_pnls.pop(cache_key, None)
+        if event.instrument_id in self._realized_pnls:
+            self._realized_pnls[event.instrument_id].pop(event.account_id, None)
+        if event.instrument_id in self._unrealized_pnls:
+            self._unrealized_pnls[event.instrument_id].pop(event.account_id, None)
 
         cdef Account account = self._cache.account(event.account_id)
 
@@ -1564,15 +1564,20 @@ cdef class Portfolio(PortfolioFacade):
             True if net flat across all instruments, else False.
 
         """
-        cdef tuple cache_key
-        cdef object net_position
-        for cache_key, net_position in self._net_positions.items():
-            # Filter by account_id if provided
-            if account_id is not None and cache_key[1] != account_id:
-                continue
+        cdef:
+            InstrumentId instrument_id
+            AccountId acct_id
+            dict account_positions
+            object net_position
 
-            if net_position != Decimal(0):
-                return False
+        for instrument_id, account_positions in self._net_positions.items():
+            for acct_id, net_position in account_positions.items():
+                # Filter by account_id if provided
+                if account_id is not None and acct_id != account_id:
+                    continue
+
+                if net_position != Decimal(0):
+                    return False
 
         return True
 
@@ -1610,7 +1615,7 @@ cdef class Portfolio(PortfolioFacade):
             Position position
             AccountId account_id
             object net_position  # Decimal
-            tuple cache_key
+            object existing_position  # Decimal
             set[AccountId] accounts_with_positions = set()
 
         # Calculate net position per account
@@ -1622,34 +1627,30 @@ cdef class Portfolio(PortfolioFacade):
 
             net_positions_by_account[account_id] += position.signed_decimal_qty()
 
+        # Ensure instrument entry exists
+        if instrument_id not in self._net_positions:
+            self._net_positions[instrument_id] = {}
+
         # Update cache for each account with positions
         for account_id, net_position in net_positions_by_account.items():
-            cache_key = (instrument_id, account_id)
-            existing_position = self._net_positions.get(cache_key, Decimal(0))
+            existing_position = self._net_positions[instrument_id].get(account_id, Decimal(0))
 
             if existing_position != net_position:
-                self._net_positions[cache_key] = net_position
+                self._net_positions[instrument_id][account_id] = net_position
                 self._log.info(f"{instrument_id} account={account_id} net_position={net_position}")
 
         # Clear cache entries for accounts that no longer have open positions
-        cdef list keys_to_remove = []
-        for cache_key in self._net_positions.keys():
-            if cache_key[0] == instrument_id and cache_key[1] not in accounts_with_positions:
-                keys_to_remove.append(cache_key)
+        cdef list accounts_to_remove = []
+        for account_id in self._net_positions[instrument_id].keys():
+            if account_id not in accounts_with_positions:
+                accounts_to_remove.append(account_id)
 
-        for cache_key in keys_to_remove:
-            self._net_positions.pop(cache_key, None)
+        for account_id in accounts_to_remove:
+            self._net_positions[instrument_id].pop(account_id, None)
 
     cdef void _update_instrument_id(self, InstrumentId instrument_id):
         # Invalidate cached PnLs for this instrument (all accounts)
-        cdef list keys_to_remove = []
-        cdef tuple cache_key
-        for cache_key in self._unrealized_pnls.keys():
-            if cache_key[0] == instrument_id:
-                keys_to_remove.append(cache_key)
-
-        for cache_key in keys_to_remove:
-            self._unrealized_pnls.pop(cache_key, None)
+        self._unrealized_pnls.pop(instrument_id, None)
 
         if self.initialized:
             return
@@ -1750,35 +1751,25 @@ cdef class Portfolio(PortfolioFacade):
         return result
 
     cdef Money _aggregate_pnl_from_cache(self, InstrumentId instrument_id, bint is_realized):
-        # Aggregate PnL from cache by iterating cache keys matching the instrument_id.
+        # Aggregate PnL from cache for the given instrument across all accounts.
         # If cache is empty, calculates PnL for all accounts with positions.
-        # The cache dictionary is inferred from is_realized.
         cdef:
             dict pnl_cache = self._realized_pnls if is_realized else self._unrealized_pnls
             str pnl_type = "realized" if is_realized else "unrealized"
             Money total_pnl = None
-            tuple cache_key_iter
             Money pnl
             Instrument inst
-            bint cache_empty = True
+            dict account_pnls = pnl_cache.get(instrument_id)
 
-        for cache_key_iter in pnl_cache.keys():
-            if cache_key_iter[0] == instrument_id:
-                cache_empty = False
-                pnl = pnl_cache[cache_key_iter]
-                if pnl is not None:
-                    total_pnl = self._add_pnl_to_total(total_pnl, pnl, pnl_type)
-                    if total_pnl is None:
-                        return None  # Currency mismatch
+        # If nothing in cache for this instrument, calculate PnL
+        if account_pnls is None or len(account_pnls) == 0:
+            return self._aggregate_pnl_by_calculation(instrument_id, price=None, is_realized=is_realized)
 
-        # If nothing in cache, calculate PnL for all accounts with positions
-        if cache_empty:
-            if is_realized:
-                # For realized PnL, check both positions and position snapshots
-                return self._aggregate_pnl_by_calculation(instrument_id, price=None, is_realized=True)
-            else:
-                # For unrealized PnL, calculate with current price
-                return self._aggregate_pnl_by_calculation(instrument_id, price=None, is_realized=False)
+        for pnl in account_pnls.values():
+            if pnl is not None:
+                total_pnl = self._add_pnl_to_total(total_pnl, pnl, pnl_type)
+                if total_pnl is None:
+                    return None  # Currency mismatch
 
         # If cache has entries but total_pnl is None, check if instrument exists and return zero
         if total_pnl is None:
@@ -1884,14 +1875,15 @@ cdef class Portfolio(PortfolioFacade):
         bint is_realized,
     ):
         # Get PnL from cache or calculate and cache if missing.
-        # The cache dictionary is inferred from is_realized.
         cdef:
             dict pnl_cache = self._realized_pnls if is_realized else self._unrealized_pnls
-            tuple cache_key = (instrument_id, account_id)
-            Money pnl = pnl_cache.get(cache_key)
+            dict account_pnls = pnl_cache.get(instrument_id)
+            Money pnl
 
-        if pnl is not None:
-            return pnl
+        if account_pnls is not None:
+            pnl = account_pnls.get(account_id)
+            if pnl is not None:
+                return pnl
 
         if is_realized:
             pnl = self._calculate_realized_pnl(instrument_id, account_id)
@@ -1899,29 +1891,24 @@ cdef class Portfolio(PortfolioFacade):
             pnl = self._calculate_unrealized_pnl(instrument_id, price=None, account_id=account_id)
 
         if pnl is not None:
-            pnl_cache[cache_key] = pnl
+            if instrument_id not in pnl_cache:
+                pnl_cache[instrument_id] = {}
+            pnl_cache[instrument_id][account_id] = pnl
 
         return pnl
 
     cdef object _net_position(self, InstrumentId instrument_id, AccountId account_id=None):
         # Get net position for instrument and account. If account_id is None, aggregate across all accounts.
-        cdef:
-            tuple cache_key
-            object total_net_position  # Decimal
-            tuple cache_key_iter
+        cdef dict account_positions = self._net_positions.get(instrument_id)
+
+        if account_positions is None:
+            return Decimal(0)
 
         if account_id is not None:
-            # Single account
-            cache_key = (instrument_id, account_id)
-            return self._net_positions.get(cache_key, Decimal(0))
-        else:
-            # Aggregate across all accounts
-            total_net_position = Decimal(0)
-            for cache_key_iter in self._net_positions.keys():
-                if cache_key_iter[0] == instrument_id:
-                    total_net_position += self._net_positions[cache_key_iter]
+            return account_positions.get(account_id, Decimal(0))
 
-            return total_net_position
+        # Aggregate across all accounts
+        return sum(account_positions.values(), Decimal(0))
 
     cdef Money _calculate_realized_pnl(self, InstrumentId instrument_id, AccountId account_id=None):
         cdef Account account = self._cache.account_for_venue(instrument_id.venue, account_id)

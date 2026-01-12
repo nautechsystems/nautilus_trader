@@ -241,6 +241,10 @@ cdef class CacheFacade:
 
 # -- ACCOUNT QUERIES ------------------------------------------------------------------------------
 
+    cpdef void set_specific_venue(self, Venue venue):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `set_specific_venue` must be implemented in the subclass")  # pragma: no cover
+
     cpdef Account account(self, AccountId account_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `account` must be implemented in the subclass")  # pragma: no cover
