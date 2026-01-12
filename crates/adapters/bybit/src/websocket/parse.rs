@@ -48,7 +48,7 @@ use crate::common::{
         BybitTriggerDirection,
     },
     parse::{
-        get_currency, parse_millis_timestamp, parse_price_with_precision,
+        get_currency, parse_book_level, parse_millis_timestamp, parse_price_with_precision,
         parse_quantity_with_precision,
     },
 };
@@ -374,23 +374,6 @@ pub(crate) fn parse_millis_i64(value: i64, field: &str) -> anyhow::Result<UnixNa
             .ok_or_else(|| anyhow::anyhow!("millisecond timestamp overflowed"))?;
         Ok(UnixNanos::from(nanos))
     }
-}
-
-fn parse_book_level(
-    level: &[String],
-    price_precision: u8,
-    size_precision: u8,
-    label: &str,
-) -> anyhow::Result<(Price, Quantity)> {
-    let price_str = level
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("missing price component in {label} level"))?;
-    let size_str = level
-        .get(1)
-        .ok_or_else(|| anyhow::anyhow!("missing size component in {label} level"))?;
-    let price = parse_price_with_precision(price_str, price_precision, label)?;
-    let size = parse_quantity_with_precision(size_str, size_precision, label)?;
-    Ok((price, size))
 }
 
 /// Parses a WebSocket kline payload into a [`Bar`].

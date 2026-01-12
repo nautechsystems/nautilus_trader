@@ -24,10 +24,11 @@ pub use nautilus_core::serialization::{
 };
 use nautilus_core::{UUID4, datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
 use nautilus_model::{
-    data::{Bar, BarType, TradeTick},
+    data::{Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, TradeTick},
     enums::{
-        AccountType, AggressorSide, AssetClass, BarAggregation, LiquiditySide, OptionKind,
-        OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce, TriggerType,
+        AccountType, AggressorSide, AssetClass, BarAggregation, BookAction, LiquiditySide,
+        OptionKind, OrderSide, OrderStatus, OrderType, PositionSideSpecified, RecordFlag,
+        TimeInForce, TriggerType,
     },
     events::account::state::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, Venue, VenueOrderId},
@@ -53,9 +54,10 @@ use crate::{
     },
     http::models::{
         BybitExecution, BybitFeeRate, BybitInstrumentInverse, BybitInstrumentLinear,
-        BybitInstrumentOption, BybitInstrumentSpot, BybitKline, BybitPosition, BybitTrade,
-        BybitWalletBalance,
+        BybitInstrumentOption, BybitInstrumentSpot, BybitKline, BybitOrderbookResult,
+        BybitPosition, BybitTrade, BybitWalletBalance,
     },
+    websocket::parse::parse_millis_i64,
 };
 
 const BYBIT_MINUTE_INTERVALS: &[u64] = &[1, 3, 5, 15, 30, 60, 120, 240, 360, 720];
@@ -558,6 +560,85 @@ pub fn parse_trade_tick(
         ts_init,
     )
     .context("failed to construct TradeTick from Bybit trade payload")
+}
+
+/// Parses an order book response into [`OrderBookDeltas`].
+pub fn parse_orderbook(
+    result: &BybitOrderbookResult,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderBookDeltas> {
+    let ts_event = parse_millis_i64(result.ts, "orderbook.timestamp")?;
+
+    let instrument_id = instrument.id();
+    let price_precision = instrument.price_precision();
+    let size_precision = instrument.size_precision();
+    let update_id = u64::try_from(result.u)
+        .context("received negative update id in Bybit order book message")?;
+    let sequence = u64::try_from(result.seq)
+        .context("received negative sequence in Bybit order book message")?;
+
+    let total_levels = result.b.len() + result.a.len();
+    let mut deltas = Vec::with_capacity(total_levels + 1);
+
+    let mut clear = OrderBookDelta::clear(instrument_id, sequence, ts_event, ts_init);
+    if total_levels == 0 {
+        clear.flags |= RecordFlag::F_LAST as u8;
+    }
+    deltas.push(clear);
+
+    let mut processed = 0_usize;
+
+    let mut push_level = |values: &[String], side: OrderSide| -> anyhow::Result<()> {
+        let (price, size) = parse_book_level(values, price_precision, size_precision, "orderbook")?;
+
+        processed += 1;
+        let mut flags = RecordFlag::F_MBP as u8;
+        if processed == total_levels {
+            flags |= RecordFlag::F_LAST as u8;
+        }
+
+        let order = BookOrder::new(side, price, size, update_id);
+        let delta = OrderBookDelta::new_checked(
+            instrument_id,
+            BookAction::Add,
+            order,
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        )
+        .context("failed to construct OrderBookDelta from Bybit book level")?;
+        deltas.push(delta);
+        Ok(())
+    };
+
+    for level in &result.b {
+        push_level(level, OrderSide::Buy)?;
+    }
+    for level in &result.a {
+        push_level(level, OrderSide::Sell)?;
+    }
+
+    OrderBookDeltas::new_checked(instrument_id, deltas)
+        .context("failed to assemble OrderBookDeltas from Bybit message")
+}
+
+pub fn parse_book_level(
+    level: &[String],
+    price_precision: u8,
+    size_precision: u8,
+    label: &str,
+) -> anyhow::Result<(Price, Quantity)> {
+    let price_str = level
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("missing price component in {label} level"))?;
+    let size_str = level
+        .get(1)
+        .ok_or_else(|| anyhow::anyhow!("missing size component in {label} level"))?;
+    let price = parse_price_with_precision(price_str, price_precision, label)?;
+    let size = parse_quantity_with_precision(size_str, size_precision, label)?;
+    Ok((price, size))
 }
 
 /// Parses a kline entry into a [`Bar`].

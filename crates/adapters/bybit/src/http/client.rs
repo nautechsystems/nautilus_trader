@@ -35,7 +35,7 @@ use nautilus_core::{
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    data::{Bar, BarType, TradeTick},
+    data::{Bar, BarType, OrderBookDeltas, TradeTick},
     enums::{OrderSide, OrderType, PositionSideSpecified, TimeInForce},
     events::account::state::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
@@ -60,10 +60,10 @@ use super::{
         BybitInstrumentInverseResponse, BybitInstrumentLinearResponse,
         BybitInstrumentOptionResponse, BybitInstrumentSpotResponse, BybitKlinesResponse,
         BybitNoConvertRepayResponse, BybitOpenOrdersResponse, BybitOrderHistoryResponse,
-        BybitPlaceOrderResponse, BybitPositionListResponse, BybitServerTimeResponse,
-        BybitSetLeverageResponse, BybitSetMarginModeResponse, BybitSetTradingStopResponse,
-        BybitSwitchModeResponse, BybitTickerData, BybitTradeHistoryResponse, BybitTradesResponse,
-        BybitWalletBalanceResponse,
+        BybitOrderbookResponse, BybitPlaceOrderResponse, BybitPositionListResponse,
+        BybitServerTimeResponse, BybitSetLeverageResponse, BybitSetMarginModeResponse,
+        BybitSetTradingStopResponse, BybitSwitchModeResponse, BybitTickerData,
+        BybitTradeHistoryResponse, BybitTradesResponse, BybitWalletBalanceResponse,
     },
     query::{
         BybitAmendOrderParamsBuilder, BybitBatchAmendOrderEntryBuilder,
@@ -72,10 +72,11 @@ use super::{
         BybitCancelAllOrdersParamsBuilder, BybitCancelOrderParamsBuilder, BybitFeeRateParams,
         BybitInstrumentsInfoParams, BybitKlinesParams, BybitKlinesParamsBuilder,
         BybitNoConvertRepayParamsBuilder, BybitOpenOrdersParamsBuilder,
-        BybitOrderHistoryParamsBuilder, BybitPlaceOrderParamsBuilder, BybitPositionListParams,
-        BybitSetLeverageParamsBuilder, BybitSetMarginModeParamsBuilder, BybitSetTradingStopParams,
-        BybitSwitchModeParamsBuilder, BybitTickersParams, BybitTradeHistoryParams,
-        BybitTradesParams, BybitTradesParamsBuilder, BybitWalletBalanceParams,
+        BybitOrderHistoryParamsBuilder, BybitOrderbookParams, BybitPlaceOrderParamsBuilder,
+        BybitPositionListParams, BybitSetLeverageParamsBuilder, BybitSetMarginModeParamsBuilder,
+        BybitSetTradingStopParams, BybitSwitchModeParamsBuilder, BybitTickersParams,
+        BybitTradeHistoryParams, BybitTradesParams, BybitTradesParamsBuilder,
+        BybitWalletBalanceParams,
     },
 };
 use crate::{
@@ -90,13 +91,13 @@ use crate::{
         parse::{
             bar_spec_to_bybit_interval, make_bybit_symbol, parse_account_state, parse_fill_report,
             parse_inverse_instrument, parse_kline_bar, parse_linear_instrument,
-            parse_option_instrument, parse_order_status_report, parse_position_status_report,
-            parse_spot_instrument, parse_trade_tick,
+            parse_option_instrument, parse_order_status_report, parse_orderbook,
+            parse_position_status_report, parse_spot_instrument, parse_trade_tick,
         },
         symbol::BybitSymbol,
         urls::bybit_http_base_url,
     },
-    http::query::BybitFeeRateParamsBuilder,
+    http::query::{BybitFeeRateParamsBuilder, BybitOrderbookParamsBuilder},
 };
 
 const DEFAULT_RECV_WINDOW_MS: u64 = 5_000;
@@ -662,6 +663,29 @@ impl BybitRawHttpClient {
         self.send_request(
             Method::GET,
             "/v5/market/recent-trade",
+            Some(params),
+            None,
+            false,
+        )
+        .await
+    }
+
+    /// Fetches orderbook from Bybit.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/market/orderbook>
+    pub async fn get_orderbook(
+        &self,
+        params: &BybitOrderbookParams,
+    ) -> Result<BybitOrderbookResponse, BybitHttpError> {
+        self.send_request(
+            Method::GET,
+            "/v5/market/orderbook",
             Some(params),
             None,
             false,
@@ -2906,6 +2930,60 @@ impl BybitHttpClient {
         }
 
         Ok(trades)
+    }
+
+    /// Request an orderbook snapshot for a given symbol.
+    ///
+    /// Bybit limits the amount of levels (depth) for each product type to:
+    /// - Spot: `1..=200` (default: `1`)
+    /// - Linear & Inverse: `1..=500` (default: `25`)
+    /// - Options: `1..=25` (default: `1`)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/market/orderbook>
+    pub async fn request_orderbook_snapshot(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        limit: Option<u32>,
+    ) -> anyhow::Result<OrderBookDeltas> {
+        let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
+        let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
+
+        let mut params_builder = BybitOrderbookParamsBuilder::default();
+        params_builder.category(product_type);
+        params_builder.symbol(bybit_symbol.raw_symbol().to_string());
+
+        if let Some(limit) = limit {
+            let max_limit = match product_type {
+                BybitProductType::Spot => 200,
+                BybitProductType::Option => 25,
+                BybitProductType::Linear | BybitProductType::Inverse => 500,
+            };
+            let clamped_limit = limit.min(max_limit);
+            if limit > max_limit {
+                log::warn!(
+                    "Bybit orderbook snapshot request depth limit exceeds venue maximum; clamping: limit={limit}, clamped_limit={clamped_limit}",
+                );
+            }
+            params_builder.limit(clamped_limit);
+        }
+
+        let params = params_builder.build().map_err(|e| anyhow::anyhow!(e))?;
+        let response = self.inner.get_orderbook(&params).await?;
+
+        let ts_init = self.generate_ts_init();
+        let deltas = parse_orderbook(&response.result, &instrument, ts_init)?;
+
+        Ok(deltas)
     }
 
     /// Request bar/kline history for a given symbol.

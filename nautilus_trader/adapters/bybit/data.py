@@ -30,6 +30,7 @@ from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
+from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeOrderBook
@@ -46,6 +47,8 @@ from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import PriceType
@@ -494,6 +497,41 @@ class BybitDataClient(LiveMarketDataClient):
             request.start,
             request.end,
             request.params,
+        )
+
+    async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
+        limit = request.limit
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(request.instrument_id.value)
+        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+            pyo3_instrument_id.symbol.value,
+        )
+
+        if product_type == nautilus_pyo3.BybitProductType.SPOT and (limit == 0 or limit > 200):
+            limit = 200
+        elif product_type == nautilus_pyo3.BybitProductType.OPTION and (limit == 0 or limit > 25):
+            limit = 25
+        elif limit == 0 or limit > 500:  # Linear and inverse
+            limit = 500
+
+        pyo3_deltas = await self._http_client.request_orderbook_snapshot(
+            product_type=product_type,
+            instrument_id=pyo3_instrument_id,
+            limit=limit,
+        )
+        snapshot = OrderBookDeltas.from_pyo3(pyo3_deltas)
+
+        data_type = DataType(
+            OrderBookDeltas,
+            metadata={"instrument_id": request.instrument_id},
+        )
+        self._handle_data_response(
+            data_type=data_type,
+            data=[snapshot],
+            correlation_id=request.id,
+            start=None,
+            end=None,
+            params=request.params,
         )
 
     async def _request_bars(self, request: RequestBars) -> None:

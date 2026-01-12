@@ -628,6 +628,27 @@ impl BybitHttpClient {
         })
     }
 
+    #[pyo3(name = "request_orderbook_snapshot")]
+    #[pyo3(signature = (product_type, instrument_id, limit=None))]
+    fn py_request_orderbook_snapshot<'py>(
+        &self,
+        py: Python<'py>,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        limit: Option<u32>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let deltas = client
+                .request_orderbook_snapshot(product_type, instrument_id, limit)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| Ok(deltas.into_py_any(py).unwrap()))
+        })
+    }
+
     #[pyo3(name = "request_bars")]
     #[pyo3(signature = (product_type, bar_type, start=None, end=None, limit=None, timestamp_on_close=true))]
     #[allow(clippy::too_many_arguments)]
