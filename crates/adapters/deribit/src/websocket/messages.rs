@@ -507,13 +507,23 @@ pub struct DeribitOrderMsg {
     /// Order state: "open", "filled", "rejected", "cancelled", "untriggered".
     pub order_state: String,
     /// Limit price (None for market orders).
-    pub price: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal_flexible"
+    )]
+    pub price: Option<Decimal>,
     /// Original order amount in contracts.
-    pub amount: f64,
+    #[serde(deserialize_with = "nautilus_core::serialization::deserialize_decimal")]
+    pub amount: Decimal,
     /// Amount filled so far.
-    pub filled_amount: f64,
+    #[serde(deserialize_with = "nautilus_core::serialization::deserialize_decimal")]
+    pub filled_amount: Decimal,
     /// Average fill price.
-    pub average_price: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal_flexible"
+    )]
+    pub average_price: Option<Decimal>,
     /// Order creation timestamp in milliseconds.
     pub creation_timestamp: u64,
     /// Last update timestamp in milliseconds.
@@ -521,8 +531,11 @@ pub struct DeribitOrderMsg {
     /// Time in force setting.
     pub time_in_force: String,
     /// Commission paid in base currency.
-    #[serde(default)]
-    pub commission: f64,
+    #[serde(
+        default,
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub commission: Decimal,
     /// Post-only flag.
     #[serde(default)]
     pub post_only: bool,
@@ -530,11 +543,19 @@ pub struct DeribitOrderMsg {
     #[serde(default)]
     pub reduce_only: bool,
     /// Trigger price for stop/take orders.
-    pub trigger_price: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal_flexible"
+    )]
+    pub trigger_price: Option<Decimal>,
     /// Trigger type: "last_price", "index_price", "mark_price".
     pub trigger: Option<String>,
     /// Max show quantity for iceberg orders.
-    pub max_show: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal_flexible"
+    )]
+    pub max_show: Option<Decimal>,
     /// API request flag.
     #[serde(default)]
     pub api: bool,
@@ -547,7 +568,7 @@ pub struct DeribitOrderMsg {
 /// User trade message from Deribit.
 ///
 /// Received from order responses and user.trades subscription.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeribitUserTradeMsg {
     /// Unique trade ID.
     pub trade_id: String,
@@ -558,11 +579,23 @@ pub struct DeribitUserTradeMsg {
     /// Trade direction: "buy" or "sell".
     pub direction: String,
     /// Execution price.
-    pub price: f64,
+    #[serde(
+        serialize_with = "nautilus_core::serialization::serialize_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub price: Decimal,
     /// Trade amount in contracts.
-    pub amount: f64,
+    #[serde(
+        serialize_with = "nautilus_core::serialization::serialize_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub amount: Decimal,
     /// Fee amount.
-    pub fee: f64,
+    #[serde(
+        serialize_with = "nautilus_core::serialization::serialize_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub fee: Decimal,
     /// Fee currency.
     pub fee_currency: String,
     /// Trade timestamp in milliseconds.
@@ -574,9 +607,17 @@ pub struct DeribitUserTradeMsg {
     /// Order type.
     pub order_type: String,
     /// Index price at trade time.
-    pub index_price: f64,
+    #[serde(
+        serialize_with = "nautilus_core::serialization::serialize_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub index_price: Decimal,
     /// Mark price at trade time.
-    pub mark_price: f64,
+    #[serde(
+        serialize_with = "nautilus_core::serialization::serialize_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub mark_price: Decimal,
     /// Tick direction (0-3).
     pub tick_direction: i8,
     /// Order state after this trade.
@@ -590,7 +631,12 @@ pub struct DeribitUserTradeMsg {
     #[serde(default)]
     pub post_only: bool,
     /// Profit/loss for this trade.
-    pub profit_loss: Option<f64>,
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal_flexible"
+    )]
+    pub profit_loss: Option<Decimal>,
 }
 
 /// Portfolio/margin message from user.portfolio subscription.

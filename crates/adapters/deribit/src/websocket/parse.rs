@@ -34,7 +34,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
-use rust_decimal::prelude::FromPrimitive;
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use ustr::Ustr;
 
 use super::{
@@ -550,10 +550,10 @@ pub fn parse_user_order_msg(
     // Map Deribit order state to Nautilus status
     let order_status = match msg.order_state.as_str() {
         "open" => {
-            if msg.filled_amount > 0.0 {
-                OrderStatus::PartiallyFilled
-            } else {
+            if msg.filled_amount.is_zero() {
                 OrderStatus::Accepted
+            } else {
+                OrderStatus::PartiallyFilled
             }
         }
         "filled" => OrderStatus::Filled,
@@ -566,8 +566,8 @@ pub fn parse_user_order_msg(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let quantity = Quantity::new(msg.amount, size_precision);
-    let filled_qty = Quantity::new(msg.filled_amount, size_precision);
+    let quantity = Quantity::from_decimal_dp(msg.amount, size_precision)?;
+    let filled_qty = Quantity::from_decimal_dp(msg.filled_amount, size_precision)?;
 
     let ts_accepted = UnixNanos::new(msg.creation_timestamp * NANOSECONDS_IN_MILLISECOND);
     let ts_last = UnixNanos::new(msg.last_update_timestamp * NANOSECONDS_IN_MILLISECOND);
@@ -598,24 +598,24 @@ pub fn parse_user_order_msg(
 
     // Add price for limit orders
     if let Some(price_val) = msg.price
-        && price_val > 0.0
+        && !price_val.is_zero()
     {
-        let price = Price::new(price_val, price_precision);
+        let price = Price::from_decimal_dp(price_val, price_precision)?;
         report = report.with_price(price);
     }
 
     // Add average price if filled
     if let Some(avg_price) = msg.average_price
-        && avg_price > 0.0
+        && !avg_price.is_zero()
     {
-        report = report.with_avg_px(avg_price)?;
+        report = report.with_avg_px(avg_price.to_f64().unwrap_or_default())?;
     }
 
     // Add trigger price for stop/take orders
     if let Some(trigger_price) = msg.trigger_price
-        && trigger_price > 0.0
+        && !trigger_price.is_zero()
     {
-        let trigger = Price::new(trigger_price, price_precision);
+        let trigger = Price::from_decimal_dp(trigger_price, price_precision)?;
         report = report.with_trigger_price(trigger);
     }
 
@@ -661,8 +661,8 @@ pub fn parse_user_trade_msg(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let last_qty = Quantity::new(msg.amount, size_precision);
-    let last_px = Price::new(msg.price, price_precision);
+    let last_qty = Quantity::from_decimal_dp(msg.amount, size_precision)?;
+    let last_px = Price::from_decimal_dp(msg.price, price_precision)?;
 
     let liquidity_side = match msg.liquidity.as_str() {
         "M" => LiquiditySide::Maker,
@@ -672,7 +672,7 @@ pub fn parse_user_trade_msg(
 
     // Get fee currency from the fee_currency field
     let fee_currency = Currency::from(&msg.fee_currency);
-    let commission = Money::new(msg.fee.abs(), fee_currency);
+    let commission = Money::new(msg.fee.abs().to_f64().unwrap_or_default(), fee_currency);
 
     let ts_event = UnixNanos::new(msg.timestamp * NANOSECONDS_IN_MILLISECOND);
 
@@ -849,9 +849,14 @@ pub fn parse_order_updated(
     let venue_order_id = VenueOrderId::new(&msg.order_id);
     let client_order_id =
         extract_client_order_id(msg).unwrap_or_else(|| ClientOrderId::new(&msg.order_id));
-    let quantity = Quantity::new(msg.amount, size_precision);
-    let price = msg.price.map(|p| Price::new(p, price_precision));
-    let trigger_price = msg.trigger_price.map(|p| Price::new(p, price_precision));
+    let quantity = Quantity::from_decimal_dp(msg.amount, size_precision)
+        .unwrap_or_else(|_| Quantity::new(0.0, size_precision));
+    let price = msg
+        .price
+        .and_then(|p| Price::from_decimal_dp(p, price_precision).ok());
+    let trigger_price = msg
+        .trigger_price
+        .and_then(|p| Price::from_decimal_dp(p, price_precision).ok());
     let ts_event = UnixNanos::new(msg.last_update_timestamp * NANOSECONDS_IN_MILLISECOND);
 
     OrderUpdated::new(
@@ -933,6 +938,7 @@ pub enum OrderEventType {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -1418,9 +1424,9 @@ mod tests {
         assert_eq!(order_msg.direction, "buy");
         assert_eq!(order_msg.order_state, "open");
         assert_eq!(order_msg.order_type, "limit");
-        assert_eq!(order_msg.price, Some(2973.55));
-        assert_eq!(order_msg.amount, 0.001);
-        assert_eq!(order_msg.filled_amount, 0.0);
+        assert_eq!(order_msg.price, Some(dec!(2973.55)));
+        assert_eq!(order_msg.amount, dec!(0.001));
+        assert_eq!(order_msg.filled_amount, rust_decimal::Decimal::ZERO);
         assert!(order_msg.post_only);
         assert!(!order_msg.reduce_only);
 
@@ -1465,8 +1471,8 @@ mod tests {
         );
         assert_eq!(order_msg.direction, "sell");
         assert_eq!(order_msg.order_state, "open");
-        assert_eq!(order_msg.price, Some(3286.7));
-        assert_eq!(order_msg.amount, 0.001);
+        assert_eq!(order_msg.price, Some(dec!(3286.7)));
+        assert_eq!(order_msg.amount, dec!(0.001));
 
         // Test parse_order_accepted for sell order
         let account_id = AccountId::new("DERIBIT-001");
@@ -1509,7 +1515,7 @@ mod tests {
         );
         assert_eq!(order_msg.direction, "buy");
         assert_eq!(order_msg.order_state, "open");
-        assert_eq!(order_msg.price, Some(3067.2)); // New price after edit
+        assert_eq!(order_msg.price, Some(dec!(3067.2))); // New price after edit
 
         // Test parse_order_updated
         let account_id = AccountId::new("DERIBIT-001");
