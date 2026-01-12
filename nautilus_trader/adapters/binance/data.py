@@ -702,11 +702,11 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
             data_type = DataType(
                 OrderBookDeltas,
-                metadata=({"instrument_id": request.instrument_id}),
+                metadata={"instrument_id": request.instrument_id},
             )
             self._handle_data_response(
                 data_type=data_type,
-                data=snapshot,
+                data=[snapshot],
                 correlation_id=request.id,
                 start=None,
                 end=None,
