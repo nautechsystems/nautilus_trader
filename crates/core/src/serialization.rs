@@ -166,6 +166,93 @@ where
     deserializer.deserialize_any(BoolVisitor)
 }
 
+/// Deserializes a `Decimal` from either a JSON string or number.
+///
+/// This is the flexible form that handles both formats for maximum API compatibility:
+/// - JSON string: `"123.456"` -> Decimal
+/// - JSON number: `123.456` -> Decimal (via string representation to preserve precision)
+/// - JSON null: becomes `Decimal::ZERO`
+///
+/// Use this for exchange APIs that send numeric values as JSON numbers (e.g., Deribit).
+///
+/// # Errors
+///
+/// Returns an error if the value cannot be parsed as a valid decimal.
+pub fn deserialize_decimal<'de, D>(deserializer: D) -> Result<Decimal, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let v = serde_json::Value::deserialize(deserializer)?;
+    match v {
+        serde_json::Value::String(s) => Decimal::from_str(&s).map_err(D::Error::custom),
+        serde_json::Value::Number(n) => {
+            // Convert to string first to preserve exact representation
+            Decimal::from_str(&n.to_string()).map_err(D::Error::custom)
+        }
+        serde_json::Value::Null => Ok(Decimal::ZERO),
+        _ => Err(D::Error::custom("expected decimal string, number, or null")),
+    }
+}
+
+/// Deserializes an `Option<Decimal>` from a JSON string, number, or null.
+///
+/// Flexible form that handles both string and number formats:
+/// - JSON string: `"123.456"` -> Some(Decimal)
+/// - JSON number: `123.456` -> Some(Decimal)
+/// - JSON null or empty string: `None`
+///
+/// # Errors
+///
+/// Returns an error if the value cannot be parsed as a valid decimal.
+pub fn deserialize_optional_decimal_flexible<'de, D>(
+    deserializer: D,
+) -> Result<Option<Decimal>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let v = serde_json::Value::deserialize(deserializer)?;
+    match v {
+        serde_json::Value::String(s) => {
+            if s.is_empty() {
+                Ok(None)
+            } else {
+                Decimal::from_str(&s).map(Some).map_err(D::Error::custom)
+            }
+        }
+        serde_json::Value::Number(n) => Decimal::from_str(&n.to_string())
+            .map(Some)
+            .map_err(D::Error::custom),
+        serde_json::Value::Null => Ok(None),
+        _ => Err(D::Error::custom("expected decimal string, number, or null")),
+    }
+}
+
+/// Serializes a `Decimal` as a JSON number (float).
+///
+/// Used for outgoing requests where exchange APIs expect JSON numbers.
+///
+/// # Errors
+///
+/// Returns an error if serialization fails.
+pub fn serialize_decimal<S: Serializer>(d: &Decimal, s: S) -> Result<S::Ok, S::Error> {
+    rust_decimal::serde::float::serialize(d, s)
+}
+
+/// Serializes an `Option<Decimal>` as a JSON number or null.
+///
+/// # Errors
+///
+/// Returns an error if serialization fails.
+pub fn serialize_optional_decimal<S: Serializer>(
+    d: &Option<Decimal>,
+    s: S,
+) -> Result<S::Ok, S::Error> {
+    match d {
+        Some(decimal) => rust_decimal::serde::float::serialize(decimal, s),
+        None => s.serialize_none(),
+    }
+}
+
 /// Deserializes a `Decimal` from a JSON string.
 ///
 /// This is the strict form that requires the value to be a string, rejecting
@@ -444,14 +531,16 @@ mod tests {
     use ustr::Ustr;
 
     use super::{
-        Serializable, deserialize_decimal_from_str, deserialize_decimal_or_zero,
-        deserialize_empty_string_as_none, deserialize_empty_ustr_as_none,
-        deserialize_optional_decimal, deserialize_optional_decimal_or_zero,
+        Serializable, deserialize_decimal, deserialize_decimal_from_str,
+        deserialize_decimal_or_zero, deserialize_empty_string_as_none,
+        deserialize_empty_ustr_as_none, deserialize_optional_decimal,
+        deserialize_optional_decimal_flexible, deserialize_optional_decimal_or_zero,
         deserialize_optional_string_to_u64, deserialize_string_to_u8, deserialize_string_to_u64,
         deserialize_vec_decimal_from_str, from_bool_as_u8,
         msgpack::{FromMsgPack, ToMsgPack},
-        parse_decimal, parse_optional_decimal, serialize_decimal_as_str,
-        serialize_optional_decimal_as_str, serialize_vec_decimal_as_str,
+        parse_decimal, parse_optional_decimal, serialize_decimal, serialize_decimal_as_str,
+        serialize_optional_decimal, serialize_optional_decimal_as_str,
+        serialize_vec_decimal_as_str,
     };
 
     #[derive(Deserialize)]
@@ -788,5 +877,67 @@ mod tests {
     ) {
         let result = parse_optional_decimal(input).unwrap();
         assert_eq!(result, expected);
+    }
+
+    // Tests for flexible decimal deserializers (handles both string and number JSON values)
+
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    struct TestFlexibleDecimal {
+        #[serde(
+            serialize_with = "serialize_decimal",
+            deserialize_with = "deserialize_decimal"
+        )]
+        value: Decimal,
+        #[serde(
+            serialize_with = "serialize_optional_decimal",
+            deserialize_with = "deserialize_optional_decimal_flexible"
+        )]
+        optional_value: Option<Decimal>,
+    }
+
+    #[rstest]
+    #[case(r#"{"value": 123.456, "optional_value": 789.012}"#, dec!(123.456), Some(dec!(789.012)))]
+    #[case(r#"{"value": "123.456", "optional_value": "789.012"}"#, dec!(123.456), Some(dec!(789.012)))]
+    #[case(r#"{"value": 100, "optional_value": null}"#, dec!(100), None)]
+    #[case(r#"{"value": null, "optional_value": null}"#, Decimal::ZERO, None)]
+    fn test_deserialize_flexible_decimal(
+        #[case] json: &str,
+        #[case] expected_value: Decimal,
+        #[case] expected_optional: Option<Decimal>,
+    ) {
+        let result: TestFlexibleDecimal = serde_json::from_str(json).unwrap();
+        assert_eq!(result.value, expected_value);
+        assert_eq!(result.optional_value, expected_optional);
+    }
+
+    #[rstest]
+    fn test_flexible_decimal_roundtrip() {
+        let original = TestFlexibleDecimal {
+            value: dec!(123.456),
+            optional_value: Some(dec!(789.012)),
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: TestFlexibleDecimal = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.value, deserialized.value);
+        assert_eq!(original.optional_value, deserialized.optional_value);
+    }
+
+    #[rstest]
+    fn test_flexible_decimal_precision_preserved() {
+        // Test that high-precision values from JSON numbers are preserved
+        let json = r#"{"value": 0.00000001, "optional_value": 99999999.99999999}"#;
+        let parsed: TestFlexibleDecimal = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.value, dec!(0.00000001));
+        assert_eq!(parsed.optional_value, Some(dec!(99999999.99999999)));
+    }
+
+    #[rstest]
+    fn test_flexible_decimal_empty_string_optional() {
+        let json = r#"{"value": 100, "optional_value": ""}"#;
+        let parsed: TestFlexibleDecimal = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.value, dec!(100));
+        assert_eq!(parsed.optional_value, None);
     }
 }
