@@ -28,9 +28,9 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
-from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeOrderBook
@@ -45,10 +45,10 @@ from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOU
 from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import FundingRateUpdate
-from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import FundingRateUpdate
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import PriceType
