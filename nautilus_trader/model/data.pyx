@@ -3335,6 +3335,26 @@ cdef class OrderBookDeltas(Data):
         capsule = PyCapsule_New(data, NULL, <PyCapsule_Destructor>capsule_destructor_deltas)
         return capsule
 
+    @staticmethod
+    def from_pyo3(pyo3_deltas) -> OrderBookDeltas:
+        """
+        Return legacy Cython orderbook deltas converted from the given pyo3 Rust object.
+
+        Parameters
+        ----------
+        pyo3_deltas : nautilus_pyo3.OrderBookDeltas
+            The pyo3 Rust orderbook deltas to convert from.
+
+        Returns
+        -------
+        OrderBookDeltas
+
+        """
+        return OrderBookDeltas(
+            instrument_id=InstrumentId.from_str(pyo3_deltas.instrument_id.value),
+            deltas=OrderBookDelta.from_pyo3_list(pyo3_deltas.deltas),
+        )
+
     cpdef to_pyo3(self):
         """
         Return a pyo3 object from this legacy Cython instance.
