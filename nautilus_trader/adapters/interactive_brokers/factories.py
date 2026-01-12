@@ -308,7 +308,11 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             f"Must pass `{config.__class__.__name__}.account_id` or set `TWS_ACCOUNT` env var."
         )
 
-        account_id = AccountId(f"{name or IB_VENUE.value}-{ib_account}")
+        # Use name if provided, otherwise use account_id issuer from the account string
+        # This allows multiple IB execution clients with different names/accounts
+        # The account_issuer will be used as the client_id and allows routing by account_id
+        account_issuer = name or IB_VENUE.value
+        account_id = AccountId(f"{account_issuer}-{ib_account}")
 
         # Create client
         exec_client = InteractiveBrokersExecutionClient(

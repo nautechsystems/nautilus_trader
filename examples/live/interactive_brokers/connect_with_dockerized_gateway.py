@@ -18,7 +18,6 @@
 import os
 
 from nautilus_trader.adapters.interactive_brokers.common import IB
-from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
 from nautilus_trader.adapters.interactive_brokers.config import IBMarketDataTypeEnum
@@ -153,7 +152,6 @@ node.trader.add_strategy(strategy)
 node.add_data_client_factory(IB, InteractiveBrokersLiveDataClientFactory)
 node.add_exec_client_factory(IB, InteractiveBrokersLiveExecClientFactory)
 node.build()
-node.portfolio.set_specific_venue(IB_VENUE)
 
 # Stop and dispose of the node with SIGINT/CTRL+C
 if __name__ == "__main__":

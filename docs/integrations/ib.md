@@ -1556,7 +1556,6 @@ node = TradingNode(config=config_node)
 node.add_data_client_factory(IB, InteractiveBrokersLiveDataClientFactory)
 node.add_exec_client_factory(IB, InteractiveBrokersLiveExecClientFactory)
 node.build()
-node.portfolio.set_specific_venue(IB_VENUE)
 
 if __name__ == "__main__":
     try:
@@ -1634,6 +1633,185 @@ exec_client_config = InteractiveBrokersExecClientConfig(
 )
 ```
 
+### Multiple IB execution clients for different accounts
+
+NautilusTrader supports using multiple Interactive Brokers execution clients simultaneously, each connected to a different IB account. This is useful when you need to trade with multiple accounts, such as:
+
+- Separate accounts for different strategies
+- Paper trading and live trading accounts running simultaneously
+- Multiple managed accounts under the same IB login
+
+To configure multiple IB execution clients, provide multiple entries in the `exec_clients` dictionary with unique keys. Each entry specifies a different `account_id`:
+
+```python
+from nautilus_trader.adapters.interactive_brokers.config import (
+    InteractiveBrokersDataClientConfig,
+    InteractiveBrokersExecClientConfig,
+    InteractiveBrokersInstrumentProviderConfig,
+    SymbologyMethod,
+    IBMarketDataTypeEnum,
+)
+from nautilus_trader.live.config import TradingNodeConfig, RoutingConfig, LoggingConfig
+from nautilus_trader.model.identifiers import AccountId, Venue, ClientId
+
+# Shared instrument provider configuration
+instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
+    symbology_method=SymbologyMethod.IB_SIMPLIFIED,
+)
+
+# Data client (shared across all accounts)
+data_client_config = InteractiveBrokersDataClientConfig(
+    ibg_host="127.0.0.1",
+    ibg_port=7497,
+    ibg_client_id=1,
+    market_data_type=IBMarketDataTypeEnum.REALTIME,
+    instrument_provider=instrument_provider_config,
+)
+
+# Configuration for multiple IB execution clients
+config_node = TradingNodeConfig(
+    trader_id="MULTI-ACCOUNT-001",
+    logging=LoggingConfig(log_level="INFO"),
+
+    # Single data client shared across accounts
+    data_clients={
+        "IB": data_client_config,
+    },
+
+    # Multiple execution clients, one per account
+    exec_clients={
+        # First account: Paper trading account
+        "IB-PAPER": InteractiveBrokersExecClientConfig(
+            ibg_host="127.0.0.1",
+            ibg_port=7497,
+            ibg_client_id=2,  # Unique IB API client ID
+            account_id="DU123456",  # Paper trading account ID
+            instrument_provider=instrument_provider_config,
+            routing=RoutingConfig(default=False),  # Not default
+        ),
+
+        # Second account: Live trading account
+        "IB-LIVE": InteractiveBrokersExecClientConfig(
+            ibg_host="127.0.0.1",
+            ibg_port=7497,
+            ibg_client_id=3,  # Unique IB API client ID
+            account_id="U987654",  # Live account ID
+            instrument_provider=instrument_provider_config,
+            routing=RoutingConfig(default=True),  # Set as default
+        ),
+
+        # Third account: Another managed account
+        "IB-ACCOUNT3": InteractiveBrokersExecClientConfig(
+            ibg_host="127.0.0.1",
+            ibg_port=7497,
+            ibg_client_id=4,  # Unique IB API client ID
+            account_id="U456789",  # Another account ID
+            instrument_provider=instrument_provider_config,
+            routing=RoutingConfig(default=False),
+        ),
+    },
+)
+```
+
+**Key points for multiple IB execution clients:**
+
+1. **Unique keys**: Each entry in `exec_clients` must have a unique key (e.g., `"IB-PAPER"`, `"IB-LIVE"`). This key becomes the `account_issuer` for that client.
+
+2. **Unique client IDs**: Each execution client must use a different `ibg_client_id` (2, 3, 4, etc.). IB Gateway/TWS requires each API connection to use a unique client ID.
+
+3. **Account ID**: Each execution client must specify a different `account_id` matching the account logged into IB Gateway/TWS.
+
+4. **Account identifiers**: The system creates `AccountId` instances like:
+   - `AccountId("IB-PAPER-DU123456")`
+   - `AccountId("IB-LIVE-U987654")`
+   - `AccountId("IB-ACCOUNT3-U456789")`
+
+5. **Routing**: Orders and queries are automatically routed to the correct execution client based on:
+   - Explicit `client_id` in the command
+   - `account_id` issuer (for `QueryAccount` commands or orders with account_id set)
+   - Default client (if one is marked with `routing=RoutingConfig(default=True)`)
+
+6. **Portfolio queries**: When querying portfolio properties, you can specify either:
+   - `account_id` for account-specific queries: `portfolio.realized_pnls(account_id=AccountId("IB-PAPER-DU123456"))`
+   - `venue` for aggregated queries across all accounts with that venue: `portfolio.realized_pnls(venue=Venue("IB-PAPER"))`
+
+**Example: Using multiple IB execution clients in a strategy:**
+
+```python
+from nautilus_trader.model.identifiers import AccountId, ClientId
+from nautilus_trader.trading.strategy import Strategy
+
+class MultiAccountStrategy(Strategy):
+    """Example strategy using multiple IB accounts."""
+
+    def on_start(self):
+        # Define account IDs for easy reference
+        self.paper_account = AccountId("IB-PAPER-DU123456")
+        self.live_account = AccountId("IB-LIVE-U987654")
+
+        # Query paper account balance
+        paper_account_state = self.cache.account(self.paper_account)
+        if paper_account_state:
+            self.log.info(f"Paper account balance: {paper_account_state.balance_total()}")
+
+        # Query live account balance
+        live_account_state = self.cache.account(self.live_account)
+        if live_account_state:
+            self.log.info(f"Live account balance: {live_account_state.balance_total()}")
+
+    def submit_order_to_paper(self, order):
+        """Submit order to paper trading account."""
+        self.submit_order(order, client_id=ClientId("IB-PAPER"))
+
+    def submit_order_to_live(self, order):
+        """Submit order to live trading account."""
+        self.submit_order(order, client_id=ClientId("IB-LIVE"))
+
+    def check_paper_pnl(self, instrument_id):
+        """Check realized PnL for paper account."""
+        pnl = self.portfolio.realized_pnl(
+            instrument_id=instrument_id,
+            account_id=self.paper_account
+        )
+        return pnl
+
+    def check_live_pnl(self, instrument_id):
+        """Check realized PnL for live account."""
+        pnl = self.portfolio.realized_pnl(
+            instrument_id=instrument_id,
+            account_id=self.live_account
+        )
+        return pnl
+```
+
+**Example: Querying account information with multiple IB clients:**
+
+```python
+from nautilus_trader.model.identifiers import AccountId
+
+# Query specific account
+paper_account = cache.account(AccountId("IB-PAPER-DU123456"))
+live_account = cache.account(AccountId("IB-LIVE-U987654"))
+
+# Query account using account_id (preferred method)
+paper_account_by_id = cache.account(AccountId("IB-PAPER-DU123456"))
+
+# Alternative: Query account using account_id parameter (also works)
+paper_account_via_account_id = cache.account_for_venue(
+    account_id=AccountId("IB-PAPER-DU123456")
+)
+
+# Query portfolio properties by account
+paper_realized_pnl = portfolio.realized_pnl(
+    instrument_id=instrument_id,
+    account_id=AccountId("IB-PAPER-DU123456")
+)
+
+# Query portfolio properties aggregated across all IB accounts
+# Note: This aggregates across all accounts with the same venue
+all_ib_realized_pnl = portfolio.realized_pnls(venue=Venue("IB"))
+```
+
 ### Running the trading node
 
 ```python
@@ -1646,9 +1824,6 @@ def run_trading_node():
         node.add_data_client_factory(IB, InteractiveBrokersLiveDataClientFactory)
         node.add_exec_client_factory(IB, InteractiveBrokersLiveExecClientFactory)
         node.build()
-
-        # Set venue for portfolio
-        node.portfolio.set_specific_venue(IB_VENUE)
 
         # Add your strategies here
         # node.trader.add_strategy(YourStrategy())
