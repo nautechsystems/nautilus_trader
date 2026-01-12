@@ -269,7 +269,8 @@ def databento_definition_dates(start_time: str, end_time: str | None = None) -> 
 
     if end_time is not None:
         # Use the provided end_time to get definitions for the full range
-        definition_end_date = end_time.split("T")[0]
+        # Apply next_day() since Databento uses half-open intervals (end exclusive)
+        definition_end_date = next_day(end_time.split("T")[0])
     else:
         # Backwards compatibility: single day
         definition_end_date = next_day(definition_start_date)
