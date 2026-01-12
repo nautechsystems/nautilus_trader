@@ -507,12 +507,21 @@ class BybitDataClient(LiveMarketDataClient):
             pyo3_instrument_id.symbol.value,
         )
 
-        if product_type == nautilus_pyo3.BybitProductType.SPOT and (limit == 0 or limit > 200):
-            limit = 200
-        elif product_type == nautilus_pyo3.BybitProductType.OPTION and (limit == 0 or limit > 25):
-            limit = 25
-        elif limit == 0 or limit > 500:  # Linear and inverse
-            limit = 500
+        if limit is not None:
+            match product_type:
+                case nautilus_pyo3.BybitProductType.SPOT:
+                    max_limit = 200
+                case nautilus_pyo3.BybitProductType.OPTION:
+                    max_limit = 25
+                case nautilus_pyo3.BybitProductType.LINEAR | nautilus_pyo3.BybitProductType.INVERSE:
+                    max_limit = 500
+
+            if limit > max_limit:
+                self._log.warning(
+                    "Bybit orderbook snapshot request depth limit exceeds venue maximum; clamping",
+                )
+
+            limit = min(limit, max_limit)
 
         pyo3_deltas = await self._http_client.request_orderbook_snapshot(
             product_type=product_type,
