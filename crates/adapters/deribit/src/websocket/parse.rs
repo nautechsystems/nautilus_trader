@@ -24,14 +24,14 @@ use nautilus_model::{
     },
     enums::{
         AggregationSource, AggressorSide, BarAggregation, BookAction, LiquiditySide, OrderSide,
-        OrderStatus, OrderType, PriceType, RecordFlag, TimeInForce,
+        OrderStatus, OrderType, PositionSideSpecified, PriceType, RecordFlag, TimeInForce,
     },
     events::{OrderAccepted, OrderCanceled, OrderExpired, OrderUpdated},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
-    reports::{FillReport, OrderStatusReport},
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
@@ -44,6 +44,7 @@ use super::{
         DeribitTickerMsg, DeribitTradeMsg, DeribitUserTradeMsg,
     },
 };
+use crate::http::models::DeribitPosition;
 
 /// Parses a Deribit trade message into a Nautilus `TradeTick`.
 ///
@@ -698,6 +699,51 @@ pub fn parse_user_trade_msg(
         ts_init,
         None, // report_id
     ))
+}
+
+/// Parses a Deribit position into a Nautilus `PositionStatusReport`.
+///
+/// # Arguments
+/// * `position` - The Deribit position data from `/private/get_positions`
+/// * `instrument` - The corresponding Nautilus instrument
+/// * `account_id` - The account ID for the report
+/// * `ts_init` - Initialization timestamp
+///
+/// # Returns
+/// A `PositionStatusReport` representing the current position state.
+#[must_use]
+pub fn parse_position_status_report(
+    position: &DeribitPosition,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) -> PositionStatusReport {
+    let instrument_id = instrument.id();
+    let size_precision = instrument.size_precision();
+
+    let signed_qty = Quantity::from_decimal_dp(position.size.abs(), size_precision)
+        .unwrap_or_else(|_| Quantity::new(0.0, size_precision));
+
+    let position_side = match position.direction.as_str() {
+        "buy" => PositionSideSpecified::Long,
+        "sell" => PositionSideSpecified::Short,
+        _ => PositionSideSpecified::Flat,
+    };
+
+    // Use average_price directly as it's already a Decimal
+    let avg_px_open = Some(position.average_price);
+
+    PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        position_side,
+        signed_qty,
+        ts_init,
+        ts_init,
+        Some(UUID4::new()),
+        None, // venue_position_id
+        avg_px_open,
+    )
 }
 
 // ------------------------------------------------------------------------------------------------

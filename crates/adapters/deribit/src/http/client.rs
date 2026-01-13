@@ -22,7 +22,7 @@ use std::sync::{
 
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
-use nautilus_core::{nanos::UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{datetime::nanos_to_millis, nanos::UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{AggregationSource, BarAggregation},
@@ -30,6 +30,7 @@ use nautilus_model::{
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
 use nautilus_network::{
     http::{HttpClient, Method},
@@ -43,9 +44,14 @@ use super::{
     error::DeribitHttpError,
     models::{
         DeribitAccountSummariesResponse, DeribitCurrency, DeribitInstrument, DeribitJsonRpcRequest,
-        DeribitJsonRpcResponse,
+        DeribitJsonRpcResponse, DeribitPosition, DeribitUserTradesResponse,
     },
-    query::{GetAccountSummariesParams, GetInstrumentParams, GetInstrumentsParams},
+    query::{
+        GetAccountSummariesParams, GetInstrumentParams, GetInstrumentsParams,
+        GetOpenOrdersByInstrumentParams, GetOpenOrdersParams, GetOrderHistoryByCurrencyParams,
+        GetOrderHistoryByInstrumentParams, GetOrderStateParams, GetPositionsParams,
+        GetUserTradesByCurrencyAndTimeParams, GetUserTradesByInstrumentAndTimeParams,
+    },
 };
 use crate::{
     common::{
@@ -63,6 +69,10 @@ use crate::{
             GetLastTradesByInstrumentAndTimeParams, GetOrderBookParams,
             GetTradingViewChartDataParams,
         },
+    },
+    websocket::{
+        messages::{DeribitOrderMsg, DeribitUserTradeMsg},
+        parse::{parse_position_status_report, parse_user_order_msg, parse_user_trade_msg},
     },
 };
 
@@ -501,6 +511,138 @@ impl DeribitRawHttpClient {
         params: GetOrderBookParams,
     ) -> Result<DeribitJsonRpcResponse<DeribitOrderBook>, DeribitHttpError> {
         self.send_request("public/get_order_book", params, false)
+            .await
+    }
+
+    /// Gets a single order by its ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing ([`DeribitHttpError::MissingCredentials`])
+    /// - Authentication fails (invalid signature, expired timestamp)
+    /// - The request fails or the response cannot be parsed
+    pub async fn get_order_state(
+        &self,
+        params: GetOrderStateParams,
+    ) -> Result<DeribitJsonRpcResponse<DeribitOrderMsg>, DeribitHttpError> {
+        self.send_request("private/get_order_state", params, true)
+            .await
+    }
+
+    /// Gets all open orders across all currencies and instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing ([`DeribitHttpError::MissingCredentials`])
+    /// - Authentication fails (invalid signature, expired timestamp)
+    /// - The request fails or the response cannot be parsed
+    pub async fn get_open_orders(
+        &self,
+        params: GetOpenOrdersParams,
+    ) -> Result<DeribitJsonRpcResponse<Vec<DeribitOrderMsg>>, DeribitHttpError> {
+        self.send_request("private/get_open_orders", params, true)
+            .await
+    }
+
+    /// Gets open orders for a specific instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing ([`DeribitHttpError::MissingCredentials`])
+    /// - Authentication fails (invalid signature, expired timestamp)
+    /// - The request fails or the response cannot be parsed
+    pub async fn get_open_orders_by_instrument(
+        &self,
+        params: GetOpenOrdersByInstrumentParams,
+    ) -> Result<DeribitJsonRpcResponse<Vec<DeribitOrderMsg>>, DeribitHttpError> {
+        self.send_request("private/get_open_orders_by_instrument", params, true)
+            .await
+    }
+
+    /// Gets historical orders for a specific instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing ([`DeribitHttpError::MissingCredentials`])
+    /// - Authentication fails (invalid signature, expired timestamp)
+    /// - The request fails or the response cannot be parsed
+    pub async fn get_order_history_by_instrument(
+        &self,
+        params: GetOrderHistoryByInstrumentParams,
+    ) -> Result<DeribitJsonRpcResponse<Vec<DeribitOrderMsg>>, DeribitHttpError> {
+        self.send_request("private/get_order_history_by_instrument", params, true)
+            .await
+    }
+
+    /// Gets historical orders for a specific currency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing ([`DeribitHttpError::MissingCredentials`])
+    /// - Authentication fails (invalid signature, expired timestamp)
+    /// - The request fails or the response cannot be parsed
+    pub async fn get_order_history_by_currency(
+        &self,
+        params: GetOrderHistoryByCurrencyParams,
+    ) -> Result<DeribitJsonRpcResponse<Vec<DeribitOrderMsg>>, DeribitHttpError> {
+        self.send_request("private/get_order_history_by_currency", params, true)
+            .await
+    }
+
+    /// Gets user trades for a specific instrument within a time range.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing ([`DeribitHttpError::MissingCredentials`])
+    /// - Authentication fails (invalid signature, expired timestamp)
+    /// - The request fails or the response cannot be parsed
+    pub async fn get_user_trades_by_instrument_and_time(
+        &self,
+        params: GetUserTradesByInstrumentAndTimeParams,
+    ) -> Result<DeribitJsonRpcResponse<DeribitUserTradesResponse>, DeribitHttpError> {
+        self.send_request(
+            "private/get_user_trades_by_instrument_and_time",
+            params,
+            true,
+        )
+        .await
+    }
+
+    /// Gets user trades for a specific currency within a time range.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing ([`DeribitHttpError::MissingCredentials`])
+    /// - Authentication fails (invalid signature, expired timestamp)
+    /// - The request fails or the response cannot be parsed
+    pub async fn get_user_trades_by_currency_and_time(
+        &self,
+        params: GetUserTradesByCurrencyAndTimeParams,
+    ) -> Result<DeribitJsonRpcResponse<DeribitUserTradesResponse>, DeribitHttpError> {
+        self.send_request("private/get_user_trades_by_currency_and_time", params, true)
+            .await
+    }
+
+    /// Gets positions for a specific currency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing ([`DeribitHttpError::MissingCredentials`])
+    /// - Authentication fails (invalid signature, expired timestamp)
+    /// - The request fails or the response cannot be parsed
+    pub async fn get_positions(
+        &self,
+        params: GetPositionsParams,
+    ) -> Result<DeribitJsonRpcResponse<Vec<DeribitPosition>>, DeribitHttpError> {
+        self.send_request("private/get_positions", params, true)
             .await
     }
 }
@@ -1023,5 +1165,292 @@ impl DeribitHttpClient {
     #[must_use]
     pub fn is_testnet(&self) -> bool {
         self.inner.is_testnet()
+    }
+
+    /// Requests order status reports for reconciliation.
+    ///
+    /// Fetches order statuses from Deribit and converts them to Nautilus [`OrderStatusReport`].
+    ///
+    /// # Strategy
+    /// - Uses `/private/get_open_orders` for all open orders (single efficient API call)
+    /// - Uses `/private/get_open_orders_by_instrument` when specific instrument is provided
+    /// - For historical orders (when `open_only=false`), iterates over currencies
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or parsing fails.
+    pub async fn request_order_status_reports(
+        &self,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        open_only: bool,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        let ts_init = self.generate_ts_init();
+        let mut reports = Vec::new();
+
+        // Helper closure to parse order and add to reports
+        let mut parse_and_add = |order: &DeribitOrderMsg| {
+            let symbol = Ustr::from(&order.instrument_name);
+            if let Some(instrument) = self.get_instrument(&symbol) {
+                match parse_user_order_msg(order, &instrument, account_id, ts_init) {
+                    Ok(report) => {
+                        // Apply time range filter based on ts_last
+                        let ts_last = report.ts_last;
+                        let in_range = match (start, end) {
+                            (Some(s), Some(e)) => ts_last >= s && ts_last <= e,
+                            (Some(s), None) => ts_last >= s,
+                            (None, Some(e)) => ts_last <= e,
+                            (None, None) => true,
+                        };
+                        if in_range {
+                            reports.push(report);
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to parse order {} for {}: {}",
+                            order.order_id,
+                            order.instrument_name,
+                            e
+                        );
+                    }
+                }
+            } else {
+                log::debug!(
+                    "Skipping order {} - instrument {} not in cache",
+                    order.order_id,
+                    order.instrument_name
+                );
+            }
+        };
+
+        if let Some(instrument_id) = instrument_id {
+            // Use instrument-specific endpoint (efficient)
+            let instrument_name = instrument_id.symbol.to_string();
+
+            // Get open orders for this instrument
+            let open_params = GetOpenOrdersByInstrumentParams {
+                instrument_name: instrument_name.clone(),
+                r#type: None,
+            };
+            if let Some(orders) = self
+                .inner
+                .get_open_orders_by_instrument(open_params)
+                .await?
+                .result
+            {
+                for order in &orders {
+                    parse_and_add(order);
+                }
+            }
+
+            // Get historical orders if not open_only
+            if !open_only {
+                let history_params = GetOrderHistoryByInstrumentParams {
+                    instrument_name,
+                    count: Some(100),
+                    offset: None,
+                    include_old: Some(true),
+                    include_unfilled: Some(true),
+                };
+                if let Some(orders) = self
+                    .inner
+                    .get_order_history_by_instrument(history_params)
+                    .await?
+                    .result
+                {
+                    for order in &orders {
+                        parse_and_add(order);
+                    }
+                }
+            }
+        } else {
+            // Use get_open_orders for ALL open orders - single API call!
+            let open_params = GetOpenOrdersParams::default();
+            if let Some(orders) = self.inner.get_open_orders(open_params).await?.result {
+                for order in &orders {
+                    parse_and_add(order);
+                }
+            }
+
+            // For historical orders, iterate currencies (ANY may not be supported)
+            if !open_only {
+                use strum::IntoEnumIterator;
+                for currency in DeribitCurrency::iter().filter(|c| *c != DeribitCurrency::ANY) {
+                    let history_params = GetOrderHistoryByCurrencyParams {
+                        currency,
+                        kind: None,
+                        count: Some(100),
+                        include_unfilled: Some(true),
+                    };
+                    if let Some(orders) = self
+                        .inner
+                        .get_order_history_by_currency(history_params)
+                        .await?
+                        .result
+                    {
+                        for order in &orders {
+                            parse_and_add(order);
+                        }
+                    }
+                }
+            }
+        }
+
+        log::info!("Generated {} order status reports", reports.len());
+        Ok(reports)
+    }
+
+    /// Requests fill reports for reconciliation.
+    ///
+    /// Fetches user trades from Deribit and converts them to Nautilus [`FillReport`].
+    ///
+    /// # Strategy
+    /// - Uses `/private/get_user_trades_by_instrument_and_time` when instrument is provided
+    /// - Otherwise iterates over currencies using `/private/get_user_trades_by_currency_and_time`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or parsing fails.
+    pub async fn request_fill_reports(
+        &self,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<FillReport>> {
+        let ts_init = self.generate_ts_init();
+        let now_ms = Utc::now().timestamp_millis();
+
+        // Convert UnixNanos to milliseconds for Deribit API
+        let start_ms = start.map_or(0, |ns| nanos_to_millis(ns.as_u64()) as i64);
+        let end_ms = end.map_or(now_ms, |ns| nanos_to_millis(ns.as_u64()) as i64);
+        let mut reports = Vec::new();
+
+        // Helper closure to parse trade and add to reports
+        let mut parse_and_add = |trade: &DeribitUserTradeMsg| {
+            let symbol = Ustr::from(&trade.instrument_name);
+            if let Some(instrument) = self.get_instrument(&symbol) {
+                match parse_user_trade_msg(trade, &instrument, account_id, ts_init) {
+                    Ok(report) => reports.push(report),
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to parse trade {} for {}: {}",
+                            trade.trade_id,
+                            trade.instrument_name,
+                            e
+                        );
+                    }
+                }
+            } else {
+                log::debug!(
+                    "Skipping trade {} - instrument {} not in cache",
+                    trade.trade_id,
+                    trade.instrument_name
+                );
+            }
+        };
+
+        if let Some(instrument_id) = instrument_id {
+            // Use instrument-specific endpoint (1 API call)
+            let params = GetUserTradesByInstrumentAndTimeParams {
+                instrument_name: instrument_id.symbol.to_string(),
+                start_timestamp: start_ms,
+                end_timestamp: end_ms,
+                count: Some(1000),
+                sorting: None,
+            };
+            if let Some(response) = self
+                .inner
+                .get_user_trades_by_instrument_and_time(params)
+                .await?
+                .result
+            {
+                for trade in &response.trades {
+                    parse_and_add(trade);
+                }
+            }
+        } else {
+            // Iterate currencies (ANY not supported for user trades endpoint)
+            use strum::IntoEnumIterator;
+            for currency in DeribitCurrency::iter().filter(|c| *c != DeribitCurrency::ANY) {
+                let params = GetUserTradesByCurrencyAndTimeParams {
+                    currency,
+                    start_timestamp: start_ms,
+                    end_timestamp: end_ms,
+                    kind: None,
+                    count: Some(1000),
+                };
+                if let Some(response) = self
+                    .inner
+                    .get_user_trades_by_currency_and_time(params)
+                    .await?
+                    .result
+                {
+                    for trade in &response.trades {
+                        parse_and_add(trade);
+                    }
+                }
+            }
+        }
+
+        log::info!("Generated {} fill reports", reports.len());
+        Ok(reports)
+    }
+
+    /// Requests position status reports for reconciliation.
+    ///
+    /// Fetches positions from Deribit and converts them to Nautilus [`PositionStatusReport`].
+    ///
+    /// # Strategy
+    /// - Must iterate over currencies (Deribit requires currency param for positions)
+    /// - Filters by instrument_id if provided
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or parsing fails.
+    pub async fn request_position_status_reports(
+        &self,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        let ts_init = self.generate_ts_init();
+        let mut reports = Vec::new();
+
+        // Use ANY to get all positions across all currencies in one call
+        let params = GetPositionsParams {
+            currency: DeribitCurrency::ANY,
+            kind: None,
+        };
+        if let Some(positions) = self.inner.get_positions(params).await?.result {
+            for position in &positions {
+                // Skip flat positions (size == 0)
+                if position.size.is_zero() {
+                    continue;
+                }
+
+                let symbol = Ustr::from(position.instrument_name.as_str());
+                if let Some(instrument) = self.get_instrument(&symbol) {
+                    let report =
+                        parse_position_status_report(position, &instrument, account_id, ts_init);
+                    reports.push(report);
+                } else {
+                    log::debug!(
+                        "Skipping position - instrument {} not in cache",
+                        position.instrument_name
+                    );
+                }
+            }
+        }
+
+        // Filter by instrument if provided
+        if let Some(instrument_id) = instrument_id {
+            reports.retain(|r| r.instrument_id == instrument_id);
+        }
+
+        log::info!("Generated {} position status reports", reports.len());
+        Ok(reports)
     }
 }

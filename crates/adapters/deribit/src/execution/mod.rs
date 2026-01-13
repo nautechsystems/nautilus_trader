@@ -33,12 +33,18 @@ use nautilus_common::{
         ExecutionEvent, ExecutionReport as NautilusExecutionReport,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-            GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+            GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
+            GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
+            GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder,
+            SubmitOrder, SubmitOrderList,
         },
     },
 };
-use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    MUTEX_POISONED, UUID4, UnixNanos,
+    datetime::{NANOSECONDS_IN_SECOND, nanos_to_millis},
+    time::get_atomic_clock_realtime,
+};
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::AccountAny,
@@ -57,11 +63,12 @@ use tokio::task::JoinHandle;
 use crate::{
     common::consts::DERIBIT_VENUE,
     config::DeribitExecClientConfig,
-    http::{client::DeribitHttpClient, models::DeribitCurrency},
+    http::{client::DeribitHttpClient, models::DeribitCurrency, query::GetOrderStateParams},
     websocket::{
         auth::DERIBIT_EXECUTION_SESSION_NAME,
         client::DeribitWebSocketClient,
         messages::{DeribitOrderParams, NautilusWsMessage},
+        parse::parse_user_order_msg,
     },
 };
 
@@ -204,7 +211,7 @@ impl DeribitExecutionClient {
 
         // For GTD orders, extract expire_time and convert to milliseconds for Deribit
         let valid_until = if order.time_in_force() == TimeInForce::Gtd {
-            order.expire_time().map(|t| t.as_u64() / 1_000_000)
+            order.expire_time().map(|t| nanos_to_millis(t.as_u64()))
         } else {
             None
         };
@@ -564,38 +571,161 @@ impl ExecutionClient for DeribitExecutionClient {
 
     async fn generate_order_status_report(
         &self,
-        _cmd: &GenerateOrderStatusReport,
+        cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        todo!("Implement generate_order_status_report for Deribit execution client");
+        // If venue_order_id is provided, fetch the specific order by ID
+        if let Some(venue_order_id) = &cmd.venue_order_id {
+            let params = GetOrderStateParams {
+                order_id: venue_order_id.to_string(),
+            };
+            let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+            match self.http_client.inner.get_order_state(params).await {
+                Ok(response) => {
+                    if let Some(order) = response.result {
+                        let symbol = ustr::Ustr::from(&order.instrument_name);
+                        if let Some(instrument) = self.http_client.get_instrument(&symbol) {
+                            let report = parse_user_order_msg(
+                                &order,
+                                &instrument,
+                                self.core.account_id,
+                                ts_init,
+                            )?;
+                            return Ok(Some(report));
+                        } else {
+                            log::warn!(
+                                "Instrument {} not in cache for order {}",
+                                order.instrument_name,
+                                order.order_id
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to get order state: {e}");
+                }
+            }
+            return Ok(None);
+        }
+
+        // If client_order_id is provided, search through open orders
+        if let Some(client_order_id) = &cmd.client_order_id {
+            let reports = self
+                .http_client
+                .request_order_status_reports(
+                    self.core.account_id,
+                    cmd.instrument_id,
+                    None,
+                    None,
+                    true, // open_only for efficiency
+                )
+                .await?;
+
+            // Filter by client_order_id
+            for report in reports {
+                if report.client_order_id == Some(*client_order_id) {
+                    return Ok(Some(report));
+                }
+            }
+        }
+
+        Ok(None)
     }
 
     async fn generate_order_status_reports(
         &self,
-        _cmd: &GenerateOrderStatusReports,
+        cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        todo!("Implement generate_order_status_reports for Deribit execution client");
+        self.http_client
+            .request_order_status_reports(
+                self.core.account_id,
+                cmd.instrument_id,
+                cmd.start,
+                cmd.end,
+                cmd.open_only,
+            )
+            .await
     }
 
     async fn generate_fill_reports(
         &self,
-        _cmd: GenerateFillReports,
+        cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
-        todo!("Implement generate_fill_reports for Deribit execution client");
+        let mut reports = self
+            .http_client
+            .request_fill_reports(self.core.account_id, cmd.instrument_id, cmd.start, cmd.end)
+            .await?;
+
+        // Filter by venue_order_id if provided
+        if let Some(venue_order_id) = &cmd.venue_order_id {
+            reports.retain(|r| r.venue_order_id.to_string() == venue_order_id.to_string());
+        }
+
+        Ok(reports)
     }
 
     async fn generate_position_status_reports(
         &self,
-        _cmd: &GeneratePositionStatusReports,
+        cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        todo!("Implement generate_position_status_reports for Deribit execution client");
+        self.http_client
+            .request_position_status_reports(self.core.account_id, cmd.instrument_id)
+            .await
     }
 
     async fn generate_mass_status(
         &self,
         lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-        log::warn!("generate_mass_status not yet implemented (lookback_mins={lookback_mins:?})");
-        Ok(None)
+        log::info!("Generating ExecutionMassStatus (lookback_mins={lookback_mins:?})");
+        let ts_now = get_atomic_clock_realtime().get_time_ns();
+        let start = lookback_mins.map(|mins| {
+            let lookback_ns = mins * 60 * NANOSECONDS_IN_SECOND;
+            UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns))
+        });
+
+        let order_cmd = GenerateOrderStatusReportsBuilder::default()
+            .ts_init(ts_now)
+            .open_only(false) // get all orders for mass status
+            .start(start)
+            .build()
+            .expect("Failed to build GenerateOrderStatusReports");
+
+        let fill_cmd = GenerateFillReportsBuilder::default()
+            .ts_init(ts_now)
+            .start(start)
+            .build()
+            .expect("Failed to build GenerateFillReports");
+
+        let position_cmd = GeneratePositionStatusReportsBuilder::default()
+            .ts_init(ts_now)
+            .start(start)
+            .build()
+            .expect("Failed to build GeneratePositionStatusReports");
+
+        let (order_reports, fill_reports, position_reports) = tokio::try_join!(
+            self.generate_order_status_reports(&order_cmd),
+            self.generate_fill_reports(fill_cmd),
+            self.generate_position_status_reports(&position_cmd),
+        )?;
+
+        log::info!("Received {} OrderStatusReports", order_reports.len());
+        log::info!("Received {} FillReports", fill_reports.len());
+        log::info!("Received {} PositionReports", position_reports.len());
+
+        let mut mass_status = ExecutionMassStatus::new(
+            self.core.client_id,
+            self.core.account_id,
+            *DERIBIT_VENUE,
+            ts_now,
+            None,
+        );
+
+        mass_status.add_order_reports(order_reports);
+        mass_status.add_fill_reports(fill_reports);
+        mass_status.add_position_reports(position_reports);
+
+        Ok(Some(mass_status))
     }
 
     fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {

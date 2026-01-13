@@ -17,6 +17,7 @@
 
 use std::fmt::Display;
 
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -617,4 +618,164 @@ pub struct DeribitOrderBook {
     /// Interest rate used in implied volatility calculations (options only)
     #[serde(default)]
     pub interest_rate: Option<f64>,
+}
+
+/// Position data from `/private/get_positions` endpoint.
+///
+/// Contains information about a single position in a specific instrument.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeribitPosition {
+    /// Unique instrument identifier
+    pub instrument_name: Ustr,
+    /// Position direction: "buy" (long), "sell" (short), or "zero" (flat)
+    pub direction: String,
+    /// Position size in contracts (positive = long, negative = short)
+    #[serde(
+        serialize_with = "nautilus_core::serialization::serialize_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub size: Decimal,
+    /// Average entry price
+    #[serde(
+        serialize_with = "nautilus_core::serialization::serialize_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub average_price: Decimal,
+    /// Current mark price
+    #[serde(
+        serialize_with = "nautilus_core::serialization::serialize_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub mark_price: Decimal,
+    /// Current index price
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal_flexible"
+    )]
+    pub index_price: Option<Decimal>,
+    /// Maintenance margin
+    #[serde(
+        serialize_with = "nautilus_core::serialization::serialize_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub maintenance_margin: Decimal,
+    /// Initial margin
+    #[serde(
+        serialize_with = "nautilus_core::serialization::serialize_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub initial_margin: Decimal,
+    /// Leverage used for the position
+    #[serde(default)]
+    pub leverage: Option<i64>,
+    /// Current unrealized profit/loss
+    #[serde(
+        serialize_with = "nautilus_core::serialization::serialize_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub floating_profit_loss: Decimal,
+    /// Realized profit/loss for this position
+    #[serde(
+        serialize_with = "nautilus_core::serialization::serialize_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub realized_profit_loss: Decimal,
+    /// Total profit/loss (floating + realized)
+    #[serde(
+        serialize_with = "nautilus_core::serialization::serialize_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub total_profit_loss: Decimal,
+    /// Instrument kind: future, option, spot, etc.
+    pub kind: DeribitInstrumentKind,
+    /// Position size in currency units (for currency-quoted positions)
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal_flexible"
+    )]
+    pub size_currency: Option<Decimal>,
+    /// Estimated liquidation price
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal_flexible"
+    )]
+    pub estimated_liquidation_price: Option<Decimal>,
+    /// Position delta (for options)
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal_flexible"
+    )]
+    pub delta: Option<Decimal>,
+    /// Position gamma (for options)
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal_flexible"
+    )]
+    pub gamma: Option<Decimal>,
+    /// Position vega (for options)
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal_flexible"
+    )]
+    pub vega: Option<Decimal>,
+    /// Position theta (for options)
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal_flexible"
+    )]
+    pub theta: Option<Decimal>,
+    /// Settlement price (if settled)
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal_flexible"
+    )]
+    pub settlement_price: Option<Decimal>,
+    /// Open orders margin for this position
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal_flexible"
+    )]
+    pub open_orders_margin: Option<Decimal>,
+    /// Average price in USD (for currency-margined contracts)
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal_flexible"
+    )]
+    pub average_price_usd: Option<Decimal>,
+    /// Realized profit loss (session)
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal_flexible"
+    )]
+    pub realized_profit_loss_session: Option<Decimal>,
+    /// Floating profit loss in USD
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal_flexible"
+    )]
+    pub floating_profit_loss_usd: Option<Decimal>,
+}
+
+/// Response wrapper for user trades endpoints.
+///
+/// Contains the trades array and pagination information.
+/// Used by `/private/get_user_trades_by_*` endpoints.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeribitUserTradesResponse {
+    /// Whether there are more trades available.
+    pub has_more: bool,
+    /// Array of user trade objects.
+    pub trades: Vec<crate::websocket::messages::DeribitUserTradeMsg>,
 }

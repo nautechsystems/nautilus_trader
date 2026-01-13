@@ -665,25 +665,88 @@ class DeribitExecutionClient(LiveExecutionClient):
         self,
         command: GenerateOrderStatusReports,
     ) -> list[OrderStatusReport]:
-        self._log.warning(
-            f"generate_order_status_reports not yet implemented (instrument_id={command.instrument_id})",
-        )
-        return []
+        reports: list[OrderStatusReport] = []
+        try:
+            pyo3_instrument_id = None
+            if command.instrument_id:
+                pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+                    command.instrument_id.value,
+                )
+
+            # command.start/end are UnixNanos (has as_u64 method)
+            start = command.start.as_u64() if command.start else None
+            end = command.end.as_u64() if command.end else None
+
+            pyo3_reports = await self._http_client.request_order_status_reports(
+                account_id=self.pyo3_account_id,
+                instrument_id=pyo3_instrument_id,
+                start=start,
+                end=end,
+                open_only=command.open_only,
+            )
+
+            for pyo3_report in pyo3_reports:
+                report = OrderStatusReport.from_pyo3(pyo3_report)
+                self._log.debug(f"Received {report}", LogColor.MAGENTA)
+                reports.append(report)
+        except Exception as e:
+            self._log.exception("Failed to generate OrderStatusReports", e)
+
+        return reports
 
     async def generate_fill_reports(
         self,
         command: GenerateFillReports,
     ) -> list[FillReport]:
-        self._log.warning(
-            f"generate_fill_reports not yet implemented (instrument_id={command.instrument_id})",
-        )
-        return []
+        reports: list[FillReport] = []
+        try:
+            pyo3_instrument_id = None
+            if command.instrument_id:
+                pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+                    command.instrument_id.value,
+                )
+
+            start = command.start.as_u64() if command.start else None
+            end = command.end.as_u64() if command.end else None
+
+            pyo3_reports = await self._http_client.request_fill_reports(
+                account_id=self.pyo3_account_id,
+                instrument_id=pyo3_instrument_id,
+                start=start,
+                end=end,
+            )
+
+            for pyo3_report in pyo3_reports:
+                report = FillReport.from_pyo3(pyo3_report)
+                self._log.debug(f"Received {report}", LogColor.MAGENTA)
+                reports.append(report)
+        except Exception as e:
+            self._log.exception("Failed to generate FillReports", e)
+
+        return reports
 
     async def generate_position_status_reports(
         self,
         command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
-        self._log.warning(
-            f"generate_position_status_reports not yet implemented (instrument_id={command.instrument_id})",
-        )
-        return []
+        reports: list[PositionStatusReport] = []
+        try:
+            pyo3_instrument_id = None
+            if command.instrument_id:
+                pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+                    command.instrument_id.value,
+                )
+
+            pyo3_reports = await self._http_client.request_position_status_reports(
+                account_id=self.pyo3_account_id,
+                instrument_id=pyo3_instrument_id,
+            )
+
+            for pyo3_report in pyo3_reports:
+                report = PositionStatusReport.from_pyo3(pyo3_report)
+                self._log.debug(f"Received {report}", LogColor.MAGENTA)
+                reports.append(report)
+        except Exception as e:
+            self._log.exception("Failed to generate PositionStatusReports", e)
+
+        return reports
