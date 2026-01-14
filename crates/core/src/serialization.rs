@@ -187,7 +187,14 @@ where
         serde_json::Value::String(s) => Decimal::from_str(&s).map_err(D::Error::custom),
         serde_json::Value::Number(n) => {
             // Convert to string first to preserve exact representation
-            Decimal::from_str(&n.to_string()).map_err(D::Error::custom)
+            // serde_json may output scientific notation for very small/large numbers
+            // rust_decimal::Decimal::from_str doesn't support scientific notation
+            let s = n.to_string();
+            if s.contains('e') || s.contains('E') {
+                Decimal::from_scientific(&s).map_err(D::Error::custom)
+            } else {
+                Decimal::from_str(&s).map_err(D::Error::custom)
+            }
         }
         serde_json::Value::Null => Ok(Decimal::ZERO),
         _ => Err(D::Error::custom("expected decimal string, number, or null")),
@@ -219,9 +226,16 @@ where
                 Decimal::from_str(&s).map(Some).map_err(D::Error::custom)
             }
         }
-        serde_json::Value::Number(n) => Decimal::from_str(&n.to_string())
-            .map(Some)
-            .map_err(D::Error::custom),
+        serde_json::Value::Number(n) => {
+            let s = n.to_string();
+            if s.contains('e') || s.contains('E') {
+                Decimal::from_scientific(&s)
+                    .map(Some)
+                    .map_err(D::Error::custom)
+            } else {
+                Decimal::from_str(&s).map(Some).map_err(D::Error::custom)
+            }
+        }
         serde_json::Value::Null => Ok(None),
         _ => Err(D::Error::custom("expected decimal string, number, or null")),
     }
@@ -925,12 +939,14 @@ mod tests {
     }
 
     #[rstest]
-    fn test_flexible_decimal_precision_preserved() {
-        // Test that high-precision values from JSON numbers are preserved
-        let json = r#"{"value": 0.00000001, "optional_value": 99999999.99999999}"#;
+    fn test_flexible_decimal_scientific_notation() {
+        // Test that scientific notation from serde_json is handled correctly.
+        // serde_json outputs very small numbers like 0.00000001 as "1e-8".
+        // Note: JSON numbers are parsed as f64, so values are limited to ~15 significant digits.
+        let json = r#"{"value": 0.00000001, "optional_value": 12345678.12345}"#;
         let parsed: TestFlexibleDecimal = serde_json::from_str(json).unwrap();
         assert_eq!(parsed.value, dec!(0.00000001));
-        assert_eq!(parsed.optional_value, Some(dec!(99999999.99999999)));
+        assert_eq!(parsed.optional_value, Some(dec!(12345678.12345)));
     }
 
     #[rstest]
