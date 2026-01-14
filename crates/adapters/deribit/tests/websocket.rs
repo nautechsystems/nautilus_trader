@@ -499,6 +499,14 @@ fn create_test_client(ws_url: &str) -> DeribitWebSocketClient {
     .expect("failed to construct deribit websocket client")
 }
 
+/// Creates a test client that explicitly has no credentials.
+///
+/// Does NOT fall back to environment variables.
+fn create_test_client_without_credentials(ws_url: &str) -> DeribitWebSocketClient {
+    DeribitWebSocketClient::new_unauthenticated(Some(ws_url.to_string()), Some(30), true)
+        .expect("failed to construct deribit websocket client")
+}
+
 #[tokio::test]
 async fn test_websocket_connection() {
     let state = Arc::new(TestServerState::default());
@@ -1351,8 +1359,8 @@ async fn test_authentication_without_credentials_fails() {
 
     let instruments = load_test_instruments();
 
-    // Create client without credentials
-    let mut client = create_test_client(&ws_url);
+    // Create client explicitly without credentials (bypasses env var resolution)
+    let mut client = create_test_client_without_credentials(&ws_url);
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client

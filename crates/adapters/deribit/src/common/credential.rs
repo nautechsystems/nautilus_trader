@@ -22,10 +22,22 @@ use std::{collections::HashMap, fmt::Debug};
 use aws_lc_rs::hmac;
 use hex;
 use nautilus_core::{UUID4, time::get_atomic_clock_realtime};
+use thiserror::Error;
 use ustr::Ustr;
 use zeroize::ZeroizeOnDrop;
 
 use crate::http::error::DeribitHttpError;
+
+/// Errors that can occur when resolving credentials.
+#[derive(Debug, Error)]
+pub enum CredentialError {
+    /// API key was provided but secret is missing.
+    #[error("API key provided but secret is missing")]
+    MissingSecret,
+    /// API secret was provided but key is missing.
+    #[error("API secret provided but key is missing")]
+    MissingKey,
+}
 
 /// Deribit API credentials for signing requests.
 ///
@@ -81,15 +93,40 @@ impl Credential {
     ///
     /// If both `api_key` and `api_secret` are provided, uses those.
     /// Otherwise falls back to loading from environment variables.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if only one of `api_key` or `api_secret` is provided.
     pub fn resolve(
         api_key: Option<String>,
         api_secret: Option<String>,
         is_testnet: bool,
-    ) -> Option<Self> {
+    ) -> Result<Option<Self>, CredentialError> {
+        Self::resolve_with_env_fallback(api_key, api_secret, is_testnet, true)
+    }
+
+    /// Resolves credentials with optional environment fallback.
+    ///
+    /// If both `api_key` and `api_secret` are provided, uses those.
+    /// If `env_fallback` is true and neither credential is provided, loads from environment.
+    /// If `env_fallback` is false and neither credential is provided, returns `Ok(None)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if only one of `api_key` or `api_secret` is provided (partial credentials).
+    /// This prevents silent fallback to environment variables when user intent is unclear.
+    pub fn resolve_with_env_fallback(
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        is_testnet: bool,
+        env_fallback: bool,
+    ) -> Result<Option<Self>, CredentialError> {
         match (api_key, api_secret) {
-            (Some(k), Some(s)) => Some(Self::new(k, s)),
-            _ => Self::from_env(is_testnet),
+            (Some(k), Some(s)) => Ok(Some(Self::new(k, s))),
+            (None, None) if env_fallback => Ok(Self::from_env(is_testnet)),
+            (None, None) => Ok(None),
+            (Some(_), None) => Err(CredentialError::MissingSecret),
+            (None, Some(_)) => Err(CredentialError::MissingKey),
         }
     }
 
@@ -507,5 +544,49 @@ mod tests {
         let sig2 = credential.sign_ws_auth(timestamp, nonce2, data);
 
         assert_ne!(sig1, sig2, "Signature should change with nonce");
+    }
+
+    #[rstest]
+    fn test_resolve_with_both_credentials() {
+        let result = Credential::resolve_with_env_fallback(
+            Some("key".to_string()),
+            Some("secret".to_string()),
+            false,
+            false,
+        );
+
+        assert!(result.is_ok());
+        let credential = result.unwrap();
+        assert!(credential.is_some());
+        assert_eq!(credential.unwrap().api_key().as_str(), "key");
+    }
+
+    #[rstest]
+    fn test_resolve_with_no_credentials_no_fallback() {
+        let result = Credential::resolve_with_env_fallback(None, None, false, false);
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[rstest]
+    fn test_resolve_partial_key_only_returns_error() {
+        let result =
+            Credential::resolve_with_env_fallback(Some("key".to_string()), None, false, false);
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            CredentialError::MissingSecret
+        ));
+    }
+
+    #[rstest]
+    fn test_resolve_partial_secret_only_returns_error() {
+        let result =
+            Credential::resolve_with_env_fallback(None, Some("secret".to_string()), false, false);
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), CredentialError::MissingKey));
     }
 }

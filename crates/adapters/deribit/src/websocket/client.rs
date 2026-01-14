@@ -127,6 +127,8 @@ impl Debug for DeribitWebSocketClient {
 impl DeribitWebSocketClient {
     /// Creates a new [`DeribitWebSocketClient`] instance.
     ///
+    /// Falls back to environment variables if credentials are not provided.
+    ///
     /// # Errors
     ///
     /// Returns an error if only one of `api_key` or `api_secret` is provided.
@@ -137,6 +139,25 @@ impl DeribitWebSocketClient {
         heartbeat_interval: Option<u64>,
         is_testnet: bool,
     ) -> anyhow::Result<Self> {
+        Self::new_inner(
+            url,
+            api_key,
+            api_secret,
+            heartbeat_interval,
+            is_testnet,
+            true,
+        )
+    }
+
+    /// Internal constructor with control over environment variable fallback.
+    fn new_inner(
+        url: Option<String>,
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        heartbeat_interval: Option<u64>,
+        is_testnet: bool,
+        env_fallback: bool,
+    ) -> anyhow::Result<Self> {
         let url = url.unwrap_or_else(|| {
             if is_testnet {
                 DERIBIT_TESTNET_WS_URL.to_string()
@@ -145,8 +166,9 @@ impl DeribitWebSocketClient {
             }
         });
 
-        // Resolve credential from config or environment variables
-        let credential = Credential::resolve(api_key, api_secret, is_testnet);
+        // Resolve credential from config or environment variables (if env_fallback is true)
+        let credential =
+            Credential::resolve_with_env_fallback(api_key, api_secret, is_testnet, env_fallback)?;
         if credential.is_some() {
             log::info!("Deribit credentials loaded (testnet={is_testnet})");
         } else {
@@ -183,12 +205,37 @@ impl DeribitWebSocketClient {
 
     /// Creates a new public (unauthenticated) client.
     ///
+    /// Does NOT fall back to environment variables for credentials.
+    ///
     /// # Errors
     ///
     /// Returns an error if initialization fails.
     pub fn new_public(is_testnet: bool) -> anyhow::Result<Self> {
         let heartbeat_interval = 10;
-        Self::new(None, None, None, Some(heartbeat_interval), is_testnet)
+        Self::new_inner(
+            None,
+            None,
+            None,
+            Some(heartbeat_interval),
+            is_testnet,
+            false,
+        )
+    }
+
+    /// Creates an unauthenticated client with a custom URL.
+    ///
+    /// Does NOT fall back to environment variables for credentials.
+    /// Useful for testing against mock servers.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if initialization fails.
+    pub fn new_unauthenticated(
+        url: Option<String>,
+        heartbeat_interval: Option<u64>,
+        is_testnet: bool,
+    ) -> anyhow::Result<Self> {
+        Self::new_inner(url, None, None, heartbeat_interval, is_testnet, false)
     }
 
     /// Creates an authenticated client with credentials.
