@@ -869,6 +869,13 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             converted_bid_price = ib_price_to_nautilus_price(bid_price, price_magnifier)
             converted_ask_price = ib_price_to_nautilus_price(ask_price, price_magnifier)
 
+            # Cap sizes to prevent overflow (IBKR sometimes sends invalid huge values)
+            SAFE_MAX_SIZE = Decimal("2000000000")  # 2 Billion cap
+            if bid_size > SAFE_MAX_SIZE:
+               bid_size = SAFE_MAX_SIZE
+            if ask_size > SAFE_MAX_SIZE:
+               ask_size = SAFE_MAX_SIZE
+
             quote_tick = QuoteTick(
                 instrument_id=instrument_id,
                 bid_price=instrument.make_price(converted_bid_price),
