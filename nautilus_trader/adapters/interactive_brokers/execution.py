@@ -815,12 +815,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             mass_status.add_fill_reports(reports=fill_reports)
             mass_status.add_position_reports(reports=position_reports)
 
-            self.reconciliation_active = False
-
             return mass_status
         except Exception as e:
             self._log.exception("Cannot reconcile execution state", e)
-        return None
+            return None
+        finally:
+            self.reconciliation_active = False
 
     async def _query_account(self, _command: QueryAccount) -> None:
         # This method triggers a fresh request for account summary information,
@@ -834,8 +834,17 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # Request fresh account summary data
         self._client.subscribe_account_summary()
 
-        # Wait for the account summary to be loaded
-        await self._account_summary_loaded.wait()
+        # Wait for the account summary to be loaded with timeout to prevent deadlock
+        try:
+            await asyncio.wait_for(
+                self._account_summary_loaded.wait(),
+                timeout=self._connection_timeout,
+            )
+        except TimeoutError:
+            self._log.error(
+                f"Timeout waiting for account summary after {self._connection_timeout}s",
+            )
+            raise
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         PyCondition.type(command, SubmitOrder, "command")
@@ -1520,7 +1529,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         contract: IBContract,
     ) -> None:
         if not execution.orderRef:
-            self._log.debug(f"ClientOrderId not available, execution={execution.__dict__}")
+            self._log.warning(f"ClientOrderId not available, execution={execution.__dict__}")
             return
 
         client_order_id = ClientOrderId(order_ref)

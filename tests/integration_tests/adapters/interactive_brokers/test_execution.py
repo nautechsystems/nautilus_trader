@@ -218,6 +218,7 @@ async def test_submit_order(
     instrument,
     contract_details,
     client_order_id,
+    mock_connection_setup,
 ):
     # Arrange
     instrument_setup(
@@ -227,46 +228,7 @@ async def test_submit_order(
         contract_details=contract_details,
     )
     # Setup connection mocks
-    mocker.patch.object(
-        exec_client._client._eclient,
-        "reqAccountSummary",
-        side_effect=partial(account_summary_setup, exec_client._client),
-    )
-
-    async def mock_wait_until_ready(timeout):
-        exec_client._client._is_client_ready.set()
-        exec_client._client._is_ib_connected.set()
-
-    mocker.patch.object(
-        exec_client._client,
-        "wait_until_ready",
-        side_effect=mock_wait_until_ready,
-    )
-    mocker.patch.object(
-        exec_client.instrument_provider,
-        "initialize",
-        return_value=None,
-    )
-    exec_client._account_summary_loaded.set()
-
-    async def mock_connect():
-        # Register event handlers as the real _connect does
-        account = exec_client.account_id.get_id()
-        exec_client._client.subscribe_event(
-            f"accountSummary-{account}",
-            exec_client._on_account_summary,
-        )
-        exec_client._client.subscribe_event(f"openOrder-{account}", exec_client._on_open_order)
-        exec_client._client.subscribe_event(f"orderStatus-{account}", exec_client._on_order_status)
-        exec_client._client.subscribe_event(f"execDetails-{account}", exec_client._on_exec_details)
-        exec_client._set_connected(True)
-
-    mocker.patch.object(
-        exec_client,
-        "_connect",
-        side_effect=mock_connect,
-    )
-
+    mock_connection_setup()
     exec_client.connect()
     await asyncio.sleep(0.1)
 
@@ -306,6 +268,7 @@ async def test_submit_order_what_if(
     instrument,
     contract_details,
     client_order_id,
+    mock_connection_setup,
 ):
     # Arrange
     instrument_setup(
@@ -315,46 +278,7 @@ async def test_submit_order_what_if(
         contract_details=contract_details,
     )
     # Setup connection mocks
-    mocker.patch.object(
-        exec_client._client._eclient,
-        "reqAccountSummary",
-        side_effect=partial(account_summary_setup, exec_client._client),
-    )
-
-    async def mock_wait_until_ready(timeout):
-        exec_client._client._is_client_ready.set()
-        exec_client._client._is_ib_connected.set()
-
-    mocker.patch.object(
-        exec_client._client,
-        "wait_until_ready",
-        side_effect=mock_wait_until_ready,
-    )
-    mocker.patch.object(
-        exec_client.instrument_provider,
-        "initialize",
-        return_value=None,
-    )
-    exec_client._account_summary_loaded.set()
-
-    async def mock_connect():
-        # Register event handlers as the real _connect does
-        account = exec_client.account_id.get_id()
-        exec_client._client.subscribe_event(
-            f"accountSummary-{account}",
-            exec_client._on_account_summary,
-        )
-        exec_client._client.subscribe_event(f"openOrder-{account}", exec_client._on_open_order)
-        exec_client._client.subscribe_event(f"orderStatus-{account}", exec_client._on_order_status)
-        exec_client._client.subscribe_event(f"execDetails-{account}", exec_client._on_exec_details)
-        exec_client._set_connected(True)
-
-    mocker.patch.object(
-        exec_client,
-        "_connect",
-        side_effect=mock_connect,
-    )
-
+    mock_connection_setup()
     exec_client.connect()
     await asyncio.sleep(0.1)
 
@@ -400,6 +324,7 @@ async def test_submit_order_list(
     instrument,
     contract_details,
     client_order_id,
+    mock_connection_setup,
 ):
     # Arrange
     instrument_setup(
@@ -409,46 +334,7 @@ async def test_submit_order_list(
         contract_details=contract_details,
     )
     # Setup connection mocks
-    mocker.patch.object(
-        exec_client._client._eclient,
-        "reqAccountSummary",
-        side_effect=partial(account_summary_setup, exec_client._client),
-    )
-
-    async def mock_wait_until_ready(timeout):
-        exec_client._client._is_client_ready.set()
-        exec_client._client._is_ib_connected.set()
-
-    mocker.patch.object(
-        exec_client._client,
-        "wait_until_ready",
-        side_effect=mock_wait_until_ready,
-    )
-    mocker.patch.object(
-        exec_client.instrument_provider,
-        "initialize",
-        return_value=None,
-    )
-    exec_client._account_summary_loaded.set()
-
-    async def mock_connect():
-        # Register event handlers as the real _connect does
-        account = exec_client.account_id.get_id()
-        exec_client._client.subscribe_event(
-            f"accountSummary-{account}",
-            exec_client._on_account_summary,
-        )
-        exec_client._client.subscribe_event(f"openOrder-{account}", exec_client._on_open_order)
-        exec_client._client.subscribe_event(f"orderStatus-{account}", exec_client._on_order_status)
-        exec_client._client.subscribe_event(f"execDetails-{account}", exec_client._on_exec_details)
-        exec_client._set_connected(True)
-
-    mocker.patch.object(
-        exec_client,
-        "_connect",
-        side_effect=mock_connect,
-    )
-
+    mock_connection_setup()
     exec_client.connect()
     await asyncio.sleep(0.1)
 
@@ -493,6 +379,7 @@ async def test_modify_order(
     instrument,
     contract_details,
     client_order_id,
+    mock_connection_setup,
 ):
     # Arrange
     instrument_setup(
@@ -502,46 +389,7 @@ async def test_modify_order(
         contract_details=contract_details,
     )
     # Setup connection mocks
-    mocker.patch.object(
-        exec_client._client._eclient,
-        "reqAccountSummary",
-        side_effect=partial(account_summary_setup, exec_client._client),
-    )
-
-    async def mock_wait_until_ready(timeout):
-        exec_client._client._is_client_ready.set()
-        exec_client._client._is_ib_connected.set()
-
-    mocker.patch.object(
-        exec_client._client,
-        "wait_until_ready",
-        side_effect=mock_wait_until_ready,
-    )
-    mocker.patch.object(
-        exec_client.instrument_provider,
-        "initialize",
-        return_value=None,
-    )
-    exec_client._account_summary_loaded.set()
-
-    async def mock_connect():
-        # Register event handlers as the real _connect does
-        account = exec_client.account_id.get_id()
-        exec_client._client.subscribe_event(
-            f"accountSummary-{account}",
-            exec_client._on_account_summary,
-        )
-        exec_client._client.subscribe_event(f"openOrder-{account}", exec_client._on_open_order)
-        exec_client._client.subscribe_event(f"orderStatus-{account}", exec_client._on_order_status)
-        exec_client._client.subscribe_event(f"execDetails-{account}", exec_client._on_exec_details)
-        exec_client._set_connected(True)
-
-    mocker.patch.object(
-        exec_client,
-        "_connect",
-        side_effect=mock_connect,
-    )
-
+    mock_connection_setup()
     exec_client.connect()
     await asyncio.sleep(0.1)
 
@@ -584,6 +432,7 @@ async def test_modify_order_quantity(
     instrument,
     contract_details,
     client_order_id,
+    mock_connection_setup,
 ):
     # Arrange
     instrument_setup(
@@ -593,46 +442,7 @@ async def test_modify_order_quantity(
         contract_details=contract_details,
     )
     # Setup connection mocks
-    mocker.patch.object(
-        exec_client._client._eclient,
-        "reqAccountSummary",
-        side_effect=partial(account_summary_setup, exec_client._client),
-    )
-
-    async def mock_wait_until_ready(timeout):
-        exec_client._client._is_client_ready.set()
-        exec_client._client._is_ib_connected.set()
-
-    mocker.patch.object(
-        exec_client._client,
-        "wait_until_ready",
-        side_effect=mock_wait_until_ready,
-    )
-    mocker.patch.object(
-        exec_client.instrument_provider,
-        "initialize",
-        return_value=None,
-    )
-    exec_client._account_summary_loaded.set()
-
-    async def mock_connect():
-        # Register event handlers as the real _connect does
-        account = exec_client.account_id.get_id()
-        exec_client._client.subscribe_event(
-            f"accountSummary-{account}",
-            exec_client._on_account_summary,
-        )
-        exec_client._client.subscribe_event(f"openOrder-{account}", exec_client._on_open_order)
-        exec_client._client.subscribe_event(f"orderStatus-{account}", exec_client._on_order_status)
-        exec_client._client.subscribe_event(f"execDetails-{account}", exec_client._on_exec_details)
-        exec_client._set_connected(True)
-
-    mocker.patch.object(
-        exec_client,
-        "_connect",
-        side_effect=mock_connect,
-    )
-
+    mock_connection_setup()
     exec_client.connect()
     await asyncio.sleep(0.1)
 
@@ -673,6 +483,7 @@ async def test_modify_order_price(
     instrument,
     contract_details,
     client_order_id,
+    mock_connection_setup,
 ):
     # Arrange
     instrument_setup(
@@ -682,46 +493,7 @@ async def test_modify_order_price(
         contract_details=contract_details,
     )
     # Setup connection mocks
-    mocker.patch.object(
-        exec_client._client._eclient,
-        "reqAccountSummary",
-        side_effect=partial(account_summary_setup, exec_client._client),
-    )
-
-    async def mock_wait_until_ready(timeout):
-        exec_client._client._is_client_ready.set()
-        exec_client._client._is_ib_connected.set()
-
-    mocker.patch.object(
-        exec_client._client,
-        "wait_until_ready",
-        side_effect=mock_wait_until_ready,
-    )
-    mocker.patch.object(
-        exec_client.instrument_provider,
-        "initialize",
-        return_value=None,
-    )
-    exec_client._account_summary_loaded.set()
-
-    async def mock_connect():
-        # Register event handlers as the real _connect does
-        account = exec_client.account_id.get_id()
-        exec_client._client.subscribe_event(
-            f"accountSummary-{account}",
-            exec_client._on_account_summary,
-        )
-        exec_client._client.subscribe_event(f"openOrder-{account}", exec_client._on_open_order)
-        exec_client._client.subscribe_event(f"orderStatus-{account}", exec_client._on_order_status)
-        exec_client._client.subscribe_event(f"execDetails-{account}", exec_client._on_exec_details)
-        exec_client._set_connected(True)
-
-    mocker.patch.object(
-        exec_client,
-        "_connect",
-        side_effect=mock_connect,
-    )
-
+    mock_connection_setup()
     exec_client.connect()
     await asyncio.sleep(0.1)
 
@@ -761,6 +533,7 @@ async def test_cancel_order(
     instrument,
     contract_details,
     client_order_id,
+    mock_connection_setup,
 ):
     # Arrange
     instrument_setup(
@@ -770,46 +543,7 @@ async def test_cancel_order(
         contract_details=contract_details,
     )
     # Setup connection mocks
-    mocker.patch.object(
-        exec_client._client._eclient,
-        "reqAccountSummary",
-        side_effect=partial(account_summary_setup, exec_client._client),
-    )
-
-    async def mock_wait_until_ready(timeout):
-        exec_client._client._is_client_ready.set()
-        exec_client._client._is_ib_connected.set()
-
-    mocker.patch.object(
-        exec_client._client,
-        "wait_until_ready",
-        side_effect=mock_wait_until_ready,
-    )
-    mocker.patch.object(
-        exec_client.instrument_provider,
-        "initialize",
-        return_value=None,
-    )
-    exec_client._account_summary_loaded.set()
-
-    async def mock_connect():
-        # Register event handlers as the real _connect does
-        account = exec_client.account_id.get_id()
-        exec_client._client.subscribe_event(
-            f"accountSummary-{account}",
-            exec_client._on_account_summary,
-        )
-        exec_client._client.subscribe_event(f"openOrder-{account}", exec_client._on_open_order)
-        exec_client._client.subscribe_event(f"orderStatus-{account}", exec_client._on_order_status)
-        exec_client._client.subscribe_event(f"execDetails-{account}", exec_client._on_exec_details)
-        exec_client._set_connected(True)
-
-    mocker.patch.object(
-        exec_client,
-        "_connect",
-        side_effect=mock_connect,
-    )
-
+    mock_connection_setup()
     exec_client.connect()
     await asyncio.sleep(0.1)
 
@@ -850,6 +584,7 @@ async def test_on_exec_details(
     instrument,
     contract_details,
     client_order_id,
+    mock_connection_setup,
 ):
     # Arrange
     instrument_setup(
@@ -859,46 +594,7 @@ async def test_on_exec_details(
         contract_details=contract_details,
     )
     # Setup connection mocks
-    mocker.patch.object(
-        exec_client._client._eclient,
-        "reqAccountSummary",
-        side_effect=partial(account_summary_setup, exec_client._client),
-    )
-
-    async def mock_wait_until_ready(timeout):
-        exec_client._client._is_client_ready.set()
-        exec_client._client._is_ib_connected.set()
-
-    mocker.patch.object(
-        exec_client._client,
-        "wait_until_ready",
-        side_effect=mock_wait_until_ready,
-    )
-    mocker.patch.object(
-        exec_client.instrument_provider,
-        "initialize",
-        return_value=None,
-    )
-    exec_client._account_summary_loaded.set()
-
-    async def mock_connect():
-        # Register event handlers as the real _connect does
-        account = exec_client.account_id.get_id()
-        exec_client._client.subscribe_event(
-            f"accountSummary-{account}",
-            exec_client._on_account_summary,
-        )
-        exec_client._client.subscribe_event(f"openOrder-{account}", exec_client._on_open_order)
-        exec_client._client.subscribe_event(f"orderStatus-{account}", exec_client._on_order_status)
-        exec_client._client.subscribe_event(f"execDetails-{account}", exec_client._on_exec_details)
-        exec_client._set_connected(True)
-
-    mocker.patch.object(
-        exec_client,
-        "_connect",
-        side_effect=mock_connect,
-    )
-
+    mock_connection_setup()
     exec_client.connect()
     await asyncio.sleep(0.1)
 
@@ -970,6 +666,7 @@ async def test_on_order_status_with_avg_px(
     instrument,
     contract_details,
     client_order_id,
+    mock_connection_setup,
 ):
     # Arrange
     instrument_setup(
@@ -979,46 +676,7 @@ async def test_on_order_status_with_avg_px(
         contract_details=contract_details,
     )
     # Setup connection mocks
-    mocker.patch.object(
-        exec_client._client._eclient,
-        "reqAccountSummary",
-        side_effect=partial(account_summary_setup, exec_client._client),
-    )
-
-    async def mock_wait_until_ready(timeout):
-        exec_client._client._is_client_ready.set()
-        exec_client._client._is_ib_connected.set()
-
-    mocker.patch.object(
-        exec_client._client,
-        "wait_until_ready",
-        side_effect=mock_wait_until_ready,
-    )
-    mocker.patch.object(
-        exec_client.instrument_provider,
-        "initialize",
-        return_value=None,
-    )
-    exec_client._account_summary_loaded.set()
-
-    async def mock_connect():
-        # Register event handlers as the real _connect does
-        account = exec_client.account_id.get_id()
-        exec_client._client.subscribe_event(
-            f"accountSummary-{account}",
-            exec_client._on_account_summary,
-        )
-        exec_client._client.subscribe_event(f"openOrder-{account}", exec_client._on_open_order)
-        exec_client._client.subscribe_event(f"orderStatus-{account}", exec_client._on_order_status)
-        exec_client._client.subscribe_event(f"execDetails-{account}", exec_client._on_exec_details)
-        exec_client._set_connected(True)
-
-    mocker.patch.object(
-        exec_client,
-        "_connect",
-        side_effect=mock_connect,
-    )
-
+    mock_connection_setup()
     exec_client.connect()
     await asyncio.sleep(0.1)
 
@@ -1060,6 +718,7 @@ async def test_on_exec_details_uses_stored_avg_px(
     instrument,
     contract_details,
     client_order_id,
+    mock_connection_setup,
 ):
     # Arrange
     instrument_setup(
@@ -1069,46 +728,7 @@ async def test_on_exec_details_uses_stored_avg_px(
         contract_details=contract_details,
     )
     # Setup connection mocks
-    mocker.patch.object(
-        exec_client._client._eclient,
-        "reqAccountSummary",
-        side_effect=partial(account_summary_setup, exec_client._client),
-    )
-
-    async def mock_wait_until_ready(timeout):
-        exec_client._client._is_client_ready.set()
-        exec_client._client._is_ib_connected.set()
-
-    mocker.patch.object(
-        exec_client._client,
-        "wait_until_ready",
-        side_effect=mock_wait_until_ready,
-    )
-    mocker.patch.object(
-        exec_client.instrument_provider,
-        "initialize",
-        return_value=None,
-    )
-    exec_client._account_summary_loaded.set()
-
-    async def mock_connect():
-        # Register event handlers as the real _connect does
-        account = exec_client.account_id.get_id()
-        exec_client._client.subscribe_event(
-            f"accountSummary-{account}",
-            exec_client._on_account_summary,
-        )
-        exec_client._client.subscribe_event(f"openOrder-{account}", exec_client._on_open_order)
-        exec_client._client.subscribe_event(f"orderStatus-{account}", exec_client._on_order_status)
-        exec_client._client.subscribe_event(f"execDetails-{account}", exec_client._on_exec_details)
-        exec_client._set_connected(True)
-
-    mocker.patch.object(
-        exec_client,
-        "_connect",
-        side_effect=mock_connect,
-    )
-
+    mock_connection_setup()
     exec_client.connect()
     await asyncio.sleep(0.1)
 

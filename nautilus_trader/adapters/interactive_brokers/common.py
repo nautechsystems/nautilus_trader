@@ -27,7 +27,7 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 
 
-IB: Final[str] = "IB"
+IB: Final[str] = "INTERACTIVE_BROKERS"
 IB_VENUE: Final[Venue] = Venue(IB)
 IB_CLIENT_ID: Final[ClientId] = ClientId(IB)
 
