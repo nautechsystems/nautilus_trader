@@ -182,7 +182,7 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `get_xrate` must be implemented in the subclass")  # pragma: no cover
 
-    cpdef get_mark_xrate(
+    cpdef object get_mark_xrate(
         self,
         Currency from_currency,
         Currency to_currency,

@@ -160,6 +160,10 @@ cdef class Cache(CacheFacade):
     cdef list _get_positions_for_ids(self, set position_ids, PositionSide side)
     cdef void _assign_position_id_to_contingencies(self, Order order)
     cpdef Money calculate_unrealized_pnl(self, Position position)
+    cpdef object get_mark_xrate(self, Currency from_currency, Currency to_currency)
+    cpdef void set_mark_xrate(self, Currency from_currency, Currency to_currency, double xrate)
+    cpdef void clear_mark_xrate(self, Currency from_currency, Currency to_currency)
+    cpdef void clear_mark_xrates(self)
 
     cpdef Instrument load_instrument(self, InstrumentId instrument_id)
     cpdef SyntheticInstrument load_synthetic(self, InstrumentId instrument_id)

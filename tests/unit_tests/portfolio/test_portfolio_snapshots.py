@@ -2040,6 +2040,9 @@ def test_realized_pnl_cache_invalidated_on_update(
     position2.apply(fill4)
     cache.update_position(position2)
 
+    # Trigger portfolio update via event
+    portfolio.update_position(TestEventStubs.position_closed(position2))
+
     # DON'T snapshot yet - position update should trigger cache invalidation
 
     # Calculate again - should recompute due to position change

@@ -684,7 +684,12 @@ cdef class Position:
         self._adjustments.append(adjustment)
         self.ts_last = adjustment.ts_event
 
-    cpdef Money notional_value(self, Price price):
+    cpdef Money notional_value(
+        self,
+        Price price,
+        Currency target_currency=None,
+        Price conversion_price=None,
+    ):
         """
         Return the current notional value of the position, using a reference
         price for the calculation (e.g., bid, ask, mid, last, or mark).
@@ -693,11 +698,18 @@ cdef class Position:
         - For an inverse instrument, the notional is returned in the base currency, with
           the calculation scaled by 1 / price.
 
+        If `target_currency` and `conversion_price` are provided, the notional
+        value will be converted to the target currency.
+
         Parameters
         ----------
         price : Price
             The reference price for the calculation. This could be the last, mid, bid, ask,
             a mark-to-market price, or any other suitably representative value.
+        target_currency : Currency, optional
+            The target currency for conversion.
+        conversion_price : Price, optional
+            The price to use for currency conversion.
 
         Returns
         -------
@@ -707,16 +719,58 @@ cdef class Position:
         """
         Condition.not_none(price, "price")
 
+        cdef Money notional
         if self.is_inverse:
-            return Money(
+            notional = Money(
                 self.quantity.as_f64_c() * self.multiplier.as_f64_c() * (1.0 / price.as_f64_c()),
                 self.base_currency,
             )
         else:
-            return Money(
+            notional = Money(
                 self.quantity.as_f64_c() * self.multiplier.as_f64_c() * price.as_f64_c(),
                 self.quote_currency,
             )
+
+        if target_currency is not None and conversion_price is not None:
+            return Money(notional.as_f64_c() * conversion_price.as_f64_c(), target_currency)
+
+        return notional
+
+    cpdef Money cross_notional_value(
+        self,
+        Price price,
+        Price quote_price,
+        Price base_price,
+        Currency target_currency,
+    ):
+        """
+        Return the current notional value of the position in a cross/target currency.
+
+        The `quote_price` is the Quote/Target conversion price, and `base_price`
+        is the Base/Target conversion price.
+
+        Parameters
+        ----------
+        price : Price
+            The reference price for the calculation.
+        quote_price : Price
+            The Quote/Target conversion price.
+        base_price : Price
+            The Base/Target conversion price.
+        target_currency : Currency
+            The target currency for conversion.
+
+        Returns
+        -------
+        Money
+
+        """
+        cdef Price conversion_price = base_price if self.is_inverse else quote_price
+        return self.notional_value(
+            price=price,
+            target_currency=target_currency,
+            conversion_price=conversion_price,
+        )
 
     cpdef Money calculate_pnl(
         self,

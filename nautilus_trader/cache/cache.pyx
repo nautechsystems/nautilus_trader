@@ -3429,7 +3429,7 @@ cdef class Cache(CacheFacade):
         Raises
         ------
         ValueError
-            If `price_type` is ``LAST`` or ``MARK``.
+            If `price_type` is ``LAST``.
 
         """
         Condition.not_none(from_currency, "from_currency")
@@ -3439,6 +3439,9 @@ cdef class Cache(CacheFacade):
             # When the source and target currencies are identical,
             # no conversion is needed; return an exchange rate of 1.0.
             return 1.0
+
+        if price_type == PriceType.MARK:
+            return self.get_mark_xrate(from_currency, to_currency)
 
         cdef tuple quotes = self._build_quote_table(venue)
         try:
@@ -3486,7 +3489,7 @@ cdef class Cache(CacheFacade):
 
         return bid_quotes, ask_quotes
 
-    cpdef get_mark_xrate(
+    cpdef object get_mark_xrate(
         self,
         Currency from_currency,
         Currency to_currency,

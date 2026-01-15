@@ -93,7 +93,7 @@ cdef class CacheFacade:
         Currency to_currency,
         PriceType price_type=*,
     )
-    cpdef get_mark_xrate(
+    cpdef object get_mark_xrate(
         self,
         Currency from_currency,
         Currency to_currency,
