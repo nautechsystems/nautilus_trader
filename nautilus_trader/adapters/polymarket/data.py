@@ -471,10 +471,22 @@ class PolymarketDataClient(LiveMarketDataClient):
             interval_ms = (self._clock.timestamp_ns() - t0) / 1_000_000
             self._log.debug(f"Computed effective deltas in {interval_ms:.3f}ms")
             # self._log.warning(book_new.pprint())  # Uncomment for development
+        else:
+            new_book = OrderBook(instrument.id, book_type=BookType.L2_MBP)
+            new_book.apply_deltas(deltas)
+            self._local_books[instrument.id] = new_book
 
         # Check if any effective deltas remain
         if deltas:
             self._handle_data(deltas)
+
+    @staticmethod
+    def __safe_price(price_obj, default, instrument: BinaryOption):
+        return price_obj if price_obj is not None else instrument.make_price(float(default))
+
+    @staticmethod
+    def __safe_quantity(qty_obj, default, instrument: BinaryOption):
+        return qty_obj if qty_obj is not None else instrument.make_qty(float(default))
 
     def _handle_quotes(
         self,
@@ -528,16 +540,21 @@ class PolymarketDataClient(LiveMarketDataClient):
                 return
             self._create_local_book(instrument.id)
 
-        local_book = self._local_books[instrument.id]
-        local_book.apply(deltas)
-
         self._handle_data(deltas)
 
+        local_book = self._local_books.get(instrument.id)
+        if local_book is None:
+            return
+        local_book.apply(deltas)
+
         if instrument.id in self.subscribed_quote_ticks():
-            bid_price = local_book.best_bid_price()
-            ask_price = local_book.best_ask_price()
-            bid_size = local_book.best_bid_size()
-            ask_size = local_book.best_ask_size()
+            # self._log.info(
+            #     f"last_quote={self._last_quotes.get(instrument.id)}, {local_book=}", LogColor.YELLOW
+            # )
+            bid_price = self.__safe_price(local_book.best_bid_price(), 0, instrument)
+            ask_price = self.__safe_price(local_book.best_ask_price(), 1, instrument)
+            bid_size = self.__safe_quantity(local_book.best_bid_size(), 0, instrument)
+            ask_size = self.__safe_quantity(local_book.best_ask_size(), 0, instrument)
 
             # Handle missing bid/ask prices (can occur near market resolution)
             if bid_price is None or ask_price is None:

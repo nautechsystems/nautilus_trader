@@ -19,6 +19,7 @@ from functools import lru_cache
 from py_clob_client.client import ApiCreds
 from py_clob_client.client import ClobClient
 from py_clob_client.constants import POLYGON
+from py_clob_rust_adaptor import PyClobClient
 
 from nautilus_trader.adapters.polymarket.common.credentials import PolymarketWebSocketAuth
 from nautilus_trader.adapters.polymarket.common.credentials import get_polymarket_api_key
@@ -94,6 +95,67 @@ def get_polymarket_http_client(
         key=key,
         funder=funder,
     )
+
+
+@lru_cache(1)
+def get_polymarket_rust_client(
+    api_key: str | None = None,
+    api_secret: str | None = None,
+    passphrase: str | None = None,
+    base_url: str | None = None,
+    chain_id: int = POLYGON,
+    signature_type: int = 0,
+    private_key: str | None = None,
+    funder: str | None = None,
+):
+    """
+    Cache and return a Polymarket Rust CLOB client.
+
+    If a cached client with matching parameters already exists, the cached client will be returned.
+
+    Parameters
+    ----------
+    api_key : str, optional
+        The API key for the client.
+    api_secret : str, optional
+        The API secret for the client.
+    passphrase : str, optional
+        The passphrase for the client.
+    base_url : str, optional
+        The base URL for the API endpoints.
+    chain_id : int, default POLYGON
+        The chain ID for the client.
+    signature_type : int, default 0 (EOA)
+        The Polymarket signature type (0=EOA, 1=PolyProxy, 2=PolyGnosisSafe).
+    private_key : str, optional
+        The private key for the wallet on the **Polygon** network.
+    funder : str, optional
+        The wallet address (public key) on the **Polygon** network used for funding USDC.
+
+    Returns
+    -------
+    RustClobClient
+
+    Raises
+    ------
+    ImportError
+        If py_clob_rust_adaptor is not available.
+
+    """
+    key = private_key or get_polymarket_private_key()
+    funder_addr = funder or get_polymarket_funder()
+
+    return PyClobClient.new(
+        host=base_url or "https://clob.polymarket.com",
+        private_key=key,
+        chain_id=chain_id,
+        api_key=api_key or get_polymarket_api_key(),
+        secret=api_secret or get_polymarket_api_secret(),
+        passphrase=passphrase or get_polymarket_passphrase(),
+        signature_type=signature_type,
+        funder=funder_addr,
+    )
+
 
 
 @lru_cache(1)
@@ -237,6 +299,20 @@ class PolymarketLiveExecClientFactory(LiveExecClientFactory):
             passphrase=config.passphrase,
             base_url=config.base_url_http,
         )
+
+        # Create Rust client if requested
+        rust_client = None
+        if config.use_rust:
+            rust_client = get_polymarket_rust_client(
+                private_key=config.private_key,
+                signature_type=config.signature_type,
+                funder=config.funder,
+                api_key=config.api_key,
+                api_secret=config.api_secret,
+                passphrase=config.passphrase,
+                base_url=config.base_url_http,
+            )
+
         ws_auth = PolymarketWebSocketAuth(
             apiKey=config.api_key or get_polymarket_api_key(),
             secret=config.api_secret or get_polymarket_api_secret(),
@@ -257,4 +333,5 @@ class PolymarketLiveExecClientFactory(LiveExecClientFactory):
             config=config,
             ws_auth=ws_auth,
             name=name,
+            rust_client=rust_client,
         )

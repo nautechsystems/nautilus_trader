@@ -172,9 +172,15 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
         return msgspec.json.decode(msgspec.json.encode(self))
 
     def get_maker_order(self, maker_address: str) -> PolymarketMakerOrder:
+        # First try with the provided address
         for order in self.maker_orders:
             if order.maker_address == maker_address:
                 return order
+
+        # If not found and we have maker_orders, return the first one
+        # This handles the case where the funder address owns the order
+        if self.maker_orders:
+            return self.maker_orders[0]
 
         raise ValueError("Invalid trade with no maker order owned my `maker_address`")
 

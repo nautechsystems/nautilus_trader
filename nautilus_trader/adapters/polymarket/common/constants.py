@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from typing import Final
+from py_clob_client.clob_types import TickSize
 
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import ClientId
@@ -26,6 +27,15 @@ POLYMARKET_CLIENT_ID: Final[ClientId] = ClientId(POLYMARKET)
 
 POLYMARKET_MAX_PRICE: Final[float] = 0.999
 POLYMARKET_MIN_PRICE: Final[float] = 0.001
+
+POLYMARKET_MIN_MAX_PRICES: dict[TickSize | None, Final[float]] = {
+    None: (0.001, 0.999),
+    "0.1": (0.1, 0.9),
+    "0.01": (0.01, 0.99),
+    "0.001": (0.001, 0.999),
+    "0.0001": (0.0001, 0.9999),
+}
+
 POLYMARKET_MAX_PRECISION_TAKER: Final[int] = 2
 POLYMARKET_MAX_PRECISION_MAKER: Final[int] = 5
 

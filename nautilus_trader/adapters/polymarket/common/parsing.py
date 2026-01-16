@@ -114,7 +114,7 @@ def parse_instrument(
     min_quantity = Quantity.from_int(int(market_info["minimum_order_size"]))
     # size_increment can be 0.01 or 0.001 (precision 2 or 3). Need to determine a reliable solution
     # trades are reported with USDC.e increments though - so we use that here
-    size_increment = Quantity.from_str("0.000001")
+    size_increment = Quantity.from_str("0.01")  # Changed to 0.01 for precision 2 # GLEB change
     end_date_iso = market_info["end_date_iso"]
 
     if end_date_iso:
@@ -136,7 +136,7 @@ def parse_instrument(
         price_increment=price_increment,
         price_precision=price_increment.precision,
         size_increment=size_increment,
-        size_precision=size_increment.precision,
+        size_precision=2, # size_increment.precision,  # GLEB change
         activation_ns=0,  # TBD?
         expiration_ns=expiration_ns,
         max_quantity=None,

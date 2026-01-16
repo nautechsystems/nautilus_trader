@@ -165,9 +165,14 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         filter_is_active = filters.get("is_active", False)
 
         markets_visited = 0
+
         next_cursor = filters.get("next_cursor", "MA==")
-        while next_cursor != "LTE=":
-            self._log.info(f"Cursor = '{next_cursor}', markets visited = {markets_visited}")
+
+        while next_cursor != "LTE=" and len(self._instruments.values()) < filters.get("n_expected_markets", 100):  # GLEB change
+
+            self._log.info(
+                f"Cursor = '{next_cursor}', markets visited = {markets_visited} markets loaded = {len(self._instruments.values())}", )  # GLEB change
+
             response: dict[str, Any] | str = await asyncio.to_thread(
                 self._client.get_markets,
                 next_cursor=next_cursor,
@@ -177,16 +182,16 @@ class PolymarketInstrumentProvider(InstrumentProvider):
 
             for market_info in response["data"]:
                 try:
-                    active = market_info["active"]
-                    if filter_is_active and not active:
+                    if any(
+                        False if key not in market_info
+                        else (market_info[key] not in value if isinstance(value, tuple) else market_info[key] != value)
+                        for key, value in filters.items()
+                    ):
                         continue
 
                     condition_id = market_info["condition_id"]
                     if not condition_id:
                         continue  # Archived
-
-                    if condition_ids and condition_id not in condition_ids:
-                        continue  # Filtering
 
                     for token_info in market_info["tokens"]:
                         token_id = token_info["token_id"]
@@ -200,6 +205,8 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                     continue
             next_cursor = response["next_cursor"]
             markets_visited += len(response["data"])
+        self._log.info(f"Loaded the following instruments: {[instrument1.info.get('question', 'Unknown') for instrument1 in list(self._instruments.values())]}")  # GLEB change
+
 
     def _load_instrument(
         self,
