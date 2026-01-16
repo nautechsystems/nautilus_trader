@@ -21,9 +21,8 @@
 
 use std::{
     fmt::Debug,
-    num::NonZeroU32,
     sync::{
-        Arc, LazyLock,
+        Arc,
         atomic::{AtomicBool, AtomicU8, Ordering},
     },
     time::Duration,
@@ -45,7 +44,6 @@ use nautilus_model::{
 use nautilus_network::{
     http::USER_AGENT,
     mode::ConnectionMode,
-    ratelimiter::quota::Quota,
     websocket::{
         AuthTracker, PingHandler, SubscriptionState, WebSocketClient, WebSocketConfig,
         channel_message_handler,
@@ -65,13 +63,12 @@ use super::{
     },
 };
 use crate::common::{
-    consts::{DERIBIT_TESTNET_WS_URL, DERIBIT_WS_URL},
+    consts::{
+        DERIBIT_TESTNET_WS_URL, DERIBIT_WS_ORDER_KEY, DERIBIT_WS_ORDER_QUOTA,
+        DERIBIT_WS_SUBSCRIPTION_KEY, DERIBIT_WS_SUBSCRIPTION_QUOTA, DERIBIT_WS_URL,
+    },
     credential::Credential,
 };
-
-/// Default Deribit WebSocket subscription rate limit: 20 requests per second.
-pub static DERIBIT_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| Quota::per_second(NonZeroU32::new(20).unwrap()));
 
 /// Authentication timeout in seconds.
 const AUTHENTICATION_TIMEOUT_SECS: u64 = 30;
@@ -392,7 +389,13 @@ impl DeribitWebSocketClient {
         };
 
         // Configure rate limits
-        let keyed_quotas = vec![("subscription".to_string(), *DERIBIT_WS_SUBSCRIPTION_QUOTA)];
+        let keyed_quotas = vec![
+            (
+                DERIBIT_WS_SUBSCRIPTION_KEY.to_string(),
+                *DERIBIT_WS_SUBSCRIPTION_QUOTA,
+            ),
+            (DERIBIT_WS_ORDER_KEY.to_string(), *DERIBIT_WS_ORDER_QUOTA),
+        ];
 
         // Connect the WebSocket
         let ws_client = WebSocketClient::connect(
@@ -401,7 +404,7 @@ impl DeribitWebSocketClient {
             Some(ping_handler),
             None, // post_reconnection
             keyed_quotas,
-            Some(*DERIBIT_WS_SUBSCRIPTION_QUOTA), // Default quota
+            Some(*DERIBIT_WS_SUBSCRIPTION_QUOTA), // Default quota for non-order operations
         )
         .await?;
 
