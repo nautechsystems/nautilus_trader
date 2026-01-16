@@ -62,6 +62,9 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
         If commands should be logged by the strategy.
     log_rejected_due_post_only_as_warning : bool, default True
         If order rejected events where `due_post_only` is True should be logged as warnings.
+    inflight_check_interval_ms : int, default 100
+        The interval in milliseconds to check for in-flight orders and open positions
+        during a market exit.
 
     """
 
@@ -76,6 +79,7 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
     log_events: bool = True
     log_commands: bool = True
     log_rejected_due_post_only_as_warning: bool = True
+    inflight_check_interval_ms: int = 100
 
 
 class ImportableStrategyConfig(NautilusConfig, frozen=True):

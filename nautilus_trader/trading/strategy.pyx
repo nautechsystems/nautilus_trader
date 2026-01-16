@@ -25,14 +25,18 @@ attempts to operate without a managing `Trader` instance.
 
 """
 
+import pandas as pd
+
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyConfig
+from nautilus_trader.trading.messages import MarketExitStrategy
 
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.actor cimport Actor
+from nautilus_trader.common.component cimport CMD
 from nautilus_trader.common.component cimport EVT
 from nautilus_trader.common.component cimport RECV
 from nautilus_trader.common.component cimport Clock
@@ -163,6 +167,7 @@ cdef class Strategy(Actor):
         self.external_order_claims = self._parse_external_order_claims(config.external_order_claims)
         self.manage_contingent_orders = config.manage_contingent_orders
         self.manage_gtd_expiry = config.manage_gtd_expiry
+        self._is_exiting = False
 
         # Public components
         self.clock = self._clock
@@ -242,6 +247,29 @@ cdef class Strategy(Actor):
             "It's expected that any actions required when resetting the strategy "
             "occur here, such as resetting indicators and other state"
         )
+
+    cpdef void on_market_exit(self):
+        """
+        Actions to be performed when a market exit has been initiated.
+
+        Warnings
+        --------
+        Override this method in a subclass to implement custom market exit logic.
+
+        """
+        # Optionally override in subclass
+
+    cpdef void after_market_exit(self):
+        """
+        Actions to be performed after a market exit has been completed.
+
+        Warnings
+        --------
+        Override this method in a subclass to implement custom logic after
+        market exit.
+
+        """
+        # Optionally override in subclass
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -1664,7 +1692,77 @@ cdef class Strategy(Actor):
         self._log.info(f"Expiring GTD order {order.client_order_id}", LogColor.BLUE)
         self.cancel_order(order)
 
-    # -- HANDLERS -------------------------------------------------------------------------------------
+    cpdef void market_exit(self):
+        """
+        Initiate an iterative market exit for the strategy.
+
+        Will cancel all open orders and close all open positions, and wait for
+        all in-flight orders to resolve and positions to close before stopping
+         the strategy.
+        """
+        if self._is_exiting:
+            return
+
+        self._is_exiting = True
+
+        self._log.info("Initiating market exit...", LogColor.BLUE)
+        self.on_market_exit()
+
+        # Get all instruments the strategy has open orders or positions for
+        cdef list open_orders = self.cache.orders_open(None, None, self.id)
+        cdef list open_positions = self.cache.positions_open(None, None, self.id)
+
+        cdef set instruments = set()
+        cdef Order order
+        for order in open_orders:
+            instruments.add(order.instrument_id)
+
+        cdef Position position
+        for position in open_positions:
+            instruments.add(position.instrument_id)
+
+        cdef InstrumentId instrument_id
+        for instrument_id in instruments:
+            self.cancel_all_orders(instrument_id)
+            self.close_all_positions(instrument_id)
+
+        # Start iterative check
+        self._log.warning(f"Setting market exit timer for {self.id}")
+        self._clock.set_timer(
+            f"MARKET-EXIT-CHECK:{self.id}",
+            pd.Timedelta(milliseconds=self.config.inflight_check_interval_ms),
+            None,
+            None,
+            self._check_market_exit,
+            True,
+            False,
+        )
+
+    cpdef void _check_market_exit(self, TimeEvent event):
+        if self.state != ComponentState.RUNNING:
+            return
+
+        self._log.warning(f"Timer triggered: {event.name}")
+        cdef list open_orders = self.cache.orders_open(None, None, self.id)
+        cdef list inflight_orders = self.cache.orders_inflight(None, None, self.id)
+
+        if open_orders or inflight_orders:
+            return
+
+        cdef list open_positions = self.cache.positions_open(None, None, self.id)
+        if open_positions:
+            # If there are open positions but no orders, we should re-send close orders
+            for position in open_positions:
+                self.close_position(position)
+
+            return
+
+        # All clear
+        if f"MARKET-EXIT-CHECK:{self.id}" in self._clock.timer_names:
+            self._clock.cancel_timer(name=f"MARKET-EXIT-CHECK:{self.id}")
+
+        self.after_market_exit()
+        self.stop()
 
     cpdef void handle_event(self, Event event):
         """

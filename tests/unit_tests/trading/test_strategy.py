@@ -201,6 +201,7 @@ class TestStrategy:
             "log_events": True,
             "log_commands": True,
             "log_rejected_due_post_only_as_warning": True,
+            "inflight_check_interval_ms": 100,
         }
 
     def test_strategy_to_importable_config(self) -> None:
@@ -235,6 +236,7 @@ class TestStrategy:
             "log_events": False,
             "log_commands": True,
             "log_rejected_due_post_only_as_warning": True,
+            "inflight_check_interval_ms": 100,
         }
 
     def test_strategy_equality(self) -> None:
@@ -2059,3 +2061,82 @@ class TestStrategy:
         assert entry_order.status == OrderStatus.FILLED
         assert tp_order.status == OrderStatus.FILLED
         assert sl_order.status == OrderStatus.CANCELED
+
+    def test_market_exit(self) -> None:
+        # Arrange
+        config = StrategyConfig(inflight_check_interval_ms=10)
+        strategy = Strategy(config=config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        strategy.start()
+
+        # Submit an order that will remain open
+        order = strategy.order_factory.limit(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            price=Price.from_str("10.000"),  # Far from market
+        )
+        strategy.submit_order(order)
+        self.exchange.process(0)
+        assert order.status == OrderStatus.ACCEPTED
+
+        # Act
+        strategy.market_exit()
+
+        # 1st check: cancels orders immediately in market_exit()
+        self.exchange.process(0)  # Process the cancel command
+        assert order.status == OrderStatus.CANCELED
+
+        # Advance time to trigger check timer
+        for handler in self.clock.advance_time(
+            self.clock.timestamp_ns() + pd.Timedelta(milliseconds=20).value,
+        ):
+            handler.handle()
+
+        # Assert
+        assert strategy.state == ComponentState.STOPPED
+
+    def test_market_exit_with_position(self) -> None:
+        # Arrange
+        config = StrategyConfig(inflight_check_interval_ms=10)
+        strategy = Strategy(config=config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        strategy.start()
+
+        # Open a position
+        order = strategy.order_factory.market(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        strategy.submit_order(order)
+        self.exchange.process(0)
+        assert not strategy.portfolio.is_completely_flat()
+
+        # Act
+        strategy.market_exit()
+
+        # 1st call to market_exit() calls close_all_positions immediately
+        self.exchange.process(0)  # Process the closing market order
+        assert strategy.portfolio.is_completely_flat()
+
+        # Advance time to trigger check timer
+        for handler in self.clock.advance_time(
+            self.clock.timestamp_ns() + pd.Timedelta(milliseconds=20).value,
+        ):
+            handler.handle()
+
+        # Assert
+        assert strategy.state == ComponentState.STOPPED

@@ -67,6 +67,7 @@ cdef class Strategy(Actor):
     cdef bint _log_events
     cdef bint _log_commands
     cdef bint _log_rejected_due_post_only_as_warning
+    cdef bint _is_exiting
 
     cdef readonly OrderFactory order_factory
     """The order factory for the strategy.\n\n:returns: `OrderFactory`"""
@@ -97,6 +98,9 @@ cdef class Strategy(Actor):
     )
     cpdef void change_id(self, StrategyId strategy_id)
     cpdef void change_order_id_tag(self, str order_id_tag)
+    cpdef void on_market_exit(self)
+    cpdef void after_market_exit(self)
+    cpdef void market_exit(self)
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
@@ -170,6 +174,7 @@ cdef class Strategy(Actor):
     cdef str _get_gtd_expiry_timer_name(self, ClientOrderId client_order_id)
     cdef void _set_gtd_expiry(self, Order order)
     cpdef void _expire_gtd_order(self, TimeEvent event)
+    cpdef void _check_market_exit(self, TimeEvent event)
 
 # -- EVENTS ---------------------------------------------------------------------------------------
 

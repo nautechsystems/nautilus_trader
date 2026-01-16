@@ -235,3 +235,29 @@ class RemoveStrategy(Command):
         super().__init__(command_id or UUID4(), ts_init)
 
         self.strategy_id = strategy_id
+
+
+class MarketExitStrategy(Command):
+    """
+    Represents a command to exit the market for a strategy.
+
+    Parameters
+    ----------
+    strategy_id : StrategyId
+        The ID of the strategy to exit the market for.
+    command_id : UUID4
+        The command ID.
+    ts_init : int
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+    """
+
+    def __init__(
+        self,
+        strategy_id: StrategyId,
+        command_id: UUID4 | None = None,
+        ts_init: int = 0,
+    ) -> None:
+        super().__init__(command_id or UUID4(), ts_init)
+
+        self.strategy_id = strategy_id
