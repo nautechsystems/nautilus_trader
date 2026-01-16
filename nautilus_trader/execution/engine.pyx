@@ -1217,11 +1217,6 @@ cdef class ExecutionEngine(Component):
         cdef ClientOrderId client_order_id = event.client_order_id
         cdef Order order = self._cache.order(event.client_order_id)
         if order is None:
-            self._log.warning(
-                f"Order with {event.client_order_id!r} "
-                f"not found in the cache to apply {event}"
-            )
-
             if event.venue_order_id is None:
                 self._log.error(
                     f"Cannot apply event to any order: "
@@ -1376,9 +1371,19 @@ cdef class ExecutionEngine(Component):
 
         fill.position_id = position_id
 
+        # Also send to portfolio endpoint for leg fills (which don't have orders in cache)
+        # Regular fills go through topic subscription below, so we only send directly for leg fills
+        # We do this BEFORE position update so portfolio can see the open quantity for PnL calcs
+        if self._is_leg_fill(fill):
+            self._msgbus.send(
+                endpoint="Portfolio.update_order",
+                msg=fill,
+            )
+
         # Handle position update
         self._handle_position_update(instrument, fill, oms_type)
 
+        # Publish to message bus topic
         self._msgbus.publish_c(
             topic=self._get_order_events_topic(fill.strategy_id),
             msg=fill,

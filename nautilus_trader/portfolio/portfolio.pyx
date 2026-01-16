@@ -516,7 +516,11 @@ cdef class Portfolio(PortfolioFacade):
             return  # No change to account state
 
         cdef Order order = self._cache.order(event.client_order_id)
-        if order is None:
+
+        # Allow OrderFilled events to proceed even without order in cache
+        # (e.g., leg fills from spread orders or option exercise)
+        # Balance updates only need the fill and position, not the order
+        if order is None and not isinstance(event, OrderFilled):
             self._log.error(
                 f"Cannot update order: "
                 f"{event.client_order_id!r} not found in the cache",
@@ -531,11 +535,15 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef Money unrealized_pnl
         if isinstance(event, OrderFilled):
-            self._accounts.update_balances(
-                account=account,
-                instrument=instrument,
-                fill=event,
-            )
+            # Skip balance updates for spread instrument fills (combo fills)
+            # Spread instruments don't create positions, and only leg fills should update balances
+            # to avoid double-counting (combo fill + leg fills)
+            if not instrument.is_spread():
+                self._accounts.update_balances(
+                    account=account,
+                    instrument=instrument,
+                    fill=event,
+                )
 
             if isinstance(instrument, BettingInstrument):
                 position_id = event.position_id or PositionId(instrument.id.value)

@@ -16,28 +16,36 @@
 """
 Comprehensive tests for option exercise simulation module.
 
-This module contains both unit and integration tests for the option exercise
-functionality, covering configuration, module behavior, exercise logic, and
-comprehensive PnL scenarios.
+This module contains unit tests for the option exercise functionality, covering
+configuration, module behavior, exercise logic, PnL scenarios, and edge cases.
 
 """
 
-from unittest.mock import Mock
-
 import pandas as pd
 
+from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.backtest.option_exercise import OptionExerciseConfig
 from nautilus_trader.backtest.option_exercise import OptionExerciseModule
+from nautilus_trader.common.component import MessageBus
+from nautilus_trader.common.component import TestClock
+from nautilus_trader.common.events import TimeEvent
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.config import ExecEngineConfig
+from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -51,10 +59,16 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import IndexInstrument
 from nautilus_trader.model.instruments import OptionContract
+from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
+from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
+from nautilus_trader.test_kit.stubs.execution import TestExecStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestOptionExerciseModule:
@@ -68,9 +82,6 @@ class TestOptionExerciseModule:
         """
         self.config = OptionExerciseConfig()
         self.module = OptionExerciseModule(self.config)
-
-        # Mock cache for testing (we'll test core logic without exchange)
-        self.mock_cache = Mock()
 
         # Create test instruments
         self.underlying = Equity(
@@ -152,6 +163,8 @@ class TestOptionExerciseModule:
             ts_init=0,
         )
 
+        self.expiry_ns = dt_to_unix_nanos(pd.Timestamp("2024-03-15 16:00:00", tz="UTC"))
+
     def test_module_initialization(self):
         """
         Test module initialization.
@@ -228,17 +241,12 @@ class TestOptionExerciseModule:
         """
         Test underlying position calculation for long call.
         """
-        from nautilus_trader.test_kit.stubs.events import TestEventStubs
-        from nautilus_trader.test_kit.stubs.execution import TestExecStubs
-
         # Create a proper position using test stubs
         order = TestExecStubs.market_order(
             instrument=self.call_option,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(2),
         )
-
-        from nautilus_trader.model.identifiers import PositionId
 
         fill = TestEventStubs.order_filled(
             order=order,
@@ -257,17 +265,12 @@ class TestOptionExerciseModule:
         """
         Test underlying position calculation for long put.
         """
-        from nautilus_trader.test_kit.stubs.events import TestEventStubs
-        from nautilus_trader.test_kit.stubs.execution import TestExecStubs
-
         # Create a proper position using test stubs
         order = TestExecStubs.market_order(
             instrument=self.put_option,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(1),
         )
-
-        from nautilus_trader.model.identifiers import PositionId
 
         fill = TestEventStubs.order_filled(
             order=order,
@@ -316,9 +319,6 @@ class TestOptionExerciseModule:
         """
         # Test the cash settlement price calculation directly
         underlying_price = Price(4600.0, 2)
-
-        # Test with a mock underlying instrument that is an IndexInstrument
-        # This simulates the cash settlement detection logic
 
         # Create a simple test to verify the intrinsic value calculation
         # For a call option with strike 4500 and underlying at 4600, intrinsic value should be 100
@@ -466,30 +466,6 @@ class TestOptionExerciseModule:
         config = OptionExerciseConfig(auto_exercise_enabled=True)
         module = OptionExerciseModule(config)
 
-        # Create underlying instruments
-        Equity(
-            instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
-            raw_symbol=Symbol("AAPL"),
-            currency=USD,
-            price_precision=2,
-            price_increment=Price(0.01, 2),
-            lot_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
-        )
-
-        IndexInstrument(
-            instrument_id=InstrumentId.from_str("SPX.CBOE"),
-            raw_symbol=Symbol("SPX"),
-            currency=USD,
-            price_precision=2,
-            size_precision=0,
-            price_increment=Price(0.01, 2),
-            size_increment=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
-        )
-
         # Create option contracts
         stock_call = OptionContract(
             instrument_id=InstrumentId.from_str("AAPL240315C00150000.NASDAQ"),
@@ -509,19 +485,9 @@ class TestOptionExerciseModule:
             ts_init=0,
         )
 
-        # Create index option for reference (not used in this simplified test)
-        # index_call = OptionContract(...)
-
-        # Test scenarios with different underlying prices
-        # ITM: underlying = 160 (above strike 150/4500)
-        # OTM: underlying = 140 (below strike 150) / 4400 (below strike 4500)
-
         # === STOCK OPTIONS (Physical Settlement) ===
 
         # Test Case 1: Long ITM Stock Call
-        from nautilus_trader.test_kit.stubs.events import TestEventStubs
-        from nautilus_trader.test_kit.stubs.execution import TestExecStubs
-
         long_itm_order = TestExecStubs.market_order(
             instrument=stock_call,
             order_side=OrderSide.BUY,
@@ -577,3 +543,854 @@ class TestOptionExerciseModule:
         # Calculate PnL: bought at $5.00, expires at $0.00 = -$500
         long_otm_pnl = long_otm_stock_position.calculate_pnl(5.0, 0.0, Quantity.from_int(1))
         assert long_otm_pnl.as_double() == -500.0
+
+
+class TestOptionExerciseModuleIntegration:
+    """
+    Integration tests for option exercise module with full setup.
+    """
+
+    def setup_method(self):
+        """
+        Set up test fixtures with full component integration.
+        """
+        self.config = OptionExerciseConfig()
+        self.module = OptionExerciseModule(self.config)
+
+        self.clock = TestClock()
+        self.clock.set_time(0)
+        self.trader_id = TraderId("TRADER-001")
+        self.account_id = AccountId("SIM-001")
+        self.msgbus = MessageBus(trader_id=self.trader_id, clock=self.clock)
+        self.cache = TestComponentStubs.cache()
+        self.portfolio = Portfolio(msgbus=self.msgbus, cache=self.cache, clock=self.clock)
+
+        # Create and add margin account (options are typically traded on margin accounts)
+        account_state = AccountState(
+            account_id=self.account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            reported=True,
+            balances=[AccountBalance(Money(1_000_000, USD), Money(0, USD), Money(1_000_000, USD))],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        account = MarginAccount(account_state, calculate_account_state=True)
+        self.cache.add_account(account)
+        self.portfolio.update_account(account_state)
+
+        # Set up execution engine to process OrderFilled events automatically
+        self.exec_engine = ExecutionEngine(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            config=ExecEngineConfig(debug=False),
+        )
+        self.exec_engine.start()  # Start the engine so it processes events
+
+        # Portfolio is already subscribed to events.order.* and events.position.*
+        # via its __init__ method, so it will automatically receive and process events
+        # Execution engine now sends leg fills to Portfolio.update_order endpoint
+        # so balances are updated correctly even without orders in cache
+
+        # Connect module
+        self.module.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Manually subscribe to position events (normally done in register_venue)
+        # This avoids needing a real SimulatedExchange for these tests
+        self.msgbus.subscribe(
+            topic="events.position.*",
+            handler=self.module.on_position_event,
+        )
+
+        # Instruments
+        self.underlying = Equity(
+            instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
+            raw_symbol=Symbol("AAPL"),
+            currency=USD,
+            price_precision=2,
+            price_increment=Price(0.01, 2),
+            lot_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(self.underlying)
+
+        self.expiry_ns = dt_to_unix_nanos(pd.Timestamp("2024-03-15 16:00:00", tz="UTC"))
+
+        self.call_option = OptionContract(
+            instrument_id=InstrumentId.from_str("AAPL240315C00150000.NASDAQ"),
+            raw_symbol=Symbol("AAPL240315C00150000"),
+            asset_class=AssetClass.EQUITY,
+            underlying="AAPL",
+            option_kind=OptionKind.CALL,
+            strike_price=Price(150.0, 2),
+            currency=USD,
+            activation_ns=dt_to_unix_nanos(pd.Timestamp("2024-03-01", tz="UTC")),
+            expiration_ns=self.expiry_ns,
+            price_precision=2,
+            price_increment=Price(0.01, 2),
+            multiplier=Quantity.from_int(100),
+            lot_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(self.call_option)
+
+    def create_position(self, instrument, side, quantity, avg_px_open):
+        """
+        Create a position and ensure it's reflected in the cache and portfolio.
+        """
+        strategy_id = TestIdStubs.strategy_id()
+        position_id = PositionId(f"{instrument.id}-{strategy_id}")
+
+        order = TestExecStubs.market_order(
+            instrument=instrument,
+            order_side=OrderSide.BUY if side == PositionSide.LONG else OrderSide.SELL,
+            quantity=quantity,
+        )
+        fill = TestEventStubs.order_filled(
+            order=order,
+            instrument=instrument,
+            last_px=Price(avg_px_open, instrument.price_precision),
+            position_id=position_id,
+            account_id=self.account_id,
+            strategy_id=strategy_id,
+        )
+
+        # Manually update account balance to simulate premium payment
+        account = self.cache.account(self.account_id)
+        premium = instrument.notional_value(
+            quantity,
+            Price(avg_px_open, instrument.price_precision),
+        )
+        current_balance = account.balance(USD)
+        impact = -premium.as_decimal() if side == PositionSide.LONG else premium.as_decimal()
+        new_total = Money(current_balance.total.as_decimal() + impact, USD)
+        new_balance = AccountBalance(new_total, Money(0, USD), new_total)
+        account.update_balances([new_balance])
+
+        return Position(instrument, fill)
+
+    def test_timer_setting_and_cleanup(self):
+        """
+        Test timer setting and cleanup logic.
+        """
+        # 1. Opening first position sets timer
+        pos1 = self.create_position(self.call_option, PositionSide.LONG, Quantity.from_int(1), 5.0)
+        self.cache.add_position(pos1, OmsType.NETTING)
+        event_open = TestEventStubs.position_opened(pos1)
+
+        initial_timer_count = len(self.clock.timer_names)
+        self.module.on_position_event(event_open)
+
+        assert self.expiry_ns in self.module.expiry_timers
+        assert f"option_expiry_{self.expiry_ns}" in self.clock.timer_names
+        assert len(self.clock.timer_names) == initial_timer_count + 1
+
+        # 2. Opening second position for same expiry does NOT set another timer
+        # Use a different strategy ID so positions have different IDs for this test
+        strategy_id2 = StrategyId("S-002")
+        order2 = TestExecStubs.market_order(
+            instrument=self.call_option,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(1),
+        )
+        position_id2 = PositionId(f"{self.call_option.id}-{strategy_id2}")
+        fill2 = TestEventStubs.order_filled(
+            order=order2,
+            instrument=self.call_option,
+            last_px=Price(5.0, 2),
+            position_id=position_id2,
+            account_id=self.account_id,
+            strategy_id=strategy_id2,
+        )
+        pos2 = Position(self.call_option, fill2)
+        self.cache.add_position(pos2, OmsType.NETTING)
+        event_open2 = TestEventStubs.position_opened(pos2)
+
+        timer_count_before = len(self.clock.timer_names)
+        self.module.on_position_event(event_open2)
+        # Timer count should not increase
+        assert len(self.clock.timer_names) == timer_count_before
+
+        # 3. Closing one position when another exists does NOT cleanup timer
+        # Create a closing fill and apply it to close the position
+        close_order = TestExecStubs.market_order(
+            instrument=self.call_option,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(1),
+        )
+        close_fill = TestEventStubs.order_filled(
+            order=close_order,
+            instrument=self.call_option,
+            last_px=Price(5.0, 2),
+            position_id=pos1.id,
+        )
+        pos1.apply(close_fill)
+        self.cache.update_position(pos1)
+        event_close = TestEventStubs.position_closed(pos1)
+
+        timer_count_before_close = len(self.clock.timer_names)
+        self.module.on_position_event(event_close)
+        # Timer should still exist
+        assert len(self.clock.timer_names) == timer_count_before_close
+
+        # 4. Closing last position DOES cleanup timer
+        # Close pos2 to remove it from cache
+        close_order2 = TestExecStubs.market_order(
+            instrument=self.call_option,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(1),
+        )
+        close_fill2 = TestEventStubs.order_filled(
+            order=close_order2,
+            instrument=self.call_option,
+            last_px=Price(5.0, 2),
+            position_id=pos2.id,
+        )
+        pos2.apply(close_fill2)
+        self.cache.update_position(pos2)
+        event_close2 = TestEventStubs.position_closed(pos2)
+        self.module.on_position_event(event_close2)
+
+        # Now close pos1 - should cleanup timer
+        self.module.on_position_event(event_close)
+        assert self.expiry_ns not in self.module.expiry_timers
+        assert f"option_expiry_{self.expiry_ns}" not in self.clock.timer_names
+
+    def test_physical_settlement_long_itm_call(self):
+        """
+        Test long ITM call exercise (physical settlement).
+        """
+        pos = self.create_position(self.call_option, PositionSide.LONG, Quantity.from_int(1), 5.0)
+        self.cache.add_position(pos, OmsType.NETTING)
+        initial_option_positions = len(self.cache.positions_open(instrument_id=self.call_option.id))
+        assert initial_option_positions == 1
+
+        # Set underlying price via trade tick (ITM: 160 > strike 150)
+        trade_tick = TradeTick(
+            instrument_id=self.underlying.id,
+            price=Price(160.0, 2),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
+            trade_id=TradeId("T1"),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+        self.cache.add_trade_tick(trade_tick)
+
+        # Create TimeEvent properly
+        time_event = TimeEvent(
+            name=f"option_expiry_{self.expiry_ns}",
+            event_id=UUID4(),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+
+        # Process expiry - module sends OrderFilled events to ExecEngine.process
+        # Execution engine will process them and portfolio will automatically update positions/balances
+        self.module._on_expiry_timer(time_event)
+
+        # Verify option position is closed
+        option_positions_after = self.cache.positions_open(instrument_id=self.call_option.id)
+        assert len(option_positions_after) == 0, "Option position should be closed"
+
+        # Verify underlying position is created (physical settlement)
+        underlying_positions = self.cache.positions_open(instrument_id=self.underlying.id)
+        assert len(underlying_positions) == 1, "Underlying position should be created"
+        underlying_pos = underlying_positions[0]
+        assert underlying_pos.side == PositionSide.LONG, "Long call should create long underlying"
+        assert underlying_pos.quantity == Quantity.from_int(100), (
+            "Should have 100 shares (1 option * 100 multiplier)"
+        )
+        assert underlying_pos.avg_px_open == Price(150.0, 2), (
+            "Underlying should open at strike price"
+        )
+
+        # Verify PnL: Option bought at 5.0, closed at 5.0 = 0, but we get underlying at 150.0
+        # The exercise creates underlying position at strike, so the PnL comes from underlying movement
+        # For now, just verify the module processed without error and positions are correct
+
+    def test_physical_settlement_long_itm_call_events(self):
+        """
+        Test long ITM call exercise (physical settlement) generates correct events.
+        """
+        # Capture events published by ExecEngine for all strategies
+        events = []
+
+        def capture(msg):
+            events.append(msg)
+
+        self.msgbus.subscribe("events.order.*", capture)
+        self.msgbus.subscribe("events.fills.*", capture)
+
+        pos = self.create_position(self.call_option, PositionSide.LONG, Quantity.from_int(1), 5.0)
+        self.cache.add_position(pos, OmsType.NETTING)
+
+        # Set underlying price via trade tick (ITM: 160 > strike 150)
+        trade_tick = TradeTick(
+            instrument_id=self.underlying.id,
+            price=Price(160.0, 2),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
+            trade_id=TradeId("T1"),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+        self.cache.add_trade_tick(trade_tick)
+
+        time_event = TimeEvent(
+            name=f"option_expiry_{self.expiry_ns}",
+            event_id=UUID4(),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+
+        self.module._on_expiry_timer(time_event)
+
+        # Verify leg fill ID patterns in emitted events
+        # Note: 2 exercise leg fills (initial position was added directly to cache)
+        assert len(events) == 2
+        fills = [e for e in events if isinstance(e, OrderFilled)]
+        option_close_fill = next(
+            f
+            for f in fills
+            if f.instrument_id == self.call_option.id and f.order_side == OrderSide.SELL
+        )
+        underlying_open_fill = next(f for f in fills if f.instrument_id == self.underlying.id)
+
+        assert "-LEG-EX-" in option_close_fill.client_order_id.value
+        assert "-LEG-EX-" in underlying_open_fill.client_order_id.value
+        assert option_close_fill.client_order_id.value.endswith("-CLOSE")
+        assert underlying_open_fill.client_order_id.value.endswith("-OPEN")
+        assert option_close_fill.last_qty == Quantity.from_int(1)
+        assert underlying_open_fill.last_qty == Quantity.from_int(100)
+        assert underlying_open_fill.last_px == Price(150.0, 2)
+
+    def test_cash_settlement_long_itm_call(self):
+        """
+        Test long ITM index call exercise (cash settlement).
+        """
+        index = IndexInstrument(
+            instrument_id=InstrumentId.from_str("SPX.CBOE"),
+            raw_symbol=Symbol("SPX"),
+            currency=USD,
+            price_precision=2,
+            size_precision=0,
+            price_increment=Price(0.01, 2),
+            size_increment=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(index)
+        index_call = OptionContract(
+            instrument_id=InstrumentId.from_str("SPX240315C04500000.CBOE"),
+            raw_symbol=Symbol("SPX240315C04500000"),
+            asset_class=AssetClass.INDEX,
+            underlying="SPX",
+            option_kind=OptionKind.CALL,
+            strike_price=Price(4500.0, 2),
+            currency=USD,
+            activation_ns=dt_to_unix_nanos(pd.Timestamp("2024-03-01", tz="UTC")),
+            expiration_ns=self.expiry_ns,
+            price_precision=2,
+            price_increment=Price(0.01, 2),
+            multiplier=Quantity.from_int(100),
+            lot_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(index_call)
+
+        # Set index price via trade tick (ITM: 4600 > strike 4500, intrinsic = 100)
+        index_trade_tick = TradeTick(
+            instrument_id=index.id,
+            price=Price(4600.0, 2),
+            size=Quantity.from_int(1),
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
+            trade_id=TradeId("T-INDEX"),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+        self.cache.add_trade_tick(index_trade_tick)
+
+        initial_balance = self.cache.account(self.account_id).balance(USD).total
+        pos = self.create_position(index_call, PositionSide.LONG, Quantity.from_int(1), 10.0)
+        self.cache.add_position(pos, OmsType.NETTING)
+
+        time_event = TimeEvent(
+            name=f"option_expiry_{self.expiry_ns}",
+            event_id=UUID4(),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+
+        # Process expiry - module sends OrderFilled events to ExecEngine.process
+        # Execution engine will process them and portfolio will automatically update positions/balances
+        self.module._on_expiry_timer(time_event)
+
+        # Verify option position is closed
+        option_positions_after = self.cache.positions_open(instrument_id=index_call.id)
+        assert len(option_positions_after) == 0, "Option position should be closed"
+
+        # Verify no underlying position created (cash settlement)
+        underlying_positions = self.cache.positions_open(instrument_id=index.id)
+        assert len(underlying_positions) == 0, "No underlying position for cash settlement"
+
+        # Verify account balance increased by intrinsic value
+        # Bought at 10.0, closed at 100.0 intrinsic = +90.0 per share * 100 multiplier = +9000
+        final_balance = self.cache.account(self.account_id).balance(USD).total
+        expected_pnl = Money(9000.0, USD)  # (100 - 10) * 100 multiplier
+        balance_change = final_balance - initial_balance
+        balance_change_money = Money(balance_change, USD)
+        assert balance_change_money == expected_pnl, (
+            f"Balance should increase by {expected_pnl}, got {balance_change_money}"
+        )
+
+    def test_otm_expiry_worthless(self):
+        """
+        Test OTM option expiry (expires worthless).
+        """
+        initial_balance = self.cache.account(self.account_id).balance(USD).total
+        pos = self.create_position(self.call_option, PositionSide.LONG, Quantity.from_int(1), 5.0)
+        self.cache.add_position(pos, OmsType.NETTING)
+
+        # Set underlying price via trade tick (OTM: 140 < strike 150)
+        trade_tick = TradeTick(
+            instrument_id=self.underlying.id,
+            price=Price(140.0, 2),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
+            trade_id=TradeId("T-OTM"),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+        self.cache.add_trade_tick(trade_tick)
+
+        time_event = TimeEvent(
+            name=f"option_expiry_{self.expiry_ns}",
+            event_id=UUID4(),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+
+        # Process expiry - module sends OrderFilled events to ExecEngine.process
+        # Execution engine will process them and portfolio will automatically update positions/balances
+        self.module._on_expiry_timer(time_event)
+
+        # Verify option position is closed
+        option_positions_after = self.cache.positions_open(instrument_id=self.call_option.id)
+        assert len(option_positions_after) == 0, "Option position should be closed"
+
+        # Verify account balance decreased (bought at 5.0, expired at 0.0 = -5.0 per share * 100 = -500)
+        final_balance = self.cache.account(self.account_id).balance(USD).total
+        expected_pnl = Money(-500.0, USD)  # (0 - 5) * 100 multiplier
+        balance_change = final_balance - initial_balance
+        balance_change_money = Money(balance_change, USD)
+        assert balance_change_money == expected_pnl, (
+            f"Balance should decrease by {expected_pnl}, got {balance_change_money}"
+        )
+
+    def test_physical_settlement_short_itm_call(self):
+        """
+        Test short call assignment (physical settlement).
+        """
+        pos = self.create_position(self.call_option, PositionSide.SHORT, Quantity.from_int(1), 5.0)
+        self.cache.add_position(pos, OmsType.NETTING)
+
+        # Set underlying price via trade tick (ITM: 160 > strike 150)
+        trade_tick = TradeTick(
+            instrument_id=self.underlying.id,
+            price=Price(160.0, 2),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
+            trade_id=TradeId("T-SHORT"),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+        self.cache.add_trade_tick(trade_tick)
+
+        initial_option_positions = len(self.cache.positions_open(instrument_id=self.call_option.id))
+        assert initial_option_positions == 1
+
+        time_event = TimeEvent(
+            name=f"option_expiry_{self.expiry_ns}",
+            event_id=UUID4(),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+        self.module._on_expiry_timer(time_event)
+
+        # Verify option position is closed
+        option_positions_after = self.cache.positions_open(instrument_id=self.call_option.id)
+        assert len(option_positions_after) == 0, "Short call position should be closed"
+
+        # Verify underlying position is created (physical settlement)
+        underlying_positions = self.cache.positions_open(instrument_id=self.underlying.id)
+        assert len(underlying_positions) == 1, "Underlying position should be created"
+        underlying_pos = underlying_positions[0]
+        assert underlying_pos.side == PositionSide.SHORT, "Long put should create short underlying"
+        assert underlying_pos.quantity == Quantity.from_int(100), (
+            "Should have 100 shares (1 option * 100 multiplier)"
+        )
+        assert underlying_pos.avg_px_open == Price(150.0, 2), (
+            "Underlying should open at strike price"
+        )
+
+    def test_physical_settlement_long_itm_put(self):
+        """
+        Test long put exercise (physical settlement).
+        """
+        put_option = OptionContract(
+            instrument_id=InstrumentId.from_str("AAPL240315P00150000.NASDAQ"),
+            raw_symbol=Symbol("AAPL240315P00150000"),
+            asset_class=AssetClass.EQUITY,
+            underlying="AAPL",
+            option_kind=OptionKind.PUT,
+            strike_price=Price(150.0, 2),
+            currency=USD,
+            activation_ns=dt_to_unix_nanos(pd.Timestamp("2024-03-01", tz="UTC")),
+            expiration_ns=self.expiry_ns,
+            price_precision=2,
+            price_increment=Price(0.01, 2),
+            multiplier=Quantity.from_int(100),
+            lot_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(put_option)
+
+        pos = self.create_position(put_option, PositionSide.LONG, Quantity.from_int(1), 8.0)
+        self.cache.add_position(pos, OmsType.NETTING)
+
+        # Set underlying price via trade tick (ITM put: 140 < strike 150)
+        trade_tick = TradeTick(
+            instrument_id=self.underlying.id,
+            price=Price(140.0, 2),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
+            trade_id=TradeId("T-PUT"),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+        self.cache.add_trade_tick(trade_tick)
+
+        initial_option_positions = len(self.cache.positions_open(instrument_id=put_option.id))
+        assert initial_option_positions == 1
+
+        time_event = TimeEvent(
+            name=f"option_expiry_{self.expiry_ns}",
+            event_id=UUID4(),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+        self.module._on_expiry_timer(time_event)
+
+        # Verify option position is closed
+        option_positions_after = self.cache.positions_open(instrument_id=self.call_option.id)
+        assert len(option_positions_after) == 0, "Long put position should be closed"
+
+        # Verify underlying position is created (physical settlement)
+        underlying_positions = self.cache.positions_open(instrument_id=self.underlying.id)
+        assert len(underlying_positions) == 1, "Underlying position should be created"
+        underlying_pos = underlying_positions[0]
+        assert underlying_pos.side == PositionSide.SHORT, "Long put should create short underlying"
+        assert underlying_pos.quantity == Quantity.from_int(100), (
+            "Should have 100 shares (1 option * 100 multiplier)"
+        )
+        assert underlying_pos.avg_px_open == Price(150.0, 2), (
+            "Underlying should open at strike price"
+        )
+
+    def test_physical_settlement_short_itm_put(self):
+        """
+        Test short put assignment (physical settlement).
+        """
+        put_option = OptionContract(
+            instrument_id=InstrumentId.from_str("AAPL240315P00150000.NASDAQ"),
+            raw_symbol=Symbol("AAPL240315P00150000"),
+            asset_class=AssetClass.EQUITY,
+            underlying="AAPL",
+            option_kind=OptionKind.PUT,
+            strike_price=Price(150.0, 2),
+            currency=USD,
+            activation_ns=dt_to_unix_nanos(pd.Timestamp("2024-03-01", tz="UTC")),
+            expiration_ns=self.expiry_ns,
+            price_precision=2,
+            price_increment=Price(0.01, 2),
+            multiplier=Quantity.from_int(100),
+            lot_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(put_option)
+
+        pos = self.create_position(put_option, PositionSide.SHORT, Quantity.from_int(1), 8.0)
+        self.cache.add_position(pos, OmsType.NETTING)
+
+        # Set underlying price via trade tick (ITM put: 140 < strike 150)
+        trade_tick = TradeTick(
+            instrument_id=self.underlying.id,
+            price=Price(140.0, 2),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
+            trade_id=TradeId("T-SHORT-PUT"),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+        self.cache.add_trade_tick(trade_tick)
+
+        initial_option_positions = len(self.cache.positions_open(instrument_id=put_option.id))
+        assert initial_option_positions == 1
+
+        time_event = TimeEvent(
+            name=f"option_expiry_{self.expiry_ns}",
+            event_id=UUID4(),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+        self.module._on_expiry_timer(time_event)
+
+        # Verify option position is closed
+        option_positions_after = self.cache.positions_open(instrument_id=put_option.id)
+        assert len(option_positions_after) == 0, "Short put position should be closed"
+
+        # Verify underlying position is created (physical settlement for short put)
+        underlying_positions = self.cache.positions_open(instrument_id=self.underlying.id)
+        assert len(underlying_positions) == 1, (
+            "Underlying position should be created for short put assignment"
+        )
+        underlying_pos = underlying_positions[0]
+        assert underlying_pos.side == PositionSide.LONG, (
+            "Short put assignment should create long underlying"
+        )
+        assert underlying_pos.quantity == Quantity.from_int(100), (
+            "Should have 100 shares (1 option * 100 multiplier)"
+        )
+        assert underlying_pos.avg_px_open == Price(150.0, 2), (
+            "Underlying should open at strike price"
+        )
+
+    def test_cash_settlement_short_itm_call(self):
+        """
+        Test short index call assignment (cash settlement).
+        """
+        index = IndexInstrument(
+            instrument_id=InstrumentId.from_str("SPX.CBOE"),
+            raw_symbol=Symbol("SPX"),
+            currency=USD,
+            price_precision=2,
+            size_precision=0,
+            price_increment=Price(0.01, 2),
+            size_increment=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(index)
+        index_call = OptionContract(
+            instrument_id=InstrumentId.from_str("SPX240315C04500000.CBOE"),
+            raw_symbol=Symbol("SPX240315C04500000"),
+            asset_class=AssetClass.INDEX,
+            underlying="SPX",
+            option_kind=OptionKind.CALL,
+            strike_price=Price(4500.0, 2),
+            currency=USD,
+            activation_ns=dt_to_unix_nanos(pd.Timestamp("2024-03-01", tz="UTC")),
+            expiration_ns=self.expiry_ns,
+            price_precision=2,
+            price_increment=Price(0.01, 2),
+            multiplier=Quantity.from_int(100),
+            lot_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(index_call)
+
+        # Set index price via trade tick (ITM: 4600 > strike 4500)
+        index_trade_tick = TradeTick(
+            instrument_id=index.id,
+            price=Price(4600.0, 2),
+            size=Quantity.from_int(1),
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
+            trade_id=TradeId("T-INDEX-SHORT"),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+        self.cache.add_trade_tick(index_trade_tick)
+
+        pos = self.create_position(index_call, PositionSide.SHORT, Quantity.from_int(1), 10.0)
+        self.cache.add_position(pos, OmsType.NETTING)
+
+        initial_option_positions = len(self.cache.positions_open(instrument_id=index_call.id))
+        assert initial_option_positions == 1
+
+        time_event = TimeEvent(
+            name=f"option_expiry_{self.expiry_ns}",
+            event_id=UUID4(),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+        self.module._on_expiry_timer(time_event)
+
+        # Verify option position is closed
+        option_positions_after = self.cache.positions_open(instrument_id=self.call_option.id)
+        assert len(option_positions_after) == 0, "Short option position should be closed"
+
+        # Verify no underlying position created (cash settlement)
+        underlying_positions = self.cache.positions_open(instrument_id=index.id)
+        assert len(underlying_positions) == 0, "No underlying position for cash settlement"
+
+    def test_otm_expiry_short_position(self):
+        """
+        Test short OTM option expiry (expires worthless, positive PnL).
+        """
+        pos = self.create_position(self.call_option, PositionSide.SHORT, Quantity.from_int(1), 5.0)
+        self.cache.add_position(pos, OmsType.NETTING)
+
+        # Set underlying price via trade tick (OTM: 140 < strike 150)
+        trade_tick = TradeTick(
+            instrument_id=self.underlying.id,
+            price=Price(140.0, 2),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
+            trade_id=TradeId("T-SHORT-OTM"),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+        self.cache.add_trade_tick(trade_tick)
+
+        initial_option_positions = len(self.cache.positions_open(instrument_id=self.call_option.id))
+        assert initial_option_positions == 1
+
+        time_event = TimeEvent(
+            name=f"option_expiry_{self.expiry_ns}",
+            event_id=UUID4(),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+        self.module._on_expiry_timer(time_event)
+
+        # Verify option position is closed
+        option_positions_after = self.cache.positions_open(instrument_id=self.call_option.id)
+        assert len(option_positions_after) == 0, "Short option position should be closed"
+
+        # Verify no underlying position created (OTM options expire worthless)
+        underlying_positions = self.cache.positions_open(instrument_id=self.underlying.id)
+        assert len(underlying_positions) == 0, "No underlying position for OTM expiry"
+
+    def test_at_the_money_option_expiry(self):
+        """
+        Test ATM option expiry (spot == strike, should not exercise).
+        """
+        pos = self.create_position(self.call_option, PositionSide.LONG, Quantity.from_int(1), 5.0)
+        self.cache.add_position(pos, OmsType.NETTING)
+
+        # Set underlying price via trade tick (ATM: 150 == strike 150)
+        trade_tick = TradeTick(
+            instrument_id=self.underlying.id,
+            price=Price(150.0, 2),  # Exactly at strike
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
+            trade_id=TradeId("T-ATM"),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+        self.cache.add_trade_tick(trade_tick)
+
+        initial_option_positions = len(self.cache.positions_open(instrument_id=self.call_option.id))
+        assert initial_option_positions == 1
+
+        time_event = TimeEvent(
+            name=f"option_expiry_{self.expiry_ns}",
+            event_id=UUID4(),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+        self.module._on_expiry_timer(time_event)
+
+        # Verify option position is closed
+        option_positions_after = self.cache.positions_open(instrument_id=self.call_option.id)
+        assert len(option_positions_after) == 0, "Short option position should be closed"
+
+        # Verify no underlying position created (ATM options expire worthless)
+        underlying_positions = self.cache.positions_open(instrument_id=self.underlying.id)
+        assert len(underlying_positions) == 0, "No underlying position for ATM expiry"
+
+    def test_missing_underlying_price(self):
+        """
+        Test handling when underlying price is missing.
+        """
+        pos = self.create_position(self.call_option, PositionSide.LONG, Quantity.from_int(1), 5.0)
+        self.cache.add_position(pos, OmsType.NETTING)
+        initial_option_positions = len(self.cache.positions_open(instrument_id=self.call_option.id))
+        assert initial_option_positions == 1
+
+        # Don't set underlying price - module logs error and doesn't process expiry
+        time_event = TimeEvent(
+            name=f"option_expiry_{self.expiry_ns}",
+            event_id=UUID4(),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+        # Should complete without exception (logs error when price missing)
+        self.module._on_expiry_timer(time_event)
+
+        # Position remains open when underlying price is missing (module returns early)
+        option_positions_after = self.cache.positions_open(instrument_id=self.call_option.id)
+        assert len(option_positions_after) == 1, (
+            "Position should remain open when underlying price is missing"
+        )
+
+    def test_missing_underlying_instrument(self):
+        """
+        Test handling when underlying instrument is missing.
+        """
+        # Create option with non-existent underlying
+        bad_option = OptionContract(
+            instrument_id=InstrumentId.from_str("BAD240315C00150000.NASDAQ"),
+            raw_symbol=Symbol("BAD240315C00150000"),
+            asset_class=AssetClass.EQUITY,
+            underlying="NONEXISTENT",
+            option_kind=OptionKind.CALL,
+            strike_price=Price(150.0, 2),
+            currency=USD,
+            activation_ns=dt_to_unix_nanos(pd.Timestamp("2024-03-01", tz="UTC")),
+            expiration_ns=self.expiry_ns,
+            price_precision=2,
+            price_increment=Price(0.01, 2),
+            multiplier=Quantity.from_int(100),
+            lot_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(bad_option)
+
+        pos = self.create_position(bad_option, PositionSide.LONG, Quantity.from_int(1), 5.0)
+        self.cache.add_position(pos, OmsType.NETTING)
+        initial_option_positions = len(self.cache.positions_open(instrument_id=bad_option.id))
+        assert initial_option_positions == 1
+
+        # Should handle gracefully when underlying not found
+        time_event = TimeEvent(
+            name=f"option_expiry_{self.expiry_ns}",
+            event_id=UUID4(),
+            ts_event=self.expiry_ns,
+            ts_init=self.expiry_ns,
+        )
+        # Should complete without exception (logs error when underlying missing)
+        self.module._on_expiry_timer(time_event)
+
+        # Position remains open when underlying instrument is missing (module returns early)
+        option_positions_after = self.cache.positions_open(instrument_id=bad_option.id)
+        assert len(option_positions_after) == 1, (
+            "Position should remain open when underlying instrument is missing"
+        )

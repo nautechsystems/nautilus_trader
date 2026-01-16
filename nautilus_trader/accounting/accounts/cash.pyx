@@ -18,6 +18,7 @@ from decimal import Decimal
 from nautilus_trader.accounting.error import AccountBalanceNegative
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AccountType
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport MoneyRaw
 from nautilus_trader.core.rust.model cimport OrderSide
@@ -396,22 +397,23 @@ cdef class CashAccount(Account):
 
         fill_px = fill.last_px.as_decimal()
         fill_qty = fill.last_qty.as_decimal()
-        last_qty = fill_qty
 
-        if position is not None and position.quantity._mem.raw != 0 and position.entry != fill.order_side:
-            # Only book open quantity towards realized PnL
-            fill_qty = min(fill_qty, position.quantity.as_decimal())
+        cdef Money quote_pnl
+        if instrument.instrument_class == InstrumentClass.SPORTS_BETTING:
+            quote_pnl = Money(fill_px * fill_qty, quote_currency)
+        else:
+            quote_pnl = instrument.notional_value(fill.last_qty, fill.last_px)
 
-        # Below we are using the original `last_qty` to adjust the base currency,
-        # this is to avoid a desync in account balance vs filled quantities later.
         if fill.order_side == OrderSide.BUY:
             if base_currency and not self.base_currency:
-                pnls[base_currency] = Money(last_qty, base_currency)
-            pnls[quote_currency] = Money(-(fill_px * fill_qty), quote_currency)
+                pnls[base_currency] = Money(fill_qty, base_currency)
+
+            pnls[quote_currency] = Money(-quote_pnl.as_decimal(), quote_currency)
         elif fill.order_side == OrderSide.SELL:
             if base_currency and not self.base_currency:
-                pnls[base_currency] = Money(-last_qty, base_currency)
-            pnls[quote_currency] = Money(fill_px * fill_qty, quote_currency)
+                pnls[base_currency] = Money(-fill_qty, base_currency)
+
+            pnls[quote_currency] = Money(quote_pnl.as_decimal(), quote_currency)
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(f"invalid `OrderSide`, was {fill.order_side}")  # pragma: no cover (design-time error)
 

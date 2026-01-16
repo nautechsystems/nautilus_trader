@@ -19,6 +19,7 @@ from nautilus_trader.accounting.margin_models cimport LeveragedMarginModel
 from nautilus_trader.accounting.margin_models cimport MarginModel
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AccountType
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport MoneyRaw
 from nautilus_trader.core.rust.model cimport OrderSide
@@ -718,7 +719,19 @@ cdef class MarginAccount(Account):
             Money pnl
             Quantity pnl_quantity
 
-        if position is not None and position.quantity._mem.raw != 0 and position.entry != fill.order_side:
+        if instrument.instrument_class in (
+            InstrumentClass.OPTION,
+            InstrumentClass.OPTION_SPREAD,
+            InstrumentClass.BINARY_OPTION,
+            InstrumentClass.WARRANT,
+        ):
+            # For premium-based instruments, realize the notional value as a cash flow on every fill
+            pnl = instrument.notional_value(fill.last_qty, fill.last_px)
+            if fill.order_side == OrderSide.BUY:
+                pnls[pnl.currency] = Money(-pnl.as_decimal(), pnl.currency)
+            else:
+                pnls[pnl.currency] = Money(pnl.as_decimal(), pnl.currency)
+        elif position is not None and position.quantity._mem.raw != 0 and position.entry != fill.order_side:
             # Calculate and add PnL using the minimum of fill quantity and position quantity
             # to avoid double-limiting that occurs in position._calculate_pnl()
             pnl_quantity = Quantity(

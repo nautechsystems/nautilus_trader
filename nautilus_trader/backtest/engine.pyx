@@ -5210,7 +5210,7 @@ cdef class OrderMatchingEngine:
         self._has_targets = False
 
         # Instrument expiration
-        if (self._instrument_has_expiration and timestamp_ns >= self.instrument.expiration_ns) or self._instrument_close is not None:
+        if (self._instrument_has_expiration and timestamp_ns > self.instrument.expiration_ns) or self._instrument_close is not None:
             self._log.info(f"{self.instrument.id} reached expiration")
 
             # Cancel all open orders
@@ -5223,7 +5223,7 @@ cdef class OrderMatchingEngine:
                     trader_id=position.trader_id,
                     strategy_id=position.strategy_id,
                     instrument_id=position.instrument_id,
-                    client_order_id=ClientOrderId(str(uuid.uuid4())),
+                    client_order_id=ClientOrderId(f"EXPIRATION-LEG-{uuid.uuid4()}"),
                     order_side=Order.closing_side_c(position.side),
                     quantity=position.quantity,
                     init_id=UUID4(),
