@@ -849,7 +849,6 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         await self._maintain_active_market(command.instrument_id)
-        print("Gleb submitting order:", command)
         order = command.order
         if order.is_closed:
             self._log.warning(f"Order {order} is already closed")
@@ -991,7 +990,6 @@ class PolymarketExecutionClient(LiveExecutionClient):
             client_order_id=order.client_order_id,
             ts_event=self._clock.timestamp_ns(),
         )
-        print(f"GLEB order: {order}, signed_order: {signed_order}")
         await self._post_signed_order(order, signed_order)
         interval = self._clock.timestamp() - signing_start
         self._log.info(f"Signed and posted Polymarket market order in {interval:.3f}s", LogColor.BLUE)
