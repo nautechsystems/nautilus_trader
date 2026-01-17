@@ -61,11 +61,13 @@ async def test_connect_fail(ib_client):
 
     await ib_client._connect()
 
-    ib_client._eclient.wrapper.error.assert_called_with(
-        NO_VALID_ID,
-        CONNECT_FAIL.code(),
-        CONNECT_FAIL.msg(),
-    )
+    # Check that error was called with correct parameters (allowing any timestamp)
+    ib_client._eclient.wrapper.error.assert_called()
+    call_args = ib_client._eclient.wrapper.error.call_args[0]
+    assert call_args[0] == NO_VALID_ID
+    assert isinstance(call_args[1], int)  # errorTime should be an integer timestamp
+    assert call_args[2] == CONNECT_FAIL.code()
+    assert call_args[3] == CONNECT_FAIL.msg()
     ib_client._handle_reconnect.assert_not_awaited()
 
 

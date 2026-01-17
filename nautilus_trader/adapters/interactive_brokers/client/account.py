@@ -203,8 +203,12 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
 
         """
         self._account_ids = {a for a in accounts_list.split(",") if a}
-        self._log.debug(f"Managed accounts set: {self._account_ids}")
+        self._log.debug(
+            f"Managed accounts set: {self._account_ids}, next_valid_order_id: {self._next_valid_order_id}",
+        )
 
+        # Set connection flag if we have next valid order id
+        # Accounts may be empty in some cases, but nextValidId is required
         if self._next_valid_order_id >= 0 and not self._is_ib_connected.is_set():
             self._log.debug("`_is_ib_connected` set by `managedAccounts`", LogColor.BLUE)
             self._is_ib_connected.set()

@@ -21,7 +21,7 @@ from decimal import Decimal
 import msgspec
 import pandas as pd
 import pytz
-from ibapi.commission_report import CommissionReport
+from ibapi.commission_and_fees_report import CommissionAndFeesReport
 from ibapi.common import UNSET_DECIMAL
 from ibapi.common import BarData
 from ibapi.contract import Contract  # We use this for the expected response from IB
@@ -774,16 +774,16 @@ class IBTestExecStubs:
         return set_attributes(Execution(), params)
 
     @staticmethod
-    def commission() -> CommissionReport:
+    def commission() -> CommissionAndFeesReport:
         params = {
             "execId": "0000e0d5.6596b0d2.01.01",
-            "commission": 1.0,
+            "commissionAndFees": 1.0,
             "currency": "USD",
             "realizedPNL": 0.0,
             "yield_": 0.0,
             "yieldRedemptionDate": 0,
         }
-        return set_attributes(CommissionReport(), params)
+        return set_attributes(CommissionAndFeesReport(), params)
 
 
 def filter_out_options(instrument) -> bool:

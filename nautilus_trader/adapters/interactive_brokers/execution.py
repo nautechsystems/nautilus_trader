@@ -20,7 +20,7 @@ from decimal import Decimal
 from typing import Any
 
 import pandas as pd
-from ibapi.commission_report import CommissionReport
+from ibapi.commission_and_fees_report import CommissionAndFeesReport
 from ibapi.const import UNSET_DECIMAL
 from ibapi.const import UNSET_DOUBLE
 from ibapi.execution import Execution
@@ -604,7 +604,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self,
         execution: Execution,
         contract: IBContract,
-        commission_report: CommissionReport,
+        commission_report: CommissionAndFeesReport,
         instrument,
         ts_init: int,
     ) -> FillReport:
@@ -1313,7 +1313,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 # Store all available fields to Cache (for now until permanent solution)
                 self._cache.add(
                     f"accountSummary:{self.account_id.get_id()}",
-                    json.dumps(self._account_summary).encode("utf-8"),
+                    json.dumps(self._account_summary, default=str).encode("utf-8"),
                 )
 
         self._account_summary_loaded.set()
@@ -1397,7 +1397,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             self._handle_order_event(
                 status=OrderStatus.REJECTED,
                 order=nautilus_order,
-                reason=json.dumps({"whatIf": order_state.__dict__}),
+                reason=json.dumps({"whatIf": order_state.__dict__}, default=str),
             )
         elif order_state.status in [
             "PreSubmitted",
@@ -1525,7 +1525,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self,
         order_ref: str,
         execution: Execution,
-        commission_report: CommissionReport,
+        commission_report: CommissionAndFeesReport,
         contract: IBContract,
     ) -> None:
         if not execution.orderRef:
@@ -1593,7 +1593,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             last_px=Price(converted_execution_price, precision=instrument.price_precision),
             quote_currency=instrument.quote_currency,
             commission=Money(
-                commission_report.commission,
+                commission_report.commissionAndFees,
                 Currency.from_str(commission_report.currency),
             ),
             liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
@@ -1633,7 +1633,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         nautilus_order: Order,
         execution: Execution,
         contract: IBContract,
-        commission_report: CommissionReport,
+        commission_report: CommissionAndFeesReport,
     ) -> None:
         """
         Handle spread execution by translating leg fills to combo progress and
@@ -1680,7 +1680,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         nautilus_order: Order,
         execution: Execution,
         contract: IBContract,
-        commission_report: CommissionReport,
+        commission_report: CommissionAndFeesReport,
     ) -> None:
         """
         Generate combo fill from leg fill for order management.
@@ -1722,7 +1722,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
             # Combo commission scaled to the number of legs of the combo
             combo_commission = (
-                commission_report.commission
+                commission_report.commissionAndFees
                 * generic_spread_id_n_legs(nautilus_order.instrument_id)
                 / abs(ratio)
             )
@@ -1764,7 +1764,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         nautilus_order: Order,
         execution: Execution,
         contract: IBContract,
-        commission_report: CommissionReport,
+        commission_report: CommissionAndFeesReport,
     ) -> None:
         """
         Generate individual leg fill for portfolio updates.
@@ -1815,7 +1815,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             order_side = order_side = OrderSide[ORDER_SIDE_TO_ORDER_ACTION[execution.side]]
 
             commission = Money(
-                commission_report.commission,
+                commission_report.commissionAndFees,
                 Currency.from_str(commission_report.currency),
             )
 

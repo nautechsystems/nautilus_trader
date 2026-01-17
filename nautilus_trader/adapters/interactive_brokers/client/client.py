@@ -23,12 +23,14 @@ from typing import Any
 
 from ibapi import comm
 from ibapi.client import EClient
-from ibapi.commission_report import CommissionReport
+from ibapi.commission_and_fees_report import CommissionAndFeesReport
+from ibapi.common import PROTOBUF_MSG_ID
 from ibapi.common import BarData
 from ibapi.const import MAX_MSG_LEN
 from ibapi.const import NO_VALID_ID
 from ibapi.errors import BAD_LENGTH
 from ibapi.execution import Execution
+from ibapi.server_versions import MIN_SERVER_VER_PROTOBUF
 from ibapi.utils import current_fn_name
 
 from nautilus_trader.adapters.interactive_brokers.client.account import (
@@ -162,7 +164,7 @@ class InteractiveBrokersClient(
         # OrderMixin
         self._exec_id_details: dict[
             str,
-            dict[str, Execution | (CommissionReport | str)],
+            dict[str, Execution | (CommissionAndFeesReport | str)],
         ] = {}
         self._order_id_to_order_ref: dict[int, AccountOrderRef] = {}
         self._next_valid_order_id: int = -1
@@ -644,13 +646,13 @@ class InteractiveBrokersClient(
         finally:
             self._log.debug("Internal message queue processor stopped")
 
-    async def _process_message(self, msg: str) -> bool:
+    async def _process_message(self, msg: bytes) -> bool:
         """
         Process a single message from TWS/Gateway.
 
         Parameters
         ----------
-        msg : str
+        msg : bytes
             The message to be processed.
 
         Returns
@@ -661,21 +663,37 @@ class InteractiveBrokersClient(
         if len(msg) > MAX_MSG_LEN:
             await self.process_error(
                 req_id=NO_VALID_ID,
+                error_time=0,
                 error_code=BAD_LENGTH.code(),
-                error_string=f"{BAD_LENGTH.msg()}:{len(msg)}:{msg}",
+                error_string=f"{BAD_LENGTH.msg()}:{len(msg)}:{msg!r}",
             )
 
             return False
 
-        fields: tuple[bytes] = comm.read_fields(msg)
-        self._log.debug(f"Msg received: {msg}")
-        self._log.debug(f"Msg received fields: {fields}")
+        if self._eclient.serverVersion() >= MIN_SERVER_VER_PROTOBUF:
+            sMsgId = msg[:4]
+            msgId = int.from_bytes(sMsgId, "big")
+            msg = msg[4:]
+        else:
+            sMsgId = msg[: msg.index(b"\0")]
+            msg = msg[msg.index(b"\0") + len(b"\0") :]
+            msgId = int(sMsgId)
 
-        # The decoder identifies the message type based on its payload (e.g., open
-        # order, process real-time ticks, etc.) and then calls the corresponding
-        # method from the EWrapper. Many of those methods are overridden in the client
-        # manager and handler classes to support custom processing required for Nautilus.
-        await asyncio.to_thread(self._eclient.decoder.interpret, fields)
+        if msgId > PROTOBUF_MSG_ID:
+            msgId -= PROTOBUF_MSG_ID
+            self._log.debug(f"Msg received (Protobuf): msgId={msgId}")
+            # Use the Protobuf decoder to identify the message type and call the
+            # corresponding EWrapper method. Protobuf encoding is used for more
+            # efficient communication in newer TWS API versions.
+            await asyncio.to_thread(self._eclient.decoder.processProtoBuf, msg, msgId)
+        else:
+            fields: tuple[bytes] = comm.read_fields(msg)
+            self._log.debug(f"Msg received: msgId={msgId} fields={fields}")
+            # Use the standard decoder to identify the message type based on the msgId
+            # and then calls the corresponding method from the EWrapper. Many of
+            # those methods are overridden in the client manager and handler classes
+            # to support custom processing required for Nautilus.
+            await asyncio.to_thread(self._eclient.decoder.interpret, fields, msgId)
 
         return True
 
@@ -743,11 +761,13 @@ class InteractiveBrokersClient(
 
     # -- EClient overrides ------------------------------------------------------------------------
 
-    def sendMsg(self, msg):
+    def sendMsg(self, msgId, msg):
         """
         Override the logging for ibapi EClient.sendMsg.
         """
-        full_msg = comm.make_msg(msg)
+        useRawIntMsgId = self._eclient.serverVersion() >= MIN_SERVER_VER_PROTOBUF
+        full_msg = comm.make_msg(msgId, useRawIntMsgId, msg)
+        self._log.debug(f"Sending msg: {full_msg}")
         self._log.debug(f"TWS API request sent: function={current_fn_name(1)} msg={full_msg}")
         self._eclient.conn.sendMsg(full_msg)
 

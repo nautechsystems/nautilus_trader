@@ -16,7 +16,7 @@
 import functools
 from decimal import Decimal
 
-from ibapi.commission_report import CommissionReport
+from ibapi.commission_and_fees_report import CommissionAndFeesReport
 from ibapi.contract import Contract
 from ibapi.execution import Execution
 from ibapi.execution import ExecutionFilter
@@ -242,8 +242,13 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
 
         """
         self._next_valid_order_id = max(self._next_valid_order_id, order_id, 101)
+        self._log.debug(
+            f"Next valid order id set: {self._next_valid_order_id}, accounts: {self.accounts()}",
+        )
 
-        if self.accounts() and not self._is_ib_connected.is_set():
+        # Set connection flag once we have next valid order id
+        # Accounts may arrive later or be empty, but nextValidId is the key indicator
+        if self._next_valid_order_id >= 0 and not self._is_ib_connected.is_set():
             self._log.debug("`_is_ib_connected` set by `nextValidId`", LogColor.BLUE)
             self._is_ib_connected.set()
 
@@ -389,10 +394,10 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
     async def process_commission_report(
         self,
         *,
-        commission_report: CommissionReport,
+        commission_report: CommissionAndFeesReport,
     ) -> None:
         """
-        Provide the CommissionReport of an Execution.
+        Provide the CommissionAndFeesReport of an Execution.
         """
         if not (cache := self._exec_id_details.get(commission_report.execId, None)):
             self._exec_id_details[commission_report.execId] = {}
