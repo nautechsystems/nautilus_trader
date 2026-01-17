@@ -30,6 +30,7 @@ from py_clob_client.client import OrderArgs
 from py_clob_client.client import PartialCreateOrderOptions
 from py_clob_client.client import TradeParams
 from py_clob_client.clob_types import AssetType
+from py_clob_client.clob_types import PostOrdersArgs
 from py_clob_client.exceptions import PolyApiException
 from py_clob_rust_adaptor import PyClobClient
 
@@ -1406,6 +1407,343 @@ class PolymarketExecutionClient(LiveExecutionClient):
         total_interval = self._clock.timestamp() - signing_start
         self._log.info(
             f"Signed and posted via Rust (separate calls) in {total_interval:.3f}s "
+            f"(sign: {sign_interval:.3f}s, post: {post_interval:.3f}s)",
+            LogColor.GREEN,
+        )
+
+    def submit_order_list(self, command: SubmitOrderList) -> None:
+        """
+        Submit an order list for execution.
+
+        For Polymarket, if the order list contains orders for the same instrument,
+        they are submitted sequentially (normal behavior). However, you can use
+        `submit_order_batch_concurrent` for concurrent submission across different
+        instruments.
+
+        Parameters
+        ----------
+        command : SubmitOrderList
+            The command to execute.
+
+        """
+        # Extract orders from the order list
+        orders = list(command.order_list.orders)
+
+        # Submit concurrently (all orders for same instrument in an OrderList)
+        self.create_task(
+            self.submit_order_batch_concurrent(orders),
+            log_msg=f"submit_order_list-{command.order_list.id}",
+        )
+
+    async def submit_order_batch_concurrent(self, orders: list[Order]) -> None:
+        """
+        Submit multiple orders concurrently across different instruments.
+
+        This method parallelizes both signing and HTTP posting to minimize
+        total submission time. Designed for batch market-making strategies
+        where orders need to hit the exchange simultaneously.
+
+        Parameters
+        ----------
+        orders : list[Order]
+            The orders to submit concurrently (can have different instrument IDs).
+
+        Notes
+        -----
+        - Each order is validated and signed independently
+        - All orders are POSTed to the exchange concurrently
+        - Errors are handled per-order (one failure doesn't affect others)
+        - Appropriate events (submitted, accepted, rejected) are generated for each order
+
+        """
+        if not orders:
+            self._log.warning("submit_order_batch_concurrent called with empty order list")
+            return
+
+        batch_start = self._clock.timestamp()
+        self._log.info(
+            f"Starting concurrent batch submission for {len(orders)} orders",
+            LogColor.BLUE,
+        )
+
+        # Step 1: Validate all orders and prepare instruments
+        validated_orders: list[tuple[Order, Any]] = []
+        for order in orders:
+            # Perform same validations as _submit_order
+            if order.is_closed:
+                self._log.warning(f"Order {order} is already closed - skipping")
+                continue
+
+            if order.is_reduce_only:
+                self.generate_order_denied(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason="REDUCE_ONLY_NOT_SUPPORTED",
+                    ts_event=self._clock.timestamp_ns(),
+                )
+                continue
+
+            if order.is_post_only:
+                self.generate_order_denied(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason="POST_ONLY_NOT_SUPPORTED",
+                    ts_event=self._clock.timestamp_ns(),
+                )
+                continue
+
+            if order.time_in_force not in VALID_POLYMARKET_TIME_IN_FORCE:
+                self.generate_order_denied(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason="UNSUPPORTED_TIME_IN_FORCE",
+                    ts_event=self._clock.timestamp_ns(),
+                )
+                continue
+
+            if order.order_type not in (OrderType.MARKET, OrderType.LIMIT):
+                self._log.error(
+                    f"Order type {order.type_string()} not supported - skipping",
+                )
+                continue
+
+            instrument = self._cache.instrument(order.instrument_id)
+            if not instrument:
+                self._log.error(f"Instrument {order.instrument_id} not found - skipping")
+                continue
+
+            validated_orders.append((order, instrument))
+
+        if not validated_orders:
+            self._log.warning("No valid orders to submit after validation")
+            return
+
+        # Step 2: Sign all orders concurrently
+        sign_start = self._clock.timestamp()
+
+        async def sign_order(order_tuple: tuple[Order, Any]) -> tuple[Order, Any, Any]:
+            order, instrument = order_tuple
+
+            # Generate OrderSubmitted event
+            self.generate_order_submitted(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                ts_event=self._clock.timestamp_ns(),
+            )
+
+            try:
+                # Extract tick_size and neg_risk from order tags (same as regular submission)
+                tick_size = None
+                neg_risk = False
+                if order.tags:
+                    tick_size = order.tags[0] if len(order.tags) > 0 else None
+                    neg_risk = order.tags[1] if len(order.tags) > 1 else False
+
+                # Determine order parameters
+                if order.order_type == OrderType.MARKET:
+                    # For market orders, convert to limit with extreme price
+                    min_price, max_price = POLYMARKET_MIN_MAX_PRICES.get(tick_size, (0.001, 0.999))
+                    if order.side == OrderSide.BUY:
+                        price_value = max_price
+                    else:
+                        price_value = min_price
+                    amount = float(order.quantity)
+                    expiration_secs = 0  # Market orders don't have expiration
+                else:  # LIMIT
+                    price_value = float(order.price)
+                    amount = float(order.quantity)
+                    # Get expiration for limit orders
+                    if order.expire_time_ns:
+                        expiration_secs = int(nanos_to_secs(order.expire_time_ns))
+                    else:
+                        expiration_secs = 0
+
+                # Get token_id from instrument_id (same way as regular submission)
+                token_id = get_polymarket_token_id(order.instrument_id)
+
+                # Sign order (using Rust client if available, otherwise Python)
+                if self._rust_client:
+                    # Rust client's create_order method (sign only)
+                    signed_order_json = await self._rust_client.create_order(
+                        token_id,                                    # market_id
+                        order_side_to_str(order.side),              # side
+                        amount,                                      # size
+                        price_value,                                 # price
+                        expiration_secs,                             # expiration
+                        float(tick_size) if tick_size else 0.01,   # tick_size
+                        neg_risk,                                    # neg_risk
+                    )
+                    # Parse the JSON string to get the signed order dict
+                    signed_order_dict = json.loads(signed_order_json)
+                    signed_order = SignedOrderWrapper(signed_order_dict)
+                else:
+                    # For Python client, use create_market_order or create_order
+                    if order.order_type == OrderType.MARKET:
+                        # Market order
+                        market_order_args = MarketOrderArgs(
+                            token_id=token_id,
+                            amount=amount,
+                            side=order_side_to_str(order.side),
+                            order_type=convert_tif_to_polymarket_order_type(order.time_in_force),
+                        )
+                        options = PartialCreateOrderOptions(
+                            tick_size=float(tick_size) if tick_size else 0.01,
+                            neg_risk=neg_risk,
+                        )
+                        signed_order = await asyncio.to_thread(
+                            self._http_client.create_market_order,
+                            market_order_args,
+                            options=options,
+                        )
+                    else:
+                        # Limit order
+                        order_args = OrderArgs(
+                            price=price_value,
+                            token_id=token_id,
+                            size=amount,
+                            side=order_side_to_str(order.side),
+                            expiration=expiration_secs,
+                        )
+                        options = PartialCreateOrderOptions(
+                            tick_size=float(tick_size) if tick_size else 0.01,
+                            neg_risk=neg_risk,
+                        )
+                        signed_order = await asyncio.to_thread(
+                            self._http_client.create_order,
+                            order_args,
+                            options=options,
+                        )
+
+                return (order, instrument, signed_order)
+            except Exception as e:
+                self._log.error(f"Error signing order {order.client_order_id}: {e}")
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=f"SIGNING_ERROR: {e}",
+                    ts_event=self._clock.timestamp_ns(),
+                )
+                return (order, instrument, None)
+
+        # Sign all orders in parallel
+        signed_results = await asyncio.gather(*[sign_order(o) for o in validated_orders])
+
+        sign_interval = self._clock.timestamp() - sign_start
+        self._log.info(
+            f"Signed {len(validated_orders)} orders in {sign_interval:.3f}s",
+            LogColor.CYAN,
+        )
+
+        # Filter out failed signings
+        successfully_signed = [(o, i, s) for o, i, s in signed_results if s is not None]
+
+        if not successfully_signed:
+            self._log.warning("No orders successfully signed")
+            return
+
+        # Step 3: POST all signed orders in a SINGLE HTTP call using post_orders
+        # Always use Python client's post_orders for maximum performance
+        post_start = self._clock.timestamp()
+
+        try:
+            # Build list of PostOrdersArgs for batch POST
+            post_orders_args = []
+            for order, instrument, signed_order in successfully_signed:
+                post_orders_args.append(
+                    PostOrdersArgs(
+                        order=signed_order,
+                        orderType=convert_tif_to_polymarket_order_type(order.time_in_force),
+                    )
+                )
+
+            # POST all orders in a SINGLE HTTP call (regardless of signing method)
+            self._log.info(
+                f"Posting {len(post_orders_args)} orders in single HTTP call",
+                LogColor.CYAN,
+            )
+
+            retry_manager = await self._retry_manager_pool.acquire()
+            try:
+                response = await retry_manager.run(
+                    "submit_orders_batch",
+                    [o.client_order_id for o, _, _ in successfully_signed],
+                    asyncio.to_thread,
+                    self._http_client.post_orders,
+                    post_orders_args,
+                )
+            finally:
+                await self._retry_manager_pool.release(retry_manager)
+
+            # Parse response and generate events
+            if response and isinstance(response, list):
+                for idx, (order, instrument, signed_order) in enumerate(successfully_signed):
+                    order_response = response[idx] if idx < len(response) else None
+
+                    if order_response and order_response.get("success"):
+                        venue_order_id = VenueOrderId(order_response["orderID"])
+                        self._cache.add_venue_order_id(order.client_order_id, venue_order_id)
+
+                        # Generate OrderAccepted event
+                        self.generate_order_accepted(
+                            strategy_id=order.strategy_id,
+                            instrument_id=order.instrument_id,
+                            client_order_id=order.client_order_id,
+                            venue_order_id=venue_order_id,
+                            ts_event=self._clock.timestamp_ns(),
+                        )
+
+                        # Signal order event
+                        event = self._ack_events_order.get(venue_order_id)
+                        if event:
+                            event.set()
+
+                        # Signal trade event
+                        trade_event = self._ack_events_trade.get(venue_order_id)
+                        if trade_event:
+                            trade_event.set()
+                    else:
+                        error_msg = order_response.get("error", "Unknown error") if order_response else "No response"
+                        self.generate_order_rejected(
+                            strategy_id=order.strategy_id,
+                            instrument_id=order.instrument_id,
+                            client_order_id=order.client_order_id,
+                            reason=f"POST_ERROR: {error_msg}",
+                            ts_event=self._clock.timestamp_ns(),
+                        )
+            else:
+                # Response format unexpected
+                self._log.error(f"Unexpected response format from post_orders: {response}")
+                for order, instrument, signed_order in successfully_signed:
+                    self.generate_order_rejected(
+                        strategy_id=order.strategy_id,
+                        instrument_id=order.instrument_id,
+                        client_order_id=order.client_order_id,
+                        reason="UNEXPECTED_RESPONSE_FORMAT",
+                        ts_event=self._clock.timestamp_ns(),
+                    )
+
+        except Exception as e:
+            self._log.error(f"Error in batch POST: {e}")
+            # Reject all orders
+            for order, instrument, signed_order in successfully_signed:
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=f"BATCH_POST_ERROR: {e}",
+                    ts_event=self._clock.timestamp_ns(),
+                )
+
+        post_interval = self._clock.timestamp() - post_start
+        batch_total = self._clock.timestamp() - batch_start
+
+        self._log.info(
+            f"Batch submission complete: {len(successfully_signed)} orders in {batch_total:.3f}s "
             f"(sign: {sign_interval:.3f}s, post: {post_interval:.3f}s)",
             LogColor.GREEN,
         )
