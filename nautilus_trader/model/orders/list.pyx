@@ -22,8 +22,6 @@ cdef class OrderList:
     """
     Represents a list of bulk or related contingent orders.
 
-    All orders must be for the same instrument ID.
-
     Parameters
     ----------
     order_list_id : OrderListId
@@ -37,8 +35,12 @@ cdef class OrderList:
         If `orders` is empty.
     ValueError
         If `orders` contains a type other than `Order`.
-    ValueError
-        If orders contain different instrument IDs (must all be the same instrument).
+
+    Notes
+    -----
+    If all orders share the same instrument_id, that ID is set as the list's instrument_id.
+    If orders have different instrument IDs, the list's instrument_id will be set to the
+    first order's instrument_id for backward compatibility.
 
     """
 
@@ -50,18 +52,9 @@ cdef class OrderList:
         Condition.not_empty(orders, "orders")
         Condition.list_type(orders, Order, "orders")
         cdef Order first = orders[0]
-        cdef Order order
-        for order in orders:
-            # First condition check avoids creating an f-string for performance reasons
-            if order.instrument_id != first.instrument_id:
-                Condition.is_true(
-                    order.instrument_id == first.instrument_id,
-                    f"order.instrument_id {order.instrument_id} != instrument_id {first.instrument_id}; "
-                    "all orders in the list must be for the same instrument ID",
-                )
 
         self.id = order_list_id
-        self.instrument_id = first.instrument_id
+        self.instrument_id = first.instrument_id  # Always set to first order's instrument
         self.strategy_id = first.strategy_id
         self.orders = orders
         self.first = first
