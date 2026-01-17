@@ -825,7 +825,9 @@ class DatabentoDataClient(LiveMarketDataClient):
                 LogColor.BLUE,
             )
         elif start == end:
-            self._log.warning(f"Zero-length interval at dataset boundary: {start}")
+            # At dataset boundary (e.g. available_end=midnight, floor("D") gives start=end)
+            start -= pd.Timedelta(1, "ns")
+            self._log.info("Adjusted start by -1ns to create non-empty interval", LogColor.BLUE)
 
         if original_start != start or (original_end is not None and original_end != end):
             self._log.info(
