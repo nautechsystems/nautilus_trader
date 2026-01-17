@@ -386,7 +386,9 @@ class DatabentoDataClient(LiveMarketDataClient):
         dataset: Dataset,
         instrument_ids: list[InstrumentId],
     ) -> None:
-        """Ensure all instruments are subscribed for definitions in a single batch."""
+        """
+        Ensure all instruments are subscribed for definitions in a single batch.
+        """
         try:
             subscribed_instruments = self._instrument_ids[dataset]
 
@@ -487,7 +489,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self.create_task(
             self._subscribe_quote_ticks(command),
             log_msg=f"subscribe: quote_ticks {command.instrument_id}",
-            success_msg=f"Subscribed quotes",
+            success_msg="Subscribed quotes",
             success_color=LogColor.BLUE,
         )
 
@@ -503,7 +505,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self.create_task(
             self._subscribe_trade_ticks(command),
             log_msg=f"subscribe: trade_ticks {command.instrument_id}",
-            success_msg=f"Subscribed trades",
+            success_msg="Subscribed trades",
             success_color=LogColor.BLUE,
         )
 
@@ -519,7 +521,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self.create_task(
             self._subscribe_bars(command),
             log_msg=f"subscribe: bars {command.bar_type}",
-            success_msg=f"Subscribed bars",
+            success_msg="Subscribed bars",
             success_color=LogColor.BLUE,
         )
 
@@ -535,7 +537,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self.create_task(
             self._subscribe_instrument_status(command),
             log_msg=f"subscribe: instrument_status {command.instrument_id}",
-            success_msg=f"Subscribed instrument status",
+            success_msg="Subscribed instrument status",
             success_color=LogColor.BLUE,
         )
 
@@ -793,7 +795,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 DatabentoSchema.TCBBO.value,
             ]:
                 self._log.warning(
-                    f"Schema {schema} not supported for quotes. Defaulting to {DatabentoSchema.MBP_1}"
+                    f"Schema {schema} not supported for quotes. Defaulting to {DatabentoSchema.MBP_1}",
                 )
                 schema = DatabentoSchema.MBP_1.value
 
@@ -1115,7 +1117,9 @@ class DatabentoDataClient(LiveMarketDataClient):
                 LogColor.BLUE,
             )
         elif start == end:
-            self._log.warning(f"Zero-length interval at dataset boundary: {start}")
+            # At dataset boundary (e.g. available_end=midnight, floor("D") gives start=end)
+            start -= pd.Timedelta(1, "ns")
+            self._log.info("Adjusted start by -1ns to create non-empty interval", LogColor.BLUE)
 
         if original_start != start or (original_end is not None and original_end != end):
             self._log.info(
