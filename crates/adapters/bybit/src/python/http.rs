@@ -637,6 +637,39 @@ impl BybitHttpClient {
         })
     }
 
+    #[pyo3(name = "request_funding_rates")]
+    #[pyo3(signature = (product_type, instrument_id, start=None, end=None, limit=None))]
+    fn py_request_funding_rates<'py>(
+        &self,
+        py: Python<'py>,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<u32>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let funding_rates = client
+                .request_funding_rates(product_type, instrument_id, start, end, limit)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let py_funding_rates: PyResult<Vec<_>> = funding_rates
+                    .into_iter()
+                    .map(|funding_rate| funding_rate.into_py_any(py))
+                    .collect();
+                let pylist = PyList::new(py, py_funding_rates?)
+                    .unwrap()
+                    .into_any()
+                    .unbind();
+                Ok(pylist)
+            })
+        })
+    }
+
     #[pyo3(name = "request_orderbook_snapshot")]
     #[pyo3(signature = (product_type, instrument_id, limit=None))]
     fn py_request_orderbook_snapshot<'py>(

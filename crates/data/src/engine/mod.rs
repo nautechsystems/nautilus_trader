@@ -802,6 +802,7 @@ impl DataEngine {
                 RequestCommand::BookDepth(req) => client.request_book_depth(req),
                 RequestCommand::Quotes(req) => client.request_quotes(req),
                 RequestCommand::Trades(req) => client.request_trades(req),
+                RequestCommand::FundingRates(req) => client.request_funding_rates(req),
                 RequestCommand::Bars(req) => client.request_bars(req),
             }
         } else {
@@ -859,6 +860,7 @@ impl DataEngine {
             }
             DataResponse::Quotes(r) => self.handle_quotes(&r.data),
             DataResponse::Trades(r) => self.handle_trades(&r.data),
+            DataResponse::FundingRates(r) => self.handle_funding_rates(&r.data),
             DataResponse::Bars(r) => self.handle_bars(&r.data),
             DataResponse::Book(r) => self.handle_book_response(&r.data),
             _ => todo!("Handle other response types"),
@@ -1397,6 +1399,17 @@ impl DataEngine {
 
     fn handle_trades(&self, trades: &[TradeTick]) {
         if let Err(e) = self.cache.as_ref().borrow_mut().add_trades(trades) {
+            log_error_on_cache_insert(&e);
+        }
+    }
+
+    fn handle_funding_rates(&self, funding_rates: &[FundingRateUpdate]) {
+        if let Err(e) = self
+            .cache
+            .as_ref()
+            .borrow_mut()
+            .add_funding_rates(funding_rates)
+        {
             log_error_on_cache_insert(&e);
         }
     }

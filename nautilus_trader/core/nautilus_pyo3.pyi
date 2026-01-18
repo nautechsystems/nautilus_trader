@@ -6210,6 +6210,14 @@ class BybitHttpClient:
         instrument_id: InstrumentId,
         limit: int | None = None,
     ) -> list[TradeTick]: ...
+    async def request_funding_rates(
+        self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
+        limit: int | None = None,
+    ) -> list[FundingRateUpdate]: ...
     async def request_orderbook_snapshot(
         self,
         product_type: BybitProductType,

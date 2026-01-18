@@ -29,6 +29,7 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import CustomData
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import IndexPriceUpdate
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import MarkPriceUpdate
@@ -50,6 +51,7 @@ from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWranglerV2
 from nautilus_trader.serialization.arrow.implementations import account_state
 from nautilus_trader.serialization.arrow.implementations import component_commands
 from nautilus_trader.serialization.arrow.implementations import component_events
+from nautilus_trader.serialization.arrow.implementations import funding_rate_update
 from nautilus_trader.serialization.arrow.implementations import instruments
 from nautilus_trader.serialization.arrow.implementations import order_events
 from nautilus_trader.serialization.arrow.implementations import position_events
@@ -445,3 +447,10 @@ for position_cls in PositionEvent.__subclasses__():
         encoder=position_events.serialize,
         decoder=position_events.deserialize(position_cls),
     )
+
+register_arrow(
+    FundingRateUpdate,
+    schema=NAUTILUS_ARROW_SCHEMA[FundingRateUpdate],
+    encoder=funding_rate_update.serialize,
+    decoder=funding_rate_update.deserialize,
+)

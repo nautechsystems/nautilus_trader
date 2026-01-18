@@ -65,11 +65,12 @@ use crate::{
     logging::{CMD, RECV, REQ, SEND},
     messages::{
         data::{
-            BarsResponse, BookResponse, CustomDataResponse, DataCommand, InstrumentResponse,
-            InstrumentsResponse, QuotesResponse, RequestBars, RequestBookSnapshot, RequestCommand,
-            RequestCustomData, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
-            SubscribeBars, SubscribeBookDeltas, SubscribeBookSnapshots, SubscribeCommand,
-            SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
+            BarsResponse, BookResponse, CustomDataResponse, DataCommand, FundingRatesResponse,
+            InstrumentResponse, InstrumentsResponse, QuotesResponse, RequestBars,
+            RequestBookSnapshot, RequestCommand, RequestCustomData, RequestFundingRates,
+            RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
+            SubscribeBookDeltas, SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData,
+            SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
             SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
             SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
             UnsubscribeBookDeltas, UnsubscribeBookSnapshots, UnsubscribeCommand,
@@ -496,6 +497,16 @@ pub trait DataActor:
         Ok(())
     }
 
+    /// Actions to be performed when receiving historical trades.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the historical trades fails.
+    #[allow(unused_variables)]
+    fn on_historical_funding_rates(&mut self, trades: &[FundingRateUpdate]) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Actions to be performed when receiving historical bars.
     ///
     /// # Errors
@@ -913,6 +924,15 @@ pub trait DataActor:
         log_received(&resp);
 
         if let Err(e) = self.on_historical_trades(&resp.data) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a funding rates response.
+    fn handle_funding_rates_response(&mut self, resp: &FundingRatesResponse) {
+        log_received(&resp);
+
+        if let Err(e) = self.on_historical_funding_rates(&resp.data) {
             log_error(&e);
         }
     }
@@ -1836,6 +1856,40 @@ pub trait DataActor:
         let actor_id = self.actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |resp: &TradesResponse| {
             get_actor_unchecked::<Self>(&actor_id).handle_trades_response(resp);
+        });
+
+        DataActorCore::request_trades(
+            self,
+            instrument_id,
+            start,
+            end,
+            limit,
+            client_id,
+            params,
+            handler,
+        )
+    }
+
+    /// Request historical [`FundingRateUpdate`] data for the given `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if input parameters are invalid.
+    fn request_funding_rates(
+        &mut self,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<NonZeroUsize>,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) -> anyhow::Result<UUID4>
+    where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let handler = ShareableMessageHandler::from_typed(move |resp: &FundingRatesResponse| {
+            get_actor_unchecked::<Self>(&actor_id).handle_funding_rates_response(resp);
         });
 
         DataActorCore::request_trades(
@@ -3692,6 +3746,48 @@ impl DataActorCore {
 
         let request_id = UUID4::new();
         let command = RequestCommand::Trades(RequestTrades {
+            instrument_id,
+            start,
+            end,
+            limit,
+            client_id,
+            request_id,
+            ts_init: now.into(),
+            params,
+        });
+
+        get_message_bus()
+            .borrow_mut()
+            .register_response_handler(command.request_id(), handler)?;
+
+        self.send_data_cmd(DataCommand::Request(command));
+
+        Ok(request_id)
+    }
+
+    /// Helper method for requesting trades.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if input parameters are invalid.
+    #[allow(clippy::too_many_arguments)]
+    pub fn request_funding_rates(
+        &self,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<NonZeroUsize>,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+        handler: ShareableMessageHandler,
+    ) -> anyhow::Result<UUID4> {
+        self.check_registered();
+
+        let now = self.clock_ref().utc_now();
+        check_timestamps(now, start, end)?;
+
+        let request_id = UUID4::new();
+        let command = RequestCommand::FundingRates(RequestFundingRates {
             instrument_id,
             start,
             end,

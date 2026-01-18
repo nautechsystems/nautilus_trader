@@ -61,6 +61,7 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport RequestBars
 from nautilus_trader.data.messages cimport RequestData
+from nautilus_trader.data.messages cimport RequestFundingRates
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
 from nautilus_trader.data.messages cimport RequestJoin
@@ -3495,6 +3496,113 @@ cdef class Actor(Component):
 
         return used_request_id
 
+    cpdef UUID4 request_funding_rates(
+        self,
+        InstrumentId instrument_id,
+        datetime start,
+        datetime end = None,
+        int limit = 0,
+        ClientId client_id = None,
+        callback: Callable[[UUID4], None] | None = None,
+        bint update_catalog = False,
+        bint join_request = False,
+        UUID4 request_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Request historical `FundingRateUpdate` data.
+
+        If `end` is ``None`` then will request up to the most recent data.
+
+        Once the response is received, the funding rate data is forwarded from the message bus
+        to the `on_historical_data` handler.
+
+        If the request fails, then an error is logged.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The tick instrument ID for the request.
+        start : datetime
+            The start datetime (UTC) of request time range.
+            Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
+        end : datetime, optional
+            The end datetime (UTC) of request time range.
+            If `None` then will be replaced with the current UTC time.
+            Should be right-inclusive (value <= end), but inclusiveness is not currently guaranteed.
+        limit : int, optional
+            The limit on the amount of trade ticks received.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        callback : Callable[[UUID4], None], optional
+            The registered callback, to be called with the request ID when the response has
+            completed processing.
+        update_catalog : bool, default False
+            Whether to update a catalog with the received data.
+        join_request: bool, optional, default to False
+            If a request should be joined and sorted with another one by using request_join.
+        request_id : UUID4, optional
+            The UUID to use for the request ID. If `None`, a new UUID will be generated.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        Returns
+        -------
+        UUID4
+            The `request_id` for the request.
+
+        Raises
+        ------
+        TypeError
+            If `start` is `None`.
+        ValueError
+            If `start` is > current timestamp (now).
+        ValueError
+            If `end` is > current timestamp (now).
+        ValueError
+            If `start` is > `end`.
+        TypeError
+            If `callback` is not `None` and not of type `Callable`.
+
+        """
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.callable_or_none(callback, "callback")
+
+        start, end = self._validate_datetime_range(start, end)
+
+        used_params = {}
+        used_params["update_catalog"] = update_catalog
+        used_params["join_request"] = join_request
+        if params:
+            used_params.update(params)
+
+        cdef UUID4 used_request_id = request_id if request_id else UUID4()
+        cdef RequestFundingRates request = RequestFundingRates(
+            instrument_id=instrument_id,
+            start=start,
+            end=end,
+            limit=limit,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            callback=self._handle_funding_rates_response,
+            request_id=used_request_id,
+            ts_init=self._clock.timestamp_ns(),
+            params=used_params,
+        )
+        self._requests[used_request_id] = request
+        self._pending_requests[used_request_id] = callback
+
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_funding_rates_topic(instrument_id, historical=True),
+            handler=self.handle_historical_funding_rate,
+        )
+
+        self._send_data_req(request)
+
+        return used_request_id
+
     cpdef UUID4 request_bars(
         self,
         BarType bar_type,
@@ -4194,7 +4302,10 @@ cdef class Actor(Component):
                 self.log.exception(f"Error on handling {repr(index_price)}", e)
                 raise
 
-    cpdef void handle_funding_rate(self, FundingRateUpdate funding_rate):
+    cpdef void handle_historical_funding_rate(self, FundingRateUpdate funding_rate):
+        self.handle_funding_rate(funding_rate, True)
+
+    cpdef void handle_funding_rate(self, FundingRateUpdate funding_rate, bint historical=False):
         """
         Handle the given funding rate update.
 
@@ -4212,7 +4323,9 @@ cdef class Actor(Component):
         """
         Condition.not_none(funding_rate, "funding_rate")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if historical:
+            self.handle_historical_data(funding_rate)
+        elif self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_funding_rate(funding_rate)
             except Exception as e:
@@ -4495,6 +4608,24 @@ cdef class Actor(Component):
             self._log.info(f"Received <TradeTick[{length}]> data for {instrument_id}")
         else:
             self._log.warning(f"Received <TradeTick[]> data with no ticks for {instrument_id}")
+
+        self._finish_response(response.correlation_id)
+
+    cpdef void _handle_funding_rates_response(self, DataResponse response):
+        cdef RequestFundingRates request = self._requests.pop(response.correlation_id, None)
+        if request is not None:
+            self._msgbus.unsubscribe(
+                topic=self._topic_cache.get_funding_rates_topic(request.instrument_id, historical=True),
+                handler=self.handle_historical_funding_rate,
+            )
+
+        cdef int length = response.params.get("data_count", 0)
+        cdef InstrumentId instrument_id = request.instrument_id
+
+        if length > 0:
+            self._log.info(f"Received <FundingRateUpdate[{length}]> data for {instrument_id}")
+        else:
+            self._log.warning(f"Received <FundingRateUpdate[]> data with no ticks for {instrument_id}")
 
         self._finish_response(response.correlation_id)
 

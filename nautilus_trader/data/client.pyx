@@ -25,6 +25,7 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport RequestBars
 from nautilus_trader.data.messages cimport RequestData
+from nautilus_trader.data.messages cimport RequestFundingRates
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
 from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
@@ -55,6 +56,7 @@ from nautilus_trader.data.messages cimport UnsubscribeOrderBook
 from nautilus_trader.data.messages cimport UnsubscribeQuoteTicks
 from nautilus_trader.data.messages cimport UnsubscribeTradeTicks
 from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport FundingRateUpdate
 from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
@@ -1082,6 +1084,21 @@ cdef class MarketDataClient(DataClient):
             f"You can implement by overriding the `request_trade_ticks` method for this client",  # pragma: no cover  # noqa
         )
 
+    cpdef void request_funding_rates(self, RequestFundingRates request):
+        """
+        Request historical `FundingRateUpdate` data.
+
+        Parameters
+        ----------
+        request : RequestFundingRates
+            The message for the data request.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot request `FundingRateUpdate` data for {request.instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `request_funding_rates` method for this client",  # pragma: no cover  # noqa
+        )
+
     cpdef void request_bars(self, RequestBars request):
         """
         Request historical `Bar` data. To load historical data from a catalog, you can pass a list[DataCatalogConfig] to the TradingNodeConfig or the BacktestEngineConfig.
@@ -1117,6 +1134,9 @@ cdef class MarketDataClient(DataClient):
 
     def _handle_trade_ticks_py(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params = None):
         self._handle_trade_ticks(instrument_id, ticks, correlation_id, start, end, params)
+
+    def _handle_funding_rates_py(self, InstrumentId instrument_id, list funding_rates, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params = None):
+        self._handle_funding_rates(instrument_id, funding_rates, correlation_id, start, end, params)
 
     def _handle_bars_py(self, BarType bar_type, list bars, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params = None):
         self._handle_bars(bar_type, bars, correlation_id, start, end, params)
@@ -1186,6 +1206,22 @@ cdef class MarketDataClient(DataClient):
             venue=instrument_id.venue,
             data_type=DataType(TradeTick, metadata=({"instrument_id": instrument_id})),
             data=ticks,
+            correlation_id=correlation_id,
+            response_id=UUID4(),
+            start=start,
+            end=end,
+            ts_init=self._clock.timestamp_ns(),
+            params=params,
+        )
+
+        self._msgbus.send(endpoint="DataEngine.response", msg=response)
+
+    cpdef void _handle_funding_rates(self, InstrumentId instrument_id, list funding_rates, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params):
+        cdef DataResponse response = DataResponse(
+            client_id=self.id,
+            venue=instrument_id.venue,
+            data_type=DataType(FundingRateUpdate, metadata=({"instrument_id": instrument_id})),
+            data=funding_rates,
             correlation_id=correlation_id,
             response_id=UUID4(),
             start=start,

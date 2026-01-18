@@ -84,6 +84,7 @@ from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport RequestBars
 from nautilus_trader.data.messages cimport RequestData
+from nautilus_trader.data.messages cimport RequestFundingRates
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
 from nautilus_trader.data.messages cimport RequestJoin
@@ -1487,6 +1488,8 @@ cdef class DataEngine(Component):
             self._handle_request_quote_ticks(client, request)
         elif isinstance(request, RequestTradeTicks):
             self._handle_request_trade_ticks(client, request)
+        elif isinstance(request, RequestFundingRates):
+            self._handle_request_funding_rates(client, request)
         elif isinstance(request, RequestBars):
             self._handle_request_bars(client, request)
         elif isinstance(request, RequestJoin):
@@ -1536,6 +1539,9 @@ cdef class DataEngine(Component):
         self._handle_date_range_request(client, request)
 
     cpdef void _handle_request_trade_ticks(self, DataClient client, RequestTradeTicks request):
+        self._handle_date_range_request(client, request)
+
+    cpdef void _handle_request_funding_rates(self, DataClient client, RequestFundingRates request):
         self._handle_date_range_request(client, request)
 
     cpdef void _handle_request_bars(self, DataClient client, RequestBars request):
@@ -1622,6 +1628,8 @@ cdef class DataEngine(Component):
             client.request_quote_ticks(request)
         elif isinstance(request, RequestTradeTicks):
             client.request_trade_ticks(request)
+        elif isinstance(request, RequestFundingRates):
+            client.request_funding_rates(request)
         elif isinstance(request, RequestOrderBookDepth):
             client.request_order_book_depth(request)
         else:
@@ -1682,6 +1690,12 @@ cdef class DataEngine(Component):
                 )
             elif isinstance(request, RequestTradeTicks):
                 data = catalog.trade_ticks(
+                    instrument_ids=[str(request.instrument_id)],
+                    start=ts_start,
+                    end=ts_end,
+                )
+            elif isinstance(request, RequestFundingRates):
+                data = catalog.funding_rates(
                     instrument_ids=[str(request.instrument_id)],
                     start=ts_start,
                     end=ts_end,

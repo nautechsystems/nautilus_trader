@@ -27,7 +27,7 @@ use nautilus_common::{
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, DataType, QuoteTick, TradeTick},
+    data::{Bar, DataType, FundingRateUpdate, QuoteTick, TradeTick},
     events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
@@ -741,6 +741,17 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             }
         });
         Ok(rx.recv()?)
+    }
+
+    fn add_funding_rate(&self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn load_funding_rates(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Vec<FundingRateUpdate>> {
+        todo!()
     }
 
     fn add_bar(&self, bar: &Bar) -> anyhow::Result<()> {

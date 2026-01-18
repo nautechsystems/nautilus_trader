@@ -80,8 +80,8 @@ use nautilus_core::{
     datetime::{iso8601_to_unix_nanos, unix_nanos_to_iso8601},
 };
 use nautilus_model::data::{
-    Bar, Data, HasTsInit, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10,
-    QuoteTick, TradeTick, close::InstrumentClose, to_variant,
+    Bar, Data, FundingRateUpdate, HasTsInit, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta,
+    OrderBookDepth10, QuoteTick, TradeTick, close::InstrumentClose, to_variant,
 };
 use nautilus_serialization::arrow::{DecodeDataFromRecordBatch, EncodeToRecordBatch};
 use object_store::{ObjectStore, path::Path as ObjectPath};
@@ -1688,6 +1688,7 @@ impl_catalog_path_prefix!(OrderBookDepth10, "order_book_depths");
 impl_catalog_path_prefix!(Bar, "bars");
 impl_catalog_path_prefix!(IndexPriceUpdate, "index_prices");
 impl_catalog_path_prefix!(MarkPriceUpdate, "mark_prices");
+impl_catalog_path_prefix!(FundingRateUpdate, "funding_rates");
 impl_catalog_path_prefix!(InstrumentClose, "instrument_closes");
 
 /// Converts timestamps to a filename using ISO 8601 format.

@@ -2655,6 +2655,111 @@ cdef class RequestTradeTicks(RequestData):
             f"correlation_id={self.correlation_id}{form_params_str(self.params)})"
         )
 
+cdef class RequestFundingRates(RequestData):
+    """
+    Represents a request for funding rates.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the request.
+    start : datetime
+        The start datetime (UTC) of request time range (inclusive).
+    end : datetime
+        The end datetime (UTC) of request time range.
+        The inclusiveness depends on individual data client implementation.
+    limit : int
+        The limit on the amount of trade ticks received.
+    client_id : ClientId or ``None``
+        The data client ID for the request.
+    venue : Venue or ``None``
+        The venue for the request.
+    callback : Callable[[Any], None]
+        The delegate to call with the data.
+    request_id : UUID4
+        The request ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object]
+        Additional parameters for the request.
+
+    Raises
+    ------
+    ValueError
+        If both `client_id` and `venue` are both ``None`` (not enough routing info).
+
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id not None,
+        datetime start : datetime | None,
+        datetime end : datetime | None,
+        int limit,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        callback: Callable[[Any], None] | None,
+        UUID4 request_id not None,
+        uint64_t ts_init,
+        dict[str, object] params: dict | None,
+        UUID4 correlation_id = None,
+    ) -> None:
+        super().__init__(
+            DataType(FundingRateUpdate),
+            instrument_id,
+            start,
+            end,
+            limit,
+            client_id,
+            venue,
+            callback,
+            request_id,
+            ts_init,
+            params,
+            correlation_id,
+        )
+
+    def with_dates(self, datetime start, datetime end, uint64_t ts_init, callback: Callable[[Any], None] | None = None):
+        return RequestFundingRates(
+            instrument_id=self.instrument_id,
+            start=start,
+            end=end,
+            limit=self.limit,
+            client_id=self.client_id,
+            venue=self.venue,
+            callback=callback,
+            request_id=UUID4(),
+            ts_init=ts_init,
+            params=self.params.copy(),
+            correlation_id=self.id,
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"start={self.start}, "
+            f"end={self.end}, "
+            f"limit={self.limit}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"data_type={self.data_type}{form_params_str(self.params)})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"start={self.start}, "
+            f"end={self.end}, "
+            f"limit={self.limit}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"callback={self.callback}, "
+            f"id={self.id}, "
+            f"correlation_id={self.correlation_id}{form_params_str(self.params)})"
+        )
+
 
 cdef class RequestBars(RequestData):
     """

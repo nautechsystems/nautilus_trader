@@ -32,7 +32,7 @@ use nautilus_core::{UUID4, UnixNanos, correctness::check_slice_not_empty};
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, DataType, QuoteTick, TradeTick},
+    data::{Bar, DataType, FundingRateUpdate, QuoteTick, TradeTick},
     events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
@@ -1185,6 +1185,17 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn load_trades(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>> {
+        anyhow::bail!("Loading market data for Redis cache adapter not supported")
+    }
+
+    fn add_funding_rate(&self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
+        anyhow::bail!("Loading market data for Redis cache adapter not supported")
+    }
+
+    fn load_funding_rates(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Vec<FundingRateUpdate>> {
         anyhow::bail!("Loading market data for Redis cache adapter not supported")
     }
 

@@ -24,7 +24,9 @@ pub use nautilus_core::serialization::{
 };
 use nautilus_core::{UUID4, datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
 use nautilus_model::{
-    data::{Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, TradeTick},
+    data::{
+        Bar, BarType, BookOrder, FundingRateUpdate, OrderBookDelta, OrderBookDeltas, TradeTick,
+    },
     enums::{
         AccountType, AggressorSide, AssetClass, BarAggregation, BookAction, LiquiditySide,
         OptionKind, OrderSide, OrderStatus, OrderType, PositionSideSpecified, RecordFlag,
@@ -53,7 +55,7 @@ use crate::{
         symbol::BybitSymbol,
     },
     http::models::{
-        BybitExecution, BybitFeeRate, BybitInstrumentInverse, BybitInstrumentLinear,
+        BybitExecution, BybitFeeRate, BybitFunding, BybitInstrumentInverse, BybitInstrumentLinear,
         BybitInstrumentOption, BybitInstrumentSpot, BybitKline, BybitOrderbookResult,
         BybitPosition, BybitTrade, BybitWalletBalance,
     },
@@ -576,6 +578,27 @@ pub fn parse_trade_tick(
         ts_init,
     )
     .context("failed to construct TradeTick from Bybit trade payload")
+}
+
+/// Parses a REST funding payload into a [`FundingRateUpdate`].
+pub fn parse_funding_rate(
+    funding: &BybitFunding,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<FundingRateUpdate> {
+    let rate = parse_decimal(&funding.funding_rate, "funding.funding_rate")?;
+    let ts_event = parse_millis_timestamp(
+        &funding.funding_rate_timestamp,
+        "funding.funding_rate_timestamp",
+    )?;
+
+    Ok(FundingRateUpdate::new(
+        instrument.id(),
+        rate,
+        None, // next_funding_ns not provided with historical funding rates
+        ts_event,
+        ts_init,
+    ))
 }
 
 /// Parses an order book response into [`OrderBookDeltas`].

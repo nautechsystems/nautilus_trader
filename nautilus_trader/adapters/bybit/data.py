@@ -28,6 +28,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import RequestFundingRates
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
@@ -487,6 +488,37 @@ class BybitDataClient(LiveMarketDataClient):
         self._handle_trade_ticks(
             request.instrument_id,
             filtered_trades,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
+
+    async def _request_funding_rates(self, request: RequestFundingRates) -> None:
+        if request.limit == 0:
+            limit = None
+        else:
+            limit = request.limit
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+            request.instrument_id.value,
+        )
+        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+            pyo3_instrument_id.symbol.value,
+        )
+
+        pyo3_funding_rates = await self._http_client.request_funding_rates(
+            product_type=product_type,
+            instrument_id=pyo3_instrument_id,
+            start=ensure_pydatetime_utc(request.start),
+            end=ensure_pydatetime_utc(request.end),
+            limit=limit,
+        )
+        funding_rates = FundingRateUpdate.from_pyo3_list(pyo3_funding_rates)
+
+        self._handle_funding_rates(
+            request.instrument_id,
+            funding_rates,
             request.id,
             request.start,
             request.end,

@@ -27,10 +27,10 @@ use ahash::AHashSet;
 use nautilus_common::{
     clients::{DataClient, log_command_error},
     messages::data::{
-        RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData, RequestInstrument,
-        RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-        SubscribeBookDepth10, SubscribeCommand, SubscribeCustomData, SubscribeFundingRates,
-        SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+        RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData, RequestFundingRates,
+        RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
+        SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCommand, SubscribeCustomData,
+        SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
         SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
         SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
         UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
@@ -666,6 +666,15 @@ impl DataClientAdapter {
     /// Returns an error if the client fails to process the trades request.
     pub fn request_trades(&self, req: RequestTrades) -> anyhow::Result<()> {
         self.client.request_trades(req)
+    }
+
+    /// Sends a funding rates request for a given instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client fails to process the trades request.
+    pub fn request_funding_rates(&self, req: RequestFundingRates) -> anyhow::Result<()> {
+        self.client.request_funding_rates(req)
     }
 
     /// Sends a bars request for a given instrument and bar type.

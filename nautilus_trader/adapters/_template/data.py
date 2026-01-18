@@ -15,6 +15,7 @@
 
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
+from nautilus_trader.data.messages import RequestFundingRates
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
@@ -156,6 +157,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     | _request_quote_ticks                   | optional    |
     | _request_trade_ticks                   | optional    |
     | _request_bars                          | optional    |
+    | _request_funding_rates                 | optional    |
     +----------------------------------------+-------------+
 
     """
@@ -337,4 +339,9 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     async def _request_bars(self, request: RequestBars) -> None:
         raise NotImplementedError(
             "method `_request_bars` must be implemented in the subclass",
+        )  # pragma: no cover
+
+    async def _request_funding_rates(self, request: RequestFundingRates) -> None:
+        raise NotImplementedError(
+            "method `_request_funding_rates` must be implemented in the subclass",
         )  # pragma: no cover
