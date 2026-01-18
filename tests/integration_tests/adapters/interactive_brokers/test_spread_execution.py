@@ -21,7 +21,9 @@ from unittest.mock import MagicMock
 
 from nautilus_trader.adapters.interactive_brokers.execution import InteractiveBrokersExecutionClient
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.events import OrderFilled
@@ -30,11 +32,17 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.identifiers import generic_spread_id_to_list
 from nautilus_trader.model.identifiers import is_generic_spread_id
+from nautilus_trader.model.identifiers import new_generic_spread_id
+from nautilus_trader.model.instruments import Equity
+from nautilus_trader.model.instruments import FuturesContract
+from nautilus_trader.model.instruments import OptionContract
+from nautilus_trader.model.instruments import OptionSpread
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -43,56 +51,113 @@ from nautilus_trader.model.objects import Quantity
 
 class TestSpreadExecutionDetection:
     """
-    Test cases for spread instrument detection.
+    Test cases for spread instrument detection using instrument.is_spread().
     """
 
-    def test_is_spread_instrument_with_spread_formats(self):
+    def test_is_spread_instrument_with_spread_instruments(self):
         """
-        Test spread detection with various spread formats.
+        Test spread detection using instrument.is_spread() method.
         """
-        # Test spread instruments with different formats
-        test_cases = [
-            ("(1)SPY C400_((1))SPY C410.SMART", True),  # Standard spread format
-            ("(1)E4DN5 P6350_((2))E4DN5 P6355.XCME", True),  # Ratio spread
-            ("SPY_SPREAD.SMART", True),  # SPREAD keyword
-            ("COMPLEX_SPREAD.SMART", True),  # SPREAD keyword
-            ("SPY C400.SMART", False),  # Single option
-            ("AAPL.NASDAQ", False),  # Single stock
-            ("ES.CME", False),  # Single future
-        ]
+        # Create spread instruments using new_generic_spread_id
+        leg1_id = InstrumentId.from_str("SPY C400.SMART")
+        leg2_id = InstrumentId.from_str("SPY C410.SMART")
+        spread1_id = new_generic_spread_id([(leg1_id, 1), (leg2_id, -1)])
 
-        for instrument_id_str, expected in test_cases:
-            instrument_id = InstrumentId.from_str(instrument_id_str)
-            result = self._is_spread_instrument(instrument_id)
-            assert result == expected, (
-                f"Failed for {instrument_id_str}: expected {expected}, was {result}"
-            )
+        leg3_id = InstrumentId.from_str("E4DN5 P6350.XCME")
+        leg4_id = InstrumentId.from_str("E4DN5 P6355.XCME")
+        spread2_id = new_generic_spread_id([(leg3_id, 1), (leg4_id, -2)])
 
-    def test_is_spread_instrument_edge_cases(self):
-        """
-        Test spread detection with edge cases.
-        """
-        # Edge cases
-        edge_cases = [
-            ("NORMAL.SMART", False),  # Normal instrument
-            ("SPREAD_TEST.SMART", True),  # SPREAD at beginning
-            ("TEST_SPREAD.SMART", True),  # SPREAD at end
-            ("TEST_SPREAD_MORE.SMART", True),  # SPREAD in middle
-        ]
+        # Create option spread instruments
+        spread1 = OptionSpread(
+            instrument_id=spread1_id,
+            raw_symbol=spread1_id.symbol,
+            asset_class=AssetClass.EQUITY,
+            currency=Currency.from_str("USD"),
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            multiplier=Quantity.from_int(100),
+            lot_size=Quantity.from_int(1),
+            underlying="SPY",
+            strategy_type="VERTICAL",
+            activation_ns=0,
+            expiration_ns=1640995200000000000,
+            ts_event=0,
+            ts_init=0,
+        )
 
-        for instrument_id_str, expected in edge_cases:
-            instrument_id = InstrumentId.from_str(instrument_id_str)
-            result = self._is_spread_instrument(instrument_id)
-            assert result == expected, (
-                f"Failed for {instrument_id_str}: expected {expected}, was {result}"
-            )
+        spread2 = OptionSpread(
+            instrument_id=spread2_id,
+            raw_symbol=spread2_id.symbol,
+            asset_class=AssetClass.EQUITY,
+            currency=Currency.from_str("USD"),
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            multiplier=Quantity.from_int(100),
+            lot_size=Quantity.from_int(1),
+            underlying="E4DN5",
+            strategy_type="RATIO",
+            activation_ns=0,
+            expiration_ns=1640995200000000000,
+            ts_event=0,
+            ts_init=0,
+        )
 
-    def _is_spread_instrument(self, instrument_id):
-        """
-        Test implementation of spread detection.
-        """
-        id_str = str(instrument_id)
-        return "_(" in id_str or ")_" in id_str or "SPREAD" in id_str.upper()
+        # Create non-spread instruments
+        option_contract = OptionContract(
+            instrument_id=InstrumentId.from_str("SPY C400.SMART"),
+            raw_symbol=Symbol("SPY C400"),
+            asset_class=AssetClass.EQUITY,
+            currency=Currency.from_str("USD"),
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            multiplier=Quantity.from_int(100),
+            lot_size=Quantity.from_int(1),
+            underlying="SPY",
+            option_kind=OptionKind.CALL,
+            activation_ns=0,
+            expiration_ns=1640995200000000000,
+            strike_price=Price.from_str("400.0"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        equity = Equity(
+            instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
+            raw_symbol=Symbol("AAPL"),
+            currency=Currency.from_str("USD"),
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            lot_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        futures = FuturesContract(
+            instrument_id=InstrumentId.from_str("ES.CME"),
+            raw_symbol=Symbol("ES"),
+            asset_class=AssetClass.INDEX,
+            currency=Currency.from_str("USD"),
+            price_precision=2,
+            price_increment=Price.from_str("0.25"),
+            multiplier=Quantity.from_int(50),
+            lot_size=Quantity.from_int(1),
+            underlying="ES",
+            activation_ns=0,
+            expiration_ns=1640995200000000000,
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Test spread instruments - should return True
+        assert spread1.is_spread() is True, "Spread1 should be detected as spread"
+        assert spread2.is_spread() is True, "Spread2 should be detected as spread"
+
+        # Test non-spread instruments - should return False
+        assert option_contract.is_spread() is False, (
+            "Option contract should not be detected as spread"
+        )
+        assert equity.is_spread() is False, "Equity should not be detected as spread"
+        assert futures.is_spread() is False, "Futures contract should not be detected as spread"
 
 
 class TestSpreadLegExtraction:
@@ -104,14 +169,18 @@ class TestSpreadLegExtraction:
         """
         Test extraction from standard spread format.
         """
-        # Create mock leg fill
-        leg_fill = MagicMock()
-        leg_fill.instrument_id = InstrumentId.from_str("(1)SPY C400_((1))SPY C410.SMART")
+        spread_id = new_generic_spread_id(
+            [
+                (InstrumentId.from_str("SPY C400.SMART"), 1),
+                (InstrumentId.from_str("SPY C410.SMART"), -1),
+            ],
+        )
 
-        # Extract leg instrument ID
+        leg_fill = MagicMock()
+        leg_fill.instrument_id = spread_id
+
         leg_id = self._extract_leg_instrument_id(leg_fill)
 
-        # Should extract first leg
         expected_id = InstrumentId.from_str("SPY C400.SMART")
         assert leg_id == expected_id
 
@@ -119,8 +188,15 @@ class TestSpreadLegExtraction:
         """
         Test extraction from ratio spread format.
         """
+        spread_id = new_generic_spread_id(
+            [
+                (InstrumentId.from_str("E4DN5 P6350.XCME"), 1),
+                (InstrumentId.from_str("E4DN5 P6355.XCME"), -2),
+            ],
+        )
+
         leg_fill = MagicMock()
-        leg_fill.instrument_id = InstrumentId.from_str("(1)E4DN5 P6350_((2))E4DN5 P6355.XCME")
+        leg_fill.instrument_id = spread_id
 
         leg_id = self._extract_leg_instrument_id(leg_fill)
 
@@ -136,19 +212,6 @@ class TestSpreadLegExtraction:
 
         leg_id = self._extract_leg_instrument_id(leg_fill)
 
-        # Should return original ID for non-spread
-        assert leg_id == leg_fill.instrument_id
-
-    def test_extract_leg_instrument_id_invalid_format(self):
-        """
-        Test handling of invalid spread formats.
-        """
-        leg_fill = MagicMock()
-        leg_fill.instrument_id = InstrumentId.from_str("INVALID_(.SMART")
-
-        leg_id = self._extract_leg_instrument_id(leg_fill)
-
-        # Should return original ID for invalid format
         assert leg_id == leg_fill.instrument_id
 
     def _extract_leg_instrument_id(self, leg_fill):
@@ -156,16 +219,10 @@ class TestSpreadLegExtraction:
         Test implementation of leg instrument ID extraction.
         """
         try:
-            spread_id_str = str(leg_fill.instrument_id)
-
-            if "_(" in spread_id_str:
-                parts = spread_id_str.split("_")
-                if len(parts) >= 2:
-                    first_leg = parts[0]
-                    if first_leg.startswith("(") and ")" in first_leg:
-                        leg_symbol = first_leg.split(")", 1)[1]
-                        venue = leg_fill.instrument_id.venue
-                        return InstrumentId.from_str(f"{leg_symbol}.{venue}")
+            if is_generic_spread_id(leg_fill.instrument_id):
+                leg_tuples = generic_spread_id_to_list(leg_fill.instrument_id)
+                if leg_tuples:
+                    return leg_tuples[0][0]
 
             return leg_fill.instrument_id
         except Exception:
@@ -225,8 +282,14 @@ class TestSpreadFillCreation:
         """
         Test creating combo fill from basic spread leg fill.
         """
+        spread_id = new_generic_spread_id(
+            [
+                (InstrumentId.from_str("SPY C400.SMART"), 1),
+                (InstrumentId.from_str("SPY C410.SMART"), -1),
+            ],
+        )
         leg_fill = self.create_test_leg_fill(
-            "(1)SPY C400___((1))SPY C410.SMART",
+            str(spread_id),
             OrderSide.SELL,
             3,
             5.25,
@@ -235,9 +298,9 @@ class TestSpreadFillCreation:
         combo_fill = self._create_combo_fill(leg_fill)
 
         assert combo_fill is not None
-        assert combo_fill.instrument_id == leg_fill.instrument_id  # Keep spread ID
-        assert combo_fill.order_side == OrderSide.BUY  # Normalized to BUY
-        assert combo_fill.last_qty == leg_fill.last_qty  # Same quantity
+        assert combo_fill.instrument_id == leg_fill.instrument_id
+        assert combo_fill.order_side == OrderSide.BUY
+        assert combo_fill.last_qty == leg_fill.last_qty
         assert combo_fill.last_px == leg_fill.last_px
         assert combo_fill.client_order_id == leg_fill.client_order_id
 
@@ -245,8 +308,14 @@ class TestSpreadFillCreation:
         """
         Test creating combo fill from ratio spread leg fill.
         """
+        spread_id = new_generic_spread_id(
+            [
+                (InstrumentId.from_str("E4DN5 P6350.XCME"), 1),
+                (InstrumentId.from_str("E4DN5 P6355.XCME"), -2),
+            ],
+        )
         leg_fill = self.create_test_leg_fill(
-            "(1)E4DN5 P6350___((2))E4DN5 P6355.XCME",
+            str(spread_id),
             OrderSide.SELL,
             6,  # 3 spreads x 2 ratio = 6 contracts
             2.50,
@@ -256,15 +325,21 @@ class TestSpreadFillCreation:
 
         assert combo_fill is not None
         assert combo_fill.instrument_id == leg_fill.instrument_id
-        assert combo_fill.order_side == OrderSide.BUY  # Normalized
+        assert combo_fill.order_side == OrderSide.BUY
         assert combo_fill.last_qty == Quantity.from_int(3)  # 6 contracts / 2 ratio = 3 spreads
 
     def test_create_leg_fill_basic_spread(self):
         """
         Test creating individual leg fill from spread execution.
         """
+        spread_id = new_generic_spread_id(
+            [
+                (InstrumentId.from_str("SPY C400.SMART"), 1),
+                (InstrumentId.from_str("SPY C410.SMART"), -1),
+            ],
+        )
         leg_fill = self.create_test_leg_fill(
-            "(1)SPY C400___((1))SPY C410.SMART",
+            str(spread_id),
             OrderSide.SELL,
             3,
             5.25,
@@ -273,22 +348,24 @@ class TestSpreadFillCreation:
         individual_leg_fill = self._create_leg_fill(leg_fill)
 
         assert individual_leg_fill is not None
-        assert individual_leg_fill.instrument_id == InstrumentId.from_str(
-            "SPY C400.SMART",
-        )  # Individual leg ID
-        assert individual_leg_fill.order_side == OrderSide.SELL  # Keep original side
-        assert individual_leg_fill.last_qty == Quantity.from_int(3)  # Keep original quantity
+        assert individual_leg_fill.instrument_id == InstrumentId.from_str("SPY C400.SMART")
+        assert individual_leg_fill.order_side == OrderSide.SELL
+        assert individual_leg_fill.last_qty == Quantity.from_int(3)
         assert individual_leg_fill.client_order_id == leg_fill.client_order_id
-        assert "SPY C400.SMART-STRATEGY-001" in str(
-            individual_leg_fill.position_id,
-        )  # Leg-specific position
+        assert "SPY C400.SMART-STRATEGY-001" in str(individual_leg_fill.position_id)
 
     def test_create_leg_fill_ratio_spread(self):
         """
         Test creating individual leg fill from ratio spread execution.
         """
+        spread_id = new_generic_spread_id(
+            [
+                (InstrumentId.from_str("E4DN5 P6350.XCME"), 1),
+                (InstrumentId.from_str("E4DN5 P6355.XCME"), -2),
+            ],
+        )
         leg_fill = self.create_test_leg_fill(
-            "(1)E4DN5 P6350___((2))E4DN5 P6355.XCME",
+            str(spread_id),
             OrderSide.SELL,
             6,
             2.50,
@@ -306,14 +383,11 @@ class TestSpreadFillCreation:
         Test implementation of combo fill creation.
         """
         try:
-            # For testing, use simple 1:1 ratio unless we can parse the spread
             ratio = 1
             if is_generic_spread_id(leg_fill.instrument_id):
                 try:
                     leg_tuples = generic_spread_id_to_list(leg_fill.instrument_id)
                     if leg_tuples:
-                        # For testing, find the leg with the highest absolute ratio
-                        # This simulates finding the executed leg
                         max_ratio_leg = max(leg_tuples, key=lambda x: abs(x[1]))
                         _, ratio = max_ratio_leg
                 except Exception:
@@ -329,12 +403,12 @@ class TestSpreadFillCreation:
             return OrderFilled(
                 trader_id=leg_fill.trader_id,
                 strategy_id=leg_fill.strategy_id,
-                instrument_id=leg_fill.instrument_id,  # Keep spread ID
+                instrument_id=leg_fill.instrument_id,
                 client_order_id=leg_fill.client_order_id,
                 venue_order_id=leg_fill.venue_order_id,
                 account_id=leg_fill.account_id,
                 trade_id=leg_fill.trade_id,
-                order_side=OrderSide.BUY,  # Normalize to BUY for combo tracking
+                order_side=OrderSide.BUY,
                 order_type=leg_fill.order_type,
                 last_qty=combo_quantity,
                 last_px=leg_fill.last_px,
@@ -365,14 +439,14 @@ class TestSpreadFillCreation:
             return OrderFilled(
                 trader_id=leg_fill.trader_id,
                 strategy_id=leg_fill.strategy_id,
-                instrument_id=leg_instrument_id,  # Individual leg ID
+                instrument_id=leg_instrument_id,
                 client_order_id=leg_fill.client_order_id,
                 venue_order_id=leg_fill.venue_order_id,
                 account_id=leg_fill.account_id,
                 trade_id=leg_fill.trade_id,
-                order_side=leg_fill.order_side,  # Keep original side
+                order_side=leg_fill.order_side,
                 order_type=leg_fill.order_type,
-                last_qty=leg_fill.last_qty,  # Keep original quantity
+                last_qty=leg_fill.last_qty,
                 last_px=leg_fill.last_px,
                 currency=Currency.from_str("USD"),
                 liquidity_side=leg_fill.liquidity_side,
@@ -382,7 +456,7 @@ class TestSpreadFillCreation:
                 reconciliation=False,
                 position_id=PositionId(
                     f"{leg_instrument_id}-{leg_fill.strategy_id}",
-                ),  # Leg-specific position
+                ),
                 commission=leg_fill.commission,
             )
         except Exception:
@@ -393,16 +467,10 @@ class TestSpreadFillCreation:
         Test implementation of leg instrument ID extraction.
         """
         try:
-            spread_id_str = str(leg_fill.instrument_id)
-
-            if "_(" in spread_id_str:
-                parts = spread_id_str.split("_")
-                if len(parts) >= 2:
-                    first_leg = parts[0]
-                    if first_leg.startswith("(") and ")" in first_leg:
-                        leg_symbol = first_leg.split(")", 1)[1]
-                        venue = leg_fill.instrument_id.venue
-                        return InstrumentId.from_str(f"{leg_symbol}.{venue}")
+            if is_generic_spread_id(leg_fill.instrument_id):
+                leg_tuples = generic_spread_id_to_list(leg_fill.instrument_id)
+                if leg_tuples:
+                    return leg_tuples[0][0]
 
             return leg_fill.instrument_id
         except Exception:
@@ -420,10 +488,8 @@ class TestSpreadFillCreation:
             if is_generic_spread_id(leg_fill.instrument_id):
                 leg_tuples = generic_spread_id_to_list(leg_fill.instrument_id)
                 if leg_tuples:
-                    # Return the first leg for testing
                     return leg_tuples[0]
 
-            # Fallback for non-spread instruments
             return leg_fill.instrument_id, 1
         except Exception:
             return None, 1
@@ -442,16 +508,11 @@ class TestSpreadFillTracking:
         client_order_id = ClientOrderId("test-order-1")
         fill_id = "fill-123"
 
-        # First fill should be new
         assert client_order_id not in tracking
 
-        # Add fill ID
         tracking[client_order_id] = {fill_id}
 
-        # Check tracking
         assert fill_id in tracking[client_order_id]
-
-        # Duplicate should be detected
         assert fill_id in tracking[client_order_id]
 
     def test_multiple_orders_tracking(self):
@@ -464,11 +525,9 @@ class TestSpreadFillTracking:
         fill1 = "fill-1"
         fill2 = "fill-2"
 
-        # Add fills for different orders
         tracking[order1] = {fill1}
         tracking[order2] = {fill2}
 
-        # Each order should track its own fills
         assert fill1 in tracking[order1]
         assert fill1 not in tracking[order2]
         assert fill2 in tracking[order2]
@@ -483,10 +542,8 @@ class TestSpreadFillTracking:
         fill1 = "fill-1"
         fill2 = "fill-2"
 
-        # Add multiple fills for same order
         tracking[client_order_id] = {fill1, fill2}
 
-        # Both fills should be tracked
         assert fill1 in tracking[client_order_id]
         assert fill2 in tracking[client_order_id]
         assert len(tracking[client_order_id]) == 2
@@ -509,30 +566,30 @@ class TestSpreadExecutionIntegration:
         """
         Test that spread execution handles duplicate fills correctly.
         """
-        leg_fill = self._create_test_fill("(1)SPY C400_((1))SPY C410.SMART")
+        spread_id = new_generic_spread_id(
+            [
+                (InstrumentId.from_str("SPY C400.SMART"), 1),
+                (InstrumentId.from_str("SPY C410.SMART"), -1),
+            ],
+        )
+        leg_fill = self._create_test_fill(str(spread_id))
 
-        # Mock the methods
         self.client._create_combo_fill = MagicMock(return_value=leg_fill)
         self.client._create_leg_fill = MagicMock(return_value=leg_fill)
         self.client._send_order_fill_event = MagicMock()
 
-        # First call should process the fill
         self._handle_spread_execution(leg_fill)
 
-        # Verify methods were called
         assert self.client._create_combo_fill.call_count == 1
         assert self.client._create_leg_fill.call_count == 1
-        assert self.client._send_order_fill_event.call_count == 2  # combo + leg
+        assert self.client._send_order_fill_event.call_count == 2
 
-        # Reset mocks
         self.client._create_combo_fill.reset_mock()
         self.client._create_leg_fill.reset_mock()
         self.client._send_order_fill_event.reset_mock()
 
-        # Second call with same fill should be ignored (duplicate)
         self._handle_spread_execution(leg_fill)
 
-        # Verify methods were NOT called (duplicate detected)
         assert self.client._create_combo_fill.call_count == 0
         assert self.client._create_leg_fill.call_count == 0
         assert self.client._send_order_fill_event.call_count == 0
@@ -541,19 +598,21 @@ class TestSpreadExecutionIntegration:
         """
         Test error handling in spread execution.
         """
-        leg_fill = self._create_test_fill("(1)SPY C400_((1))SPY C410.SMART")
+        spread_id = new_generic_spread_id(
+            [
+                (InstrumentId.from_str("SPY C400.SMART"), 1),
+                (InstrumentId.from_str("SPY C410.SMART"), -1),
+            ],
+        )
+        leg_fill = self._create_test_fill(str(spread_id))
 
-        # Mock methods to raise exceptions
         self.client._create_combo_fill = MagicMock(side_effect=Exception("Test error"))
         self.client._send_order_fill_event = MagicMock()
 
-        # Should handle error gracefully and send original fill
         self._handle_spread_execution(leg_fill)
 
-        # Verify error was logged and original fill was sent
         assert self.client._log.error.called
         assert self.client._send_order_fill_event.called
-        # Should be called with original fill as fallback
         self.client._send_order_fill_event.assert_called_with(leg_fill)
 
     def _create_test_fill(self, instrument_id_str: str) -> OrderFilled:
@@ -587,7 +646,6 @@ class TestSpreadExecutionIntegration:
         Test implementation of spread execution handling.
         """
         try:
-            # Check for duplicate fills
             fill_id = str(leg_fill.trade_id)
             client_order_id = leg_fill.client_order_id
 
@@ -595,21 +653,18 @@ class TestSpreadExecutionIntegration:
                 self.client._spread_fill_tracking[client_order_id] = set()
 
             if fill_id in self.client._spread_fill_tracking[client_order_id]:
-                return  # Already processed
+                return
 
             self.client._spread_fill_tracking[client_order_id].add(fill_id)
 
-            # Create combo fill for order management
             combo_fill = self.client._create_combo_fill(leg_fill)
             if combo_fill:
                 self.client._send_order_fill_event(combo_fill)
 
-            # Create leg fill for portfolio updates
             leg_fill_event = self.client._create_leg_fill(leg_fill)
             if leg_fill_event:
                 self.client._send_order_fill_event(leg_fill_event)
 
         except Exception as e:
             self.client._log.error(f"Error handling spread execution: {e}")
-            # Fallback to sending original fill
             self.client._send_order_fill_event(leg_fill)

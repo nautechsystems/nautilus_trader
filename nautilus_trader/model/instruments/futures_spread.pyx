@@ -219,17 +219,6 @@ cdef class FuturesSpread(Instrument):
         """
         return pd.Timestamp(self.expiration_ns, tz=pytz.utc)
 
-    cpdef bint is_spread(self):
-        """
-        Return whether the instrument is a spread instrument.
-
-        Returns
-        -------
-        bool
-
-        """
-        return True
-
     cpdef list legs(self):
         """
         Return the list of leg tuples (instrument_id, ratio) for this spread.

@@ -1073,7 +1073,7 @@ cdef class DataEngine(Component):
 
         if command.params.get("aggregate_spread_quotes", False):
             instrument = self._cache.instrument(command.instrument_id)
-            if instrument and instrument.is_spread() and len(instrument.legs()) > 1:
+            if instrument and instrument.is_spread():
                 self._start_spread_quote_aggregator(client, command)
                 return
 
@@ -1314,7 +1314,7 @@ cdef class DataEngine(Component):
 
         if command.params.get("aggregate_spread_quotes", False):
             instrument = self._cache.instrument(command.instrument_id)
-            if instrument and instrument.is_spread() and len(instrument.legs()) > 1:
+            if instrument and instrument.is_spread():
                 self._stop_spread_quote_aggregator(client, command)
                 return
 
@@ -1458,7 +1458,7 @@ cdef class DataEngine(Component):
         # "aggregate_spread_quotes" allows to aggregate spread quotes from component quotes
         if isinstance(request, RequestQuoteTicks) and request.params.get("aggregate_spread_quotes", False):
             instrument = self._cache.instrument(request.instrument_id)
-            if instrument and instrument.is_spread() and len(instrument.legs()) > 1:
+            if instrument and instrument.is_spread():
                 if self._should_request_spread_quote_ticks(request):
                     self._handle_spread_quote_tick_request(request)
                     return

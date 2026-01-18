@@ -436,7 +436,7 @@ cdef class Instrument(Data):
         bool
 
         """
-        return False
+        return len(self.legs()) > 1
 
     cpdef list legs(self):
         """
