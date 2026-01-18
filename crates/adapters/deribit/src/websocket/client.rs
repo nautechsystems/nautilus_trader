@@ -1268,6 +1268,7 @@ impl DeribitWebSocketClient {
             amount: quantity.as_decimal(),
             price: Some(price.as_decimal()),
             post_only: None,
+            reject_post_only: None,
             reduce_only: None,
             trigger_price: None,
         };

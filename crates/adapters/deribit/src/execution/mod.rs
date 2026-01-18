@@ -239,6 +239,11 @@ impl DeribitExecutionClient {
             } else {
                 None
             },
+            reject_post_only: if order.is_post_only() {
+                Some(true)
+            } else {
+                None
+            },
             reduce_only: if order.is_reduce_only() {
                 Some(true)
             } else {

@@ -364,9 +364,14 @@ pub struct DeribitOrderParams {
     /// Time in force: "good_til_cancelled", "good_til_date", "fill_or_kill", "immediate_or_cancel".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time_in_force: Option<String>,
-    /// Post-only flag (rejected if would take liquidity).
+    /// Post-only flag. If true and order would take liquidity, price is adjusted
+    /// to be just below the spread (unless reject_post_only is true).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub post_only: Option<bool>,
+    /// If true with post_only, order is rejected instead of price being adjusted.
+    /// Only valid when post_only is true.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reject_post_only: Option<bool>,
     /// Reduce-only flag (only reduces position).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reduce_only: Option<bool>,
@@ -430,9 +435,14 @@ pub struct DeribitEditParams {
         with = "rust_decimal::serde::float_option"
     )]
     pub trigger_price: Option<Decimal>,
-    /// Post-only flag.
+    /// Post-only flag. If true and order would take liquidity, price is adjusted
+    /// to be just below the spread (unless reject_post_only is true).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub post_only: Option<bool>,
+    /// If true with post_only, order is rejected instead of price being adjusted.
+    /// Only valid when post_only is true.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reject_post_only: Option<bool>,
     /// Reduce-only flag.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reduce_only: Option<bool>,

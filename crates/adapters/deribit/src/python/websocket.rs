@@ -944,6 +944,7 @@ impl DeribitWebSocketClient {
             price: price.map(|p| p.as_decimal()),
             time_in_force: deribit_tif,
             post_only: if post_only { Some(true) } else { None },
+            reject_post_only: if post_only { Some(true) } else { None },
             reduce_only: if reduce_only { Some(true) } else { None },
             trigger_price: trigger_price.map(|p| p.as_decimal()),
             trigger,
