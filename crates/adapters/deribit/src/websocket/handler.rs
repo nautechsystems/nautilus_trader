@@ -1030,11 +1030,9 @@ impl DeribitWsFeedHandler {
                                 {
                                     Ok(order_response) => {
                                         let venue_order_id = order_response.order.order_id.clone();
-                                        log::info!(
-                                            "Order accepted: venue_order_id={}, client_order_id={}, state={}",
-                                            venue_order_id,
-                                            client_order_id,
-                                            order_response.order.order_state
+                                        let order_state = &order_response.order.order_state;
+                                        log::debug!(
+                                            "Order response: venue_order_id={venue_order_id}, client_order_id={client_order_id}, state={order_state}"
                                         );
 
                                         self.order_contexts.insert(
@@ -1047,35 +1045,46 @@ impl DeribitWsFeedHandler {
                                             },
                                         );
 
-                                        let instrument_name_ustr = Ustr::from(
-                                            order_response.order.instrument_name.as_str(),
-                                        );
-                                        if let Some(instrument) =
-                                            self.instruments_cache.get(&instrument_name_ustr)
-                                        {
-                                            if let Some(account_id) = self.account_id {
-                                                let event = parse_order_accepted(
-                                                    &order_response.order,
-                                                    instrument,
-                                                    account_id,
-                                                    trader_id,
-                                                    strategy_id,
-                                                    ts_init,
-                                                );
-                                                // Mark OrderAccepted as emitted to prevent duplicate from subscription
-                                                self.emitted_order_accepted.insert(venue_order_id);
-                                                return Some(NautilusWsMessage::OrderAccepted(
-                                                    event,
-                                                ));
+                                        // Skip OrderAccepted for orders that are already filled(e.g., market orders).
+                                        // The order went directly from Submitted -> Filled via the fill report from user.trades.
+                                        if order_state == "filled" {
+                                            log::debug!(
+                                                "Skipping OrderAccepted for already filled order: venue_order_id={venue_order_id}, client_order_id={client_order_id}"
+                                            );
+                                            // Mark as emitted to prevent duplicate from subscription
+                                            self.emitted_order_accepted.insert(venue_order_id);
+                                        } else {
+                                            let instrument_name_ustr = Ustr::from(
+                                                order_response.order.instrument_name.as_str(),
+                                            );
+                                            if let Some(instrument) =
+                                                self.instruments_cache.get(&instrument_name_ustr)
+                                            {
+                                                if let Some(account_id) = self.account_id {
+                                                    let event = parse_order_accepted(
+                                                        &order_response.order,
+                                                        instrument,
+                                                        account_id,
+                                                        trader_id,
+                                                        strategy_id,
+                                                        ts_init,
+                                                    );
+                                                    // Mark OrderAccepted as emitted to prevent duplicate from subscription
+                                                    self.emitted_order_accepted
+                                                        .insert(venue_order_id);
+                                                    return Some(NautilusWsMessage::OrderAccepted(
+                                                        event,
+                                                    ));
+                                                } else {
+                                                    log::warn!(
+                                                        "Cannot create OrderAccepted: account_id not set"
+                                                    );
+                                                }
                                             } else {
                                                 log::warn!(
-                                                    "Cannot create OrderAccepted: account_id not set"
+                                                    "Instrument {instrument_name_ustr} not found in cache for order response"
                                                 );
                                             }
-                                        } else {
-                                            log::warn!(
-                                                "Instrument {instrument_name_ustr} not found in cache for order response"
-                                            );
                                         }
                                     }
                                     Err(e) => {
