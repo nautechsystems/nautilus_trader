@@ -24,7 +24,7 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use nautilus_core::{AtomicTime, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::{Bar, Data},
@@ -212,6 +212,7 @@ pub struct DeribitWsFeedHandler {
     pending_requests: AHashMap<u64, PendingRequestType>,
     account_id: Option<AccountId>,
     order_contexts: AHashMap<String, OrderContext>,
+    emitted_order_accepted: AHashSet<String>,
     pending_bars: AHashMap<String, Bar>,
     bars_timestamp_on_close: bool,
 }
@@ -245,6 +246,7 @@ impl DeribitWsFeedHandler {
             pending_requests: AHashMap::new(),
             account_id,
             order_contexts: AHashMap::new(),
+            emitted_order_accepted: AHashSet::new(),
             pending_bars: AHashMap::new(),
             bars_timestamp_on_close,
         }
@@ -269,6 +271,57 @@ impl DeribitWsFeedHandler {
     /// Returns the current timestamp.
     fn ts_init(&self) -> UnixNanos {
         self.clock.get_time_ns()
+    }
+
+    /// Checks if there's a pending buy/sell request for the given client_order_id.
+    ///
+    /// This is used to avoid emitting duplicate OrderAccepted events from the
+    /// user.orders subscription when the response path will also emit an event.
+    fn is_pending_order(&self, client_order_id: &ClientOrderId) -> bool {
+        self.pending_requests.values().any(|req| match req {
+            PendingRequestType::Buy {
+                client_order_id: id,
+                ..
+            }
+            | PendingRequestType::Sell {
+                client_order_id: id,
+                ..
+            } => id == client_order_id,
+            _ => false,
+        })
+    }
+
+    /// Gets the OrderContext from a pending buy/sell request by client_order_id.
+    ///
+    /// Returns None if no pending request found.
+    fn get_pending_order_context(&self, client_order_id: &ClientOrderId) -> Option<OrderContext> {
+        for req in self.pending_requests.values() {
+            match req {
+                PendingRequestType::Buy {
+                    client_order_id: id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                }
+                | PendingRequestType::Sell {
+                    client_order_id: id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                } => {
+                    if id == client_order_id {
+                        return Some(OrderContext {
+                            client_order_id: *id,
+                            trader_id: *trader_id,
+                            strategy_id: *strategy_id,
+                            instrument_id: *instrument_id,
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
     }
 
     /// Sends a message over the WebSocket with retry logic.
@@ -786,8 +839,18 @@ impl DeribitWsFeedHandler {
                 {
                     match request_type {
                         PendingRequestType::Authenticate => {
-                            // Parse authentication result
-                            if let Some(result) = &response.result {
+                            if let Some(error) = &response.error {
+                                log::error!(
+                                    "Authentication failed: code={}, message={}, request_id={}",
+                                    error.code,
+                                    error.message,
+                                    request_id
+                                );
+                                self.auth_tracker.fail(format!(
+                                    "Authentication error code={}: {}",
+                                    error.code, error.message
+                                ));
+                            } else if let Some(result) = &response.result {
                                 match serde_json::from_value::<DeribitAuthResult>(result.clone()) {
                                     Ok(auth_result) => {
                                         self.auth_tracker.succeed();
@@ -812,24 +875,68 @@ impl DeribitWsFeedHandler {
                             }
                         }
                         PendingRequestType::Subscribe { channels } => {
-                            // Confirm each channel in the subscription
-                            for ch in &channels {
-                                self.subscriptions_state.confirm_subscribe(ch);
-                                log::debug!("Subscription confirmed: {ch}");
+                            if let Some(error) = &response.error {
+                                log::error!(
+                                    "Subscribe failed: code={}, message={}, channels={:?}, request_id={}",
+                                    error.code,
+                                    error.message,
+                                    channels,
+                                    request_id
+                                );
+                                // Mark channels as failed so they can be retried
+                                for ch in &channels {
+                                    self.subscriptions_state.confirm_unsubscribe(ch);
+                                }
+                            } else {
+                                // Confirm each channel in the subscription
+                                for ch in &channels {
+                                    self.subscriptions_state.confirm_subscribe(ch);
+                                    log::debug!("Subscription confirmed: {ch}");
+                                }
                             }
                         }
                         PendingRequestType::Unsubscribe { channels } => {
-                            // Confirm each channel in the unsubscription
-                            for ch in &channels {
-                                self.subscriptions_state.confirm_unsubscribe(ch);
-                                log::debug!("Unsubscription confirmed: {ch}");
+                            if let Some(error) = &response.error {
+                                log::error!(
+                                    "Unsubscribe failed: code={}, message={}, channels={:?}, request_id={}",
+                                    error.code,
+                                    error.message,
+                                    channels,
+                                    request_id
+                                );
+                            } else {
+                                // Confirm each channel in the unsubscription
+                                for ch in &channels {
+                                    self.subscriptions_state.confirm_unsubscribe(ch);
+                                    log::debug!("Unsubscription confirmed: {ch}");
+                                }
                             }
                         }
                         PendingRequestType::SetHeartbeat => {
-                            log::debug!("Heartbeat enabled (request_id={request_id})");
+                            if let Some(error) = &response.error {
+                                log::error!(
+                                    "Set heartbeat failed: code={}, message={}, request_id={}",
+                                    error.code,
+                                    error.message,
+                                    request_id
+                                );
+                            } else {
+                                log::debug!("Heartbeat enabled (request_id={request_id})");
+                            }
                         }
                         PendingRequestType::Test => {
-                            log::trace!("Heartbeat test acknowledged (request_id={request_id})");
+                            if let Some(error) = &response.error {
+                                log::warn!(
+                                    "Heartbeat test failed: code={}, message={}, request_id={}",
+                                    error.code,
+                                    error.message,
+                                    request_id
+                                );
+                            } else {
+                                log::trace!(
+                                    "Heartbeat test acknowledged (request_id={request_id})"
+                                );
+                            }
                         }
                         PendingRequestType::Cancel {
                             client_order_id,
@@ -931,7 +1038,7 @@ impl DeribitWsFeedHandler {
                                         );
 
                                         self.order_contexts.insert(
-                                            venue_order_id,
+                                            venue_order_id.clone(),
                                             OrderContext {
                                                 client_order_id,
                                                 trader_id,
@@ -955,6 +1062,8 @@ impl DeribitWsFeedHandler {
                                                     strategy_id,
                                                     ts_init,
                                                 );
+                                                // Mark OrderAccepted as emitted to prevent duplicate from subscription
+                                                self.emitted_order_accepted.insert(venue_order_id);
                                                 return Some(NautilusWsMessage::OrderAccepted(
                                                     event,
                                                 ));
@@ -1188,6 +1297,41 @@ impl DeribitWsFeedHandler {
                             }
                         }
                     }
+                } else if let Some(request_id) = response.id {
+                    // Response with ID but no matching pending request
+                    if let Some(error) = &response.error {
+                        // Log orphaned error response with all available context
+                        log::error!(
+                            "Deribit error for unknown request: code={}, message={}, request_id={}, data={:?}",
+                            error.code,
+                            error.message,
+                            request_id,
+                            error.data
+                        );
+                        return Some(NautilusWsMessage::Error(DeribitWsError::DeribitError {
+                            code: error.code,
+                            message: error.message.clone(),
+                        }));
+                    } else {
+                        // Success response but no pending request - likely already processed
+                        log::debug!(
+                            "Received response for unknown request_id={}, result present: {}",
+                            request_id,
+                            response.result.is_some()
+                        );
+                    }
+                } else if let Some(error) = &response.error {
+                    // Error response with no ID (shouldn't happen in JSON-RPC 2.0, but handle it)
+                    log::error!(
+                        "Deribit error with no request_id: code={}, message={}, data={:?}",
+                        error.code,
+                        error.message,
+                        error.data
+                    );
+                    return Some(NautilusWsMessage::Error(DeribitWsError::DeribitError {
+                        code: error.code,
+                        message: error.message.clone(),
+                    }));
                 }
                 None
             }
@@ -1460,9 +1604,41 @@ impl DeribitWsFeedHandler {
                                         };
 
                                         // Look up OrderContext for this order
-                                        // If not found, this is an external order (not submitted via this handler)
-                                        let context = self.order_contexts.get(venue_order_id);
-                                        let is_known_order = context.is_some();
+                                        // First check order_contexts (for orders whose response has been processed)
+                                        // Then check pending_requests (for orders whose response hasn't arrived yet)
+                                        // If neither found, this is a true external order
+                                        let context =
+                                            self.order_contexts.get(venue_order_id).cloned();
+
+                                        // Extract client_order_id from order label for pending check
+                                        let label_client_order_id = order
+                                            .label
+                                            .as_ref()
+                                            .filter(|l| !l.is_empty())
+                                            .map(ClientOrderId::new);
+
+                                        // Check for pending request if not in order_contexts
+                                        let pending_context = if context.is_none() {
+                                            if let Some(client_id) = &label_client_order_id {
+                                                self.get_pending_order_context(client_id)
+                                            } else {
+                                                None
+                                            }
+                                        } else {
+                                            None
+                                        };
+
+                                        // Check if order has a pending request for context resolution
+                                        let has_pending_request =
+                                            if let Some(client_id) = &label_client_order_id {
+                                                self.is_pending_order(client_id)
+                                            } else {
+                                                false
+                                            };
+
+                                        let effective_context = context.or(pending_context);
+                                        let is_known_order =
+                                            effective_context.is_some() || has_pending_request;
 
                                         // Determine event type based on order state
                                         let event_type = determine_order_event_type(
@@ -1472,7 +1648,7 @@ impl DeribitWsFeedHandler {
                                         );
 
                                         let (trader_id, strategy_id, _client_order_id) =
-                                            if let Some(ctx) = context {
+                                            if let Some(ctx) = effective_context {
                                                 (
                                                     ctx.trader_id,
                                                     ctx.strategy_id,
@@ -1490,6 +1666,18 @@ impl DeribitWsFeedHandler {
 
                                         match event_type {
                                             OrderEventType::Accepted => {
+                                                // Check if we already emitted OrderAccepted for this order
+                                                // This prevents duplicates from both response and subscription paths
+                                                if self
+                                                    .emitted_order_accepted
+                                                    .contains(venue_order_id)
+                                                {
+                                                    log::trace!(
+                                                        "Skipping duplicate OrderAccepted: venue_order_id={venue_order_id}"
+                                                    );
+                                                    continue;
+                                                }
+
                                                 let event = parse_order_accepted(
                                                     order,
                                                     instrument,
@@ -1498,6 +1686,11 @@ impl DeribitWsFeedHandler {
                                                     strategy_id,
                                                     ts_init,
                                                 );
+
+                                                // Mark OrderAccepted as emitted
+                                                self.emitted_order_accepted
+                                                    .insert(venue_order_id.clone());
+
                                                 log::debug!(
                                                     "Emitting OrderAccepted: venue_order_id={venue_order_id}, is_known={is_known_order}"
                                                 );
@@ -1517,7 +1710,9 @@ impl DeribitWsFeedHandler {
                                                 log::debug!(
                                                     "Emitting OrderCanceled: venue_order_id={venue_order_id}"
                                                 );
+                                                // Clean up tracking maps on terminal state
                                                 self.order_contexts.remove(venue_order_id);
+                                                self.emitted_order_accepted.remove(venue_order_id);
                                                 return Some(NautilusWsMessage::OrderCanceled(
                                                     event,
                                                 ));
@@ -1534,7 +1729,9 @@ impl DeribitWsFeedHandler {
                                                 log::debug!(
                                                     "Emitting OrderExpired: venue_order_id={venue_order_id}"
                                                 );
+                                                // Clean up tracking maps on terminal state
                                                 self.order_contexts.remove(venue_order_id);
+                                                self.emitted_order_accepted.remove(venue_order_id);
                                                 return Some(NautilusWsMessage::OrderExpired(
                                                     event,
                                                 ));
@@ -1563,12 +1760,23 @@ impl DeribitWsFeedHandler {
                                                 }
                                             }
                                             OrderEventType::None => {
-                                                // No event to emit (e.g., partial fills handled via trades)
-                                                log::trace!(
-                                                    "No event to emit for order {}, state={}",
-                                                    venue_order_id,
-                                                    order.order_state
-                                                );
+                                                // No event to emit but clean up on terminal states
+                                                // Fills are handled via user.trades, but we still need
+                                                // to clean up tracking maps when order reaches terminal state
+                                                if order.order_state == "filled" {
+                                                    log::debug!(
+                                                        "Cleaning up filled order: venue_order_id={venue_order_id}"
+                                                    );
+                                                    self.order_contexts.remove(venue_order_id);
+                                                    self.emitted_order_accepted
+                                                        .remove(venue_order_id);
+                                                } else {
+                                                    log::trace!(
+                                                        "No event to emit for order {}, state={}",
+                                                        venue_order_id,
+                                                        order.order_state
+                                                    );
+                                                }
                                             }
                                         }
                                     }

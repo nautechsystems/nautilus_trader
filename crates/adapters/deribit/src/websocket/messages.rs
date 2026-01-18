@@ -748,17 +748,10 @@ pub fn parse_raw_message(text: &str) -> Result<DeribitWsMessage, DeribitWsError>
     }
 
     // Check for JSON-RPC response (has "id" field)
+    // IMPORTANT: Both success and error responses should be returned as Response
+    // so the handler can correlate them with pending requests using the ID.
+    // This allows proper cleanup of pending_requests and emission of rejection events.
     if value.get("id").is_some() {
-        // Check for error response
-        if value.get("error").is_some() {
-            let response: DeribitJsonRpcResponse<serde_json::Value> =
-                serde_json::from_value(value.clone())
-                    .map_err(|e| DeribitWsError::Json(e.to_string()))?;
-            if let Some(err) = response.error {
-                return Ok(DeribitWsMessage::Error(err));
-            }
-        }
-        // Success response
         let response: DeribitJsonRpcResponse<serde_json::Value> =
             serde_json::from_value(value).map_err(|e| DeribitWsError::Json(e.to_string()))?;
         return Ok(DeribitWsMessage::Response(response));
@@ -821,6 +814,8 @@ mod tests {
 
     #[rstest]
     fn test_parse_error_response() {
+        // Error responses with an ID are returned as Response (not Error)
+        // so the handler can correlate them with pending requests
         let json = r#"{
             "jsonrpc": "2.0",
             "id": 1,
@@ -831,7 +826,15 @@ mod tests {
         }"#;
 
         let msg = parse_raw_message(json).unwrap();
-        assert!(matches!(msg, DeribitWsMessage::Error(_)));
+        match msg {
+            DeribitWsMessage::Response(resp) => {
+                assert!(resp.error.is_some());
+                let error = resp.error.unwrap();
+                assert_eq!(error.code, 10028);
+                assert_eq!(error.message, "too_many_requests");
+            }
+            _ => panic!("Expected Response with error, got {msg:?}"),
+        }
     }
 
     #[rstest]
