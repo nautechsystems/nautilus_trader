@@ -189,7 +189,7 @@ class TestSimulatedExchangeOtoFullTriggerModel:
             cache=self.cache,
             clock=self.clock,
             latency_model=LatencyModel(0),
-            oto_trigger_model=OtoTriggerModel.FULL.value,
+            oto_trigger_model=OtoTriggerModel.FULL,
         )
         self.exchange.add_instrument(ETHUSDT_PERP_BINANCE)
 

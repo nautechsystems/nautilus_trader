@@ -510,7 +510,7 @@ cdef class BacktestEngine:
         allow_cash_borrowing: bool = False,
         frozen_account: bool = False,
         price_protection_points=None,
-        oto_trigger_model: str = "PARTIAL",
+        oto_trigger_model = "PARTIAL",
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -2603,7 +2603,7 @@ cdef class SimulatedExchange:
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
         bint support_contingent_orders = True,
-        str oto_trigger_model = "PARTIAL",
+        oto_trigger_model = "PARTIAL",
         bint use_position_ids = True,
         bint use_random_ids = False,
         bint use_reduce_only = True,
@@ -2648,6 +2648,10 @@ cdef class SimulatedExchange:
         self.reject_stop_orders = reject_stop_orders
         self.support_gtd_orders = support_gtd_orders
         self.support_contingent_orders = support_contingent_orders
+        if not isinstance(oto_trigger_model, str):
+            raise TypeError(
+                f"Invalid `oto_trigger_model`, expected str, was {type(oto_trigger_model)!r}",
+            )
         cdef str oto_trigger_model_norm = oto_trigger_model.upper()
         if oto_trigger_model_norm not in ("PARTIAL", "FULL"):
             raise ValueError(
