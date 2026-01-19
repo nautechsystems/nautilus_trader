@@ -510,6 +510,7 @@ cdef class BacktestEngine:
         allow_cash_borrowing: bool = False,
         frozen_account: bool = False,
         price_protection_points=None,
+        oto_trigger_model: str = "PARTIAL",
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -587,6 +588,10 @@ cdef class BacktestEngine:
         price_protection_points : int, optional
             Defines an exchange-calculated price boundary (in points) to prevent
             marketable orders from executing at excessively aggressive prices.
+        oto_trigger_model : str, default "PARTIAL"
+            The OTO trigger model for contingent orders:
+            - "PARTIAL": release child orders pro-rata to each partial fill (default).
+            - "FULL": release child orders only once the parent is fully filled.
 
         Raises
         ------
@@ -651,6 +656,7 @@ cdef class BacktestEngine:
             trade_execution=trade_execution,
             liquidity_consumption=liquidity_consumption,
             price_protection_points=price_protection_points,
+            oto_trigger_model=oto_trigger_model,
         )
 
         self._venues[venue] = exchange
@@ -2521,6 +2527,10 @@ cdef class SimulatedExchange:
     support_contingent_orders : bool, default True
         If contingent orders will be supported/respected by the exchange.
         If False, then its expected the strategy will be managing any contingent orders.
+    oto_trigger_model : str, default "PARTIAL"
+        The OTO trigger model for contingent orders:
+        - "PARTIAL": release child orders pro-rata to each partial fill (default).
+        - "FULL": release child orders only once the parent is fully filled.
     use_position_ids : bool, default True
         If venue position IDs will be generated on order fills.
     use_random_ids : bool, default False
@@ -2593,6 +2603,7 @@ cdef class SimulatedExchange:
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
         bint support_contingent_orders = True,
+        str oto_trigger_model = "PARTIAL",
         bint use_position_ids = True,
         bint use_random_ids = False,
         bint use_reduce_only = True,
@@ -2637,6 +2648,12 @@ cdef class SimulatedExchange:
         self.reject_stop_orders = reject_stop_orders
         self.support_gtd_orders = support_gtd_orders
         self.support_contingent_orders = support_contingent_orders
+        cdef str oto_trigger_model_norm = oto_trigger_model.upper()
+        if oto_trigger_model_norm not in ("PARTIAL", "FULL"):
+            raise ValueError(
+                f"Invalid `oto_trigger_model`, was {oto_trigger_model!r}; expected 'PARTIAL' or 'FULL'",
+            )
+        self.oto_full_trigger = oto_trigger_model_norm == "FULL"
         self.use_position_ids = use_position_ids
         self.use_random_ids = use_random_ids
         self.use_reduce_only = use_reduce_only
@@ -2799,6 +2816,7 @@ cdef class SimulatedExchange:
             reject_stop_orders=self.reject_stop_orders,
             support_gtd_orders=self.support_gtd_orders,
             support_contingent_orders=self.support_contingent_orders,
+            oto_full_trigger=self.oto_full_trigger,
             use_position_ids=self.use_position_ids,
             use_random_ids=self.use_random_ids,
             use_reduce_only=self.use_reduce_only,
@@ -3622,6 +3640,7 @@ cdef class OrderMatchingEngine:
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
         bint support_contingent_orders = True,
+        bint oto_full_trigger = False,
         bint use_position_ids = True,
         bint use_random_ids = False,
         bint use_reduce_only = True,
@@ -3650,6 +3669,7 @@ cdef class OrderMatchingEngine:
         self._reject_stop_orders = reject_stop_orders
         self._support_gtd_orders = support_gtd_orders
         self._support_contingent_orders = support_contingent_orders
+        self._oto_full_trigger = oto_full_trigger
         self._use_position_ids = use_position_ids
         self._use_random_ids = use_random_ids
         self._use_reduce_only = use_reduce_only
@@ -4501,14 +4521,21 @@ cdef class OrderMatchingEngine:
             Order parent
             Order contingenct_order
             ClientOrderId client_order_id
+            OrderStatus parent_status
         if self._support_contingent_orders and order.parent_order_id is not None:
             parent = self.cache.order(order.parent_order_id)
             assert parent is not None and parent.contingency_type == ContingencyType.OTO, "OTO parent not found"
 
-            if parent.status_c() == OrderStatus.REJECTED and order.is_open_c():
+            parent_status = parent.status_c()
+
+            if parent_status == OrderStatus.REJECTED and order.is_open_c():
                 self._generate_order_rejected(order, f"REJECT OTO from {parent.client_order_id}")
                 return  # Order rejected
-            elif parent.status_c() == OrderStatus.ACCEPTED or parent.status_c() == OrderStatus.TRIGGERED:
+            elif (
+                parent_status == OrderStatus.ACCEPTED
+                or parent_status == OrderStatus.TRIGGERED
+                or (self._oto_full_trigger and parent_status == OrderStatus.PARTIALLY_FILLED)
+            ):
                 self._log.info(f"Pending OTO {order.client_order_id} triggers from {parent.client_order_id}")
                 return  # Pending trigger
 

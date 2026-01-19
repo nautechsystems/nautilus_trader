@@ -97,6 +97,19 @@ from nautilus_trader.model.functions import trigger_type_from_str
 from nautilus_trader.model.functions import trigger_type_to_str
 
 
+@unique
+class OtoTriggerModel(str, Enum):
+    """
+    Defines when OTO child orders are released.
+
+    - ``PARTIAL``: release child order(s) pro-rata to each partial fill (default).
+    - ``FULL``: release child order(s) only once the parent is fully filled.
+    """
+
+    PARTIAL = "PARTIAL"
+    FULL = "FULL"
+
+
 __all__ = [
     "AccountType",
     "AggregationSource",
@@ -114,6 +127,7 @@ __all__ = [
     "MarketStatusAction",
     "OmsType",
     "OptionKind",
+    "OtoTriggerModel",
     "OrderSide",
     "OrderStatus",
     "OrderType",

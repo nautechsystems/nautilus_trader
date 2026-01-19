@@ -398,6 +398,7 @@ class BacktestNode:
                 reject_stop_orders=venue_config.reject_stop_orders,
                 support_gtd_orders=venue_config.support_gtd_orders,
                 support_contingent_orders=venue_config.support_contingent_orders,
+                oto_trigger_model=venue_config.oto_trigger_model,
                 use_position_ids=venue_config.use_position_ids,
                 use_random_ids=venue_config.use_random_ids,
                 use_reduce_only=venue_config.use_reduce_only,

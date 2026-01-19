@@ -32,6 +32,7 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import OtoTriggerModel
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Quantity
@@ -133,6 +134,157 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.data_engine.start()
         self.exec_engine.start()
         self.strategy.start()
+
+class TestSimulatedExchangeOtoFullTriggerModel:
+    def setup(self):
+        # Fixture Setup
+        self.clock = TestClock()
+        self.trader_id = TestIdStubs.trader_id()
+
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+
+        self.cache = TestComponentStubs.cache()
+
+        self.portfolio = Portfolio(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        self.data_engine = DataEngine(
+            msgbus=self.msgbus,
+            clock=self.clock,
+            cache=self.cache,
+        )
+
+        self.exec_engine = ExecutionEngine(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        self.risk_engine = RiskEngine(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        self.exchange = SimulatedExchange(
+            venue=BINANCE,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            base_currency=None,  # Multi-asset wallet
+            starting_balances=[Money(200, ETH), Money(1_000_000, USDT)],
+            default_leverage=Decimal(10),
+            leverages={},
+            modules=[],
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            latency_model=LatencyModel(0),
+            oto_trigger_model=OtoTriggerModel.FULL.value,
+        )
+        self.exchange.add_instrument(ETHUSDT_PERP_BINANCE)
+
+        self.exec_client = BacktestExecClient(
+            exchange=self.exchange,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Wire up components
+        self.exec_engine.register_client(self.exec_client)
+        self.exchange.register_client(self.exec_client)
+
+        self.cache.add_instrument(ETHUSDT_PERP_BINANCE)
+
+        # Create mock strategy
+        self.strategy = MockStrategy(bar_type=TestDataStubs.bartype_usdjpy_1min_bid())
+        self.strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Start components
+        self.exchange.reset()
+        self.data_engine.start()
+        self.exec_engine.start()
+        self.strategy.start()
+
+    def test_partial_fill_entry_does_not_trigger_oto_children_until_filled(self):
+        # Arrange
+        bracket = self.strategy.order_factory.bracket(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(10.000),
+            entry_price=ETHUSDT_PERP_BINANCE.make_price(3090.5),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(3050.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(3150.0),
+            entry_order_type=OrderType.LIMIT,
+        )
+
+        entry_order = bracket.orders[0]
+        sl_order = bracket.orders[1]
+        tp_order = bracket.orders[2]
+
+        # Act: Submit (orders should not fill yet without market data)
+        self.strategy.submit_order_list(bracket)
+        self.exchange.process(0)
+
+        # Act: Provide market with limited liquidity to force partial fill
+        tick1 = QuoteTick(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            bid_price=ETHUSDT_PERP_BINANCE.make_price(3090.2),
+            ask_price=ETHUSDT_PERP_BINANCE.make_price(3090.5),
+            bid_size=ETHUSDT_PERP_BINANCE.make_qty(15.100),
+            ask_size=ETHUSDT_PERP_BINANCE.make_qty(5.000),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.data_engine.process(tick1)
+        self.exchange.process_quote_tick(tick1)
+        self.exchange.process(0)
+
+        # Assert: Entry partially filled, children remain pending (not accepted / on-book)
+        assert entry_order.status == OrderStatus.PARTIALLY_FILLED
+        assert sl_order.status == OrderStatus.SUBMITTED
+        assert tp_order.status == OrderStatus.SUBMITTED
+        assert self.exchange.get_open_orders() == [entry_order]
+
+        # Act: Provide additional liquidity to complete the entry fill
+        tick2 = QuoteTick(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            bid_price=ETHUSDT_PERP_BINANCE.make_price(3090.2),
+            ask_price=ETHUSDT_PERP_BINANCE.make_price(3090.5),
+            bid_size=ETHUSDT_PERP_BINANCE.make_qty(15.100),
+            ask_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        self.data_engine.process(tick2)
+        self.exchange.process_quote_tick(tick2)
+        self.exchange.process(0)
+
+        # Assert: Entry filled, children accepted and now open on exchange
+        assert entry_order.status == OrderStatus.FILLED
+        assert sl_order.status == OrderStatus.ACCEPTED
+        assert tp_order.status == OrderStatus.ACCEPTED
+        assert len(self.exchange.get_open_orders()) == 2
+        assert sl_order in self.exchange.get_open_orders()
+        assert tp_order in self.exchange.get_open_orders()
 
     def test_submit_bracket_market_entry_buy_accepts_sl_and_tp(self):
         # Arrange: Prepare market

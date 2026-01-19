@@ -600,7 +600,7 @@ An OTO order involves two parts:
 
 :::info
 The default backtest venue for NautilusTrader uses a *partial-trigger model* for OTO orders.
-A future update will add configuration to opt-in to a *full-trigger model*.
+To opt-in to a *full-trigger model*, set `oto_trigger_model="FULL"` for the venue (e.g. via `BacktestVenueConfig`).
 :::
 
 **Working with partial-trigger in production:**
