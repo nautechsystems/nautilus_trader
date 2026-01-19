@@ -65,6 +65,10 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
     inflight_check_interval_ms : int, default 100
         The interval in milliseconds to check for in-flight orders and open positions
         during a market exit.
+    market_exit_max_attempts : int, default 100
+        The maximum number of attempts to wait for orders and positions to close
+        during a market exit before forcing a stop. Defaults to 100 attempts
+        (10 seconds at 100ms intervals).
 
     """
 
@@ -80,6 +84,7 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
     log_commands: bool = True
     log_rejected_due_post_only_as_warning: bool = True
     inflight_check_interval_ms: int = 100
+    market_exit_max_attempts: int = 100
 
 
 class ImportableStrategyConfig(NautilusConfig, frozen=True):

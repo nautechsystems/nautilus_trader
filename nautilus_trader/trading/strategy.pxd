@@ -68,6 +68,7 @@ cdef class Strategy(Actor):
     cdef bint _log_commands
     cdef bint _log_rejected_due_post_only_as_warning
     cdef bint _is_exiting
+    cdef int _market_exit_attempts
 
     cdef readonly OrderFactory order_factory
     """The order factory for the strategy.\n\n:returns: `OrderFactory`"""

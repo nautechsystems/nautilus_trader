@@ -202,6 +202,7 @@ class TestStrategy:
             "log_commands": True,
             "log_rejected_due_post_only_as_warning": True,
             "inflight_check_interval_ms": 100,
+            "market_exit_max_attempts": 100,
         }
 
     def test_strategy_to_importable_config(self) -> None:
@@ -237,6 +238,7 @@ class TestStrategy:
             "log_commands": True,
             "log_rejected_due_post_only_as_warning": True,
             "inflight_check_interval_ms": 100,
+            "market_exit_max_attempts": 100,
         }
 
     def test_strategy_equality(self) -> None:

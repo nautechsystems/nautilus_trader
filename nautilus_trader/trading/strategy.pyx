@@ -36,7 +36,6 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.actor cimport Actor
-from nautilus_trader.common.component cimport CMD
 from nautilus_trader.common.component cimport EVT
 from nautilus_trader.common.component cimport RECV
 from nautilus_trader.common.component cimport Clock
@@ -168,6 +167,7 @@ cdef class Strategy(Actor):
         self.manage_contingent_orders = config.manage_contingent_orders
         self.manage_gtd_expiry = config.manage_gtd_expiry
         self._is_exiting = False
+        self._market_exit_attempts = 0
 
         # Public components
         self.clock = self._clock
@@ -431,6 +431,10 @@ cdef class Strategy(Actor):
 
         if self._manager:
             self._manager.reset()
+
+        # Reset market exit state
+        self._is_exiting = False
+        self._market_exit_attempts = 0
 
         self.on_reset()
 
@@ -1698,12 +1702,13 @@ cdef class Strategy(Actor):
 
         Will cancel all open orders and close all open positions, and wait for
         all in-flight orders to resolve and positions to close before stopping
-         the strategy.
+        the strategy.
         """
         if self._is_exiting:
             return
 
         self._is_exiting = True
+        self._market_exit_attempts = 0
 
         self._log.info("Initiating market exit...", LogColor.BLUE)
         self.on_market_exit()
@@ -1727,7 +1732,7 @@ cdef class Strategy(Actor):
             self.close_all_positions(instrument_id)
 
         # Start iterative check
-        self._log.warning(f"Setting market exit timer for {self.id}")
+        self._log.info(f"Setting market exit timer for {self.id}")
         self._clock.set_timer(
             f"MARKET-EXIT-CHECK:{self.id}",
             pd.Timedelta(milliseconds=self.config.inflight_check_interval_ms),
@@ -1742,7 +1747,30 @@ cdef class Strategy(Actor):
         if self.state != ComponentState.RUNNING:
             return
 
-        self._log.warning(f"Timer triggered: {event.name}")
+        self._market_exit_attempts += 1
+        self._log.debug(f"Market exit check triggered: {event.name} (attempt {self._market_exit_attempts})")
+
+        # Check if max attempts reached
+        if self._market_exit_attempts >= self.config.market_exit_max_attempts:
+            timer_name = f"MARKET-EXIT-CHECK:{self.id}"
+            if timer_name in self._clock.timer_names:
+                self._clock.cancel_timer(name=timer_name)
+
+            self._log.warning(
+                f"Market exit max attempts ({self.config.market_exit_max_attempts}) reached. "
+                f"Forcing stop. Open orders: {len(self.cache.orders_open(None, None, self.id))}, "
+                f"inflight orders: {len(self.cache.orders_inflight(None, None, self.id))}, "
+                f"open positions: {len(self.cache.positions_open(None, None, self.id))}",
+                LogColor.YELLOW
+            )
+
+            # Reset before stopping
+            self._is_exiting = False
+            self._market_exit_attempts = 0
+            self.after_market_exit()
+            self.stop()
+            return
+
         cdef list open_orders = self.cache.orders_open(None, None, self.id)
         cdef list inflight_orders = self.cache.orders_inflight(None, None, self.id)
 
@@ -1758,9 +1786,13 @@ cdef class Strategy(Actor):
             return
 
         # All clear
-        if f"MARKET-EXIT-CHECK:{self.id}" in self._clock.timer_names:
-            self._clock.cancel_timer(name=f"MARKET-EXIT-CHECK:{self.id}")
+        timer_name = f"MARKET-EXIT-CHECK:{self.id}"
+        if timer_name in self._clock.timer_names:
+            self._clock.cancel_timer(name=timer_name)
 
+        # Reset before stopping
+        self._is_exiting = False
+        self._market_exit_attempts = 0
         self.after_market_exit()
         self.stop()
 
