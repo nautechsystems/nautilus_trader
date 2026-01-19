@@ -22,8 +22,10 @@ from nautilus_trader.backtest.models import LatencyModel
 from nautilus_trader.backtest.models import MakerTakerFeeModel
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
+from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data import QuoteTick
@@ -140,6 +142,7 @@ class TestSimulatedExchangeOtoFullTriggerModel:
         # Fixture Setup
         self.clock = TestClock()
         self.trader_id = TestIdStubs.trader_id()
+        self.strategy_id = TestIdStubs.strategy_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -154,20 +157,7 @@ class TestSimulatedExchangeOtoFullTriggerModel:
             clock=self.clock,
         )
 
-        self.data_engine = DataEngine(
-            msgbus=self.msgbus,
-            clock=self.clock,
-            cache=self.cache,
-        )
-
         self.exec_engine = ExecutionEngine(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-        )
-
-        self.risk_engine = RiskEngine(
-            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -206,7 +196,29 @@ class TestSimulatedExchangeOtoFullTriggerModel:
 
         self.cache.add_instrument(ETHUSDT_PERP_BINANCE)
 
-        # Create mock strategy
+        # Start components
+        self.exchange.reset()
+        self.exec_engine.start()
+
+        self._full_stack_started = False
+
+    def _start_full_stack(self) -> None:
+        if self._full_stack_started:
+            return
+
+        self.data_engine = DataEngine(
+            msgbus=self.msgbus,
+            clock=self.clock,
+            cache=self.cache,
+        )
+
+        self.risk_engine = RiskEngine(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
         self.strategy = MockStrategy(bar_type=TestDataStubs.bartype_usdjpy_1min_bid())
         self.strategy.register(
             trader_id=self.trader_id,
@@ -216,15 +228,19 @@ class TestSimulatedExchangeOtoFullTriggerModel:
             clock=self.clock,
         )
 
-        # Start components
-        self.exchange.reset()
         self.data_engine.start()
-        self.exec_engine.start()
         self.strategy.start()
+        self._full_stack_started = True
 
     def test_partial_fill_entry_does_not_trigger_oto_children_until_filled(self):
         # Arrange
-        bracket = self.strategy.order_factory.bracket(
+        order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            clock=self.clock,
+        )
+
+        bracket = order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10.000),
@@ -239,7 +255,14 @@ class TestSimulatedExchangeOtoFullTriggerModel:
         tp_order = bracket.orders[2]
 
         # Act: Submit (orders should not fill yet without market data)
-        self.strategy.submit_order_list(bracket)
+        submit_command = SubmitOrderList(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            order_list=bracket,
+            command_id=TestIdStubs.uuid(),
+            ts_init=0,
+        )
+        self.exec_engine.execute(submit_command)
         self.exchange.process(0)
 
         # Act: Provide market with limited liquidity to force partial fill
@@ -253,7 +276,6 @@ class TestSimulatedExchangeOtoFullTriggerModel:
             ts_init=0,
         )
 
-        self.data_engine.process(tick1)
         self.exchange.process_quote_tick(tick1)
         self.exchange.process(0)
 
@@ -274,7 +296,6 @@ class TestSimulatedExchangeOtoFullTriggerModel:
             ts_init=1,
         )
 
-        self.data_engine.process(tick2)
         self.exchange.process_quote_tick(tick2)
         self.exchange.process(0)
 
@@ -287,6 +308,7 @@ class TestSimulatedExchangeOtoFullTriggerModel:
         assert tp_order in self.exchange.get_open_orders()
 
     def test_submit_bracket_market_entry_buy_accepts_sl_and_tp(self):
+        self._start_full_stack()
         # Arrange: Prepare market
         tick = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -319,6 +341,7 @@ class TestSimulatedExchangeOtoFullTriggerModel:
         assert bracket.orders[2].status == OrderStatus.ACCEPTED
 
     def test_submit_bracket_market_entry_sell_accepts_sl_and_tp(self):
+        self._start_full_stack()
         # Arrange: Prepare market
         tick = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -351,6 +374,7 @@ class TestSimulatedExchangeOtoFullTriggerModel:
         assert bracket.orders[2].status == OrderStatus.ACCEPTED
 
     def test_submit_bracket_market_entry_with_immediate_modify_accepts_sl_and_tp(self):
+        self._start_full_stack()
         # Arrange: Prepare market
         tick = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -393,6 +417,7 @@ class TestSimulatedExchangeOtoFullTriggerModel:
         assert tp_order.price == new_tp_price
 
     def test_submit_bracket_limit_entry_with_immediate_modify_accepts_sl_and_tp(self):
+        self._start_full_stack()
         # Arrange: Prepare market
         tick = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -439,6 +464,7 @@ class TestSimulatedExchangeOtoFullTriggerModel:
         assert tp_order.price == new_tp_price  # Modification should work
 
     def test_submit_bracket_market_entry_with_immediate_cancel(self):
+        self._start_full_stack()
         # Arrange: Prepare market
         tick = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -476,6 +502,7 @@ class TestSimulatedExchangeOtoFullTriggerModel:
         assert tp_order.status == OrderStatus.CANCELED
 
     def test_submit_bracket_limit_entry_buy_has_sl_tp_pending(self):
+        self._start_full_stack()
         # Arrange: Prepare market
         tick = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -510,6 +537,7 @@ class TestSimulatedExchangeOtoFullTriggerModel:
         assert bracket.orders[2].status == OrderStatus.SUBMITTED
 
     def test_submit_bracket_limit_entry_sell_has_sl_tp_pending(self):
+        self._start_full_stack()
         # Arrange: Prepare market
         tick = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -544,6 +572,7 @@ class TestSimulatedExchangeOtoFullTriggerModel:
         assert bracket.orders[2].status == OrderStatus.SUBMITTED
 
     def test_submit_bracket_limit_entry_buy_fills_then_triggers_sl_and_tp(self):
+        self._start_full_stack()
         # Arrange: Prepare market
         tick = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -581,6 +610,7 @@ class TestSimulatedExchangeOtoFullTriggerModel:
         assert bracket.orders[2] in self.exchange.get_open_orders()
 
     def test_submit_bracket_limit_entry_sell_fills_then_triggers_sl_and_tp(self):
+        self._start_full_stack()
         # Arrange: Prepare market
         tick = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -618,6 +648,7 @@ class TestSimulatedExchangeOtoFullTriggerModel:
         assert bracket.orders[2] in self.exchange.get_open_orders()
 
     def test_reject_bracket_entry_then_rejects_sl_and_tp(self):
+        self._start_full_stack()
         # Arrange: Prepare market
         tick = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -656,6 +687,7 @@ class TestSimulatedExchangeOtoFullTriggerModel:
         assert bracket.orders[2] not in self.exchange.get_open_orders()
 
     def test_filling_bracket_sl_cancels_tp_order(self):
+        self._start_full_stack()
         # Arrange: Prepare market
         tick1 = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -704,6 +736,7 @@ class TestSimulatedExchangeOtoFullTriggerModel:
         assert len(self.exchange.cache.positions_open()) == 0
 
     def test_filling_bracket_tp_cancels_sl_order(self):
+        self._start_full_stack()
         # Arrange: Prepare market
         tick1 = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -752,6 +785,7 @@ class TestSimulatedExchangeOtoFullTriggerModel:
         assert len(self.exchange.cache.positions_open()) == 0
 
     def test_partial_fill_bracket_tp_updates_sl_order(self):
+        self._start_full_stack()
         # Arrange: Prepare market
         tick1 = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -807,6 +841,7 @@ class TestSimulatedExchangeOtoFullTriggerModel:
         assert len(self.exchange.cache.positions_open()) == 1
 
     def test_modifying_bracket_tp_updates_sl_order(self):
+        self._start_full_stack()
         # Arrange: Prepare market
         tick1 = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -857,6 +892,7 @@ class TestSimulatedExchangeOtoFullTriggerModel:
         assert len(self.exchange.cache.positions_open()) == 1
 
     def test_closing_position_cancels_bracket_ocos(self):
+        self._start_full_stack()
         # Arrange: Prepare market
         tick1 = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -898,6 +934,7 @@ class TestSimulatedExchangeOtoFullTriggerModel:
         assert len(self.exchange.cache.positions_open()) == 0
 
     def test_partially_filling_position_updates_bracket_ocos(self):
+        self._start_full_stack()
         # Arrange: Prepare market
         tick1 = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
