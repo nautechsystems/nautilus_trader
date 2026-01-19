@@ -3115,6 +3115,7 @@ cdef class OrderBookDeltas(Data):
     def __eq__(self, OrderBookDeltas other) -> bool:
         if other is None:
             return False
+
         return OrderBookDeltas.to_dict_c(self) == OrderBookDeltas.to_dict_c(other)
 
     def __hash__(self) -> int:
@@ -3311,7 +3312,8 @@ cdef class OrderBookDeltas(Data):
             OrderBookDelta delta
         for delta in data:
             batch.append(delta)
-            if delta.flags == RecordFlag.F_LAST:
+
+            if delta.flags & RecordFlag.F_LAST:
                 batches.append(batch)
                 batch = []
 
@@ -3333,6 +3335,7 @@ cdef class OrderBookDeltas(Data):
         cdef OrderBookDeltas_API *data = <OrderBookDeltas_API *>PyMem_Malloc(sizeof(OrderBookDeltas_API))
         data[0] = self._mem
         capsule = PyCapsule_New(data, NULL, <PyCapsule_Destructor>capsule_destructor_deltas)
+
         return capsule
 
     @staticmethod
@@ -3366,6 +3369,7 @@ cdef class OrderBookDeltas(Data):
         """
         capsule = self.to_capsule()
         deltas = nautilus_pyo3.OrderBookDeltas.from_pycapsule(capsule)
+
         return deltas
 
 
