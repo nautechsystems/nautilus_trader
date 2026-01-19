@@ -104,6 +104,7 @@ class OtoTriggerModel(str, Enum):
 
     - ``PARTIAL``: release child order(s) pro-rata to each partial fill (default).
     - ``FULL``: release child order(s) only once the parent is fully filled.
+
     """
 
     PARTIAL = "PARTIAL"
@@ -127,10 +128,10 @@ __all__ = [
     "MarketStatusAction",
     "OmsType",
     "OptionKind",
-    "OtoTriggerModel",
     "OrderSide",
     "OrderStatus",
     "OrderType",
+    "OtoTriggerModel",
     "PositionSide",
     "PriceType",
     "RecordFlag",

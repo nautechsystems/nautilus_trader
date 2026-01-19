@@ -137,6 +137,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.exec_engine.start()
         self.strategy.start()
 
+
 class TestSimulatedExchangeOtoFullTriggerModel:
     def setup(self):
         # Fixture Setup
