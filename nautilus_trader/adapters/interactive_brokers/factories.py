@@ -114,7 +114,7 @@ def get_cached_ib_client(
         )
         PyCondition.not_none(port, "Please provide the `port` for the IB TWS or Gateway.")
 
-    client_key: tuple = (host, port, client_id, fetch_all_open_orders)
+    client_key: tuple = (host, port, client_id)
 
     if client_key not in IB_CLIENTS:
         client = InteractiveBrokersClient(
