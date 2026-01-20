@@ -34,6 +34,7 @@ from nautilus_trader.data.engine import TimeRangeGenerator
 from nautilus_trader.data.engine import get_time_range_generator
 from nautilus_trader.model import BOOK_DATA_TYPES
 from nautilus_trader.model import NAUTILUS_PYO3_DATA_TYPES
+from nautilus_trader.model.enums import OtoTriggerModel
 from nautilus_trader.system.kernel import NautilusKernel
 from nautilus_trader.trading.trader import Trader
 
@@ -2653,11 +2654,13 @@ cdef class SimulatedExchange:
                 f"Invalid `oto_trigger_model`, expected str, was {type(oto_trigger_model)!r}",
             )
         cdef str oto_trigger_model_norm = oto_trigger_model.upper()
-        if oto_trigger_model_norm not in ("PARTIAL", "FULL"):
+        try:
+            trigger_model = OtoTriggerModel(oto_trigger_model_norm)
+        except ValueError:
             raise ValueError(
                 f"Invalid `oto_trigger_model`, was {oto_trigger_model!r}; expected 'PARTIAL' or 'FULL'",
-            )
-        self.oto_full_trigger = oto_trigger_model_norm == "FULL"
+            ) from None
+        self.oto_full_trigger = trigger_model == OtoTriggerModel.FULL
         self.use_position_ids = use_position_ids
         self.use_random_ids = use_random_ids
         self.use_reduce_only = use_reduce_only
