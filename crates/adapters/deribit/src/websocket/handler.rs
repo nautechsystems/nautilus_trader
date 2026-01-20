@@ -31,7 +31,7 @@ use ahash::{AHashMap, AHashSet};
 use nautilus_core::{AtomicTime, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::{Bar, Data},
-    events::{OrderCancelRejected, OrderModifyRejected, OrderRejected},
+    events::{AccountState, OrderCancelRejected, OrderModifyRejected, OrderRejected},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
 };
@@ -62,7 +62,10 @@ use super::{
         resolution_to_bar_type,
     },
 };
-use crate::common::consts::{DERIBIT_POST_ONLY_ERROR_CODE, DERIBIT_RATE_LIMIT_KEY_ORDER};
+use crate::common::{
+    consts::{DERIBIT_POST_ONLY_ERROR_CODE, DERIBIT_RATE_LIMIT_KEY_ORDER},
+    parse::parse_portfolio_to_account_state,
+};
 
 /// Type of pending request for request ID correlation.
 #[derive(Debug, Clone)]
@@ -224,6 +227,8 @@ pub struct DeribitWsFeedHandler {
     terminal_orders_queue: VecDeque<ClientOrderId>,
     pending_bars: AHashMap<String, Bar>,
     bars_timestamp_on_close: bool,
+    /// Last account state per currency for duplicate detection
+    last_account_states: AHashMap<String, AccountState>,
 }
 
 impl DeribitWsFeedHandler {
@@ -260,6 +265,7 @@ impl DeribitWsFeedHandler {
             terminal_orders_queue: VecDeque::new(),
             pending_bars: AHashMap::new(),
             bars_timestamp_on_close,
+            last_account_states: AHashMap::new(),
         }
     }
 
@@ -1904,15 +1910,52 @@ impl DeribitWsFeedHandler {
                         DeribitWsChannel::UserPortfolio => {
                             match serde_json::from_value::<DeribitPortfolioMsg>(data.clone()) {
                                 Ok(portfolio) => {
-                                    log::debug!(
-                                        "Portfolio update: {} equity={} balance={} margin={}",
-                                        portfolio.currency,
-                                        portfolio.equity,
-                                        portfolio.balance,
-                                        portfolio.margin_balance
-                                    );
-                                    // TODO: Convert to AccountState
-                                    return Some(NautilusWsMessage::Raw(data.clone()));
+                                    // Skip zero-balance currencies (common with cross-collateral)
+                                    // Only check equity and balance - initial_margin can be non-zero
+                                    // for all currencies when cross-collateral is enabled
+                                    if portfolio.equity.is_zero() && portfolio.balance.is_zero() {
+                                        log::trace!(
+                                            "Skipping zero-balance portfolio for {}",
+                                            portfolio.currency
+                                        );
+                                        return None;
+                                    }
+
+                                    // Require account_id for parsing
+                                    let Some(account_id) = self.account_id else {
+                                        log::warn!("Cannot parse portfolio: account_id not set");
+                                        return None;
+                                    };
+
+                                    match parse_portfolio_to_account_state(
+                                        &portfolio, account_id, ts_init,
+                                    ) {
+                                        Ok(account_state) => {
+                                            // Check for duplicate per currency
+                                            let currency_key = portfolio.currency.clone();
+                                            if let Some(last) =
+                                                self.last_account_states.get(&currency_key)
+                                                && account_state.has_same_balances_and_margins(last)
+                                            {
+                                                log::trace!(
+                                                    "Skipping duplicate portfolio update for {}",
+                                                    portfolio.currency
+                                                );
+                                                return None;
+                                            }
+
+                                            self.last_account_states
+                                                .insert(currency_key, account_state.clone());
+                                            return Some(NautilusWsMessage::AccountState(
+                                                account_state,
+                                            ));
+                                        }
+                                        Err(e) => {
+                                            log::warn!(
+                                                "Failed to parse portfolio to AccountState: {e}"
+                                            );
+                                        }
+                                    }
                                 }
                                 Err(e) => {
                                     log::warn!("Failed to deserialize portfolio: {e}");

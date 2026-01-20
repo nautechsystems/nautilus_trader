@@ -164,7 +164,8 @@ class DeribitExecutionClient(LiveExecutionClient):
 
         await self._ws_client.subscribe_user_orders()
         await self._ws_client.subscribe_user_trades()
-        self._log.info("Subscribed to user order and trade updates", LogColor.BLUE)
+        await self._ws_client.subscribe_user_portfolio()
+        self._log.info("Subscribed to user order, trade, and portfolio updates", LogColor.BLUE)
 
         # Fetch initial account state
         try:

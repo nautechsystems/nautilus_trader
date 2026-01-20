@@ -47,6 +47,7 @@ use crate::{
         DeribitAccountSummary, DeribitInstrument, DeribitOrderBook, DeribitPublicTrade,
         DeribitTradingViewChartData,
     },
+    websocket::messages::DeribitPortfolioMsg,
 };
 
 /// Parses a Deribit instrument ID into kind and currency for WebSocket channel subscription.
@@ -482,9 +483,13 @@ pub fn parse_account_state(
             Some("DERIBIT - Parsing account state"),
         );
 
-        // Parse balance: total (equity includes unrealized PnL), locked, free
-        // Note: Deribit's available_funds = equity - initial_margin, so we must use equity for total
-        let total = Money::new(summary.equity, currency);
+        // Parse balance using margin_balance (not equity):
+        // - total: margin_balance (equity minus fee reserves)
+        // - free: available_funds
+        // - locked: total - free = initial_margin
+        //
+        // Key: available_funds = margin_balance - initial_margin
+        let total = Money::new(summary.margin_balance, currency);
         let free = Money::new(summary.available_funds, currency);
         let locked = Money::from_raw(total.raw - free.raw, currency);
 
@@ -501,6 +506,8 @@ pub fn parse_account_state(
                 let maintenance = Money::new(maintenance_margin, currency);
 
                 // Create a synthetic instrument_id for account-level margins
+                // SAFETY: Format string "ACCOUNT-{currency}" always produces valid ASCII
+                // symbol since currency codes are uppercase alphanumeric (e.g., BTC, ETH, USDT)
                 let margin_instrument_id = InstrumentId::new(
                     Symbol::from_str_unchecked(format!("ACCOUNT-{}", summary.currency)),
                     Venue::new("DERIBIT"),
@@ -534,6 +541,91 @@ pub fn parse_account_state(
         is_reported,
         UUID4::new(),
         ts_event,
+        ts_init,
+        None,
+    ))
+}
+
+/// Parses a Deribit WebSocket portfolio message into a Nautilus [`AccountState`].
+///
+/// This function converts real-time portfolio updates from the `user.portfolio.{currency}`
+/// subscription channel into Nautilus account state events.
+///
+/// # Returns
+///
+/// An `AccountState` containing balances and margin information.
+///
+/// # Errors
+///
+/// Returns an error if Money conversion fails for any balance field.
+pub fn parse_portfolio_to_account_state(
+    portfolio: &DeribitPortfolioMsg,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<AccountState> {
+    let ccy_str = portfolio.currency.trim();
+
+    // Skip empty currency codes
+    if ccy_str.is_empty() {
+        anyhow::bail!("Portfolio message has empty currency code");
+    }
+
+    let currency = Currency::get_or_create_crypto_with_context(
+        ccy_str,
+        Some("DERIBIT - Parsing portfolio update"),
+    );
+
+    // Parse balance using margin_balance (not equity):
+    // - total: margin_balance (equity minus fee reserves, used for margin calculations)
+    // - free: available_funds (what can be used for new orders)
+    // - locked: derived as (total - free) which equals initial_margin
+    //
+    // Key relationship: available_funds = margin_balance - initial_margin
+    // So: locked = margin_balance - available_funds = initial_margin
+    //
+    // Using margin_balance instead of equity ensures locked is always non-negative
+    // and accurately reflects the margin requirement.
+    let total = Money::from_decimal(portfolio.margin_balance, currency)?;
+    let free = Money::from_decimal(portfolio.available_funds, currency)?;
+    let locked = Money::from_raw(total.raw - free.raw, currency);
+
+    let balance = AccountBalance::new(total, locked, free);
+    let balances = vec![balance];
+
+    // Parse margin balances
+    let mut margins = Vec::new();
+    let initial_margin = portfolio.initial_margin;
+    let maintenance_margin = portfolio.maintenance_margin;
+
+    // Only create margin balance if there are actual margin requirements
+    if !initial_margin.is_zero() || !maintenance_margin.is_zero() {
+        let initial = Money::from_decimal(initial_margin, currency)?;
+        let maintenance = Money::from_decimal(maintenance_margin, currency)?;
+
+        // Create a synthetic instrument_id for account-level margins
+        let margin_instrument_id = InstrumentId::new(
+            Symbol::from_str_unchecked(format!("ACCOUNT-{}", portfolio.currency)),
+            Venue::new("DERIBIT"),
+        );
+
+        margins.push(MarginBalance::new(
+            initial,
+            maintenance,
+            margin_instrument_id,
+        ));
+    }
+
+    let account_type = AccountType::Margin;
+    let is_reported = true;
+
+    Ok(AccountState::new(
+        account_id,
+        account_type,
+        balances,
+        margins,
+        is_reported,
+        UUID4::new(),
+        ts_init, // Use ts_init for both since we don't have server timestamp in portfolio msg
         ts_init,
         None,
     ))
@@ -901,27 +993,25 @@ mod tests {
             .expect("BTC balance should exist");
 
         // From test data:
-        // balance: 302.60065765, equity: 302.61869214, available_funds: 301.38059622
-        // initial_margin: 1.24669592, session_upl: 0.05271555
+        // margin_balance: 302.62729214, available_funds: 301.38059622
+        // initial_margin: 1.24669592
         //
-        // Using equity (correct):
-        // total = equity = 302.61869214
+        // Using margin_balance:
+        // total = margin_balance = 302.62729214
         // free = available_funds = 301.38059622
-        // locked = total - free = 302.61869214 - 301.38059622 = 1.23809592
-        //
-        // This is close to initial_margin (1.24669592), small difference due to other factors
-        assert_eq!(btc_balance.total.as_f64(), 302.61869214);
+        // locked = total - free = 302.62729214 - 301.38059622 = 1.24669592 (exactly initial_margin!)
+        assert_eq!(btc_balance.total.as_f64(), 302.62729214);
         assert_eq!(btc_balance.free.as_f64(), 301.38059622);
 
-        // Verify locked is positive and close to initial_margin
+        // Verify locked equals initial_margin exactly
         let locked = btc_balance.locked.as_f64();
         assert!(
             locked > 0.0,
             "Locked should be positive when positions exist"
         );
         assert!(
-            (locked - 1.24669592).abs() < 0.01,
-            "Locked ({locked}) should be close to initial_margin (1.24669592)"
+            (locked - 1.24669592).abs() < 0.0001,
+            "Locked ({locked}) should equal initial_margin (1.24669592)"
         );
 
         // Test ETH balance (no positions)
@@ -931,10 +1021,10 @@ mod tests {
             .find(|b| b.currency.code == "ETH")
             .expect("ETH balance should exist");
 
-        // From test data: balance: 100, equity: 100, available_funds: 99.999598
-        // total = equity = 100
+        // From test data: margin_balance: 100, available_funds: 99.999598, initial_margin: 0.000402
+        // total = margin_balance = 100
         // free = available_funds = 99.999598
-        // locked = 100 - 99.999598 = 0.000402 (matches initial_margin)
+        // locked = 100 - 99.999598 = 0.000402 (equals initial_margin)
         assert_eq!(eth_balance.total.as_f64(), 100.0);
         assert_eq!(eth_balance.free.as_f64(), 99.999598);
         assert_eq!(eth_balance.locked.as_f64(), 0.000402);
@@ -1224,5 +1314,65 @@ mod tests {
                 "currency mismatch for {symbol}"
             );
         }
+    }
+
+    #[rstest]
+    fn test_parse_portfolio_to_account_state() {
+        let json_data = load_test_json("ws_portfolio.json");
+        let notification: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+
+        // Extract the data field from the notification
+        let data = notification
+            .get("params")
+            .and_then(|p| p.get("data"))
+            .expect("Test data must have params.data");
+
+        let portfolio: DeribitPortfolioMsg =
+            serde_json::from_value(data.clone()).expect("Should deserialize portfolio message");
+
+        // Verify deserialization
+        assert_eq!(portfolio.currency, "USDT");
+        assert_eq!(portfolio.equity, dec!(55.00055));
+        assert_eq!(portfolio.balance, dec!(55.00055));
+        assert_eq!(portfolio.available_funds, dec!(53.868247));
+        assert_eq!(portfolio.margin_balance, dec!(54.968258));
+        assert_eq!(portfolio.initial_margin, dec!(1.100011));
+        assert_eq!(portfolio.maintenance_margin, dec!(0.0));
+
+        // Test parsing to AccountState
+        let account_id = AccountId::new("DERIBIT-master");
+        let ts_init = UnixNanos::from(1700000000000000000_u64);
+
+        let account_state =
+            parse_portfolio_to_account_state(&portfolio, account_id, ts_init).unwrap();
+
+        // Verify account state
+        assert_eq!(account_state.account_id, account_id);
+        assert_eq!(account_state.account_type, AccountType::Margin);
+        assert!(account_state.is_reported);
+
+        // Verify balances (should have 1 balance for USDT)
+        assert_eq!(account_state.balances.len(), 1);
+        let balance = &account_state.balances[0];
+        assert_eq!(balance.currency.code, "USDT");
+        assert_eq!(balance.total.as_f64(), 54.968258); // margin_balance
+        assert_eq!(balance.free.as_f64(), 53.868247); // available_funds
+
+        // locked = total - free = 54.968258 - 53.868247 = 1.100011 (equals initial_margin)
+        let locked = balance.locked.as_f64();
+        assert!(
+            (locked - 1.100011).abs() < 0.0001,
+            "Locked ({locked}) should be close to 1.100011 (initial_margin)"
+        );
+
+        // Verify margins (should have 1 margin since initial_margin > 0)
+        assert_eq!(account_state.margins.len(), 1);
+        let margin = &account_state.margins[0];
+        assert_eq!(margin.initial.as_f64(), 1.100011);
+        assert_eq!(margin.maintenance.as_f64(), 0.0);
+        assert_eq!(
+            margin.instrument_id,
+            InstrumentId::from("ACCOUNT-USDT.DERIBIT")
+        );
     }
 }

@@ -623,38 +623,26 @@ pub struct DeribitUserTradeMsg {
 /// Portfolio/margin message from user.portfolio subscription.
 #[derive(Debug, Clone, Deserialize)]
 pub struct DeribitPortfolioMsg {
-    /// Currency (e.g., "BTC", "ETH").
+    /// Currency code (e.g., "BTC", "ETH", "USDC", "USDT").
     pub currency: String,
-    /// Account equity.
-    pub equity: f64,
-    /// Available funds.
-    pub available_funds: f64,
-    /// Available withdrawal funds.
-    pub available_withdrawal_funds: f64,
-    /// Balance.
-    pub balance: f64,
-    /// Margin balance.
-    pub margin_balance: f64,
-    /// Initial margin.
-    pub initial_margin: f64,
-    /// Maintenance margin.
-    pub maintenance_margin: f64,
-    /// Total profit/loss.
-    pub total_pl: f64,
-    /// Session profit/loss.
-    pub session_pl: Option<f64>,
-    /// Unrealized profit/loss.
-    pub session_upl: Option<f64>,
-    /// Options session profit/loss.
-    pub options_session_upl: Option<f64>,
-    /// Futures session profit/loss.
-    pub futures_session_upl: Option<f64>,
-    /// Delta total.
-    pub delta_total: Option<f64>,
-    /// Options delta.
-    pub options_delta: Option<f64>,
-    /// Futures delta (position in contracts).
-    pub futures_pl: Option<f64>,
+    /// Account equity (balance + unrealized PnL). Used for zero-balance filtering.
+    #[serde(with = "rust_decimal::serde::float")]
+    pub equity: Decimal,
+    /// Account balance. Used for zero-balance filtering.
+    #[serde(with = "rust_decimal::serde::float")]
+    pub balance: Decimal,
+    /// Available funds for trading. Maps to AccountBalance.free.
+    #[serde(with = "rust_decimal::serde::float")]
+    pub available_funds: Decimal,
+    /// Margin balance. Maps to AccountBalance.total.
+    #[serde(with = "rust_decimal::serde::float")]
+    pub margin_balance: Decimal,
+    /// Initial margin requirement. Maps to MarginBalance.initial.
+    #[serde(with = "rust_decimal::serde::float")]
+    pub initial_margin: Decimal,
+    /// Maintenance margin requirement. Maps to MarginBalance.maintenance.
+    #[serde(with = "rust_decimal::serde::float")]
+    pub maintenance_margin: Decimal,
 }
 
 /// Raw Deribit WebSocket message variants.

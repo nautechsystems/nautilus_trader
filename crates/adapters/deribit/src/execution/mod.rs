@@ -550,8 +550,12 @@ impl ExecutionClient for DeribitExecutionClient {
             .subscribe_user_trades()
             .await
             .map_err(|e| anyhow::anyhow!("failed to subscribe to user trades: {e}"))?;
+        self.ws_client
+            .subscribe_user_portfolio()
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to subscribe to user portfolio: {e}"))?;
 
-        log::info!("Subscribed to user order and trade updates");
+        log::info!("Subscribed to user order, trade, and portfolio updates");
 
         // Spawn stream handler to dispatch WebSocket messages to the execution engine
         let stream = self.ws_client.stream();

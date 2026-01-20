@@ -1155,6 +1155,35 @@ impl DeribitWebSocketClient {
             .await
     }
 
+    /// Subscribes to user portfolio updates for all currencies.
+    ///
+    /// Requires authentication. Subscribes to `user.portfolio.any` channel which
+    /// provides real-time account balance and margin updates for all currencies
+    /// (BTC, ETH, USDC, USDT, etc.).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if client is not authenticated or subscription fails.
+    pub async fn subscribe_user_portfolio(&self) -> DeribitWsResult<()> {
+        if !self.is_authenticated() {
+            return Err(DeribitWsError::Authentication(
+                "User portfolio subscription requires authentication".to_string(),
+            ));
+        }
+        self.send_subscribe(vec!["user.portfolio.any".to_string()])
+            .await
+    }
+
+    /// Unsubscribes from user portfolio updates for all currencies.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unsubscription fails.
+    pub async fn unsubscribe_user_portfolio(&self) -> DeribitWsResult<()> {
+        self.send_unsubscribe(vec!["user.portfolio.any".to_string()])
+            .await
+    }
+
     /// Subscribes to multiple channels at once.
     ///
     /// # Errors

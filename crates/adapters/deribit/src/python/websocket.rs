@@ -716,6 +716,35 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Subscribes to user portfolio updates for all currencies.
+    ///
+    /// Requires authentication. Subscribes to `user.portfolio.any` channel which
+    /// provides real-time account balance and margin updates.
+    #[pyo3(name = "subscribe_user_portfolio")]
+    fn py_subscribe_user_portfolio<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_user_portfolio()
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Unsubscribes from user portfolio updates for all currencies.
+    #[pyo3(name = "unsubscribe_user_portfolio")]
+    fn py_unsubscribe_user_portfolio<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_user_portfolio()
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
     /// Subscribes to multiple channels at once.
     #[pyo3(name = "subscribe")]
     fn py_subscribe<'py>(
