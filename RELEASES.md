@@ -212,6 +212,7 @@ This release adds support for Python 3.14 with the following limitations:
 - Fixed Databento quote decoding with undefined bid/ask prices
 - Fixed Interactive Brokers quote tick subscriptions to use tick-by-tick data (#3135), thanks for reporting @genliusrocks
 - Fixed Interactive Brokers serialization of `IBContractDetails` (#3181), thanks @faysou
+- Fixed Interactive Brokers synthetic position order reconciliation causing filled_qty mismatch errors during periodic consistency checks
 - Fixed Interactive Brokers parsing of invalid prices (#3246), thanks @faysou
 - Fixed OKX pre-open instrument parsing and standardize enum usage (#3134), thanks for reporting @3wtz
 - Fixed OKX `request_bars` pagination halting prematurely in Range mode (#3145), thanks for reporting @3wtz
