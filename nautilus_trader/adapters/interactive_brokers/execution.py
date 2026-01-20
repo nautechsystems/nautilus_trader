@@ -432,66 +432,69 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
     ) -> list[OrderStatusReport]:
         report = []
 
-        # Create the Filled OrderStatusReport from Open Positions
-        positions: list[IBPosition] = await self._client.get_positions(
-            self.account_id.get_id(),
-        )
-
-        if not positions:
-            return []
-
-        ts_init = self._clock.timestamp_ns()
-
-        for position in positions:
-            self._log.debug(
-                f"Infer OrderStatusReport from open position {position.contract}",
+        # Only create synthetic filled orders from positions during startup reconciliation
+        # (when open_only=False). During periodic consistency checks (open_only=True),
+        # we should only return actual open orders from IB, not synthetic filled orders
+        # based on current position state. Re-generating these synthetic orders during
+        # periodic checks causes filled_qty mismatches because the position may have
+        # changed due to partial fills on exit orders.
+        if not command.open_only:
+            positions: list[IBPosition] = await self._client.get_positions(
+                self.account_id.get_id(),
             )
 
-            if position.quantity > 0:
-                order_side = OrderSide.BUY
-            elif position.quantity < 0:
-                order_side = OrderSide.SELL
-            else:
-                continue  # Skip, IB may continue to display closed positions
+            ts_init = self._clock.timestamp_ns()
 
-            instrument = await self.instrument_provider.get_instrument(position.contract)
+            for position in positions:
+                self._log.debug(
+                    f"Infer OrderStatusReport from open position {position.contract}",
+                )
 
-            if instrument is None:
-                if position.contract.secType in self._filter_sec_types:
-                    self._log.warning(
-                        f"Skipping reconciliation for filtered contract: {position.contract}",
-                    )
+                if position.quantity > 0:
+                    order_side = OrderSide.BUY
+                elif position.quantity < 0:
+                    order_side = OrderSide.SELL
                 else:
-                    self._log.error(
-                        f"Cannot generate report: instrument not found for contract ID {position.contract.conId}",
-                    )
-                continue
+                    continue  # Skip, IB may continue to display closed positions
 
-            contract_details = self.instrument_provider.contract_details[instrument.id]
-            avg_px = instrument.make_price(
-                position.avg_cost
-                / (instrument.multiplier.as_double() * contract_details.priceMagnifier),
-            ).as_decimal()
-            quantity = Quantity.from_str(str(position.quantity.copy_abs()))
-            order_status = OrderStatusReport(
-                account_id=self.account_id,
-                instrument_id=instrument.id,
-                venue_order_id=VenueOrderId(instrument.id.value),
-                order_side=order_side,
-                order_type=OrderType.MARKET,
-                time_in_force=TimeInForce.FOK,
-                order_status=OrderStatus.FILLED,
-                quantity=quantity,
-                filled_qty=quantity,
-                avg_px=avg_px,
-                report_id=UUID4(),
-                ts_accepted=ts_init,
-                ts_last=ts_init,
-                ts_init=ts_init,
-                client_order_id=ClientOrderId(instrument.id.value),
-            )
-            self._log.debug(f"Received {order_status!r}")
-            report.append(order_status)
+                instrument = await self.instrument_provider.get_instrument(position.contract)
+
+                if instrument is None:
+                    if position.contract.secType in self._filter_sec_types:
+                        self._log.warning(
+                            f"Skipping reconciliation for filtered contract: {position.contract}",
+                        )
+                    else:
+                        self._log.error(
+                            f"Cannot generate report: instrument not found for contract ID {position.contract.conId}",
+                        )
+                    continue
+
+                contract_details = self.instrument_provider.contract_details[instrument.id]
+                avg_px = instrument.make_price(
+                    position.avg_cost
+                    / (instrument.multiplier.as_double() * contract_details.priceMagnifier),
+                ).as_decimal()
+                quantity = Quantity.from_str(str(position.quantity.copy_abs()))
+                order_status = OrderStatusReport(
+                    account_id=self.account_id,
+                    instrument_id=instrument.id,
+                    venue_order_id=VenueOrderId(instrument.id.value),
+                    order_side=order_side,
+                    order_type=OrderType.MARKET,
+                    time_in_force=TimeInForce.FOK,
+                    order_status=OrderStatus.FILLED,
+                    quantity=quantity,
+                    filled_qty=quantity,
+                    avg_px=avg_px,
+                    report_id=UUID4(),
+                    ts_accepted=ts_init,
+                    ts_last=ts_init,
+                    ts_init=ts_init,
+                    client_order_id=ClientOrderId(instrument.id.value),
+                )
+                self._log.debug(f"Received {order_status!r}")
+                report.append(order_status)
 
         # Create the Open OrderStatusReport from Open Orders
         ib_orders: list[IBOrder] = await self._client.get_open_orders(
