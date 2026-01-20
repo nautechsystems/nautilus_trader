@@ -984,31 +984,122 @@ impl ExecutionClient for DeribitExecutionClient {
     }
 
     fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
-        // Deribit doesn't support side filtering - log warning if specified
-        if cmd.order_side != OrderSide::NoOrderSide {
-            log::warn!(
-                "Deribit cancel_all_by_instrument doesn't support order_side filtering; \
-                 cancelling all orders for instrument regardless of side"
+        let instrument_id = cmd.instrument_id;
+
+        // If NoOrderSide, use efficient bulk cancel via Deribit API
+        if cmd.order_side == OrderSide::NoOrderSide {
+            log::info!(
+                "Cancelling all orders: instrument={instrument_id}, order_side=NoOrderSide (bulk)"
             );
+
+            let ws_client = self.ws_client.clone();
+            self.spawn_task("cancel_all_orders", async move {
+                if let Err(e) = ws_client.cancel_all_orders(instrument_id, None).await {
+                    log::error!("Cancel all orders failed for instrument {instrument_id}: {e}");
+                    anyhow::bail!("Cancel all orders failed: {e}");
+                }
+                Ok(())
+            });
+
+            return Ok(());
         }
 
-        let instrument_name = cmd.instrument_id.symbol.to_string();
-        let instrument_id = cmd.instrument_id;
-        let ws_client = self.ws_client.clone();
-
+        // For specific side (Buy/Sell), filter from cache and cancel individually
+        // Deribit API doesn't support side filtering, so we implement it locally
         log::info!(
-            "Cancelling all orders: instrument={}, order_side={}",
-            instrument_name,
+            "Cancelling orders by side: instrument={}, order_side={}",
+            instrument_id,
             cmd.order_side
         );
 
-        self.spawn_task("cancel_all_orders", async move {
-            if let Err(e) = ws_client.cancel_all_orders(instrument_id, None).await {
-                log::error!("Cancel all orders failed for instrument {instrument_id}: {e}");
-                anyhow::bail!("Cancel all orders failed: {e}");
-            }
-            Ok(())
-        });
+        let orders_to_cancel: Vec<_> = {
+            let cache = self.core.cache().borrow();
+            let open_orders = cache.orders_open(None, Some(&instrument_id), None, None, None);
+
+            open_orders
+                .into_iter()
+                .filter(|order| order.order_side() == cmd.order_side)
+                .filter_map(|order| {
+                    let venue_order_id = order.venue_order_id()?;
+                    Some((
+                        venue_order_id.to_string(),
+                        order.client_order_id(),
+                        order.instrument_id(),
+                        Some(venue_order_id),
+                    ))
+                })
+                .collect()
+        };
+
+        if orders_to_cancel.is_empty() {
+            log::debug!(
+                "No open {} orders to cancel for {}",
+                cmd.order_side,
+                instrument_id
+            );
+            return Ok(());
+        }
+
+        log::info!(
+            "Cancelling {} {} orders for {}",
+            orders_to_cancel.len(),
+            cmd.order_side,
+            instrument_id
+        );
+
+        let ts_init = cmd.ts_init;
+        let exec_event_sender = self.exec_event_sender.clone();
+        let account_id = self.core.account_id;
+
+        // Cancel each matching order individually
+        for (venue_order_id_str, client_order_id, order_instrument_id, venue_order_id) in
+            orders_to_cancel
+        {
+            let ws_client = self.ws_client.clone();
+            let trader_id = cmd.trader_id;
+            let strategy_id = cmd.strategy_id;
+            let exec_event_sender = exec_event_sender.clone();
+
+            self.spawn_task("cancel_order_by_side", async move {
+                if let Err(e) = ws_client
+                    .cancel_order(
+                        &venue_order_id_str,
+                        client_order_id,
+                        trader_id,
+                        strategy_id,
+                        order_instrument_id,
+                    )
+                    .await
+                {
+                    log::error!(
+                        "Cancel order failed: order_id={venue_order_id_str}, client_order_id={client_order_id}, error={e}"
+                    );
+
+                    let rejected_event = OrderCancelRejected::new(
+                        trader_id,
+                        strategy_id,
+                        order_instrument_id,
+                        client_order_id,
+                        format!("cancel-order-error: {e}").into(),
+                        UUID4::new(),
+                        ts_init,
+                        get_atomic_clock_realtime().get_time_ns(),
+                        false,
+                        venue_order_id,
+                        Some(account_id),
+                    );
+
+                    if let Some(sender) = &exec_event_sender
+                        && let Err(send_err) = sender.send(ExecutionEvent::Order(
+                            OrderEventAny::CancelRejected(rejected_event),
+                        ))
+                    {
+                        log::warn!("Failed to send OrderCancelRejected event: {send_err}");
+                    }
+                }
+                Ok(())
+            });
+        }
 
         Ok(())
     }

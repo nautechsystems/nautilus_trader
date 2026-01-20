@@ -576,15 +576,64 @@ class DeribitExecutionClient(LiveExecutionClient):
             )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        # Deribit doesn't support side filtering - log warning if specified
+        # If specific side requested, cancel orders individually (Deribit API doesn't support side filtering)
         if command.order_side != OrderSide.NO_ORDER_SIDE:
-            self._log.warning(
-                "Deribit cancel_all_by_instrument doesn't support order_side filtering. "
-                "Cancelling all orders for instrument regardless of side.",
+            open_orders = self._cache.orders_open(
+                instrument_id=command.instrument_id,
+                side=command.order_side,
             )
 
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+            if not open_orders:
+                self._log.debug(
+                    f"No open {command.order_side.name} orders to cancel for {command.instrument_id}",
+                )
+                return
 
+            self._log.info(
+                f"Cancelling {len(open_orders)} {command.order_side.name} orders "
+                f"for {command.instrument_id} (side-filtered)",
+            )
+
+            for order in open_orders:
+                if order.venue_order_id is None:
+                    self._log.warning(
+                        f"Cannot cancel order {order.client_order_id} - no venue_order_id",
+                    )
+                    continue
+
+                try:
+                    pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
+                    pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
+                    pyo3_order_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+                        order.instrument_id.value,
+                    )
+                    pyo3_client_order_id = nautilus_pyo3.ClientOrderId.from_str(
+                        order.client_order_id.value,
+                    )
+
+                    await self._ws_client.cancel_order(
+                        order_id=order.venue_order_id.value,
+                        client_order_id=pyo3_client_order_id,
+                        trader_id=pyo3_trader_id,
+                        strategy_id=pyo3_strategy_id,
+                        instrument_id=pyo3_order_instrument_id,
+                    )
+                except Exception as e:
+                    self._log.error(
+                        f"Failed to cancel order {order.client_order_id}: {e}",
+                    )
+                    self.generate_order_cancel_rejected(
+                        strategy_id=order.strategy_id,
+                        instrument_id=order.instrument_id,
+                        client_order_id=order.client_order_id,
+                        venue_order_id=order.venue_order_id,
+                        reason=str(e),
+                        ts_event=self._clock.timestamp_ns(),
+                    )
+            return
+
+        # No side filtering - use bulk cancel API
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         try:
             self._log.info(
                 f"Cancelling all orders for instrument {command.instrument_id}",
