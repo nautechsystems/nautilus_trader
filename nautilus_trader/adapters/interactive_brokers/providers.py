@@ -717,7 +717,10 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             return "IBCMDTY"
 
         # Use the exchange from the contract
-        exchange = contract.primaryExchange if contract.exchange == "SMART" else contract.exchange
+        if contract.exchange == "SMART" and contract.primaryExchange:
+            exchange = contract.primaryExchange
+        else:
+            exchange = contract.exchange
         venue = None
 
         if self._convert_exchange_to_mic_venue:
