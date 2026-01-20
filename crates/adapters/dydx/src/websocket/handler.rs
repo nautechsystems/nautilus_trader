@@ -431,9 +431,12 @@ impl FeedHandler {
             },
             DydxWsFeedMessage::BlockHeight(msg) => match msg {
                 DydxWsBlockHeightMessage::Subscribed(data) => {
-                    // Subscribed message uses "height" field, parse directly
+                    // Subscribed message uses "height" field with timestamp
                     match data.contents.height.parse::<u64>() {
-                        Ok(height) => Some(NautilusWsMessage::BlockHeight(height)),
+                        Ok(height) => Some(NautilusWsMessage::BlockHeight {
+                            height,
+                            time: data.contents.time,
+                        }),
                         Err(e) => {
                             log::warn!("Failed to parse block height from subscription: {e}");
                             None
@@ -441,9 +444,12 @@ impl FeedHandler {
                     }
                 }
                 DydxWsBlockHeightMessage::ChannelData(data) => {
-                    // Channel data uses "blockHeight" field, parse directly
+                    // Channel data uses "blockHeight" field with timestamp
                     match data.contents.block_height.parse::<u64>() {
-                        Ok(height) => Some(NautilusWsMessage::BlockHeight(height)),
+                        Ok(height) => Some(NautilusWsMessage::BlockHeight {
+                            height,
+                            time: data.contents.time,
+                        }),
                         Err(e) => {
                             log::warn!("Failed to parse block height from channel data: {e}");
                             None
@@ -581,7 +587,9 @@ impl FeedHandler {
             }
             DydxWsMessage::ChannelData(data) => self.handle_channel_data(data),
             DydxWsMessage::ChannelBatchData(data) => self.handle_channel_batch_data(data),
-            DydxWsMessage::BlockHeight(height) => Ok(Some(NautilusWsMessage::BlockHeight(height))),
+            DydxWsMessage::BlockHeight { height, time } => {
+                Ok(Some(NautilusWsMessage::BlockHeight { height, time }))
+            }
             DydxWsMessage::Error(err) => Ok(Some(NautilusWsMessage::Error(err))),
             DydxWsMessage::Reconnected => {
                 if let Err(e) = self.replay_subscriptions().await {
@@ -660,7 +668,10 @@ impl FeedHandler {
             .parse::<u64>()
             .map_err(|e| DydxWsError::Parse(format!("Failed to parse block height: {e}")))?;
 
-        Ok(Some(NautilusWsMessage::BlockHeight(height)))
+        Ok(Some(NautilusWsMessage::BlockHeight {
+            height,
+            time: contents.time,
+        }))
     }
 
     fn parse_trades(&self, data: &DydxWsChannelDataMsg) -> DydxWsResult<Option<NautilusWsMessage>> {

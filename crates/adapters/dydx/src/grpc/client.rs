@@ -24,6 +24,7 @@ use tonic::transport::Channel;
 use crate::{
     error::DydxError,
     proto::{
+        AccountAuthenticator, AccountPlusClient, GetAuthenticatorsRequest,
         cosmos_sdk_proto::cosmos::{
             auth::v1beta1::{
                 BaseAccount, QueryAccountRequest, query_client::QueryClient as AuthClient,
@@ -78,6 +79,7 @@ pub struct DydxGrpcClient {
     clob: ClobClient<Channel>,
     perpetuals: PerpetualsClient<Channel>,
     subaccounts: SubaccountsClient<Channel>,
+    accountplus: AccountPlusClient<Channel>,
     current_url: String,
 }
 
@@ -113,6 +115,7 @@ impl DydxGrpcClient {
             clob: ClobClient::new(channel.clone()),
             perpetuals: PerpetualsClient::new(channel.clone()),
             subaccounts: SubaccountsClient::new(channel.clone()),
+            accountplus: AccountPlusClient::new(channel.clone()),
             channel,
             current_url: grpc_url,
         })
@@ -329,6 +332,25 @@ impl DydxGrpcClient {
         };
         let balances = self.bank.all_balances(req).await?.into_inner().balances;
         Ok(balances)
+    }
+
+    /// Query for authenticators registered for an account.
+    ///
+    /// Authenticators enable permissioned key trading, allowing API wallets
+    /// to sign transactions on behalf of a main account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub async fn get_authenticators(
+        &mut self,
+        address: &str,
+    ) -> Result<Vec<AccountAuthenticator>, anyhow::Error> {
+        let req = GetAuthenticatorsRequest {
+            account: address.to_string(),
+        };
+        let resp = self.accountplus.get_authenticators(req).await?.into_inner();
+        Ok(resp.account_authenticators)
     }
 
     /// Query for node info.

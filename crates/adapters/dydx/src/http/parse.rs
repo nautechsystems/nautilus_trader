@@ -881,12 +881,11 @@ pub fn parse_order_status_report(
     let price = Price::from_decimal_dp(order.price, price_precision)
         .context("failed to parse order price")?;
 
-    let ts_accepted = order.good_til_block_time.map_or(ts_init, |dt| {
+    // Use updated_at for both ts_accepted and ts_last (not good_til_block_time which is the expiry)
+    let ts_accepted = order.updated_at.map_or(ts_init, |dt| {
         UnixNanos::from(dt.timestamp_millis() as u64 * 1_000_000)
     });
-    let ts_last = order.updated_at.map_or(ts_init, |dt| {
-        UnixNanos::from(dt.timestamp_millis() as u64 * 1_000_000)
-    });
+    let ts_last = ts_accepted;
 
     let mut report = OrderStatusReport::new(
         account_id,

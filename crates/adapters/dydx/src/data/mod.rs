@@ -61,7 +61,7 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use crate::{
-    common::{consts::DYDX_VENUE, parse::extract_raw_symbol},
+    common::{consts::DYDX_VENUE, instrument_cache::InstrumentCache, parse::extract_raw_symbol},
     config::DydxDataClientConfig,
     http::client::DydxHttpClient,
     types::DydxOraclePrice,
@@ -71,7 +71,7 @@ use crate::{
 /// Groups WebSocket message handling dependencies.
 struct WsMessageContext {
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    instruments: Arc<DashMap<Ustr, InstrumentAny>>,
+    instrument_cache: Arc<InstrumentCache>,
     order_books: Arc<DashMap<InstrumentId, OrderBook>>,
     last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
     ws_client: DydxWebSocketClient,
@@ -108,8 +108,8 @@ pub struct DydxDataClient {
     tasks: Vec<JoinHandle<()>>,
     /// Channel sender for emitting data events to the DataEngine.
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    /// Cached instruments by symbol (shared with HTTP client via `Arc<DashMap<Ustr, InstrumentAny>>`).
-    instruments: Arc<DashMap<Ustr, InstrumentAny>>,
+    /// Shared instrument cache (with HTTP client and execution client).
+    instrument_cache: Arc<InstrumentCache>,
     /// Local order books maintained for generating quotes and resolving crosses.
     order_books: Arc<DashMap<InstrumentId, OrderBook>>,
     /// Last quote tick per instrument (used for quote generation from book deltas).
@@ -168,7 +168,9 @@ impl DydxDataClient {
     ) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
-        let instruments_cache = http_client.instruments().clone();
+
+        // Share the instrument cache from HTTP client
+        let instrument_cache = Arc::clone(http_client.instrument_cache());
 
         Ok(Self {
             clock,
@@ -180,7 +182,7 @@ impl DydxDataClient {
             cancellation_token: CancellationToken::new(),
             tasks: Vec::new(),
             data_sender,
-            instruments: instruments_cache,
+            instrument_cache,
             order_books: Arc::new(DashMap::new()),
             last_quotes: Arc::new(DashMap::new()),
             incomplete_bars: Arc::new(DashMap::new()),
@@ -232,26 +234,34 @@ impl DydxDataClient {
     /// - Instrument parsing fails.
     ///
     async fn bootstrap_instruments(&mut self) -> anyhow::Result<Vec<InstrumentAny>> {
+        // Fetch instruments via HTTP - this populates the shared InstrumentCache
         self.http_client
             .fetch_and_cache_instruments()
             .await
             .context("failed to load instruments from dYdX")?;
 
-        let instruments: Vec<InstrumentAny> = self
-            .http_client
-            .instruments()
-            .iter()
-            .map(|entry| entry.value().clone())
-            .collect();
+        let instruments: Vec<InstrumentAny> = self.http_client.all_instruments();
 
         if instruments.is_empty() {
             log::warn!("No instruments were loaded");
             return Ok(instruments);
         }
 
-        log::info!("Loaded {} instruments", instruments.len());
+        log::info!("Loaded {} instruments into shared cache", instruments.len());
 
+        // Cache in WebSocket client for handler lookups
         self.ws_client.cache_instruments(instruments.clone());
+
+        // Publish all instruments to the data engine so they're available in the shared Cache
+        for instrument in &instruments {
+            if let Err(e) = self
+                .data_sender
+                .send(DataEvent::Instrument(instrument.clone()))
+            {
+                log::warn!("Failed to publish instrument {}: {e}", instrument.id());
+            }
+        }
+        log::debug!("Published {} instruments to data engine", instruments.len());
 
         Ok(instruments)
     }
@@ -321,7 +331,7 @@ impl DataClient for DydxDataClient {
         if let Some(rx) = self.ws_client.take_receiver() {
             log::debug!("Starting message processing task");
             let data_tx = self.data_sender.clone();
-            let instruments = self.instruments.clone();
+            let instrument_cache = self.instrument_cache.clone();
             let order_books = self.order_books.clone();
             let last_quotes = self.last_quotes.clone();
             let ws_client = self.ws_client.clone();
@@ -332,7 +342,7 @@ impl DataClient for DydxDataClient {
 
             let ctx = WsMessageContext {
                 data_sender: data_tx,
-                instruments,
+                instrument_cache,
                 order_books,
                 last_quotes,
                 ws_client,
@@ -421,19 +431,16 @@ impl DataClient for DydxDataClient {
         // Look up and send the requested instrument to the data engine
         let symbol = cmd.instrument_id.symbol.inner();
 
-        if let Some(instrument) = self.instruments.get(&symbol) {
+        if let Some(instrument) = self.instrument_cache.get(&symbol) {
             log::debug!("Sending cached instrument for {}", cmd.instrument_id);
-            if let Err(e) = self
-                .data_sender
-                .send(DataEvent::Instrument(instrument.clone()))
-            {
+            if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
                 log::warn!("Failed to send instrument {}: {e}", cmd.instrument_id);
             }
         } else {
             log::warn!(
                 "Instrument {} not found in cache (available: {})",
                 cmd.instrument_id,
-                self.instruments.len()
+                self.instrument_cache.len()
             );
         }
         Ok(())
@@ -689,7 +696,7 @@ impl DataClient for DydxDataClient {
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
-        let instruments_cache = self.instruments.clone();
+        let instrument_cache = self.instrument_cache.clone();
         let sender = self.data_sender.clone();
         let http = self.http_client.clone();
         let instrument_id = request.instrument_id;
@@ -705,9 +712,9 @@ impl DataClient for DydxDataClient {
         get_runtime().spawn(async move {
             // First try to get from cache
             let symbol = Ustr::from(instrument_id.symbol.as_str());
-            let instrument = if let Some(cached) = instruments_cache.get(&symbol) {
+            let instrument = if let Some(cached) = instrument_cache.get(&symbol) {
                 log::debug!("Found instrument {instrument_id} in cache");
-                Some(cached.clone())
+                Some(cached)
             } else {
                 // Not in cache, fetch from API
                 log::debug!("Instrument {instrument_id} not in cache, fetching from API");
@@ -715,7 +722,7 @@ impl DataClient for DydxDataClient {
                     Ok(instruments) => {
                         // Cache all fetched instruments
                         for inst in &instruments {
-                            upsert_instrument(&instruments_cache, inst.clone());
+                            upsert_instrument(&instrument_cache, inst.clone());
                         }
                         // Find the requested instrument
                         instruments.into_iter().find(|i| i.id() == instrument_id)
@@ -753,7 +760,7 @@ impl DataClient for DydxDataClient {
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
-        let instruments_cache = self.instruments.clone();
+        let instrument_cache = self.instrument_cache.clone();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let venue = self.venue();
@@ -771,7 +778,7 @@ impl DataClient for DydxDataClient {
 
                     // Cache all instruments
                     for instrument in &instruments {
-                        upsert_instrument(&instruments_cache, instrument.clone());
+                        upsert_instrument(&instrument_cache, instrument.clone());
                     }
 
                     let response = DataResponse::Instruments(InstrumentsResponse::new(
@@ -816,7 +823,7 @@ impl DataClient for DydxDataClient {
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
         let http = self.http_client.clone();
-        let instruments = self.instruments.clone();
+        let instrument_cache = self.instrument_cache.clone();
         let sender = self.data_sender.clone();
         let instrument_id = request.instrument_id;
         let start = request.start;
@@ -840,7 +847,7 @@ impl DataClient for DydxDataClient {
                 .to_string();
 
             // Look up instrument to derive price and size precision.
-            let instrument = match instruments.get(&Ustr::from(instrument_id.symbol.as_ref())) {
+            let instrument = match instrument_cache.get(&Ustr::from(instrument_id.symbol.as_ref())) {
                 Some(inst) => inst.clone(),
                 None => {
                     log::error!(
@@ -1020,7 +1027,7 @@ impl DataClient for DydxDataClient {
         };
 
         let http = self.http_client.clone();
-        let instruments = self.instruments.clone();
+        let instrument_cache = self.instrument_cache.clone();
         let sender = self.data_sender.clone();
         let instrument_id = bar_type.instrument_id();
         // dYdX ticker does not include the "-PERP" suffix.
@@ -1072,7 +1079,7 @@ impl DataClient for DydxDataClient {
             };
 
             // Look up instrument to derive price and size precision.
-            let instrument = match instruments.get(&Ustr::from(instrument_id.symbol.as_ref())) {
+            let instrument = match instrument_cache.get(&Ustr::from(instrument_id.symbol.as_ref())) {
                 Some(inst) => inst.clone(),
                 None => {
                     log::error!(
@@ -1279,9 +1286,8 @@ impl DataClient for DydxDataClient {
 }
 
 /// Upserts an instrument into the shared cache.
-fn upsert_instrument(cache: &Arc<DashMap<Ustr, InstrumentAny>>, instrument: InstrumentAny) {
-    let symbol = Ustr::from(instrument.id().symbol.as_str());
-    cache.insert(symbol, instrument);
+fn upsert_instrument(cache: &Arc<InstrumentCache>, instrument: InstrumentAny) {
+    cache.insert_instrument_only(instrument);
 }
 
 impl DydxDataClient {
@@ -1304,7 +1310,6 @@ impl DydxDataClient {
 
         let interval = Duration::from_secs(interval_secs);
         let http_client = self.http_client.clone();
-        let instruments_cache = self.instruments.clone();
         let ws_client = self.ws_client.clone();
         let cancellation_token = self.cancellation_token.clone();
 
@@ -1323,20 +1328,11 @@ impl DydxDataClient {
                     _ = interval_timer.tick() => {
                         log::debug!("Refreshing instruments");
 
-                        // Populates all HTTP cache layers (instruments, clob_pair_id, market_params)
+                        // Populates shared InstrumentCache via HTTP client
                         match http_client.fetch_and_cache_instruments().await {
                             Ok(()) => {
-                                let instruments: Vec<_> = http_client
-                                    .instruments()
-                                    .iter()
-                                    .map(|entry| entry.value().clone())
-                                    .collect();
-
-                                log::debug!("Refreshed {} instruments", instruments.len());
-
-                                for instrument in &instruments {
-                                    upsert_instrument(&instruments_cache, instrument.clone());
-                                }
+                                let instruments = http_client.all_instruments();
+                                log::debug!("Refreshed {} instruments in shared cache", instruments.len());
 
                                 // Propagate to WS handler for message parsing
                                 ws_client.cache_instruments(instruments);
@@ -1374,7 +1370,7 @@ impl DydxDataClient {
 
         let interval = Duration::from_secs(interval_secs);
         let http_client = self.http_client.clone();
-        let instruments = self.instruments.clone();
+        let instrument_cache = self.instrument_cache.clone();
         let order_books = self.order_books.clone();
         let active_subs = self.active_orderbook_subs.clone();
         let cancellation_token = self.cancellation_token.clone();
@@ -1410,7 +1406,7 @@ impl DydxDataClient {
 
                         for instrument_id in active_instruments {
                             // Get instrument for parsing
-                            let instrument = match instruments.get(&Ustr::from(instrument_id.symbol.as_ref())) {
+                            let instrument = match instrument_cache.get(&Ustr::from(instrument_id.symbol.as_ref())) {
                                 Some(inst) => inst.clone(),
                                 None => {
                                     log::warn!(
@@ -1553,29 +1549,26 @@ impl DydxDataClient {
     /// Get a cached instrument by symbol.
     #[must_use]
     pub fn get_instrument(&self, symbol: &str) -> Option<InstrumentAny> {
-        self.instruments.get(&Ustr::from(symbol)).map(|i| i.clone())
+        self.instrument_cache.get(&Ustr::from(symbol))
     }
 
     /// Get all cached instruments.
     #[must_use]
     pub fn get_instruments(&self) -> Vec<InstrumentAny> {
-        self.instruments.iter().map(|i| i.clone()).collect()
+        self.instrument_cache.all_instruments()
     }
 
     /// Cache a single instrument.
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
-        let symbol_key = Ustr::from(instrument.id().symbol.as_str());
-        self.instruments.insert(symbol_key, instrument);
+        self.instrument_cache.insert_instrument_only(instrument);
     }
 
     /// Cache multiple instruments.
     ///
     /// Clears the existing cache first, then adds all provided instruments.
     pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
-        self.instruments.clear();
-        for instrument in instruments {
-            self.cache_instrument(instrument);
-        }
+        self.instrument_cache.clear();
+        self.instrument_cache.insert_instruments_only(instruments);
     }
 
     fn ensure_order_book(&self, instrument_id: InstrumentId, book_type: BookType) {
@@ -1657,11 +1650,11 @@ impl DydxDataClient {
                     &ctx.data_sender,
                     &ctx.order_books,
                     &ctx.last_quotes,
-                    &ctx.instruments,
+                    &ctx.instrument_cache,
                 );
             }
             crate::websocket::enums::NautilusWsMessage::OraclePrices(oracle_prices) => {
-                Self::handle_oracle_prices(oracle_prices, &ctx.instruments, &ctx.data_sender);
+                Self::handle_oracle_prices(oracle_prices, &ctx.instrument_cache, &ctx.data_sender);
             }
             crate::websocket::enums::NautilusWsMessage::Error(err) => {
                 log::error!("dYdX WS error: {err}");
@@ -1755,7 +1748,7 @@ impl DydxDataClient {
 
                 log::info!("Completed re-subscription requests after reconnection");
             }
-            crate::websocket::enums::NautilusWsMessage::BlockHeight(_) => {
+            crate::websocket::enums::NautilusWsMessage::BlockHeight { .. } => {
                 log::debug!(
                     "Ignoring block height message on dYdX data client (handled by execution adapter)"
                 );
@@ -2004,13 +1997,13 @@ impl DydxDataClient {
         data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
         order_books: &Arc<DashMap<InstrumentId, OrderBook>>,
         last_quotes: &Arc<DashMap<InstrumentId, QuoteTick>>,
-        instruments: &Arc<DashMap<Ustr, InstrumentAny>>,
+        instrument_cache: &Arc<InstrumentCache>,
     ) {
         let instrument_id = deltas.instrument_id;
 
         // Get instrument for crossed orderbook resolution
-        let instrument = match instruments.get(&Ustr::from(instrument_id.symbol.as_ref())) {
-            Some(inst) => inst.clone(),
+        let instrument = match instrument_cache.get(&Ustr::from(instrument_id.symbol.as_ref())) {
+            Some(inst) => inst,
             None => {
                 log::error!("Cannot resolve crossed order book: no instrument for {instrument_id}");
                 // Still emit the raw deltas even without instrument
@@ -2097,7 +2090,7 @@ impl DydxDataClient {
             String,
             crate::websocket::messages::DydxOraclePriceMarket,
         >,
-        instruments: &Arc<DashMap<Ustr, InstrumentAny>>,
+        instrument_cache: &Arc<InstrumentCache>,
         data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
     ) {
         let ts_init = get_atomic_clock_realtime().get_time_ns();
@@ -2109,7 +2102,7 @@ impl DydxDataClient {
             let symbol = Ustr::from(&perp_symbol);
 
             // Get instrument to access instrument_id
-            let Some(instrument) = instruments.get(&symbol) else {
+            let Some(instrument) = instrument_cache.get(&symbol) else {
                 log::debug!(
                     "Received oracle price for unknown instrument (not cached yet): symbol={symbol}"
                 );
@@ -2403,7 +2396,7 @@ mod tests {
         setup_test_env();
 
         let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        let instruments = Arc::new(DashMap::new());
+        let instrument_cache = Arc::new(InstrumentCache::new());
         let order_books = Arc::new(DashMap::new());
         let last_quotes = Arc::new(DashMap::new());
         let ws_client = DydxWebSocketClient::new_public("ws://test".to_string(), None);
@@ -2442,10 +2435,7 @@ mod tests {
             bar_ts,
             bar_ts,
         );
-        instruments.insert(
-            Ustr::from("BTC-USD-PERP"),
-            InstrumentAny::CryptoPerpetual(instrument),
-        );
+        instrument_cache.insert_instrument_only(InstrumentAny::CryptoPerpetual(instrument));
 
         let price = Price::from("100.00");
         let size = Quantity::from("1.0");
@@ -2476,7 +2466,7 @@ mod tests {
         let incomplete_bars = Arc::new(DashMap::new());
         let ctx = WsMessageContext {
             data_sender: sender,
-            instruments,
+            instrument_cache,
             order_books,
             last_quotes,
             ws_client,
@@ -2514,7 +2504,7 @@ mod tests {
         // Ensure malformed/error WebSocket messages are logged and ignored
         // without panicking or affecting client state.
         let (sender, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        let instruments = Arc::new(DashMap::new());
+        let instrument_cache = Arc::new(InstrumentCache::new());
         let order_books = Arc::new(DashMap::new());
         let last_quotes = Arc::new(DashMap::new());
         let ws_client = DydxWebSocketClient::new_public("ws://test".to_string(), None);
@@ -2525,7 +2515,7 @@ mod tests {
 
         let ctx = WsMessageContext {
             data_sender: sender,
-            instruments,
+            instrument_cache,
             order_books,
             last_quotes,
             ws_client,
@@ -2634,8 +2624,8 @@ mod tests {
         // Seed instrument cache so request_bars can resolve precision.
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let spec = BarSpecification {
             step: std::num::NonZeroUsize::new(1).unwrap(),
@@ -2963,8 +2953,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_ref());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_ref());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let spec = BarSpecification {
             step: std::num::NonZeroUsize::new(1).unwrap(),
@@ -3060,8 +3050,8 @@ mod tests {
         // Seed instruments and orderbook state for a single instrument.
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_ref());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_ref());
+        client.instrument_cache.insert_instrument_only(instrument);
         client.order_books.insert(
             instrument_id,
             OrderBook::new(instrument_id, BookType::L2_MBP),
@@ -3613,7 +3603,7 @@ mod tests {
         let client =
             DydxDataClient::new(client_id, config, http_client, create_test_ws_client()).unwrap();
 
-        let initial_cache_size = client.instruments.len();
+        let initial_cache_size = client.instrument_cache.len();
 
         let request = RequestInstruments::new(
             None,
@@ -3631,7 +3621,7 @@ mod tests {
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
         // Verify cache populated (if HTTP succeeded)
-        let final_cache_size = client.instruments.len();
+        let final_cache_size = client.instrument_cache.len();
         // Cache should be unchanged (empty) if HTTP failed, or populated if succeeded
         // We can't assert exact size without mocking, but can verify no panic
         assert!(final_cache_size >= initial_cache_size);
@@ -4055,8 +4045,10 @@ mod tests {
         // Pre-populate cache with test instrument
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument.clone());
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client
+            .instrument_cache
+            .insert_instrument_only(instrument.clone());
 
         let request = RequestInstrument::new(
             instrument_id,
@@ -4178,7 +4170,7 @@ mod tests {
         let client =
             DydxDataClient::new(client_id, config, http_client, create_test_ws_client()).unwrap();
 
-        let initial_cache_size = client.instruments.len();
+        let initial_cache_size = client.instrument_cache.len();
 
         let instrument_id = InstrumentId::from("ETH-USD-PERP.DYDX");
 
@@ -4198,7 +4190,7 @@ mod tests {
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
         // Verify cache populated with all instruments (if HTTP succeeded)
-        let final_cache_size = client.instruments.len();
+        let final_cache_size = client.instrument_cache.len();
         assert!(final_cache_size >= initial_cache_size);
         // If HTTP succeeded, cache should have multiple instruments
     }
@@ -4218,8 +4210,10 @@ mod tests {
         // Pre-populate cache to get immediate response
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument.clone());
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client
+            .instrument_cache
+            .insert_instrument_only(instrument.clone());
 
         let request_id = UUID4::new();
         let request = RequestInstrument::new(
@@ -4258,8 +4252,10 @@ mod tests {
         // Pre-populate cache
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument.clone());
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client
+            .instrument_cache
+            .insert_instrument_only(instrument.clone());
 
         let request = RequestInstrument::new(
             instrument_id,
@@ -4328,8 +4324,10 @@ mod tests {
         // Pre-populate cache
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument.clone());
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client
+            .instrument_cache
+            .insert_instrument_only(instrument.clone());
 
         let request = RequestInstrument::new(
             instrument_id,
@@ -4405,8 +4403,8 @@ mod tests {
         let instrument_id = instrument.id();
         let price_precision = instrument.price_precision();
         let size_precision = instrument.size_precision();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let request_id = UUID4::new();
         let now = Utc::now();
@@ -4491,8 +4489,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let request_id = UUID4::new();
 
@@ -4594,8 +4592,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let request_id = UUID4::new();
 
@@ -4671,8 +4669,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let request_id = UUID4::new();
         let request = RequestTrades::new(
@@ -4747,8 +4745,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let request = RequestTrades::new(
             instrument_id,
@@ -4856,8 +4854,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         // Test with limit
         let limit = std::num::NonZeroUsize::new(500).unwrap();
@@ -4988,8 +4986,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let request = RequestTrades::new(
             instrument_id,
@@ -5086,8 +5084,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let request = RequestInstrument::new(
             instrument_id,
@@ -5242,8 +5240,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let request = RequestTrades::new(
             instrument_id,
@@ -5893,8 +5891,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         // Invalid date range: end is before start
         let start = Utc::now();
@@ -5948,8 +5946,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         // Minimum valid limit (1)
         let request = RequestTrades::new(
@@ -5991,8 +5989,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let request = RequestTrades::new(
             instrument_id,
@@ -6040,8 +6038,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let request = RequestTrades::new(
             instrument_id,
@@ -6090,8 +6088,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let request = RequestTrades::new(
             instrument_id,
@@ -6139,8 +6137,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         // Test 1: Invalid instrument ID
         let invalid_id = InstrumentId::from("INVALID.WRONG");
@@ -6660,8 +6658,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let request = RequestInstrument::new(
             instrument_id,
@@ -6708,8 +6706,10 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument.clone());
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client
+            .instrument_cache
+            .insert_instrument_only(instrument.clone());
 
         let request = RequestInstrument::new(
             instrument_id,
@@ -6756,8 +6756,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let request = RequestInstrument::new(
             instrument_id,
@@ -6806,8 +6806,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let request_id = UUID4::new();
         let start = Some(Utc::now() - chrono::Duration::hours(1));
@@ -6870,8 +6870,10 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument.clone());
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client
+            .instrument_cache
+            .insert_instrument_only(instrument.clone());
 
         let request = RequestInstrument::new(
             instrument_id,
@@ -6932,8 +6934,10 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument.clone());
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client
+            .instrument_cache
+            .insert_instrument_only(instrument.clone());
 
         let request_id = UUID4::new();
         let ts_init = get_atomic_clock_realtime().get_time_ns();
@@ -7037,8 +7041,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let request = RequestTrades::new(
             instrument_id,
@@ -7119,8 +7123,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let request = RequestTrades::new(
             instrument_id,
@@ -7226,8 +7230,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let request = RequestTrades::new(
             instrument_id,
@@ -7321,8 +7325,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let request = RequestTrades::new(
             instrument_id,
@@ -7429,8 +7433,8 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
-        client.instruments.insert(symbol_key, instrument);
+        let _symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let request_id = UUID4::new();
         let request = RequestTrades::new(
@@ -7585,9 +7589,7 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        client
-            .instruments
-            .insert(Ustr::from(instrument_id.symbol.as_str()), instrument);
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let spec = BarSpecification {
             step: std::num::NonZeroUsize::new(1).unwrap(),
@@ -7646,9 +7648,7 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        client
-            .instruments
-            .insert(Ustr::from(instrument_id.symbol.as_str()), instrument);
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let spec = BarSpecification {
             step: std::num::NonZeroUsize::new(1).unwrap(),
@@ -7703,9 +7703,7 @@ mod tests {
 
         let instrument = create_test_instrument_any();
         let instrument_id = instrument.id();
-        client
-            .instruments
-            .insert(Ustr::from(instrument_id.symbol.as_str()), instrument);
+        client.instrument_cache.insert_instrument_only(instrument);
 
         let request = RequestTrades::new(
             instrument_id,

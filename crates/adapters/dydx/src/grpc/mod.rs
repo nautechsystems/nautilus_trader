@@ -40,7 +40,6 @@ pub mod builder;
 pub mod client;
 pub mod order;
 pub mod types;
-pub mod wallet;
 
 pub use builder::TxBuilder;
 pub use client::{DydxGrpcClient, Height, TxHash};
@@ -49,4 +48,3 @@ pub use order::{
     SHORT_TERM_ORDER_MAXIMUM_LIFETIME,
 };
 pub use types::ChainId;
-pub use wallet::{Account, Subaccount, Wallet};

@@ -57,7 +57,7 @@ ahash = { workspace = true }
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
 async-trait = { workspace = true }
-bip32 = { workspace = true }
+base64 = { workspace = true }
 chrono = { workspace = true }
 cosmrs = { workspace = true }
 dashmap = { workspace = true }

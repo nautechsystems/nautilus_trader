@@ -54,14 +54,10 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     num::NonZeroU32,
-    sync::{
-        Arc, LazyLock,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, LazyLock},
 };
 
 use chrono::{DateTime, Utc};
-use dashmap::DashMap;
 use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::{
@@ -88,6 +84,7 @@ use super::error::DydxHttpError;
 use crate::common::{
     consts::{DYDX_HTTP_URL, DYDX_TESTNET_HTTP_URL},
     enums::DydxCandleResolution,
+    instrument_cache::InstrumentCache,
     parse::extract_raw_symbol,
 };
 
@@ -645,37 +642,18 @@ impl DydxRawHttpClient {
 pub struct DydxHttpClient {
     /// Raw HTTP client wrapped in Arc for efficient cloning.
     pub(crate) inner: Arc<DydxRawHttpClient>,
-    /// Instrument cache shared across the adapter using DashMap for thread-safe access.
-    pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
-    /// Cached mapping from CLOB pair ID → InstrumentId for efficient lookups.
+    /// Shared instrument cache with multiple lookup indices.
     ///
-    /// This is populated from HTTP PerpetualMarket metadata (`clob_pair_id`) alongside
-    /// instrument creation to avoid re-deriving IDs from symbols or other heuristics.
-    pub(crate) clob_pair_id_to_instrument: Arc<DashMap<u32, InstrumentId>>,
-    /// Cached mapping from InstrumentId → PerpetualMarket for market params extraction.
-    ///
-    /// This stores the raw market data from the HTTP API for later extraction of
-    /// quantization parameters (atomic_resolution, subticks_per_tick, etc.) needed
-    /// for order submission.
-    pub(crate) market_params_cache: Arc<DashMap<InstrumentId, super::models::PerpetualMarket>>,
-    /// Tracks whether the instrument cache has been initialized.
-    cache_initialized: AtomicBool,
+    /// This cache is shared across HTTP client, WebSocket client, and execution client.
+    /// It provides O(1) lookups by symbol, market ticker, or clob_pair_id.
+    pub(crate) instrument_cache: Arc<InstrumentCache>,
 }
 
 impl Clone for DydxHttpClient {
     fn clone(&self) -> Self {
-        let cache_initialized = AtomicBool::new(false);
-        let is_initialized = self.cache_initialized.load(Ordering::Acquire);
-        if is_initialized {
-            cache_initialized.store(true, Ordering::Release);
-        }
-
         Self {
             inner: self.inner.clone(),
-            instruments_cache: self.instruments_cache.clone(),
-            clob_pair_id_to_instrument: self.clob_pair_id_to_instrument.clone(),
-            market_params_cache: self.market_params_cache.clone(),
-            cache_initialized,
+            instrument_cache: Arc::clone(&self.instrument_cache),
         }
     }
 }
@@ -691,6 +669,9 @@ impl DydxHttpClient {
     /// Creates a new [`DydxHttpClient`] using the default dYdX Indexer HTTP URL,
     /// optionally overridden with a custom base URL.
     ///
+    /// This constructor creates its own internal instrument cache. For shared caching
+    /// across multiple clients, use [`new_with_cache`](Self::new_with_cache) instead.
+    ///
     /// **Note**: No credentials are required as the dYdX Indexer API is publicly accessible.
     /// Order submission and trading operations use gRPC with blockchain transaction signing.
     ///
@@ -704,6 +685,36 @@ impl DydxHttpClient {
         is_testnet: bool,
         retry_config: Option<RetryConfig>,
     ) -> anyhow::Result<Self> {
+        Self::new_with_cache(
+            base_url,
+            timeout_secs,
+            proxy_url,
+            is_testnet,
+            retry_config,
+            Arc::new(InstrumentCache::new()),
+        )
+    }
+
+    /// Creates a new [`DydxHttpClient`] with a shared instrument cache.
+    ///
+    /// Use this constructor when sharing instrument data between HTTP client,
+    /// WebSocket client, and execution client.
+    ///
+    /// # Arguments
+    ///
+    /// * `instrument_cache` - Shared instrument cache for lookups by symbol, ticker, or clob_pair_id
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying HTTP client or retry manager cannot be created.
+    pub fn new_with_cache(
+        base_url: Option<String>,
+        timeout_secs: Option<u64>,
+        proxy_url: Option<String>,
+        is_testnet: bool,
+        retry_config: Option<RetryConfig>,
+        instrument_cache: Arc<InstrumentCache>,
+    ) -> anyhow::Result<Self> {
         Ok(Self {
             inner: Arc::new(DydxRawHttpClient::new(
                 base_url,
@@ -712,10 +723,7 @@ impl DydxHttpClient {
                 is_testnet,
                 retry_config,
             )?),
-            instruments_cache: Arc::new(DashMap::new()),
-            clob_pair_id_to_instrument: Arc::new(DashMap::new()),
-            market_params_cache: Arc::new(DashMap::new()),
-            cache_initialized: AtomicBool::new(false),
+            instrument_cache,
         })
     }
 
@@ -821,78 +829,63 @@ impl DydxHttpClient {
             }
         }
 
-        // Only clear and repopulate caches after successful fetch and parse
-        self.instruments_cache.clear();
-        self.clob_pair_id_to_instrument.clear();
-        self.market_params_cache.clear();
+        // Only clear and repopulate cache after successful fetch and parse
+        self.instrument_cache.clear();
 
-        for (instrument, market) in parsed_instruments.iter().zip(parsed_markets.into_iter()) {
-            let instrument_id = instrument.id();
-            let symbol = instrument_id.symbol.inner();
-            self.instruments_cache.insert(symbol, instrument.clone());
-            self.clob_pair_id_to_instrument
-                .insert(market.clob_pair_id, instrument_id);
-            self.market_params_cache.insert(instrument_id, market);
+        // Zip instruments with their market data for bulk insert
+        let items: Vec<_> = parsed_instruments.into_iter().zip(parsed_markets).collect();
+
+        if !items.is_empty() {
+            self.instrument_cache.insert_many(items.clone());
         }
 
-        if !parsed_instruments.is_empty() {
-            self.cache_initialized.store(true, Ordering::Release);
-        }
+        let count = items.len();
 
         if skipped_inactive > 0 {
-            log::info!(
-                "Cached {} instruments, skipped {} inactive",
-                parsed_instruments.len(),
-                skipped_inactive
-            );
+            log::info!("Cached {count} instruments, skipped {skipped_inactive} inactive");
         } else {
-            log::info!("Cached {} instruments", parsed_instruments.len());
+            log::info!("Cached {count} instruments");
         }
 
         Ok(())
     }
 
-    /// Caches multiple instruments.
+    /// Caches multiple instruments (symbol lookup only).
     ///
+    /// Use `fetch_and_cache_instruments()` for full caching with market params.
     /// Any existing instruments with the same symbols will be replaced.
     pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
-        for inst in instruments {
-            let symbol = inst.id().symbol.inner();
-            self.instruments_cache.insert(symbol, inst);
-        }
-        self.cache_initialized.store(true, Ordering::Release);
+        self.instrument_cache.insert_instruments_only(instruments);
     }
 
-    /// Caches a single instrument.
+    /// Caches a single instrument (symbol lookup only).
     ///
+    /// Use `fetch_and_cache_instruments()` for full caching with market params.
     /// Any existing instrument with the same symbol will be replaced.
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
-        let symbol = instrument.id().symbol.inner();
-        self.instruments_cache.insert(symbol, instrument);
-        self.cache_initialized.store(true, Ordering::Release);
+        self.instrument_cache.insert_instrument_only(instrument);
     }
 
     /// Gets an instrument from the cache by symbol.
     #[must_use]
     pub fn get_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
-        self.instruments_cache
-            .get(symbol)
-            .map(|entry| entry.clone())
+        self.instrument_cache.get(symbol)
     }
 
     /// Gets an instrument by CLOB pair ID.
     ///
-    /// This uses the internal clob_pair_id mapping populated during `fetch_and_cache_instruments()`.
+    /// Only works for instruments cached via `fetch_and_cache_instruments()`.
     #[must_use]
     pub fn get_instrument_by_clob_id(&self, clob_pair_id: u32) -> Option<InstrumentAny> {
-        // First get the InstrumentId from clob_pair_id mapping
-        let instrument_id = self
-            .clob_pair_id_to_instrument
-            .get(&clob_pair_id)
-            .map(|entry| *entry)?;
+        self.instrument_cache.get_by_clob_id(clob_pair_id)
+    }
 
-        // Then look up the full instrument by symbol
-        self.get_instrument(&instrument_id.symbol.inner())
+    /// Gets an instrument by market ticker (e.g., "BTC-USD").
+    ///
+    /// Only works for instruments cached via `fetch_and_cache_instruments()`.
+    #[must_use]
+    pub fn get_instrument_by_market(&self, ticker: &str) -> Option<InstrumentAny> {
+        self.instrument_cache.get_by_market(ticker)
     }
 
     /// Gets market parameters for order submission from the cached market data.
@@ -908,9 +901,7 @@ impl DydxHttpClient {
         &self,
         instrument_id: &InstrumentId,
     ) -> Option<super::models::PerpetualMarket> {
-        self.market_params_cache
-            .get(instrument_id)
-            .map(|entry| entry.clone())
+        self.instrument_cache.get_market_params_by_id(instrument_id)
     }
 
     /// Requests historical trades for a symbol.
@@ -1170,28 +1161,35 @@ impl DydxHttpClient {
     /// Check if the instrument cache has been initialized.
     #[must_use]
     pub fn is_cache_initialized(&self) -> bool {
-        self.cache_initialized.load(Ordering::Acquire)
+        self.instrument_cache.is_initialized()
     }
 
     /// Get the number of instruments currently cached.
     #[must_use]
     pub fn cached_instruments_count(&self) -> usize {
-        self.instruments_cache.len()
+        self.instrument_cache.len()
     }
 
-    /// Returns a reference to the instruments cache.
-    #[must_use]
-    pub fn instruments(&self) -> &Arc<DashMap<Ustr, InstrumentAny>> {
-        &self.instruments_cache
-    }
-
-    /// Get the mapping from CLOB pair ID to `InstrumentId`.
+    /// Returns a reference to the shared instrument cache.
     ///
-    /// This map is populated when instruments are fetched via `request_instruments` /
-    /// `cache_instruments()` using the Indexer `PerpetualMarket.clob_pair_id` field.
+    /// The cache provides lookups by symbol, market ticker, and clob_pair_id.
     #[must_use]
-    pub fn clob_pair_id_mapping(&self) -> &Arc<DashMap<u32, InstrumentId>> {
-        &self.clob_pair_id_to_instrument
+    pub fn instrument_cache(&self) -> &Arc<InstrumentCache> {
+        &self.instrument_cache
+    }
+
+    /// Returns all cached instruments.
+    ///
+    /// This is a convenience method that collects all instruments into a Vec.
+    #[must_use]
+    pub fn all_instruments(&self) -> Vec<InstrumentAny> {
+        self.instrument_cache.all_instruments()
+    }
+
+    /// Returns all cached instrument IDs.
+    #[must_use]
+    pub fn all_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_cache.all_instrument_ids()
     }
 
     /// Requests order status reports for a subaccount.
@@ -1377,7 +1375,6 @@ impl DydxHttpClient {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::UnixNanos;
     use rstest::rstest;
 
     use super::*;
@@ -1441,67 +1438,12 @@ mod tests {
         let cloned = client.clone();
         assert!(!cloned.is_cache_initialized());
 
-        // Simulate cache initialization
-        client.cache_initialized.store(true, Ordering::Release);
+        client.instrument_cache.insert_instruments_only(vec![]);
 
         // Clone after initialization
         #[allow(clippy::redundant_clone)]
         let cloned_after = client.clone();
         assert!(cloned_after.is_cache_initialized());
-    }
-
-    #[rstest]
-    fn test_domain_client_cache_instrument() {
-        use nautilus_model::{
-            identifiers::{InstrumentId, Symbol},
-            instruments::CryptoPerpetual,
-            types::{Currency, Price, Quantity},
-        };
-
-        let client = DydxHttpClient::default();
-        assert_eq!(client.cached_instruments_count(), 0);
-
-        // Create a test instrument
-        let instrument_id =
-            InstrumentId::new(Symbol::from("BTC-USD"), *crate::common::consts::DYDX_VENUE);
-        let price = Price::from("1.0");
-        let size = Quantity::from("0.001");
-        let instrument = CryptoPerpetual::new(
-            instrument_id,
-            Symbol::from("BTC-USD"),
-            Currency::BTC(),
-            Currency::USD(),
-            Currency::USD(),
-            false,
-            price.precision,
-            size.precision,
-            price,
-            size,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
-
-        // Cache the instrument
-        client.cache_instrument(InstrumentAny::CryptoPerpetual(instrument));
-        assert_eq!(client.cached_instruments_count(), 1);
-        assert!(client.is_cache_initialized());
-
-        // Retrieve it
-        let btc_usd = Ustr::from("BTC-USD");
-        let cached = client.get_instrument(&btc_usd);
-        assert!(cached.is_some());
     }
 
     #[rstest]

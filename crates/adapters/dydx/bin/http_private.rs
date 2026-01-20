@@ -21,15 +21,15 @@
 //! Usage:
 //! ```bash
 //! # Test against testnet (default)
-//! DYDX_MNEMONIC="your mnemonic" cargo run --bin dydx-http-private -p nautilus-dydx
+//! DYDX_PRIVATE_KEY="your hex private key" cargo run --bin dydx-http-private -p nautilus-dydx
 //!
 //! # Test against mainnet
-//! DYDX_MNEMONIC="your mnemonic" \
+//! DYDX_PRIVATE_KEY="your hex private key" \
 //! DYDX_HTTP_URL=https://indexer.dydx.trade \
 //! cargo run --bin dydx-http-private -p nautilus-dydx -- --mainnet
 //!
 //! # With custom subaccount and market filter
-//! DYDX_MNEMONIC="your mnemonic" cargo run --bin dydx-http-private -p nautilus-dydx -- \
+//! DYDX_PRIVATE_KEY="your hex private key" cargo run --bin dydx-http-private -p nautilus-dydx -- \
 //!   --subaccount 1 \
 //!   --market BTC-USD
 //! ```
@@ -37,7 +37,7 @@
 use std::env;
 
 use nautilus_dydx::{
-    common::consts::DYDX_TESTNET_HTTP_URL, grpc::wallet::Wallet, http::client::DydxHttpClient,
+    common::consts::DYDX_TESTNET_HTTP_URL, execution::wallet::Wallet, http::client::DydxHttpClient,
 };
 
 const DEFAULT_SUBACCOUNT: u32 = 0;
@@ -61,7 +61,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|i| args.get(i + 1))
         .map(|s| s.as_str());
 
-    let mnemonic = env::var("DYDX_MNEMONIC").expect("DYDX_MNEMONIC environment variable not set");
+    let private_key =
+        env::var("DYDX_PRIVATE_KEY").expect("DYDX_PRIVATE_KEY environment variable not set");
+
+    // Allow overriding wallet address (for permissioned key setups)
+    let wallet_address_override = env::var("DYDX_WALLET_ADDRESS").ok();
 
     let http_url = if is_mainnet {
         env::var("DYDX_HTTP_URL").unwrap_or_else(|_| "https://indexer.dydx.trade".to_string())
@@ -80,10 +84,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     log::info!("");
 
-    let wallet = Wallet::from_mnemonic(&mnemonic)?;
-    let account = wallet.account_offline(subaccount_number)?;
-    let wallet_address = account.address.clone();
-    log::info!("Wallet address: {wallet_address}");
+    let wallet = Wallet::from_private_key(&private_key)?;
+    let account = wallet.account_offline()?;
+    let derived_address = account.address.clone();
+
+    // Use override address if provided (for API/permissioned key setups)
+    let wallet_address = wallet_address_override.unwrap_or_else(|| derived_address.clone());
+
+    log::info!("Derived address (from private key): {derived_address}");
+    if wallet_address == derived_address {
+        log::info!("Wallet address: {wallet_address}");
+    } else {
+        log::info!("Using override address (DYDX_WALLET_ADDRESS): {wallet_address}");
+    }
     log::info!("");
 
     let client = DydxHttpClient::new(Some(http_url), Some(30), None, !is_mainnet, None)?;

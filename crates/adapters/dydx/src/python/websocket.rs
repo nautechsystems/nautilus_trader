@@ -51,13 +51,12 @@ impl DydxWebSocketClient {
     #[pyo3(name = "new_private")]
     fn py_new_private(
         url: String,
-        mnemonic: String,
-        account_index: u32,
+        private_key: String,
         authenticator_ids: Vec<u64>,
         account_id: AccountId,
         heartbeat: Option<u64>,
     ) -> PyResult<Self> {
-        let credential = DydxCredential::from_mnemonic(&mnemonic, account_index, authenticator_ids)
+        let credential = DydxCredential::from_private_key(&private_key, authenticator_ids)
             .map_err(to_pyvalue_err)?;
         Ok(Self::new_private(url, credential, account_id, heartbeat))
     }
