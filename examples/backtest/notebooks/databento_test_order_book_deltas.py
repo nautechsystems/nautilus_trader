@@ -21,6 +21,8 @@
 
 # %%
 
+import pandas as pd
+
 from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
 from nautilus_trader.backtest.node import BacktestNode
@@ -91,6 +93,19 @@ class TestOrderBookDeltasStrategy(Strategy):
 
     def on_start(self):
         self.request_instrument(self.config.symbol_id)
+
+        # Set time alert for 1 second after start
+        alert_time = self.clock.utc_now() + pd.Timedelta(seconds=1)
+        self.clock.set_time_alert(
+            "subscribe_alert",
+            alert_time,
+            self.on_subscribe_timer,
+        )
+
+    def on_subscribe_timer(self, event):
+        self.user_log(
+            f"Subscribing to order book deltas after 1 second delay, clock={self.clock.utc_now()}",
+        )
         self.subscribe_order_book_deltas(self.config.symbol_id)
 
     def on_order_book_deltas(self, deltas):
@@ -100,12 +115,12 @@ class TestOrderBookDeltasStrategy(Strategy):
 
         self._deltas_count += 1
 
-    def user_log(self, msg, color=LogColor.GREEN):
-        self.log.warning(f"{msg}", color=color)
-
     def on_stop(self):
         order_book = self.cache.order_book(self.config.symbol_id)
-        self.user_log(f"{order_book}")
+        self.user_log(f"Final OrderBook: {order_book}")
+
+    def user_log(self, msg, color=LogColor.GREEN):
+        self.log.warning(f"{msg}", color=color)
 
 
 # %% [markdown]

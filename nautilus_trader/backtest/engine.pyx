@@ -823,7 +823,6 @@ cdef class BacktestEngine:
 
         if validate:
             first = data[0]
-
             if hasattr(first, "instrument_id"):
                 Condition.is_true(
                     first.instrument_id in self._kernel.cache.instrument_ids(),
@@ -1532,12 +1531,22 @@ cdef class BacktestEngine:
                     break
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
-        self._last_ns = 0
+        self._last_ns = start_ns
         cdef uint64_t raw_handlers_count = 0
         cdef Data data = self._data_iterator.next()
         cdef CVec raw_handlers
+        raw_handlers.ptr = NULL
+        raw_handlers.len = 0
+        raw_handlers.cap = 0
         try:
-            while data is not None:
+            while True:
+                if data is None:
+                    if self._process_next_timer():
+                        break
+
+                    data = self._data_iterator.next()
+                    continue
+
                 if data.ts_init > end_ns:
                     # End of backtest
                     break
@@ -1593,6 +1602,7 @@ cdef class BacktestEngine:
                     )
                     if raw_handlers.ptr != NULL:
                         vec_time_event_handlers_drop(raw_handlers)
+
                     raw_handlers_count = 0
 
                 self._iteration += 1
@@ -1611,10 +1621,6 @@ cdef class BacktestEngine:
         # Process remaining messages
         for exchange in self._venues.values():
             exchange.process(self._kernel.clock.timestamp_ns())
-
-        # Flush remaining events at the last data timestamp
-        if self._last_ns > 0:
-            self._flush_accumulator_events(self._last_ns)
 
     cdef CVec _advance_time(self, uint64_t ts_now):
         # Advance clocks and process all events before ts_now in timestamp order.
@@ -1696,6 +1702,47 @@ cdef class BacktestEngine:
         empty_vec.len = 0
         empty_vec.cap = 0
         return empty_vec
+
+    cdef bint _process_next_timer(self):
+        # Process the next chronological timer when data is exhausted.
+        #
+        # This method is used when the data stream is empty, but timers (alerts) might
+        # still be active. Instead of jumping to the end of the backtest, it finds the
+        # absolute next timer time across all component clocks and advances to it.
+        #
+        # This allows for scenarios where a timer callback might load new data on-the-fly
+        # (e.g. via a subscription), which should then be processed in proper sequence.
+        #
+        # Returns True if there are no more timers within the backtest range (should break),
+        # False otherwise (should continue the backtest loop to check for new data).
+
+        cdef list[TestClock] clocks = get_component_clocks(self._instance_id)
+        cdef TestClock clock
+        cdef uint64_t min_next_time = 0
+        cdef uint64_t next_timer_time
+        cdef str name
+
+        # 1. Process all timers up to current time
+        self._flush_accumulator_events(self._last_ns)
+
+        # 2. Find the absolute next timer time across all clocks
+        for clock in clocks:
+            for name in clock.timer_names:
+                next_timer_time = clock.next_time_ns(name)
+                if next_timer_time > self._last_ns:
+                    if min_next_time == 0 or next_timer_time < min_next_time:
+                        min_next_time = next_timer_time
+
+        if min_next_time == 0 or min_next_time > self._end_ns:
+            # No more timers in the backtest range
+            return True
+
+        # 3. Process the next closest possible timer(s)
+        self._last_ns = min_next_time
+        self._flush_accumulator_events(min_next_time)
+
+        # Return False to indicate we should continue checking for data
+        return False
 
     cdef void _flush_accumulator_events(self, uint64_t ts_now):
         cdef list[TestClock] clocks = get_component_clocks(self._instance_id)
