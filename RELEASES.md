@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added multi-account execution support (#3194), thanks @faysou
 - Added `use_market_order_acks` venue config option to generate `OrderAccepted` events for market orders before filling (mimics behavior of venues like Binance)
+- Added `oto_trigger_model` venue config option to control whether OTO child orders activate on partial fills (PARTIAL) or only after full fill (FULL) (default PARTIAL)
 - Improved tearsheet with dynamic Nautilus version and refined run info table (#3396), thanks @KaulSe
 
 ### Breaking Changes
