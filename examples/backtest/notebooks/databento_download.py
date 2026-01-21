@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.18.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -116,6 +116,14 @@ node.download_data(
     instrument_id=InstrumentId.from_str("ESM4.XCME"),
     start=time_object_to_dt(start_time_2),
     end=time_object_to_dt(end_time_1),
+)
+
+# %%
+node.download_data(
+    "request_order_book_deltas",
+    instrument_id=InstrumentId.from_str("ESM4.XCME"),
+    start=time_object_to_dt("2024-05-08T10:00:00"),
+    end=time_object_to_dt("2024-05-08T10:00:01"),
 )
 
 # %%

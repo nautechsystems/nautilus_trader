@@ -282,6 +282,42 @@ impl DatabentoHistoricalClient {
         })
     }
 
+    #[pyo3(name = "get_range_order_book_deltas")]
+    #[pyo3(signature = (dataset, instrument_ids, start, end=None, limit=None, price_precision=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_get_range_order_book_deltas<'py>(
+        &self,
+        py: Python<'py>,
+        dataset: String,
+        instrument_ids: Vec<InstrumentId>,
+        start: u64,
+        end: Option<u64>,
+        limit: Option<u64>,
+        price_precision: Option<u8>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let inner = self.inner.clone();
+        let symbols = inner
+            .prepare_symbols_from_instrument_ids(&instrument_ids)
+            .map_err(to_pyvalue_err)?;
+
+        let params = RangeQueryParams {
+            dataset,
+            symbols,
+            start: start.into(),
+            end: end.map(Into::into),
+            limit,
+            price_precision,
+        };
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let deltas = inner
+                .get_range_order_book_deltas(params)
+                .await
+                .map_err(to_pyvalue_err)?;
+            Python::attach(|py| deltas.into_py_any(py))
+        })
+    }
+
     #[pyo3(name = "get_range_imbalance")]
     #[pyo3(signature = (dataset, instrument_ids, start, end=None, limit=None, price_precision=None))]
     #[allow(clippy::too_many_arguments)]

@@ -27,6 +27,7 @@ from nautilus_trader.data.messages cimport RequestBars
 from nautilus_trader.data.messages cimport RequestData
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
+from nautilus_trader.data.messages cimport RequestOrderBookDeltas
 from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
 from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
@@ -55,6 +56,7 @@ from nautilus_trader.data.messages cimport UnsubscribeOrderBook
 from nautilus_trader.data.messages cimport UnsubscribeQuoteTicks
 from nautilus_trader.data.messages cimport UnsubscribeTradeTicks
 from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
@@ -1052,6 +1054,21 @@ cdef class MarketDataClient(DataClient):
             "You can implement by overriding the `request_order_book_snapshot` method for this client."
         )
 
+    cpdef void request_order_book_deltas(self, RequestOrderBookDeltas request):
+        """
+        Request historical `OrderBookDeltas` data.
+
+        Parameters
+        ----------
+        request : RequestOrderBookDeltas
+            The message for the data request.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot request `OrderBookDeltas` data for {request.instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `request_order_book_deltas` method for this client",  # pragma: no cover  # noqa
+        )
+
     cpdef void request_quote_ticks(self, RequestQuoteTicks request):
         """
         Request historical `QuoteTick` data.
@@ -1123,6 +1140,9 @@ cdef class MarketDataClient(DataClient):
 
     def _handle_order_book_depths_py(self, InstrumentId instrument_id, list depths, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params = None):
         self._handle_order_book_depths(instrument_id, depths, correlation_id, start, end, params)
+
+    def _handle_order_book_deltas_py(self, InstrumentId instrument_id, list deltas, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params = None):
+        self._handle_order_book_deltas(instrument_id, deltas, correlation_id, start, end, params)
 
     def _handle_data_response_py(self, DataType data_type, data, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params = None):
         self._handle_data_response(data_type, data, correlation_id, start, end, params)
@@ -1218,6 +1238,22 @@ cdef class MarketDataClient(DataClient):
             venue=instrument_id.venue,
             data_type=DataType(OrderBookDepth10, metadata=({"instrument_id": instrument_id})),
             data=depths,
+            correlation_id=correlation_id,
+            response_id=UUID4(),
+            start=start,
+            end=end,
+            ts_init=self._clock.timestamp_ns(),
+            params=params,
+        )
+
+        self._msgbus.send(endpoint="DataEngine.response", msg=response)
+
+    cpdef void _handle_order_book_deltas(self, InstrumentId instrument_id, list deltas, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params):
+        cdef DataResponse response = DataResponse(
+            client_id=self.id,
+            venue=instrument_id.venue,
+            data_type=DataType(OrderBookDeltas, metadata=({"instrument_id": instrument_id})),
+            data=deltas,
             correlation_id=correlation_id,
             response_id=UUID4(),
             start=start,

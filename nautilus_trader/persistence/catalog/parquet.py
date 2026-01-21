@@ -1631,7 +1631,6 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         # Gather data
         data = []
-
         for chunk in result:
             data.extend(capsule_to_list(chunk))
 

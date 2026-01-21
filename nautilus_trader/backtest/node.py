@@ -330,6 +330,7 @@ class BacktestNode:
             "request_quote_ticks",
             "request_trade_ticks",
             "request_order_book_depth",
+            "request_order_book_deltas",
         ]
 
         if request_function not in compatible_request_functions:

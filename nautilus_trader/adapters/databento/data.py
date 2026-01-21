@@ -43,6 +43,7 @@ from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookDeltas
 from nautilus_trader.data.messages import RequestOrderBookDepth
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
@@ -68,12 +69,15 @@ from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import InstrumentStatus
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.enums import bar_aggregation_to_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -784,6 +788,8 @@ class DatabentoDataClient(LiveMarketDataClient):
             await self._request_statistics(request.data_type, request.id)
         elif request.data_type.type == OrderBookDepth10:
             await self._request_order_book_depth(request)
+        elif request.data_type.type == OrderBookDeltas:
+            await self._request_order_book_deltas(request)
         else:
             raise NotImplementedError(
                 f"Cannot request {request.data_type.type} (not implemented)",
@@ -1142,6 +1148,65 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._handle_order_book_depths(
             instrument_id=request.instrument_id,
             depths=depths,
+            correlation_id=request.id,
+            start=request.start,
+            end=request.end,
+            params=request.params,
+        )
+
+    async def _request_order_book_deltas(self, request: RequestOrderBookDeltas) -> None:
+        dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
+        start, end = await self._resolve_time_range_for_request(dataset, request.start, request.end)
+
+        if request.limit > 0:
+            self._log.warning(
+                f"Databento does not support `limit` parameter for order book deltas, "
+                f"ignoring limit={request.limit}",
+            )
+
+        self._log.info(
+            f"Requesting {request.instrument_id} order book deltas data: start={start}, end={end}",
+            LogColor.BLUE,
+        )
+
+        # Request MBO data directly from the historical API
+        pyo3_deltas = await self._http_client.get_range_order_book_deltas(
+            dataset=dataset,
+            instrument_ids=[instrument_id_to_pyo3(request.instrument_id)],
+            start=start.value,
+            end=end.value,
+        )
+        deltas_list = OrderBookDelta.from_pyo3_list(pyo3_deltas)
+
+        # Group deltas into OrderBookDeltas objects by sequence and F_LAST flag
+        deltas: list[OrderBookDeltas] = []
+        current_group: list[OrderBookDelta] = []
+
+        for delta in deltas_list:
+            current_group.append(delta)
+
+            # Check if this is the last delta in an event (F_LAST flag)
+            if delta.flags & RecordFlag.F_LAST:
+                deltas.append(
+                    OrderBookDeltas(
+                        instrument_id=request.instrument_id,
+                        deltas=current_group.copy(),
+                    ),
+                )
+                current_group.clear()
+
+        # Handle any remaining deltas without F_LAST flag
+        if current_group:
+            deltas.append(
+                OrderBookDeltas(
+                    instrument_id=request.instrument_id,
+                    deltas=current_group,
+                ),
+            )
+
+        self._handle_order_book_deltas(
+            instrument_id=request.instrument_id,
+            deltas=deltas,
             correlation_id=request.id,
             start=request.start,
             end=request.end,

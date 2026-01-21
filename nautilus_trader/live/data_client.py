@@ -41,6 +41,7 @@ from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookDeltas
 from nautilus_trader.data.messages import RequestOrderBookDepth
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestQuoteTicks
@@ -880,6 +881,18 @@ class LiveMarketDataClient(MarketDataClient):
             log_msg=f"request: order_book_depth {request.instrument_id}",
         )
 
+    def request_order_book_deltas(self, request: RequestOrderBookDeltas) -> None:
+        time_range_str = format_utc_timerange(request.start, request.end)
+        limit_str = f" limit={request.limit}" if request.limit != 0 else ""
+        self._log.info(
+            f"Request {request.instrument_id} order_book_deltas{time_range_str}{limit_str}",
+            LogColor.BLUE,
+        )
+        self.create_task(
+            self._request_order_book_deltas(request),
+            log_msg=f"request: order_book_deltas {request.instrument_id}",
+        )
+
     ############################################################################
     # Coroutines to implement
     ############################################################################
@@ -1061,6 +1074,11 @@ class LiveMarketDataClient(MarketDataClient):
     async def _request_order_book_depth(self, request: RequestOrderBookDepth) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_order_book_depth` coroutine",  # pragma: no cover
+        )
+
+    async def _request_order_book_deltas(self, request: RequestOrderBookDeltas) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_request_order_book_deltas` coroutine",  # pragma: no cover
         )
 
     async def cancel_pending_tasks(self, timeout_secs: float = 5.0) -> None:

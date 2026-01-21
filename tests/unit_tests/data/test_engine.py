@@ -36,6 +36,7 @@ from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookDeltas
 from nautilus_trader.data.messages import RequestOrderBookDepth
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestQuoteTicks
@@ -3736,6 +3737,376 @@ class TestDataEngine:
         assert handler[0].data == []  # Response data should be empty
         assert len(depths_received) == 1  # Depth should flow through message bus
         assert depths_received[0] == depth
+
+    def test_request_order_book_deltas_reaches_client(self):
+        # Arrange
+        self.data_engine.register_client(self.mock_market_data_client)
+        from nautilus_trader.test_kit.stubs.data import TestDataStubs
+
+        deltas = OrderBookDeltas(
+            instrument_id=ETHUSDT_BINANCE.id,
+            deltas=[TestDataStubs.order_book_delta(instrument_id=ETHUSDT_BINANCE.id)],
+        )
+        self.mock_market_data_client.order_book_deltas = [deltas]
+
+        # Subscribe to order book deltas on message bus
+        deltas_received = []
+        topic = f"historical.data.book.deltas.{ETHUSDT_BINANCE.venue}.{ETHUSDT_BINANCE.id.symbol.topic()}"
+        self.msgbus.subscribe(topic=topic, handler=deltas_received.append)
+
+        handler = []
+        request = RequestOrderBookDeltas(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=None,
+            end=None,
+            limit=0,
+            client_id=None,  # Will route to the Binance venue
+            venue=ETHUSDT_BINANCE.venue,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params={"update_catalog": False},
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        assert handler[0].data == []  # Response data should be empty
+        assert len(deltas_received) == 1  # Deltas should flow through message bus
+        assert deltas_received[0] == deltas
+
+    def test_request_order_book_deltas_with_start_date_floors_to_day_start(self):
+        # Arrange
+        self.data_engine.register_client(self.mock_market_data_client)
+
+        start_date = pd.Timestamp("2024-01-15T14:30:00", tz="UTC")
+        handler = []
+        request = RequestOrderBookDeltas(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=start_date,
+            end=None,
+            limit=0,
+            client_id=None,
+            venue=ETHUSDT_BINANCE.venue,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params={"update_catalog": False},
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        # Verify that original_start_date is stored in params
+        assert "original_start_date" in request.params
+        assert request.params["original_start_date"] == start_date
+        # Verify that start date was floored to start of day
+        assert request.start == pd.Timestamp("2024-01-15T00:00:00", tz="UTC")
+
+    def test_request_order_book_deltas_with_from_day_start_false_preserves_start_date(self):
+        # Arrange
+        self.data_engine.register_client(self.mock_market_data_client)
+
+        start_date = pd.Timestamp("2024-01-15T14:30:00", tz="UTC")
+        handler = []
+        request = RequestOrderBookDeltas(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=start_date,
+            end=None,
+            limit=0,
+            client_id=None,
+            venue=ETHUSDT_BINANCE.venue,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params={"update_catalog": False, "from_day_start": False},
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        # Verify that original_start_date is stored in params
+        assert "original_start_date" in request.params
+        assert request.params["original_start_date"] == start_date
+        # Verify that start date was NOT floored
+        assert request.start == start_date
+
+    def test_process_order_book_deltas_with_historical_flag(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        self.data_engine.process(ETHUSDT_BINANCE)
+
+        historical_handler = []
+        live_handler = []
+
+        self.msgbus.subscribe(
+            topic="historical.data.book.deltas.BINANCE.ETHUSDT",
+            handler=historical_handler.append,
+        )
+        self.msgbus.subscribe(
+            topic="data.book.deltas.BINANCE.ETHUSDT",
+            handler=live_handler.append,
+        )
+
+        subscribe = SubscribeOrderBook(
+            book_data_type=OrderBookDelta,
+            client_id=None,
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=BookType.L2_MBP,
+            depth=10,
+            managed=True,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        deltas = TestDataStubs.order_book_deltas(ETHUSDT_BINANCE.id)
+
+        # Act - Process as historical data via process_historical
+        # Historical data flows through process_historical, which calls _handle_data with historical=True
+        self.data_engine.process_historical(deltas)
+
+        # Assert
+        # Historical data should be published to historical topic
+        assert len(historical_handler) == 1
+        assert historical_handler[0].instrument_id == ETHUSDT_BINANCE.id
+        assert isinstance(historical_handler[0], OrderBookDeltas)
+        # Live handler should not receive historical data
+        assert len(live_handler) == 0
+
+    def test_process_order_book_deltas_with_f_last_flag_in_middle_of_batch(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        self.data_engine.process(ETHUSDT_BINANCE)
+
+        handler = []
+        self.msgbus.subscribe(
+            topic="data.book.deltas.BINANCE.ETHUSDT",
+            handler=handler.append,
+        )
+
+        subscribe = SubscribeOrderBook(
+            book_data_type=OrderBookDelta,
+            client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=BookType.L3_MBO,
+            depth=5,
+            managed=True,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        # Create deltas with F_LAST flag in the middle
+        delta1 = TestDataStubs.order_book_delta(
+            instrument_id=ETHUSDT_BINANCE.id,
+            flags=0,
+            ts_init=1,
+        )
+        delta2 = TestDataStubs.order_book_delta(
+            instrument_id=ETHUSDT_BINANCE.id,
+            flags=RecordFlag.F_LAST,
+            ts_init=2,
+        )
+        delta3 = TestDataStubs.order_book_delta(
+            instrument_id=ETHUSDT_BINANCE.id,
+            flags=0,
+            ts_init=3,
+        )
+
+        deltas_with_f_last = OrderBookDeltas(
+            instrument_id=ETHUSDT_BINANCE.id,
+            deltas=[delta1, delta2, delta3],
+        )
+
+        # Act
+        self.data_engine.process(deltas_with_f_last)
+
+        # Assert
+        # When buffering is disabled, all deltas are published immediately
+        # When buffering is enabled, only deltas up to and including F_LAST are published
+        # Since default config has buffer_deltas=False, all deltas should be published
+        assert len(handler) == 1
+        assert handler[0].instrument_id == ETHUSDT_BINANCE.id
+        assert isinstance(handler[0], OrderBookDeltas)
+        # All deltas should be published when buffering is disabled
+        assert len(handler[0].deltas) == 3
+        assert handler[0].deltas[0] == delta1
+        assert handler[0].deltas[1] == delta2
+        assert handler[0].deltas[2] == delta3
+
+    def test_handle_order_book_deltas_snapshot_replay_with_snapshot_at_day_start(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        self.data_engine.process(ETHUSDT_BINANCE)
+
+        # Create a snapshot delta at start of UTC day
+        day_start = pd.Timestamp("2024-01-15T00:00:00", tz="UTC")
+        day_start_ns = day_start.value
+
+        snapshot_delta = TestDataStubs.order_book_delta(
+            instrument_id=ETHUSDT_BINANCE.id,
+            flags=RecordFlag.F_SNAPSHOT,
+            ts_init=int(day_start_ns),
+        )
+
+        # Create deltas after the original start date
+        original_start = pd.Timestamp("2024-01-15T10:00:00", tz="UTC")
+        original_start_ns = original_start.value
+
+        delta1 = TestDataStubs.order_book_delta(
+            instrument_id=ETHUSDT_BINANCE.id,
+            flags=0,
+            ts_init=int(day_start_ns + 1_000_000_000),  # 1 second after day start
+        )
+        delta2 = TestDataStubs.order_book_delta(
+            instrument_id=ETHUSDT_BINANCE.id,
+            flags=0,
+            ts_init=int(original_start_ns + 1_000_000_000),  # After original start
+        )
+
+        deltas_obj1 = OrderBookDeltas(
+            instrument_id=ETHUSDT_BINANCE.id,
+            deltas=[snapshot_delta, delta1],
+        )
+
+        deltas_obj2 = OrderBookDeltas(
+            instrument_id=ETHUSDT_BINANCE.id,
+            deltas=[delta2],
+        )
+
+        response = DataResponse(
+            client_id=None,
+            venue=BINANCE,
+            data_type=DataType(OrderBookDeltas),
+            data=[deltas_obj1, deltas_obj2],
+            correlation_id=UUID4(),
+            response_id=UUID4(),
+            start=day_start,
+            end=pd.Timestamp("2024-01-15T23:59:59", tz="UTC"),
+            ts_init=self.clock.timestamp_ns(),
+            params={
+                "original_start_date": original_start,
+                "book_type": BookType.L2_MBP,
+            },
+        )
+
+        # Act
+        self.data_engine._handle_order_book_deltas_snapshot_replay(response)
+
+        # Assert
+        # Response data should be filtered and contain evolved snapshot
+        assert len(response.data) > 0
+        # First item should be the evolved snapshot (not the original snapshot)
+        first_item = response.data[0]
+        assert isinstance(first_item, OrderBookDeltas)
+        # Should contain a Clear delta followed by Add deltas (snapshot format)
+        assert len(first_item.deltas) > 0
+        # First delta should be a Clear (snapshot format)
+        assert first_item.deltas[0].action == BookAction.CLEAR
+
+    def test_handle_order_book_deltas_snapshot_replay_without_snapshot_skips_replay(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        self.data_engine.process(ETHUSDT_BINANCE)
+
+        # Create deltas without snapshot flag
+        delta1 = TestDataStubs.order_book_delta(
+            instrument_id=ETHUSDT_BINANCE.id,
+            flags=0,
+        )
+
+        deltas_obj = OrderBookDeltas(
+            instrument_id=ETHUSDT_BINANCE.id,
+            deltas=[delta1],
+        )
+
+        response = DataResponse(
+            client_id=None,
+            venue=BINANCE,
+            data_type=DataType(OrderBookDeltas),
+            data=[deltas_obj],
+            correlation_id=UUID4(),
+            response_id=UUID4(),
+            start=pd.Timestamp("2024-01-15T00:00:00", tz="UTC"),
+            end=pd.Timestamp("2024-01-15T23:59:59", tz="UTC"),
+            ts_init=self.clock.timestamp_ns(),
+            params={
+                "original_start_date": pd.Timestamp("2024-01-15T10:00:00", tz="UTC"),
+                "book_type": BookType.L2_MBP,
+            },
+        )
+
+        original_data = response.data.copy()
+
+        # Act
+        self.data_engine._handle_order_book_deltas_snapshot_replay(response)
+
+        # Assert
+        # Data should remain unchanged (no snapshot replay)
+        assert response.data == original_data
+
+    def test_handle_order_book_deltas_snapshot_replay_without_original_start_date_skips_replay(
+        self,
+    ):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        self.data_engine.process(ETHUSDT_BINANCE)
+
+        snapshot_delta = TestDataStubs.order_book_delta(
+            instrument_id=ETHUSDT_BINANCE.id,
+            flags=RecordFlag.F_SNAPSHOT,
+        )
+
+        deltas_obj = OrderBookDeltas(
+            instrument_id=ETHUSDT_BINANCE.id,
+            deltas=[snapshot_delta],
+        )
+
+        response = DataResponse(
+            client_id=None,
+            venue=BINANCE,
+            data_type=DataType(OrderBookDeltas),
+            data=[deltas_obj],
+            correlation_id=UUID4(),
+            response_id=UUID4(),
+            start=pd.Timestamp("2024-01-15T00:00:00", tz="UTC"),
+            end=pd.Timestamp("2024-01-15T23:59:59", tz="UTC"),
+            ts_init=self.clock.timestamp_ns(),
+            params={
+                "book_type": BookType.L2_MBP,
+            },
+        )
+
+        original_data = response.data.copy()
+
+        # Act
+        self.data_engine._handle_order_book_deltas_snapshot_replay(response)
+
+        # Assert
+        # Data should remain unchanged (no original_start_date in params)
+        assert response.data == original_data
 
     def test_request_aggregated_bars_with_bars(self):
         # Arrange

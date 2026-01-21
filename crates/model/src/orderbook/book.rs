@@ -28,7 +28,7 @@ use super::{
 };
 use crate::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
-    enums::{BookAction, BookType, OrderSide, OrderSideSpecified, OrderStatus},
+    enums::{BookAction, BookType, OrderSide, OrderSideSpecified, OrderStatus, RecordFlag},
     identifiers::InstrumentId,
     orderbook::{
         BookIntegrityError, InvalidBookOperation,
@@ -373,6 +373,84 @@ impl OrderBook {
             self.apply_delta_unchecked(delta)?;
         }
         Ok(())
+    }
+
+    /// Creates an `OrderBookDeltas` snapshot from the current order book state.
+    ///
+    /// This is the reverse operation of `apply_deltas`: it converts the current book state
+    /// back into a snapshot format with a `Clear` delta followed by `Add` deltas for all orders.
+    ///
+    /// # Parameters
+    ///
+    /// * `ts_event` - UNIX timestamp (nanoseconds) when the book event occurred.
+    /// * `ts_init` - UNIX timestamp (nanoseconds) when the instance was created.
+    ///
+    /// # Returns
+    ///
+    /// An `OrderBookDeltas` containing a snapshot of the current order book state.
+    #[must_use]
+    pub fn to_deltas(&self, ts_event: UnixNanos, ts_init: UnixNanos) -> OrderBookDeltas {
+        let mut deltas = Vec::new();
+
+        // Add clear delta first
+        deltas.push(OrderBookDelta::clear(
+            self.instrument_id,
+            self.sequence,
+            ts_event,
+            ts_init,
+        ));
+
+        // Count total orders to determine which one should have F_LAST flag
+        let total_orders = self.bids(None).map(|level| level.len()).sum::<usize>()
+            + self.asks(None).map(|level| level.len()).sum::<usize>();
+
+        let mut order_count = 0;
+
+        // Add bid orders
+        for level in self.bids(None) {
+            for order in level.iter() {
+                order_count += 1;
+                let flags = if order_count == total_orders {
+                    RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+                } else {
+                    RecordFlag::F_SNAPSHOT as u8
+                };
+
+                deltas.push(OrderBookDelta::new(
+                    self.instrument_id,
+                    BookAction::Add,
+                    *order,
+                    flags,
+                    self.sequence,
+                    ts_event,
+                    ts_init,
+                ));
+            }
+        }
+
+        // Add ask orders
+        for level in self.asks(None) {
+            for order in level.iter() {
+                order_count += 1;
+                let flags = if order_count == total_orders {
+                    RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+                } else {
+                    RecordFlag::F_SNAPSHOT as u8
+                };
+
+                deltas.push(OrderBookDelta::new(
+                    self.instrument_id,
+                    BookAction::Add,
+                    *order,
+                    flags,
+                    self.sequence,
+                    ts_event,
+                    ts_init,
+                ));
+            }
+        }
+
+        OrderBookDeltas::new(self.instrument_id, deltas)
     }
 
     /// Replaces current book state with a depth snapshot.

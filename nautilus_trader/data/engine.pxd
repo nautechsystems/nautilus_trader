@@ -36,6 +36,7 @@ from nautilus_trader.data.messages cimport RequestData
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
 from nautilus_trader.data.messages cimport RequestJoin
+from nautilus_trader.data.messages cimport RequestOrderBookDeltas
 from nautilus_trader.data.messages cimport RequestOrderBookDepth
 from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
 from nautilus_trader.data.messages cimport RequestQuoteTicks
@@ -226,6 +227,8 @@ cdef class DataEngine(Component):
     cpdef void _handle_request_instrument(self, DataClient client, RequestInstrument request)
     cpdef void _handle_request_order_book_snapshot(self, DataClient client, RequestOrderBookSnapshot request)
     cpdef void _handle_request_order_book_depth(self, DataClient client, RequestOrderBookDepth request)
+    cpdef void _handle_order_book_deltas_request(self, DataClient client, RequestOrderBookDeltas request)
+    cpdef void _handle_order_book_deltas_snapshot_replay(self, DataResponse response)
     cpdef tuple _bound_dates(self, RequestData request)
     cpdef void _date_range_client_request(self, DataClient client, RequestData request)
     cpdef void _handle_date_range_request(self, DataClient client, RequestData request)

@@ -6786,6 +6786,15 @@ class DatabentoHistoricalClient:
         end: int | None = None,
         depth: int | None = None,
     ) -> list[OrderBookDepth10]: ...
+    async def get_range_order_book_deltas(
+        self,
+        dataset: str,
+        instrument_ids: list[InstrumentId],
+        start: int,
+        end: int | None = None,
+        limit: int | None = None,
+        price_precision: int | None = None,
+    ) -> list[OrderBookDelta]: ...
     async def get_range_imbalance(
         self,
         dataset: str,

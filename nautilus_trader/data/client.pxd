@@ -23,6 +23,7 @@ from nautilus_trader.data.messages cimport RequestBars
 from nautilus_trader.data.messages cimport RequestData
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
+from nautilus_trader.data.messages cimport RequestOrderBookDeltas
 from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
 from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
@@ -171,6 +172,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void request_instrument(self, RequestInstrument request)
     cpdef void request_instruments(self, RequestInstruments request)
     cpdef void request_order_book_snapshot(self, RequestOrderBookSnapshot request)
+    cpdef void request_order_book_deltas(self, RequestOrderBookDeltas request)
     cpdef void request_quote_ticks(self, RequestQuoteTicks request)
     cpdef void request_trade_ticks(self, RequestTradeTicks request)
     cpdef void request_bars(self, RequestBars request)
@@ -183,3 +185,4 @@ cdef class MarketDataClient(DataClient):
     cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)
     cpdef void _handle_bars(self, BarType bar_type, list bars, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)
     cpdef void _handle_order_book_depths(self, InstrumentId instrument_id, list depths, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)
+    cpdef void _handle_order_book_deltas(self, InstrumentId instrument_id, list deltas, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)

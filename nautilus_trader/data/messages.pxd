@@ -180,6 +180,10 @@ cdef class RequestOrderBookDepth(RequestData):
     """The maximum depth for the order book depths.\n\n:returns: `int`"""
 
 
+cdef class RequestOrderBookDeltas(RequestData):
+    pass
+
+
 cdef class RequestQuoteTicks(RequestData):
     pass
 

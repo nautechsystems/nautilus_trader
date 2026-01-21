@@ -238,7 +238,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             return
 
         self._add_subscription_order_book_deltas(command.instrument_id)
-        # Do nothing else for backtest
+        self._msgbus.send(endpoint="BacktestEngine.execute", msg=command)
 
     cpdef void subscribe_order_book_depth(self, SubscribeOrderBook command):
         Condition.not_none(command.instrument_id, "instrument_id")

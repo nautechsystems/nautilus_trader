@@ -61,8 +61,11 @@ from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.core cimport NANOSECONDS_IN_MILLISECOND
 from nautilus_trader.core.rust.core cimport NANOSECONDS_IN_SECOND
 from nautilus_trader.core.rust.core cimport millis_to_nanos
+from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport BookType
+from nautilus_trader.core.rust.model cimport OrderBookDeltas_API
 from nautilus_trader.core.rust.model cimport PriceType
+from nautilus_trader.core.rust.model cimport orderbook_to_snapshot_deltas
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport RenkoBarAggregator
@@ -87,6 +90,7 @@ from nautilus_trader.data.messages cimport RequestData
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
 from nautilus_trader.data.messages cimport RequestJoin
+from nautilus_trader.data.messages cimport RequestOrderBookDeltas
 from nautilus_trader.data.messages cimport RequestOrderBookDepth
 from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
 from nautilus_trader.data.messages cimport RequestQuoteTicks
@@ -137,8 +141,6 @@ from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.identifiers cimport generic_spread_id_to_list
-from nautilus_trader.model.identifiers cimport is_generic_spread_id
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Price
@@ -985,7 +987,6 @@ cdef class DataEngine(Component):
 
         if command.interval_ms > 0:
             key = (command.instrument_id, command.interval_ms)
-
             if key not in self._order_book_intervals:
                 self._order_book_intervals[key] = []
 
@@ -1483,6 +1484,8 @@ cdef class DataEngine(Component):
             self._handle_request_order_book_snapshot(client, request)
         elif isinstance(request, RequestOrderBookDepth):
             self._handle_request_order_book_depth(client, request)
+        elif isinstance(request, RequestOrderBookDeltas):
+            self._handle_order_book_deltas_request(client, request)
         elif isinstance(request, RequestQuoteTicks):
             self._handle_request_quote_ticks(client, request)
         elif isinstance(request, RequestTradeTicks):
@@ -1530,6 +1533,17 @@ cdef class DataEngine(Component):
         client.request_order_book_snapshot(request)
 
     cpdef void _handle_request_order_book_depth(self, DataClient client, RequestOrderBookDepth request):
+        self._handle_date_range_request(client, request)
+
+    cpdef void _handle_order_book_deltas_request(self, DataClient client, RequestOrderBookDeltas request):
+        # Store original start_date only if not already present (for long requests)
+        if request.start is not None:
+            request.params["original_start_date"] = request.start
+
+            # Floor to start of UTC day (optional, default True)
+            if request.params.get("from_day_start", True):
+                request.start = request.start.floor(freq="d")
+
         self._handle_date_range_request(client, request)
 
     cpdef void _handle_request_quote_ticks(self, DataClient client, RequestQuoteTicks request):
@@ -1624,6 +1638,8 @@ cdef class DataEngine(Component):
             client.request_trade_ticks(request)
         elif isinstance(request, RequestOrderBookDepth):
             client.request_order_book_depth(request)
+        elif isinstance(request, RequestOrderBookDeltas):
+            client.request_order_book_deltas(request)
         else:
             try:
                 client.request(request)
@@ -1704,6 +1720,14 @@ cdef class DataEngine(Component):
                     start=ts_start,
                     end=ts_end,
                 )
+            elif isinstance(request, RequestOrderBookDeltas):
+                batched = request.params.get("batched", True)
+                data = catalog.order_book_deltas(
+                    instrument_ids=[str(request.instrument_id)],
+                    start=ts_start,
+                    end=ts_end,
+                    batched=batched,
+                )
             elif type(request) is RequestData:
                 filter_expr = request.params.get("filter_expr")
                 if filter_expr:
@@ -1735,11 +1759,9 @@ cdef class DataEngine(Component):
 
         if isinstance(request, RequestInstruments) or isinstance(request, RequestInstrument):
             only_last = request.params.get("only_last", True)
-
             if only_last:
                 # Retains only the latest instrument record per instrument_id, based on the most recent ts_init
                 last_instrument = {}
-
                 for instrument in data:
                     if instrument.id not in last_instrument:
                         last_instrument[instrument.id] = instrument
@@ -2036,6 +2058,7 @@ cdef class DataEngine(Component):
             list[OrderBookDelta] buffer_deltas = None
             bint is_last_delta = False
             InstrumentId instrument_id = delta.instrument_id
+            OrderBookDelta last_delta = None
         if self._buffer_deltas:
             buffer_deltas = self._buffered_deltas_map.get(instrument_id)
             if buffer_deltas is None:
@@ -2058,7 +2081,7 @@ cdef class DataEngine(Component):
         else:
             deltas = OrderBookDeltas(
                 instrument_id=instrument_id,
-                deltas=[delta]
+                deltas=[delta],
             )
             self._msgbus.publish_c(
                 topic=self._topic_cache.get_deltas_topic(instrument_id, historical),
@@ -2067,33 +2090,55 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_order_book_deltas(self, OrderBookDeltas deltas, bint historical = False):
         cdef:
-            OrderBookDeltas deltas_to_publish = None
-            list[OrderBookDelta] buffer_deltas = None
-            bint is_last_delta = False
             InstrumentId instrument_id = deltas.instrument_id
+            list[OrderBookDelta] buffer_deltas = None
+            OrderBookDeltas all_deltas = None
+            OrderBookDelta delta
+            bint has_last_flag = False
+            uint64_t i
+            uint64_t f_last_index = 0
+            uint64_t deltas_len = len(deltas.deltas)
+
         if self._buffer_deltas:
             buffer_deltas = self._buffered_deltas_map.get(instrument_id)
             if buffer_deltas is None:
                 buffer_deltas = []
                 self._buffered_deltas_map[instrument_id] = buffer_deltas
 
-            for delta in deltas.deltas:
-                buffer_deltas.append(delta)
+            # Find the index of the first delta with F_LAST flag
+            for i in range(deltas_len):
+                delta = deltas.deltas[i]
+                if delta.flags & RecordFlag.F_LAST:
+                    has_last_flag = True
+                    f_last_index = i
+                    break
 
-                is_last_delta = delta.flags & RecordFlag.F_LAST
-                if is_last_delta:
-                    deltas_to_publish = OrderBookDeltas(
-                        instrument_id=instrument_id,
-                        deltas=buffer_deltas,
-                    )
-                    self._msgbus.publish_c(
-                        topic=self._topic_cache.get_deltas_topic(instrument_id, historical),
-                        msg=deltas_to_publish,
-                    )
-                    buffer_deltas.clear()
+            if has_last_flag:
+                # Add deltas up to and including the one with F_LAST to buffer
+                for i in range(f_last_index + 1):
+                    buffer_deltas.append(deltas.deltas[i])
+
+                # Publish all buffered deltas and clear buffer
+                all_deltas = OrderBookDeltas(
+                    instrument_id=instrument_id,
+                    deltas=buffer_deltas,
+                )
+                self._msgbus.publish_c(
+                    topic=self._topic_cache.get_deltas_topic(instrument_id, historical),
+                    msg=all_deltas,
+                )
+                buffer_deltas.clear()
+
+                # Add any remaining deltas (after F_LAST) to buffer for next batch
+                for i in range(f_last_index + 1, deltas_len):
+                    buffer_deltas.append(deltas.deltas[i])
+            else:
+                # No F_LAST flag, add all deltas to buffer
+                for i in range(deltas_len):
+                    buffer_deltas.append(deltas.deltas[i])
         else:
             self._msgbus.publish_c(
-                topic=self._topic_cache.get_deltas_topic(instrument_id, historical),
+                topic=self._topic_cache.get_deltas_topic(deltas.instrument_id, historical),
                 msg=deltas,
             )
 
@@ -2259,6 +2304,10 @@ cdef class DataEngine(Component):
         if grouped_response.params.get("disable_historical_cache", False):
             self._disable_historical_cache = True
 
+        # Handle snapshot forward replay for order book deltas
+        if grouped_response.data_type.type == OrderBookDeltas:
+            self._handle_order_book_deltas_snapshot_replay(grouped_response)
+
         cdef:
             bint query_past_data = response.params.get("subscription_name") is None
             Data data
@@ -2352,7 +2401,7 @@ cdef class DataEngine(Component):
 
         cdef:
             uint64_t start = response.start.value if response.start is not None else 0
-            cdef int first_index = 0
+            int first_index = 0
         if start:
             for i in range(data_len):
                 if response.data[i].ts_init >= start:
@@ -2424,6 +2473,110 @@ cdef class DataEngine(Component):
         cdef Instrument instrument
         for instrument in instruments:
             self._handle_instrument(instrument)
+
+    cpdef void _handle_order_book_deltas_snapshot_replay(self, DataResponse response):
+        """
+        Handle snapshot forward replay for order book deltas.
+
+        If the data at the start of a UTC day is a snapshot, move the snapshot forward
+        by playing order book deltas until the first delta with ts_init >= "original_start_date".
+        """
+        cdef:
+            OrderBookDelta delta = None
+            OrderBookDelta last_applied = None
+            OrderBookDeltas deltas_obj
+            OrderBookDeltas snapshot_deltas = None
+            OrderBookDeltas_API snapshot_deltas_api
+            OrderBook order_book
+            Instrument instrument
+            InstrumentId instrument_id
+            uint64_t original_start_ns
+            uint64_t snapshot_ts
+            bint stop = False
+            list[OrderBookDeltas] filtered_data = []
+            list[OrderBookDelta] before_deltas
+            list[OrderBookDelta] after_deltas
+
+        original_start_date = response.params.get("original_start_date")
+        if original_start_date is None or not response.data:
+            return
+
+        # Check if first deltas at start of UTC day is a snapshot
+        deltas_obj = response.data[0]
+        if not deltas_obj.deltas:
+            return
+
+        delta = deltas_obj.deltas[0]
+        if not (delta.flags & RecordFlag.F_SNAPSHOT):
+            return
+
+        # Check if first delta is at start of UTC day
+        first_delta_dt = unix_nanos_to_dt(delta.ts_init)
+        start_of_utc_day = first_delta_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        if first_delta_dt != start_of_utc_day:
+            return
+
+        # Apply the initial snapshot and deltas up to original_start_date, similar to _update_order_book
+        instrument_id = delta.instrument_id
+        instrument = self._cache.instrument(instrument_id)
+        if instrument is None:
+            self._log.warning(f"Instrument {instrument_id} not found in cache, skipping snapshot replay")
+            return
+
+        book_type = response.params.get("book_type", BookType.L2_MBP)
+        order_book = OrderBook(instrument_id, book_type)
+        original_start_ns = dt_to_unix_nanos(original_start_date)
+
+        if original_start_ns <= delta.ts_init:
+            return
+
+        # Apply snapshot and deltas until first delta >= original_start_ns
+        for deltas_obj in response.data:
+            if stop:
+                filtered_data.append(deltas_obj)
+                continue
+
+            before_deltas = []
+            after_deltas = []
+            for delta in deltas_obj.deltas:
+                if not stop:
+                    before_deltas.append(delta)
+                    if delta.ts_init >= original_start_ns:
+                        stop = True
+                        last_applied = delta
+                else:
+                    after_deltas.append(delta)
+
+            if before_deltas:
+                order_book.apply(OrderBookDeltas(
+                    instrument_id=instrument_id,
+                    deltas=before_deltas,
+                ))
+                if last_applied is None:
+                    last_applied = before_deltas[-1]
+
+            if stop:
+                # Create the evolved snapshot
+                snapshot_ts = last_applied.ts_init
+                if snapshot_ts < original_start_ns:
+                    snapshot_ts = original_start_ns
+
+                snapshot_deltas = order_book.to_deltas_c(snapshot_ts, snapshot_ts)
+                filtered_data.append(snapshot_deltas)
+
+                if after_deltas:
+                    filtered_data.append(OrderBookDeltas(
+                        instrument_id=instrument_id,
+                        deltas=after_deltas,
+                    ))
+
+        # If we exhausted all data without reaching original_start_ns, create snapshot from end state
+        if not stop and last_applied is not None:
+            snapshot_ts = max(last_applied.ts_init, original_start_ns)
+            snapshot_deltas = order_book.to_deltas_c(snapshot_ts, snapshot_ts)
+            filtered_data.append(snapshot_deltas)
+
+        response.data = filtered_data
 
     cpdef void _update_order_book(self, Data data):
         cdef OrderBook order_book = self._cache.order_book(data.instrument_id)

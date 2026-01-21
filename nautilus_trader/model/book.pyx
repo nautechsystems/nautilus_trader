@@ -32,6 +32,7 @@ from nautilus_trader.core.rust.model cimport BookLevel_API
 from nautilus_trader.core.rust.model cimport BookOrder_t
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport OrderBook_API
+from nautilus_trader.core.rust.model cimport OrderBookDeltas_API
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport Price_t
@@ -75,6 +76,7 @@ from nautilus_trader.core.rust.model cimport orderbook_reset
 from nautilus_trader.core.rust.model cimport orderbook_sequence
 from nautilus_trader.core.rust.model cimport orderbook_simulate_fills
 from nautilus_trader.core.rust.model cimport orderbook_spread
+from nautilus_trader.core.rust.model cimport orderbook_to_snapshot_deltas
 from nautilus_trader.core.rust.model cimport orderbook_ts_last
 from nautilus_trader.core.rust.model cimport orderbook_update
 from nautilus_trader.core.rust.model cimport orderbook_update_count
@@ -839,6 +841,11 @@ cdef class OrderBook(Data):
             ts_event=self.ts_last,
             ts_init=self.ts_last,
         )
+
+    cpdef OrderBookDeltas to_deltas_c(self, uint64_t ts_event, uint64_t ts_init):
+        cdef OrderBookDeltas obj = OrderBookDeltas.__new__(OrderBookDeltas)
+        obj._mem = orderbook_to_snapshot_deltas(&self._mem, ts_event, ts_init)
+        return obj
 
     cpdef str pprint(self, int num_levels=3):
         """
