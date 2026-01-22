@@ -4565,6 +4565,113 @@ class TestDataEngine:
             f"Bar type should be {bar_type.standard()}, but got {completed_bar.bar_type}"
         )
 
+    def test_internal_time_bar_aggregator_emits_revisions_when_enabled(self):
+        # Arrange
+        # Use a non-zero timestamp so the TimeBarAggregator timer start time is not `0ns`
+        # (the TestClock treats `start_time_ns=0` as \"start now\").
+        self.clock.set_time(to_time_ns=61_000_000_000)  # 61s
+
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec, AggregationSource.INTERNAL)
+
+        bars = []
+        self.msgbus.subscribe(topic=f"data.bars.{bar_type.standard()}", handler=bars.append)
+
+        subscribe = SubscribeBars(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            bar_type=bar_type,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params={
+                "handle_revised_bars": True,
+            },
+        )
+        self.data_engine.execute(subscribe)
+
+        key = (bar_type.standard(), None)
+        aggregator = self.data_engine._bar_aggregators.get(key)
+        assert aggregator is not None, "Expected a running bar aggregator"
+
+        # Initialize and close the first interval to ensure a last bar exists in cache
+        first_open_ns = aggregator.stored_open_ns
+        first_close_ns = aggregator.next_close_ns
+
+        tick1_ts = first_open_ns + 10_000_000_000  # +10s
+        self.data_engine.process(
+            TradeTick(
+                instrument_id=ETHUSDT_BINANCE.id,
+                price=Price.from_str("100.0"),
+                size=Quantity.from_int(1),
+                aggressor_side=AggressorSide.BUYER,
+                trade_id=TradeId("T1"),
+                ts_event=tick1_ts,
+                ts_init=tick1_ts,
+            ),
+        )
+
+        events = self.clock.advance_time(first_close_ns)
+        for event in events:
+            event.handle()
+
+        # Second interval: emit revisions as ticks arrive, then emit final on close
+        second_open_ns = aggregator.stored_open_ns
+        second_close_ns = aggregator.next_close_ns
+
+        tick2_ts = second_open_ns + 10_000_000_000  # +10s
+        tick3_ts = second_open_ns + 20_000_000_000  # +20s
+
+        self.data_engine.process(
+            TradeTick(
+                instrument_id=ETHUSDT_BINANCE.id,
+                price=Price.from_str("101.0"),
+                size=Quantity.from_int(2),
+                aggressor_side=AggressorSide.BUYER,
+                trade_id=TradeId("T2"),
+                ts_event=tick2_ts,
+                ts_init=tick2_ts,
+            ),
+        )
+        self.data_engine.process(
+            TradeTick(
+                instrument_id=ETHUSDT_BINANCE.id,
+                price=Price.from_str("102.0"),
+                size=Quantity.from_int(3),
+                aggressor_side=AggressorSide.BUYER,
+                trade_id=TradeId("T3"),
+                ts_event=tick3_ts,
+                ts_init=tick3_ts,
+            ),
+        )
+
+        # Assert: revisions are emitted while the bar is still being built
+        second_interval_revisions = [
+            bar for bar in bars if bar.ts_event == second_close_ns and bar.is_revision
+        ]
+        assert len(second_interval_revisions) >= 2, (
+            "Expected revised bars to be published for the current interval",
+        )
+        assert [bar.ts_init for bar in second_interval_revisions] == sorted(
+            [bar.ts_init for bar in second_interval_revisions],
+        )
+
+        events = self.clock.advance_time(second_close_ns)
+        for event in events:
+            event.handle()
+
+        second_interval_bars = [bar for bar in bars if bar.ts_event == second_close_ns]
+        assert second_interval_bars[-1].is_revision is False, (
+            "Expected a final bar on interval close"
+        )
+
+        # The final bar should replace any prior revisions (no duplicate ts_event entries in the cache)
+        cached_bars = self.cache.bars(bar_type.standard())
+        assert sum(1 for bar in cached_bars if bar.ts_event == second_close_ns) == 1
+        assert self.cache.bar(bar_type.standard()) == second_interval_bars[-1]
+
     # TODO: Implement with new Rust datafusion backend"
     # def test_request_quote_ticks_when_catalog_registered_using_rust(self) -> None:
     #     # Arrange

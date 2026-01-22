@@ -156,6 +156,7 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef bint _timestamp_on_close
     cdef bint _skip_first_non_full_bar
     cdef bint _build_with_no_updates
+    cdef bint _handle_revised_bars
     cdef int _bar_build_delay
     cdef object _time_bars_origin_offset
     cdef list _historical_events
@@ -167,6 +168,7 @@ cdef class TimeBarAggregator(BarAggregator):
     cpdef void stop_timer(self)
     cdef void _pre_process_historical_events(self, uint64_t ts_init)
     cdef void _post_process_historical_events(self)
+    cdef void _build_and_send_revision(self, uint64_t ts_init)
     cpdef void _build_bar(self, TimeEvent event)
 
 

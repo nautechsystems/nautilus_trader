@@ -1390,6 +1390,7 @@ cdef class TimeBarAggregator(BarAggregator):
         bint build_with_no_updates = True,
         object time_bars_origin_offset: pd.Timedelta | pd.DateOffset = None,
         int bar_build_delay = 0,
+        bint handle_revised_bars = False,
     ) -> None:
         super().__init__(
             instrument=instrument,
@@ -1400,6 +1401,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self._timestamp_on_close = timestamp_on_close
         self._skip_first_non_full_bar = skip_first_non_full_bar
         self._build_with_no_updates = build_with_no_updates
+        self._handle_revised_bars = handle_revised_bars
         self._bar_build_delay = bar_build_delay
         self._time_bars_origin_offset = time_bars_origin_offset or 0
         self._timer_name = f"time_bar_{self.bar_type}"
@@ -1580,6 +1582,7 @@ cdef class TimeBarAggregator(BarAggregator):
             self._pre_process_historical_events(ts_init)
 
         self._builder.update(price, size, ts_init)
+        self._build_and_send_revision(ts_init)
 
         if self.historical_mode:
             self._post_process_historical_events()
@@ -1589,9 +1592,42 @@ cdef class TimeBarAggregator(BarAggregator):
             self._pre_process_historical_events(ts_init)
 
         self._builder.update_bar(bar, volume, ts_init)
+        self._build_and_send_revision(ts_init)
 
         if self.historical_mode:
             self._post_process_historical_events()
+
+    cdef void _build_and_send_revision(self, uint64_t ts_init):
+        if not self._handle_revised_bars:
+            return
+
+        if self._skip_first_non_full_bar and ts_init <= self.first_close_ns:
+            return
+
+        if self._builder.ts_last != ts_init:
+            return  # Update was not applied
+
+        if self._builder.count == 0 or self._builder._open is None:
+            return
+
+        cdef uint64_t ts_event
+        if self._is_left_open:
+            ts_event = self.next_close_ns if self._timestamp_on_close else self.stored_open_ns
+        else:
+            ts_event = self.stored_open_ns
+
+        cdef Bar revision = Bar(
+            bar_type=self.bar_type,
+            open=self._builder._open,
+            high=self._builder._high,
+            low=self._builder._low,
+            close=self._builder._close,
+            volume=Quantity(self._builder.volume, self._builder.size_precision),
+            ts_event=ts_event,
+            ts_init=ts_init,
+            is_revision=True,
+        )
+        self._handler(revision)
 
     cdef void _pre_process_historical_events(self, uint64_t ts_init):
         if self._clock.timestamp_ns() == 0:
@@ -1623,6 +1659,8 @@ cdef class TimeBarAggregator(BarAggregator):
             return  # Do not build bar when no update
 
         cdef uint64_t ts_init = event.ts_event
+        if self._handle_revised_bars and self._builder.ts_last > ts_init:
+            ts_init = self._builder.ts_last
         cdef uint64_t ts_event
 
         if self._is_left_open:

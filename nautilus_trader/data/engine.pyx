@@ -2203,6 +2203,7 @@ cdef class DataEngine(Component):
             Bar last_bar
             list bars
             int i
+            bint cached_in_sequence_validation = False
         if self._validate_data_sequence:
             last_bar = self._cache.bar(bar_type)
             if last_bar is not None:
@@ -2218,20 +2219,20 @@ cdef class DataEngine(Component):
                     )
                     return  # `bar` is out of sequence
 
-                if bar.is_revision:
-                    if bar.ts_event == last_bar.ts_event:
-                        # Replace `last_bar`, previously cached bar will fall out of scope
-                        self._cache._bars.get(bar_type)[0] = bar  # noqa
-                    elif bar.ts_event > last_bar.ts_event:
-                        # Bar is latest, consider as new bar
-                        self._cache.add_bar(bar)
-                    else:
-                        self._log.warning(
-                            f"Bar revision {bar} was not at last bar `ts_event` {last_bar.ts_event}",
-                        )
-                        return  # Revision SHOULD be at `last_bar.ts_event`
+                if bar.ts_event == last_bar.ts_event:
+                    # Replace `last_bar`, previously cached bar will fall out of scope
+                    self._cache._bars.get(bar_type)[0] = bar  # noqa
+                    cached_in_sequence_validation = True
+                elif bar.is_revision:
+                    # Bar is latest, consider as new bar
+                    self._cache.add_bar(bar)
+                    cached_in_sequence_validation = True
 
-        if not bar.is_revision and not (historical and self._disable_historical_cache):
+        if (
+            not bar.is_revision
+            and not cached_in_sequence_validation
+            and not (historical and self._disable_historical_cache)
+        ):
             self._cache.add_bar(bar)
 
         self._msgbus.publish_c(topic=self._topic_cache.get_bars_topic(bar_type, historical), msg=bar)
@@ -2716,6 +2717,7 @@ cdef class DataEngine(Component):
                 build_with_no_updates=self._time_bars_build_with_no_updates,
                 time_bars_origin_offset=time_bars_origin_offset,
                 bar_build_delay=self._time_bars_build_delay,
+                handle_revised_bars=params.get("handle_revised_bars", False),
             )
         elif bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(
