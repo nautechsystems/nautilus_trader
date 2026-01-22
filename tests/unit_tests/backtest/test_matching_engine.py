@@ -52,6 +52,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import MarketIfTouchedOrder
 from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.model.orders import StopMarketOrder
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -3907,6 +3908,93 @@ class TestOrderMatchingEngineLiquidityConsumption:
 
         assert len(filled_events) == 1, (
             f"Stop should fill despite gap, got: {[type(m).__name__ for m in messages]}"
+        )
+
+    def test_market_if_touched_fills_at_trigger_price(self) -> None:
+        """
+        Test MarketIfTouchedOrder fills at trigger price during bar processing.
+
+        Regression test: Previously, MIT orders were filling at bar extremes
+        instead of trigger price, causing positive slippage.
+
+        """
+        # Arrange: Create engine with bar_execution enabled
+        clock = TestClock()
+        trader_id = TestIdStubs.trader_id()
+        msgbus = MessageBus(trader_id=trader_id, clock=clock)
+        cache = TestComponentStubs.cache()
+        cache.add_instrument(self.instrument)
+
+        matching_engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L1_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            reject_stop_orders=False,
+            bar_execution=True,
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+        )
+
+        messages: list[Any] = []
+        msgbus.register("ExecEngine.process", messages.append)
+
+        # Place BUY MIT at 95.00 (below current market)
+        # MIT BUY triggers when price touches 95 from above
+        order = MarketIfTouchedOrder(
+            trader_id=trader_id,
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=self.instrument.id,
+            client_order_id=TestIdStubs.client_order_id(),
+            order_side=OrderSide.BUY,
+            quantity=self.instrument.make_qty(1.0),
+            trigger_price=Price.from_str("95.00"),
+            trigger_type=TriggerType.DEFAULT,
+            init_id=UUID4(),
+            ts_init=0,
+        )
+        matching_engine.process_order(order, self.account_id)
+        messages.clear()
+
+        # Act: Process bar with low at 90.00 (crosses trigger at 95.00)
+        # Bar moves from 100 -> high:105 -> low:90 -> close:92
+        # Low at 90.00 should trigger MIT at 95.00, NOT fill at 90.00
+        bar_spec = BarSpecification(
+            step=1,
+            aggregation=BarAggregation.MINUTE,
+            price_type=PriceType.LAST,
+        )
+        bar_type = BarType(
+            instrument_id=self.instrument.id,
+            bar_spec=bar_spec,
+            aggregation_source=AggregationSource.EXTERNAL,
+        )
+        trigger_bar = Bar(
+            bar_type=bar_type,
+            open=Price.from_str("100.00"),
+            high=Price.from_str("105.00"),
+            low=Price.from_str("90.00"),
+            close=Price.from_str("92.00"),
+            volume=Quantity.from_str("100.000"),
+            ts_event=0,
+            ts_init=0,
+        )
+        matching_engine.process_bar(trigger_bar)
+
+        # Assert: MIT fills at trigger price (95.00), NOT bar extreme (90.00)
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+
+        assert len(filled_events) == 1, (
+            f"MIT should fill at trigger price, got: {[type(m).__name__ for m in messages]}"
+        )
+        # Check fill price from the OrderFilled event
+        fill_event = filled_events[0]
+        assert fill_event.last_px == 95.00, (
+            f"Expected fill at trigger price 95.00, got {fill_event.last_px}"
         )
 
     def test_liquidity_consumption_regression_level_after_delete(self):
