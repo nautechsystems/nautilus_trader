@@ -89,7 +89,8 @@ async def test_load_futures_contract_instrument(mocker, instrument_provider):
 @pytest.mark.asyncio
 async def test_load_option_contract_instrument(mocker, instrument_provider):
     # Arrange
-    instrument_id = InstrumentId.from_str("TSLA230120C00100000.MIAX")
+    # OCC format preserves space padding between symbol and expiry
+    instrument_id = InstrumentId.from_str("TSLA  230120C00100000.MIAX")
     mock_ib_contract_calls(
         mocker=mocker,
         instrument_provider=instrument_provider,
@@ -98,7 +99,7 @@ async def test_load_option_contract_instrument(mocker, instrument_provider):
 
     # Act
     await instrument_provider.load_async(
-        IBContract(secType="OPT", symbol="TSLA230120C00100000", exchange="MIAX"),
+        IBContract(secType="OPT", symbol="TSLA  230120C00100000", exchange="MIAX"),
     )
     option = instrument_provider.find(instrument_id)
     instrument_provider._client.stop()
