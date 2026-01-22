@@ -240,6 +240,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # Track average fill prices for orders
         self._order_avg_prices: dict[ClientOrderId, Price] = {}
 
+        # Track external execIds processed in real-time to avoid duplicate processing during reconciliation
+        self._processed_external_exec_ids: set[str] = set()
+
     @property
     def instrument_provider(self) -> InteractiveBrokersInstrumentProvider:
         return self._instrument_provider  # type: ignore
@@ -391,10 +394,17 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             order_type = mapped_order_type_info
             time_in_force = ib_to_nautilus_time_in_force[ib_order.tif]
 
+        # Use permId for external orders (orderId=0) since it's unique across sessions
+        venue_order_id = (
+            VenueOrderId(f"PERM-{ib_order.permId}")
+            if ib_order.orderId == 0
+            else VenueOrderId(str(ib_order.orderId))
+        )
+
         order_status = OrderStatusReport(
             account_id=self.account_id,
             instrument_id=instrument.id,
-            venue_order_id=VenueOrderId(str(ib_order.orderId)),
+            venue_order_id=venue_order_id,
             order_side=ib_to_nautilus_order_side[ib_order.action],
             order_type=order_type,
             time_in_force=time_in_force,
@@ -513,6 +523,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
     ) -> list[FillReport]:
         self._log.debug("Requesting FillReports...")
         reports: list[FillReport] = []
+        # Track external orders (orderId=0) by permId to generate synthetic OrderStatusReports
+        external_orders: dict[int, dict] = {}  # permId -> {instrument, execution, side, qty, price}
 
         try:
             # Create execution filter based on command parameters
@@ -579,6 +591,39 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                     )
                     continue
 
+                # Track external orders for synthetic OrderStatusReport generation
+                if execution.orderId == 0 and execution.permId != 0:
+                    # Skip if already processed in real-time
+                    if execution.execId in self._processed_external_exec_ids:
+                        self._log.debug(
+                            f"Skipping already-processed external execution: {execution.execId}",
+                        )
+                        continue
+
+                    perm_id = execution.permId
+                    order_side = OrderSide[ORDER_SIDE_TO_ORDER_ACTION[execution.side]]
+                    price_magnifier = self.instrument_provider.get_price_magnifier(instrument.id)
+                    exec_price = ib_price_to_nautilus_price(execution.price, price_magnifier)
+
+                    if perm_id not in external_orders:
+                        external_orders[perm_id] = {
+                            "instrument": instrument,
+                            "order_side": order_side,
+                            "total_qty": Decimal(str(execution.shares)),
+                            "avg_price": exec_price,
+                            "ts_event": timestring_to_timestamp(execution.time).value,
+                        }
+                    else:
+                        # Aggregate fills for the same order
+                        existing = external_orders[perm_id]
+                        existing["total_qty"] += Decimal(str(execution.shares))
+                        # Use cumQty's avgPrice if available, otherwise keep first price
+                        if hasattr(execution, "avgPrice") and execution.avgPrice > 0:
+                            existing["avg_price"] = ib_price_to_nautilus_price(
+                                execution.avgPrice,
+                                price_magnifier,
+                            )
+
                 # Convert IB execution to Nautilus FillReport
                 try:
                     fill_report = self._create_fill_report(
@@ -595,6 +640,19 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                         f"Failed to create fill report for execution {execution.execId}: {e}",
                     )
                     continue
+
+            # Generate and send synthetic OrderStatusReports for external orders
+            # These must be processed before FillReports so the execution engine can find the orders
+            for perm_id, order_data in external_orders.items():
+                self._send_synthetic_external_order_report(
+                    perm_id=perm_id,
+                    instrument=order_data["instrument"],
+                    order_side=order_data["order_side"],
+                    quantity=order_data["total_qty"],
+                    avg_price=order_data["avg_price"],
+                    ts_event=order_data["ts_event"],
+                    ts_init=ts_init,
+                )
 
             self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO, "Generated")
 
@@ -627,9 +685,16 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             # Remove the order ID suffix that IB adds
             order_ref = execution.orderRef.rsplit(":", 1)[0]
             client_order_id = ClientOrderId(order_ref)
+        elif execution.orderId == 0 and execution.permId != 0:
+            # External order - use synthetic client order ID matching the synthetic order
+            client_order_id = ClientOrderId(f"EXTERNAL-{execution.permId}")
 
         # Create venue order ID
-        venue_order_id = VenueOrderId(str(execution.orderId))
+        # For external orders (orderId=0), use permId as the unique identifier
+        if execution.orderId == 0 and execution.permId != 0:
+            venue_order_id = VenueOrderId(f"PERM-{execution.permId}")
+        else:
+            venue_order_id = VenueOrderId(str(execution.orderId))
 
         # Create trade ID
         trade_id = TradeId(execution.execId)
@@ -669,6 +734,59 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             client_order_id=client_order_id,
             venue_position_id=None,  # IB doesn't provide position ID in executions
         )
+
+    def _send_synthetic_external_order_report(
+        self,
+        perm_id: int,
+        instrument,
+        order_side: OrderSide,
+        quantity: Decimal,
+        avg_price: Decimal,
+        ts_event: int,
+        ts_init: int,
+    ) -> None:
+        """
+        Create and send a synthetic OrderStatusReport for an external order.
+
+        External orders are those placed outside NautilusTrader (e.g., via TWS or
+        another client). They have orderId=0 and are identified by their permId.
+
+        """
+        venue_order_id = VenueOrderId(f"PERM-{perm_id}")
+        client_order_id = ClientOrderId(f"EXTERNAL-{perm_id}")
+
+        qty = Quantity(quantity, precision=instrument.size_precision)
+        price = Price(avg_price, precision=instrument.price_precision)
+
+        # Note: order_type and time_in_force are not available from IB Execution data
+        # (only from the Order object which we don't have for external orders).
+        # Using MARKET/FOK as defaults for consistency with generate_fill_reports.
+        # Since the order is already filled, these values only affect record-keeping.
+        report = OrderStatusReport(
+            account_id=self.account_id,
+            instrument_id=instrument.id,
+            venue_order_id=venue_order_id,
+            order_side=order_side,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.FOK,
+            order_status=OrderStatus.FILLED,
+            quantity=qty,
+            filled_qty=qty,
+            avg_px=price,
+            report_id=UUID4(),
+            ts_accepted=ts_event,
+            ts_last=ts_event,
+            ts_init=ts_init,
+            client_order_id=client_order_id,
+        )
+
+        self._log.info(
+            f"Generated synthetic OrderStatusReport for external order: "
+            f"permId={perm_id}, instrument={instrument.id}, side={order_side.name}, "
+            f"qty={qty}, avg_px={price}",
+        )
+
+        self._send_order_status_report(report)
 
     async def generate_position_status_reports(
         self,
@@ -1531,8 +1649,20 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         commission_report: CommissionAndFeesReport,
         contract: IBContract,
     ) -> None:
-        if not execution.orderRef:
+        # Check for external order (no orderRef, but has permId)
+        is_external_order = (
+            not execution.orderRef and execution.orderId == 0 and execution.permId != 0
+        )
+
+        if not execution.orderRef and not is_external_order:
             self._log.warning(f"ClientOrderId not available, execution={execution.__dict__}")
+            return
+
+        if is_external_order:
+            # Handle external order asynchronously
+            self.create_task(
+                self._handle_external_execution(execution, commission_report, contract),
+            )
             return
 
         client_order_id = ClientOrderId(order_ref)
@@ -1542,8 +1672,22 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         nautilus_order = self._find_order_for_execution(client_order_id, venue_order_id)
 
         if not nautilus_order:
-            # Order not found - execution engine will handle this during reconciliation
-            # Log and return early to avoid processing incomplete execution details
+            # Order not found in cache. If orderId=0, this is likely an order from a
+            # previous Nautilus session (same clientId but different session), so treat
+            # it as an external order. This ensures fills are processed in real-time
+            # rather than waiting for periodic reconciliation.
+            if execution.orderId == 0 and execution.permId != 0:
+                self._log.info(
+                    f"Order {order_ref} not found in cache but orderId=0. "
+                    f"Treating as external order (previous session). permId={execution.permId}",
+                )
+                self.create_task(
+                    self._handle_external_execution(execution, commission_report, contract),
+                )
+                return
+
+            # Order not found and has valid orderId - execution engine will handle
+            # this during reconciliation
             self._log.debug(
                 f"Order not found in cache for execution (order_ref={order_ref}, "
                 f"venue_order_id={venue_order_id}, execId={execution.execId}). "
@@ -1630,6 +1774,72 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                     return order
 
         return None
+
+    async def _handle_external_execution(
+        self,
+        execution: Execution,
+        commission_report: CommissionAndFeesReport,
+        contract: IBContract,
+    ) -> None:
+        """
+        Handle execution from an external order (placed outside NautilusTrader).
+
+        Creates a synthetic order report followed by a fill event for the execution.
+
+        """
+        # Skip if already processed (IB can send duplicate execution callbacks)
+        if execution.execId in self._processed_external_exec_ids:
+            self._log.debug(
+                f"Skipping already-processed external execution: {execution.execId}",
+            )
+            return
+
+        perm_id = execution.permId
+
+        self._log.info(
+            f"Handling external execution: permId={perm_id}, "
+            f"execId={execution.execId}, shares={execution.shares}, price={execution.price}",
+        )
+
+        # Get the instrument for this contract
+        instrument = await self.instrument_provider.get_instrument(contract)
+        if not instrument:
+            self._log.error(
+                f"Cannot process external execution: instrument not found for contract {contract}",
+            )
+            return
+
+        # Determine order side from execution
+        order_side = OrderSide[ORDER_SIDE_TO_ORDER_ACTION[execution.side]]
+
+        # Get timestamps
+        ts_event = timestring_to_timestamp(execution.time).value
+        ts_init = self._clock.timestamp_ns()
+
+        # Convert execution price using price magnifier
+        price_magnifier = self.instrument_provider.get_price_magnifier(instrument.id)
+        converted_price = ib_price_to_nautilus_price(execution.price, price_magnifier)
+
+        # Send synthetic OrderStatusReport for this external order
+        self._send_synthetic_external_order_report(
+            perm_id=perm_id,
+            instrument=instrument,
+            order_side=order_side,
+            quantity=Decimal(execution.shares),
+            avg_price=Decimal(converted_price),
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
+
+        # Track this execId to prevent duplicate processing
+        self._processed_external_exec_ids.add(execution.execId)
+
+        # Note: We don't call generate_order_filled here because the execution engine
+        # automatically infers a fill when it sees the OrderStatusReport transition
+        # from unfilled to filled state.
+
+        # Update position tracking
+        self._update_position_tracking_from_execution(contract, execution)
 
     def _handle_spread_execution(
         self,

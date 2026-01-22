@@ -28,6 +28,7 @@ Released on TBD (UTC).
 - Improved TLS cert loading and socket suffix validation
 
 ### Fixes
+- Fixed Interactive Brokers external order reconciliation (orders placed via TWS or other clients)
 - Fixed matching engine liquidity consumption using cumulative book quantity
 - Fixed matching engine trade execution fills discarded with `liquidity_consumption`
 - Fixed remaining `F_LAST` flag checks to use proper bitmask comparison

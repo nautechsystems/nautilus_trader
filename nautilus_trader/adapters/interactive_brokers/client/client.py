@@ -166,7 +166,7 @@ class InteractiveBrokersClient(
             str,
             dict[str, Execution | (CommissionAndFeesReport | str)],
         ] = {}
-        self._order_id_to_order_ref: dict[int, AccountOrderRef] = {}
+        self._order_id_to_order_ref: dict[int | str, AccountOrderRef] = {}
         self._next_valid_order_id: int = -1
 
         # Instrument provider (set by data/execution clients during connection)
