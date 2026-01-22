@@ -5484,14 +5484,18 @@ cdef class OrderMatchingEngine:
             is_aggressive=True,
         )
 
-        # For stop market orders during bar H/L/C processing, fill at trigger price
+        # For stop market and market-if-touched orders during bar H/L/C processing, fill at trigger price
         # (market moved through the trigger). For gaps/immediate triggers, fill at market.
         cdef Price triggered_price
         if (
             not self._fill_at_market
             and self._book.book_type == BookType.L1_MBP
             and fills
-            and (order.order_type == OrderType.STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_MARKET)
+            and (
+                order.order_type == OrderType.STOP_MARKET
+                or order.order_type == OrderType.TRAILING_STOP_MARKET
+                or order.order_type == OrderType.MARKET_IF_TOUCHED
+            )
         ):
             triggered_price = order.get_triggered_price_c()
             if triggered_price is not None:
