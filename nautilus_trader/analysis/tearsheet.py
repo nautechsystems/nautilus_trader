@@ -1768,7 +1768,7 @@ def _render_bars_with_fills(  # noqa: C901
         bars_df[column] = bars_df[column].astype(float)
 
     # Get order fills and filter by instrument_id
-    fills_df = engine.trader.generate_order_fills_report()
+    fills_df = engine.trader.generate_fills_report()
 
     if not fills_df.empty:
         # Filter fills by instrument_id from bar_type
@@ -1777,8 +1777,8 @@ def _render_bars_with_fills(  # noqa: C901
 
         if not fills_df.empty:
             fills_df["ts_init"] = pd.to_datetime(fills_df["ts_init"])
-            fills_df["filled_qty"] = pd.to_numeric(fills_df["filled_qty"], errors="coerce")
-            fills_df["avg_px"] = pd.to_numeric(fills_df["avg_px"], errors="coerce")
+            fills_df["last_qty"] = pd.to_numeric(fills_df["last_qty"], errors="coerce")
+            fills_df["last_px"] = pd.to_numeric(fills_df["last_px"], errors="coerce")
 
     # Add candlestick chart
     fig.add_trace(
@@ -1799,10 +1799,14 @@ def _render_bars_with_fills(  # noqa: C901
     if not fills_df.empty and "ts_init" in fills_df.columns:
         # Separate buy and sell fills
         buy_fills = (
-            fills_df[fills_df["side"] == "BUY"] if "side" in fills_df.columns else pd.DataFrame()
+            fills_df[fills_df["order_side"] == "BUY"]
+            if "order_side" in fills_df.columns
+            else pd.DataFrame()
         )
         sell_fills = (
-            fills_df[fills_df["side"] == "SELL"] if "side" in fills_df.columns else pd.DataFrame()
+            fills_df[fills_df["order_side"] == "SELL"]
+            if "order_side" in fills_df.columns
+            else pd.DataFrame()
         )
 
         # Get theme colors for fills
@@ -1851,16 +1855,15 @@ def _add_fill_scatter_trace(
     marker_color: str,
     name: str,
 ) -> None:
-    if fills_df.empty or "avg_px" not in fills_df.columns or "filled_qty" not in fills_df.columns:
+    if fills_df.empty or "last_px" not in fills_df.columns or "last_qty" not in fills_df.columns:
         return
 
     required_cols = [
         "strategy_id",
         "instrument_id",
-        "type",
-        "side",
-        "filled_qty",
-        "avg_px",
+        "order_side",
+        "last_qty",
+        "last_px",
         "ts_init",
     ]
     has_all_cols = all(col in fills_df.columns for col in required_cols)
@@ -1868,7 +1871,7 @@ def _add_fill_scatter_trace(
     fig.add_trace(
         go.Scatter(
             x=fills_df["ts_init"],
-            y=fills_df["avg_px"],
+            y=fills_df["last_px"],
             mode="markers",
             customdata=fills_df[required_cols].to_numpy() if has_all_cols else fills_df.to_numpy(),
             marker_symbol=marker_symbol,
@@ -1882,10 +1885,9 @@ def _add_fill_scatter_trace(
                 "Price: %{y:.2f}<br>"
                 "Strategy: %{customdata[0]}<br>"
                 "Instrument: %{customdata[1]}<br>"
-                "Type: %{customdata[2]}<br>"
-                "Side: %{customdata[3]}<br>"
-                "Quantity: %{customdata[4]:.2f}<br>"
-                "Avg Price: %{customdata[5]:.2f}<br>"
+                "Side: %{customdata[2]}<br>"
+                "Quantity: %{customdata[3]:.2f}<br>"
+                "Price: %{customdata[4]:.2f}<br>"
                 "<extra></extra>"
             )
             if has_all_cols
