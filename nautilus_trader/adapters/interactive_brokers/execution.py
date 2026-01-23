@@ -400,7 +400,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             time_in_force=time_in_force,
             order_status=order_status,
             quantity=total_qty,
-            filled_qty=Quantity.from_int(0),
+            filled_qty=filled_qty,
             avg_px=Decimal(0),
             report_id=UUID4(),
             ts_accepted=ts_init,
@@ -1336,7 +1336,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 ts_event=self._clock.timestamp_ns(),
             )
         elif status == OrderStatus.ACCEPTED:
-            if order.status != OrderStatus.ACCEPTED:
+            # Skip if order is already ACCEPTED or in a later state (PARTIALLY_FILLED, FILLED)
+            # IB sends openOrder callbacks even after partial fills, which would cause
+            # invalid state transitions if we tried to generate OrderAccepted again
+            if order.status not in (
+                OrderStatus.ACCEPTED,
+                OrderStatus.PARTIALLY_FILLED,
+                OrderStatus.FILLED,
+            ):
                 self.generate_order_accepted(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,

@@ -65,6 +65,8 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers venue determination when primaryExchange is empty (#3452), thanks @shzhng
 - Fixed Interactive Brokers option symbol parsing to preserve OCC format with space padding (#3452), thanks @shzhng
 - Fixed Interactive Brokers minor bugs with options (#3452), thanks @shzhng
+- Fixed Interactive Brokers partial fill state transition errors where openOrder callbacks after fills caused invalid PARTIALLY_FILLED -> ACCEPTED transitions, thanks @shzhng
+- Fixed Interactive Brokers OrderStatusReport filled_qty always being 0 for open orders causing reconciliation errors, thanks @shzhng
 - Fixed Kraken spot instrument fee/margin parsing where parameters were incorrectly swapped
 - Fixed Polymarket order state race condition where `PLACEMENT` events could arrive late
 - Fixed Polymarket duplicate WebSocket subscriptions (#3403), thanks for reporting @santivazq
