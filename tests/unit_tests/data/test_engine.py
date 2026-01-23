@@ -4651,21 +4651,29 @@ class TestDataEngine:
         second_interval_revisions = [
             bar for bar in bars if bar.ts_event == second_close_ns and bar.is_revision
         ]
-        assert len(second_interval_revisions) >= 2, (
-            "Expected revised bars to be published for the current interval",
+        assert len(second_interval_revisions) == 2, (
+            "Expected exactly 2 revised bars to be published for the current interval",
         )
         assert [bar.ts_init for bar in second_interval_revisions] == sorted(
             [bar.ts_init for bar in second_interval_revisions],
         )
+
+        # First revision: from T2
+        assert second_interval_revisions[0].close == Price.from_str("101.0")
+        assert second_interval_revisions[0].volume == Quantity.from_int(2)
+
+        # Second revision: from T3 (cumulative volume)
+        assert second_interval_revisions[1].close == Price.from_str("102.0")
+        assert second_interval_revisions[1].volume == Quantity.from_int(5)
 
         events = self.clock.advance_time(second_close_ns)
         for event in events:
             event.handle()
 
         second_interval_bars = [bar for bar in bars if bar.ts_event == second_close_ns]
-        assert second_interval_bars[-1].is_revision is False, (
-            "Expected a final bar on interval close"
-        )
+        final_bar = second_interval_bars[-1]
+        assert final_bar.is_revision is False, "Expected a final bar on interval close"
+        assert final_bar.volume == Quantity.from_int(5)
 
         # The final bar should replace any prior revisions (no duplicate ts_event entries in the cache)
         cached_bars = self.cache.bars(bar_type.standard())
