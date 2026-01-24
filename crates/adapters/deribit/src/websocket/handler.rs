@@ -1459,34 +1459,47 @@ impl DeribitWsFeedHandler {
                         }
                         DeribitWsChannel::Book => {
                             // Parse order book messages
-                            if let Ok(book_msg) =
-                                serde_json::from_value::<DeribitBookMsg>(data.clone())
-                                && let Some(instrument) =
-                                    self.instruments_cache.get(&book_msg.instrument_name)
-                            {
-                                if book_msg.msg_type == DeribitBookMsgType::Change
-                                    && let Some(prev_id) = book_msg.prev_change_id
-                                    && let Some(&last_id) =
-                                        self.book_sequence.get(&book_msg.instrument_name)
-                                    && prev_id != last_id
-                                {
-                                    log::warn!(
-                                        "Book sequence gap for {}: expected prev_change_id={}, was {}",
-                                        book_msg.instrument_name,
-                                        last_id,
-                                        prev_id
-                                    );
-                                }
-                                self.book_sequence
-                                    .insert(book_msg.instrument_name, book_msg.change_id);
+                            match serde_json::from_value::<DeribitBookMsg>(data.clone()) {
+                                Ok(book_msg) => {
+                                    if let Some(instrument) =
+                                        self.instruments_cache.get(&book_msg.instrument_name)
+                                    {
+                                        if book_msg.msg_type == DeribitBookMsgType::Change
+                                            && let Some(prev_id) = book_msg.prev_change_id
+                                            && let Some(&last_id) =
+                                                self.book_sequence.get(&book_msg.instrument_name)
+                                            && prev_id != last_id
+                                        {
+                                            log::warn!(
+                                                "Book sequence gap for {}: expected prev_change_id={}, was {}",
+                                                book_msg.instrument_name,
+                                                last_id,
+                                                prev_id
+                                            );
+                                        }
+                                        self.book_sequence
+                                            .insert(book_msg.instrument_name, book_msg.change_id);
 
-                                match parse_book_msg(&book_msg, instrument, ts_init) {
-                                    Ok(deltas) => {
-                                        return Some(NautilusWsMessage::Deltas(deltas));
+                                        match parse_book_msg(&book_msg, instrument, ts_init) {
+                                            Ok(deltas) => {
+                                                return Some(NautilusWsMessage::Deltas(deltas));
+                                            }
+                                            Err(e) => {
+                                                log::warn!("Failed to parse book message: {e}");
+                                            }
+                                        }
+                                    } else {
+                                        log::warn!(
+                                            "Book message received but instrument '{}' not found in cache (cache size: {})",
+                                            book_msg.instrument_name,
+                                            self.instruments_cache.len()
+                                        );
                                     }
-                                    Err(e) => {
-                                        log::warn!("Failed to parse book message: {e}");
-                                    }
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "Failed to deserialize book message: {e}, channel: {channel}"
+                                    );
                                 }
                             }
                         }
