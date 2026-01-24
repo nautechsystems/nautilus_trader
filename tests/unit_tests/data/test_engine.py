@@ -4565,43 +4565,86 @@ class TestDataEngine:
             f"Bar type should be {bar_type.standard()}, but got {completed_bar.bar_type}"
         )
 
-    def test_internal_time_bar_aggregator_emits_revisions_when_enabled(self):
-        # Arrange
-        # Use a non-zero timestamp so the TimeBarAggregator timer start time is not `0ns`
-        # (the TestClock treats `start_time_ns=0` as \"start now\").
-        self.clock.set_time(to_time_ns=61_000_000_000)  # 61s
+    def _setup_internal_time_bar_aggregator_for_revisions(
+        self,
+        *,
+        validate_data_sequence: bool,
+    ):
+        if validate_data_sequence:
+            clock = self.clock
+            msgbus = self.msgbus
+            cache = self.cache
+            data_engine = self.data_engine
+            binance_client = self.binance_client
+        else:
+            clock = TestClock()
+            msgbus = MessageBus(
+                trader_id=TestIdStubs.trader_id(),
+                clock=clock,
+            )
+            cache = TestComponentStubs.cache()
+            config = DataEngineConfig(
+                validate_data_sequence=False,
+                emit_quotes_from_book_depths=True,
+                debug=True,
+            )
+            data_engine = DataEngine(
+                msgbus=msgbus,
+                cache=cache,
+                clock=clock,
+                config=config,
+            )
+            data_engine.process(ETHUSDT_BINANCE)
+            binance_client = BacktestMarketDataClient(
+                client_id=ClientId(BINANCE.value),
+                msgbus=msgbus,
+                cache=cache,
+                clock=clock,
+            )
 
-        self.data_engine.register_client(self.binance_client)
-        self.binance_client.start()
+        # Use a non-zero timestamp so the TimeBarAggregator timer start time is not `0ns`
+        # (the TestClock treats `start_time_ns=0` as "start now").
+        clock.set_time(to_time_ns=61_000_000_000)  # 61s
+
+        data_engine.register_client(binance_client)
+        binance_client.start()
 
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
         bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec, AggregationSource.INTERNAL)
 
         bars = []
-        self.msgbus.subscribe(topic=f"data.bars.{bar_type.standard()}", handler=bars.append)
+        msgbus.subscribe(topic=f"data.bars.{bar_type.standard()}", handler=bars.append)
 
         subscribe = SubscribeBars(
             client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             bar_type=bar_type,
             command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
+            ts_init=clock.timestamp_ns(),
             params={
                 "handle_revised_bars": True,
             },
         )
-        self.data_engine.execute(subscribe)
+        data_engine.execute(subscribe)
 
         key = (bar_type.standard(), None)
-        aggregator = self.data_engine._bar_aggregators.get(key)
+        aggregator = data_engine._bar_aggregators.get(key)
         assert aggregator is not None, "Expected a running bar aggregator"
 
-        # Initialize and close the first interval to ensure a last bar exists in cache
+        return clock, msgbus, cache, data_engine, aggregator, bar_type, bars
+
+    def _close_first_internal_time_bar_interval(
+        self,
+        *,
+        clock: TestClock,
+        data_engine: DataEngine,
+        aggregator,
+    ) -> tuple[int, int]:
         first_open_ns = aggregator.stored_open_ns
         first_close_ns = aggregator.next_close_ns
 
         tick1_ts = first_open_ns + 10_000_000_000  # +10s
-        self.data_engine.process(
+        data_engine.process(
             TradeTick(
                 instrument_id=ETHUSDT_BINANCE.id,
                 price=Price.from_str("100.0"),
@@ -4613,18 +4656,37 @@ class TestDataEngine:
             ),
         )
 
-        events = self.clock.advance_time(first_close_ns)
+        events = clock.advance_time(first_close_ns)
         for event in events:
             event.handle()
 
-        # Second interval: emit revisions as ticks arrive, then emit final on close
-        second_open_ns = aggregator.stored_open_ns
-        second_close_ns = aggregator.next_close_ns
+        return aggregator.stored_open_ns, aggregator.next_close_ns
 
+    def test_internal_time_bar_aggregator_emits_revisions_when_enabled(self):
+        # Arrange
+        (
+            clock,
+            msgbus,
+            cache,
+            data_engine,
+            aggregator,
+            bar_type,
+            bars,
+        ) = self._setup_internal_time_bar_aggregator_for_revisions(
+            validate_data_sequence=True,
+        )
+
+        second_open_ns, second_close_ns = self._close_first_internal_time_bar_interval(
+            clock=clock,
+            data_engine=data_engine,
+            aggregator=aggregator,
+        )
+
+        # Second interval: emit revisions as ticks arrive, then emit final on close
         tick2_ts = second_open_ns + 10_000_000_000  # +10s
         tick3_ts = second_open_ns + 20_000_000_000  # +20s
 
-        self.data_engine.process(
+        data_engine.process(
             TradeTick(
                 instrument_id=ETHUSDT_BINANCE.id,
                 price=Price.from_str("101.0"),
@@ -4635,7 +4697,7 @@ class TestDataEngine:
                 ts_init=tick2_ts,
             ),
         )
-        self.data_engine.process(
+        data_engine.process(
             TradeTick(
                 instrument_id=ETHUSDT_BINANCE.id,
                 price=Price.from_str("102.0"),
@@ -4666,7 +4728,7 @@ class TestDataEngine:
         assert second_interval_revisions[1].close == Price.from_str("102.0")
         assert second_interval_revisions[1].volume == Quantity.from_int(5)
 
-        events = self.clock.advance_time(second_close_ns)
+        events = clock.advance_time(second_close_ns)
         for event in events:
             event.handle()
 
@@ -4676,93 +4738,31 @@ class TestDataEngine:
         assert final_bar.volume == Quantity.from_int(5)
 
         # The final bar should replace any prior revisions (no duplicate ts_event entries in the cache)
-        cached_bars = self.cache.bars(bar_type.standard())
+        cached_bars = cache.bars(bar_type.standard())
         assert sum(1 for bar in cached_bars if bar.ts_event == second_close_ns) == 1
-        assert self.cache.bar(bar_type.standard()) == second_interval_bars[-1]
+        assert cache.bar(bar_type.standard()) == second_interval_bars[-1]
 
     def test_internal_time_bar_aggregator_caches_revisions_when_sequence_validation_disabled(self):
         # Arrange
-        # Use a non-zero timestamp so the TimeBarAggregator timer start time is not `0ns`
-        # (the TestClock treats `start_time_ns=0` as "start now").
-        clock = TestClock()
-        clock.set_time(to_time_ns=61_000_000_000)  # 61s
-
-        trader_id = TestIdStubs.trader_id()
-        msgbus = MessageBus(
-            trader_id=trader_id,
-            clock=clock,
-        )
-        cache = TestComponentStubs.cache()
-
-        config = DataEngineConfig(
+        (
+            clock,
+            msgbus,
+            cache,
+            data_engine,
+            aggregator,
+            bar_type,
+            bars,
+        ) = self._setup_internal_time_bar_aggregator_for_revisions(
             validate_data_sequence=False,
-            emit_quotes_from_book_depths=True,
-            debug=True,
         )
-        data_engine = DataEngine(
-            msgbus=msgbus,
-            cache=cache,
+
+        second_open_ns, second_close_ns = self._close_first_internal_time_bar_interval(
             clock=clock,
-            config=config,
+            data_engine=data_engine,
+            aggregator=aggregator,
         )
-        data_engine.process(ETHUSDT_BINANCE)
-
-        binance_client = BacktestMarketDataClient(
-            client_id=ClientId(BINANCE.value),
-            msgbus=msgbus,
-            cache=cache,
-            clock=clock,
-        )
-        data_engine.register_client(binance_client)
-        binance_client.start()
-
-        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
-        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec, AggregationSource.INTERNAL)
-
-        bars = []
-        msgbus.subscribe(topic=f"data.bars.{bar_type.standard()}", handler=bars.append)
-
-        subscribe = SubscribeBars(
-            client_id=None,  # Will route to the Binance venue
-            venue=BINANCE,
-            bar_type=bar_type,
-            command_id=UUID4(),
-            ts_init=clock.timestamp_ns(),
-            params={
-                "handle_revised_bars": True,
-            },
-        )
-        data_engine.execute(subscribe)
-
-        key = (bar_type.standard(), None)
-        aggregator = data_engine._bar_aggregators.get(key)
-        assert aggregator is not None, "Expected a running bar aggregator"
-
-        # Initialize and close the first interval to ensure a last bar exists in the cache
-        first_open_ns = aggregator.stored_open_ns
-        first_close_ns = aggregator.next_close_ns
-
-        tick1_ts = first_open_ns + 10_000_000_000  # +10s
-        data_engine.process(
-            TradeTick(
-                instrument_id=ETHUSDT_BINANCE.id,
-                price=Price.from_str("100.0"),
-                size=Quantity.from_int(1),
-                aggressor_side=AggressorSide.BUYER,
-                trade_id=TradeId("T1"),
-                ts_event=tick1_ts,
-                ts_init=tick1_ts,
-            ),
-        )
-
-        events = clock.advance_time(first_close_ns)
-        for event in events:
-            event.handle()
 
         # Second interval: emit revisions and assert they are cached (even without sequence validation)
-        second_open_ns = aggregator.stored_open_ns
-        second_close_ns = aggregator.next_close_ns
-
         tick2_ts = second_open_ns + 10_000_000_000  # +10s
         tick3_ts = second_open_ns + 20_000_000_000  # +20s
 
