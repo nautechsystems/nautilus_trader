@@ -4612,7 +4612,7 @@ class TestDataEngine:
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
         bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec, AggregationSource.INTERNAL)
 
-        bars = []
+        bars: list[Bar] = []
         msgbus.subscribe(topic=f"data.bars.{bar_type.standard()}", handler=bars.append)
 
         subscribe = SubscribeBars(
