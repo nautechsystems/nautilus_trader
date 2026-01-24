@@ -1607,7 +1607,7 @@ cdef class TimeBarAggregator(BarAggregator):
         if self._builder.ts_last != ts_init:
             return  # This update did not advance the builder (stale/out-of-order timestamp)
 
-        if self._builder.count == 0 or self._builder._open is None:
+        if self._builder.count == 0:
             return
 
         cdef uint64_t ts_event
