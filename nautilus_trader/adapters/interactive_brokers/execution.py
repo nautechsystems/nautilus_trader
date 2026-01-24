@@ -438,11 +438,42 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         return order_status
 
-    async def generate_order_status_reports(
+    async def generate_order_status_reports(  # noqa: C901 (complexity due to position adjustment logic)
         self,
         command: GenerateOrderStatusReports,
     ) -> list[OrderStatusReport]:
         report = []
+
+        # Get open orders first - needed for both startup and periodic reconciliation,
+        # and to calculate open order fills for synthetic order adjustment
+        ib_orders: list[IBOrder] = await self._client.get_open_orders(
+            self.account_id.get_id(),
+        )
+
+        # Build a map of instrument_id -> net signed filled quantity from open orders
+        # This is used to adjust synthetic position orders to avoid double-counting
+        # partial fills that will be processed separately from open orders (fixes #3476)
+        open_order_fills: dict[InstrumentId, Decimal] = {}
+
+        for ib_order in ib_orders:
+            order_status = await self._parse_ib_order_to_order_status_report(ib_order)
+            report.append(order_status)
+
+            # Track filled quantities by instrument for synthetic order adjustment
+            if not command.open_only and order_status.filled_qty.as_decimal() > 0:
+                instrument_id = order_status.instrument_id
+                filled_qty = order_status.filled_qty.as_decimal()
+
+                # Convert to signed quantity based on order side
+                if order_status.order_side == OrderSide.BUY:
+                    signed_filled = filled_qty
+                else:  # SELL
+                    signed_filled = -filled_qty
+
+                if instrument_id in open_order_fills:
+                    open_order_fills[instrument_id] += signed_filled
+                else:
+                    open_order_fills[instrument_id] = signed_filled
 
         # Only create synthetic filled orders from positions during startup reconciliation
         # (when open_only=False). During periodic consistency checks (open_only=True),
@@ -458,17 +489,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             ts_init = self._clock.timestamp_ns()
 
             for position in positions:
-                self._log.debug(
-                    f"Infer OrderStatusReport from open position {position.contract}",
-                )
-
-                if position.quantity > 0:
-                    order_side = OrderSide.BUY
-                elif position.quantity < 0:
-                    order_side = OrderSide.SELL
-                else:
-                    continue  # Skip, IB may continue to display closed positions
-
                 instrument = await self.instrument_provider.get_instrument(position.contract)
 
                 if instrument is None:
@@ -482,12 +502,36 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                         )
                     continue
 
+                # Calculate the adjusted quantity for the synthetic order (fixes #3476)
+                # Position quantity represents the NET position (signed: +ve=LONG, -ve=SHORT)
+                # We subtract filled quantities from open orders to avoid double-counting
+                # Example: position=-1, open_order_fills=+4 (BUY filled 4)
+                #   adjusted = -1 - (+4) = -5, so synthetic SELL 5
+                #   Then: synthetic SELL 5 (-5) + open order BUY 4 (+4) = -1 ✓
+                position_qty = position.quantity
+                open_fills = open_order_fills.get(instrument.id, Decimal(0))
+                adjusted_qty = position_qty - open_fills
+
+                self._log.debug(
+                    f"Infer OrderStatusReport from open position {position.contract}: "
+                    f"position={position_qty}, open_fills={open_fills}, adjusted={adjusted_qty}",
+                )
+
+                if adjusted_qty == 0:
+                    # All fills are accounted for by open orders, no synthetic order needed
+                    continue
+
+                if adjusted_qty > 0:
+                    order_side = OrderSide.BUY
+                else:
+                    order_side = OrderSide.SELL
+
                 contract_details = self.instrument_provider.contract_details[instrument.id]
                 avg_px = instrument.make_price(
                     position.avg_cost
                     / (instrument.multiplier.as_double() * contract_details.priceMagnifier),
                 ).as_decimal()
-                quantity = Quantity.from_str(str(position.quantity.copy_abs()))
+                quantity = Quantity.from_str(str(abs(adjusted_qty)))
                 order_status = OrderStatusReport(
                     account_id=self.account_id,
                     instrument_id=instrument.id,
@@ -507,15 +551,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 )
                 self._log.debug(f"Received {order_status!r}")
                 report.append(order_status)
-
-        # Create the Open OrderStatusReport from Open Orders
-        ib_orders: list[IBOrder] = await self._client.get_open_orders(
-            self.account_id.get_id(),
-        )
-
-        for ib_order in ib_orders:
-            order_status = await self._parse_ib_order_to_order_status_report(ib_order)
-            report.append(order_status)
 
         return report
 
