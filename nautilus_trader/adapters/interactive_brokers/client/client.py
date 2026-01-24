@@ -63,6 +63,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import VenueOrderId
 
 
 class InteractiveBrokersClient(
@@ -166,7 +167,7 @@ class InteractiveBrokersClient(
             str,
             dict[str, Execution | (CommissionAndFeesReport | str)],
         ] = {}
-        self._order_id_to_order_ref: dict[int, AccountOrderRef] = {}
+        self._order_id_to_order_ref: dict[VenueOrderId, AccountOrderRef] = {}
         self._next_valid_order_id: int = -1
 
         # Instrument provider (set by data/execution clients during connection)
