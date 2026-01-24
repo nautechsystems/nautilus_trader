@@ -1605,7 +1605,7 @@ cdef class TimeBarAggregator(BarAggregator):
             return
 
         if self._builder.ts_last != ts_init:
-            return  # Update was not applied
+            return  # This update did not advance the builder (stale/out-of-order timestamp)
 
         if self._builder.count == 0 or self._builder._open is None:
             return
@@ -1659,6 +1659,9 @@ cdef class TimeBarAggregator(BarAggregator):
             return  # Do not build bar when no update
 
         cdef uint64_t ts_init = event.ts_event
+        # When revisions are enabled, `ts_init` should reflect the latest contributing update
+        # rather than the timer boundary (`event.ts_event`). This prevents the final bar from
+        # having a `ts_init` earlier than the last emitted revision (sequence validation would drop it).
         if self._handle_revised_bars and self._builder.ts_last > ts_init:
             ts_init = self._builder.ts_last
         cdef uint64_t ts_event
