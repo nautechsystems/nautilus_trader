@@ -1622,7 +1622,7 @@ cdef class TimeBarAggregator(BarAggregator):
             high=self._builder._high,
             low=self._builder._low,
             close=self._builder._close,
-            volume=Quantity(self._builder.volume, self._builder.size_precision),
+            volume=Quantity.from_raw_c(self._builder.volume._mem.raw, self._builder.size_precision),
             ts_event=ts_event,
             ts_init=ts_init,
             is_revision=True,

@@ -2199,41 +2199,35 @@ cdef class DataEngine(Component):
     cpdef void _handle_bar(self, Bar bar, bint historical = False):
         cdef:
             BarType bar_type = bar.bar_type
-            Bar cached_bar
             Bar last_bar
-            list bars
-            int i
-            bint cached_in_sequence_validation = False
-        if self._validate_data_sequence:
-            last_bar = self._cache.bar(bar_type)
-            if last_bar is not None:
-                if bar.ts_event < last_bar.ts_event:
-                    self._log.warning(
-                        f"Bar {bar} was prior to last bar `ts_event` {last_bar.ts_event}",
-                    )
-                    return  # `bar` is out of sequence
+        last_bar = self._cache.bar(bar_type)
+        if self._validate_data_sequence and last_bar is not None:
+            if bar.ts_event < last_bar.ts_event:
+                self._log.warning(
+                    f"Bar {bar} was prior to last bar `ts_event` {last_bar.ts_event}",
+                )
+                return  # `bar` is out of sequence
 
-                if bar.ts_init < last_bar.ts_init:
-                    self._log.warning(
-                        f"Bar {bar} was prior to last bar `ts_init` {last_bar.ts_init}",
-                    )
-                    return  # `bar` is out of sequence
+            if bar.ts_init < last_bar.ts_init:
+                self._log.warning(
+                    f"Bar {bar} was prior to last bar `ts_init` {last_bar.ts_init}",
+                )
+                return  # `bar` is out of sequence
 
-                if bar.ts_event == last_bar.ts_event:
-                    # Replace `last_bar`, previously cached bar will fall out of scope
-                    self._cache._bars.get(bar_type)[0] = bar  # noqa
-                    cached_in_sequence_validation = True
-                elif bar.is_revision:
-                    # Bar is latest, consider as new bar
+        if not (historical and self._disable_historical_cache):
+            if (
+                last_bar is not None
+                and bar.ts_event == last_bar.ts_event
+                and (self._validate_data_sequence or last_bar.is_revision)
+            ):
+                # Replace `last_bar`, previously cached bar will fall out of scope
+                self._cache._bars.get(bar_type)[0] = bar  # noqa
+            elif bar.is_revision:
+                # Cache revisions for the latest interval (even when sequence validation is disabled).
+                if last_bar is None or bar.ts_event > last_bar.ts_event:
                     self._cache.add_bar(bar)
-                    cached_in_sequence_validation = True
-
-        if (
-            not bar.is_revision
-            and not cached_in_sequence_validation
-            and not (historical and self._disable_historical_cache)
-        ):
-            self._cache.add_bar(bar)
+            else:
+                self._cache.add_bar(bar)
 
         self._msgbus.publish_c(topic=self._topic_cache.get_bars_topic(bar_type, historical), msg=bar)
 
