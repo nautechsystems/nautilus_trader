@@ -4662,7 +4662,11 @@ class TestDataEngine:
 
         return aggregator.stored_open_ns, aggregator.next_close_ns
 
-    def test_internal_time_bar_aggregator_emits_revisions_when_enabled(self):
+    @pytest.mark.parametrize("validate_data_sequence", [True, False])
+    def test_internal_time_bar_aggregator_emits_revisions_when_enabled(
+        self,
+        validate_data_sequence,
+    ):
         # Arrange
         (
             clock,
@@ -4673,7 +4677,7 @@ class TestDataEngine:
             bar_type,
             bars,
         ) = self._setup_internal_time_bar_aggregator_for_revisions(
-            validate_data_sequence=True,
+            validate_data_sequence=validate_data_sequence,
         )
 
         second_open_ns, second_close_ns = self._close_first_internal_time_bar_interval(
@@ -4697,6 +4701,11 @@ class TestDataEngine:
                 ts_init=tick2_ts,
             ),
         )
+
+        cached = cache.bar(bar_type.standard())
+        assert cached.ts_event == second_close_ns
+        assert cached.is_revision is True, "Expected the current interval revision to be cached"
+
         data_engine.process(
             TradeTick(
                 instrument_id=ETHUSDT_BINANCE.id,
@@ -4734,13 +4743,15 @@ class TestDataEngine:
 
         second_interval_bars = [bar for bar in bars if bar.ts_event == second_close_ns]
         final_bar = second_interval_bars[-1]
-        assert final_bar.is_revision is False, "Expected a final bar on interval close"
-        assert final_bar.volume == Quantity.from_int(5)
+        cached_final = cache.bar(bar_type.standard())
+        assert cached_final.ts_event == second_close_ns
+        assert cached_final.is_revision is False, "Expected a final bar on interval close"
+        assert cached_final.volume == Quantity.from_int(5)
+        assert cached_final == final_bar
 
-        # The final bar should replace any prior revisions (no duplicate ts_event entries in the cache)
+        # The final bar should replace any prior cached revisions (no duplicate ts_event entries in the cache)
         cached_bars = cache.bars(bar_type.standard())
         assert sum(1 for bar in cached_bars if bar.ts_event == second_close_ns) == 1
-        assert cache.bar(bar_type.standard()) == second_interval_bars[-1]
 
         # A revision should never overwrite a finalized bar with the same `ts_event`
         late_revision = Bar(
@@ -4760,71 +4771,6 @@ class TestDataEngine:
         assert cached_after.is_revision is False
         assert cached_after.close == final_bar.close
         assert cached_after.volume == Quantity.from_int(5)
-
-    def test_internal_time_bar_aggregator_caches_revisions_when_sequence_validation_disabled(self):
-        # Arrange
-        (
-            clock,
-            msgbus,
-            cache,
-            data_engine,
-            aggregator,
-            bar_type,
-            bars,
-        ) = self._setup_internal_time_bar_aggregator_for_revisions(
-            validate_data_sequence=False,
-        )
-
-        second_open_ns, second_close_ns = self._close_first_internal_time_bar_interval(
-            clock=clock,
-            data_engine=data_engine,
-            aggregator=aggregator,
-        )
-
-        # Second interval: emit revisions and assert they are cached (even without sequence validation)
-        tick2_ts = second_open_ns + 10_000_000_000  # +10s
-        tick3_ts = second_open_ns + 20_000_000_000  # +20s
-
-        data_engine.process(
-            TradeTick(
-                instrument_id=ETHUSDT_BINANCE.id,
-                price=Price.from_str("101.0"),
-                size=Quantity.from_int(2),
-                aggressor_side=AggressorSide.BUYER,
-                trade_id=TradeId("T2"),
-                ts_event=tick2_ts,
-                ts_init=tick2_ts,
-            ),
-        )
-
-        cached = cache.bar(bar_type.standard())
-        assert cached.ts_event == second_close_ns
-        assert cached.is_revision is True, "Expected the current interval revision to be cached"
-
-        data_engine.process(
-            TradeTick(
-                instrument_id=ETHUSDT_BINANCE.id,
-                price=Price.from_str("102.0"),
-                size=Quantity.from_int(3),
-                aggressor_side=AggressorSide.BUYER,
-                trade_id=TradeId("T3"),
-                ts_event=tick3_ts,
-                ts_init=tick3_ts,
-            ),
-        )
-
-        events = clock.advance_time(second_close_ns)
-        for event in events:
-            event.handle()
-
-        cached_final = cache.bar(bar_type.standard())
-        assert cached_final.ts_event == second_close_ns
-        assert cached_final.is_revision is False, "Expected a final bar on interval close"
-        assert cached_final.volume == Quantity.from_int(5)
-
-        # The final bar should replace any prior cached revisions (no duplicate ts_event entries)
-        cached_bars = cache.bars(bar_type.standard())
-        assert sum(1 for bar in cached_bars if bar.ts_event == second_close_ns) == 1
 
     # TODO: Implement with new Rust datafusion backend"
     # def test_request_quote_ticks_when_catalog_registered_using_rust(self) -> None:

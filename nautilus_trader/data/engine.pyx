@@ -2215,24 +2215,33 @@ cdef class DataEngine(Component):
                 return  # `bar` is out of sequence
 
         if not (historical and self._disable_historical_cache):
-            if last_bar is not None and bar.ts_event == last_bar.ts_event:
+            is_update_to_last_bar = last_bar is not None and bar.ts_event == last_bar.ts_event
+
+            if is_update_to_last_bar:
                 # Do not allow a stale in-progress revision from an internal time-bar aggregator
                 # to overwrite the already finalized bar for the same interval.
-                if (
+                is_stale_internal_revision = (
                     bar.is_revision
                     and not last_bar.is_revision
                     and bar_type.is_internally_aggregated()
                     and bar_type.spec.is_time_aggregated()
-                ):
+                )
+                if is_stale_internal_revision:
                     return
 
                 # Preserve behavior: external revisions are cached only when sequence validation is enabled.
-                if not bar.is_revision or self._validate_data_sequence or bar_type.is_internally_aggregated():
+                should_replace = (
+                    not bar.is_revision
+                    or self._validate_data_sequence
+                    or bar_type.is_internally_aggregated()
+                )
+                if should_replace:
                     # Replace `last_bar`, previously cached bar will fall out of scope
                     self._cache._bars.get(bar_type)[0] = bar  # noqa
             else:
                 # Cache revisions only if they are for a newer interval, otherwise treat as stale.
-                if not bar.is_revision or last_bar is None or bar.ts_event > last_bar.ts_event:
+                should_add = not bar.is_revision or last_bar is None or bar.ts_event > last_bar.ts_event
+                if should_add:
                     self._cache.add_bar(bar)
 
         self._msgbus.publish_c(topic=self._topic_cache.get_bars_topic(bar_type, historical), msg=bar)
