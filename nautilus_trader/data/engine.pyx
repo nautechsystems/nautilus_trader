@@ -2230,12 +2230,10 @@ cdef class DataEngine(Component):
                 if not bar.is_revision or self._validate_data_sequence or bar_type.is_internally_aggregated():
                     # Replace `last_bar`, previously cached bar will fall out of scope
                     self._cache._bars.get(bar_type)[0] = bar  # noqa
-            elif bar.is_revision:
-                # Cache revisions for the latest interval (even when sequence validation is disabled).
-                if last_bar is None or bar.ts_event > last_bar.ts_event:
-                    self._cache.add_bar(bar)
             else:
-                self._cache.add_bar(bar)
+                # Cache revisions only if they are for a newer interval, otherwise treat as stale.
+                if not bar.is_revision or last_bar is None or bar.ts_event > last_bar.ts_event:
+                    self._cache.add_bar(bar)
 
         self._msgbus.publish_c(topic=self._topic_cache.get_bars_topic(bar_type, historical), msg=bar)
 
