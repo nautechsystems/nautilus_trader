@@ -2215,13 +2215,27 @@ cdef class DataEngine(Component):
                 return  # `bar` is out of sequence
 
         if not (historical and self._disable_historical_cache):
-            if (
-                last_bar is not None
-                and bar.ts_event == last_bar.ts_event
-                and (last_bar.is_revision or not bar.is_revision)
-            ):
-                # Replace `last_bar`, previously cached bar will fall out of scope
-                self._cache._bars.get(bar_type)[0] = bar  # noqa
+            if last_bar is not None and bar.ts_event == last_bar.ts_event:
+                # Do not allow a stale in-progress revision from an internal time-bar aggregator
+                # to overwrite the already finalized bar for the same interval.
+                if (
+                    bar.is_revision
+                    and not last_bar.is_revision
+                    and bar_type.is_internally_aggregated()
+                    and bar_type.spec.is_time_aggregated()
+                ):
+                    return
+
+                # Preserve behavior: external revisions are cached only when sequence validation is enabled.
+                if (
+                    bar.is_revision
+                    and not self._validate_data_sequence
+                    and not bar_type.is_internally_aggregated()
+                ):
+                    pass
+                else:
+                    # Replace `last_bar`, previously cached bar will fall out of scope
+                    self._cache._bars.get(bar_type)[0] = bar  # noqa
             elif bar.is_revision:
                 # Cache revisions for the latest interval (even when sequence validation is disabled).
                 if last_bar is None or bar.ts_event > last_bar.ts_event:
