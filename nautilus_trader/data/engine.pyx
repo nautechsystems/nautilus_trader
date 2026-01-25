@@ -2218,7 +2218,7 @@ cdef class DataEngine(Component):
             if (
                 last_bar is not None
                 and bar.ts_event == last_bar.ts_event
-                and (self._validate_data_sequence or last_bar.is_revision)
+                and (last_bar.is_revision or not bar.is_revision)
             ):
                 # Replace `last_bar`, previously cached bar will fall out of scope
                 self._cache._bars.get(bar_type)[0] = bar  # noqa

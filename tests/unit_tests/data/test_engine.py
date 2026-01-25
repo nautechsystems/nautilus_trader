@@ -4742,6 +4742,25 @@ class TestDataEngine:
         assert sum(1 for bar in cached_bars if bar.ts_event == second_close_ns) == 1
         assert cache.bar(bar_type.standard()) == second_interval_bars[-1]
 
+        # A revision should never overwrite a finalized bar with the same `ts_event`
+        late_revision = Bar(
+            bar_type=bar_type.standard(),
+            open=final_bar.open,
+            high=final_bar.high,
+            low=final_bar.low,
+            close=Price.from_str("101.0"),
+            volume=Quantity.from_int(6),
+            ts_event=second_close_ns,
+            ts_init=final_bar.ts_init + 1,
+            is_revision=True,
+        )
+        data_engine.process(late_revision)
+
+        cached_after = cache.bar(bar_type.standard())
+        assert cached_after.is_revision is False
+        assert cached_after.close == final_bar.close
+        assert cached_after.volume == Quantity.from_int(5)
+
     def test_internal_time_bar_aggregator_caches_revisions_when_sequence_validation_disabled(self):
         # Arrange
         (
