@@ -4800,7 +4800,9 @@ class TestDataEngine:
         )
 
         assert cached_revision.ts_event == second_close_ns
-        assert cached_revision.is_revision is True, "Expected the current interval revision to be cached"
+        assert cached_revision.is_revision is True, (
+            "Expected the current interval revision to be cached"
+        )
 
         cached_final = cache.bar(bar_type.standard())
         assert cached_final.ts_event == second_close_ns
