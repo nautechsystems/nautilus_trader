@@ -4662,6 +4662,64 @@ class TestDataEngine:
 
         return aggregator.stored_open_ns, aggregator.next_close_ns
 
+    def _run_second_internal_time_bar_interval_with_revisions(
+        self,
+        *,
+        clock: TestClock,
+        cache,
+        data_engine: DataEngine,
+        aggregator,
+        bar_type: BarType,
+        bars: list[Bar],
+    ) -> tuple[int, list[Bar], Bar, Bar]:
+        second_open_ns, second_close_ns = self._close_first_internal_time_bar_interval(
+            clock=clock,
+            data_engine=data_engine,
+            aggregator=aggregator,
+        )
+
+        tick2_ts = second_open_ns + 10_000_000_000  # +10s
+        tick3_ts = second_open_ns + 20_000_000_000  # +20s
+
+        data_engine.process(
+            TradeTick(
+                instrument_id=ETHUSDT_BINANCE.id,
+                price=Price.from_str("101.0"),
+                size=Quantity.from_int(2),
+                aggressor_side=AggressorSide.BUYER,
+                trade_id=TradeId("T2"),
+                ts_event=tick2_ts,
+                ts_init=tick2_ts,
+            ),
+        )
+
+        cached_revision = cache.bar(bar_type.standard())
+
+        data_engine.process(
+            TradeTick(
+                instrument_id=ETHUSDT_BINANCE.id,
+                price=Price.from_str("102.0"),
+                size=Quantity.from_int(3),
+                aggressor_side=AggressorSide.BUYER,
+                trade_id=TradeId("T3"),
+                ts_event=tick3_ts,
+                ts_init=tick3_ts,
+            ),
+        )
+
+        second_interval_revisions = [
+            bar for bar in bars if bar.ts_event == second_close_ns and bar.is_revision
+        ]
+
+        events = clock.advance_time(second_close_ns)
+        for event in events:
+            event.handle()
+
+        second_interval_bars = [bar for bar in bars if bar.ts_event == second_close_ns]
+        final_bar = second_interval_bars[-1]
+
+        return second_close_ns, second_interval_revisions, final_bar, cached_revision
+
     @pytest.mark.parametrize("validate_data_sequence", [True, False])
     def test_internal_time_bar_aggregator_emits_revisions_when_enabled(
         self,
@@ -4680,48 +4738,21 @@ class TestDataEngine:
             validate_data_sequence=validate_data_sequence,
         )
 
-        second_open_ns, second_close_ns = self._close_first_internal_time_bar_interval(
+        (
+            second_close_ns,
+            second_interval_revisions,
+            _final_bar,
+            _cached_revision,
+        ) = self._run_second_internal_time_bar_interval_with_revisions(
             clock=clock,
+            cache=cache,
             data_engine=data_engine,
             aggregator=aggregator,
-        )
-
-        # Second interval: emit revisions as ticks arrive, then emit final on close
-        tick2_ts = second_open_ns + 10_000_000_000  # +10s
-        tick3_ts = second_open_ns + 20_000_000_000  # +20s
-
-        data_engine.process(
-            TradeTick(
-                instrument_id=ETHUSDT_BINANCE.id,
-                price=Price.from_str("101.0"),
-                size=Quantity.from_int(2),
-                aggressor_side=AggressorSide.BUYER,
-                trade_id=TradeId("T2"),
-                ts_event=tick2_ts,
-                ts_init=tick2_ts,
-            ),
-        )
-
-        cached = cache.bar(bar_type.standard())
-        assert cached.ts_event == second_close_ns
-        assert cached.is_revision is True, "Expected the current interval revision to be cached"
-
-        data_engine.process(
-            TradeTick(
-                instrument_id=ETHUSDT_BINANCE.id,
-                price=Price.from_str("102.0"),
-                size=Quantity.from_int(3),
-                aggressor_side=AggressorSide.BUYER,
-                trade_id=TradeId("T3"),
-                ts_event=tick3_ts,
-                ts_init=tick3_ts,
-            ),
+            bar_type=bar_type,
+            bars=bars,
         )
 
         # Assert: revisions are emitted while the bar is still being built
-        second_interval_revisions = [
-            bar for bar in bars if bar.ts_event == second_close_ns and bar.is_revision
-        ]
         assert len(second_interval_revisions) == 2, (
             "Expected exactly 2 revised bars to be published for the current interval",
         )
@@ -4730,30 +4761,86 @@ class TestDataEngine:
         )
 
         # First revision: from T2
+        assert second_interval_revisions[0].ts_event == second_close_ns
         assert second_interval_revisions[0].close == Price.from_str("101.0")
         assert second_interval_revisions[0].volume == Quantity.from_int(2)
 
         # Second revision: from T3 (cumulative volume)
+        assert second_interval_revisions[1].ts_event == second_close_ns
         assert second_interval_revisions[1].close == Price.from_str("102.0")
         assert second_interval_revisions[1].volume == Quantity.from_int(5)
 
-        events = clock.advance_time(second_close_ns)
-        for event in events:
-            event.handle()
+    @pytest.mark.parametrize("validate_data_sequence", [True, False])
+    def test_internal_time_bar_aggregator_final_bar_replaces_any_prior_revisions_in_cache(
+        self,
+        validate_data_sequence,
+    ):
+        # Arrange
+        (
+            clock,
+            msgbus,
+            cache,
+            data_engine,
+            aggregator,
+            bar_type,
+            bars,
+        ) = self._setup_internal_time_bar_aggregator_for_revisions(
+            validate_data_sequence=validate_data_sequence,
+        )
 
-        second_interval_bars = [bar for bar in bars if bar.ts_event == second_close_ns]
-        final_bar = second_interval_bars[-1]
+        second_close_ns, _revisions, final_bar, cached_revision = (
+            self._run_second_internal_time_bar_interval_with_revisions(
+                clock=clock,
+                cache=cache,
+                data_engine=data_engine,
+                aggregator=aggregator,
+                bar_type=bar_type,
+                bars=bars,
+            )
+        )
+
+        assert cached_revision.ts_event == second_close_ns
+        assert cached_revision.is_revision is True, "Expected the current interval revision to be cached"
+
         cached_final = cache.bar(bar_type.standard())
         assert cached_final.ts_event == second_close_ns
         assert cached_final.is_revision is False, "Expected a final bar on interval close"
         assert cached_final.volume == Quantity.from_int(5)
         assert cached_final == final_bar
 
-        # The final bar should replace any prior cached revisions (no duplicate ts_event entries in the cache)
+        # No duplicate ts_event entries in the cache for the interval close.
         cached_bars = cache.bars(bar_type.standard())
         assert sum(1 for bar in cached_bars if bar.ts_event == second_close_ns) == 1
 
-        # A revision should never overwrite a finalized bar with the same `ts_event`
+    @pytest.mark.parametrize("validate_data_sequence", [True, False])
+    def test_internal_time_bar_aggregator_stale_revision_does_not_overwrite_final_bar(
+        self,
+        validate_data_sequence,
+    ):
+        # Arrange
+        (
+            clock,
+            msgbus,
+            cache,
+            data_engine,
+            aggregator,
+            bar_type,
+            bars,
+        ) = self._setup_internal_time_bar_aggregator_for_revisions(
+            validate_data_sequence=validate_data_sequence,
+        )
+
+        second_close_ns, _revisions, final_bar, _cached_revision = (
+            self._run_second_internal_time_bar_interval_with_revisions(
+                clock=clock,
+                cache=cache,
+                data_engine=data_engine,
+                aggregator=aggregator,
+                bar_type=bar_type,
+                bars=bars,
+            )
+        )
+
         late_revision = Bar(
             bar_type=bar_type.standard(),
             open=final_bar.open,
