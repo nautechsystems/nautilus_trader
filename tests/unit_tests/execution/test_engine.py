@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,6 +30,7 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.messages import TradingCommand
@@ -47,6 +48,7 @@ from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -178,6 +180,41 @@ class TestExecutionEngine:
             exec_client.id,
             self.exec_client.id,
         ]
+
+    def test_execute_skips_commands_for_external_clients(self):
+        # Arrange
+        ext_client_id = ClientId("EXT_EXEC")
+
+        msgbus = MessageBus(trader_id=self.trader_id, clock=self.clock)
+        cache = Cache(database=MockCacheDatabase())
+
+        engine = ExecutionEngine(
+            msgbus=msgbus,
+            cache=cache,
+            clock=self.clock,
+            config=ExecEngineConfig(external_clients=[ext_client_id], debug=True),
+        )
+
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(1),
+        )
+
+        cmd = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            order=order,
+            position_id=None,
+            client_id=ext_client_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act / Assert: no error even though no client registered for EXT_EXEC
+        engine.execute(cmd)
+
+        assert engine.get_external_client_ids() == {ext_client_id}
 
     def test_register_venue_routing(self) -> None:
         # Arrange
@@ -654,6 +691,50 @@ class TestExecutionEngine:
 
         # Assert
         assert order.status == OrderStatus.INITIALIZED
+
+    def test_duplicate_order_accepted_event_logs_debug_not_warning(self) -> None:
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+
+        # Order is now in ACCEPTED state
+        assert order.status == OrderStatus.ACCEPTED
+        initial_event_count = order.event_count
+
+        # Process duplicate OrderAccepted event
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+
+        # Assert
+        assert order.status == OrderStatus.ACCEPTED  # Status unchanged
+        assert order.event_count == initial_event_count  # Event not applied
 
     def test_order_filled_event_when_order_not_found_in_cache_logs(self) -> None:
         # Arrange
@@ -1249,6 +1330,123 @@ class TestExecutionEngine:
         assert self.cache.positions_total_count() == 1
         assert self.cache.positions_open_count() == 1
         assert self.cache.positions_closed_count() == 0
+
+    def test_duplicate_fill_with_same_trade_id_and_data_is_skipped(self) -> None:
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+
+        # First fill with specific trade_id
+        fill1 = TestEventStubs.order_filled(
+            order=order,
+            instrument=AUDUSD_SIM,
+            last_qty=Quantity.from_int(50_000),
+            trade_id=TradeId("TRADE-001"),
+        )
+        self.exec_engine.process(fill1)
+
+        # Assert first fill applied
+        assert order.filled_qty == Quantity.from_int(50_000)
+        assert order.status == OrderStatus.PARTIALLY_FILLED
+        assert order.event_count == 4  # init, submitted, accepted, filled
+
+        # Act - try to apply exact duplicate fill (same trade_id, side, qty, px)
+        fill2_duplicate = TestEventStubs.order_filled(
+            order=order,
+            instrument=AUDUSD_SIM,
+            last_qty=Quantity.from_int(50_000),
+            trade_id=TradeId("TRADE-001"),  # Same trade_id
+        )
+        self.exec_engine.process(fill2_duplicate)
+
+        # Assert duplicate was skipped
+        assert order.filled_qty == Quantity.from_int(50_000)  # Unchanged
+        assert order.status == OrderStatus.PARTIALLY_FILLED
+        assert order.event_count == 4  # Still 4, duplicate not applied
+
+    def test_fill_with_same_trade_id_but_different_data_is_rejected_at_order_level(self) -> None:
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+
+        # First fill with specific trade_id
+        fill1 = TestEventStubs.order_filled(
+            order=order,
+            instrument=AUDUSD_SIM,
+            last_qty=Quantity.from_int(50_000),
+            trade_id=TradeId("TRADE-001"),
+        )
+        self.exec_engine.process(fill1)
+
+        # Assert first fill applied
+        assert order.filled_qty == Quantity.from_int(50_000)
+
+        # Act - fill with same trade_id but different quantity
+        # Not an exact duplicate, so passes engine check but rejected at order level
+        fill2_different_qty = TestEventStubs.order_filled(
+            order=order,
+            instrument=AUDUSD_SIM,
+            last_qty=Quantity.from_int(30_000),  # Different quantity
+            trade_id=TradeId("TRADE-001"),  # Same trade_id
+        )
+        self.exec_engine.process(fill2_different_qty)
+
+        # Order level rejects due to duplicate trade_id (KeyError from Condition.not_in)
+        assert order.filled_qty == Quantity.from_int(50_000)
 
     def test_handle_position_opening_with_position_id_none(self) -> None:
         # Arrange
@@ -2240,6 +2438,77 @@ class TestExecutionEngine:
         assert order.quantity == expected_quantity
         assert not order.is_quote_quantity
 
+    def test_submit_order_with_quote_quantity_and_conversion_disabled_keeps_quote_quantity(
+        self,
+    ) -> None:
+        # Arrange
+        local_clock = TestClock()
+        msgbus = MessageBus(trader_id=self.trader_id, clock=local_clock)
+        cache = Cache(database=MockCacheDatabase())
+        portfolio = Portfolio(msgbus=msgbus, cache=cache, clock=local_clock)
+        portfolio.update_account(TestEventStubs.margin_account_state())
+
+        config = ExecEngineConfig(convert_quote_qty_to_base=False, debug=True)
+        exec_engine = ExecutionEngine(
+            msgbus=msgbus,
+            cache=cache,
+            clock=local_clock,
+            config=config,
+        )
+
+        exec_client = MockExecutionClient(
+            client_id=ClientId(self.venue.value),
+            venue=self.venue,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=msgbus,
+            cache=cache,
+            clock=local_clock,
+        )
+        exec_engine.register_client(exec_client)
+        exec_engine.start()
+
+        cache.add_instrument(AUDUSD_SIM)
+
+        tick = QuoteTick(
+            instrument_id=AUDUSD_SIM.id,
+            bid_price=Price.from_str("0.80000"),
+            ask_price=Price.from_str("0.80010"),
+            bid_size=Quantity.from_int(10_000_000),
+            ask_size=Quantity.from_int(10_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        cache.add_quote_tick(tick)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=portfolio,
+            msgbus=msgbus,
+            cache=cache,
+            clock=local_clock,
+        )
+
+        order = strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            price=Price.from_str("10.0"),
+            quantity=Quantity.from_int(100_000),
+            quote_quantity=True,
+        )
+        original_qty = order.quantity
+
+        strategy.submit_order(order)
+
+        # Act
+        exec_engine.process(TestEventStubs.order_submitted(order))
+        exec_engine.process(TestEventStubs.order_accepted(order))
+
+        # Assert
+        assert order.is_quote_quantity
+        assert order.quantity == original_qty
+
     @pytest.mark.parametrize(
         ("order_side", "expected_quantity"),
         [
@@ -2495,6 +2764,99 @@ class TestExecutionEngine:
         assert len(own_book.bids_to_dict()) == 0
         assert self.cache.own_bid_orders(instrument.id) == {}
         assert self.cache.own_ask_orders(instrument.id) == {}
+
+    def test_rejected_order_removed_from_own_book(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("10.0"),
+        )
+
+        strategy.submit_order(order)
+
+        # Assert order was added to own book
+        own_book = self.cache.own_order_book(order.instrument_id)
+        assert len(own_book.bids_to_dict()) == 1
+
+        # Act - reject the order
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_rejected(order))
+
+        # Assert - order should be removed from own book
+        assert len(own_book.bids_to_dict()) == 0
+        assert self.cache.own_bid_orders(order.instrument_id) == {}
+
+    @pytest.mark.parametrize(
+        ("time_in_force"),
+        [
+            TimeInForce.FOK,
+            TimeInForce.IOC,
+        ],
+    )
+    def test_ioc_fok_not_added_to_existing_own_book(self, time_in_force: TimeInForce) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # First, create a normal limit order to establish an own book for this instrument
+        limit_order = strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("10.0"),
+        )
+        strategy.submit_order(limit_order)
+
+        # Assert own book exists
+        own_book = self.cache.own_order_book(limit_order.instrument_id)
+        assert own_book is not None
+        assert len(own_book.bids_to_dict()) == 1
+
+        # Act - submit IOC/FOK order for same instrument
+        ioc_fok_order = strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(50_000),
+            price=Price.from_str("10.5"),
+            time_in_force=time_in_force,
+        )
+        strategy.submit_order(ioc_fok_order)
+
+        # Assert - IOC/FOK order should NOT be in own book
+        assert len(own_book.bids_to_dict()) == 1  # Still just the limit order
+        assert Decimal("10.0") in own_book.bids_to_dict()
+        assert Decimal("10.5") not in own_book.bids_to_dict()
+
+        # Simulate rejection and ensure it doesn't cause issues
+        self.exec_engine.process(TestEventStubs.order_submitted(ioc_fok_order))
+        self.exec_engine.process(TestEventStubs.order_rejected(ioc_fok_order))
+
+        # Assert - still only the limit order in book
+        assert len(own_book.bids_to_dict()) == 1
+        assert Decimal("10.0") in own_book.bids_to_dict()
 
     def test_own_book_status_filtering(self) -> None:
         # Arrange
@@ -2902,7 +3264,7 @@ class TestExecutionEngine:
         assert self.cache.position_id(sl_order.client_order_id) == position_id
 
     @pytest.mark.parametrize(
-        ("status, price, process_steps, expected_in_book"),
+        ("status", "price", "process_steps", "expected_in_book"),
         [
             (
                 OrderStatus.INITIALIZED,
@@ -3144,7 +3506,7 @@ class TestExecutionEngine:
             status={OrderStatus.ACCEPTED},
         )
         assert len(accepted_orders) == 3
-        for price, order in zip(prices, orders):
+        for price, order in zip(prices, orders, strict=False):
             assert Decimal(price) in accepted_orders
             assert order.client_order_id in [
                 o.client_order_id for o in accepted_orders[Decimal(price)]
@@ -3294,7 +3656,7 @@ class TestExecutionEngine:
 
         # === Test Case 2: Multiple orders at same price level ===
         same_price_orders = []
-        for i in range(3):
+        for _ in range(3):
             order = strategy.order_factory.limit(
                 instrument_id=instrument.id,
                 order_side=OrderSide.SELL,
@@ -3418,41 +3780,66 @@ class TestExecutionEngine:
         assert Decimal("1.15") not in current_bids
 
     def test_own_book_order_overfill_removes_from_book(self) -> None:
-        # Arrange
-        self.exec_engine.set_manage_own_order_books(True)
-        self.exec_engine.start()
-
-        strategy = Strategy()
-        strategy.register(
+        # Arrange - need allow_overfills=True to test overfill handling
+        # Create fresh msgbus, cache, and exec_engine for isolation
+        msgbus = MessageBus(
             trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
             clock=self.clock,
         )
+        cache = Cache(database=MockCacheDatabase())
+        cache.add_instrument(AUDUSD_SIM)
+
+        config = ExecEngineConfig(allow_overfills=True, debug=True)
+        exec_engine = ExecutionEngine(
+            msgbus=msgbus,
+            cache=cache,
+            clock=self.clock,
+            config=config,
+        )
+
+        # Register mock client for order routing
+        exec_client = MockExecutionClient(
+            client_id=ClientId("SIM"),
+            venue=Venue("SIM"),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=msgbus,
+            cache=cache,
+            clock=self.clock,
+        )
+        exec_engine.register_client(exec_client)
+        exec_engine.set_manage_own_order_books(True)
+        exec_engine.start()
 
         instrument = AUDUSD_SIM
 
-        order = strategy.order_factory.limit(
+        order = self.order_factory.limit(
             instrument_id=instrument.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(100_000),
             price=Price.from_str("1.00000"),
         )
 
-        # Submit and accept the order
-        strategy.submit_order(order)
-        self.exec_engine.process(TestEventStubs.order_submitted(order))
-        self.exec_engine.process(TestEventStubs.order_accepted(order))
+        # Add order to cache and submit via execute command
+        submit = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        exec_engine.execute(submit)
+        exec_engine.process(TestEventStubs.order_submitted(order))
+        exec_engine.process(TestEventStubs.order_accepted(order))
 
         # Verify order is in the own book
-        own_book = self.cache.own_order_book(instrument.id)
+        own_book = cache.own_order_book(instrument.id)
         assert own_book.update_count == 3
         assert len(own_book.bids_to_dict()) == 1
         assert Decimal("1.00000") in own_book.bids_to_dict()
 
         # Partially fill the order with 50% of quantity
-        self.exec_engine.process(
+        exec_engine.process(
             TestEventStubs.order_filled(
                 order,
                 instrument,
@@ -3462,12 +3849,12 @@ class TestExecutionEngine:
 
         # Verify order is still in the book with updated status
         assert order.status == OrderStatus.PARTIALLY_FILLED
-        own_book = self.cache.own_order_book(instrument.id)
+        own_book = cache.own_order_book(instrument.id)
         assert len(own_book.bids_to_dict()) == 1
         assert Decimal("1.00000") in own_book.bids_to_dict()
 
         # Act - overfill the order (60K more when only 50K remains)
-        self.exec_engine.process(
+        exec_engine.process(
             TestEventStubs.order_filled(
                 order,
                 instrument,
@@ -3477,14 +3864,14 @@ class TestExecutionEngine:
         )
 
         # Assert
-        own_book = self.cache.own_order_book(instrument.id)
+        own_book = cache.own_order_book(instrument.id)
         assert order.status == OrderStatus.FILLED
-        assert (
-            len(own_book.bids_to_dict()) == 0
-        ), "Order should be removed from own book despite overfill"
-        assert (
-            self.cache.own_bid_orders(instrument.id) == {}
-        ), "Own book cache should be empty after overfill"
+        assert len(own_book.bids_to_dict()) == 0, (
+            "Order should be removed from own book despite overfill"
+        )
+        assert cache.own_bid_orders(instrument.id) == {}, (
+            "Own book cache should be empty after overfill"
+        )
 
     def test_own_book_order_denied_removes_from_book(self) -> None:
         # Arrange
@@ -3530,3 +3917,754 @@ class TestExecutionEngine:
         assert order2.status == OrderStatus.SUBMITTED
         assert len(own_book.bids_to_dict()) == 1
         assert order2.client_order_id.value == own_book.bid_client_order_ids()[0].value
+
+    def test_own_book_accepted_buffer_filtering(self) -> None:
+        # Arrange
+        self.exec_engine.set_manage_own_order_books(True)
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        instrument = AUDUSD_SIM
+
+        # Create and submit orders at different times
+        bid_order = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.00000"),
+        )
+
+        ask_order = strategy.order_factory.limit(
+            instrument_id=instrument.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.10000"),
+        )
+
+        # Submit and accept first order (older)
+        strategy.submit_order(bid_order)
+        self.exec_engine.process(TestEventStubs.order_submitted(bid_order))
+
+        # Set accepted time for first order
+        bid_accepted_time = self.clock.timestamp_ns()
+        self.exec_engine.process(
+            TestEventStubs.order_accepted(bid_order, ts_event=bid_accepted_time),
+        )
+
+        # Advance time by 5 seconds
+        self.clock.advance_time(5_000_000_000)  # 5 seconds in nanoseconds
+
+        # Submit and accept second order (newer)
+        strategy.submit_order(ask_order)
+        self.exec_engine.process(TestEventStubs.order_submitted(ask_order))
+
+        # Set accepted time for second order
+        ask_accepted_time = self.clock.timestamp_ns()
+        self.exec_engine.process(
+            TestEventStubs.order_accepted(ask_order, ts_event=ask_accepted_time),
+        )
+
+        # Test without buffer - should return both orders
+        bid_orders_no_buffer = self.cache.own_bid_orders(instrument.id, accepted_buffer_ns=0)
+        ask_orders_no_buffer = self.cache.own_ask_orders(instrument.id, accepted_buffer_ns=0)
+
+        assert len(bid_orders_no_buffer) == 1
+        assert len(ask_orders_no_buffer) == 1
+        assert Decimal("1.00000") in bid_orders_no_buffer
+        assert Decimal("1.10000") in ask_orders_no_buffer
+
+        # Test validation: accepted_buffer_ns > 0 but ts_now == 0 should raise ValueError
+        with pytest.raises(ValueError, match="ts_now must be provided when accepted_buffer_ns > 0"):
+            self.cache.own_bid_orders(instrument.id, accepted_buffer_ns=2_000_000_000)
+
+        with pytest.raises(ValueError, match="ts_now must be provided when accepted_buffer_ns > 0"):
+            self.cache.own_ask_orders(instrument.id, accepted_buffer_ns=2_000_000_000)
+
+        # Test with buffer and current time (should work properly now)
+        current_time = self.clock.timestamp_ns()
+        bid_orders_2s_buffer = self.cache.own_bid_orders(
+            instrument.id,
+            accepted_buffer_ns=2_000_000_000,
+            ts_now=current_time,
+        )
+        ask_orders_2s_buffer = self.cache.own_ask_orders(
+            instrument.id,
+            accepted_buffer_ns=2_000_000_000,
+            ts_now=current_time,
+        )
+
+        # With proper filtering, newer ask order should be excluded
+        assert len(bid_orders_2s_buffer) == 1  # Bid order is older than 2s
+        assert len(ask_orders_2s_buffer) == 0  # Ask order is newer than 2s
+        assert Decimal("1.00000") in bid_orders_2s_buffer
+
+        # Test with larger buffer - should include both orders
+        bid_orders_10s_buffer = self.cache.own_bid_orders(
+            instrument.id,
+            accepted_buffer_ns=10_000_000_000,
+            ts_now=current_time,
+        )
+        ask_orders_10s_buffer = self.cache.own_ask_orders(
+            instrument.id,
+            accepted_buffer_ns=10_000_000_000,
+            ts_now=current_time,
+        )
+
+        assert len(bid_orders_10s_buffer) == 0  # Both orders are newer than 10s
+        assert len(ask_orders_10s_buffer) == 0
+
+        # Advance time and test again
+        self.clock.advance_time(15_000_000_000)  # 15 seconds
+        current_time = self.clock.timestamp_ns()
+
+        bid_orders_final = self.cache.own_bid_orders(
+            instrument.id,
+            accepted_buffer_ns=8_000_000_000,
+            ts_now=current_time,
+        )
+        ask_orders_final = self.cache.own_ask_orders(
+            instrument.id,
+            accepted_buffer_ns=8_000_000_000,
+            ts_now=current_time,
+        )
+
+        assert len(bid_orders_final) == 1  # Both orders are now older than 8s
+        assert len(ask_orders_final) == 1
+        assert Decimal("1.00000") in bid_orders_final
+        assert Decimal("1.10000") in ask_orders_final
+
+        # Test with status filtering combined with buffer
+        bid_orders_status_buffer = self.cache.own_bid_orders(
+            instrument.id,
+            status={OrderStatus.ACCEPTED},
+            accepted_buffer_ns=8_000_000_000,
+            ts_now=current_time,
+        )
+        ask_orders_status_buffer = self.cache.own_ask_orders(
+            instrument.id,
+            status={OrderStatus.ACCEPTED},
+            accepted_buffer_ns=8_000_000_000,
+            ts_now=current_time,
+        )
+
+        assert len(bid_orders_status_buffer) == 1
+        assert len(ask_orders_status_buffer) == 1
+        assert Decimal("1.00000") in bid_orders_status_buffer
+        assert Decimal("1.10000") in ask_orders_status_buffer
+
+    def test_find_client_by_account_id_routes_submit_order_with_account_id(self) -> None:
+        # Arrange
+        ib_client_id = ClientId("IB-002")
+        ib_account_id = AccountId("IB-002")
+        # Create separate message bus to avoid endpoint registration conflicts
+        test_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+        ib_client = MockExecutionClient(
+            client_id=ib_client_id,
+            venue=None,  # Multi-venue
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        engine = ExecutionEngine(
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        engine.register_client(ib_client)
+
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+        )
+        # Set account_id by processing OrderSubmitted event
+        submitted_event = TestEventStubs.order_submitted(order, account_id=ib_account_id)
+        order.apply(submitted_event)
+
+        submit_cmd = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            order=order,
+            position_id=None,
+            client_id=None,  # No explicit client_id
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        engine.execute(submit_cmd)
+
+        # Assert - Order should be cached
+        assert self.cache.order_exists(order.client_order_id)
+        assert ib_client_id in engine.registered_clients
+
+    def test_find_client_by_account_id_routes_modify_order_with_account_id(self) -> None:
+        # Arrange
+        ib_client_id = ClientId("IB-003")
+        ib_account_id = AccountId("IB-003")
+        # Create separate message bus to avoid endpoint registration conflicts
+        test_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+        ib_client = MockExecutionClient(
+            client_id=ib_client_id,
+            venue=None,  # Multi-venue
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        engine = ExecutionEngine(
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        engine.register_client(ib_client)
+
+        # First submit an order
+        order = self.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.00000"),
+        )
+        # Set account_id by processing OrderSubmitted event
+        submitted_event = TestEventStubs.order_submitted(order, account_id=ib_account_id)
+        order.apply(submitted_event)
+
+        submit_cmd = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            order=order,
+            position_id=None,
+            client_id=ib_client_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        engine.execute(submit_cmd)
+        engine.process(TestEventStubs.order_submitted(order))
+        engine.process(TestEventStubs.order_accepted(order))
+
+        # Now modify the order
+        modify_cmd = ModifyOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=order.client_order_id,
+            venue_order_id=None,
+            quantity=Quantity.from_int(200_000),
+            price=Price.from_str("1.01000"),
+            trigger_price=None,
+            client_id=None,  # No explicit client_id
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        engine.execute(modify_cmd)
+
+        # Assert - Command should be routed to IB client
+        assert ib_client_id in engine.registered_clients
+
+    def test_find_client_by_account_id_routes_cancel_order_with_account_id(self) -> None:
+        # Arrange
+        ib_client_id = ClientId("IB-004")
+        ib_account_id = AccountId("IB-004")
+        # Create separate message bus to avoid endpoint registration conflicts
+        test_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+        ib_client = MockExecutionClient(
+            client_id=ib_client_id,
+            venue=None,  # Multi-venue
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        engine = ExecutionEngine(
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        engine.register_client(ib_client)
+
+        # First submit an order
+        order = self.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.00000"),
+        )
+        # Set account_id by processing OrderSubmitted event
+        submitted_event = TestEventStubs.order_submitted(order, account_id=ib_account_id)
+        order.apply(submitted_event)
+
+        submit_cmd = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            order=order,
+            position_id=None,
+            client_id=ib_client_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        engine.execute(submit_cmd)
+        engine.process(TestEventStubs.order_submitted(order))
+        engine.process(TestEventStubs.order_accepted(order))
+
+        # Now cancel the order
+        cancel_cmd = CancelOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=order.client_order_id,
+            venue_order_id=None,
+            client_id=None,  # No explicit client_id
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        engine.execute(cancel_cmd)
+
+        # Assert - Command should be routed to IB client
+        assert ib_client_id in engine.registered_clients
+
+    def test_client_routing_priority_explicit_client_id_first(self) -> None:
+        # Arrange - Create two clients
+        ib_client_id = ClientId("IB-ROUTE")
+        ib_account_id = AccountId("IB-ROUTE")
+        # Create separate message bus to avoid endpoint registration conflicts
+        test_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+        ib_client = MockExecutionClient(
+            client_id=ib_client_id,
+            venue=None,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        sim_client_id = ClientId("SIM")
+        sim_client = MockExecutionClient(
+            client_id=sim_client_id,
+            venue=Venue("SIM"),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        engine = ExecutionEngine(
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        engine.register_client(ib_client)
+        engine.register_client(sim_client)
+
+        # Create order with account_id that would route to IB
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+        )
+        # Set account_id by processing OrderSubmitted event
+        submitted_event = TestEventStubs.order_submitted(order, account_id=ib_account_id)
+        order.apply(submitted_event)
+
+        # But explicitly specify SIM client_id
+        submit_cmd = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            order=order,
+            position_id=None,
+            client_id=sim_client_id,  # Explicit client_id should take priority
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        engine.execute(submit_cmd)
+
+        # Assert - Order should be cached (command was routed)
+        assert self.cache.order_exists(order.client_order_id)
+        assert sim_client_id in engine.registered_clients
+        assert ib_client_id in engine.registered_clients
+
+    def test_client_routing_fallback_to_venue_when_account_id_not_found(self) -> None:
+        # Arrange
+        sim_client_id = ClientId("SIM")
+        # Create separate message bus to avoid endpoint registration conflicts
+        test_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+        sim_client = MockExecutionClient(
+            client_id=sim_client_id,
+            venue=Venue("SIM"),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        engine = ExecutionEngine(
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        engine.register_client(sim_client)
+
+        # Create order with account_id that doesn't match any client
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+        )
+        # Set account_id by processing OrderSubmitted event
+        unknown_account_id = AccountId("UNKNOWN-UNKNOWN")
+        submitted_event = TestEventStubs.order_submitted(order, account_id=unknown_account_id)
+        order.apply(submitted_event)
+
+        submit_cmd = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            order=order,
+            position_id=None,
+            client_id=None,  # No explicit client_id
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        engine.execute(submit_cmd)
+
+        # Assert - Should fallback to venue-based routing
+        assert self.cache.order_exists(order.client_order_id)
+        assert sim_client_id in engine.registered_clients
+
+    def test_client_routing_fallback_to_default_when_no_other_routing(self) -> None:
+        # Arrange
+        default_client_id = ClientId("DEFAULT")
+        # Create separate message bus to avoid endpoint registration conflicts
+        test_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+        default_client = MockExecutionClient(
+            client_id=default_client_id,
+            venue=None,  # Multi-venue, will be default
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        engine = ExecutionEngine(
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        engine.register_client(default_client)
+
+        # Create order with account_id that doesn't match any client
+        # and instrument venue that doesn't match any routing
+        order = self.order_factory.market(
+            instrument_id=InstrumentId.from_str("EUR/USD.UNKNOWN"),
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+        )
+        # Set account_id by processing OrderSubmitted event
+        unknown_account_id = AccountId("UNKNOWN-UNKNOWN")
+        submitted_event = TestEventStubs.order_submitted(order, account_id=unknown_account_id)
+        order.apply(submitted_event)
+
+        submit_cmd = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            order=order,
+            position_id=None,
+            client_id=None,  # No explicit client_id
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        engine.execute(submit_cmd)
+
+        # Assert - Should fallback to default client
+        assert self.cache.order_exists(order.client_order_id)
+        assert default_client_id in engine.registered_clients
+        assert engine.default_client == default_client_id
+
+    def test_query_account_routes_by_account_id(self) -> None:
+        # Arrange
+        ib_client_id = ClientId("IB-QUERY")
+        ib_account_id = AccountId("IB-QUERY")
+        # Create separate message bus to avoid endpoint registration conflicts
+        test_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+        ib_client = MockExecutionClient(
+            client_id=ib_client_id,
+            venue=None,  # Multi-venue
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        engine = ExecutionEngine(
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        engine.register_client(ib_client)
+
+        query_cmd = QueryAccount(
+            trader_id=self.trader_id,
+            account_id=ib_account_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=None,  # No explicit client_id
+        )
+
+        # Act & Assert - Verify routing by checking that client was found
+        # The routing logic should find the client by account_id issuer matching client_id
+        client = engine._find_client_for_command(query_cmd)
+        assert client is not None
+        assert client.id == ib_client_id
+        assert ib_client_id in engine.registered_clients
+
+    def test_query_account_with_explicit_client_id_takes_priority(self) -> None:
+        # Arrange - Create two clients
+        ib_client_id = ClientId("IB-QUERY2")
+        ib_account_id = AccountId("IB-QUERY2")
+        sim_client_id = ClientId("SIM")
+        # Create separate message bus to avoid endpoint registration conflicts
+        test_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+        ib_client = MockExecutionClient(
+            client_id=ib_client_id,
+            venue=None,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        sim_client = MockExecutionClient(
+            client_id=sim_client_id,
+            venue=Venue("SIM"),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        engine = ExecutionEngine(
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        engine.register_client(ib_client)
+        engine.register_client(sim_client)
+
+        # QueryAccount with account_id that would route to IB, but explicit SIM client_id
+        query_cmd = QueryAccount(
+            trader_id=self.trader_id,
+            account_id=ib_account_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=sim_client_id,  # Explicit client_id should take priority
+        )
+
+        # Act & Assert - Verify routing by checking that client was found
+        # Explicit client_id should take priority over account_id routing
+        client = engine._find_client_for_command(query_cmd)
+        assert client is not None
+        assert client.id == sim_client_id  # Should route to SIM despite account_id
+        assert sim_client_id in engine.registered_clients
+        assert ib_client_id in engine.registered_clients
+
+    def test_multi_account_routing_priority_comprehensive(self) -> None:
+        # Arrange - Set up three clients to test all routing priorities:
+        # 1. IB client (multi-venue broker, no venue)
+        # 2. SIM client (single-venue)
+        # 3. DEFAULT client (fallback)
+        ib_client_id = ClientId("IB")
+        sim_client_id = ClientId("SIM")
+        default_client_id = ClientId("DEFAULT")
+
+        test_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+
+        ib_client = MockExecutionClient(
+            client_id=ib_client_id,
+            venue=None,  # Multi-venue broker
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        sim_client = MockExecutionClient(
+            client_id=sim_client_id,
+            venue=Venue("SIM"),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        default_client = MockExecutionClient(
+            client_id=default_client_id,
+            venue=Venue("DEFAULT"),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        engine = ExecutionEngine(
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        engine.register_client(ib_client)
+        engine.register_client(sim_client)
+        engine.register_default_client(default_client)
+
+        # Add instrument to cache for venue-based routing
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        # Test 1: Explicit client_id takes highest priority
+        order1 = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+        )
+        order1.apply(TestEventStubs.order_submitted(order1, account_id=AccountId("IB-001")))
+
+        cmd1 = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            order=order1,
+            position_id=None,
+            client_id=sim_client_id,  # Explicit: should override account_id routing
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        client = engine._find_client_for_command(cmd1)
+        assert client.id == sim_client_id, "Explicit client_id should take priority"
+
+        # Test 2: Account ID issuer routes to matching client
+        order2 = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+        )
+        order2.apply(TestEventStubs.order_submitted(order2, account_id=AccountId("IB-002")))
+
+        cmd2 = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            order=order2,
+            position_id=None,
+            client_id=None,  # No explicit client_id
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        client = engine._find_client_for_command(cmd2)
+        assert client.id == ib_client_id, "Account issuer 'IB' should route to IB client"
+
+        # Test 3: Venue-based routing when no account_id match
+        order3 = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+        )
+        # No account_id set - should fall back to venue routing
+
+        cmd3 = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            order=order3,
+            position_id=None,
+            client_id=None,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        client = engine._find_client_for_command(cmd3)
+        assert client.id == sim_client_id, "Should route to SIM client via venue"
+
+        # Test 4: Default client fallback for unknown venue
+        unknown_instrument_id = InstrumentId.from_str("XYZ/USD.UNKNOWN")
+        order4 = self.order_factory.market(
+            instrument_id=unknown_instrument_id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+        )
+
+        cmd4 = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            order=order4,
+            position_id=None,
+            client_id=None,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        client = engine._find_client_for_command(cmd4)
+        assert client.id == default_client_id, "Should fall back to default client"
+
+        # Test 5: QueryAccount routes by account_id issuer
+        query_cmd = QueryAccount(
+            trader_id=self.trader_id,
+            account_id=AccountId("IB-003"),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=None,
+        )
+        client = engine._find_client_for_command(query_cmd)
+        assert client.id == ib_client_id, "QueryAccount should route by account_id issuer"

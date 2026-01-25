@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,7 +29,7 @@ use crate::{
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", frozen, eq)
 )]
 pub struct AccountBalance {
     /// The account balance currency.
@@ -55,10 +55,7 @@ impl AccountBalance {
     pub fn new_checked(total: Money, locked: Money, free: Money) -> anyhow::Result<Self> {
         check_predicate_true(
             total == locked + free,
-            &format!(
-                "total balance is not equal to the sum of locked and free balances: {} != {} + {}",
-                total, locked, free
-            ),
+            &format!("`total` ({total}) - `locked` ({locked}) != `free` ({free})"),
         )?;
         Ok(Self {
             currency: total.currency,
@@ -106,7 +103,7 @@ impl Display for AccountBalance {
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", frozen, eq)
 )]
 pub struct MarginBalance {
     pub initial: Money,
@@ -116,14 +113,42 @@ pub struct MarginBalance {
 }
 
 impl MarginBalance {
-    /// Creates a new [`MarginBalance`] instance.
-    pub fn new(initial: Money, maintenance: Money, instrument_id: InstrumentId) -> Self {
-        Self {
+    /// Creates a new [`MarginBalance`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `initial` and `maintenance` have different currencies.
+    ///
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    pub fn new_checked(
+        initial: Money,
+        maintenance: Money,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<Self> {
+        check_predicate_true(
+            initial.currency == maintenance.currency,
+            &format!(
+                "`initial` currency ({}) != `maintenance` currency ({})",
+                initial.currency, maintenance.currency
+            ),
+        )?;
+        Ok(Self {
             initial,
             maintenance,
             currency: initial.currency,
             instrument_id,
-        }
+        })
+    }
+
+    /// Creates a new [`MarginBalance`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `initial` and `maintenance` have different currencies.
+    pub fn new(initial: Money, maintenance: Money, instrument_id: InstrumentId) -> Self {
+        Self::new_checked(initial, maintenance, instrument_id).expect(FAILED)
     }
 }
 
@@ -154,16 +179,16 @@ impl Display for MarginBalance {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use crate::types::{
-        AccountBalance, MarginBalance,
-        stubs::{stub_account_balance, stub_margin_balance},
+    use crate::{
+        identifiers::InstrumentId,
+        types::{
+            AccountBalance, Currency, MarginBalance, Money,
+            stubs::{stub_account_balance, stub_margin_balance},
+        },
     };
 
     #[rstest]
@@ -211,6 +236,32 @@ mod tests {
         assert_eq!(
             "MarginBalance(initial=5000.00 USD, maintenance=20000.00 USD, instrument_id=BTCUSDT.COINBASE)",
             display
+        );
+    }
+
+    #[rstest]
+    fn test_margin_balance_new_checked_with_currency_mismatch_returns_error() {
+        let usd = Currency::USD();
+        let eur = Currency::EUR();
+        let instrument_id = InstrumentId::from("BTCUSDT.COINBASE");
+        let result = MarginBalance::new_checked(
+            Money::new(5000.0, usd),
+            Money::new(20000.0, eur),
+            instrument_id,
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[should_panic(expected = "`initial` currency (USD) != `maintenance` currency (EUR)")]
+    fn test_margin_balance_new_with_currency_mismatch_panics() {
+        let usd = Currency::USD();
+        let eur = Currency::EUR();
+        let instrument_id = InstrumentId::from("BTCUSDT.COINBASE");
+        let _ = MarginBalance::new(
+            Money::new(5000.0, usd),
+            Money::new(20000.0, eur),
+            instrument_id,
         );
     }
 }

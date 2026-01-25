@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,9 +14,17 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
-from numpy import float64
 
-from nautilus_trader.analysis.statistics.risk_return_ratio import RiskReturnRatio
+from nautilus_trader.analysis import RiskReturnRatio
+
+
+def convert_to_daily_returns(values: list[float]) -> dict[int, float]:
+    """
+    Convert values to dict with daily-spaced timestamps.
+    """
+    one_day_ns = 86_400_000_000_000
+    start_time = 1_600_000_000_000_000_000
+    return {start_time + i * one_day_ns: v for i, v in enumerate(values)}
 
 
 class TestRiskReturnRatioPortfolioStatistic:
@@ -33,7 +41,7 @@ class TestRiskReturnRatioPortfolioStatistic:
     def test_calculate_given_empty_series_returns_nan(self):
         # Arrange
         stat = RiskReturnRatio()
-        data = pd.Series([], dtype=float64)
+        data = convert_to_daily_returns([])
 
         # Act
         result = stat.calculate_from_returns(data)
@@ -44,7 +52,7 @@ class TestRiskReturnRatioPortfolioStatistic:
     def test_calculate_given_mix_of_pnls1_returns_expected(self):
         # Arrange
         stat = RiskReturnRatio()
-        data = pd.Series([1.0, -1.0], dtype=float64)
+        data = convert_to_daily_returns([1.0, -1.0])
 
         # Act
         result = stat.calculate_from_returns(data)
@@ -55,7 +63,7 @@ class TestRiskReturnRatioPortfolioStatistic:
     def test_calculate_given_mix_of_pnls2_returns_expected(self):
         # Arrange
         stat = RiskReturnRatio()
-        data = pd.Series([2.0, 2.0, 1.0, -1.0, -2.0], dtype=float64)
+        data = convert_to_daily_returns([2.0, 2.0, 1.0, -1.0, -2.0])
 
         # Act
         result = stat.calculate_from_returns(data)

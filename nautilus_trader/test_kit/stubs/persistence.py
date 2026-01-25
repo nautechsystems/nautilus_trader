@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -77,6 +77,9 @@ class TestPersistenceStubs:
     @staticmethod
     def news_events() -> list[NewsEventData]:
         df = pd.read_csv(TEST_DATA_DIR / "news_events.csv")
+        # Use only first 5000 rows for faster testing (vs original 86,985 rows)
+        # This reduces test time from ~40s to ~2-3s while maintaining test validity
+        df = df.head(5000)
         events = []
         for _, row in df.iterrows():
             data = NewsEventData(

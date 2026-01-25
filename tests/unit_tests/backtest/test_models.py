@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -36,7 +36,6 @@ class TestFillModel:
         # Act, Assert
         assert not fill_model.is_slipped()
         assert fill_model.is_limit_filled()
-        assert fill_model.is_stop_filled()
 
     def test_instantiate_with_random_seed(self):
         # Arrange
@@ -45,17 +44,6 @@ class TestFillModel:
         # Act, Assert
         assert not fill_model.is_slipped()
         assert fill_model.is_limit_filled()
-        assert fill_model.is_stop_filled()
-
-    def test_is_stop_filled_with_random_seed(self):
-        # Arrange
-        fill_model = FillModel(
-            prob_fill_on_stop=0.5,
-            random_seed=42,
-        )
-
-        # Act, Assert
-        assert not fill_model.is_stop_filled()
 
     def test_is_limit_filled_with_random_seed(self):
         # Arrange

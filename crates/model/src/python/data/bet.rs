@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,7 +31,7 @@ use crate::{
 impl Bet {
     #[new]
     fn py_new(price: Decimal, stake: Decimal, side: BetSide) -> PyResult<Self> {
-        Ok(Bet::new(price, stake, side))
+        Ok(Self::new(price, stake, side))
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -64,14 +64,14 @@ impl Bet {
         volume: Decimal,
         side: BetSide,
     ) -> PyResult<Self> {
-        Ok(Bet::from_stake_or_liability(price, volume, side))
+        Ok(Self::from_stake_or_liability(price, volume, side))
     }
 
     /// Create a bet from a given stake.
     #[staticmethod]
     #[pyo3(name = "from_stake")]
     fn py_from_stake(price: Decimal, stake: Decimal, side: BetSide) -> PyResult<Self> {
-        Ok(Bet::from_stake(price, stake, side))
+        Ok(Self::from_stake(price, stake, side))
     }
 
     /// Create a bet from a given liability.
@@ -80,7 +80,7 @@ impl Bet {
     #[staticmethod]
     #[pyo3(name = "from_liability")]
     fn py_from_liability(price: Decimal, liability: Decimal, side: BetSide) -> PyResult<Self> {
-        Ok(Bet::from_liability(price, liability, side))
+        Ok(Self::from_liability(price, liability, side))
     }
 
     /// Returns the bet's price.

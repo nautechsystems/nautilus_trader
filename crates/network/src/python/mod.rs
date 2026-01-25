@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -27,11 +27,11 @@ pub mod websocket;
 
 use std::num::NonZeroU32;
 
-use pyo3::{PyTypeCheck, exceptions::PyException, prelude::*};
+use pyo3::{exceptions::PyException, prelude::*};
 
 use crate::{
     python::{
-        http::{HttpError, HttpTimeoutError},
+        http::{HttpClientBuildError, HttpError, HttpInvalidProxyError, HttpTimeoutError},
         websocket::WebSocketClientError,
     },
     ratelimiter::quota::Quota,
@@ -91,7 +91,7 @@ impl Quota {
 ///
 /// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
-pub fn network(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn network(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::http::HttpClient>()?;
     m.add_class::<crate::http::HttpMethod>()?;
     m.add_class::<crate::http::HttpResponse>()?;
@@ -101,19 +101,26 @@ pub fn network(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::socket::SocketClient>()?;
     m.add_class::<crate::socket::SocketConfig>()?;
 
-    // Add error classes
     m.add(
-        <WebSocketClientError as PyTypeCheck>::NAME,
+        "WebSocketClientError",
         m.py().get_type::<WebSocketClientError>(),
     )?;
+    m.add("HttpError", m.py().get_type::<HttpError>())?;
+    m.add("HttpTimeoutError", m.py().get_type::<HttpTimeoutError>())?;
     m.add(
-        <HttpError as PyTypeCheck>::NAME,
-        m.py().get_type::<HttpError>(),
+        "HttpInvalidProxyError",
+        m.py().get_type::<HttpInvalidProxyError>(),
     )?;
     m.add(
-        <HttpTimeoutError as PyTypeCheck>::NAME,
-        m.py().get_type::<HttpTimeoutError>(),
+        "HttpClientBuildError",
+        m.py().get_type::<HttpClientBuildError>(),
     )?;
+
+    m.add_function(wrap_pyfunction!(http::http_get, m)?)?;
+    m.add_function(wrap_pyfunction!(http::http_post, m)?)?;
+    m.add_function(wrap_pyfunction!(http::http_patch, m)?)?;
+    m.add_function(wrap_pyfunction!(http::http_delete, m)?)?;
+    m.add_function(wrap_pyfunction!(http::http_download, m)?)?;
 
     Ok(())
 }

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -235,7 +235,7 @@ class BinanceFuturesMarkPriceData(msgspec.Struct, frozen=True):
             index=Price.from_str(self.i),
             estimated_settle=Price.from_str(self.P),
             funding_rate=Decimal(self.r),
-            ts_next_funding=millis_to_nanos(self.T),
+            next_funding_ns=millis_to_nanos(self.T),
             ts_event=millis_to_nanos(self.E),
             ts_init=ts_init,
         )

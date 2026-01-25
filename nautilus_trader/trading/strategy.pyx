@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -53,6 +53,7 @@ from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport QueryAccount
 from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
@@ -85,6 +86,7 @@ from nautilus_trader.model.functions cimport oms_type_from_str
 from nautilus_trader.model.functions cimport order_side_to_str
 from nautilus_trader.model.functions cimport order_status_to_str
 from nautilus_trader.model.functions cimport position_side_to_str
+from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -145,6 +147,7 @@ cdef class Strategy(Actor):
         self.id = StrategyId(f"{component_id}-{config.order_id_tag}")
         self.order_id_tag = str(config.order_id_tag)
         self.use_uuid_client_order_ids = config.use_uuid_client_order_ids
+        self.use_hyphens_in_client_order_ids = config.use_hyphens_in_client_order_ids
         self._log = Logger(name=component_id)
 
         oms_type = config.oms_type or OmsType.UNSPECIFIED
@@ -154,6 +157,7 @@ cdef class Strategy(Actor):
         # Configuration
         self._log_events = config.log_events
         self._log_commands = config.log_commands
+        self._log_rejected_due_post_only_as_warning = config.log_rejected_due_post_only_as_warning
         self.config = config
         self.oms_type = <OmsType>oms_type
         self.external_order_claims = self._parse_external_order_claims(config.external_order_claims)
@@ -288,7 +292,8 @@ cdef class Strategy(Actor):
             strategy_id=self.id,
             clock=clock,
             cache=cache,
-            use_uuid_client_order_ids=self.use_uuid_client_order_ids
+            use_uuid_client_order_ids=self.use_uuid_client_order_ids,
+            use_hyphens_in_client_order_ids=self.use_hyphens_in_client_order_ids
         )
 
         self._manager = OrderManager(
@@ -804,6 +809,10 @@ cdef class Strategy(Actor):
 
         self.cache.add_order(order, position_id, client_id)
 
+        cdef dict[str, object] used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef SubmitOrder command = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=self.id,
@@ -812,7 +821,7 @@ cdef class Strategy(Actor):
             ts_init=self.clock.timestamp_ns(),
             position_id=position_id,
             client_id=client_id,
-            params=params,
+            params=used_params,
         )
 
         if self.manage_gtd_expiry and order.time_in_force == TimeInForce.GTD:
@@ -903,6 +912,10 @@ cdef class Strategy(Actor):
         for order in order_list.orders:
             self.cache.add_order(order, position_id, client_id)
 
+        cdef dict[str, object] used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef SubmitOrderList command = SubmitOrderList(
             trader_id=self.trader_id,
             strategy_id=self.id,
@@ -911,7 +924,7 @@ cdef class Strategy(Actor):
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
-            params=params,
+            params=used_params,
         )
 
         if self.manage_gtd_expiry:
@@ -985,13 +998,17 @@ cdef class Strategy(Actor):
         Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
 
+        cdef dict[str, object] used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef ModifyOrder command = self._create_modify_order(
             order=order,
             quantity=quantity,
             price=price,
             trigger_price=trigger_price,
             client_id=client_id,
-            params=params,
+            params=used_params,
         )
         if command is None:
             return
@@ -1022,10 +1039,14 @@ cdef class Strategy(Actor):
         Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
 
+        cdef dict[str, object] used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef CancelOrder command = self._create_cancel_order(
             order=order,
             client_id=client_id,
-            params=params,
+            params=used_params,
         )
         if command is None:
             return
@@ -1106,6 +1127,10 @@ cdef class Strategy(Actor):
             self._log.warning("Cannot send `BatchCancelOrders`, no valid cancel commands")
             return
 
+        cdef dict[str, object] used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef command = BatchCancelOrders(
             trader_id=self.trader_id,
             strategy_id=self.id,
@@ -1114,7 +1139,7 @@ cdef class Strategy(Actor):
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
-            params=params,
+            params=used_params,
         )
 
         self._manager.send_exec_command(command)
@@ -1209,6 +1234,10 @@ cdef class Strategy(Actor):
                 if order.strategy_id == self.id and not order.is_closed_c():
                     self.cancel_order(order)
 
+        cdef dict[str, object] used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef CancelAllOrders command
 
         if open_count > 0:
@@ -1220,7 +1249,7 @@ cdef class Strategy(Actor):
                 command_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
                 client_id=client_id,
-                params=params,
+                params=used_params,
             )
             self._manager.send_exec_command(command)
 
@@ -1233,7 +1262,7 @@ cdef class Strategy(Actor):
                 command_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
                 client_id=client_id,
-                params=params,
+                params=used_params,
             )
             self._manager.send_emulator_command(command)
 
@@ -1244,6 +1273,7 @@ cdef class Strategy(Actor):
         list[str] tags = None,
         TimeInForce time_in_force = TimeInForce.GTC,
         bint reduce_only = True,
+        bint quote_quantity = False,
         dict[str, object] params = None,
     ):
         """
@@ -1266,6 +1296,8 @@ cdef class Strategy(Actor):
         reduce_only : bool, default True
             If the market order to close the position should carry the 'reduce-only' execution instruction.
             Optional, as not all venues support this feature.
+        quote_quantity : bool, default False
+            If the order quantity should be interpreted as quoted (e.g. in USDT for ETH-USDT).
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -1289,13 +1321,17 @@ cdef class Strategy(Actor):
             quantity=position.quantity,
             time_in_force=time_in_force,
             reduce_only=reduce_only,
-            quote_quantity=False,
+            quote_quantity=quote_quantity,
             exec_algorithm_id=None,
             exec_algorithm_params=None,
             tags=tags,
         )
 
-        self.submit_order(order, position_id=position.id, client_id=client_id, params=params)
+        cdef dict[str, object] used_params = {}
+        if params:
+            used_params.update(params)
+
+        self.submit_order(order, position_id=position.id, client_id=client_id, params=used_params)
 
     cpdef void close_all_positions(
         self,
@@ -1305,6 +1341,7 @@ cdef class Strategy(Actor):
         list[str] tags = None,
         TimeInForce time_in_force = TimeInForce.GTC,
         bint reduce_only = True,
+        bint quote_quantity = False,
         dict[str, object] params = None,
     ):
         """
@@ -1326,6 +1363,8 @@ cdef class Strategy(Actor):
         reduce_only : bool, default True
             If the market orders to close positions should carry the 'reduce-only' execution instruction.
             Optional, as not all venues support this feature.
+        quote_quantity : bool, default False
+            If the order quantity is denominated in the quote currency.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -1352,9 +1391,56 @@ cdef class Strategy(Actor):
             f"Closing {count} open{position_side_str} position{'' if count == 1 else 's'}",
         )
 
+        cdef dict[str, object] used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef Position position
         for position in positions_open:
-            self.close_position(position, client_id, tags, time_in_force, reduce_only, params)
+            self.close_position(
+                position,
+                client_id,
+                tags,
+                time_in_force,
+                reduce_only,
+                quote_quantity,
+                used_params,
+            )
+
+    cpdef void query_account(self, AccountId account_id, ClientId client_id = None, dict[str, object] params = None):
+        """
+        Query the account with optional routing instructions.
+
+        A `QueryAccount` command will be created and then sent to the
+        `ExecutionEngine`.
+
+        Parameters
+        ----------
+        account_id : AccountId
+            The account to query.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
+
+        cdef dict[str, object] used_params = {}
+        if params:
+            used_params.update(params)
+
+        cdef QueryAccount command = QueryAccount(
+            trader_id=self.trader_id,
+            account_id=account_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=client_id,
+            params=used_params,
+        )
+
+        self._manager.send_exec_command(command)
 
     cpdef void query_order(self, Order order, ClientId client_id = None, dict[str, object] params = None):
         """
@@ -1379,6 +1465,10 @@ cdef class Strategy(Actor):
         Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
 
+        cdef dict[str, object] used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef QueryOrder command = QueryOrder(
             trader_id=self.trader_id,
             strategy_id=self.id,
@@ -1388,7 +1478,7 @@ cdef class Strategy(Actor):
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
-            params=params,
+            params=used_params,
         )
 
         self._manager.send_exec_command(command)
@@ -1594,7 +1684,9 @@ cdef class Strategy(Actor):
         """
         Condition.not_none(event, "event")
 
-        if type(event) in self._warning_events:
+        if type(event) in self._warning_events and not (
+            isinstance(event, OrderRejected) and event.due_post_only and not self._log_rejected_due_post_only_as_warning
+        ):
             self.log.warning(f"{RECV}{EVT} {event}")
         elif self._log_events:
             self.log.info(f"{RECV}{EVT} {event}")

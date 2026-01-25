@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -151,7 +151,7 @@ impl From<OrderAny> for OrderSnapshot {
             liquidity_side: order.liquidity_side(),
             avg_px: order.avg_px(),
             slippage: order.slippage(),
-            commissions: order.commissions().values().cloned().collect(),
+            commissions: order.commissions().values().copied().collect(),
             status: order.status(),
             is_post_only: order.is_post_only(),
             is_reduce_only: order.is_reduce_only(),

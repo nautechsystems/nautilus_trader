@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,7 +34,6 @@ from betfair_parser.spec.betting.type_definitions import LimitOrder
 from betfair_parser.spec.betting.type_definitions import MarketOnCloseOrder
 from betfair_parser.spec.common import BetId
 from betfair_parser.spec.common import CustomerOrderRef
-from betfair_parser.spec.common import OrderSide as BetOrderSide
 from betfair_parser.spec.common import OrderStatus as BetfairOrderStatus
 from betfair_parser.spec.common import OrderType
 from betfair_parser.spec.streaming import Order as BetfairOrder
@@ -52,6 +51,8 @@ from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISIO
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing.common import min_fill_size
 from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
+from nautilus_trader.core.datetime import nanos_to_millis
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
@@ -323,8 +324,18 @@ def betfair_account_to_account_state(
     ts_init,
     reported,
     account_id="001",
+    fallback_currency: Currency | None = None,
 ) -> AccountState:
-    currency = Currency.from_str(account_detail.currency_code)
+    currency_code = account_detail.currency_code
+    if currency_code:
+        currency = Currency.from_str(currency_code)
+    elif fallback_currency is not None:
+        currency = fallback_currency
+    else:
+        raise ValueError(
+            f"Cannot determine account currency: currency_code={currency_code!r}, "
+            f"fallback_currency={fallback_currency}",
+        )
     free = float(account_funds.available_to_bet_balance)
     locked = -float(account_funds.exposure)
     total = free + locked
@@ -387,17 +398,35 @@ def bet_to_order_status_report(
     ts_init,
     report_id,
 ) -> OrderStatusReport:
-    if order.price_size.size != 0.0:
+    is_bsp_order = order.price_size.size == 0.0 and order.bsp_liability != 0.0
+
+    if not is_bsp_order and order.price_size.size != 0.0:
         qty = Quantity(order.price_size.size, BETFAIR_QUANTITY_PRECISION)
         fill_qty = Quantity(order.size_matched, BETFAIR_QUANTITY_PRECISION)
-    elif order.bsp_liability != 0.0:
-        size = (
-            order.bsp_liability / order if order.side == BetOrderSide.BACK else order.bsp_liability
+        price = BETFAIR_FLOAT_TO_PRICE[order.price_size.price]
+    elif is_bsp_order:
+        # BSP orders: bspLiability is in payout units, but size fields are in stake units
+        # Must use stake units consistently to avoid incorrect fill ratios
+        total_size = (
+            order.size_matched
+            + order.size_remaining
+            + order.size_cancelled
+            + order.size_lapsed
+            + order.size_voided
         )
-        qty = Quantity(size, BETFAIR_QUANTITY_PRECISION)
-        fill_qty = Quantity(size, BETFAIR_QUANTITY_PRECISION)
+        qty = Quantity(total_size, BETFAIR_QUANTITY_PRECISION)
+        fill_qty = Quantity(order.size_matched, BETFAIR_QUANTITY_PRECISION)
+
+        # BSP orders with limit price specified use price_size.price, pure BSP use average_price_matched
+        if order.price_size.price > 0.0:
+            price = BETFAIR_FLOAT_TO_PRICE[order.price_size.price]
+        elif order.average_price_matched > 0.0:
+            price = Price(order.average_price_matched, BETFAIR_PRICE_PRECISION)
+        else:
+            price = Price(0.0, BETFAIR_PRICE_PRECISION)
     else:
         raise ValueError(f"Unknown order size {order.price_size.size=}, {order.bsp_liability=}")
+
     return OrderStatusReport(
         account_id=account_id,
         instrument_id=instrument_id,
@@ -408,7 +437,7 @@ def bet_to_order_status_report(
         contingency_type=ContingencyType.NO_CONTINGENCY,
         time_in_force=B2N_TIME_IN_FORCE[order.persistence_type],
         order_status=determine_order_status(order),
-        price=BETFAIR_FLOAT_TO_PRICE[order.price_size.price],
+        price=price,
         quantity=qty,
         filled_qty=fill_qty,
         report_id=report_id,
@@ -554,6 +583,10 @@ def order_to_trade_id(uo: BetfairOrder) -> TradeId:
 
 
 def current_order_summary_to_trade_id(order: CurrentOrderSummary) -> TradeId:
+    placed_date_ms = nanos_to_millis(dt_to_unix_nanos(order.placed_date))
+    matched_date_ns = maybe_dt_to_unix_nanos(order.matched_date)
+    matched_date_ms = nanos_to_millis(matched_date_ns) if matched_date_ns else None
+
     return hashed_trade_id(
         bet_id=order.bet_id,
         price=order.price_size.price,
@@ -561,8 +594,8 @@ def current_order_summary_to_trade_id(order: CurrentOrderSummary) -> TradeId:
         side=order.side.value[0],
         persistence_type=order.persistence_type.value,
         order_type=order.order_type.value,
-        placed_date=order.placed_date,
-        matched_date=order.matched_date,
+        placed_date=placed_date_ms,
+        matched_date=matched_date_ms,
         average_price_matched=order.average_price_matched,
         size_matched=order.size_matched,
     )

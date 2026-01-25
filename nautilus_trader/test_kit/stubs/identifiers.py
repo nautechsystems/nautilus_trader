@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -53,8 +53,16 @@ class TestIdStubs:
         return InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE"))
 
     @staticmethod
+    def btcusdt_perp_binance_id() -> InstrumentId:
+        return InstrumentId(Symbol("BTCUSDT-PERP"), Venue("BINANCE"))
+
+    @staticmethod
     def ethusdt_binance_id() -> InstrumentId:
         return InstrumentId(Symbol("ETHUSDT"), Venue("BINANCE"))
+
+    @staticmethod
+    def ethusdt_perp_binance_id() -> InstrumentId:
+        return InstrumentId(Symbol("ETHUSDT-PERP"), Venue("BINANCE"))
 
     @staticmethod
     def adabtc_binance_id() -> InstrumentId:

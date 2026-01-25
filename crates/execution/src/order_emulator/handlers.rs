@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,9 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{any::Any, cell::RefCell, rc::Rc};
+use std::any::Any;
 
-use nautilus_common::{messages::execution::TradingCommand, msgbus::handler::MessageHandler};
+use nautilus_common::{messages::execution::TradingCommand, msgbus::Handler};
+use nautilus_core::WeakCell;
 use nautilus_model::events::OrderEventAny;
 use ustr::Ustr;
 
@@ -23,50 +24,56 @@ use super::emulator::OrderEmulator;
 
 #[derive(Debug)]
 pub struct OrderEmulatorExecuteHandler {
-    pub id: Ustr,
-    pub emulator: Rc<RefCell<OrderEmulator>>,
+    id: Ustr,
+    emulator: WeakCell<OrderEmulator>,
 }
 
-impl MessageHandler for OrderEmulatorExecuteHandler {
+impl OrderEmulatorExecuteHandler {
+    #[inline]
+    #[must_use]
+    pub const fn new(id: Ustr, emulator: WeakCell<OrderEmulator>) -> Self {
+        Self { id, emulator }
+    }
+}
+
+impl Handler<dyn Any> for OrderEmulatorExecuteHandler {
     fn id(&self) -> Ustr {
         self.id
     }
 
     fn handle(&self, msg: &dyn Any) {
-        self.emulator.borrow_mut().execute(
-            msg.downcast_ref::<&TradingCommand>()
-                .unwrap()
-                .to_owned()
-                .clone(),
-        );
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
+        if let Some(emulator) = self.emulator.upgrade() {
+            if let Some(command) = msg.downcast_ref::<TradingCommand>() {
+                emulator.borrow_mut().execute(command.clone());
+            } else {
+                log::error!("OrderEmulator received unexpected message type");
+            }
+        }
     }
 }
 
 #[derive(Debug)]
 pub struct OrderEmulatorOnEventHandler {
-    pub id: Ustr,
-    pub emulator: Rc<RefCell<OrderEmulator>>,
+    id: Ustr,
+    emulator: WeakCell<OrderEmulator>,
 }
 
-impl MessageHandler for OrderEmulatorOnEventHandler {
+impl OrderEmulatorOnEventHandler {
+    #[inline]
+    #[must_use]
+    pub const fn new(id: Ustr, emulator: WeakCell<OrderEmulator>) -> Self {
+        Self { id, emulator }
+    }
+}
+
+impl Handler<OrderEventAny> for OrderEmulatorOnEventHandler {
     fn id(&self) -> Ustr {
         self.id
     }
 
-    fn handle(&self, msg: &dyn Any) {
-        self.emulator.borrow_mut().on_event(
-            msg.downcast_ref::<&OrderEventAny>()
-                .unwrap()
-                .to_owned()
-                .clone(),
-        );
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
+    fn handle(&self, event: &OrderEventAny) {
+        if let Some(emulator) = self.emulator.upgrade() {
+            emulator.borrow_mut().on_event(event.clone());
+        }
     }
 }

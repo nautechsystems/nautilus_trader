@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -47,7 +47,7 @@ def test_live_clock_timestamp_ms(benchmark) -> None:
     benchmark(_LIVE_CLOCK.timestamp_ms)
 
 
-@pytest.mark.skip()
+@pytest.mark.skip
 def test_live_clock_cancel(benchmark) -> None:
     def _start_and_cancel():
         _LIVE_CLOCK.set_timer("timer1", pd.Timedelta(microseconds=10), callback=print)

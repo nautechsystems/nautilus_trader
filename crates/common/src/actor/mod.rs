@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,6 +12,12 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+//! Actor system for event-driven message processing.
+//!
+//! This module provides the actor framework used throughout NautilusTrader for handling
+//! data processing, event management, and asynchronous message handling. Actors are
+//! lightweight components that process messages in isolation.
 
 #![allow(unsafe_code)]
 
@@ -28,7 +34,7 @@ pub mod registry;
 mod tests;
 
 // Re-exports
-pub use data_actor::{DataActor, DataActorCore};
+pub use data_actor::{DataActor, DataActorConfig, DataActorCore};
 
 pub use crate::component::Component;
 

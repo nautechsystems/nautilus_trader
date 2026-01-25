@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,21 +13,31 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Display;
+
+use nautilus_model::position::Position;
+
 use crate::{Returns, statistic::PortfolioStatistic};
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
 )]
 pub struct ReturnsAverageWin {}
 
+impl Display for ReturnsAverageWin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Average Win (Return)")
+    }
+}
+
 impl PortfolioStatistic for ReturnsAverageWin {
     type Item = f64;
 
     fn name(&self) -> String {
-        stringify!(ReturnsAverageWin).to_string()
+        self.to_string()
     }
 
     fn calculate_from_returns(&self, returns: &Returns) -> Option<Self::Item> {
@@ -35,16 +45,23 @@ impl PortfolioStatistic for ReturnsAverageWin {
             return Some(f64::NAN);
         }
 
-        let negative_returns: Vec<f64> = returns.values().copied().filter(|&x| x > 0.0).collect();
+        let positive_returns: Vec<f64> = returns.values().copied().filter(|&x| x > 0.0).collect();
 
-        if negative_returns.is_empty() {
+        if positive_returns.is_empty() {
             return Some(f64::NAN);
         }
 
-        let sum: f64 = negative_returns.iter().sum();
-        let count = negative_returns.len() as f64;
+        let sum: f64 = positive_returns.iter().sum();
+        let count = positive_returns.len() as f64;
 
         Some(sum / count)
+    }
+    fn calculate_from_realized_pnls(&self, _realized_pnls: &[f64]) -> Option<Self::Item> {
+        None
+    }
+
+    fn calculate_from_positions(&self, _positions: &[Position]) -> Option<Self::Item> {
+        None
     }
 }
 
@@ -52,7 +69,7 @@ impl PortfolioStatistic for ReturnsAverageWin {
 mod tests {
     use std::collections::BTreeMap;
 
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UnixNanos, approx_eq};
     use rstest::rstest;
 
     use super::*;
@@ -90,7 +107,7 @@ mod tests {
         let result = avg_win.calculate_from_returns(&returns);
         assert!(result.is_some());
         // Average of [10.0, 20.0, 30.0] = (10 + 20 + 30) / 3 = 20.0
-        assert_eq!(result.unwrap(), 20.0);
+        assert!(approx_eq!(f64, result.unwrap(), 20.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -100,12 +117,12 @@ mod tests {
         let result = avg_win.calculate_from_returns(&returns);
         assert!(result.is_some());
         // Average of [10.0, 30.0] = (10 + 30) / 2 = 20.0
-        assert_eq!(result.unwrap(), 20.0);
+        assert!(approx_eq!(f64, result.unwrap(), 20.0, epsilon = 1e-9));
     }
 
     #[rstest]
     fn test_name() {
         let avg_win = ReturnsAverageWin {};
-        assert_eq!(avg_win.name(), "ReturnsAverageWin");
+        assert_eq!(avg_win.name(), "Average Win (Return)");
     }
 }

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,24 +15,24 @@
 
 //! Factory functions for creating Databento clients and components.
 
-use std::{any::Any, cell::RefCell, path::PathBuf, rc::Rc};
+use std::{any::Any, cell::RefCell, fmt::Debug, path::PathBuf, rc::Rc};
 
-use nautilus_common::{cache::Cache, clock::Clock};
+use nautilus_common::{cache::Cache, clients::DataClient, clock::Clock};
 use nautilus_core::time::{AtomicTime, get_atomic_clock_realtime};
-use nautilus_data::client::DataClient;
 use nautilus_model::identifiers::ClientId;
 use nautilus_system::factories::{ClientConfig, DataClientFactory};
 
 use crate::{
+    common::Credential,
     data::{DatabentoDataClient, DatabentoDataClientConfig},
     historical::DatabentoHistoricalClient,
 };
 
 /// Configuration for Databento data clients used with `LiveNode`.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DatabentoLiveClientConfig {
-    /// Databento API key.
-    pub api_key: String,
+    /// Databento API credential.
+    credential: Credential,
     /// Path to publishers.json file.
     pub publishers_filepath: PathBuf,
     /// Whether to use exchange as venue for GLBX instruments.
@@ -41,21 +41,44 @@ pub struct DatabentoLiveClientConfig {
     pub bars_timestamp_on_close: bool,
 }
 
+impl Debug for DatabentoLiveClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(DatabentoLiveClientConfig))
+            .field("credential", &"<redacted>")
+            .field("publishers_filepath", &self.publishers_filepath)
+            .field("use_exchange_as_venue", &self.use_exchange_as_venue)
+            .field("bars_timestamp_on_close", &self.bars_timestamp_on_close)
+            .finish()
+    }
+}
+
 impl DatabentoLiveClientConfig {
     /// Creates a new [`DatabentoLiveClientConfig`] instance.
     #[must_use]
-    pub const fn new(
-        api_key: String,
+    pub fn new(
+        api_key: impl Into<String>,
         publishers_filepath: PathBuf,
         use_exchange_as_venue: bool,
         bars_timestamp_on_close: bool,
     ) -> Self {
         Self {
-            api_key,
+            credential: Credential::new(api_key),
             publishers_filepath,
             use_exchange_as_venue,
             bars_timestamp_on_close,
         }
+    }
+
+    /// Returns the API key associated with this config.
+    #[must_use]
+    pub fn api_key(&self) -> &str {
+        self.credential.api_key()
+    }
+
+    /// Returns a masked version of the API key for logging purposes.
+    #[must_use]
+    pub fn api_key_masked(&self) -> String {
+        self.credential.api_key_masked()
     }
 }
 
@@ -83,7 +106,7 @@ impl DatabentoDataClientFactory {
     /// Returns an error if the client cannot be created or publisher configuration cannot be loaded.
     pub fn create_live_data_client(
         client_id: ClientId,
-        api_key: String,
+        api_key: impl Into<String>,
         publishers_filepath: PathBuf,
         use_exchange_as_venue: bool,
         bars_timestamp_on_close: bool,
@@ -132,14 +155,13 @@ impl DataClientFactory for DatabentoDataClientFactory {
             .downcast_ref::<DatabentoLiveClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for DatabentoDataClientFactory. Expected DatabentoLiveClientConfig, got {:?}",
-                    config
+                    "Invalid config type for DatabentoDataClientFactory. Expected DatabentoLiveClientConfig, was {config:?}"
                 )
             })?;
 
         let client_id = ClientId::from(name);
         let config = DatabentoDataClientConfig::new(
-            databento_config.api_key.clone(),
+            databento_config.api_key(),
             databento_config.publishers_filepath.clone(),
             databento_config.use_exchange_as_venue,
             databento_config.bars_timestamp_on_close,
@@ -257,10 +279,11 @@ mod tests {
     use std::env;
 
     use nautilus_core::time::get_atomic_clock_realtime;
+    use rstest::rstest;
 
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_config_builder() {
         let config = DatabentoDataClientConfigBuilder::new()
             .api_key("test_key".to_string())
@@ -272,12 +295,12 @@ mod tests {
 
         assert!(config.is_ok());
         let config = config.unwrap();
-        assert_eq!(config.api_key, "test_key");
+        assert_eq!(config.api_key(), "test_key");
         assert!(config.use_exchange_as_venue);
         assert!(!config.bars_timestamp_on_close);
     }
 
-    #[test]
+    #[rstest]
     fn test_config_builder_missing_required_fields() {
         let config = DatabentoDataClientConfigBuilder::new()
             .api_key("test_key".to_string())
@@ -287,7 +310,7 @@ mod tests {
         assert!(config.is_err());
     }
 
-    #[test]
+    #[rstest]
     fn test_historical_client_factory() {
         let api_key = env::var("DATABENTO_API_KEY").unwrap_or_else(|_| "test_key".to_string());
         let publishers_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json");
@@ -302,7 +325,7 @@ mod tests {
         assert!(result.is_err() || result.is_ok());
     }
 
-    #[test]
+    #[rstest]
     fn test_live_data_client_factory() {
         let client_id = ClientId::from("DATABENTO-001");
         let api_key = "test_key".to_string();

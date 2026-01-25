@@ -16,6 +16,7 @@ from Cython.Build import build_ext
 from Cython.Build import cythonize
 from Cython.Compiler import Options
 from Cython.Compiler.Version import version as cython_compiler_version
+from packaging.version import Version
 from setuptools import Distribution
 from setuptools import Extension
 
@@ -39,6 +40,8 @@ ANNOTATION_MODE = bool(os.getenv("ANNOTATION_MODE", ""))
 PARALLEL_BUILD = os.getenv("PARALLEL_BUILD", "true").lower() == "true"
 # If COPY_TO_SOURCE is enabled, copy built *.so files back into the source tree
 COPY_TO_SOURCE = os.getenv("COPY_TO_SOURCE", "true").lower() == "true"
+# Force stripping of debug symbols even in non-release builds
+FORCE_STRIP = os.getenv("FORCE_STRIP", "false").lower() == "true"
 # If PyO3 only then don't build C extensions to reduce compilation time
 PYO3_ONLY = os.getenv("PYO3_ONLY", "").lower() != ""
 # If dry run only print the commands that would be executed
@@ -49,8 +52,7 @@ DRY_RUN = bool(os.getenv("DRY_RUN", ""))
 HIGH_PRECISION = os.getenv("HIGH_PRECISION", "true").lower() == "true"
 if IS_WINDOWS and HIGH_PRECISION:
     print(
-        "Warning: high-precision mode not supported on Windows (128-bit integers unavailable)\n"
-        "Forcing standard-precision (64-bit) mode",
+        "Warning: high-precision mode not supported on Windows (128-bit integers unavailable)\nForcing standard-precision (64-bit) mode",
     )
     HIGH_PRECISION = False
 
@@ -68,6 +70,9 @@ else:
 ################################################################################
 
 USE_SCCACHE = "sccache" in os.environ.get("CC", "") or "sccache" in os.environ.get("CXX", "")
+if USE_SCCACHE:
+    os.environ["RUSTC_WRAPPER"] = "sccache"
+    os.environ["CARGO_INCREMENTAL"] = "0"
 
 if IS_LINUX:
     # Use clang as the default compiler
@@ -76,8 +81,8 @@ if IS_LINUX:
     os.environ["LDSHARED"] = "clang -shared"
 
 if IS_MACOS and IS_ARM64:
-    os.environ["CFLAGS"] = "-arch arm64"
-    os.environ["LDFLAGS"] = "-arch arm64 -w"
+    os.environ["CFLAGS"] = f"{os.environ.get('CFLAGS', '')} -arch arm64"
+    os.environ["LDFLAGS"] = f"{os.environ.get('LDFLAGS', '')} -arch arm64 -w"
 
 if IS_LINUX and IS_ARM64:
     os.environ["CFLAGS"] = f"{os.environ.get('CFLAGS', '')} -fPIC"
@@ -108,7 +113,16 @@ else:  # Linux
 
 CARGO_TARGET_DIR = os.environ.get("CARGO_TARGET_DIR", Path.cwd() / "target")
 CARGO_BUILD_TARGET = os.environ.get("CARGO_BUILD_TARGET", "")
-CARGO_TARGET_DIR = Path(CARGO_TARGET_DIR) / CARGO_BUILD_TARGET / BUILD_MODE
+
+# Determine the profile directory name
+if BUILD_MODE == "release":
+    profile_dir = "release"
+elif BUILD_MODE == "debug-pyo3":
+    profile_dir = "debug-pyo3"
+else:
+    profile_dir = "debug"
+
+CARGO_TARGET_DIR = Path(CARGO_TARGET_DIR) / CARGO_BUILD_TARGET / profile_dir
 
 # Directories with headers to include
 RUST_INCLUDES = ["nautilus_trader/core/includes"]
@@ -123,10 +137,23 @@ RUST_LIBS: list[str] = [str(path) for path in RUST_LIB_PATHS]
 
 
 def _set_feature_flags() -> list[str]:
+    feature_list = [
+        "cython-compat",
+        "extension-module",
+        "ffi",
+        "postgres",
+        "python",
+        "tracing-bridge",
+    ]
+
     if HIGH_PRECISION:
-        return ["--features", "high-precision,ffi,python,extension-module"]
-    else:
-        return ["--features", "ffi,python,extension-module"]
+        feature_list.append("high-precision")
+
+    feature_list.sort()
+
+    flags = ["--no-default-features", "--features", ",".join(feature_list)]
+
+    return flags
 
 
 def _build_rust_libs() -> None:
@@ -137,7 +164,28 @@ def _build_rust_libs() -> None:
         if RUSTUP_TOOLCHAIN not in ("stable", "nightly"):
             raise ValueError(f"Invalid `RUSTUP_TOOLCHAIN` '{RUSTUP_TOOLCHAIN}'")
 
-        build_options = " --release" if BUILD_MODE == "release" else ""
+        needed_crates = [
+            "nautilus-backtest",
+            "nautilus-common",
+            "nautilus-core",
+            "nautilus-infrastructure",
+            "nautilus-model",
+            "nautilus-persistence",
+            "nautilus-pyo3",
+        ]
+
+        if BUILD_MODE == "release":
+            build_options = ["--release"]
+            # Only pass '-s' at link time on Linux. On macOS this flag is obsolete
+            # and may cause failures with recent toolchains. Cargo already performs
+            # symbol stripping per profile, and we post-strip where applicable.
+            if IS_LINUX:
+                existing_rustflags = os.environ.get("RUSTFLAGS", "")
+                os.environ["RUSTFLAGS"] = f"{existing_rustflags} -C link-arg=-s"
+        elif BUILD_MODE == "debug-pyo3":
+            build_options = ["--profile", "debug-pyo3"]
+        else:
+            build_options = []
 
         features = _set_feature_flags()
 
@@ -145,7 +193,8 @@ def _build_rust_libs() -> None:
             "cargo",
             "build",
             "--lib",
-            *build_options.split(),
+            *itertools.chain.from_iterable(("-p", p) for p in needed_crates),
+            *build_options,
             *features,
         ]
 
@@ -186,7 +235,7 @@ CYTHON_COMPILER_DIRECTIVES = {
 }
 
 # TODO: Temporarily separate Cython configuration while we require v3.0.11 for coverage
-if cython_compiler_version == "3.1.0":
+if Version(cython_compiler_version) >= Version("3.1.2"):
     Options.warning_errors = True  # Treat compiler warnings as errors
     Options.extra_warnings = True
     CYTHON_COMPILER_DIRECTIVES["warn.deprecated.IF"] = False
@@ -214,29 +263,41 @@ def _build_extensions() -> list[Extension]:
             extra_compile_args.append("-O2")
             extra_compile_args.append("-pipe")
 
+            if IS_LINUX:
+                extra_compile_args.append("-ffunction-sections")
+                extra_compile_args.append("-fdata-sections")
+                extra_link_args.append("-Wl,--gc-sections")
+                extra_link_args.append("-Wl,--as-needed")
+                # Ensure non-executable stack on Linux to avoid loader errors
+                # when any input object accidentally requests an execstack.
+                extra_link_args.append("-Wl,-z,noexecstack")
+
     if IS_WINDOWS:
+        # Standard Windows system libraries required when linking Cython extensions.
+        # Keep this list lowercase and alphabetically sorted for easy maintenance
+        # and to avoid duplicates sneaking in.
         extra_link_args += [
-            "AdvAPI32.Lib",
+            "advapi32.lib",
             "bcrypt.lib",
-            "Crypt32.lib",
-            "Iphlpapi.lib",
-            "Kernel32.lib",
+            "crypt32.lib",
+            "iphlpapi.lib",
+            "kernel32.lib",
             "ncrypt.lib",
-            "Netapi32.lib",
+            "netapi32.lib",
             "ntdll.lib",
-            "Ole32.lib",
-            "OleAut32.lib",
-            "Pdh.lib",
-            "PowrProf.lib",
-            "Propsys.lib",
-            "Psapi.lib",
+            "ole32.lib",
+            "oleaut32.lib",
+            "pdh.lib",
+            "powrprof.lib",
+            "propsys.lib",
+            "psapi.lib",
             "runtimeobject.lib",
             "schannel.lib",
             "secur32.lib",
-            "Shell32.lib",
-            "User32.Lib",
-            "UserEnv.Lib",
-            "WS2_32.Lib",
+            "shell32.lib",
+            "user32.lib",
+            "userenv.lib",
+            "ws2_32.lib",
         ]
 
     print("Creating C extension modules...")
@@ -321,30 +382,29 @@ def _get_nautilus_version() -> str:
 def _get_clang_version() -> str:
     try:
         result = subprocess.run(
-            ["clang", "--version"],  # noqa
+            ["clang", "--version"],
             check=True,
             capture_output=True,
         )
         output = (
             result.stdout.decode()
             .splitlines()[0]
-            .lstrip("Apple ")
-            .lstrip("Ubuntu ")
-            .lstrip("clang version ")
+            .removeprefix("Apple ")
+            .removeprefix("Ubuntu ")
+            .removeprefix("clang version ")
         )
         return output
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         err_msg = str(e) if isinstance(e, FileNotFoundError) else e.stderr.decode()
         raise RuntimeError(
-            "You are installing from source which requires the Clang compiler to be installed.\n"
-            f"Error running clang: {err_msg}",
+            f"You are installing from source which requires the Clang compiler to be installed.\nError running clang: {err_msg}",
         ) from e
 
 
 def _get_rustc_version() -> str:
     try:
         result = subprocess.run(
-            ["rustc", "--version"],  # noqa
+            ["rustc", "--version"],
             check=True,
             capture_output=True,
         )
@@ -359,12 +419,66 @@ def _get_rustc_version() -> str:
         ) from e
 
 
+def _ensure_windows_python_import_lib() -> None:
+    """
+    Ensure that the *t* suffixed Python import library exists on Windows.
+
+    On some official CPython Windows builds the import library is named
+    ``pythonXY.lib`` (for example ``python313.lib``). However, when building
+    C-extensions ``distutils``/``setuptools`` may ask the MSVC linker for the
+    file ``pythonXYt.lib`` - note the additional *t* suffix. The *t* variant
+    historically referred to a *thread-safe* build but is no longer shipped.
+
+    When the file is missing the linker exits with
+    ``LINK : fatal error LNK1104: cannot open file 'pythonXYt.lib'`` which
+    breaks the CI build on Windows. To work around this we simply create a
+    copy of the existing import library with the expected name **before** the
+    extension build starts.
+
+    """
+    if not IS_WINDOWS:
+        return
+
+    try:
+        # The virtual environment as well as the base installation may both
+        # participate in the link search path.  Attempt the fix in both
+        # locations to maximise the chance of success.
+        candidate_roots = {Path(sys.base_prefix), Path(sys.prefix)}
+
+        # Example: for Python 3.13 -> '313'
+        major, minor, *_ = platform.python_version_tuple()
+        version_compact = f"{major}{minor}"
+
+        for root in candidate_roots:
+            libs_dir = root / "libs"
+            if not libs_dir.exists():
+                continue
+
+            src = libs_dir / f"python{version_compact}.lib"
+            dst = libs_dir / f"python{version_compact}t.lib"
+
+            if src.exists() and not dst.exists():
+                print(
+                    f"Creating missing Windows import lib {dst} (copying from {src})",
+                )
+                shutil.copyfile(src, dst)
+    except Exception as e:  # pragma: no cover - defensive
+        # Never fail the build because of this helper, just show the warning
+        print(f"Warning: failed to create *t* suffixed Python import library: {e}")
+
+
 def _strip_unneeded_symbols() -> None:
     try:
         print("Stripping unneeded symbols from binaries...")
+        total_before = 0
+        total_after = 0
+
         for so in itertools.chain(Path("nautilus_trader").rglob("*.so")):
+            size_before = so.stat().st_size
+            total_before += size_before
+
             if IS_LINUX:
-                strip_cmd = ["strip", "--strip-unneeded", so]
+                strip_cmd = ["strip", "--strip-all", "-R", ".comment", "-R", ".note", so]
             elif IS_MACOS:
                 strip_cmd = ["strip", "-x", so]
             else:
@@ -373,6 +487,15 @@ def _strip_unneeded_symbols() -> None:
                 strip_cmd,  # type: ignore [arg-type]
                 check=True,
                 capture_output=True,
+            )
+
+            size_after = so.stat().st_size
+            total_after += size_after
+
+        if total_before > 0:
+            reduction = (1 - total_after / total_before) * 100
+            print(
+                f"Stripped binaries: {total_before / 1024 / 1024:.1f}MB -> {total_after / 1024 / 1024:.1f}MB ({reduction:.1f}% reduction)",
             )
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error when stripping symbols.\n{e}") from e
@@ -414,8 +537,11 @@ def build() -> None:
     """
     Construct the extensions and distribution.
     """
+    _ensure_windows_python_import_lib()
     _build_rust_libs()
-    _copy_rust_dylibs_to_project()
+    # Allow skipping Rust dylib copy in constrained environments
+    if not os.getenv("SKIP_RUST_DYLIB_COPY"):
+        _copy_rust_dylibs_to_project()
 
     if not PYO3_ONLY:
         # Create C Extensions to feed into cythonize()
@@ -434,8 +560,8 @@ def build() -> None:
             # Copy the build back into the source tree for development and wheel packaging
             _copy_build_dir_to_project(cmd)
 
-    if BUILD_MODE == "release" and (IS_LINUX or IS_MACOS):
-        # Only strip symbols for release builds
+    if (BUILD_MODE == "release" or FORCE_STRIP) and (IS_LINUX or IS_MACOS):
+        # Strip symbols for release builds or when forced
         _strip_unneeded_symbols()
 
 
@@ -465,6 +591,7 @@ if __name__ == "__main__":
     print(f"ANNOTATION_MODE={ANNOTATION_MODE}")
     print(f"PARALLEL_BUILD={PARALLEL_BUILD}")
     print(f"COPY_TO_SOURCE={COPY_TO_SOURCE}")
+    print(f"FORCE_STRIP={FORCE_STRIP}")
     print(f"PYO3_ONLY={PYO3_ONLY}")
     print_env_var_if_exists("CC")
     print_env_var_if_exists("CXX")
@@ -472,8 +599,12 @@ if __name__ == "__main__":
     print_env_var_if_exists("CFLAGS")
     print_env_var_if_exists("LDFLAGS")
     print_env_var_if_exists("LD_LIBRARY_PATH")
+    print_env_var_if_exists("PYO3_PYTHON")
+    print_env_var_if_exists("PYTHONHOME")
     print_env_var_if_exists("RUSTFLAGS")
     print_env_var_if_exists("DRY_RUN")
+    print_env_var_if_exists("RUSTC_WRAPPER")
+    print_env_var_if_exists("CARGO_INCREMENTAL")
 
     if DRY_RUN:
         show_rustanalyzer_settings()

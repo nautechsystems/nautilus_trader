@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -38,7 +38,8 @@ cdef class DataCommand(Command):
 
 
 cdef class SubscribeData(DataCommand):
-    pass
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
 
 
 cdef class SubscribeInstruments(SubscribeData):
@@ -46,13 +47,10 @@ cdef class SubscribeInstruments(SubscribeData):
 
 
 cdef class SubscribeInstrument(SubscribeData):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+    pass
 
 
 cdef class SubscribeOrderBook(SubscribeData):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
     cdef readonly BookType book_type
     """The order book type."""
     cdef readonly int depth
@@ -60,50 +58,45 @@ cdef class SubscribeOrderBook(SubscribeData):
     cdef readonly bint managed
     """If an order book should be managed by the data engine based on the subscribed feed."""
     cdef readonly int interval_ms
-    """The order book snapshot interval in milliseconds (must be positive)."""
-    cdef readonly bint only_deltas
-    """If the subscription is for OrderBookDeltas or OrderBook snapshots."""
+    """The order book snapshot interval in milliseconds (must be positive for snapshots)."""
 
 
 cdef class SubscribeQuoteTicks(SubscribeData):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+    pass
 
 
 cdef class SubscribeTradeTicks(SubscribeData):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+    pass
 
 
 cdef class SubscribeMarkPrices(SubscribeData):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+    pass
 
 
 cdef class SubscribeIndexPrices(SubscribeData):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+    pass
+
+
+cdef class SubscribeFundingRates(SubscribeData):
+    pass
 
 
 cdef class SubscribeBars(SubscribeData):
     cdef readonly BarType bar_type
     """The bar type for the subscription."""
-    cdef readonly bint await_partial
-    """If the bar aggregator should await the arrival of a historical partial bar prior to actively aggregating new bars."""
 
 
 cdef class SubscribeInstrumentStatus(SubscribeData):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+    pass
 
 
 cdef class SubscribeInstrumentClose(SubscribeData):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+    pass
 
 
 cdef class UnsubscribeData(DataCommand):
-    pass
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
 
 
 cdef class UnsubscribeInstruments(UnsubscribeData):
@@ -111,35 +104,31 @@ cdef class UnsubscribeInstruments(UnsubscribeData):
 
 
 cdef class UnsubscribeInstrument(UnsubscribeData):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+    pass
 
 
 cdef class UnsubscribeOrderBook(UnsubscribeData):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
-    cdef readonly bint only_deltas
-    """If the subscription is for OrderBookDeltas or OrderBook snapshots."""
+    pass
 
 
 cdef class UnsubscribeQuoteTicks(UnsubscribeData):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+    pass
 
 
 cdef class UnsubscribeTradeTicks(UnsubscribeData):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+    pass
 
 
 cdef class UnsubscribeMarkPrices(UnsubscribeData):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+    pass
 
 
 cdef class UnsubscribeIndexPrices(UnsubscribeData):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+    pass
+
+
+cdef class UnsubscribeFundingRates(UnsubscribeData):
+    pass
 
 
 cdef class UnsubscribeBars(UnsubscribeData):
@@ -148,18 +137,18 @@ cdef class UnsubscribeBars(UnsubscribeData):
 
 
 cdef class UnsubscribeInstrumentStatus(UnsubscribeData):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+    pass
 
 
 cdef class UnsubscribeInstrumentClose(UnsubscribeData):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+    pass
 
 
 cdef class RequestData(Request):
     cdef readonly DataType data_type
     """The request data type.\n\n:returns: `type`"""
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the request.\n\n:returns: `InstrumentId`"""
     cdef readonly datetime start
     """The start datetime (UTC) of request time range (inclusive)."""
     cdef readonly datetime end
@@ -175,8 +164,7 @@ cdef class RequestData(Request):
 
 
 cdef class RequestInstrument(RequestData):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the request.\n\n:returns: `InstrumentId`"""
+    pass
 
 
 cdef class RequestInstruments(RequestData):
@@ -184,23 +172,30 @@ cdef class RequestInstruments(RequestData):
 
 
 cdef class RequestOrderBookSnapshot(RequestData):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the request.\n\n:returns: `InstrumentId`"""
+    pass
+
+
+cdef class RequestOrderBookDepth(RequestData):
+    cdef readonly int depth
+    """The maximum depth for the order book depths.\n\n:returns: `int`"""
 
 
 cdef class RequestQuoteTicks(RequestData):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the request.\n\n:returns: `InstrumentId`"""
+    pass
 
 
 cdef class RequestTradeTicks(RequestData):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the request.\n\n:returns: `InstrumentId`"""
+    pass
 
 
 cdef class RequestBars(RequestData):
     cdef readonly BarType bar_type
     """The bar type for the request.\n\n:returns: `BarType`"""
+
+
+cdef class RequestJoin(RequestData):
+    cdef readonly tuple request_ids
+    """The tuple of sub-request IDs.\n\n:returns: `tuple[UUID4]`"""
 
 
 cdef class DataResponse(Response):
@@ -212,6 +207,10 @@ cdef class DataResponse(Response):
     """The response data type.\n\n:returns: `type`"""
     cdef readonly object data
     """The response data.\n\n:returns: `object`"""
+    cdef readonly datetime start
+    """The start datetime (UTC) of response time range (inclusive)."""
+    cdef readonly datetime end
+    """The end datetime (UTC) of response time range."""
     cdef readonly dict[str, object] params
     """Additional specific parameters for the response.\n\n:returns: `dict[str, object]` or ``None``"""
 

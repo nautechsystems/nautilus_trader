@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,12 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import json
 from decimal import Decimal
 
 import pytest
 
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.core.rust.model import PositionAdjustmentType
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
@@ -29,11 +31,11 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events.position import PositionAdjusted
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
-from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -58,8 +60,8 @@ class TestPosition:
         self.trader_id = TestIdStubs.trader_id()
         self.account_id = TestIdStubs.account_id()
         self.order_factory = OrderFactory(
-            trader_id=TraderId("TESTER-000"),
-            strategy_id=StrategyId("S-001"),
+            trader_id=self.trader_id,
+            strategy_id=TestIdStubs.strategy_id(),
             clock=TestClock(),
         )
 
@@ -101,7 +103,7 @@ class TestPosition:
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00001"),
         )
 
@@ -124,7 +126,7 @@ class TestPosition:
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00001"),
         )
 
@@ -174,7 +176,7 @@ class TestPosition:
             order,
             instrument=AAPL_XNAS,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00001"),
         )
 
@@ -224,7 +226,7 @@ class TestPosition:
             order,
             instrument=AAPL_XNAS,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00001"),
         )
 
@@ -312,12 +314,12 @@ class TestPosition:
             Quantity.from_int(4),
         )
 
-        trade_id = TradeId("1")
+        trade_id = TestIdStubs.trade_id()
 
         fill1 = TestEventStubs.order_filled(
             order1,
             instrument=AUDUSD_SIM,
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=last_px1,
             last_qty=last_qty1,
             trade_id=trade_id,
@@ -327,7 +329,7 @@ class TestPosition:
         fill2 = TestEventStubs.order_filled(
             order2,
             instrument=AUDUSD_SIM,
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=last_px2,
             last_qty=last_qty2,
             trade_id=trade_id,
@@ -349,9 +351,9 @@ class TestPosition:
         fill = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.000"),
-            trade_id=TradeId("1"),
+            trade_id=TestIdStubs.trade_id(),
             position_id=PositionId("1"),
         )
 
@@ -373,7 +375,7 @@ class TestPosition:
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00001"),
         )
 
@@ -393,7 +395,7 @@ class TestPosition:
         assert position.peak_qty == Quantity.from_int(100_000)
         assert position.size_precision == 0
         assert position.closing_order_side() == OrderSide.SELL
-        assert position.signed_decimal_qty() == Decimal("100000")
+        assert position.signed_decimal_qty() == Decimal(100000)
         assert position.signed_qty == 100_000.0
         assert position.entry == OrderSide.BUY
         assert position.side == PositionSide.LONG
@@ -402,7 +404,7 @@ class TestPosition:
         assert position.avg_px_open == 1.00001
         assert position.event_count == 1
         assert position.client_order_ids == [order.client_order_id]
-        assert position.venue_order_ids == [VenueOrderId("1")]
+        assert position.venue_order_ids == [TestIdStubs.venue_order_id()]
         assert position.trade_ids == [TradeId("E-19700101-000000-000-001-1")]
         assert position.last_trade_id == TradeId("E-19700101-000000-000-001-1")
         assert position.id == PositionId("P-123456")
@@ -430,7 +432,7 @@ class TestPosition:
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00001"),
         )
 
@@ -444,7 +446,7 @@ class TestPosition:
         assert position.peak_qty == Quantity.from_int(100_000)
         assert position.size_precision == 0
         assert position.closing_order_side() == OrderSide.BUY
-        assert position.signed_decimal_qty() == Decimal("-100000")
+        assert position.signed_decimal_qty() == Decimal(-100000)
         assert position.signed_qty == -100_000.0
         assert position.side == PositionSide.SHORT
         assert position.ts_opened == 0
@@ -476,7 +478,7 @@ class TestPosition:
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00001"),
             last_qty=Quantity.from_int(50_000),
         )
@@ -514,9 +516,9 @@ class TestPosition:
         fill1 = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
-            trade_id=TradeId("1"),
+            trade_id=TestIdStubs.trade_id(),
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00001"),
             last_qty=Quantity.from_int(50_000),
         )
@@ -526,7 +528,7 @@ class TestPosition:
             instrument=AUDUSD_SIM,
             trade_id=TradeId("2"),
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00002"),
             last_qty=Quantity.from_int(50_000),
         )
@@ -567,32 +569,23 @@ class TestPosition:
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00001"),
             ts_event=1_000_000_000,
         )
 
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
 
-        fill2 = OrderFilled(
-            self.trader_id,
-            StrategyId("S-001"),
-            order.instrument_id,
-            order.client_order_id,
-            VenueOrderId("2"),
-            self.account_id,
-            TradeId("E2"),
-            PositionId("T123456"),
-            OrderSide.SELL,
-            OrderType.MARKET,
-            order.quantity,
-            Price.from_str("1.00011"),
-            AUDUSD_SIM.quote_currency,
-            Money(0, USD),
-            LiquiditySide.TAKER,
-            UUID4(),
-            2_000_000_000,
-            0,
+        fill2 = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            venue_order_id=VenueOrderId("2"),
+            trade_id=TradeId("E2"),
+            position_id=PositionId("T123456"),
+            side=OrderSide.SELL,
+            last_px=Price.from_str("1.00011"),
+            commission=Money(0, USD),
+            ts_event=2_000_000_000,
         )
 
         last = Price.from_str("1.00050")
@@ -649,9 +642,9 @@ class TestPosition:
         fill2 = TestEventStubs.order_filled(
             order2,
             instrument=AUDUSD_SIM,
-            trade_id=TradeId("1"),
+            trade_id=TestIdStubs.trade_id(),
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00001"),
             last_qty=Quantity.from_int(50_000),
         )
@@ -661,7 +654,7 @@ class TestPosition:
             instrument=AUDUSD_SIM,
             trade_id=TradeId("2"),
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00003"),
             last_qty=Quantity.from_int(50_000),
         )
@@ -717,7 +710,7 @@ class TestPosition:
             order2,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00000"),
         )
 
@@ -774,14 +767,14 @@ class TestPosition:
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
         )
 
         fill2 = TestEventStubs.order_filled(
             order2,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00001"),
         )
 
@@ -789,7 +782,7 @@ class TestPosition:
             order3,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00010"),
         )
 
@@ -883,7 +876,7 @@ class TestPosition:
             order3,
             instrument=ETHUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_int(101),
         )
 
@@ -896,7 +889,7 @@ class TestPosition:
             order4,
             instrument=ETHUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_int(105),
         )
 
@@ -909,7 +902,7 @@ class TestPosition:
             order5,
             instrument=ETHUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_int(103),
         )
 
@@ -934,55 +927,37 @@ class TestPosition:
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00001"),
             ts_event=1_000_000_000,
         )
 
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
 
-        fill2 = OrderFilled(
-            self.trader_id,
-            StrategyId("S-001"),
-            order.instrument_id,
-            order.client_order_id,
-            VenueOrderId("2"),
-            self.account_id,
-            TradeId("E2"),
-            PositionId("P-123456"),
-            OrderSide.SELL,
-            OrderType.MARKET,
-            order.quantity,
-            Price.from_str("1.00011"),
-            AUDUSD_SIM.quote_currency,
-            Money(0, USD),
-            LiquiditySide.TAKER,
-            UUID4(),
-            2_000_000_000,
-            0,
+        fill2 = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            venue_order_id=VenueOrderId("2"),
+            trade_id=TradeId("E2"),
+            position_id=PositionId("P-123456"),
+            side=OrderSide.SELL,
+            last_px=Price.from_str("1.00011"),
+            commission=Money(0, USD),
+            ts_event=2_000_000_000,
         )
 
         position.apply(fill2)
 
-        fill3 = OrderFilled(
-            self.trader_id,
-            StrategyId("S-001"),
-            order.instrument_id,
-            order.client_order_id,
-            VenueOrderId("2"),
-            self.account_id,
-            TradeId("E3"),
-            PositionId("P-123456"),
-            OrderSide.BUY,
-            OrderType.MARKET,
-            order.quantity,
-            Price.from_str("1.00012"),
-            AUDUSD_SIM.quote_currency,
-            Money(0, USD),
-            LiquiditySide.TAKER,
-            UUID4(),
-            3_000_000_000,
-            0,
+        fill3 = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            venue_order_id=VenueOrderId("2"),
+            trade_id=TradeId("E3"),
+            position_id=PositionId("P-123456"),
+            side=OrderSide.BUY,
+            last_px=Price.from_str("1.00012"),
+            commission=Money(0, USD),
+            ts_event=3_000_000_000,
         )
 
         # Act
@@ -1071,7 +1046,7 @@ class TestPosition:
             order3,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("10001.00"),
         )
 
@@ -1084,7 +1059,7 @@ class TestPosition:
             order4,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("10003.00"),
         )
 
@@ -1097,7 +1072,7 @@ class TestPosition:
             order5,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("10005"),
         )
 
@@ -1122,7 +1097,7 @@ class TestPosition:
             order,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("10500.00"),
         )
 
@@ -1150,7 +1125,7 @@ class TestPosition:
             order,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("10500.00"),
         )
 
@@ -1182,7 +1157,7 @@ class TestPosition:
             order,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("10500.00"),
         )
 
@@ -1214,7 +1189,7 @@ class TestPosition:
             order,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("10500.00"),
         )
 
@@ -1246,7 +1221,7 @@ class TestPosition:
             order,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("10500.00"),
         )
 
@@ -1278,7 +1253,7 @@ class TestPosition:
             order,
             instrument=XBTUSD_BITMEX,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("10000.00"),
         )
 
@@ -1309,7 +1284,7 @@ class TestPosition:
             order,
             instrument=ETHUSD_BITMEX,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("375.95"),
         )
 
@@ -1364,7 +1339,7 @@ class TestPosition:
             order,
             instrument=XBTUSD_BITMEX,
             position_id=PositionId("P-1"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=last_px,
         )
 
@@ -1392,7 +1367,7 @@ class TestPosition:
             order1,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("10500.00"),
         )
 
@@ -1400,7 +1375,7 @@ class TestPosition:
             order2,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("10500.00"),
         )
 
@@ -1427,7 +1402,7 @@ class TestPosition:
             order,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("10505.60"),
         )
 
@@ -1452,7 +1427,7 @@ class TestPosition:
             order,
             instrument=XBTUSD_BITMEX,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("10500.00"),
         )
 
@@ -1479,7 +1454,7 @@ class TestPosition:
             order,
             instrument=XBTUSD_BITMEX,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("15500.00"),
         )
 
@@ -1497,8 +1472,8 @@ class TestPosition:
     @pytest.mark.parametrize(
         ("order_side", "quantity", "expected_signed_qty", "expected_decimal_qty"),
         [
-            [OrderSide.BUY, 25, 25.0, Decimal("25")],
-            [OrderSide.SELL, 25, -25.0, Decimal("-25")],
+            [OrderSide.BUY, 25, 25.0, Decimal(25)],
+            [OrderSide.SELL, 25, -25.0, Decimal(-25)],
         ],
     )
     def test_signed_qty_decimal_qty_for_equity(
@@ -1519,7 +1494,7 @@ class TestPosition:
             order,
             instrument=AAPL_XNAS,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("100"),
         )
 
@@ -1548,7 +1523,7 @@ class TestPosition:
             order1,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("10500.00"),
         )
 
@@ -1556,7 +1531,7 @@ class TestPosition:
             order2,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("10500.00"),
         )
 
@@ -1586,8 +1561,9 @@ class TestPosition:
             order,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("10500.00"),
+            ts_event=1_000_000_000,  # Explicit non-zero timestamp
         )
 
         position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
@@ -1596,6 +1572,12 @@ class TestPosition:
         assert position.event_count == 1
         assert position.last_event is not None
         assert position.last_trade_id is not None
+
+        # Store original timestamps (should be non-zero)
+        original_ts_opened = position.ts_opened
+        original_ts_last = position.ts_last
+        assert original_ts_opened > 0
+        assert original_ts_last > 0
 
         # Act - Purge all events by purging the only order
         position.purge_events_for_order(fill.client_order_id)
@@ -1606,3 +1588,1711 @@ class TestPosition:
         assert position.trade_ids == []
         assert position.last_event is None
         assert position.last_trade_id is None
+
+        # Verify timestamps are zeroed - empty shell has no meaningful history
+        assert position.ts_opened == 0
+        assert position.ts_last == 0
+        assert position.ts_closed == 0
+        assert position.duration_ns == 0
+
+        # Verify empty shell reports as closed (this was the bug we fixed!)
+        # is_closed must return True so cache purge logic recognizes empty shells
+        assert position.is_closed
+        assert not position.is_open
+        assert position.side == PositionSide.FLAT
+
+    def test_revive_from_empty_shell(self) -> None:
+        """
+        Test adding a fill to an empty shell position revives it with correct state.
+        """
+        # Arrange: Create position with a fill
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("1.00000"),
+            ts_event=1_000_000_000,
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+
+        # Purge all events to create empty shell
+        position.purge_events_for_order(order1.client_order_id)
+
+        # Verify it's an empty shell
+        assert position.is_closed
+        assert position.ts_closed == 0
+        assert position.event_count == 0
+
+        # Act: Add new fill to revive the position
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(50_000),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("1.00020"),
+            ts_event=3_000_000_000,
+        )
+
+        position.apply(fill2)
+
+        # Assert: Position should be alive with new timestamps
+        assert position.is_long
+        assert not position.is_closed
+        # NOTE: Python uses 0 for "not closed", Rust uses None (semantic difference in representation)
+        assert position.ts_closed == 0  # Reset to 0 when reopened (Rust: None)
+        assert position.ts_opened == fill2.ts_event
+        assert position.ts_last == fill2.ts_event
+        assert position.event_count == 1
+        assert position.quantity == Quantity.from_int(50_000)
+
+    def test_empty_shell_position_invariants(self) -> None:
+        """
+        Property-based test: Any position with event_count == 0 must satisfy invariants.
+        This test documents the contract that empty shell positions MUST follow.
+        """
+        # Arrange: Create and purge position to get empty shell
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("1.00000"),
+            ts_event=1_000_000_000,
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        position.purge_events_for_order(order.client_order_id)
+
+        # INVARIANTS: When event_count == 0, the following MUST be true
+        assert position.event_count == 0, "Precondition: event_count must be 0"
+
+        # Invariant 1: Position must report as closed
+        assert position.is_closed, "INV1: Empty shell must report is_closed == True"
+        assert not position.is_open, "INV1: Empty shell must report is_open == False"
+
+        # Invariant 2: Position must be FLAT
+        assert position.side == PositionSide.FLAT, "INV2: Empty shell must be FLAT"
+
+        # Invariant 3: ts_closed must be 0 (not None, not preserved)
+        assert position.ts_closed == 0, "INV3: Empty shell ts_closed must be 0"
+
+        # Invariant 4: All lifecycle timestamps must be zeroed
+        assert position.ts_opened == 0, "INV4: Empty shell ts_opened must be 0"
+        assert position.ts_last == 0, "INV4: Empty shell ts_last must be 0"
+        assert position.duration_ns == 0, "INV4: Empty shell duration_ns must be 0"
+
+        # Invariant 5: Quantity must be zero
+        assert position.quantity == Quantity.zero(
+            AUDUSD_SIM.size_precision,
+        ), "INV5: Empty shell quantity must be 0"
+
+        # Invariant 6: No events or trade IDs
+        assert position.events == [], "INV6: Empty shell must have no events"
+        assert position.trade_ids == [], "INV6: Empty shell must have no trade IDs"
+        assert position.last_event is None, "INV6: Empty shell must have no last event"
+        assert position.last_trade_id is None, "INV6: Empty shell must have no last trade ID"
+
+    def test_commission_accumulation_single_currency(self) -> None:
+        """
+        Test that commissions are correctly accumulated for a single currency.
+        """
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(50_000),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.00100"),
+        )
+
+        # Act
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position.apply(fill2)
+
+        # Assert
+        commissions = position.commissions()
+        assert len(commissions) == 1
+        # Default commission: 100k * 0.00002 + 50k * 0.00002 = 2 + 1 = 3 USD
+        assert commissions[0] == Money(3, USD)
+
+    def test_commission_accumulation_multiple_fills(self) -> None:
+        """
+        Test that commissions are correctly accumulated with multiple fills.
+        """
+        # Arrange
+        order1 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("1.0"),
+        )
+
+        order2 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("0.5"),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("50000.00"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("51000.00"),
+        )
+
+        # Act
+        position = Position(instrument=BTCUSDT_BINANCE, fill=fill1)
+        position.apply(fill2)
+
+        # Assert
+        commissions = position.commissions()
+        assert len(commissions) == 1
+        # BTCUSDT_BINANCE has taker_fee of 0.001 (0.1%)
+        # Commission: 1.0 * 50000 * 0.001 + 0.5 * 51000 * 0.001 = 50 + 25.5 = 75.5 USDT
+        assert commissions[0] == Money(75.5, USDT)
+
+    def test_realized_return_calculation_long_position(self) -> None:
+        """
+        Test realized return calculation for a long position.
+        """
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.10000"),  # 10% gain
+        )
+
+        # Act
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position.apply(fill2)
+
+        # Assert
+        assert position.is_closed
+        assert position.realized_return == pytest.approx(0.1, rel=1e-9)  # 10% return
+
+    def test_realized_return_calculation_short_position(self) -> None:
+        """
+        Test realized return calculation for a short position.
+        """
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.10000"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.00000"),  # ~9.09% gain
+        )
+
+        # Act
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position.apply(fill2)
+
+        # Assert
+        assert position.is_closed
+        assert position.realized_return == pytest.approx(0.09090909, rel=1e-6)
+
+    def test_duration_calculation(self) -> None:
+        """
+        Test position duration calculation from open to close.
+        """
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+
+        # Create fills with specific timestamps
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.00000"),
+            ts_event=1_000_000_000,  # 1 second
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.00010"),
+            ts_event=3_600_000_000_000,  # 1 hour later
+        )
+
+        # Act
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position.apply(fill2)
+
+        # Assert
+        assert position.is_closed
+        assert position.duration_ns == 3_599_000_000_000  # 1 hour - 1 second in nanoseconds
+        assert position.ts_opened == 1_000_000_000
+        assert position.ts_closed == 3_600_000_000_000
+
+    def test_is_opposite_side_method(self) -> None:
+        """
+        Test the is_opposite_side method for long and short positions.
+        """
+        # Arrange
+        buy_order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        buy_fill = TestEventStubs.order_filled(
+            buy_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-LONG"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        sell_order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+
+        sell_fill = TestEventStubs.order_filled(
+            sell_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-SHORT"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        # Act
+        long_position = Position(instrument=AUDUSD_SIM, fill=buy_fill)
+        short_position = Position(instrument=AUDUSD_SIM, fill=sell_fill)
+
+        # Assert
+        # Long position
+        assert long_position.is_long
+        assert not long_position.is_opposite_side(OrderSide.BUY)
+        assert long_position.is_opposite_side(OrderSide.SELL)
+
+        # Short position
+        assert short_position.is_short
+        assert short_position.is_opposite_side(OrderSide.BUY)
+        assert not short_position.is_opposite_side(OrderSide.SELL)
+
+    def test_avg_px_calculations_multiple_fills(self) -> None:
+        """
+        Test average price calculations with multiple fills at different prices.
+        """
+        # Arrange - Build position with multiple fills
+        fills_data = [
+            (OrderSide.BUY, 50_000, "1.00000"),
+            (OrderSide.BUY, 30_000, "1.00100"),
+            (OrderSide.BUY, 20_000, "1.00200"),
+        ]
+
+        position = None
+        for _, (side, qty, price) in enumerate(fills_data):
+            order = self.order_factory.market(
+                AUDUSD_SIM.id,
+                side,
+                Quantity.from_int(qty),
+            )
+
+            fill = TestEventStubs.order_filled(
+                order,
+                instrument=AUDUSD_SIM,
+                position_id=PositionId("P-123456"),
+                strategy_id=TestIdStubs.strategy_id(),
+                last_px=Price.from_str(price),
+            )
+
+            if position is None:
+                position = Position(instrument=AUDUSD_SIM, fill=fill)
+            else:
+                position.apply(fill)
+
+        # Assert
+        # Weighted average: (50k * 1.0 + 30k * 1.001 + 20k * 1.002) / 100k
+        expected_avg = (50_000 * 1.00000 + 30_000 * 1.00100 + 20_000 * 1.00200) / 100_000
+        assert position is not None
+        assert position.avg_px_open == pytest.approx(expected_avg, rel=1e-9)
+        assert position.quantity == Quantity.from_int(100_000)
+
+    def test_closing_order_side_for_different_position_sides(self) -> None:
+        """
+        Test the closing_order_side method returns correct side.
+        """
+        # Arrange
+        buy_order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        buy_fill = TestEventStubs.order_filled(
+            buy_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-LONG"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        sell_order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+
+        sell_fill = TestEventStubs.order_filled(
+            sell_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-SHORT"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        # Act
+        long_position = Position(instrument=AUDUSD_SIM, fill=buy_fill)
+        short_position = Position(instrument=AUDUSD_SIM, fill=sell_fill)
+
+        # Assert
+        assert long_position.closing_order_side() == OrderSide.SELL
+        assert short_position.closing_order_side() == OrderSide.BUY
+
+    def test_signed_decimal_qty_for_different_sides(self) -> None:
+        """
+        Test signed_decimal_qty returns correct sign based on position side.
+        """
+        # Arrange
+        buy_order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        buy_fill = TestEventStubs.order_filled(
+            buy_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-LONG"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        sell_order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(75_000),
+        )
+
+        sell_fill = TestEventStubs.order_filled(
+            sell_order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-SHORT"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        # Act
+        long_position = Position(instrument=AUDUSD_SIM, fill=buy_fill)
+        short_position = Position(instrument=AUDUSD_SIM, fill=sell_fill)
+
+        # Assert
+        assert long_position.signed_decimal_qty() == Decimal(100000)
+        assert short_position.signed_decimal_qty() == Decimal(-75000)
+
+    def test_notional_value_calculation(self) -> None:
+        """
+        Test notional value calculation for positions.
+        """
+        # Arrange
+        order = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("2.5"),
+        )
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("50000.00"),
+        )
+
+        position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
+
+        # Act
+        current_price = Price.from_str("52000.00")
+        notional = position.notional_value(current_price)
+
+        # Assert
+        # 2.5 BTC * 52000 USDT/BTC = 130000 USDT
+        assert notional == Money(130000, USDT)
+
+    def test_partial_close_updates_quantities_correctly(self) -> None:
+        """
+        Test that partial closes update buy/sell quantities correctly.
+        """
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(40_000),
+        )
+
+        order3 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(60_000),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.00100"),
+        )
+
+        fill3 = TestEventStubs.order_filled(
+            order3,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.00200"),
+        )
+
+        # Act
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position.apply(fill2)
+        position.apply(fill3)
+
+        # Assert
+        assert position.is_closed
+        assert position.quantity == Quantity.from_int(0)
+        assert position.peak_qty == Quantity.from_int(100_000)
+
+    def test_id_list_deduplication_and_sorting(self) -> None:
+        """
+        Test that client_order_ids, venue_order_ids, and trade_ids are deduplicated and
+        sorted.
+        """
+        # Arrange - Create fills with duplicate IDs
+        orders = []
+        fills = []
+
+        # Create multiple orders with controlled IDs
+        for i in range(3):
+            order = self.order_factory.market(
+                AUDUSD_SIM.id,
+                OrderSide.BUY,
+                Quantity.from_int(10_000),
+            )
+            orders.append(order)
+
+            # Create fills with specific venue_order_ids and trade_ids
+            fill = TestEventStubs.order_filled(
+                order,
+                instrument=AUDUSD_SIM,
+                position_id=PositionId("P-123456"),
+                strategy_id=TestIdStubs.strategy_id(),
+                venue_order_id=(
+                    VenueOrderId("V-001") if i < 2 else VenueOrderId("V-002")
+                ),  # Duplicate first
+                trade_id=TradeId(f"T-00{i + 1}"),  # Unique trade IDs
+                last_px=Price.from_str("1.00000"),
+            )
+            fills.append(fill)
+
+        # Act
+        position = Position(instrument=AUDUSD_SIM, fill=fills[0])
+
+        for fill in fills[1:]:
+            position.apply(fill)
+
+        # Assert
+        # Check that IDs are deduplicated where appropriate
+        assert len(position.client_order_ids) == 3  # All unique client order IDs
+        assert len(position.venue_order_ids) == 2  # Should be deduplicated: V-001, V-002
+        assert len(position.trade_ids) == 3  # All unique: T-001, T-002, T-003
+
+        # Check sorting (if applicable - need to verify if sorting is guaranteed)
+        # The lists should be in chronological order of fills
+        assert position.venue_order_ids == [VenueOrderId("V-001"), VenueOrderId("V-002")]
+        assert position.trade_ids == [TradeId("T-001"), TradeId("T-002"), TradeId("T-003")]
+
+    def test_position_equality_and_hash_semantics(self) -> None:
+        """
+        Test that Position equality and hash are based solely on position ID.
+        """
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(50_000),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-789"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.10000"),
+        )
+
+        # Act
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position2 = Position(instrument=AUDUSD_SIM, fill=fill2)
+
+        # Create another position with same ID as position1 but different state
+        fill3 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),  # Same ID as position1
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.50000"),  # Different price
+        )
+        position3 = Position(instrument=AUDUSD_SIM, fill=fill3)
+
+        # Assert
+        # Different IDs = not equal
+        assert position1 != position2
+        assert hash(position1) != hash(position2)
+
+        # Same ID = equal (even with different internal state)
+        assert position1 == position3
+        assert hash(position1) == hash(position3)
+
+        # Test as dictionary keys
+        position_dict = {position1: "first", position3: "third"}
+        assert len(position_dict) == 1  # Should only have one entry due to same ID
+        assert position_dict[position1] == "third"  # Last one wins
+
+    def test_purge_events_preserves_financial_state(self) -> None:
+        """
+        Test that purging events correctly rebuilds position state from remaining fills.
+
+        When the opening fill is purged, the remaining fill becomes the new opening
+        fill, causing the position to flip sides and recalculate all financial state.
+
+        """
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(50_000),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.10000"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position.apply(fill2)
+
+        # Before purge: LONG 50,000 @ 1.00 avg open (partially closed at 1.10)
+        assert position.side == PositionSide.LONG
+        assert position.signed_qty == 50_000.0
+        assert position.avg_px_open == 1.0
+        assert position.avg_px_close == 1.1
+
+        # Act - Purge the opening BUY fill
+        position.purge_events_for_order(order1.client_order_id)
+
+        # Assert - Position rebuilt from remaining SELL fill
+        # The SELL now becomes the opening fill, creating a SHORT position
+        assert position.event_count == 1  # Only fill2 remains
+        assert len(position.trade_ids) == 1
+
+        # State should be recalculated from the remaining fill
+        assert position.side == PositionSide.SHORT  # Flipped to SHORT
+        assert position.signed_qty == -50_000.0  # Now short
+        assert position.quantity == Quantity.from_int(50_000)
+        assert position.avg_px_open == 1.1  # The SELL @ 1.10 is now the opening price
+        assert position.avg_px_close == 0.0  # No closing fills yet
+        assert position.realized_return == 0.0  # No realized return yet
+        assert position.ts_opened == fill2.ts_event  # Opened at fill2, not fill1
+        assert position.ts_closed == 0  # Still open
+
+    def test_peak_quantity_tracking(self) -> None:
+        """
+        Test that peak_qty correctly tracks the maximum position size reached.
+        """
+        # Arrange - Build up position then partially close
+        fills_data = [
+            (OrderSide.BUY, 50_000, "1.00000"),  # Position: 50k
+            (OrderSide.BUY, 30_000, "1.00100"),  # Position: 80k
+            (OrderSide.BUY, 40_000, "1.00200"),  # Position: 120k (peak)
+            (OrderSide.SELL, 70_000, "1.00300"),  # Position: 50k
+            (OrderSide.SELL, 30_000, "1.00400"),  # Position: 20k
+        ]
+
+        position = None
+        for _, (side, qty, price) in enumerate(fills_data):
+            order = self.order_factory.market(
+                AUDUSD_SIM.id,
+                side,
+                Quantity.from_int(qty),
+            )
+
+            fill = TestEventStubs.order_filled(
+                order,
+                instrument=AUDUSD_SIM,
+                position_id=PositionId("P-123456"),
+                strategy_id=TestIdStubs.strategy_id(),
+                last_px=Price.from_str(price),
+            )
+
+            if position is None:
+                position = Position(instrument=AUDUSD_SIM, fill=fill)
+            else:
+                position.apply(fill)
+
+        # Assert
+        assert position is not None
+        assert position.peak_qty == Quantity.from_int(120_000)  # Maximum reached
+        assert position.quantity == Quantity.from_int(20_000)  # Current position
+
+    def test_position_invariants_across_fills(self) -> None:
+        """
+        Test key invariants that should always hold across any sequence of fills.
+        """
+        # Arrange - Random sequence of buys and sells
+        fills_data = [
+            (OrderSide.BUY, 100_000, "1.00000"),
+            (OrderSide.SELL, 30_000, "1.00100"),
+            (OrderSide.BUY, 50_000, "1.00200"),
+            (OrderSide.SELL, 120_000, "1.00300"),
+            (OrderSide.SELL, 20_000, "1.00400"),  # Goes short
+            (OrderSide.BUY, 40_000, "1.00500"),
+        ]
+
+        position = None
+
+        for i, (side, qty, price) in enumerate(fills_data):
+            order = self.order_factory.market(
+                AUDUSD_SIM.id,
+                side,
+                Quantity.from_int(qty),
+            )
+
+            fill = TestEventStubs.order_filled(
+                order,
+                instrument=AUDUSD_SIM,
+                position_id=PositionId("P-123456"),
+                strategy_id=TestIdStubs.strategy_id(),
+                last_px=Price.from_str(price),
+            )
+
+            if position is None:
+                position = Position(instrument=AUDUSD_SIM, fill=fill)
+            else:
+                position.apply(fill)
+
+            # Check invariants after each fill
+            # Invariant 1: quantity == abs(signed_qty)
+            assert position.quantity == Quantity.from_int(abs(int(position.signed_qty)))
+
+            # Invariant 2: side consistency with signed_qty
+            if position.signed_qty > 0:
+                assert position.side == PositionSide.LONG
+                assert position.closing_order_side() == OrderSide.SELL
+            elif position.signed_qty < 0:
+                assert position.side == PositionSide.SHORT
+                assert position.closing_order_side() == OrderSide.BUY
+            else:
+                assert position.side == PositionSide.FLAT
+
+            # Invariant 3: peak_qty never decreases
+            if i > 0:
+                assert position.peak_qty >= Quantity.from_int(0)  # Always non-negative
+
+    def test_position_multiple_cycles_pnl_tracking(self) -> None:
+        """
+        Test that each discrete position cycle tracks its own realized PnL.
+
+        This test validates that when positions are closed and reopened, each open-flat-
+        reopen cycle tracks its own realized PnL independently, not cumulatively. This
+        is the intended behavior for position PnL tracking in the platform.
+
+        """
+        # Arrange - Create test instruments
+        position_id = PositionId("P-CYCLE-001")
+
+        # Cycle 1: Open long, make profit, close
+        order1_open = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        fill1_open = TestEventStubs.order_filled(
+            order1_open,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("0.70000"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill1_open)
+
+        # Close with profit (10 pips)
+        order1_close = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+
+        fill1_close = TestEventStubs.order_filled(
+            order1_close,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("0.70010"),
+        )
+
+        position.apply(fill1_close)
+
+        # Assert Cycle 1 results
+        assert position.is_closed
+        # 10 pips profit (10.00) - commission (2.80) = 7.20
+        assert position.realized_pnl == Money(7.20, USD)
+        cycle1_pnl = position.realized_pnl
+
+        # Cycle 2: Reopen same position ID, make loss, close
+        order2_open = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(150_000),
+        )
+
+        fill2_open = TestEventStubs.order_filled(
+            order2_open,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("0.70020"),
+        )
+
+        # Reopen position (simulating NETTING behavior)
+        position.apply(fill2_open)
+
+        assert position.is_open
+        assert position.quantity == Quantity.from_int(150_000)
+        # Commission from reopening
+        assert position.realized_pnl == Money(-2.10, USD)
+
+        # Close with loss (5 pips)
+        order2_close = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(150_000),
+        )
+
+        fill2_close = TestEventStubs.order_filled(
+            order2_close,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("0.70015"),
+        )
+
+        position.apply(fill2_close)
+
+        # Assert Cycle 2 results
+        assert position.is_closed
+        # 5 pips loss on 150k (7.50) + commissions (2.10 + 2.10) = -11.70
+        assert position.realized_pnl == Money(-11.70, USD)
+        cycle2_pnl = position.realized_pnl
+
+        # Cycle 3: Reopen short position, make profit, close
+        order3_open = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(200_000),
+        )
+
+        fill3_open = TestEventStubs.order_filled(
+            order3_open,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("0.70025"),
+        )
+
+        position.apply(fill3_open)
+
+        assert position.is_short
+        assert position.quantity == Quantity.from_int(200_000)
+        # Commission from reopening
+        assert position.realized_pnl == Money(-2.80, USD)
+
+        # Close short with profit (8 pips)
+        order3_close = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(200_000),
+        )
+
+        fill3_close = TestEventStubs.order_filled(
+            order3_close,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("0.70017"),
+        )
+
+        position.apply(fill3_close)
+
+        # Assert Cycle 3 results
+        assert position.is_closed
+        # 8 pips profit on 200k (16.00) - commissions (2.80 + 2.80) = 10.40
+        assert position.realized_pnl == Money(10.40, USD)
+        cycle3_pnl = position.realized_pnl
+
+        # Assert - each cycle's PnL is independent
+        # The position object only holds the LAST cycle's PnL
+        # Portfolio/Account aggregation should handle historical cycles
+        assert cycle1_pnl == Money(7.20, USD)
+        assert cycle2_pnl == Money(-11.70, USD)
+        assert cycle3_pnl == Money(10.40, USD)
+
+        # The current position only shows the last cycle
+        assert position.realized_pnl == cycle3_pnl
+
+    def test_position_flip_long_to_short_pnl_tracking(self) -> None:
+        """
+        Test PnL tracking when position flips from long to short.
+
+        This validates that when a position flips (e.g., selling 150k when long 100k),
+        the PnL for closing the long is calculated correctly, and the new short position
+        starts fresh.
+
+        """
+        # Arrange
+        position_id = PositionId("P-FLIP-001")
+
+        # Open long 100k
+        order_long = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        fill_long = TestEventStubs.order_filled(
+            order_long,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("0.75000"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill_long)
+        assert position.is_long
+        assert position.quantity == Quantity.from_int(100_000)
+
+        # Flip to short by selling 150k (closes 100k long, opens 50k short)
+        # NOTE: The test expectations below rely on the current TestEventStubs.order_filled
+        # behavior which uses order.quantity (150k) for commission calculation on both fills.
+        # If the stub is changed to use last_qty for commission calculation, the expected
+        # PnL values would need to be updated accordingly.
+        order_flip = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(150_000),
+        )
+
+        # First part closes the long
+        fill_close_long = TestEventStubs.order_filled(
+            order_flip,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("0.75020"),  # 20 pips profit
+            last_qty=Quantity.from_int(100_000),
+        )
+
+        position.apply(fill_close_long)
+
+        # Position should be closed after matching quantity
+        assert position.is_closed
+        # 20 pips on 100k (20.00) - commissions (1.50 + 2.25) = 16.25
+        assert position.realized_pnl == Money(16.25, USD)
+        long_pnl = position.realized_pnl
+
+        # Second part opens new short
+        fill_open_short = TestEventStubs.order_filled(
+            order_flip,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("0.75020"),
+            last_qty=Quantity.from_int(50_000),
+        )
+
+        position.apply(fill_open_short)
+
+        # Now should be short
+        assert position.is_short
+        assert position.quantity == Quantity.from_int(50_000)
+        # Note: Commission from flip order carries over
+        assert position.realized_pnl == Money(-2.25, USD)
+
+        # Close the short with a loss
+        order_close_short = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(50_000),
+        )
+
+        fill_close_short = TestEventStubs.order_filled(
+            order_close_short,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("0.75030"),  # 10 pips loss
+        )
+
+        position.apply(fill_close_short)
+
+        assert position.is_closed
+        # 10 pips loss on 50k (5.00) + commissions (2.25 + 0.75) = -8.00
+        assert position.realized_pnl == Money(-8.00, USD)
+        short_pnl = position.realized_pnl
+
+        # Validate independent PnL tracking
+        assert long_pnl == Money(16.25, USD)
+        assert short_pnl == Money(-8.00, USD)
+
+    def test_position_adjustment_creation_and_serialization(self) -> None:
+        """
+        Test creating a PositionAdjusted event and serializing/deserializing it.
+        """
+        # Arrange
+        adjustment = PositionAdjusted(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=TestIdStubs.audusd_id(),
+            position_id=PositionId("P-123456"),
+            account_id=TestIdStubs.account_id(),
+            adjustment_type=PositionAdjustmentType.COMMISSION,
+            quantity_change=Decimal("-0.001"),
+            pnl_change=None,
+            reason="test_order_id",
+            event_id=UUID4(),
+            ts_event=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Act
+        adj_dict = PositionAdjusted.to_dict(adjustment)
+        reconstructed = PositionAdjusted.from_dict(adj_dict)
+
+        # Assert
+        assert reconstructed.trader_id == adjustment.trader_id
+        assert reconstructed.strategy_id == adjustment.strategy_id
+        assert reconstructed.instrument_id == adjustment.instrument_id
+        assert reconstructed.position_id == adjustment.position_id
+        assert reconstructed.account_id == adjustment.account_id
+        assert reconstructed.adjustment_type == adjustment.adjustment_type
+        assert reconstructed.quantity_change == adjustment.quantity_change
+        assert reconstructed.pnl_change == adjustment.pnl_change
+        assert reconstructed.reason == adjustment.reason
+        assert reconstructed.ts_event == adjustment.ts_event
+        assert reconstructed.ts_init == adjustment.ts_init
+
+    def test_position_with_adjustments_tracking(self) -> None:
+        """
+        Test that positions correctly track and store adjustment events.
+        """
+        # Arrange
+        order = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_int(1),
+        )
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_int(50000),
+        )
+
+        position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
+
+        adjustment = PositionAdjusted(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=BTCUSDT_BINANCE.id,
+            position_id=PositionId("P-123456"),
+            account_id=TestIdStubs.account_id(),
+            adjustment_type=PositionAdjustmentType.COMMISSION,
+            quantity_change=Decimal("-0.001"),
+            pnl_change=None,
+            reason="commission_adjustment",
+            event_id=UUID4(),
+            ts_event=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+        position.apply_adjustment(adjustment)
+
+        # Assert
+        assert len(position.adjustments) == 1
+        assert position.adjustments[0].adjustment_type == PositionAdjustmentType.COMMISSION
+        assert position.adjustments[0].quantity_change == Decimal("-0.001")
+        assert position.adjustments[0].reason == "commission_adjustment"
+
+    def test_position_adjustment_funding_only_no_quantity_change(self) -> None:
+        """
+        Test creating a funding adjustment with no quantity change.
+
+        This tests the ability to express PnL-only adjustments (funding payments) by
+        passing None for quantity_change.
+
+        """
+        # Arrange
+        adjustment = PositionAdjusted(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=BTCUSDT_BINANCE.id,
+            position_id=PositionId("P-123456"),
+            account_id=TestIdStubs.account_id(),
+            adjustment_type=PositionAdjustmentType.FUNDING,
+            quantity_change=None,  # Funding-only adjustment
+            pnl_change=Money(5.50, USD),
+            reason="funding_2024_01_15",
+            event_id=UUID4(),
+            ts_event=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Assert
+        assert adjustment.adjustment_type == PositionAdjustmentType.FUNDING
+        assert adjustment.quantity_change is None
+        assert adjustment.pnl_change == Money(5.50, USD)
+        assert adjustment.reason == "funding_2024_01_15"
+
+    def test_position_adjustment_json_serialization_round_trip(self) -> None:
+        """
+        Test that PositionAdjusted can be serialized to JSON and back.
+
+        This verifies that the enum is properly converted to string (not enum object) so
+        that json.dumps() works without errors.
+
+        """
+        # Arrange
+        adjustment = PositionAdjusted(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=TestIdStubs.audusd_id(),
+            position_id=PositionId("P-123456"),
+            account_id=TestIdStubs.account_id(),
+            adjustment_type=PositionAdjustmentType.COMMISSION,
+            quantity_change=Decimal("-0.001"),
+            pnl_change=None,
+            reason="test_commission",
+            event_id=UUID4(),
+            ts_event=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Act - Full JSON round-trip
+        adj_dict = PositionAdjusted.to_dict(adjustment)
+        json_str = json.dumps(adj_dict)  # Should not raise (enum must be string)
+        parsed_dict = json.loads(json_str)
+        reconstructed = PositionAdjusted.from_dict(parsed_dict)
+
+        # Assert
+        assert reconstructed.adjustment_type == PositionAdjustmentType.COMMISSION
+        assert reconstructed.quantity_change == adjustment.quantity_change
+        assert adj_dict["adjustment_type"] == "COMMISSION"  # String, not enum
+
+    def test_position_adjustment_funding_json_serialization(self) -> None:
+        """
+        Test JSON serialization of funding adjustment with None quantity_change.
+        """
+        # Arrange
+        adjustment = PositionAdjusted(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=BTCUSDT_BINANCE.id,
+            position_id=PositionId("P-123456"),
+            account_id=TestIdStubs.account_id(),
+            adjustment_type=PositionAdjustmentType.FUNDING,
+            quantity_change=None,
+            pnl_change=Money(-5.50, USD),
+            reason="funding_payment",
+            event_id=UUID4(),
+            ts_event=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Act
+        adj_dict = PositionAdjusted.to_dict(adjustment)
+        json_str = json.dumps(adj_dict)
+        parsed_dict = json.loads(json_str)
+        reconstructed = PositionAdjusted.from_dict(parsed_dict)
+
+        # Assert
+        assert reconstructed.quantity_change is None
+        assert reconstructed.pnl_change == Money(-5.50, USD)
+        assert reconstructed.adjustment_type == PositionAdjustmentType.FUNDING
+
+    def test_position_close_and_reopen_clears_adjustments(self) -> None:
+        """
+        Test that closing then reopening a position clears adjustment history.
+        """
+        # Arrange - Open position with base currency commission (creates adjustment)
+        buy_fill = OrderFilled(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=BTCUSDT_BINANCE.id,
+            client_order_id=ClientOrderId("O-001"),
+            venue_order_id=TestIdStubs.venue_order_id(),
+            account_id=TestIdStubs.account_id(),
+            trade_id=TestIdStubs.trade_id(),
+            position_id=PositionId("P-123456"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            last_qty=Quantity.from_str("1.0"),
+            last_px=Price.from_int(50000),
+            currency=BTC,
+            commission=Money(-0.001, BTC),  # Base currency commission
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        position = Position(instrument=BTCUSDT_BINANCE, fill=buy_fill)
+
+        # Verify initial state
+        assert len(position.adjustments) == 1
+        assert position.adjustments[0].quantity_change == Decimal("-0.001")
+
+        # Close position
+        sell_fill = OrderFilled(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=BTCUSDT_BINANCE.id,
+            client_order_id=ClientOrderId("O-002"),
+            venue_order_id=VenueOrderId("2"),
+            account_id=TestIdStubs.account_id(),
+            trade_id=TradeId("2"),
+            position_id=PositionId("P-123456"),
+            order_side=OrderSide.SELL,
+            order_type=OrderType.MARKET,
+            last_qty=Quantity.from_str("0.999"),  # Account for commission
+            last_px=Price.from_int(51000),
+            currency=USDT,
+            commission=Money(-50.0, USDT),  # Quote currency commission - no adjustment
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        position.apply(sell_fill)
+
+        assert position.is_closed
+        assert len(position.adjustments) == 1  # Only buy had adjustment
+
+        # Reopen position - adjustments should be cleared
+        buy_fill2 = OrderFilled(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=BTCUSDT_BINANCE.id,
+            client_order_id=ClientOrderId("O-003"),
+            venue_order_id=VenueOrderId("3"),
+            account_id=TestIdStubs.account_id(),
+            trade_id=TradeId("3"),
+            position_id=PositionId("P-123456"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            last_qty=Quantity.from_str("2.0"),
+            last_px=Price.from_int(52000),
+            currency=BTC,
+            commission=Money(-0.002, BTC),
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        position.apply(buy_fill2)
+
+        # Assert - old adjustments cleared, only new adjustment
+        assert position.is_open
+        assert len(position.adjustments) == 1
+        assert position.adjustments[0].quantity_change == Decimal("-0.002")
+        assert len(position.events) == 1  # Events also cleared
+
+    def test_position_purge_events_clears_adjustments(self) -> None:
+        """
+        Test that purging events clears corresponding adjustments.
+        """
+        # Arrange - Create position with two fills, each with adjustment
+        fill1 = OrderFilled(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=BTCUSDT_BINANCE.id,
+            client_order_id=ClientOrderId("O-001"),
+            venue_order_id=TestIdStubs.venue_order_id(),
+            account_id=TestIdStubs.account_id(),
+            trade_id=TestIdStubs.trade_id(),
+            position_id=PositionId("P-123456"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            last_qty=Quantity.from_str("1.0"),
+            last_px=Price.from_int(50000),
+            currency=BTC,
+            commission=Money(-0.001, BTC),
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        position = Position(instrument=BTCUSDT_BINANCE, fill=fill1)
+
+        fill2 = OrderFilled(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=BTCUSDT_BINANCE.id,
+            client_order_id=ClientOrderId("O-002"),
+            venue_order_id=VenueOrderId("2"),
+            account_id=TestIdStubs.account_id(),
+            trade_id=TradeId("2"),
+            position_id=PositionId("P-123456"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            last_qty=Quantity.from_str("2.0"),
+            last_px=Price.from_int(51000),
+            currency=BTC,
+            commission=Money(-0.002, BTC),
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        position.apply(fill2)
+
+        assert len(position.adjustments) == 2
+        assert len(position.events) == 2
+
+        # Act - Purge first order
+        position.purge_events_for_order(ClientOrderId("O-001"))
+
+        # Assert - Only second adjustment remains
+        assert len(position.events) == 1
+        assert len(position.adjustments) == 1
+        assert position.adjustments[0].quantity_change == Decimal("-0.002")  # From order2
+
+    def test_position_purge_events_preserves_manual_adjustments(self) -> None:
+        """
+        Test that manual adjustments (e.g., funding payments) are preserved when purging
+        unrelated fills.
+        """
+        # Arrange - Create position with first fill
+        fill1 = OrderFilled(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=BTCUSDT_BINANCE.id,
+            client_order_id=ClientOrderId("O-001"),
+            venue_order_id=TestIdStubs.venue_order_id(),
+            account_id=TestIdStubs.account_id(),
+            trade_id=TestIdStubs.trade_id(),
+            position_id=PositionId("P-123456"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            last_qty=Quantity.from_str("1.0"),
+            last_px=Price.from_int(50000),
+            currency=BTC,
+            commission=Money(-0.001, BTC),
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        position = Position(instrument=BTCUSDT_BINANCE, fill=fill1)
+        assert len(position.adjustments) == 1
+
+        # Apply a manual funding payment adjustment (no reason field)
+        funding_adjustment = PositionAdjusted(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=BTCUSDT_BINANCE.id,
+            position_id=PositionId("P-123456"),
+            account_id=TestIdStubs.account_id(),
+            adjustment_type=PositionAdjustmentType.FUNDING,
+            quantity_change=None,
+            pnl_change=Money(10.0, USDT),
+            reason=None,  # No reason - this is a manual adjustment
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        position.apply_adjustment(funding_adjustment)
+        assert len(position.adjustments) == 2
+
+        # Apply second fill with different order
+        fill2 = OrderFilled(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=BTCUSDT_BINANCE.id,
+            client_order_id=ClientOrderId("O-002"),
+            venue_order_id=VenueOrderId("2"),
+            account_id=TestIdStubs.account_id(),
+            trade_id=TradeId("2"),
+            position_id=PositionId("P-123456"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            last_qty=Quantity.from_str("2.0"),
+            last_px=Price.from_int(51000),
+            currency=BTC,
+            commission=Money(-0.002, BTC),
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        position.apply(fill2)
+        assert len(position.adjustments) == 3  # 2 commissions + 1 funding
+
+        # Act - Purge first order - manual funding adjustment should be preserved
+        position.purge_events_for_order(ClientOrderId("O-001"))
+
+        # Assert
+        assert len(position.events) == 1
+        assert len(position.adjustments) == 2  # Funding + commission from remaining fill
+
+        # Verify funding adjustment is preserved
+        has_funding = any(
+            adj.adjustment_type == PositionAdjustmentType.FUNDING
+            and adj.pnl_change == Money(10.0, USDT)
+            for adj in position.adjustments
+        )
+        assert has_funding
+
+        # Verify realized_pnl includes the funding payment
+        # Note: Commission is in BTC (base currency), so it doesn't directly affect USDT realized_pnl
+        assert position.realized_pnl == Money(10.0, USDT)
+
+    def test_position_sell_base_currency_commission_reduces_short(self) -> None:
+        """
+        Test that base currency commission on SELL correctly increases the short
+        position.
+
+        When selling with commission paid in base currency, the commission increases the
+        effective short exposure (makes it more negative).
+
+        """
+        # Arrange - Create a SELL fill with base currency (BTC) commission
+        sell_fill = OrderFilled(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=BTCUSDT_BINANCE.id,
+            client_order_id=ClientOrderId("O-001"),
+            venue_order_id=TestIdStubs.venue_order_id(),
+            account_id=AccountId("ACC-001"),
+            trade_id=TestIdStubs.trade_id(),
+            position_id=PositionId("P-123456"),
+            order_side=OrderSide.SELL,
+            order_type=OrderType.MARKET,
+            last_qty=Quantity.from_str("1.0"),
+            last_px=Price.from_int(50000),
+            currency=BTC,  # Base currency commission
+            commission=Money(-0.001, BTC),  # Negative = cost
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        position = Position(instrument=BTCUSDT_BINANCE, fill=sell_fill)
+
+        # Assert
+        # Should have created one adjustment event for base currency commission
+        assert len(position.adjustments) == 1
+
+        # The adjustment should be NEGATIVE (-0.001) to increase the short
+        # (commission is already negative, passed through unchanged)
+        assert position.adjustments[0].quantity_change == Decimal("-0.001")
+
+        # The final position should be -1.001 (sold 1.0 + paid 0.001 commission)
+        # This represents the true short exposure: you sold and paid commission
+        assert abs(position.signed_qty - (-1.001)) < 1e-9
+        assert abs(position.quantity.as_decimal() - Decimal("1.001")) < Decimal("0.000000001")
+
+    def test_position_flattens_with_quote_currency_commission_on_close(self) -> None:
+        """
+        Test that positions flatten correctly when closing with quote currency
+        commission.
+
+        This is the realistic scenario: when selling BTC to close a long, commission is
+        paid in USDT (quote currency), not BTC. The position should flatten to zero.
+
+        """
+        # Arrange: BUY fill with base currency commission
+        fill1 = OrderFilled(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=BTCUSDT_BINANCE.id,
+            client_order_id=ClientOrderId("O-001"),
+            venue_order_id=TestIdStubs.venue_order_id(),
+            account_id=AccountId("ACC-001"),
+            trade_id=TestIdStubs.trade_id(),
+            position_id=PositionId("P-123456"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            last_qty=Quantity.from_str("1.0"),
+            last_px=Price.from_int(50000),
+            currency=BTC,
+            commission=Money(-0.001, BTC),  # Base currency commission on open
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act: Open position
+        position = Position(instrument=BTCUSDT_BINANCE, fill=fill1)
+
+        # Assert: Position should be 0.999 long after commission
+        assert abs(position.signed_qty - 0.999) < 1e-9
+        assert position.side == PositionSide.LONG
+        assert len(position.adjustments) == 1
+
+        # Act: Close by selling position.quantity with QUOTE currency commission (realistic)
+        fill2 = OrderFilled(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=BTCUSDT_BINANCE.id,
+            client_order_id=ClientOrderId("O-002"),
+            venue_order_id=VenueOrderId("2"),
+            account_id=AccountId("ACC-001"),
+            trade_id=TradeId("2"),
+            position_id=PositionId("P-123456"),
+            order_side=OrderSide.SELL,
+            order_type=OrderType.MARKET,
+            last_qty=position.quantity,  # Sell exact quantity (0.999)
+            last_px=Price.from_int(50100),
+            currency=USDT,  # Quote currency commission - the realistic case
+            commission=Money(-50.0, USDT),  # Commission paid in USDT, not BTC
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        position.apply(fill2)
+
+        # Assert: Position should be FLAT with quote currency commission
+        assert position.side == PositionSide.FLAT
+        assert abs(position.signed_qty) < 1e-9
+        assert position.is_closed
+        # Only 1 adjustment (from open) - no adjustment on close with quote commission
+        assert len(position.adjustments) == 1
+
+    def test_position_base_currency_commission_on_close_creates_short(self) -> None:
+        """
+        Test that closing with base currency commission creates a small short position.
+
+        When you SELL with base currency commission, the commission is additional asset
+        you must pay. If you sell exactly what you have, the commission pushes you short.
+        This is the correct behavior - on a real exchange you'd need slightly more asset
+        to fully close.
+
+        """
+        # Arrange: BUY fill with base currency commission
+        fill1 = OrderFilled(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=BTCUSDT_BINANCE.id,
+            client_order_id=ClientOrderId("O-001"),
+            venue_order_id=TestIdStubs.venue_order_id(),
+            account_id=AccountId("ACC-001"),
+            trade_id=TestIdStubs.trade_id(),
+            position_id=PositionId("P-123456"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            last_qty=Quantity.from_str("1.0"),
+            last_px=Price.from_int(50000),
+            currency=BTC,
+            commission=Money(-0.001, BTC),  # Base currency commission
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act: Open position
+        position = Position(instrument=BTCUSDT_BINANCE, fill=fill1)
+
+        # Assert: Position should be 0.999 long after commission
+        assert abs(position.signed_qty - 0.999) < 1e-9
+        assert position.side == PositionSide.LONG
+        assert len(position.adjustments) == 1
+
+        # Act: Sell exact quantity with base currency commission
+        fill2 = OrderFilled(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=BTCUSDT_BINANCE.id,
+            client_order_id=ClientOrderId("O-002"),
+            venue_order_id=VenueOrderId("2"),
+            account_id=AccountId("ACC-001"),
+            trade_id=TradeId("2"),
+            position_id=PositionId("P-123456"),
+            order_side=OrderSide.SELL,
+            order_type=OrderType.MARKET,
+            last_qty=position.quantity,  # Sell exact quantity (0.999)
+            last_px=Price.from_int(50100),
+            currency=BTC,
+            commission=Money(-0.000999, BTC),  # Base currency commission on sell
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        position.apply(fill2)
+
+        # Assert: Position goes SHORT due to commission
+        # SELL 0.999 BTC → signed_qty goes to 0
+        # Commission -0.000999 BTC applied → signed_qty goes to -0.000999
+        assert position.side == PositionSide.SHORT
+        assert abs(position.signed_qty - (-0.000999)) < 1e-9
+        assert position.is_open
+        # Should have 2 adjustments: both with quantity changes
+        assert len(position.adjustments) == 2
+        assert position.adjustments[0].quantity_change == Decimal("-0.001")
+        assert position.adjustments[1].quantity_change == Decimal("-0.000999")

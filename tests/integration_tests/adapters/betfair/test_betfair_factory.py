@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,8 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-import asyncio
 
 import pytest
 
@@ -31,9 +29,10 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestBetfairFactory:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
+        self.loop = request.getfixturevalue("event_loop")
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
@@ -47,7 +46,9 @@ class TestBetfairFactory:
         )
         self.cache = TestComponentStubs.cache()
 
-    @pytest.mark.asyncio()
+        return
+
+    @pytest.mark.asyncio
     def test_create(self):
         data_config = BetfairDataClientConfig(
             account_currency="GBP",
@@ -65,7 +66,7 @@ class TestBetfairFactory:
         )
 
         data_client = BetfairLiveDataClientFactory.create(
-            loop=asyncio.get_event_loop(),
+            loop=self.loop,
             name=BETFAIR_VENUE.value,
             config=data_config,
             msgbus=self.msgbus,
@@ -73,7 +74,7 @@ class TestBetfairFactory:
             clock=self.clock,
         )
         exec_client = BetfairLiveExecClientFactory.create(
-            loop=asyncio.get_event_loop(),
+            loop=self.loop,
             name=BETFAIR_VENUE.value,
             config=exec_config,
             msgbus=self.msgbus,

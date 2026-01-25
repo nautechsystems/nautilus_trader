@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -81,6 +81,7 @@ class PortfolioAnalyzer:
         """
         self._account_balances_starting = {}
         self._account_balances = {}
+        self._positions = []
         self._realized_pnls = {}
         self._returns = pd.Series(dtype=float64)
 
@@ -139,11 +140,12 @@ class PortfolioAnalyzer:
         """
         self._account_balances_starting = account.starting_balances()
         self._account_balances = account.balances_total()
+        self._positions = []
         self._realized_pnls = {}
         self._returns = pd.Series(dtype=float64)
 
         self.add_positions(positions)
-        self._returns.sort_index()
+        self._returns = self._returns.sort_index()
 
     def add_positions(self, positions: list[Position]) -> None:
         """
@@ -156,9 +158,15 @@ class PortfolioAnalyzer:
 
         """
         self._positions += positions
+
         for position in positions:
+            if position.realized_pnl is None:
+                continue  # Skip empty shell positions
+
             self.add_trade(position.id, position.realized_pnl)
-            self.add_return(unix_nanos_to_dt(position.ts_closed), position.realized_return)
+
+            if position.ts_closed > 0:
+                self.add_return(unix_nanos_to_dt(position.ts_closed), position.realized_return)
 
     def add_trade(self, position_id: PositionId, realized_pnl: Money) -> None:
         """
@@ -366,7 +374,17 @@ class PortfolioAnalyzer:
         }
 
         for name, stat in self._statistics.items():
-            value = stat.calculate_from_realized_pnls(realized_pnls)
+            # Check if this is a Rust statistic (requires list) or Python statistic (expects Series)
+            is_rust_stat = type(stat).__module__.startswith("nautilus_trader.core.nautilus_pyo3")
+
+            if is_rust_stat:
+                # Convert pandas Series to list for Rust statistics
+                pnls_list = realized_pnls.tolist() if realized_pnls is not None else []
+                value = stat.calculate_from_realized_pnls(pnls_list)
+            else:
+                # Pass Series directly for Python statistics (backward compatibility)
+                value = stat.calculate_from_realized_pnls(realized_pnls)
+
             if value is None:
                 continue  # Not implemented
             if not isinstance(value, int | float | str | bool):
@@ -385,8 +403,24 @@ class PortfolioAnalyzer:
 
         """
         output = {}
+
         for name, stat in self._statistics.items():
-            value = stat.calculate_from_returns(self._returns)
+            # Check if this is a Rust statistic (requires dict) or Python statistic (expects Series)
+            is_rust_stat = type(stat).__module__.startswith("nautilus_trader.core.nautilus_pyo3")
+
+            if is_rust_stat:
+                # Convert pandas Series with datetime index to dict with unix timestamps for Rust statistics
+                returns_dict = {}
+                if not self._returns.empty:
+                    for timestamp, value in self._returns.items():
+                        # Convert datetime to unix nanoseconds (use .value to avoid float precision loss)
+                        unix_nanos = timestamp.value
+                        returns_dict[unix_nanos] = float(value)
+                value = stat.calculate_from_returns(returns_dict)
+            else:
+                # Pass Series directly for Python statistics (backward compatibility)
+                value = stat.calculate_from_returns(self._returns)
+
             if value is None:
                 continue  # Not implemented
             if not isinstance(value, int | float | str | bool):
@@ -407,6 +441,8 @@ class PortfolioAnalyzer:
         output = {}
 
         for name, stat in self._statistics.items():
+            # Positions are passed as-is to both Rust and Python statistics
+            # (list[Position] works for both)
             value = stat.calculate_from_positions(self._positions)
             if value is None:
                 continue  # Not implemented

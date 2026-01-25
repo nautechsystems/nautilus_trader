@@ -1,0 +1,31 @@
+{
+  "code": "0",
+  "data": [
+    {
+      "cTime": "1736745586679",
+      "ccy": "USDT",
+      "closeAvgPx": "3224.8",
+      "closeTotalPos": "0.1",
+      "direction": "long",
+      "fee": "-0.04516211",
+      "fundingFee": "0",
+      "instId": "ETH-USDT-SWAP",
+      "instType": "SWAP",
+      "lever": "3.0",
+      "liqPenalty": "0",
+      "mgnMode": "isolated",
+      "openAvgPx": "3226.93",
+      "openMaxPos": "0.1",
+      "pnl": "-0.0213",
+      "pnlRatio": "-0.0061788241455501",
+      "posId": "2155643638909198336",
+      "posSide": "long",
+      "realizedPnl": "-0.06646211",
+      "triggerPx": "",
+      "type": "2",
+      "uTime": "1736745929198",
+      "uly": "ETH-USDT"
+    }
+  ],
+  "msg": ""
+}

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,6 @@
 //! Python bindings from [PyO3](https://pyo3.rs).
 
 pub mod arrow;
-pub mod enums;
 
 use pyo3::prelude::*;
 
@@ -67,8 +66,6 @@ pub fn serialization(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         crate::python::arrow::py_instrument_closes_to_arrow_record_batch_bytes,
         m
     )?)?;
-
-    m.add_class::<crate::enums::ParquetWriteMode>()?;
 
     Ok(())
 }

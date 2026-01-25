@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,7 +19,6 @@ from decimal import Decimal
 import pandas as pd
 import pytest
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
 from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
@@ -38,9 +37,15 @@ from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VEN
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUES_FUT
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUES_OPT
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import _tick_size_to_precision
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import expiry_timestring_to_datetime
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ib_contract_to_instrument_id
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
+    expiry_timestring_to_datetime,
+)
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
+    ib_contract_to_instrument_id,
+)
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
+    instrument_id_to_ib_contract,
+)
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.identifiers import InstrumentId
@@ -48,171 +53,198 @@ from nautilus_trader.model.instruments import OptionContract
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
 
 
-# fmt: on
-
-
 simplified_symbology_params = [
-    # fmt: off
     (IBContract(secType="CASH", exchange="IDEALPRO", localSymbol="EUR.USD"), "EUR/USD.IDEALPRO"),
-    (IBContract(secType="OPT", exchange="SMART", localSymbol="AAPL  230217P00155000"), "AAPL230217P00155000.SMART"),
+    (
+        IBContract(secType="OPT", exchange="SMART", localSymbol="AAPL  230217P00155000"),
+        "AAPL  230217P00155000.SMART",
+    ),
     (IBContract(secType="CONTFUT", exchange="CME", symbol="ES"), "ES.CME"),
     (IBContract(secType="CONTFUT", exchange="CME", symbol="M6E"), "M6E.CME"),
     (IBContract(secType="CONTFUT", exchange="NYMEX", symbol="MCL"), "MCL.NYMEX"),
     (IBContract(secType="CONTFUT", exchange="SNFE", symbol="SPI"), "SPI.SNFE"),
-    (IBContract(secType="FUT", exchange="CME", localSymbol="ESH3"), "ESH23.CME"),
-    (IBContract(secType="FUT", exchange="CME", localSymbol="M6EH3"), "M6EH23.CME"),
-    (IBContract(secType="FUT", exchange="CBOT", localSymbol="MYMM3"), "MYMM23.CBOT"),
-    (IBContract(secType="FUT", exchange="NYMEX", localSymbol="MCLV3"), "MCLV23.NYMEX"),
-    (IBContract(secType="FUT", exchange="SNFE", localSymbol="APH3"), "APH23.SNFE"),
-    (IBContract(secType="FOP", exchange="NYBOT", localSymbol="EX2G3 P4080"), "EX2G23P4080.NYBOT"),
-    (IBContract(secType="FOP", exchange="NYBOT", localSymbol="DXH3 P103.5"), "DXH23P103.5.NYBOT"),
-    (IBContract(secType="STK", exchange="SMART", primaryExchange="ARCA", localSymbol="SPY"), "SPY.ARCA"),
-    (IBContract(secType="STK", exchange="SMART", primaryExchange="NASDAQ", localSymbol="AAPL"), "AAPL.NASDAQ"),
-    (IBContract(secType="STK", exchange="SMART", primaryExchange="NYSE", localSymbol="BF B"), "BF-B.NYSE"),
-    (IBContract(secType="STK", exchange="SMART", primaryExchange="ASX", localSymbol="29M"), "29M.ASX"),
+    (IBContract(secType="FUT", exchange="CME", localSymbol="ESH3"), "ESH3.CME"),
+    (IBContract(secType="FUT", exchange="CME", localSymbol="M6EH3"), "M6EH3.CME"),
+    (IBContract(secType="FUT", exchange="CBOT", localSymbol="MYMM3"), "MYMM3.CBOT"),
+    (IBContract(secType="FUT", exchange="NYMEX", localSymbol="MCLV3"), "MCLV3.NYMEX"),
+    (IBContract(secType="FUT", exchange="SNFE", localSymbol="APH3"), "APH3.SNFE"),
+    (IBContract(secType="FOP", exchange="NYBOT", localSymbol="EX2G3 P4080"), "EX2G3 P4080.NYBOT"),
+    (IBContract(secType="FOP", exchange="NYBOT", localSymbol="DXH3 P103.5"), "DXH3 P103.5.NYBOT"),
+    (
+        IBContract(secType="STK", exchange="SMART", primaryExchange="ARCA", localSymbol="SPY"),
+        "SPY.ARCA",
+    ),
+    (
+        IBContract(secType="STK", exchange="SMART", primaryExchange="NASDAQ", localSymbol="AAPL"),
+        "AAPL.NASDAQ",
+    ),
+    (
+        IBContract(secType="STK", exchange="SMART", primaryExchange="NYSE", localSymbol="BF B"),
+        "BF-B.NYSE",
+    ),
+    (
+        IBContract(secType="STK", exchange="SMART", primaryExchange="ASX", localSymbol="29M"),
+        "29M.ASX",
+    ),
     (IBContract(secType="CRYPTO", exchange="PAXOS", localSymbol="BTC.USD"), "BTC/USD.PAXOS"),
     (IBContract(secType="IND", exchange="CBOE", localSymbol="SPX"), "^SPX.CBOE"),
     (IBContract(secType="IND", exchange="ASX", localSymbol="XJO"), "^XJO.ASX"),
-    # fmt: on
 ]
 
+
 raw_symbology_params = [
-    # fmt: off
-    (IBContract(secType="CASH", exchange="IDEALPRO", localSymbol="EUR.USD"), "EUR.USD=CASH.IDEALPRO"),
-    (IBContract(secType="OPT", exchange="SMART", localSymbol="AAPL  230217P00155000"), "AAPL  230217P00155000=OPT.SMART"),
+    (
+        IBContract(secType="CASH", exchange="IDEALPRO", localSymbol="EUR.USD"),
+        "EUR.USD=CASH.IDEALPRO",
+    ),
+    (
+        IBContract(secType="OPT", exchange="SMART", localSymbol="AAPL  230217P00155000"),
+        "AAPL  230217P00155000=OPT.SMART",
+    ),
     (IBContract(secType="FUT", exchange="CME", localSymbol="ESH3"), "ESH3=FUT.CME"),
     (IBContract(secType="FUT", exchange="CME", localSymbol="M6EH3"), "M6EH3=FUT.CME"),
     (IBContract(secType="FUT", exchange="CBOT", localSymbol="MYMM3"), "MYMM3=FUT.CBOT"),
     (IBContract(secType="FUT", exchange="NYMEX", localSymbol="MCLV3"), "MCLV3=FUT.NYMEX"),
     (IBContract(secType="FUT", exchange="SNFE", localSymbol="APH3"), "APH3=FUT.SNFE"),
-    (IBContract(secType="FOP", exchange="NYBOT", localSymbol="EX2G3 P4080"), "EX2G3 P4080=FOP.NYBOT"),
-    (IBContract(secType="FOP", exchange="NYBOT", localSymbol="DXH3 P103.5"), "DXH3 P103.5=FOP.NYBOT"),
-    (IBContract(secType="STK", exchange="SMART", primaryExchange="ARCA", localSymbol="SPY"), "SPY=STK.ARCA"),
-    (IBContract(secType="STK", exchange="SMART", primaryExchange="NASDAQ", localSymbol="AAPL"), "AAPL=STK.NASDAQ"),
-    (IBContract(secType="STK", exchange="SMART", primaryExchange="NYSE", localSymbol="BF B"), "BF B=STK.NYSE"),
-    (IBContract(secType="STK", exchange="SMART", primaryExchange="ASX", localSymbol="29M"), "29M=STK.ASX"),
-    (IBContract(secType="FUT", exchange="EUREX", localSymbol="SCOI 20251219 M"), "SCOI 20251219 M=FUT.EUREX"),
-    (IBContract(secType="FUT", exchange="LMEOTC", localSymbol="AH_20240221"), "AH_20240221=FUT.LMEOTC"),
+    (
+        IBContract(secType="FOP", exchange="NYBOT", localSymbol="EX2G3 P4080"),
+        "EX2G3 P4080=FOP.NYBOT",
+    ),
+    (
+        IBContract(secType="FOP", exchange="NYBOT", localSymbol="DXH3 P103.5"),
+        "DXH3 P103.5=FOP.NYBOT",
+    ),
+    (
+        IBContract(secType="STK", exchange="SMART", primaryExchange="ARCA", localSymbol="SPY"),
+        "SPY=STK.ARCA",
+    ),
+    (
+        IBContract(secType="STK", exchange="SMART", primaryExchange="NASDAQ", localSymbol="AAPL"),
+        "AAPL=STK.NASDAQ",
+    ),
+    (
+        IBContract(secType="STK", exchange="SMART", primaryExchange="NYSE", localSymbol="BF B"),
+        "BF B=STK.NYSE",
+    ),
+    (
+        IBContract(secType="STK", exchange="SMART", primaryExchange="ASX", localSymbol="29M"),
+        "29M=STK.ASX",
+    ),
+    (
+        IBContract(secType="FUT", exchange="EUREX", localSymbol="SCOI 20251219 M"),
+        "SCOI 20251219 M=FUT.EUREX",
+    ),
+    (
+        IBContract(secType="FUT", exchange="LMEOTC", localSymbol="AH_20240221"),
+        "AH_20240221=FUT.LMEOTC",
+    ),
     (IBContract(secType="FUT", exchange="NSE", localSymbol="INFY24FEBFUT"), "INFY24FEBFUT=FUT.NSE"),
     (IBContract(secType="FUT", exchange="OMS", localSymbol="4TLSN4L"), "4TLSN4L=FUT.OMS"),
     (IBContract(secType="FUT", exchange="OMS", localSymbol="3TLSN4N"), "3TLSN4N=FUT.OMS"),
     (IBContract(secType="FUT", exchange="MEFFRV", localSymbol="M3FIDRM4P"), "M3FIDRM4P=FUT.MEFFRV"),
-    (IBContract(secType="FUT", exchange="MEXDER", localSymbol="DVCE91MR24"), "DVCE91MR24=FUT.MEXDER"),
-    (IBContract(secType="FUT", exchange="MEXDER", localSymbol="DVCXC MR24"), "DVCXC MR24=FUT.MEXDER"),
-    (IBContract(secType="FUT", exchange="MEXDER", localSymbol="DVM3  JN24"), "DVM3  JN24=FUT.MEXDER"),
+    (
+        IBContract(secType="FUT", exchange="MEXDER", localSymbol="DVCE91MR24"),
+        "DVCE91MR24=FUT.MEXDER",
+    ),
+    (
+        IBContract(secType="FUT", exchange="MEXDER", localSymbol="DVCXC MR24"),
+        "DVCXC MR24=FUT.MEXDER",
+    ),
+    (
+        IBContract(secType="FUT", exchange="MEXDER", localSymbol="DVM3  JN24"),
+        "DVM3  JN24=FUT.MEXDER",
+    ),
     (IBContract(secType="FUT", exchange="CDE", localSymbol="SXAH24"), "SXAH24=FUT.CDE"),
     (IBContract(secType="FUT", exchange="IPE", localSymbol="HOILN7"), "HOILN7=FUT.IPE"),
     (IBContract(secType="FUT", exchange="CFE", localSymbol="IBHYH4"), "IBHYH4=FUT.CFE"),
     (IBContract(secType="FUT", exchange="IDEM", localSymbol="ISP   24L20"), "ISP   24L20=FUT.IDEM"),
-    (IBContract(secType="FOP", exchange="NYBOT", localSymbol="EX2G3 P4080"), "EX2G3 P4080=FOP.NYBOT"),
-    (IBContract(secType="FOP", exchange="NYBOT", localSymbol="DXH3 P103.5"), "DXH3 P103.5=FOP.NYBOT"),
+    (
+        IBContract(secType="FOP", exchange="NYBOT", localSymbol="EX2G3 P4080"),
+        "EX2G3 P4080=FOP.NYBOT",
+    ),
+    (
+        IBContract(secType="FOP", exchange="NYBOT", localSymbol="DXH3 P103.5"),
+        "DXH3 P103.5=FOP.NYBOT",
+    ),
     (IBContract(secType="FOP", exchange="CME", localSymbol="6NZ4 P0655"), "6NZ4 P0655=FOP.CME"),
-    (IBContract(secType="FOP", exchange="EUREX", localSymbol="C OEXD 20261218 50 M"), "C OEXD 20261218 50 M=FOP.EUREX"),
+    (
+        IBContract(secType="FOP", exchange="EUREX", localSymbol="C OEXD 20261218 50 M"),
+        "C OEXD 20261218 50 M=FOP.EUREX",
+    ),
     (IBContract(secType="FOP", exchange="IPE", localSymbol="WTIF5 C80"), "WTIF5 C80=FOP.IPE"),
-    (IBContract(secType="FOP", exchange="MEXDER", localSymbol="DVIP40000L"), "DVIP40000L=FOP.MEXDER"),
+    (
+        IBContract(secType="FOP", exchange="MEXDER", localSymbol="DVIP40000L"),
+        "DVIP40000L=FOP.MEXDER",
+    ),
     (IBContract(secType="FOP", exchange="NYBOT", localSymbol="OJF6 C1.3"), "OJF6 C1.3=FOP.NYBOT"),
     (IBContract(secType="FOP", exchange="SGX", localSymbol="FCHZ24_C7000"), "FCHZ24_C7000=FOP.SGX"),
-    (IBContract(secType="FUT", exchange="EUREX", localSymbol="FMEU 20240125 D"), "FMEU 20240125 D=FUT.EUREX"),
-    (IBContract(secType="FUT", exchange="EUREX", localSymbol="FMEU 20240126 D"), "FMEU 20240126 D=FUT.EUREX"),
-    (IBContract(secType="FUT", exchange="EUREX", localSymbol="FMEU 20240129 D"), "FMEU 20240129 D=FUT.EUREX"),
+    (
+        IBContract(secType="FUT", exchange="EUREX", localSymbol="FMEU 20240125 D"),
+        "FMEU 20240125 D=FUT.EUREX",
+    ),
+    (
+        IBContract(secType="FUT", exchange="EUREX", localSymbol="FMEU 20240126 D"),
+        "FMEU 20240126 D=FUT.EUREX",
+    ),
+    (
+        IBContract(secType="FUT", exchange="EUREX", localSymbol="FMEU 20240129 D"),
+        "FMEU 20240129 D=FUT.EUREX",
+    ),
     (IBContract(secType="FOP", exchange="ENDEX", localSymbol="TFMG0"), "TFMG0=FOP.ENDEX"),
-    (IBContract(secType="FUT", exchange="OSE.JPN", localSymbol="1690200A1"), "1690200A1=FUT.OSE/JPN"),
+    (
+        IBContract(secType="FUT", exchange="OSE.JPN", localSymbol="1690200A1"),
+        "1690200A1=FUT.OSE/JPN",
+    ),
     (IBContract(secType="CRYPTO", exchange="PAXOS", localSymbol="BTC.USD"), "BTC.USD=CRYPTO.PAXOS"),
     (IBContract(secType="IND", exchange="CBOE", localSymbol="SPX"), "SPX=IND.CBOE"),
     (IBContract(secType="IND", exchange="ASX", localSymbol="XJO"), "XJO=IND.ASX"),
-    # fmt: on
 ]
 
 
-databento_symbology_params = [
-    # fmt: off
-    (IBContract(secType="OPT", exchange="SMART", localSymbol="AAPL  230217P00155000"), "AAPL  230217P00155000.OPRA"),
-    (IBContract(secType="FUT", exchange="SMART", localSymbol="ESH3"), "ESH3.GLBX"),
-    (IBContract(secType="FUT", exchange="SMART", localSymbol="M6EH3"), "M6EH3.GLBX"),
-    (IBContract(secType="FUT", exchange="SMART", localSymbol="MYMM3"), "MYMM3.GLBX"),
-    (IBContract(secType="FUT", exchange="SMART", localSymbol="MCLV3"), "MCLV3.GLBX"),
-    (IBContract(secType="FUT", exchange="SMART", localSymbol="TFMG5"), "TFMG5.NDEX"),
-    (IBContract(secType="FUT", exchange="SMART", localSymbol="GENZ4"), "GENZ4.IFEU"),
-    (IBContract(secType="FOP", exchange="SMART", localSymbol="EX2G3 P4080"), "EX2G3 P4080.GLBX"),
-    (IBContract(secType="FOP", exchange="SMART", localSymbol="DXH3 P103.5"), "DXH3 P103.5.GLBX"),
-    (IBContract(secType="FOP", exchange="SMART", localSymbol="EX2G3 P4080"), "EX2G3 P4080.GLBX"),
-    (IBContract(secType="FOP", exchange="SMART", localSymbol="DXH3 P103.5"), "DXH3 P103.5.GLBX"),
-    (IBContract(secType="FOP", exchange="SMART", localSymbol="OJF6 C1.3"), "OJF6 C1.3.GLBX"),
-    (IBContract(secType="FOP", exchange="SMART", localSymbol="6NZ4 P0655"), "6NZ4 P0655.GLBX"),
-    (IBContract(secType="STK", exchange="SMART", currency="USD", localSymbol="SPY"), "SPY.XNAS"),
-    (IBContract(secType="STK", exchange="SMART", currency="USD", localSymbol="AAPL"), "AAPL.XNAS"),
-    # fmt: on
-]
-
-
-@pytest.mark.parametrize("contract, instrument_id", simplified_symbology_params)
+@pytest.mark.parametrize(("contract", "instrument_id"), simplified_symbology_params)
 def test_ib_contract_to_instrument_id_simplified_symbology(contract, instrument_id):
     # Arrange, Act
-    result = ib_contract_to_instrument_id(contract)
+    instrument_id = InstrumentId.from_str(instrument_id)
+    result = ib_contract_to_instrument_id(contract, instrument_id.venue.value)
 
     # Assert
-    expected = InstrumentId.from_str(instrument_id)
-    assert result == expected
+    assert result == instrument_id
 
 
-@pytest.mark.parametrize("contract, instrument_id", raw_symbology_params)
+@pytest.mark.parametrize(("contract", "instrument_id"), raw_symbology_params)
 def test_ib_contract_to_instrument_id_raw_symbology(contract, instrument_id):
     # Arrange, Act
+    instrument_id_type = InstrumentId.from_str(instrument_id)
     result = ib_contract_to_instrument_id(
-        contract=contract,
-        symbology_method=SymbologyMethod.IB_RAW,
+        contract,
+        instrument_id_type.venue.value,
+        SymbologyMethod.IB_RAW,
     )
 
     # Assert
-    expected = InstrumentId.from_str(instrument_id)
+    expected = instrument_id_type
     assert result == expected
 
 
-@pytest.mark.parametrize("contract, instrument_id", databento_symbology_params)
-def test_ib_contract_to_instrument_id_databento_symbology(contract, instrument_id):
-    # Arrange, Act
-    instrument_id_obj = InstrumentId.from_str(instrument_id)
-    databento_venue = instrument_id_obj.venue.value
-    result = ib_contract_to_instrument_id(
-        contract=contract,
-        symbology_method=SymbologyMethod.DATABENTO,
-        databento_venue=databento_venue,
-    )
-
-    # Assert
-    expected = instrument_id_obj
-    assert result == expected
-
-
-@pytest.mark.parametrize("contract, instrument_id", simplified_symbology_params)
+@pytest.mark.parametrize(("contract", "instrument_id"), simplified_symbology_params)
 def test_instrument_id_to_ib_contract_simplified_symbology(instrument_id, contract):
     # Arrange, Act
-    result = instrument_id_to_ib_contract(InstrumentId.from_str(instrument_id))
+    instrument_id_type = InstrumentId.from_str(instrument_id)
+    result = instrument_id_to_ib_contract(instrument_id_type, instrument_id_type.venue.value)
 
     # Assert
     expected = contract
     assert result == expected
 
 
-@pytest.mark.parametrize("contract, instrument_id", raw_symbology_params)
+@pytest.mark.parametrize(("contract", "instrument_id"), raw_symbology_params)
 def test_instrument_id_to_ib_contract_raw_symbology(instrument_id, contract):
     # Arrange, Act
+    instrument_id = InstrumentId.from_str(instrument_id)
     result = instrument_id_to_ib_contract(
-        InstrumentId.from_str(instrument_id),
-        symbology_method=SymbologyMethod.IB_RAW,
-    )
-
-    # Assert
-    expected = contract
-    assert result == expected
-
-
-@pytest.mark.parametrize("contract, instrument_id", databento_symbology_params)
-def test_instrument_id_to_ib_contract_databento_symbology(instrument_id, contract):
-    # Arrange, Act
-    result = instrument_id_to_ib_contract(
-        InstrumentId.from_str(instrument_id),
-        symbology_method=SymbologyMethod.DATABENTO,
+        instrument_id,
+        instrument_id.venue.value,
+        SymbologyMethod.IB_RAW,
     )
 
     # Assert
@@ -261,11 +293,40 @@ def test_regular_expression_crypto():
 @pytest.mark.parametrize(
     ("symbol", "expected"),
     [
-        # fmt: off
-        ("AAPL230217P00155000", {"symbol": "AAPL", "expiry": "230217", "right": "P", "strike": "00155", "decimal": "000"}),
-        ("A230217P00150000", {"symbol": "A", "expiry": "230217", "right": "P", "strike": "00150", "decimal": "000"}),
-        ("CMCSA230217P00039500", {"symbol": "CMCSA", "expiry": "230217", "right": "P", "strike": "00039", "decimal": "500"}),
-        # fmt: on
+        (
+            "AAPL230217P00155000",
+            {
+                "symbol": "AAPL",
+                "expiry": "230217",
+                "right": "P",
+                "strike": "00155",
+                "decimal": "000",
+            },
+        ),
+        (
+            "A230217P00150000",
+            {"symbol": "A", "expiry": "230217", "right": "P", "strike": "00150", "decimal": "000"},
+        ),
+        (
+            "CMCSA230217P00039500",
+            {
+                "symbol": "CMCSA",
+                "expiry": "230217",
+                "right": "P",
+                "strike": "00039",
+                "decimal": "500",
+            },
+        ),
+        (
+            "SPXW  260120P06835000",  # OCC compliant with space padding
+            {
+                "symbol": "SPXW",
+                "expiry": "260120",
+                "right": "P",
+                "strike": "06835",
+                "decimal": "000",
+            },
+        ),
     ],
 )
 def test_regular_expression_option(symbol, expected):
@@ -324,10 +385,14 @@ def test_regular_expression_future_original(symbol, expected):
 @pytest.mark.parametrize(
     ("symbol", "expected"),
     [
-        # fmt: off
-        ("EX2G23P4080", {"symbol": "EX2", "month": "G", "year": "23", "right": "P", "strike": "4080"}),
-        ("DXH23P103.5", {"symbol": "DX", "month": "H", "year": "23", "right": "P", "strike": "103.5"}),
-        # fmt: on
+        (
+            "EX2G23P4080",
+            {"symbol": "EX2", "month": "G", "year": "23", "right": "P", "strike": "4080"},
+        ),
+        (
+            "DXH23P103.5",
+            {"symbol": "DX", "month": "H", "year": "23", "right": "P", "strike": "103.5"},
+        ),
     ],
 )
 def test_regular_expression_future_options(symbol, expected):
@@ -341,10 +406,14 @@ def test_regular_expression_future_options(symbol, expected):
 @pytest.mark.parametrize(
     ("symbol", "expected"),
     [
-        # fmt: off
-        ("EX2G3 P4080", {"symbol": "EX2", "month": "G", "year": "3", "right": "P", "strike": "4080"}),
-        ("DXH3 P103.5", {"symbol": "DX", "month": "H", "year": "3", "right": "P", "strike": "103.5"}),
-        # fmt: on
+        (
+            "EX2G3 P4080",
+            {"symbol": "EX2", "month": "G", "year": "3", "right": "P", "strike": "4080"},
+        ),
+        (
+            "DXH3 P103.5",
+            {"symbol": "DX", "month": "H", "year": "3", "right": "P", "strike": "103.5"},
+        ),
     ],
 )
 def test_regular_expression_future_options_original(symbol, expected):
@@ -432,15 +501,29 @@ def test_tick_size_to_precision(tick_size: float | Decimal, expected: int):
 
 
 @pytest.mark.parametrize(
-    ("expiry", "expected"),
+    ("contract_details", "expected"),
     [
-        ("20240411", pd.Timestamp("2024-04-11 00:00:00", tz="UTC")),
-        ("20250420 18:35:00 GB", pd.Timestamp("2025-04-20 17:35:00", tz="UTC")),
+        (
+            IBContractDetails(
+                contract=IBContract(lastTradeDateOrContractMonth="20240411"),
+                tradingHours="CLOSED",
+                timeZoneId="UTC",
+            ),
+            pd.Timestamp("2024-04-11 00:00:00", tz="UTC"),
+        ),
+        (
+            IBContractDetails(
+                contract=IBContract(lastTradeDateOrContractMonth="20250420"),
+                tradingHours="20250420:0930-20250420:1835",
+                timeZoneId="Europe/London",
+            ),
+            pd.Timestamp("2025-04-20 17:35:00", tz="UTC"),
+        ),
     ],
 )
-def test_expiry_timestring_to_datetime(expiry: str, expected: pd.Timestamp):
+def test_expiry_timestring_to_datetime(contract_details: IBContractDetails, expected: pd.Timestamp):
     # Arrange, Act
-    result = expiry_timestring_to_datetime(expiry=expiry)
+    result = expiry_timestring_to_datetime(contract_details)
     # Act, Assert
     assert result == expected
 
@@ -452,8 +535,8 @@ def test_parse_instrument_future_option():
     contract_details = IBContractDetails(**contract_details.__dict__)
 
     # Act
-    instrument = parse_instrument(contract_details)
+    instrument = parse_instrument(contract_details, "CME")
 
     # Assert
-    assert instrument.id.value == "E4AN24C5655.CME"
+    assert instrument.id.value == "E4AN4 C5655.CME"
     assert isinstance(instrument, OptionContract), "instrument is not a OptionContract"

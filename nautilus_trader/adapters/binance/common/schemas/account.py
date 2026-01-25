@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,9 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import datetime
 from decimal import Decimal
 
 import msgspec
+import pandas as pd
 
 from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
@@ -23,6 +25,7 @@ from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -30,6 +33,8 @@ from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import AccountId
@@ -166,6 +171,27 @@ class BinanceOrder(msgspec.Struct, frozen=True):
     cumBase: str | None = None  # COIN-M FUTURES only
     pair: str | None = None  # COIN-M FUTURES only
 
+    def _parse_time_in_force_and_expire(
+        self,
+        order_type: OrderType,
+        enum_parser: BinanceEnumParser,
+    ) -> tuple[TimeInForce | None, datetime | None]:
+        time_in_force = (
+            enum_parser.parse_binance_time_in_force(self.timeInForce) if self.timeInForce else None
+        )
+        expire_time: datetime | None = None
+
+        # GTD requires expire_time. Convert to GTC if goodTillDate is missing or for MARKET
+        # orders (which don't support GTD).
+        if time_in_force == TimeInForce.GTD:
+            if order_type == OrderType.MARKET or self.goodTillDate is None:
+                time_in_force = TimeInForce.GTC
+            else:
+                expire_ts: pd.Timestamp = unix_nanos_to_dt(millis_to_nanos(self.goodTillDate))
+                expire_time = expire_ts.to_pydatetime()
+
+        return time_in_force, expire_time
+
     def parse_to_order_status_report(
         self,
         account_id: AccountId,
@@ -220,6 +246,12 @@ class BinanceOrder(msgspec.Struct, frozen=True):
         if treat_expired_as_canceled and order_status == OrderStatus.EXPIRED:
             order_status = OrderStatus.CANCELED
 
+        order_type = enum_parser.parse_binance_order_type(self.type)
+        time_in_force, expire_time = self._parse_time_in_force_and_expire(
+            order_type,
+            enum_parser,
+        )
+
         return OrderStatusReport(
             account_id=account_id,
             instrument_id=instrument_id,
@@ -227,13 +259,10 @@ class BinanceOrder(msgspec.Struct, frozen=True):
             order_list_id=order_list_id,
             venue_order_id=VenueOrderId(str(self.orderId)),
             order_side=enum_parser.parse_binance_order_side(self.side),
-            order_type=enum_parser.parse_binance_order_type(self.type),
+            order_type=order_type,
             contingency_type=contingency_type,
-            time_in_force=(
-                enum_parser.parse_binance_time_in_force(self.timeInForce)
-                if self.timeInForce
-                else None
-            ),
+            time_in_force=time_in_force,
+            expire_time=expire_time,
             order_status=order_status,
             price=Price.from_str(self.price),
             trigger_price=Price.from_str(str(trigger_price)),  # `decimal.Decimal`

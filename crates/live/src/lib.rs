@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,27 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Live node handling execution and data streaming for Nautilus systems.
+//! Live system node for [NautilusTrader](http://nautilustrader.io).
 //!
-//! This crate provides high-level abstractions and infrastructure for running live trading
+//! The `nautilus-live` crate provides high-level abstractions and infrastructure for running live trading
 //! systems, including data streaming, execution management, and system lifecycle handling.
-//! It builds on top of the system kernel to provide simplified interfaces for live deployment.
+//! It builds on top of the system kernel to provide simplified interfaces for live deployment:
 //!
-//! The main components include:
-//! - [`LiveNode`] - High-level abstraction for live system nodes
-//! - [`LiveNodeConfig`] - Configuration for live node deployment
-//! - Data streaming and execution management for live environments
-//! - Async runners for managing system lifecycle
+//! - `LiveNode` High-level abstraction for live system nodes.
+//! - `LiveNodeConfig` Configuration for live node deployment.
+//! - `AsyncRunner` for managing system real-time data flow.
 //!
-//! [`LiveNode`]: node::LiveNode
-//! [`LiveNodeConfig`]: config::LiveNodeConfig
+//! # Platform
 //!
 //! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.
 //!
-//! # Feature flags
+//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
+//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
+//!
+//! # Feature Flags
 //!
 //! This crate provides feature flags to control source code inclusion during compilation,
 //! depending on the intended use case, i.e. whether to provide Python bindings
@@ -41,18 +41,28 @@
 //! or as part of a Rust only build.
 //!
 //! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//! - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
+//! - `streaming`: Enables `persistence` dependency for streaming configuration.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) (auto-enables `streaming`).
+//! - `defi`: Enables DeFi (Decentralized Finance) support.
+//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
+#![deny(unsafe_op_in_unsafe_fn)]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]
 #![deny(clippy::missing_errors_doc)]
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
+pub mod builder;
 pub mod config;
-pub mod data;
+pub mod manager;
 pub mod node;
 pub mod runner;
+
+// Re-exports for adapters
+pub use nautilus_execution::client::base::ExecutionClientCore;
+
+#[cfg(feature = "python")]
+pub mod python;

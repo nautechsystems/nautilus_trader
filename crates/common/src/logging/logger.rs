@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,13 +14,11 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::HashMap,
-    env,
     fmt::Display,
-    str::FromStr,
-    sync::{atomic::Ordering, mpsc::SendError},
+    sync::{Mutex, OnceLock, atomic::Ordering, mpsc::SendError},
 };
 
+use ahash::AHashMap;
 use indexmap::IndexMap;
 use log::{
     Level, LevelFilter, Log, STATIC_MAX_LEVEL,
@@ -36,111 +34,22 @@ use nautilus_model::identifiers::TraderId;
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
-use super::{LOGGING_BYPASSED, LOGGING_REALTIME};
+pub use super::config::LoggerConfig;
+use super::{LOGGING_BYPASSED, LOGGING_GUARDS_ACTIVE, LOGGING_INITIALIZED, LOGGING_REALTIME};
 use crate::{
     enums::{LogColor, LogLevel},
     logging::writer::{FileWriter, FileWriterConfig, LogWriter, StderrWriter, StdoutWriter},
 };
 
 const LOGGING: &str = "logging";
+const KV_COLOR: &str = "color";
+const KV_COMPONENT: &str = "component";
 
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
-)]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LoggerConfig {
-    /// Maximum log level to write to stdout.
-    pub stdout_level: LevelFilter,
-    /// Maximum log level to write to file (disabled is `Off`).
-    pub fileout_level: LevelFilter,
-    /// Per-component log levels, allowing finer-grained control.
-    component_level: HashMap<Ustr, LevelFilter>,
-    /// If logger is using ANSI color codes.
-    pub is_colored: bool,
-    /// If the configuration should be printed to stdout at initialization.
-    pub print_config: bool,
-}
+/// Global log sender which allows multiple log guards per process.
+static LOGGER_TX: OnceLock<std::sync::mpsc::Sender<LogEvent>> = OnceLock::new();
 
-impl Default for LoggerConfig {
-    /// Creates a new default [`LoggerConfig`] instance.
-    fn default() -> Self {
-        Self {
-            stdout_level: LevelFilter::Info,
-            fileout_level: LevelFilter::Off,
-            component_level: HashMap::new(),
-            is_colored: false,
-            print_config: false,
-        }
-    }
-}
-
-impl LoggerConfig {
-    /// Creates a new [`LoggerConfig`] instance.
-    #[must_use]
-    pub const fn new(
-        stdout_level: LevelFilter,
-        fileout_level: LevelFilter,
-        component_level: HashMap<Ustr, LevelFilter>,
-        is_colored: bool,
-        print_config: bool,
-    ) -> Self {
-        Self {
-            stdout_level,
-            fileout_level,
-            component_level,
-            is_colored,
-            print_config,
-        }
-    }
-
-    /// # Errors
-    ///
-    /// Returns an error if the spec string is invalid.
-    pub fn from_spec(spec: &str) -> anyhow::Result<Self> {
-        let mut config = Self::default();
-        for kv in spec.split(';') {
-            let kv = kv.trim();
-            if kv.is_empty() {
-                continue;
-            }
-            let kv_lower = kv.to_lowercase(); // For case-insensitive comparison
-            if kv_lower == "is_colored" {
-                config.is_colored = true;
-            } else if kv_lower == "print_config" {
-                config.print_config = true;
-            } else {
-                let parts: Vec<&str> = kv.split('=').collect();
-                if parts.len() != 2 {
-                    anyhow::bail!("Invalid spec pair: {}", kv);
-                }
-                let k = parts[0].trim(); // Trim key
-                let v = parts[1].trim(); // Trim value
-                let lvl = LevelFilter::from_str(v)
-                    .map_err(|_| anyhow::anyhow!("Invalid log level: {}", v))?;
-                let k_lower = k.to_lowercase(); // Case-insensitive key matching
-                match k_lower.as_str() {
-                    "stdout" => config.stdout_level = lvl,
-                    "fileout" => config.fileout_level = lvl,
-                    _ => {
-                        config.component_level.insert(Ustr::from(k), lvl);
-                    }
-                }
-            }
-        }
-        Ok(config)
-    }
-
-    /// Retrieves the logger configuration from the "`NAUTILUS_LOG`" environment variable.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the variable is unset or invalid.
-    pub fn from_env() -> anyhow::Result<Self> {
-        let spec = env::var("NAUTILUS_LOG")?;
-        Self::from_spec(&spec)
-    }
-}
+/// Global handle to the logging thread - only one thread exists per process.
+static LOGGER_HANDLE: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
 
 /// A high-performance logger utilizing a MPSC channel under the hood.
 ///
@@ -156,7 +65,7 @@ pub struct Logger {
 }
 
 /// Represents a type of log event.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum LogEvent {
     /// A log line event.
     Log(LogLine),
@@ -281,7 +190,7 @@ impl Serialize for LogLineWrapper {
         json_obj.insert("level".to_string(), self.line.level.to_string());
         json_obj.insert("color".to_string(), self.line.color.to_string());
         json_obj.insert("component".to_string(), self.line.component.to_string());
-        json_obj.insert("message".to_string(), self.line.message.to_string());
+        json_obj.insert("message".to_string(), self.line.message.clone());
 
         json_obj.serialize(serializer)
     }
@@ -305,10 +214,10 @@ impl Log for Logger {
             let level = record.level();
             let key_values = record.key_values();
             let color: LogColor = key_values
-                .get("color".into())
+                .get(KV_COLOR.into())
                 .and_then(|v| v.to_u64().map(|v| (v as u8).into()))
                 .unwrap_or(level.into());
-            let component = key_values.get("component".into()).map_or_else(
+            let component = key_values.get(KV_COMPONENT.into()).map_or_else(
                 || Ustr::from(record.metadata().target()),
                 |v| Ustr::from(&v.to_string()),
             );
@@ -327,8 +236,13 @@ impl Log for Logger {
     }
 
     fn flush(&self) {
+        // Don't attempt to flush if we're already bypassed/shutdown
+        if LOGGING_BYPASSED.load(Ordering::Relaxed) {
+            return;
+        }
+
         if let Err(e) = self.tx.send(LogEvent::Flush) {
-            eprintln!("Error sending flush log event (receiver closed): {e}");
+            eprintln!("Error sending flush log event: {e}");
         }
     }
 }
@@ -351,15 +265,6 @@ impl Logger {
 
     /// Initializes the logger with the given configuration.
     ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// let config = LoggerConfig::from_spec("stdout=Info;fileout=Debug;RiskEngine=Error");
-    /// let file_config = FileWriterConfig::default();
-    /// let log_guard = Logger::init_with_config(trader_id, instance_id, config, file_config);
-    /// ```
-    /// Initializes the logger with the given `LoggerConfig` and `FileWriterConfig`.
-    ///
     /// # Errors
     ///
     /// Returns an error if the logger fails to register or initialize the background thread.
@@ -369,6 +274,12 @@ impl Logger {
         config: LoggerConfig,
         file_config: FileWriterConfig,
     ) -> anyhow::Result<LogGuard> {
+        // Fast path: already initialized
+        if super::LOGGING_INITIALIZED.load(Ordering::SeqCst) {
+            return LogGuard::new()
+                .ok_or_else(|| anyhow::anyhow!("Logging already initialized but sender missing"));
+        }
+
         let (tx, rx) = std::sync::mpsc::channel::<LogEvent>();
 
         let logger_tx = tx.clone();
@@ -377,41 +288,57 @@ impl Logger {
             config: config.clone(),
         };
 
+        set_boxed_logger(Box::new(logger))?;
+
+        // Store the sender globally so additional guards can be created
+        if LOGGER_TX.set(tx).is_err() {
+            debug_assert!(
+                false,
+                "LOGGER_TX already set - re-initialization not supported"
+            );
+        }
+
+        let is_colored = config.is_colored;
+
         let print_config = config.print_config;
         if print_config {
             println!("STATIC_MAX_LEVEL={STATIC_MAX_LEVEL}");
             println!("Logger initialized with {config:?} {file_config:?}");
         }
 
-        let handle: Option<std::thread::JoinHandle<()>>;
-        match set_boxed_logger(Box::new(logger)) {
-            Ok(()) => {
-                handle = Some(
-                    std::thread::Builder::new()
-                        .name(LOGGING.to_string())
-                        .spawn(move || {
-                            Self::handle_messages(
-                                trader_id.to_string(),
-                                instance_id.to_string(),
-                                config,
-                                file_config,
-                                rx,
-                            );
-                        })?,
+        let handle = std::thread::Builder::new()
+            .name(LOGGING.to_string())
+            .spawn(move || {
+                Self::handle_messages(
+                    trader_id.to_string(),
+                    instance_id.to_string(),
+                    config,
+                    file_config,
+                    rx,
                 );
+            })?;
 
-                let max_level = log::LevelFilter::Trace;
-                set_max_level(max_level);
-                if print_config {
-                    println!("Logger set as `log` implementation with max level {max_level}");
-                }
-            }
-            Err(e) => {
-                anyhow::bail!("Cannot initialize logger because of error: {e}");
-            }
+        // Store the handle globally
+        if let Ok(mut handle_guard) = LOGGER_HANDLE.lock() {
+            debug_assert!(
+                handle_guard.is_none(),
+                "LOGGER_HANDLE already set - re-initialization not supported"
+            );
+            *handle_guard = Some(handle);
         }
 
-        Ok(LogGuard::new(handle, Some(tx)))
+        let max_level = log::LevelFilter::Trace;
+        set_max_level(max_level);
+
+        if print_config {
+            println!("Logger set as `log` implementation with max level {max_level}");
+        }
+
+        super::LOGGING_INITIALIZED.store(true, Ordering::SeqCst);
+        super::LOGGING_COLORED.store(is_colored, Ordering::SeqCst);
+
+        LogGuard::new()
+            .ok_or_else(|| anyhow::anyhow!("Failed to create LogGuard from global sender"))
     }
 
     fn handle_messages(
@@ -424,10 +351,18 @@ impl Logger {
         let LoggerConfig {
             stdout_level,
             fileout_level,
-            ref component_level,
+            component_level,
+            module_level,
+            log_components_only,
             is_colored,
             print_config: _,
+            use_tracing: _,
         } = config;
+
+        // Pre-sort module filters by descending path length for O(n) longest-prefix lookup
+        let mut module_filters_sorted: Vec<(Ustr, LevelFilter)> =
+            module_level.into_iter().collect();
+        module_filters_sorted.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
 
         let trader_id_cache = Ustr::from(&trader_id);
 
@@ -442,18 +377,20 @@ impl Logger {
             FileWriter::new(trader_id, instance_id, file_config, fileout_level)
         };
 
-        // Continue to receive and handle log events until channel is hung up
-        while let Ok(event) = rx.recv() {
+        let process_event = |event: LogEvent,
+                             stdout_writer: &mut StdoutWriter,
+                             stderr_writer: &mut StderrWriter,
+                             file_writer_opt: &mut Option<FileWriter>| {
             match event {
                 LogEvent::Log(line) => {
-                    let component_level = component_level.get(&line.component);
-
-                    // Check if the component exists in level_filters,
-                    // and if its level is greater than event.level.
-                    if let Some(&filter_level) = component_level {
-                        if line.level > filter_level {
-                            continue;
-                        }
+                    if should_filter_log(
+                        &line.component,
+                        line.level,
+                        &module_filters_sorted,
+                        &component_level,
+                        log_components_only,
+                    ) {
+                        return;
                     }
 
                     let mut wrapper = LogLineWrapper::new(line, trader_id_cache);
@@ -474,13 +411,13 @@ impl Logger {
                         }
                     }
 
-                    if let Some(ref mut file_writer) = file_writer_opt {
-                        if file_writer.enabled(&wrapper.line) {
-                            if file_writer.json_format {
-                                file_writer.write(&wrapper.get_json());
-                            } else {
-                                file_writer.write(wrapper.get_string());
-                            }
+                    if let Some(file_writer) = file_writer_opt
+                        && file_writer.enabled(&wrapper.line)
+                    {
+                        if file_writer.json_format {
+                            file_writer.write(&wrapper.get_json());
+                        } else {
+                            file_writer.write(wrapper.get_string());
                         }
                     }
                 }
@@ -488,23 +425,129 @@ impl Logger {
                     stdout_writer.flush();
                     stderr_writer.flush();
 
-                    if let Some(ref mut file_writer) = file_writer_opt {
+                    if let Some(file_writer) = file_writer_opt {
                         file_writer.flush();
                     }
                 }
                 LogEvent::Close => {
-                    // Final flush
+                    // Close handled in the main loop; ignore here.
+                }
+            }
+        };
+
+        // Continue to receive and handle log events until channel is hung up
+        while let Ok(event) = rx.recv() {
+            match event {
+                LogEvent::Log(_) | LogEvent::Flush => process_event(
+                    event,
+                    &mut stdout_writer,
+                    &mut stderr_writer,
+                    &mut file_writer_opt,
+                ),
+                LogEvent::Close => {
+                    // First flush what's been written so far
                     stdout_writer.flush();
                     stderr_writer.flush();
 
                     if let Some(ref mut file_writer) = file_writer_opt {
                         file_writer.flush();
                     }
+
+                    // Drain any remaining events that may have raced with shutdown
+                    // This ensures logs enqueued just before/around shutdown aren't lost.
+                    while let Ok(evt) = rx.try_recv() {
+                        match evt {
+                            LogEvent::Close => (), // ignore extra Close events
+                            _ => process_event(
+                                evt,
+                                &mut stdout_writer,
+                                &mut stderr_writer,
+                                &mut file_writer_opt,
+                            ),
+                        }
+                    }
+
+                    // Final flush after draining
+                    stdout_writer.flush();
+                    stderr_writer.flush();
+
+                    if let Some(ref mut file_writer) = file_writer_opt {
+                        file_writer.flush();
+                    }
+
                     break;
                 }
             }
         }
     }
+}
+
+/// Determines if a log line should be filtered out based on module and component filters.
+///
+/// Returns `true` if the line should be skipped (filtered out), `false` if it should be logged.
+///
+/// The `module_filters_sorted` slice must be pre-sorted by descending path length so the
+/// first `starts_with` match is the longest prefix.
+#[must_use]
+pub fn should_filter_log(
+    component: &Ustr,
+    line_level: log::Level,
+    module_filters_sorted: &[(Ustr, LevelFilter)],
+    component_level: &AHashMap<Ustr, LevelFilter>,
+    log_components_only: bool,
+) -> bool {
+    if module_filters_sorted.is_empty() && component_level.is_empty() {
+        return log_components_only;
+    }
+
+    // Module filter: first match in sorted list is longest prefix
+    let module_filter = module_filters_sorted
+        .iter()
+        .find(|(path, _)| component.starts_with(path.as_str()))
+        .map(|(_, level)| *level);
+
+    let component_filter = component_level.get(component).copied();
+
+    if log_components_only && module_filter.is_none() && component_filter.is_none() {
+        return true;
+    }
+
+    // Module filter takes precedence over component filter
+    if let Some(filter_level) = module_filter.or(component_filter)
+        && line_level > filter_level
+    {
+        return true;
+    }
+
+    false
+}
+
+/// Gracefully shuts down the logging subsystem.
+///
+/// Performs the same shutdown sequence as dropping the last `LogGuard`, but can be called
+/// explicitly for deterministic shutdown timing (e.g., testing or Windows Python applications).
+///
+/// # Safety
+///
+/// Safe to call multiple times. Thread join is skipped if called from the logging thread.
+pub(crate) fn shutdown_graceful() {
+    // Prevent further logging
+    LOGGING_BYPASSED.store(true, Ordering::SeqCst);
+    log::set_max_level(log::LevelFilter::Off);
+
+    // Signal Close if the sender exists
+    if let Some(tx) = LOGGER_TX.get() {
+        let _ = tx.send(LogEvent::Close);
+    }
+
+    if let Ok(mut handle_guard) = LOGGER_HANDLE.lock()
+        && let Some(handle) = handle_guard.take()
+        && handle.thread().id() != std::thread::current().id()
+    {
+        let _ = handle.join();
+    }
+
+    LOGGING_INITIALIZED.store(false, Ordering::SeqCst);
 }
 
 pub fn log<T: AsRef<str>>(level: LogLevel, color: LogColor, component: Ustr, message: T) {
@@ -530,53 +573,117 @@ pub fn log<T: AsRef<str>>(level: LogLevel, color: LogColor, component: Ustr, mes
     }
 }
 
+/// A guard that manages the lifecycle of the logging subsystem.
+///
+/// `LogGuard` ensures the logging thread remains active while instances exist and properly
+/// terminates when all guards are dropped. The system uses reference counting to track active
+/// guards - when the last `LogGuard` is dropped, the logging thread is joined to ensure all
+/// pending log messages are written before the process terminates.
+///
+/// # Reference Counting
+///
+/// The logging system maintains a global atomic counter of active `LogGuard` instances. This
+/// ensures that:
+/// - The logging thread remains active as long as at least one `LogGuard` exists.
+/// - All log messages are properly flushed when intermediate guards are dropped.
+/// - The logging thread is cleanly terminated and joined when the last guard is dropped.
+///
+/// # Shutdown Behavior
+///
+/// When the last guard is dropped, the logging thread is signaled to close, drains pending
+/// messages, and is joined to ensure all logs are written before process termination.
+///
+/// **Python on Windows:** Non-deterministic GC order during interpreter shutdown can
+/// occasionally prevent proper thread join, resulting in truncated logs.
+///
+/// # Limits
+///
+/// The system supports a maximum of 255 concurrent `LogGuard` instances.
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
 )]
 #[derive(Debug)]
 pub struct LogGuard {
-    handle: Option<std::thread::JoinHandle<()>>,
-    tx: Option<std::sync::mpsc::Sender<LogEvent>>,
+    tx: std::sync::mpsc::Sender<LogEvent>,
 }
 
 impl LogGuard {
-    /// Creates a new [`LogGuard`] instance.
+    /// Creates a new [`LogGuard`] instance from the global logger.
+    ///
+    /// Returns `None` if logging has not been initialized.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the number of active LogGuards would exceed 255.
     #[must_use]
-    pub const fn new(
-        handle: Option<std::thread::JoinHandle<()>>,
-        tx: Option<std::sync::mpsc::Sender<LogEvent>>,
-    ) -> Self {
-        Self { handle, tx }
-    }
-}
+    pub fn new() -> Option<Self> {
+        LOGGER_TX.get().map(|tx| {
+            LOGGING_GUARDS_ACTIVE
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
+                    if count == u8::MAX {
+                        None // Reject the update if we're at the limit
+                    } else {
+                        Some(count + 1)
+                    }
+                })
+                .expect("Maximum number of active LogGuards (255) exceeded");
 
-impl Default for LogGuard {
-    /// Creates a new default [`LogGuard`] instance.
-    fn default() -> Self {
-        Self::new(None, None)
+            Self { tx: tx.clone() }
+        })
     }
 }
 
 impl Drop for LogGuard {
+    /// Handles cleanup when a `LogGuard` is dropped.
+    ///
+    /// Sends `Flush` if other guards remain active, otherwise sends `Close`, joins the
+    /// logging thread, and resets the subsystem state.
     fn drop(&mut self) {
-        if let Some(tx) = self.tx.take() {
-            let _ = tx.send(LogEvent::Close);
-        }
+        let previous_count = LOGGING_GUARDS_ACTIVE
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
+                assert!(count != 0, "LogGuard reference count underflow");
+                Some(count - 1)
+            })
+            .expect("Failed to decrement LogGuard count");
 
-        if let Some(handle) = self.handle.take() {
-            handle.join().expect("Error joining logging handle");
+        // Check if this was the last LogGuard - re-check after decrement to avoid race
+        if previous_count == 1 && LOGGING_GUARDS_ACTIVE.load(Ordering::SeqCst) == 0 {
+            // This is truly the last LogGuard, so we should close the logger and join the thread
+            // to ensure all log messages are written before the process terminates.
+            // Prevent any new log events from being accepted while shutting down.
+            LOGGING_BYPASSED.store(true, Ordering::SeqCst);
+
+            // Disable all log levels to reduce overhead on late calls
+            log::set_max_level(log::LevelFilter::Off);
+
+            // Ensure Close is delivered before joining (critical for shutdown)
+            let _ = self.tx.send(LogEvent::Close);
+
+            // Join the logging thread to ensure all pending logs are written
+            if let Ok(mut handle_guard) = LOGGER_HANDLE.lock()
+                && let Some(handle) = handle_guard.take()
+            {
+                // Avoid self-join deadlock
+                if handle.thread().id() != std::thread::current().id() {
+                    let _ = handle.join();
+                }
+            }
+
+            // Reset LOGGING_INITIALIZED since the logging thread has terminated
+            LOGGING_INITIALIZED.store(false, Ordering::SeqCst);
+        } else {
+            // Other LogGuards are still active, just flush our logs
+            let _ = self.tx.send(LogEvent::Flush);
         }
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, thread::sleep, time::Duration};
+    use std::time::Duration;
 
+    use ahash::AHashMap;
     use log::LevelFilter;
     use nautilus_core::UUID4;
     use nautilus_model::identifiers::TraderId;
@@ -620,12 +727,15 @@ mod tests {
             LoggerConfig {
                 stdout_level: LevelFilter::Info,
                 fileout_level: LevelFilter::Debug,
-                component_level: HashMap::from_iter(vec![(
+                component_level: AHashMap::from_iter(vec![(
                     Ustr::from("RiskEngine"),
                     LevelFilter::Error
                 )]),
+                module_level: AHashMap::new(),
+                log_components_only: false,
                 is_colored: true,
                 print_config: false,
+                use_tracing: false,
             }
         );
     }
@@ -638,274 +748,770 @@ mod tests {
             LoggerConfig {
                 stdout_level: LevelFilter::Warn,
                 fileout_level: LevelFilter::Error,
-                component_level: HashMap::new(),
-                is_colored: false,
+                component_level: AHashMap::new(),
+                module_level: AHashMap::new(),
+                log_components_only: false,
+                is_colored: true,
                 print_config: true,
+                use_tracing: false,
             }
         );
     }
 
     #[rstest]
-    fn test_logging_to_file() {
-        let config = LoggerConfig {
-            fileout_level: LevelFilter::Debug,
-            ..Default::default()
-        };
-
-        let temp_dir = tempdir().expect("Failed to create temporary directory");
-        let file_config = FileWriterConfig {
-            directory: Some(temp_dir.path().to_str().unwrap().to_string()),
-            ..Default::default()
-        };
-
-        let log_guard = Logger::init_with_config(
-            TraderId::from("TRADER-001"),
-            UUID4::new(),
-            config,
-            file_config,
-        );
-
-        logging_clock_set_static_mode();
-        logging_clock_set_static_time(1_650_000_000_000_000);
-
-        log::info!(
-            component = "RiskEngine";
-            "This is a test."
-        );
-
-        let mut log_contents = String::new();
-
-        wait_until(
-            || {
-                std::fs::read_dir(&temp_dir)
-                    .expect("Failed to read directory")
-                    .filter_map(Result::ok)
-                    .any(|entry| entry.path().is_file())
-            },
-            Duration::from_secs(3),
-        );
-
-        drop(log_guard); // Ensure log buffers are flushed
-
-        wait_until(
-            || {
-                let log_file_path = std::fs::read_dir(&temp_dir)
-                    .expect("Failed to read directory")
-                    .filter_map(Result::ok)
-                    .find(|entry| entry.path().is_file())
-                    .expect("No files found in directory")
-                    .path();
-                dbg!(&log_file_path);
-                log_contents =
-                    std::fs::read_to_string(log_file_path).expect("Error while reading log file");
-                !log_contents.is_empty()
-            },
-            Duration::from_secs(3),
-        );
-
-        assert_eq!(
-            log_contents,
-            "1970-01-20T02:20:00.000000000Z [INFO] TRADER-001.RiskEngine: This is a test.\n"
-        );
-    }
-
-    #[rstest]
-    fn test_log_component_level_filtering() {
-        let config = LoggerConfig::from_spec("stdout=Info;fileout=Debug;RiskEngine=Error").unwrap();
-
-        let temp_dir = tempdir().expect("Failed to create temporary directory");
-        let file_config = FileWriterConfig {
-            directory: Some(temp_dir.path().to_str().unwrap().to_string()),
-            ..Default::default()
-        };
-
-        let log_guard = Logger::init_with_config(
-            TraderId::from("TRADER-001"),
-            UUID4::new(),
-            config,
-            file_config,
-        );
-
-        logging_clock_set_static_mode();
-        logging_clock_set_static_time(1_650_000_000_000_000);
-
-        log::info!(
-            component = "RiskEngine";
-            "This is a test."
-        );
-
-        drop(log_guard); // Ensure log buffers are flushed
-
-        wait_until(
-            || {
-                if let Some(log_file) = std::fs::read_dir(&temp_dir)
-                    .expect("Failed to read directory")
-                    .filter_map(Result::ok)
-                    .find(|entry| entry.path().is_file())
-                {
-                    let log_file_path = log_file.path();
-                    let log_contents = std::fs::read_to_string(log_file_path)
-                        .expect("Error while reading log file");
-                    !log_contents.contains("RiskEngine")
-                } else {
-                    false
-                }
-            },
-            Duration::from_secs(3),
-        );
-
-        assert!(
-            std::fs::read_dir(&temp_dir)
-                .expect("Failed to read directory")
-                .filter_map(Result::ok)
-                .any(|entry| entry.path().is_file()),
-            "Log file exists"
-        );
-    }
-
-    #[rstest]
-    fn test_logging_to_file_in_json_format() {
+    fn log_config_parsing_with_log_components_only() {
         let config =
-            LoggerConfig::from_spec("stdout=Info;is_colored;fileout=Debug;RiskEngine=Info")
-                .unwrap();
+            LoggerConfig::from_spec("stdout=Info;log_components_only;RiskEngine=Debug").unwrap();
+        assert_eq!(
+            config,
+            LoggerConfig {
+                stdout_level: LevelFilter::Info,
+                fileout_level: LevelFilter::Off,
+                component_level: AHashMap::from_iter(vec![(
+                    Ustr::from("RiskEngine"),
+                    LevelFilter::Debug
+                )]),
+                module_level: AHashMap::new(),
+                log_components_only: true,
+                is_colored: true,
+                print_config: false,
+                use_tracing: false,
+            }
+        );
+    }
 
-        let temp_dir = tempdir().expect("Failed to create temporary directory");
-        let file_config = FileWriterConfig {
-            directory: Some(temp_dir.path().to_str().unwrap().to_string()),
-            file_format: Some("json".to_string()),
-            ..Default::default()
+    #[rstest]
+    fn test_log_line_wrapper_plain_string() {
+        let line = LogLine {
+            timestamp: 1_650_000_000_000_000_000.into(),
+            level: log::Level::Info,
+            color: LogColor::Normal,
+            component: Ustr::from("TestComponent"),
+            message: "Test message".to_string(),
         };
 
-        let log_guard = Logger::init_with_config(
-            TraderId::from("TRADER-001"),
-            UUID4::new(),
-            config,
-            file_config,
-        );
+        let mut wrapper = LogLineWrapper::new(line, Ustr::from("TRADER-001"));
+        let result = wrapper.get_string();
 
-        logging_clock_set_static_mode();
-        logging_clock_set_static_time(1_650_000_000_000_000);
+        assert!(result.contains("TRADER-001"));
+        assert!(result.contains("TestComponent"));
+        assert!(result.contains("Test message"));
+        assert!(result.contains("[INFO]"));
+        assert!(result.ends_with('\n'));
+        // Should NOT contain ANSI codes
+        assert!(!result.contains("\x1b["));
+    }
 
-        log::info!(
-            component = "RiskEngine";
-            "This is a test."
-        );
+    #[rstest]
+    fn test_log_line_wrapper_colored_string() {
+        let line = LogLine {
+            timestamp: 1_650_000_000_000_000_000.into(),
+            level: log::Level::Info,
+            color: LogColor::Green,
+            component: Ustr::from("TestComponent"),
+            message: "Test message".to_string(),
+        };
 
-        let mut log_contents = String::new();
+        let mut wrapper = LogLineWrapper::new(line, Ustr::from("TRADER-001"));
+        let result = wrapper.get_colored();
 
-        drop(log_guard); // Ensure log buffers are flushed
+        assert!(result.contains("TRADER-001"));
+        assert!(result.contains("TestComponent"));
+        assert!(result.contains("Test message"));
+        // Should contain ANSI codes
+        assert!(result.contains("\x1b["));
+        assert!(result.ends_with('\n'));
+    }
 
-        wait_until(
-            || {
-                if let Some(log_file) = std::fs::read_dir(&temp_dir)
-                    .expect("Failed to read directory")
-                    .filter_map(Result::ok)
-                    .find(|entry| entry.path().is_file())
-                {
-                    let log_file_path = log_file.path();
+    #[rstest]
+    fn test_log_line_wrapper_json_output() {
+        let line = LogLine {
+            timestamp: 1_650_000_000_000_000_000.into(),
+            level: log::Level::Warn,
+            color: LogColor::Yellow,
+            component: Ustr::from("RiskEngine"),
+            message: "Warning message".to_string(),
+        };
+
+        let wrapper = LogLineWrapper::new(line, Ustr::from("TRADER-002"));
+        let json = wrapper.get_json();
+
+        let parsed: Value = serde_json::from_str(json.trim()).unwrap();
+        assert_eq!(parsed["trader_id"], "TRADER-002");
+        assert_eq!(parsed["component"], "RiskEngine");
+        assert_eq!(parsed["message"], "Warning message");
+        assert_eq!(parsed["level"], "WARN");
+        assert_eq!(parsed["color"], "YELLOW");
+    }
+
+    #[rstest]
+    fn test_log_line_wrapper_caches_string() {
+        let line = LogLine {
+            timestamp: 1_650_000_000_000_000_000.into(),
+            level: log::Level::Info,
+            color: LogColor::Normal,
+            component: Ustr::from("Test"),
+            message: "Cached".to_string(),
+        };
+
+        let mut wrapper = LogLineWrapper::new(line, Ustr::from("TRADER"));
+        let first = wrapper.get_string().to_string();
+        let second = wrapper.get_string().to_string();
+
+        assert_eq!(first, second);
+    }
+
+    #[rstest]
+    fn test_log_line_display() {
+        let line = LogLine {
+            timestamp: 0.into(),
+            level: log::Level::Error,
+            color: LogColor::Red,
+            component: Ustr::from("Component"),
+            message: "Error occurred".to_string(),
+        };
+
+        let display = format!("{line}");
+        assert_eq!(display, "[ERROR] Component: Error occurred");
+    }
+
+    /// Helper to convert module level map to sorted vec (descending by path length)
+    fn sorted_module_filters(map: AHashMap<Ustr, LevelFilter>) -> Vec<(Ustr, LevelFilter)> {
+        let mut v: Vec<_> = map.into_iter().collect();
+        v.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+        v
+    }
+
+    #[rstest]
+    fn test_filter_no_filters_passes_all() {
+        let module_filters = vec![];
+        let component_level = AHashMap::new();
+
+        assert!(!should_filter_log(
+            &Ustr::from("anything"),
+            Level::Trace,
+            &module_filters,
+            &component_level,
+            false
+        ));
+    }
+
+    #[rstest]
+    fn test_filter_component_exact_match() {
+        let module_filters = vec![];
+        let component_level = AHashMap::from_iter([(Ustr::from("RiskEngine"), LevelFilter::Error)]);
+
+        assert!(should_filter_log(
+            &Ustr::from("RiskEngine"),
+            Level::Info,
+            &module_filters,
+            &component_level,
+            false
+        ));
+        assert!(!should_filter_log(
+            &Ustr::from("RiskEngine"),
+            Level::Error,
+            &module_filters,
+            &component_level,
+            false
+        ));
+        assert!(!should_filter_log(
+            &Ustr::from("Portfolio"),
+            Level::Info,
+            &module_filters,
+            &component_level,
+            false
+        ));
+    }
+
+    #[rstest]
+    fn test_filter_module_prefix_match() {
+        let module_filters = vec![(Ustr::from("nautilus_okx::websocket"), LevelFilter::Debug)];
+        let component_level = AHashMap::new();
+
+        assert!(!should_filter_log(
+            &Ustr::from("nautilus_okx::websocket"),
+            Level::Debug,
+            &module_filters,
+            &component_level,
+            false
+        ));
+        assert!(!should_filter_log(
+            &Ustr::from("nautilus_okx::websocket::handler"),
+            Level::Debug,
+            &module_filters,
+            &component_level,
+            false
+        ));
+        assert!(should_filter_log(
+            &Ustr::from("nautilus_okx::websocket::handler"),
+            Level::Trace,
+            &module_filters,
+            &component_level,
+            false
+        ));
+        assert!(!should_filter_log(
+            &Ustr::from("nautilus_binance::data"),
+            Level::Trace,
+            &module_filters,
+            &component_level,
+            false
+        ));
+    }
+
+    #[rstest]
+    fn test_filter_longest_prefix_wins() {
+        let module_filters = sorted_module_filters(AHashMap::from_iter([
+            (Ustr::from("nautilus_okx"), LevelFilter::Error),
+            (Ustr::from("nautilus_okx::websocket"), LevelFilter::Debug),
+        ]));
+        let component_level = AHashMap::new();
+
+        assert!(!should_filter_log(
+            &Ustr::from("nautilus_okx::websocket::handler"),
+            Level::Debug,
+            &module_filters,
+            &component_level,
+            false
+        ));
+        assert!(should_filter_log(
+            &Ustr::from("nautilus_okx::data"),
+            Level::Debug,
+            &module_filters,
+            &component_level,
+            false
+        ));
+        assert!(!should_filter_log(
+            &Ustr::from("nautilus_okx::data"),
+            Level::Error,
+            &module_filters,
+            &component_level,
+            false
+        ));
+    }
+
+    #[rstest]
+    fn test_filter_module_precedence_over_component() {
+        let module_filters = vec![(Ustr::from("nautilus_okx::websocket"), LevelFilter::Debug)];
+        let component_level =
+            AHashMap::from_iter([(Ustr::from("nautilus_okx::websocket"), LevelFilter::Error)]);
+
+        assert!(!should_filter_log(
+            &Ustr::from("nautilus_okx::websocket"),
+            Level::Debug,
+            &module_filters,
+            &component_level,
+            false
+        ));
+    }
+
+    #[rstest]
+    fn test_filter_log_components_only_blocks_unknown() {
+        let module_filters = vec![];
+        let component_level = AHashMap::from_iter([(Ustr::from("RiskEngine"), LevelFilter::Debug)]);
+
+        assert!(should_filter_log(
+            &Ustr::from("Portfolio"),
+            Level::Info,
+            &module_filters,
+            &component_level,
+            true
+        ));
+        assert!(!should_filter_log(
+            &Ustr::from("RiskEngine"),
+            Level::Info,
+            &module_filters,
+            &component_level,
+            true
+        ));
+    }
+
+    #[rstest]
+    fn test_filter_log_components_only_with_module() {
+        let module_filters = vec![(Ustr::from("nautilus_okx"), LevelFilter::Debug)];
+        let component_level = AHashMap::new();
+
+        assert!(!should_filter_log(
+            &Ustr::from("nautilus_okx::websocket"),
+            Level::Debug,
+            &module_filters,
+            &component_level,
+            true
+        ));
+        assert!(should_filter_log(
+            &Ustr::from("nautilus_binance::data"),
+            Level::Debug,
+            &module_filters,
+            &component_level,
+            true
+        ));
+    }
+
+    #[rstest]
+    fn test_filter_level_comparison() {
+        let module_filters = vec![];
+        let component_level = AHashMap::from_iter([(Ustr::from("Test"), LevelFilter::Warn)]);
+
+        assert!(!should_filter_log(
+            &Ustr::from("Test"),
+            Level::Error,
+            &module_filters,
+            &component_level,
+            false
+        ));
+        assert!(!should_filter_log(
+            &Ustr::from("Test"),
+            Level::Warn,
+            &module_filters,
+            &component_level,
+            false
+        ));
+        assert!(should_filter_log(
+            &Ustr::from("Test"),
+            Level::Info,
+            &module_filters,
+            &component_level,
+            false
+        ));
+        assert!(should_filter_log(
+            &Ustr::from("Test"),
+            Level::Debug,
+            &module_filters,
+            &component_level,
+            false
+        ));
+        assert!(should_filter_log(
+            &Ustr::from("Test"),
+            Level::Trace,
+            &module_filters,
+            &component_level,
+            false
+        ));
+    }
+
+    // These tests use global logging state (one logger per process).
+    // They run correctly with cargo-nextest which isolates each test in its own process.
+    mod serial_tests {
+        use std::sync::atomic::Ordering;
+
+        use super::*;
+        use crate::logging::{LOGGING_BYPASSED, logging_is_initialized, logging_set_bypass};
+
+        #[rstest]
+        fn test_logging_to_file() {
+            let config = LoggerConfig {
+                fileout_level: LevelFilter::Debug,
+                ..Default::default()
+            };
+
+            let temp_dir = tempdir().expect("Failed to create temporary directory");
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+
+            let log_guard = Logger::init_with_config(
+                TraderId::from("TRADER-001"),
+                UUID4::new(),
+                config,
+                file_config,
+            );
+
+            logging_clock_set_static_mode();
+            logging_clock_set_static_time(1_650_000_000_000_000);
+
+            log::info!(
+                component = "RiskEngine";
+                "This is a test."
+            );
+
+            let mut log_contents = String::new();
+
+            wait_until(
+                || {
+                    std::fs::read_dir(&temp_dir)
+                        .expect("Failed to read directory")
+                        .filter_map(Result::ok)
+                        .any(|entry| entry.path().is_file())
+                },
+                Duration::from_secs(3),
+            );
+
+            drop(log_guard); // Ensure log buffers are flushed
+
+            wait_until(
+                || {
+                    let log_file_path = std::fs::read_dir(&temp_dir)
+                        .expect("Failed to read directory")
+                        .filter_map(Result::ok)
+                        .find(|entry| entry.path().is_file())
+                        .expect("No files found in directory")
+                        .path();
                     log_contents = std::fs::read_to_string(log_file_path)
                         .expect("Error while reading log file");
                     !log_contents.is_empty()
-                } else {
-                    false
-                }
-            },
-            Duration::from_secs(3),
-        );
-
-        assert_eq!(
-            log_contents,
-            "{\"timestamp\":\"1970-01-20T02:20:00.000000000Z\",\"trader_id\":\"TRADER-001\",\"level\":\"INFO\",\"color\":\"NORMAL\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
-        );
-    }
-
-    #[ignore = "Flaky test: Passing locally on some systems, failing in CI"]
-    #[rstest]
-    fn test_file_rotation_and_backup_limits() {
-        // Create a temporary directory for log files
-        let temp_dir = tempdir().expect("Failed to create temporary directory");
-        let dir_path = temp_dir.path().to_str().unwrap().to_string();
-
-        // Configure a small max file size to trigger rotation quickly
-        let max_backups = 3;
-        let max_file_size = 100;
-        let file_config = FileWriterConfig {
-            directory: Some(dir_path.clone()),
-            file_name: None,
-            file_format: Some("log".to_string()),
-            file_rotate: Some((max_file_size, max_backups).into()), // 100 bytes max size, 3 max backups
-        };
-
-        // Create the file writer
-        let config = LoggerConfig::from_spec("fileout=Info;Test=Info").unwrap();
-        let log_guard = Logger::init_with_config(
-            TraderId::from("TRADER-001"),
-            UUID4::new(),
-            config,
-            file_config,
-        );
-
-        log::info!(
-            component = "Test";
-            "Test log message with enough content to exceed our small max file size limit"
-        );
-
-        sleep(Duration::from_millis(100));
-
-        // Count the number of log files in the directory
-        let files: Vec<_> = std::fs::read_dir(&dir_path)
-            .expect("Failed to read directory")
-            .filter_map(Result::ok)
-            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "log"))
-            .collect();
-
-        // We should have multiple files due to rotation
-        assert_eq!(files.len(), 1);
-
-        log::info!(
-            component = "Test";
-            "Test log message with enough content to exceed our small max file size limit"
-        );
-
-        sleep(Duration::from_millis(100));
-
-        // Count the number of log files in the directory
-        let files: Vec<_> = std::fs::read_dir(&dir_path)
-            .expect("Failed to read directory")
-            .filter_map(Result::ok)
-            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "log"))
-            .collect();
-
-        // We should have multiple files due to rotation
-        assert_eq!(files.len(), 2);
-
-        for _ in 0..5 {
-            // Write enough data to trigger a few rotations
-            log::info!(
-            component = "Test";
-            "Test log message with enough content to exceed our small max file size limit"
+                },
+                Duration::from_secs(3),
             );
 
-            sleep(Duration::from_millis(100));
+            assert_eq!(
+                log_contents,
+                "1970-01-20T02:20:00.000000000Z [INFO] TRADER-001.RiskEngine: This is a test.\n"
+            );
         }
 
-        // Count the number of log files in the directory
-        let files: Vec<_> = std::fs::read_dir(&dir_path)
-            .expect("Failed to read directory")
-            .filter_map(Result::ok)
-            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "log"))
-            .collect();
+        #[rstest]
+        fn test_shutdown_drains_backlog_tail() {
+            const N: usize = 1000;
 
-        // We should have at most max_backups + 1 files (current file + backups)
-        assert!(
-            files.len() == max_backups as usize + 1,
-            "Expected at most {} log files, found {}",
-            max_backups,
-            files.len()
-        );
+            // Configure file logging at Info level
+            let config = LoggerConfig {
+                stdout_level: LevelFilter::Off,
+                fileout_level: LevelFilter::Info,
+                ..Default::default()
+            };
 
-        // Clean up
-        drop(log_guard);
-        drop(temp_dir);
+            let temp_dir = tempdir().expect("Failed to create temporary directory");
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+
+            let log_guard = Logger::init_with_config(
+                TraderId::from("TRADER-TAIL"),
+                UUID4::new(),
+                config,
+                file_config,
+            )
+            .expect("Failed to initialize logger");
+
+            // Use static time for reproducibility
+            logging_clock_set_static_mode();
+            logging_clock_set_static_time(1_700_000_000_000_000);
+
+            // Enqueue a known number of messages synchronously
+            for i in 0..N {
+                log::info!(component = "TailDrain"; "BacklogTest {i}");
+            }
+
+            // Drop guard to trigger shutdown (bypass + close + drain)
+            drop(log_guard);
+
+            // Wait until the file exists and contains at least N lines with our marker
+            let mut count = 0usize;
+            wait_until(
+                || {
+                    if let Some(log_file) = std::fs::read_dir(&temp_dir)
+                        .expect("Failed to read directory")
+                        .filter_map(Result::ok)
+                        .find(|entry| entry.path().is_file())
+                    {
+                        let log_file_path = log_file.path();
+                        if let Ok(contents) = std::fs::read_to_string(log_file_path) {
+                            count = contents
+                                .lines()
+                                .filter(|l| l.contains("BacklogTest "))
+                                .count();
+                            count >= N
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                },
+                Duration::from_secs(5),
+            );
+
+            assert_eq!(count, N, "Expected all pre-shutdown messages to be written");
+        }
+
+        #[rstest]
+        fn test_log_component_level_filtering() {
+            let config =
+                LoggerConfig::from_spec("stdout=Info;fileout=Debug;RiskEngine=Error").unwrap();
+
+            let temp_dir = tempdir().expect("Failed to create temporary directory");
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+
+            let log_guard = Logger::init_with_config(
+                TraderId::from("TRADER-001"),
+                UUID4::new(),
+                config,
+                file_config,
+            );
+
+            logging_clock_set_static_mode();
+            logging_clock_set_static_time(1_650_000_000_000_000);
+
+            log::info!(
+                component = "RiskEngine";
+                "This is a test."
+            );
+
+            drop(log_guard); // Ensure log buffers are flushed
+
+            wait_until(
+                || {
+                    if let Some(log_file) = std::fs::read_dir(&temp_dir)
+                        .expect("Failed to read directory")
+                        .filter_map(Result::ok)
+                        .find(|entry| entry.path().is_file())
+                    {
+                        let log_file_path = log_file.path();
+                        let log_contents = std::fs::read_to_string(log_file_path)
+                            .expect("Error while reading log file");
+                        !log_contents.contains("RiskEngine")
+                    } else {
+                        false
+                    }
+                },
+                Duration::from_secs(3),
+            );
+
+            assert!(
+                std::fs::read_dir(&temp_dir)
+                    .expect("Failed to read directory")
+                    .filter_map(Result::ok)
+                    .any(|entry| entry.path().is_file()),
+                "Log file exists"
+            );
+        }
+
+        #[rstest]
+        fn test_logging_to_file_in_json_format() {
+            let config =
+                LoggerConfig::from_spec("stdout=Info;is_colored;fileout=Debug;RiskEngine=Info")
+                    .unwrap();
+
+            let temp_dir = tempdir().expect("Failed to create temporary directory");
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                file_format: Some("json".to_string()),
+                ..Default::default()
+            };
+
+            let log_guard = Logger::init_with_config(
+                TraderId::from("TRADER-001"),
+                UUID4::new(),
+                config,
+                file_config,
+            );
+
+            logging_clock_set_static_mode();
+            logging_clock_set_static_time(1_650_000_000_000_000);
+
+            log::info!(
+                component = "RiskEngine";
+                "This is a test."
+            );
+
+            let mut log_contents = String::new();
+
+            drop(log_guard); // Ensure log buffers are flushed
+
+            wait_until(
+                || {
+                    if let Some(log_file) = std::fs::read_dir(&temp_dir)
+                        .expect("Failed to read directory")
+                        .filter_map(Result::ok)
+                        .find(|entry| entry.path().is_file())
+                    {
+                        let log_file_path = log_file.path();
+                        log_contents = std::fs::read_to_string(log_file_path)
+                            .expect("Error while reading log file");
+                        !log_contents.is_empty()
+                    } else {
+                        false
+                    }
+                },
+                Duration::from_secs(3),
+            );
+
+            assert_eq!(
+                log_contents,
+                "{\"timestamp\":\"1970-01-20T02:20:00.000000000Z\",\"trader_id\":\"TRADER-001\",\"level\":\"INFO\",\"color\":\"NORMAL\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
+            );
+        }
+
+        #[rstest]
+        fn test_init_sets_logging_is_initialized_flag() {
+            let config = LoggerConfig::default();
+            let file_config = FileWriterConfig::default();
+
+            let guard = Logger::init_with_config(
+                TraderId::from("TRADER-001"),
+                UUID4::new(),
+                config,
+                file_config,
+            );
+            assert!(guard.is_ok());
+            assert!(logging_is_initialized());
+
+            drop(guard);
+            assert!(!logging_is_initialized());
+        }
+
+        #[rstest]
+        fn test_reinit_after_guard_drop_fails() {
+            let config = LoggerConfig::default();
+            let file_config = FileWriterConfig::default();
+
+            let guard1 = Logger::init_with_config(
+                TraderId::from("TRADER-001"),
+                UUID4::new(),
+                config.clone(),
+                file_config.clone(),
+            );
+            assert!(guard1.is_ok());
+            drop(guard1);
+
+            // Re-init fails because log crate's set_boxed_logger only works once per process
+            let guard2 = Logger::init_with_config(
+                TraderId::from("TRADER-002"),
+                UUID4::new(),
+                config,
+                file_config,
+            );
+            assert!(guard2.is_err());
+        }
+
+        #[rstest]
+        fn test_bypass_before_init_prevents_logging() {
+            logging_set_bypass();
+            assert!(LOGGING_BYPASSED.load(Ordering::Relaxed));
+
+            let temp_dir = tempdir().expect("Failed to create temporary directory");
+            let config = LoggerConfig {
+                fileout_level: LevelFilter::Debug,
+                ..Default::default()
+            };
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+
+            let guard = Logger::init_with_config(
+                TraderId::from("TRADER-001"),
+                UUID4::new(),
+                config,
+                file_config,
+            );
+            assert!(guard.is_ok());
+
+            log::info!(
+                component = "TestComponent";
+                "This should be bypassed"
+            );
+            std::thread::sleep(Duration::from_millis(100));
+            drop(guard);
+
+            // Bypass flag remains permanently set (no reset mechanism)
+            assert!(LOGGING_BYPASSED.load(Ordering::Relaxed));
+        }
+
+        #[rstest]
+        fn test_module_level_filtering() {
+            // Configure module-level filters (note: requires :: to be a module filter):
+            // - nautilus::adapters=Warn (general adapter logs at Warn+)
+            // - nautilus::adapters::okx=Debug (OKX adapter logs at Debug+)
+            let config = LoggerConfig::from_spec(
+                "stdout=Off;fileout=Trace;nautilus::adapters=Warn;nautilus::adapters::okx=Debug",
+            )
+            .unwrap();
+
+            let temp_dir = tempdir().expect("Failed to create temporary directory");
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+
+            let log_guard = Logger::init_with_config(
+                TraderId::from("TRADER-MOD"),
+                UUID4::new(),
+                config,
+                file_config,
+            )
+            .expect("Failed to initialize logger");
+
+            logging_clock_set_static_mode();
+            logging_clock_set_static_time(1_650_000_000_000_000);
+
+            // Log from nautilus::adapters::okx::websocket - should pass (Debug allowed)
+            log::debug!(
+                component = "nautilus::adapters::okx::websocket";
+                "OKX debug message"
+            );
+
+            // Log from nautilus::adapters::okx - should pass (Debug allowed)
+            log::info!(
+                component = "nautilus::adapters::okx";
+                "OKX info message"
+            );
+
+            // Log from nautilus::adapters::binance - should be filtered (only Warn+ allowed)
+            log::info!(
+                component = "nautilus::adapters::binance";
+                "Binance info message SHOULD NOT APPEAR"
+            );
+
+            // Log from nautilus::adapters::binance at Warn - should pass
+            log::warn!(
+                component = "nautilus::adapters::binance";
+                "Binance warn message"
+            );
+
+            // Log from unrelated component - should pass (no filter)
+            log::trace!(
+                component = "Portfolio";
+                "Portfolio trace message"
+            );
+
+            drop(log_guard);
+
+            wait_until(
+                || {
+                    std::fs::read_dir(&temp_dir)
+                        .expect("Failed to read directory")
+                        .filter_map(Result::ok)
+                        .any(|entry| entry.path().is_file())
+                },
+                Duration::from_secs(3),
+            );
+
+            let log_file_path = std::fs::read_dir(&temp_dir)
+                .expect("Failed to read directory")
+                .filter_map(Result::ok)
+                .find(|entry| entry.path().is_file())
+                .expect("No log file found")
+                .path();
+
+            let log_contents =
+                std::fs::read_to_string(log_file_path).expect("Error reading log file");
+
+            assert!(
+                log_contents.contains("OKX debug message"),
+                "OKX debug should pass (longer prefix wins)"
+            );
+            assert!(
+                log_contents.contains("OKX info message"),
+                "OKX info should pass"
+            );
+            assert!(
+                log_contents.contains("Binance warn message"),
+                "Binance warn should pass"
+            );
+            assert!(
+                log_contents.contains("Portfolio trace message"),
+                "Unfiltered component should pass"
+            );
+            assert!(
+                !log_contents.contains("SHOULD NOT APPEAR"),
+                "Binance info should be filtered (adapters=Warn)"
+            );
+        }
     }
 }

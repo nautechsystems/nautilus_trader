@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Display, Formatter};
+use std::fmt::Display;
 
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
@@ -47,7 +47,7 @@ pub struct HullMovingAverage {
 }
 
 impl Display for HullMovingAverage {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}({})", self.name(), self.period)
     }
 }
@@ -102,7 +102,7 @@ impl HullMovingAverage {
     ///
     /// # Panics
     ///
-    /// Panics if `period` is not positive (> 0).
+    /// Panics if `period` is not a positive integer (> 0).
     #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
         assert!(
@@ -162,9 +162,6 @@ impl MovingAverage for HullMovingAverage {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
@@ -320,7 +317,7 @@ mod tests {
             hma.update_raw(price);
             assert!(
                 (hma.value() - price).abs() < f64::EPSILON,
-                "HMA(1) should equal last price {price}, got {}",
+                "HMA(1) should equal last price {price}, was {}",
                 hma.value()
             );
             assert!(hma.initialized(), "HMA(1) must initialise immediately");
@@ -337,7 +334,7 @@ mod tests {
             hma.update_raw(constant);
             assert!(
                 (hma.value() - constant).abs() < 1e-12,
-                "Expected {constant}, got {}",
+                "Expected {constant}, was {}",
                 hma.value()
             );
         }

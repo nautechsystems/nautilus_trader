@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -45,6 +45,8 @@ from nautilus_trader.data.messages import UnsubscribeMarkPrices
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
+from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOUT
+from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import IndexPriceUpdate
 from nautilus_trader.model.data import MarkPriceUpdate
@@ -110,7 +112,8 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
 
         # HTTP API
         self._http_client = client
-        self._log.info(f"REST API key {self._http_client.api_key}", LogColor.BLUE)
+        masked_key = self._http_client.api_key_masked
+        self._log.info(f"REST API key {masked_key}", LogColor.BLUE)
 
         # WebSocket API
         self._ws_client = nautilus_pyo3.CoinbaseIntxWebSocketClient(
@@ -118,6 +121,7 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
             api_key=config.api_key,
             api_secret=config.api_secret,
             api_passphrase=config.api_passphrase,
+            heartbeat=20,
         )
         self._ws_client_futures: set[asyncio.Future] = set()
 
@@ -130,15 +134,16 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
         self._cache_instruments()
         self._send_all_instruments_to_data_engine()
 
-        future = asyncio.ensure_future(
-            self._ws_client.connect(
-                instruments=self.coinbase_intx_instrument_provider.instruments_pyo3(),
-                callback=self._handle_msg,
-            ),
+        await self._ws_client.connect(
+            instruments=self.coinbase_intx_instrument_provider.instruments_pyo3(),
+            callback=self._handle_msg,
         )
-        self._ws_client_futures.add(future)
+
+        # Wait for connection to be established
+        await self._ws_client.wait_until_active(timeout_secs=10.0)
         self._log.info(f"Connected to {self._ws_client.url}", LogColor.BLUE)
-        self._log.info(f"WebSocket API key {self._ws_client.api_key}", LogColor.BLUE)
+        masked_key = self._ws_client.api_key_masked
+        self._log.info(f"WebSocket API key {masked_key}", LogColor.BLUE)
         self._log.info("Coinbase Intx API key authenticated", LogColor.GREEN)
 
         await self._ws_client.subscribe_instruments()
@@ -150,13 +155,18 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
         # Shutdown websockets
         if not self._ws_client.is_closed():
             self._log.info("Disconnecting websocket")
+
             await self._ws_client.close()
+
             self._log.info(f"Disconnected from {self._ws_client.url}", LogColor.BLUE)
 
-        # Cancel all client futures
-        for future in self._ws_client_futures:
-            if not future.done():
-                future.cancel()
+        # Cancel any pending futures
+        await cancel_tasks_with_timeout(
+            self._ws_client_futures,
+            self._log,
+            timeout_secs=DEFAULT_FUTURE_CANCELLATION_TIMEOUT,
+        )
+        self._ws_client_futures.clear()
 
     def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct
@@ -204,7 +214,7 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
             return
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.subscribe_order_book([pyo3_instrument_id])
+        await self._ws_client.subscribe_book([pyo3_instrument_id])
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -234,11 +244,7 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.unsubscribe_order_book([pyo3_instrument_id])
-
-    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.unsubscribe_order_book([pyo3_instrument_id])
+        await self._ws_client.unsubscribe_book([pyo3_instrument_id])
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -276,7 +282,7 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
             self._log.error(f"Cannot find instrument for {request.instrument_id}")
             return
 
-        self._handle_instrument(instrument, request.id, request.params)
+        self._handle_instrument(instrument, request.id, request.start, request.end, request.params)
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
         if request.start is not None:
@@ -292,9 +298,11 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
         instruments = self._instrument_provider.get_all()
 
         self._handle_instruments(
-            instruments,
             request.venue,
+            instruments,
             request.id,
+            request.start,
+            request.end,
             request.params,
         )
 

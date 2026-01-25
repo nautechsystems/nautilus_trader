@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 2Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,8 +21,8 @@ pub fn get_cache(cache_database: Option<Box<dyn CacheDatabaseAdapter>>) -> Cache
 }
 
 #[cfg(test)]
-#[cfg(target_os = "linux")] // Databases only supported on Linux
-
+#[cfg(feature = "postgres")]
+#[cfg(target_os = "linux")] // Databases only tested and supported on Linux
 mod serial_tests {
     use std::time::Duration;
 
@@ -122,7 +122,7 @@ mod serial_tests {
         cache.cache_orders().await.unwrap();
         cache.build_index();
 
-        let cached_order_ids = cache.client_order_ids(None, None, None);
+        let cached_order_ids = cache.client_order_ids(None, None, None, None);
         assert_eq!(cached_order_ids.len(), 1);
         let target_order = cache.order(&market_order.client_order_id());
         assert_eq!(target_order.unwrap(), &market_order);
@@ -138,10 +138,8 @@ mod serial_tests {
 
         let account = AccountAny::default();
         let last_event = account.last_event().unwrap();
-        if last_event.base_currency.is_some() {
-            database
-                .add_currency(&last_event.base_currency.unwrap())
-                .unwrap();
+        if let Some(base_currency) = &last_event.base_currency {
+            database.add_currency(base_currency).unwrap();
         }
 
         // Insert into database and wait
@@ -168,7 +166,19 @@ mod serial_tests {
         database.close().unwrap();
     }
 
-    #[ignore = "continue testing and add foreign key contraints"]
+    // Test inserting and loading OrderCancelRejected events from PostgreSQL.
+    //
+    // This test verifies that order cancel rejection events can be persisted to and
+    // retrieved from the PostgreSQL cache. Currently on hold pending schema updates.
+    //
+    // TODO: Complete database schema with proper foreign key constraints:
+    // - Add FK constraint from order_events to orders table
+    // - Add FK constraint to instruments table for instrument_id
+    // - Add FK constraint to accounts table for account_id
+    // - Verify referential integrity with comprehensive integration tests
+    //
+    // Related: Database schema migration for cache persistence layer
+    #[ignore = "Waiting on PostgreSQL schema completion - needs FK constraints"]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_order_cancel_rejected_insert_and_load() {
         let db = get_pg_cache_database().await.expect("connect db");
@@ -221,7 +231,19 @@ mod serial_tests {
         }
     }
 
-    #[ignore = "continue testing and add foreign key contraints"]
+    // Test inserting and loading OrderModifyRejected events from PostgreSQL.
+    //
+    // This test verifies that order modification rejection events can be persisted to and
+    // retrieved from the PostgreSQL cache. Currently on hold pending schema updates.
+    //
+    // TODO: Complete database schema with proper foreign key constraints:
+    // - Add FK constraint from order_events to orders table
+    // - Add FK constraint to instruments table for instrument_id
+    // - Add FK constraint to accounts table for account_id
+    // - Verify referential integrity with comprehensive integration tests
+    //
+    // Related: Database schema migration for cache persistence layer
+    #[ignore = "Waiting on PostgreSQL schema completion - needs FK constraints"]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_order_modify_rejected_insert_and_load() {
         let db = get_pg_cache_database().await.expect("connect db");
@@ -270,5 +292,60 @@ mod serial_tests {
             }
             other => panic!("Expected OrderModifyRejected, was {other:?}"),
         }
+    }
+
+    /// Tests that data is flushed immediately with the current hardcoded buffer_interval=0.
+    /// When buffer_interval is exposed via config, this test validates the zero-interval path.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_buffer_flushes_immediately() {
+        let mut database = get_pg_cache_database().await.unwrap();
+
+        let eth = Currency::new("ETH", 2, 0, "ETH", CurrencyType::Crypto);
+        let eth_key = Ustr::from("ETH");
+
+        database.add_currency(&eth).unwrap();
+
+        wait_until_async(
+            || async {
+                let currencies = database.load_currencies().await.unwrap();
+                currencies.contains_key(&eth_key)
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        let currencies = database.load_currencies().await.unwrap();
+        assert!(
+            currencies.contains_key(&eth_key),
+            "Currency should be flushed immediately"
+        );
+
+        database.flush().unwrap();
+        database.close().unwrap();
+    }
+
+    /// Tests that pending buffered data is drained when close is called.
+    /// With buffer_interval=0 the buffer is typically empty, but this validates the code path.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_buffer_drains_on_close() {
+        let mut database = get_pg_cache_database().await.unwrap();
+
+        let usdt = Currency::new("USDT", 2, 0, "USDT", CurrencyType::Crypto);
+        let usdt_key = Ustr::from("USDT");
+
+        database.add_currency(&usdt).unwrap();
+        database.close().unwrap();
+
+        // Reconnect to verify data was persisted
+        let mut database = get_pg_cache_database().await.unwrap();
+        let currencies = database.load_currencies().await.unwrap();
+
+        assert!(
+            currencies.contains_key(&usdt_key),
+            "Currency should be persisted after close"
+        );
+
+        database.flush().unwrap();
+        database.close().unwrap();
     }
 }

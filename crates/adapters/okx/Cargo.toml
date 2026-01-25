@@ -1,0 +1,130 @@
+[package]
+name = "nautilus-okx"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "OKX exchange integration adapter for the Nautilus trading engine"
+categories.workspace = true
+keywords.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+name = "nautilus_okx"
+crate-type = ["rlib", "cdylib"]
+
+[features]
+default = ["high-precision"]
+extension-module = [
+  "nautilus-common/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-model/extension-module",
+  "nautilus-network/extension-module",
+  "python",
+  "pyo3/extension-module",
+]
+python = [
+  "nautilus-common/python",
+  "nautilus-core/python",
+  "nautilus-model/python",
+  "nautilus-network/python",
+  "pyo3",
+  "pyo3-async-runtimes",
+]
+high-precision = ["nautilus-model/high-precision"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+nautilus-common = { workspace = true, features = ["live"] }
+nautilus-core = { workspace = true }
+nautilus-live = { workspace = true }
+nautilus-model = { workspace = true }
+nautilus-network = { workspace = true }
+nautilus-system = { workspace = true }
+
+ahash = { workspace = true }
+anyhow = { workspace = true }
+arc-swap = { workspace = true }
+async-stream = { workspace = true }
+async-trait = { workspace = true }
+aws-lc-rs = { workspace = true }
+base64 = { workspace = true }
+chrono = { workspace = true }
+dashmap = { workspace = true }
+derive_builder = { workspace = true }
+dotenvy = { workspace = true }
+futures-util = { workspace = true }
+log = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_urlencoded = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+tokio-util = { workspace = true }
+ustr = { workspace = true }
+zeroize = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
+
+[dev-dependencies]
+nautilus-testkit = { workspace = true }
+
+axum = { workspace = true }
+criterion = { workspace = true }
+iai = { workspace = true }
+rstest = { workspace = true }
+rust_decimal_macros = { workspace = true }
+url = { workspace = true }
+
+# Run with `cargo bench -p nautilus-okx --bench websocket`
+[[bench]]
+name = "websocket"
+harness = false
+
+[[bin]]
+name = "okx-http-public"
+path = "bin/http_public.rs"
+doc = false
+
+[[bin]]
+name = "okx-http-private"
+path = "bin/http_private.rs"
+doc = false
+
+[[bin]]
+name = "okx-ws-data"
+path = "bin/ws_data.rs"
+doc = false
+
+[[bin]]
+name = "okx-ws-exec"
+path = "bin/ws_exec.rs"
+doc = false
+
+# Run with `cargo run --example okx-data-tester --package nautilus-okx`.
+[[example]]
+name = "okx-data-tester"
+path = "examples/node_data_tester.rs"
+required-features = []
+doc = false
+
+# Run with `cargo run --example okx-exec-tester --package nautilus-okx`.
+[[example]]
+name = "okx-exec-tester"
+path = "examples/node_exec_tester.rs"
+required-features = []
+doc = false

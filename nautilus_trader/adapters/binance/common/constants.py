@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Final
 
 from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 
@@ -39,3 +40,43 @@ BINANCE_RETRY_ERRORS: set[BinanceErrorCode] = {
     BinanceErrorCode.CANCEL_REJECTED,
     BinanceErrorCode.ME_RECVWINDOW_REJECT,
 }
+
+# Set of Binance error codes for which Nautilus will log a warning on failure, rather than an error
+BINANCE_RETRY_WARNINGS: set[BinanceErrorCode] = {
+    BinanceErrorCode.FOK_ORDER_REJECT,
+    BinanceErrorCode.GTX_ORDER_REJECT,
+    BinanceErrorCode.ORDER_WOULD_IMMEDIATELY_TRIGGER,
+}
+
+# Valid `priceMatch` argument values for Binance Futures order placement.
+BINANCE_PRICE_MATCH_VALUES: Final[frozenset[str]] = frozenset(
+    {
+        "OPPONENT",
+        "OPPONENT_5",
+        "OPPONENT_10",
+        "OPPONENT_20",
+        "QUEUE",
+        "QUEUE_5",
+        "QUEUE_10",
+        "QUEUE_20",
+    },
+)
+
+BINANCE_PRICE_MATCH_ORDER_TYPES: Final[frozenset[OrderType]] = frozenset(
+    {
+        OrderType.LIMIT,
+        OrderType.STOP_LIMIT,
+        OrderType.LIMIT_IF_TOUCHED,
+    },
+)
+
+# Conditional order types that require the Algo Order API for Binance Futures (as of 2025-12-09)
+BINANCE_FUTURES_ALGO_ORDER_TYPES: Final[frozenset[OrderType]] = frozenset(
+    {
+        OrderType.STOP_MARKET,
+        OrderType.STOP_LIMIT,
+        OrderType.MARKET_IF_TOUCHED,
+        OrderType.LIMIT_IF_TOUCHED,
+        OrderType.TRAILING_STOP_MARKET,
+    },
+)

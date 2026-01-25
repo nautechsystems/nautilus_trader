@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -39,16 +39,21 @@ class DataEngineConfig(NautilusConfig, frozen=True):
     time_bars_origin_offset : dict[BarAggregation, pd.Timedelta | pd.DateOffset], optional
         A dictionary mapping time bar aggregations to their origin time offsets.
     time_bars_build_delay : int, default 0
-        The time delay (microseconds) before building and emitting a composite bar type.
-        15 microseconds can be useful in a backtest context, when aggregating internal bars
-        from internal bars several times so all messages are processed before a timer triggers.
+        The time delay (microseconds) before building and emitting a bar.
+        This can be useful in a backtest context to ensure data at bar boundary
+        timestamps is processed before the bar close timer fires.
     validate_data_sequence : bool, default False
         If data objects timestamp sequencing will be validated and handled.
     buffer_deltas : bool, default False
         If order book deltas should be buffered until the F_LAST flag is set for a delta.
+    emit_quotes_from_book : bool, default False
+        If quotes should be emitted on order book updates.
+    emit_quotes_from_book_depths : bool, default False
+        If quotes should be emitted on order book depth updates.
     external_clients : list[ClientId], optional
-        The client IDs declared for external stream processing.
-        The data engine will not attempt to send data commands to these client IDs.
+        Client IDs representing external data streams.
+        Commands with these client IDs will be published on the message bus only;
+        the data engine will not attempt to forward them to a local `DataClient`.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
 
@@ -62,5 +67,7 @@ class DataEngineConfig(NautilusConfig, frozen=True):
     time_bars_build_delay: int = 0
     validate_data_sequence: bool = False
     buffer_deltas: bool = False
+    emit_quotes_from_book: bool = False
+    emit_quotes_from_book_depths: bool = False
     external_clients: list[ClientId] | None = None
     debug: bool = False

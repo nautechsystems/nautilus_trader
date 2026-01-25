@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,12 +29,12 @@ use indexmap::IndexMap;
 use nautilus_core::{
     UnixNanos,
     correctness::{FAILED, check_predicate_true},
-    datetime::{add_n_months, subtract_n_months},
+    datetime::{add_n_months, subtract_n_months, subtract_n_years},
     serialization::Serializable,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use super::GetTsInit;
+use super::HasTsInit;
 use crate::{
     enums::{AggregationSource, BarAggregation, PriceType},
     identifiers::InstrumentId,
@@ -157,7 +157,8 @@ pub fn get_bar_interval(bar_type: &BarType) -> TimeDelta {
         BarAggregation::Hour => TimeDelta::hours(spec.step.get() as i64),
         BarAggregation::Day => TimeDelta::days(spec.step.get() as i64),
         BarAggregation::Week => TimeDelta::days(7 * spec.step.get() as i64),
-        BarAggregation::Month => TimeDelta::days(0),
+        BarAggregation::Month => TimeDelta::days(30 * spec.step.get() as i64), // Proxy for comparing bar lengths
+        BarAggregation::Year => TimeDelta::days(365 * spec.step.get() as i64), // Proxy for comparing bar lengths
         _ => panic!("Aggregation not time based"),
     }
 }
@@ -191,83 +192,18 @@ pub fn get_time_bar_start(
 
     match spec.aggregation {
         BarAggregation::Millisecond => {
-            let mut start_time = now.trunc_subsecs(0);
-            start_time += origin_offset;
-
-            if now < start_time {
-                start_time -= Duration::seconds(1);
-            }
-
-            while start_time <= now {
-                start_time += Duration::milliseconds(step);
-            }
-
-            start_time -= Duration::milliseconds(step);
-            start_time
+            find_closest_smaller_time(now, origin_offset, Duration::milliseconds(step))
         }
         BarAggregation::Second => {
-            let mut start_time = now.trunc_subsecs(0) - Duration::seconds(now.second() as i64);
-            start_time += origin_offset;
-
-            if now < start_time {
-                start_time -= Duration::minutes(1);
-            }
-
-            while start_time <= now {
-                start_time += Duration::seconds(step);
-            }
-
-            start_time -= Duration::seconds(step);
-            start_time
+            find_closest_smaller_time(now, origin_offset, Duration::seconds(step))
         }
         BarAggregation::Minute => {
-            let mut start_time = now.trunc_subsecs(0)
-                - Duration::seconds(now.second() as i64)
-                - Duration::minutes(now.minute() as i64);
-            start_time += origin_offset;
-
-            if now < start_time {
-                start_time -= Duration::hours(1);
-            }
-
-            while start_time <= now {
-                start_time += Duration::minutes(step);
-            }
-
-            start_time -= Duration::minutes(step);
-            start_time
+            find_closest_smaller_time(now, origin_offset, Duration::minutes(step))
         }
         BarAggregation::Hour => {
-            let mut start_time = now.trunc_subsecs(0)
-                - Duration::seconds(now.second() as i64)
-                - Duration::minutes(now.minute() as i64)
-                - Duration::hours(now.hour() as i64);
-            start_time += origin_offset;
-
-            if now < start_time {
-                start_time -= Duration::days(1);
-            }
-
-            while start_time <= now {
-                start_time += Duration::hours(step);
-            }
-
-            start_time -= Duration::hours(step);
-            start_time
+            find_closest_smaller_time(now, origin_offset, Duration::hours(step))
         }
-        BarAggregation::Day => {
-            let mut start_time = now.trunc_subsecs(0)
-                - Duration::seconds(now.second() as i64)
-                - Duration::minutes(now.minute() as i64)
-                - Duration::hours(now.hour() as i64);
-            start_time += origin_offset;
-
-            if now < start_time {
-                start_time -= Duration::days(1);
-            }
-
-            start_time
-        }
+        BarAggregation::Day => find_closest_smaller_time(now, origin_offset, Duration::days(step)),
         BarAggregation::Week => {
             let mut start_time = now.trunc_subsecs(0)
                 - Duration::seconds(now.second() as i64)
@@ -277,7 +213,7 @@ pub fn get_time_bar_start(
             start_time += origin_offset;
 
             if now < start_time {
-                start_time -= Duration::weeks(1);
+                start_time -= Duration::weeks(step);
             }
 
             start_time
@@ -308,11 +244,52 @@ pub fn get_time_bar_start(
                 subtract_n_months(start_time, months_step).expect("Failed to subtract months_step");
             start_time
         }
+        BarAggregation::Year => {
+            // Set to the first day of the year
+            let mut start_time = DateTime::from_naive_utc_and_offset(
+                chrono::NaiveDate::from_ymd_opt(now.year(), 1, 1)
+                    .expect("valid date")
+                    .and_hms_opt(0, 0, 0)
+                    .expect("valid time"),
+                Utc,
+            );
+            start_time += origin_offset;
+
+            if now < start_time {
+                start_time =
+                    subtract_n_years(start_time, step as u32).expect("Failed to subtract years");
+            }
+
+            start_time
+        }
         _ => panic!(
             "Aggregation type {} not supported for time bars",
             spec.aggregation
         ),
     }
+}
+
+/// Finds the closest smaller time based on a daily time origin and period.
+///
+/// This function calculates the most recent time that is aligned with the given period
+/// and is less than or equal to the current time.
+fn find_closest_smaller_time(
+    now: DateTime<Utc>,
+    daily_time_origin: TimeDelta,
+    period: TimeDelta,
+) -> DateTime<Utc> {
+    // Floor to start of day
+    let day_start = now.trunc_subsecs(0)
+        - Duration::seconds(now.second() as i64)
+        - Duration::minutes(now.minute() as i64)
+        - Duration::hours(now.hour() as i64);
+    let base_time = day_start + daily_time_origin;
+
+    let time_difference = now - base_time;
+    let num_periods = (time_difference.num_nanoseconds().unwrap_or(0)
+        / period.num_nanoseconds().unwrap_or(1)) as i32;
+
+    base_time + period * num_periods
 }
 
 /// Represents a bar aggregation specification including a step, aggregation
@@ -370,9 +347,15 @@ impl BarSpecification {
 
     /// Returns the `TimeDelta` interval for this bar specification.
     ///
+    /// # Notes
+    ///
+    /// For [`BarAggregation::Month`] and [`BarAggregation::Year`], proxy values are used
+    /// (30 days for months, 365 days for years) to estimate their respective durations,
+    /// since months and years have variable lengths.
+    ///
     /// # Panics
     ///
-    /// Panics if the aggregation method is not supported for time duration.
+    /// Panics if the aggregation method is not time-based.
     pub fn timedelta(&self) -> TimeDelta {
         match self.aggregation {
             BarAggregation::Millisecond => Duration::milliseconds(self.step.get() as i64),
@@ -380,6 +363,9 @@ impl BarSpecification {
             BarAggregation::Minute => Duration::minutes(self.step.get() as i64),
             BarAggregation::Hour => Duration::hours(self.step.get() as i64),
             BarAggregation::Day => Duration::days(self.step.get() as i64),
+            BarAggregation::Week => Duration::days(self.step.get() as i64 * 7),
+            BarAggregation::Month => Duration::days(self.step.get() as i64 * 30), // Proxy for comparing bar lengths
+            BarAggregation::Year => Duration::days(self.step.get() as i64 * 365), // Proxy for comparing bar lengths
             _ => panic!(
                 "Timedelta not supported for aggregation type: {:?}",
                 self.aggregation
@@ -516,24 +502,25 @@ impl BarType {
     /// Returns whether this instance is a standard bar type.
     pub fn is_standard(&self) -> bool {
         match &self {
-            BarType::Standard { .. } => true,
-            BarType::Composite { .. } => false,
+            Self::Standard { .. } => true,
+            Self::Composite { .. } => false,
         }
     }
 
     /// Returns whether this instance is a composite bar type.
     pub fn is_composite(&self) -> bool {
         match &self {
-            BarType::Standard { .. } => false,
-            BarType::Composite { .. } => true,
+            Self::Standard { .. } => false,
+            Self::Composite { .. } => true,
         }
     }
 
     /// Returns the standard bar type component.
+    #[must_use]
     pub fn standard(&self) -> Self {
-        match &self {
-            &&b @ BarType::Standard { .. } => b,
-            BarType::Composite {
+        match self {
+            &b @ Self::Standard { .. } => b,
+            Self::Composite {
                 instrument_id,
                 spec,
                 aggregation_source,
@@ -543,10 +530,11 @@ impl BarType {
     }
 
     /// Returns any composite bar type component.
+    #[must_use]
     pub fn composite(&self) -> Self {
-        match &self {
-            &&b @ BarType::Standard { .. } => b, // case shouldn't be used if is_composite is called before
-            BarType::Composite {
+        match self {
+            &b @ Self::Standard { .. } => b, // case shouldn't be used if is_composite is called before
+            Self::Composite {
                 instrument_id,
                 spec,
                 aggregation_source: _,
@@ -565,7 +553,7 @@ impl BarType {
     /// Returns the [`InstrumentId`] for this bar type.
     pub fn instrument_id(&self) -> InstrumentId {
         match &self {
-            BarType::Standard { instrument_id, .. } | BarType::Composite { instrument_id, .. } => {
+            Self::Standard { instrument_id, .. } | Self::Composite { instrument_id, .. } => {
                 *instrument_id
             }
         }
@@ -574,20 +562,30 @@ impl BarType {
     /// Returns the [`BarSpecification`] for this bar type.
     pub fn spec(&self) -> BarSpecification {
         match &self {
-            BarType::Standard { spec, .. } | BarType::Composite { spec, .. } => *spec,
+            Self::Standard { spec, .. } | Self::Composite { spec, .. } => *spec,
         }
     }
 
     /// Returns the [`AggregationSource`] for this bar type.
     pub fn aggregation_source(&self) -> AggregationSource {
         match &self {
-            BarType::Standard {
+            Self::Standard {
                 aggregation_source, ..
             }
-            | BarType::Composite {
+            | Self::Composite {
                 aggregation_source, ..
             } => *aggregation_source,
         }
+    }
+
+    /// Returns the instrument ID and bar specification as a tuple key.
+    ///
+    /// Useful as a hashmap key when aggregation source should be ignored,
+    /// such as for indicator registration where INTERNAL and EXTERNAL bars
+    /// should trigger the same indicators.
+    #[must_use]
+    pub fn id_spec_key(&self) -> (InstrumentId, BarSpecification) {
+        (self.instrument_id(), self.spec())
     }
 }
 
@@ -602,6 +600,7 @@ pub struct BarTypeParseError {
 impl FromStr for BarType {
     type Err = BarTypeParseError;
 
+    #[allow(clippy::needless_collect)] // Collect needed for .rev() and indexing
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = s.split('@').collect();
         let standard = parts[0];
@@ -699,23 +698,23 @@ impl FromStr for BarType {
     }
 }
 
-impl From<&str> for BarType {
-    fn from(value: &str) -> Self {
-        Self::from_str(value).expect(FAILED)
+impl<T: AsRef<str>> From<T> for BarType {
+    fn from(value: T) -> Self {
+        Self::from_str(value.as_ref()).expect(FAILED)
     }
 }
 
 impl Display for BarType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
-            BarType::Standard {
+            Self::Standard {
                 instrument_id,
                 spec,
                 aggregation_source,
             } => {
-                write!(f, "{}-{}-{}", instrument_id, spec, aggregation_source)
+                write!(f, "{instrument_id}-{spec}-{aggregation_source}")
             }
-            BarType::Composite {
+            Self::Composite {
                 instrument_id,
                 spec,
                 aggregation_source,
@@ -781,7 +780,7 @@ pub struct Bar {
     pub volume: Quantity,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
-    /// UNIX timestamp (nanoseconds) when the struct was initialized.
+    /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
 }
 
@@ -897,18 +896,18 @@ impl Display for Bar {
 
 impl Serializable for Bar {}
 
-impl GetTsInit for Bar {
+impl HasTsInit for Bar {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use chrono::TimeZone;
+    use nautilus_core::serialization::msgpack::{FromMsgPack, ToMsgPack};
     use rstest::rstest;
 
     use super::*;
@@ -940,6 +939,12 @@ mod tests {
     #[case(BarAggregation::Hour, 4, TimeDelta::hours(4))]
     #[case(BarAggregation::Day, 1, TimeDelta::days(1))]
     #[case(BarAggregation::Day, 2, TimeDelta::days(2))]
+    #[case(BarAggregation::Week, 1, TimeDelta::days(7))]
+    #[case(BarAggregation::Week, 2, TimeDelta::days(14))]
+    #[case(BarAggregation::Month, 1, TimeDelta::days(30))]
+    #[case(BarAggregation::Month, 3, TimeDelta::days(90))]
+    #[case(BarAggregation::Year, 1, TimeDelta::days(365))]
+    #[case(BarAggregation::Year, 2, TimeDelta::days(730))]
     #[should_panic(expected = "Aggregation not time based")]
     #[case(BarAggregation::Tick, 1, TimeDelta::zero())]
     fn test_get_bar_interval(
@@ -968,6 +973,12 @@ mod tests {
     #[case(BarAggregation::Hour, 4, UnixNanos::from(14_400_000_000_000))]
     #[case(BarAggregation::Day, 1, UnixNanos::from(86_400_000_000_000))]
     #[case(BarAggregation::Day, 2, UnixNanos::from(172_800_000_000_000))]
+    #[case(BarAggregation::Week, 1, UnixNanos::from(604_800_000_000_000))]
+    #[case(BarAggregation::Week, 2, UnixNanos::from(1_209_600_000_000_000))]
+    #[case(BarAggregation::Month, 1, UnixNanos::from(2_592_000_000_000_000))]
+    #[case(BarAggregation::Month, 3, UnixNanos::from(7_776_000_000_000_000))]
+    #[case(BarAggregation::Year, 1, UnixNanos::from(31_536_000_000_000_000))]
+    #[case(BarAggregation::Year, 2, UnixNanos::from(63_072_000_000_000_000))]
     #[should_panic(expected = "Aggregation not time based")]
     #[case(BarAggregation::Tick, 1, UnixNanos::from(0))]
     fn test_get_bar_interval_ns(
@@ -1097,6 +1108,25 @@ mod tests {
         );
         assert_eq!(bar_type.aggregation_source(), AggregationSource::External);
         assert_eq!(bar_type, BarType::from(input));
+    }
+
+    #[rstest]
+    fn test_bar_type_from_str_with_utf8_symbol() {
+        let non_ascii_instrument = "TËST-PÉRP.BINANCE";
+        let non_ascii_bar_type = "TËST-PÉRP.BINANCE-1-MINUTE-LAST-EXTERNAL";
+
+        let bar_type = BarType::from_str(non_ascii_bar_type).unwrap();
+
+        assert_eq!(
+            bar_type.instrument_id(),
+            InstrumentId::from_str(non_ascii_instrument).unwrap()
+        );
+        assert_eq!(
+            bar_type.spec(),
+            BarSpecification::new(1, BarAggregation::Minute, PriceType::Last)
+        );
+        assert_eq!(bar_type.aggregation_source(), AggregationSource::External);
+        assert_eq!(bar_type.to_string(), non_ascii_bar_type);
     }
 
     #[rstest]
@@ -1281,6 +1311,26 @@ mod tests {
         assert_eq!(bar_type1, bar_type1);
         assert_eq!(bar_type1, bar_type2);
         assert_ne!(bar_type1, bar_type3);
+    }
+
+    #[rstest]
+    fn test_bar_type_id_spec_key_ignores_aggregation_source() {
+        let bar_type_external = BarType::from_str("ESM4.XCME-1-MINUTE-LAST-EXTERNAL").unwrap();
+        let bar_type_internal = BarType::from_str("ESM4.XCME-1-MINUTE-LAST-INTERNAL").unwrap();
+
+        // Full equality should differ
+        assert_ne!(bar_type_external, bar_type_internal);
+
+        // id_spec_key should be the same
+        assert_eq!(
+            bar_type_external.id_spec_key(),
+            bar_type_internal.id_spec_key()
+        );
+
+        // Verify key components
+        let (instrument_id, spec) = bar_type_external.id_spec_key();
+        assert_eq!(instrument_id, bar_type_external.instrument_id());
+        assert_eq!(spec, bar_type_external.spec());
     }
 
     #[rstest]

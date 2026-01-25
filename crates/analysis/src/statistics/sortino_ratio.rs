@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,10 +13,31 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Display;
+
+use nautilus_model::position::Position;
+
 use crate::{Returns, statistic::PortfolioStatistic};
 
+/// Calculates the Sortino ratio for portfolio returns.
+///
+/// The Sortino ratio is a variation of the Sharpe ratio that only penalizes downside
+/// volatility, making it more appropriate for strategies with asymmetric return distributions.
+///
+/// Formula: `Mean Return / Downside Deviation * sqrt(period)`
+///
+/// Where downside deviation is calculated as:
+/// `sqrt(sum(negative_returns^2) / total_observations)`
+///
+/// Note: Uses total observations count (not just negative returns) as per Sortino's methodology.
+///
+/// # References
+///
+/// - Sortino, F. A., & van der Meer, R. (1991). "Downside Risk". *Journal of Portfolio Management*, 17(4), 27-31.
+/// - Sortino, F. A., & Price, L. N. (1994). "Performance Measurement in a Downside Risk Framework".
+///   *Journal of Investing*, 3(3), 59-64.
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
@@ -35,11 +56,17 @@ impl SortinoRatio {
     }
 }
 
+impl Display for SortinoRatio {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Sortino Ratio ({} days)", self.period)
+    }
+}
+
 impl PortfolioStatistic for SortinoRatio {
     type Item = f64;
 
     fn name(&self) -> String {
-        stringify!(SortinoRatio).to_string()
+        self.to_string()
     }
 
     fn calculate_from_returns(&self, raw_returns: &Returns) -> Option<Self::Item> {
@@ -67,13 +94,20 @@ impl PortfolioStatistic for SortinoRatio {
 
         Some(annualized_ratio)
     }
+    fn calculate_from_realized_pnls(&self, _realized_pnls: &[f64]) -> Option<Self::Item> {
+        None
+    }
+
+    fn calculate_from_positions(&self, _positions: &[Position]) -> Option<Self::Item> {
+        None
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UnixNanos, approx_eq};
     use rstest::rstest;
 
     use super::*;
@@ -115,12 +149,17 @@ mod tests {
         let returns = create_returns(vec![-0.01, 0.02, -0.015, 0.005, -0.02]);
         let result = ratio.calculate_from_returns(&returns);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), -5.273224492824493);
+        assert!(approx_eq!(
+            f64,
+            result.unwrap(),
+            -5.273224492824493,
+            epsilon = 1e-9
+        ));
     }
 
     #[rstest]
     fn test_name() {
         let ratio = SortinoRatio::new(None);
-        assert_eq!(ratio.name(), "SortinoRatio");
+        assert_eq!(ratio.name(), "Sortino Ratio (252 days)");
     }
 }

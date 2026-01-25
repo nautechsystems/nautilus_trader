@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,6 +17,7 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.accounting.error import AccountBalanceNegative
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
@@ -25,6 +26,7 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
+from nautilus_trader.model.currencies import EUR
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
@@ -216,7 +218,10 @@ class TestPortfolio:
         self.portfolio.update_quote_tick(tick)
 
         # Assert
-        assert self.portfolio.unrealized_pnl(GBPUSD_SIM.id) is None
+        # When no positions exist, unrealized_pnl returns Money(0, currency) instead of None
+        result = self.portfolio.unrealized_pnl(GBPUSD_SIM.id)
+        assert result is not None
+        assert result == Money(0, USD)
 
     def test_exceed_free_balance_single_currency_raises_account_balance_negative_exception(self):
         # Arrange
@@ -256,13 +261,298 @@ class TestPortfolio:
         self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
 
         # Act, Assert: push account to negative balance (wouldn't normally be allowed by risk engine)
-        with pytest.raises(ValueError):
-            fill = TestEventStubs.order_filled(
-                order,
-                instrument=AUDUSD_SIM,
-                account_id=account_id,
-            )
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            account_id=account_id,
+        )
+
+        with pytest.raises(AccountBalanceNegative):
             self.exec_engine.process(fill)
+
+    def test_limit_order_consumes_entire_balance_of_multi_currency_cash_account(self):
+        # Arrange
+        AccountFactory.register_calculated_account("BINANCE")
+
+        account_id = AccountId("BINANCE-000")
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency account
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_100.00000000, USDT),
+                    Money(0.00000000, USDT),
+                    Money(100_100.00000000, USDT),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state)
+
+        account = self.portfolio.account(BINANCE)
+
+        order = self.order_factory.limit(  # will use up entire quote balance
+            instrument_id=BTCUSDT_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str(f"{Decimal(100_000):.{BTCUSDT_BINANCE.size_precision}f}"),
+            price=Price.from_str("1"),
+        )
+
+        self.cache.add_order(order, position_id=None)
+
+        self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
+
+        usdt_balance = account.balance(USDT)
+        assert usdt_balance.total == Money(100_100.00000000, USDT)
+        assert usdt_balance.locked == Money(0.00000000, USDT)
+        assert usdt_balance.free == Money(100_100.00000000, USDT)
+
+        btc_balance = account.balance(BTC)
+        assert btc_balance is None
+
+        self.exec_engine.process(TestEventStubs.order_accepted(order, account_id=account_id))
+
+        usdt_balance = account.balance(USDT)
+        assert usdt_balance.total == Money(100_100.00000000, USDT)
+        assert usdt_balance.locked == Money(100_000.00000000, USDT)
+        assert usdt_balance.free == Money(100.00000000, USDT)
+
+        btc_balance = account.balance(BTC)
+        assert btc_balance is None
+
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                order,
+                BTCUSDT_BINANCE,
+                last_px=order.price,
+                account_id=account_id,
+            ),
+        )
+
+        usdt_balance = account.balance(USDT)
+        assert usdt_balance.total == Money(0.00000000, USDT)
+        assert usdt_balance.locked == Money(0.00000000, USDT)
+        assert usdt_balance.free == Money(0.00000000, USDT)
+
+        btc_balance = account.balance(BTC)
+        assert btc_balance.total == Money(100_000.00000000, BTC)
+        assert btc_balance.locked == Money(0.00000000, BTC)
+        assert btc_balance.free == Money(100_000.00000000, BTC)
+
+    def test_market_order_consumes_entire_balance_of_multi_currency_cash_account(self):
+        # Arrange
+        AccountFactory.register_calculated_account("BINANCE")
+
+        account_id = AccountId("BINANCE-000")
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency account
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_100.00000000, USDT),
+                    Money(0.00000000, USDT),
+                    Money(100_100.00000000, USDT),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state)
+
+        account = self.portfolio.account(BINANCE)
+
+        order = self.order_factory.market(
+            instrument_id=BTCUSDT_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str(f"{Decimal(100_000):.{BTCUSDT_BINANCE.size_precision}f}"),
+        )
+
+        self.cache.add_order(order, position_id=None)
+
+        self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
+
+        usdt_balance = account.balance(USDT)
+        assert usdt_balance.total == Money(100_100.00000000, USDT)
+        assert usdt_balance.locked == Money(0.00000000, USDT)
+        assert usdt_balance.free == Money(100_100.00000000, USDT)
+
+        btc_balance = account.balance(BTC)
+        assert btc_balance is None
+
+        self.exec_engine.process(TestEventStubs.order_accepted(order, account_id=account_id))
+
+        usdt_balance = account.balance(USDT)
+        assert usdt_balance.total == Money(100_100.00000000, USDT)
+        assert usdt_balance.locked == Money(0.00000000, USDT)
+        assert usdt_balance.free == Money(100_100.00000000, USDT)
+
+        btc_balance = account.balance(BTC)
+        assert btc_balance is None
+
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                order,
+                BTCUSDT_BINANCE,
+                last_px=Price.from_str(f"{1:.{BTCUSDT_BINANCE.price_precision}f}"),
+                account_id=account_id,
+            ),
+        )
+
+        usdt_balance = account.balance(USDT)
+        assert usdt_balance.total == Money(0.00000000, USDT)
+        assert usdt_balance.locked == Money(0.00000000, USDT)
+        assert usdt_balance.free == Money(0.00000000, USDT)
+
+        btc_balance = account.balance(BTC)
+        assert btc_balance.total == Money(100_000.00000000, BTC)
+        assert btc_balance.locked == Money(0.00000000, BTC)
+        assert btc_balance.free == Money(100_000.00000000, BTC)
+
+    def test_limit_order_consumes_nearly_entire_balance_of_single_currency_margin_account(self):
+        # Arrange
+        AccountFactory.register_calculated_account("SIM")
+
+        account_id = AccountId("SIM-01234")
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_000.00000000, USD),
+                    Money(0.00000000, USD),
+                    Money(100_000.00000000, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state)
+
+        account = self.portfolio.account(SIM)
+
+        order = self.order_factory.limit(  # will use up entire quote balance
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str(f"{Decimal(3_300_000):.{AUDUSD_SIM.size_precision}f}"),
+            price=Price.from_str("1"),
+        )
+
+        self.cache.add_order(order, position_id=None)
+
+        self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
+
+        usdt_balance = account.balance(USD)
+        assert usdt_balance.total == Money(100_000.00000000, USD)
+        assert usdt_balance.locked == Money(0.00000000, USD)
+        assert usdt_balance.free == Money(100_000.00000000, USD)
+
+        self.exec_engine.process(TestEventStubs.order_accepted(order, account_id=account_id))
+
+        usdt_balance = account.balance(USD)
+        assert usdt_balance.total == Money(100_000.00000000, USD)
+        assert usdt_balance.locked == Money(99_000.00000000, USD)
+        assert usdt_balance.free == Money(1_000.00000000, USD)
+
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                order,
+                AUDUSD_SIM,
+                last_px=order.price,
+                account_id=account_id,
+            ),
+        )
+
+        usdt_balance = account.balance(USD)
+        assert usdt_balance.total == Money(99_934.00000000, USD)
+        assert usdt_balance.locked == Money(99_000.00000000, USD)
+        assert usdt_balance.free == Money(934.00000000, USD)
+
+        assert self.portfolio.net_position(AUDUSD_SIM.id) == Decimal(3_300_000)
+
+    def test_market_order_consumes_nearly_entire_balance_of_single_currency_margin_account(self):
+        # Arrange
+        AccountFactory.register_calculated_account("SIM")
+
+        account_id = AccountId("SIM-01234")
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_000.00000000, USD),
+                    Money(0.00000000, USD),
+                    Money(100_000.00000000, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state)
+
+        account = self.portfolio.account(SIM)
+
+        order = self.order_factory.market(  # will use up entire quote balance
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str(f"{Decimal(3_300_000):.{AUDUSD_SIM.size_precision}f}"),
+        )
+
+        self.cache.add_order(order, position_id=None)
+
+        self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
+
+        usdt_balance = account.balance(USD)
+        assert usdt_balance.total == Money(100_000.00000000, USD)
+        assert usdt_balance.locked == Money(0.00000000, USD)
+        assert usdt_balance.free == Money(100_000.00000000, USD)
+
+        self.exec_engine.process(TestEventStubs.order_accepted(order, account_id=account_id))
+
+        usdt_balance = account.balance(USD)
+        assert usdt_balance.total == Money(100_000.00000000, USD)
+        assert usdt_balance.locked == Money(0.00000000, USD)
+        assert usdt_balance.free == Money(100_000.00000000, USD)
+
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                order,
+                AUDUSD_SIM,
+                last_px=Price.from_str("1"),
+                account_id=account_id,
+            ),
+        )
+
+        usdt_balance = account.balance(USD)
+        assert usdt_balance.total == Money(99_934.00000000, USD)
+        assert usdt_balance.locked == Money(99_000.00000000, USD)
+        assert usdt_balance.free == Money(934.00000000, USD)
+
+        assert self.portfolio.net_position(AUDUSD_SIM.id) == Decimal(3_300_000)
 
     def test_exceed_free_balance_multi_currency_raises_account_balance_negative_exception(self):
         # Arrange
@@ -505,9 +795,15 @@ class TestPortfolio:
         self.cache.add_order(order1, position_id=None)
 
         # Push states to ACCEPTED
-        order1.apply(TestEventStubs.order_submitted(order1))
+        order1.apply(TestEventStubs.order_submitted(order1, account_id=account_id))
         self.cache.update_order(order1)
-        order1.apply(TestEventStubs.order_accepted(order1, venue_order_id=VenueOrderId("1")))
+        order1.apply(
+            TestEventStubs.order_accepted(
+                order1,
+                venue_order_id=VenueOrderId("1"),
+                account_id=account_id,
+            ),
+        )
         self.cache.update_order(order1)
 
         # Act
@@ -1239,6 +1535,107 @@ class TestPortfolio:
         # Assert
         assert result == {BTC: Money(0.00200000, BTC)}
 
+    def test_net_exposures_with_multiple_accounts_different_base_currencies_returns_none(self):
+        # Arrange
+        AccountFactory.register_calculated_account("SIM")
+
+        account_id_usd = AccountId("SIM-001")
+        state_usd = AccountState(
+            account_id=account_id_usd,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1_000_000, USD),
+                    Money(0, USD),
+                    Money(1_000_000, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        account_id_eur = AccountId("SIM-002")
+        state_eur = AccountState(
+            account_id=account_id_eur,
+            account_type=AccountType.MARGIN,
+            base_currency=EUR,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1_000_000, EUR),
+                    Money(0, EUR),
+                    Money(1_000_000, EUR),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state_usd)
+        self.portfolio.update_account(state_eur)
+
+        # Create position on USD account
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-1"),
+            account_id=account_id_usd,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("0.80000"),
+        )
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
+        self.portfolio.update_position(TestEventStubs.position_opened(position1))
+        self.cache.add_position(position1, OmsType.HEDGING)
+
+        # Create position on EUR account
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-2"),
+            account_id=account_id_eur,
+            position_id=PositionId("P-2"),
+            last_px=Price.from_str("0.80000"),
+        )
+        position2 = Position(instrument=AUDUSD_SIM, fill=fill2)
+        self.portfolio.update_position(TestEventStubs.position_opened(position2))
+        self.cache.add_position(position2, OmsType.HEDGING)
+
+        # Add quote tick
+        tick = QuoteTick(
+            instrument_id=AUDUSD_SIM.id,
+            bid_price=Price.from_str("0.80000"),
+            ask_price=Price.from_str("0.80010"),
+            bid_size=Quantity.from_int(100_000),
+            ask_size=Quantity.from_int(100_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_quote_tick(tick)
+
+        # Act - query without target_currency across multiple accounts with different base currencies
+        result = self.portfolio.net_exposures(SIM)
+
+        # Assert - should return None due to currency mismatch
+        assert result is None
+
     def test_opening_several_positions_updates_portfolio(self):
         # Arrange
         AccountFactory.register_calculated_account("SIM")
@@ -1908,7 +2305,6 @@ class TestPortfolio:
         expected_unrealized: float,
     ) -> None:
         # Arrange
-        self.portfolio.set_specific_venue(Venue("BETFAIR"))
         self.portfolio.set_use_mark_prices(True)
         self.portfolio.set_use_mark_xrates(True)
 
@@ -2028,7 +2424,6 @@ class TestPortfolio:
         expected_unrealized: float,
     ) -> None:
         # Arrange
-        self.portfolio.set_specific_venue(Venue("BETFAIR"))
         self.portfolio.set_use_mark_prices(True)
         self.portfolio.set_use_mark_xrates(True)
 
@@ -2148,7 +2543,6 @@ class TestPortfolio:
         expected_unrealized: float,
     ) -> None:
         # Arrange
-        self.portfolio.set_specific_venue(Venue("BETFAIR"))
         self.portfolio.set_use_mark_prices(True)
         self.portfolio.set_use_mark_xrates(True)
 
@@ -2270,7 +2664,6 @@ class TestPortfolio:
         expected_unrealized: float,
     ) -> None:
         # Arrange
-        self.portfolio.set_specific_venue(Venue("BETFAIR"))
         self.portfolio.set_use_mark_prices(True)
         self.portfolio.set_use_mark_xrates(True)
 
@@ -2359,3 +2752,536 @@ class TestPortfolio:
             expected_unrealized,
             GBP,
         )
+
+    def test_realized_pnl_sums_across_multiple_accounts(self):
+        # Arrange
+        AccountFactory.register_calculated_account("BINANCE")
+
+        account_id_1 = AccountId("BINANCE-001")
+        account_id_2 = AccountId("BINANCE-002")
+
+        state_1 = AccountState(
+            account_id=account_id_1,
+            account_type=AccountType.CASH,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100000.00000000, USDT),
+                    Money(0.00000000, USDT),
+                    Money(100000.00000000, USDT),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        state_2 = AccountState(
+            account_id=account_id_2,
+            account_type=AccountType.CASH,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100000.00000000, USDT),
+                    Money(0.00000000, USDT),
+                    Money(100000.00000000, USDT),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state_1)
+        self.portfolio.update_account(state_2)
+
+        # Create and fill orders for account 1
+        order1 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("1.0"),
+        )
+
+        order2 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.SELL,
+            Quantity.from_str("1.0"),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=BTCUSDT_BINANCE,
+            strategy_id=StrategyId("S-1"),
+            account_id=account_id_1,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("50000.00"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=BTCUSDT_BINANCE,
+            strategy_id=StrategyId("S-1"),
+            account_id=account_id_1,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("51000.00"),
+        )
+
+        position1 = Position(instrument=BTCUSDT_BINANCE, fill=fill1)
+        position1.apply(fill2)
+
+        # Create and fill orders for account 2
+        order3 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("1.0"),
+        )
+
+        order4 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.SELL,
+            Quantity.from_str("1.0"),
+        )
+
+        fill3 = TestEventStubs.order_filled(
+            order3,
+            instrument=BTCUSDT_BINANCE,
+            strategy_id=StrategyId("S-1"),
+            account_id=account_id_2,
+            position_id=PositionId("P-2"),
+            last_px=Price.from_str("50000.00"),
+        )
+
+        fill4 = TestEventStubs.order_filled(
+            order4,
+            instrument=BTCUSDT_BINANCE,
+            strategy_id=StrategyId("S-1"),
+            account_id=account_id_2,
+            position_id=PositionId("P-2"),
+            last_px=Price.from_str("52000.00"),
+        )
+
+        position2 = Position(instrument=BTCUSDT_BINANCE, fill=fill3)
+        position2.apply(fill4)
+
+        self.cache.add_position(position1, OmsType.HEDGING)
+        self.cache.add_position(position2, OmsType.HEDGING)
+        self.portfolio.update_position(TestEventStubs.position_closed(position1))
+        self.portfolio.update_position(TestEventStubs.position_closed(position2))
+
+        # Act
+        result = self.portfolio.realized_pnl(BTCUSDT_BINANCE.id)
+
+        # Assert
+        # Verify that PnL is calculated (should sum across both accounts)
+        # The exact value depends on commission calculation, but should be positive
+        assert result is not None
+        assert result.currency == USDT
+        # Verify it's a reasonable positive value (both positions were profitable)
+        assert result.as_decimal() > Decimal(0)
+
+        # Verify individual account PnLs sum correctly
+        account1_pnl = self.portfolio.realized_pnls(account_id=account_id_1)
+        account2_pnl = self.portfolio.realized_pnls(account_id=account_id_2)
+
+        # Both accounts should have realized PnL
+        assert USDT in account1_pnl
+        assert USDT in account2_pnl
+
+        # Sum should equal the total
+        total_from_accounts = account1_pnl[USDT].as_decimal() + account2_pnl[USDT].as_decimal()
+        assert abs(result.as_decimal() - total_from_accounts) < Decimal("0.01")
+
+    def test_unrealized_pnl_sums_across_multiple_accounts(self):
+        # Arrange
+        AccountFactory.register_calculated_account("BINANCE")
+
+        account_id_1 = AccountId("BINANCE-001")
+        account_id_2 = AccountId("BINANCE-002")
+
+        state_1 = AccountState(
+            account_id=account_id_1,
+            account_type=AccountType.CASH,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100000.00000000, USDT),
+                    Money(0.00000000, USDT),
+                    Money(100000.00000000, USDT),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        state_2 = AccountState(
+            account_id=account_id_2,
+            account_type=AccountType.CASH,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100000.00000000, USDT),
+                    Money(0.00000000, USDT),
+                    Money(100000.00000000, USDT),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state_1)
+        self.portfolio.update_account(state_2)
+
+        # Create positions for both accounts
+        order1 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("1.0"),
+        )
+
+        order2 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("1.0"),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=BTCUSDT_BINANCE,
+            strategy_id=StrategyId("S-1"),
+            account_id=account_id_1,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("50000.00"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=BTCUSDT_BINANCE,
+            strategy_id=StrategyId("S-1"),
+            account_id=account_id_2,
+            position_id=PositionId("P-2"),
+            last_px=Price.from_str("50000.00"),
+        )
+
+        position1 = Position(instrument=BTCUSDT_BINANCE, fill=fill1)
+        position2 = Position(instrument=BTCUSDT_BINANCE, fill=fill2)
+
+        self.cache.add_position(position1, OmsType.HEDGING)
+        self.cache.add_position(position2, OmsType.HEDGING)
+        self.portfolio.update_position(TestEventStubs.position_opened(position1))
+        self.portfolio.update_position(TestEventStubs.position_opened(position2))
+
+        # Initialize positions to ensure portfolio is aware of them
+        self.portfolio.initialize_positions()
+
+        # Add market data
+        last = QuoteTick(
+            instrument_id=BTCUSDT_BINANCE.id,
+            bid_price=Price.from_str("51000.00"),
+            ask_price=Price.from_str("51000.00"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.cache.add_quote_tick(last)
+        self.portfolio.update_quote_tick(last)
+
+        # Act
+        result = self.portfolio.unrealized_pnl(BTCUSDT_BINANCE.id)
+
+        # Assert
+        # Verify that PnL is calculated (should sum across both accounts)
+        assert result is not None
+        assert result.currency == USDT
+        # Verify it's a reasonable positive value (both positions are profitable)
+        assert result.as_decimal() > Decimal(0)
+
+        # Verify individual account PnLs sum correctly
+        account1_pnl = self.portfolio.unrealized_pnls(account_id=account_id_1)
+        account2_pnl = self.portfolio.unrealized_pnls(account_id=account_id_2)
+
+        # Both accounts should have unrealized PnL
+        assert USDT in account1_pnl
+        assert USDT in account2_pnl
+
+        # Sum should equal the total (approximately)
+        total_from_accounts = account1_pnl[USDT].as_decimal() + account2_pnl[USDT].as_decimal()
+        assert abs(result.as_decimal() - total_from_accounts) < Decimal("0.01")
+
+    def test_account_method_with_account_id(self):
+        # Arrange
+        account_id_1 = AccountId("SIM-001")
+        account_id_2 = AccountId("SIM-002")
+
+        state_1 = AccountState(
+            account_id=account_id_1,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100000, USD),
+                    Money(0, USD),
+                    Money(100000, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        state_2 = AccountState(
+            account_id=account_id_2,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(50000, USD),
+                    Money(0, USD),
+                    Money(50000, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state_1)
+        self.portfolio.update_account(state_2)
+
+        # Act
+        account_1 = self.portfolio.account(account_id=account_id_1)
+        account_2 = self.portfolio.account(account_id=account_id_2)
+
+        # Assert
+        assert account_1 is not None
+        assert account_1.id == account_id_1
+        assert account_2 is not None
+        assert account_2.id == account_id_2
+
+    def test_balances_locked_with_account_id(self):
+        # Arrange
+        account_id = AccountId("SIM-001")
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100000, USD),
+                    Money(10000, USD),  # Locked balance
+                    Money(90000, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state)
+
+        # Act
+        balances = self.portfolio.balances_locked(account_id=account_id)
+
+        # Assert
+        assert balances is not None
+        assert USD in balances
+        assert balances[USD] == Money(10000, USD)
+
+    def test_margins_init_with_account_id(self):
+        # Arrange
+        account_id = AccountId("SIM-001")
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100000, USD),
+                    Money(0, USD),
+                    Money(100000, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state)
+
+        # Act
+        margins = self.portfolio.margins_init(account_id=account_id)
+
+        # Assert
+        assert margins is not None
+        # For margin accounts, margins_init should return a dict (may be empty if no orders)
+
+    def test_margins_maint_with_account_id(self):
+        # Arrange
+        account_id = AccountId("SIM-001")
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100000, USD),
+                    Money(0, USD),
+                    Money(100000, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state)
+
+        # Act
+        margins = self.portfolio.margins_maint(account_id=account_id)
+
+        # Assert
+        assert margins is not None
+        # For margin accounts, margins_maint should return a dict (may be empty if no positions)
+
+    def test_account_method_raises_when_both_none(self):
+        # Arrange & Act & Assert
+        # The Condition.not_none check raises TypeError with a specific message
+        with pytest.raises(TypeError, match="venue or account_id must be provided"):
+            self.portfolio.account()
+
+    def test_balances_locked_raises_when_both_none(self):
+        # Arrange & Act & Assert
+        # The code raises TypeError with a clear message when both parameters are None
+        with pytest.raises(TypeError, match=r".*'venue' or 'account_id' must be provided"):
+            self.portfolio.balances_locked()
+
+    def test_on_order_event_passes_account_id_to_cache_query(self):
+        # Arrange
+        AccountFactory.register_calculated_account("BINANCE")
+
+        account_id = AccountId("BINANCE-001")
+
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.CASH,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100000.00000000, USDT),
+                    Money(0.00000000, USDT),
+                    Money(100000.00000000, USDT),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state)
+
+        # Create order with account_id
+        order = self.order_factory.limit(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("1.0"),
+            Price.from_str("50000.00"),
+        )
+        order.apply(TestEventStubs.order_submitted(order, account_id=account_id))
+        order.apply(TestEventStubs.order_accepted(order, account_id=account_id))
+        self.cache.add_order(order, position_id=None)
+
+        # Act: Process order event - should pass account_id to cache query
+        event = TestEventStubs.order_updated(order)
+        # This should not raise an error and should use account_id from event
+        self.portfolio.on_order_event(event)
+
+        # Assert: Verify account exists and order is in cache
+        account = self.cache.account(account_id)
+        assert account is not None
+        assert self.cache.order_exists(order.client_order_id)
+
+    def test_update_position_passes_account_id_to_cache_query(self):
+        # Arrange
+        AccountFactory.register_calculated_account("BINANCE")
+
+        account_id = AccountId("BINANCE-001")
+
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.CASH,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100000.00000000, USDT),
+                    Money(0.00000000, USDT),
+                    Money(100000.00000000, USDT),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state)
+
+        # Create position with account_id
+        order = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("1.0"),
+        )
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=BTCUSDT_BINANCE,
+            strategy_id=StrategyId("S-1"),
+            account_id=account_id,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("50000.00"),
+        )
+        position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
+        self.cache.add_position(position, OmsType.HEDGING)
+
+        # Act: Process position event - should pass account_id to cache query
+        # Use TestEventStubs helper to create position event
+        event = TestEventStubs.position_changed(position)
+        # This should not raise an error and should use account_id from event
+        self.portfolio.update_position(event)
+
+        # Assert: Verify position is in cache
+        assert self.cache.position_exists(position.id)

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,7 +23,6 @@
 
 use std::time::Duration;
 
-use anyhow;
 use nautilus_core::correctness::{check_in_range_inclusive_f64, check_predicate_true};
 use rand::Rng;
 
@@ -60,6 +59,7 @@ impl ExponentialBackoff {
     /// Returns an error if:
     /// - `delay_initial` is zero.
     /// - `delay_max` is less than `delay_initial`.
+    /// - `delay_max` exceeds `Duration::from_nanos(u64::MAX)` (≈584 years).
     /// - `factor` is not in the range [1.0, 100.0] (to prevent reconnect spam).
     pub fn new(
         delay_initial: Duration,
@@ -72,6 +72,10 @@ impl ExponentialBackoff {
         check_predicate_true(
             delay_max >= delay_initial,
             "delay_max must be >= delay_initial",
+        )?;
+        check_predicate_true(
+            delay_max.as_nanos() <= u128::from(u64::MAX),
+            "delay_max exceeds maximum representable duration (≈584 years)",
         )?;
         check_in_range_inclusive_f64(factor, 1.0, 100.0, "factor")?;
 
@@ -101,13 +105,40 @@ impl ExponentialBackoff {
         let jitter = rand::rng().random_range(0..=self.jitter_ms);
         let delay_with_jitter = self.delay_current + Duration::from_millis(jitter);
 
-        // Prepare the next delay
-        let current_nanos = self.delay_current.as_nanos();
-        let max_nanos = self.delay_max.as_nanos() as u64;
-        let next_nanos = (current_nanos as f64 * self.factor) as u64;
-        self.delay_current = Duration::from_nanos(std::cmp::min(next_nanos, max_nanos));
+        // Clamp the returned delay to never exceed delay_max
+        let clamped_delay = std::cmp::min(delay_with_jitter, self.delay_max);
 
-        delay_with_jitter
+        // Prepare the next delay with overflow protection
+        // Keep all math in u128 to avoid silent truncation
+        let current_nanos = self.delay_current.as_nanos();
+        let max_nanos = self.delay_max.as_nanos();
+
+        // Use checked floating point multiplication to prevent overflow
+        let next_nanos_u128 = if current_nanos > u128::from(u64::MAX) {
+            // Current is already at max representable value, cap to max
+            max_nanos
+        } else {
+            let current_u64 = current_nanos as u64;
+            let next_f64 = current_u64 as f64 * self.factor;
+
+            // Check for overflow in the float result
+            if next_f64 > u64::MAX as f64 {
+                u128::from(u64::MAX)
+            } else {
+                u128::from(next_f64 as u64)
+            }
+        };
+
+        let clamped = std::cmp::min(next_nanos_u128, max_nanos);
+        let final_nanos = if clamped > u128::from(u64::MAX) {
+            u64::MAX
+        } else {
+            clamped as u64
+        };
+
+        self.delay_current = Duration::from_nanos(final_nanos);
+
+        clamped_delay
     }
 
     /// Reset the backoff to its initial state.
@@ -125,9 +156,6 @@ impl ExponentialBackoff {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -335,6 +363,23 @@ mod tests {
     }
 
     #[rstest]
+    fn test_validation_delay_max_exceeds_u64_max_nanos() {
+        // Duration::from_nanos(u64::MAX) is approximately 584 years
+        // Try to create a backoff with delay_max exceeding this
+        let max_valid = Duration::from_nanos(u64::MAX);
+        let too_large = max_valid + Duration::from_nanos(1);
+
+        let result = ExponentialBackoff::new(Duration::from_millis(100), too_large, 2.0, 0, false);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("delay_max exceeds maximum representable duration")
+        );
+    }
+
+    #[rstest]
     fn test_immediate_first() {
         let initial = Duration::from_millis(100);
         let max = Duration::from_millis(1600);
@@ -390,5 +435,29 @@ mod tests {
             Duration::ZERO,
             "Reset should restore immediate_first behavior"
         );
+    }
+
+    #[rstest]
+    fn test_jitter_never_exceeds_max_delay() {
+        let initial = Duration::from_millis(100);
+        let max = Duration::from_millis(1000);
+        let factor = 2.0;
+        let jitter = 500;
+
+        let mut backoff = ExponentialBackoff::new(initial, max, factor, jitter, false).unwrap();
+
+        // Run backoff until it reaches the cap
+        while backoff.current_delay() < max {
+            backoff.next_duration();
+        }
+
+        // Now that we're at the cap, verify jitter doesn't push us over delay_max
+        for _ in 0..100 {
+            let delay = backoff.next_duration();
+            assert!(
+                delay <= max,
+                "Delay with jitter {delay:?} exceeded max {max:?}"
+            );
+        }
     }
 }

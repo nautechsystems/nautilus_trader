@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
+
 from betfair_parser.endpoints import ENDPOINTS
+from betfair_parser.exceptions import BetfairError
+from betfair_parser.exceptions import JSONError
 from betfair_parser.spec.accounts.operations import GetAccountDetails
 from betfair_parser.spec.accounts.operations import GetAccountFunds
 from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
@@ -59,6 +63,7 @@ from betfair_parser.spec.navigation import Navigation
 
 import nautilus_trader
 from nautilus_trader.common.component import Logger
+from nautilus_trader.common.secure import SecureString
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
@@ -68,6 +73,18 @@ from nautilus_trader.core.rust.common import LogColor
 class BetfairHttpClient:
     """
     Provides a HTTP client for Betfair.
+
+    Parameters
+    ----------
+    username : str
+        The Betfair account username.
+    password : str
+        The Betfair account password.
+    app_key : str
+        The Betfair application key.
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
+
     """
 
     def __init__(
@@ -75,16 +92,18 @@ class BetfairHttpClient:
         username: str,
         password: str,
         app_key: str,
+        proxy_url: str | None = None,
     ) -> None:
         # Config
         self.username = username
-        self.password = password
+        self.password = SecureString(password, name="password")
         self.app_key = app_key
 
         # Client
-        self._client = HttpClient()
+        self._client = HttpClient(proxy_url=proxy_url)
         self._headers: dict[str, str] = {}
         self._log = Logger(name=type(self).__name__)
+        self._connect_lock: asyncio.Lock | None = None
         self.reset_headers()
 
     async def _request(self, method: HttpMethod, request: Request) -> HttpResponse:
@@ -104,13 +123,27 @@ class BetfairHttpClient:
             self._log.debug(f"[RESP] {response.body.decode()}")
         return response
 
+    def _parse_response(self, request: Request, response: HttpResponse) -> Request.return_type:
+        try:
+            return request.parse_response(response.body, raise_errors=True)
+        except ValueError as e:
+            # Handle betfair-parser bug with undocumented error codes like -32099
+            if "is not a valid JSONExceptionCode" in str(e):
+                self._log.warning(f"Betfair parser error (treating as session error): {e}")
+                raise BetfairError(f"INVALID_SESSION_INFORMATION: {e}") from e
+            raise
+        except JSONError as e:
+            # Handle betfair-parser msgspec parsing errors
+            self._log.warning(f"Betfair JSON parsing error: {e}")
+            raise BetfairError(f"JSON_PARSE_ERROR: {e}") from e
+
     async def _post(self, request: Request) -> Request.return_type:
         response: HttpResponse = await self._request(HttpMethod.POST, request)
-        return request.parse_response(response.body, raise_errors=True)
+        return self._parse_response(request, response)
 
     async def _get(self, request: Request) -> Request.return_type:
         response: HttpResponse = await self._request(HttpMethod.GET, request)
-        return request.parse_response(response.body, raise_errors=True)
+        return self._parse_response(request, response)
 
     @property
     def session_token(self) -> str | None:
@@ -133,17 +166,21 @@ class BetfairHttpClient:
         }
 
     async def connect(self) -> None:
-        if self.session_token is not None:
-            self._log.warning("Session token exists (already connected), skipping")
-            return
+        if self._connect_lock is None:
+            self._connect_lock = asyncio.Lock()
 
-        self._log.info("Connecting (Betfair login)")
-        request = Login.with_params(username=self.username, password=self.password)
-        resp: LoginResponse = await self._post(request)
-        if resp.status != LoginStatus.SUCCESS:
-            raise RuntimeError(f"Login not successful: {resp.status.value}")
-        self._log.info("Login success", color=LogColor.GREEN)
-        self.update_headers(login_resp=resp)
+        async with self._connect_lock:
+            if self.session_token is not None:
+                self._log.debug("Session token exists (already connected), skipping")
+                return
+
+            self._log.info("Connecting (Betfair login)")
+            request = Login.with_params(username=self.username, password=self.password.get_value())
+            resp: LoginResponse = await self._post(request)
+            if resp.status != LoginStatus.SUCCESS:
+                raise RuntimeError(f"Login not successful: {resp.status.value}")
+            self._log.info("Login success", color=LogColor.GREEN)
+            self.update_headers(login_resp=resp)
 
     async def reconnect(self) -> None:
         self._log.info("Reconnecting...")

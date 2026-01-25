@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,17 +13,24 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! FFI helpers for the [`UUID4`] wrapper type.
+//!
+//! The functions exported here make it possible for C/Python code to create, compare, and hash
+//! UUID values *without* having to understand the internal representation chosen by
+//! NautilusTrader.
+
 use std::{
     collections::hash_map::DefaultHasher,
     ffi::{CStr, c_char},
     hash::{Hash, Hasher},
 };
 
-use crate::UUID4;
+use crate::{UUID4, ffi::abort_on_panic};
 
+/// Generate a new random (version-4) UUID and return it by value.
 #[unsafe(no_mangle)]
 pub extern "C" fn uuid4_new() -> UUID4 {
-    UUID4::new()
+    abort_on_panic(UUID4::new)
 }
 
 /// Returns a [`UUID4`] from C string pointer.
@@ -37,32 +44,40 @@ pub extern "C" fn uuid4_new() -> UUID4 {
 /// Panics if `ptr` cannot be cast to a valid C string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn uuid4_from_cstr(ptr: *const c_char) -> UUID4 {
-    assert!(!ptr.is_null(), "`ptr` was NULL");
-    let cstr = unsafe { CStr::from_ptr(ptr) };
-    let value = cstr.to_str().expect("Failed to convert C string to UTF-8");
-    UUID4::from(value)
+    abort_on_panic(|| {
+        assert!(!ptr.is_null(), "`ptr` was NULL");
+        // SAFETY: Caller guarantees ptr is valid per function contract
+        let cstr = unsafe { CStr::from_ptr(ptr) };
+        let value = cstr.to_str().expect("Failed to convert C string to UTF-8");
+        UUID4::from(value)
+    })
 }
 
+/// Return a borrowed *null-terminated* UTF-8 C string representing `uuid`.
+///
+/// The pointer remains valid for as long as the input `UUID4` reference lives – callers **must
+/// not** attempt to free it.
 #[unsafe(no_mangle)]
 pub extern "C" fn uuid4_to_cstr(uuid: &UUID4) -> *const c_char {
-    uuid.to_cstr().as_ptr()
+    abort_on_panic(|| uuid.to_cstr().as_ptr())
 }
 
+/// Compare two UUID values, returning `1` when they are equal and `0` otherwise.
 #[unsafe(no_mangle)]
 pub extern "C" fn uuid4_eq(lhs: &UUID4, rhs: &UUID4) -> u8 {
-    u8::from(lhs == rhs)
+    abort_on_panic(|| u8::from(lhs == rhs))
 }
 
+/// Compute the stable [`u64`] hash of `uuid` using Rust’s default hasher.
 #[unsafe(no_mangle)]
 pub extern "C" fn uuid4_hash(uuid: &UUID4) -> u64 {
-    let mut h = DefaultHasher::new();
-    uuid.hash(&mut h);
-    h.finish()
+    abort_on_panic(|| {
+        let mut h = DefaultHasher::new();
+        uuid.hash(&mut h);
+        h.finish()
+    })
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::ffi::CString;

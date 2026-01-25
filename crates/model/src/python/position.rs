@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,7 +24,7 @@ use rust_decimal::prelude::ToPrimitive;
 use super::common::commissions_from_vec;
 use crate::{
     enums::{OrderSide, PositionSide},
-    events::OrderFilled,
+    events::{OrderFilled, PositionAdjusted},
     identifiers::{
         ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, TraderId, Venue,
         VenueOrderId,
@@ -37,7 +37,7 @@ use crate::{
 #[pymethods]
 impl Position {
     #[new]
-    fn py_new(py: Python, instrument: PyObject, fill: OrderFilled) -> PyResult<Self> {
+    fn py_new(py: Python, instrument: Py<PyAny>, fill: OrderFilled) -> PyResult<Self> {
         let instrument_any = pyobject_to_instrument_any(py, instrument)?;
         Ok(Self::new(&instrument_any, fill))
     }
@@ -233,6 +233,12 @@ impl Position {
     }
 
     #[getter]
+    #[pyo3(name = "adjustments")]
+    fn py_adjustments(&self) -> Vec<PositionAdjusted> {
+        self.adjustments.clone()
+    }
+
+    #[getter]
     #[pyo3(name = "client_order_ids")]
     fn py_client_order_ids(&self) -> Vec<ClientOrderId> {
         self.client_order_ids()
@@ -312,6 +318,16 @@ impl Position {
         self.apply(fill);
     }
 
+    #[pyo3(name = "apply_adjustment")]
+    fn py_apply_adjustment(&mut self, adjustment: PositionAdjusted) {
+        self.apply_adjustment(adjustment);
+    }
+
+    #[pyo3(name = "purge_events_for_order")]
+    fn py_purge_events_for_order(&mut self, client_order_id: ClientOrderId) {
+        self.purge_events_for_order(client_order_id);
+    }
+
     #[pyo3(name = "is_opposite_side")]
     fn py_is_opposite_side(&self, side: OrderSide) -> bool {
         self.is_opposite_side(side)
@@ -344,11 +360,14 @@ impl Position {
     ///
     /// Returns a `PyErr` if serialization into a Python dict fails.
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(Position))?;
         let events_dict: PyResult<Vec<_>> = self.events.iter().map(|e| e.py_to_dict(py)).collect();
         dict.set_item("events", events_dict?)?;
+        let adjustments_dict: PyResult<Vec<_>> =
+            self.adjustments.iter().map(|a| a.py_to_dict(py)).collect();
+        dict.set_item("adjustments", adjustments_dict?)?;
         dict.set_item("trader_id", self.trader_id.to_string())?;
         dict.set_item("strategy_id", self.strategy_id.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;
@@ -399,19 +418,12 @@ impl Position {
             Some(realized_pnl) => dict.set_item("realized_pnl", realized_pnl.to_string())?,
             None => dict.set_item("realized_pnl", py.None())?,
         }
-        let venue_order_ids_list = PyList::new(
-            py,
-            self.venue_order_ids()
-                .iter()
-                .map(std::string::ToString::to_string),
-        )
-        .expect("Invalid `ExactSizeIterator`");
+        let venue_order_ids_list =
+            PyList::new(py, self.venue_order_ids().iter().map(ToString::to_string))
+                .expect("Invalid `ExactSizeIterator`");
         dict.set_item("venue_order_ids", venue_order_ids_list)?;
-        let trade_ids_list = PyList::new(
-            py,
-            self.trade_ids.iter().map(std::string::ToString::to_string),
-        )
-        .expect("Invalid `ExactSizeIterator`");
+        let trade_ids_list = PyList::new(py, self.trade_ids.iter().map(ToString::to_string))
+            .expect("Invalid `ExactSizeIterator`");
         dict.set_item("trade_ids", trade_ids_list)?;
         dict.set_item("buy_qty", self.buy_qty.to_string())?;
         dict.set_item("sell_qty", self.sell_qty.to_string())?;

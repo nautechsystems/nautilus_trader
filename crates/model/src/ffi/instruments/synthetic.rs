@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -84,7 +84,7 @@ pub unsafe extern "C" fn synthetic_instrument_new(
     // TODO: There is absolutely no error handling here yet
     let components = unsafe { bytes_to_string_vec(components_ptr) }
         .into_iter()
-        .map(|s| InstrumentId::from(s.as_str()))
+        .map(InstrumentId::from)
         .collect::<Vec<InstrumentId>>();
     let formula = unsafe { cstr_as_str(formula_ptr).to_string() };
     let synth = SyntheticInstrument::new(
@@ -134,7 +134,7 @@ pub extern "C" fn synthetic_instrument_components_to_cstr(
     let components_vec = synth
         .components
         .iter()
-        .map(std::string::ToString::to_string)
+        .map(ToString::to_string)
         .collect::<Vec<String>>();
 
     string_vec_to_bytes(&components_vec)
@@ -160,14 +160,24 @@ pub extern "C" fn synthetic_instrument_ts_init(synth: &SyntheticInstrument_API) 
 /// Assumes `formula_ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn synthetic_instrument_is_valid_formula(
-    synth: &SyntheticInstrument_API,
     formula_ptr: *const c_char,
+    components_ptr: *const c_char,
 ) -> u8 {
-    if formula_ptr.is_null() {
-        return u8::from(false);
+    if formula_ptr.is_null() || components_ptr.is_null() {
+        return 0;
     }
+
+    let components = unsafe { bytes_to_string_vec(components_ptr) }
+        .into_iter()
+        .map(InstrumentId::from)
+        .collect::<Vec<InstrumentId>>();
+
     let formula = unsafe { cstr_as_str(formula_ptr) };
-    u8::from(synth.is_valid_formula(formula))
+
+    u8::from(SyntheticInstrument::is_valid_formula_for_components(
+        formula,
+        &components,
+    ))
 }
 
 /// # Safety

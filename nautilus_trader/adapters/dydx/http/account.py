@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,18 +25,24 @@ from nautilus_trader.adapters.dydx.common.enums import DYDXOrderType
 from nautilus_trader.adapters.dydx.common.enums import DYDXPerpetualPositionStatus
 from nautilus_trader.adapters.dydx.endpoints.account.address import DYDXGetAddressEndpoint
 from nautilus_trader.adapters.dydx.endpoints.account.address import DYDXGetAddressGetParams
-
-# fmt: off
-from nautilus_trader.adapters.dydx.endpoints.account.asset_positions import DYDXGetAssetPositionsEndpoint
-from nautilus_trader.adapters.dydx.endpoints.account.asset_positions import DYDXGetAssetPositionsGetParams
+from nautilus_trader.adapters.dydx.endpoints.account.asset_positions import (
+    DYDXGetAssetPositionsEndpoint,
+)
+from nautilus_trader.adapters.dydx.endpoints.account.asset_positions import (
+    DYDXGetAssetPositionsGetParams,
+)
 from nautilus_trader.adapters.dydx.endpoints.account.fills import DYDXGetFillsEndpoint
 from nautilus_trader.adapters.dydx.endpoints.account.fills import DYDXGetFillsGetParams
 from nautilus_trader.adapters.dydx.endpoints.account.order import DYDXGetOrderEndpoint
 from nautilus_trader.adapters.dydx.endpoints.account.order import DYDXGetOrderGetParams
 from nautilus_trader.adapters.dydx.endpoints.account.orders import DYDXGetOrdersEndpoint
 from nautilus_trader.adapters.dydx.endpoints.account.orders import DYDXGetOrdersGetParams
-from nautilus_trader.adapters.dydx.endpoints.account.perpetual_positions import DYDXGetPerpetualPositionsEndpoint
-from nautilus_trader.adapters.dydx.endpoints.account.perpetual_positions import DYDXGetPerpetualPositionsGetParams
+from nautilus_trader.adapters.dydx.endpoints.account.perpetual_positions import (
+    DYDXGetPerpetualPositionsEndpoint,
+)
+from nautilus_trader.adapters.dydx.endpoints.account.perpetual_positions import (
+    DYDXGetPerpetualPositionsGetParams,
+)
 from nautilus_trader.adapters.dydx.endpoints.account.subaccount import DYDXGetSubaccountEndpoint
 from nautilus_trader.adapters.dydx.endpoints.account.subaccount import DYDXGetSubaccountGetParams
 from nautilus_trader.adapters.dydx.http.client import DYDXHttpClient
@@ -45,9 +51,9 @@ from nautilus_trader.adapters.dydx.schemas.account.address import DYDXSubaccount
 from nautilus_trader.adapters.dydx.schemas.account.asset_positions import DYDXAssetPositionsResponse
 from nautilus_trader.adapters.dydx.schemas.account.fills import DYDXFillsResponse
 from nautilus_trader.adapters.dydx.schemas.account.orders import DYDXOrderResponse
-from nautilus_trader.adapters.dydx.schemas.account.perpetual_positions import DYDXPerpetualPositionsResponse
-
-# fmt: on
+from nautilus_trader.adapters.dydx.schemas.account.perpetual_positions import (
+    DYDXPerpetualPositionsResponse,
+)
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.core.correctness import PyCondition
 
@@ -77,7 +83,7 @@ class DYDXAccountHttpAPI:
         self._endpoint_get_order = DYDXGetOrderEndpoint(client)
         self._endpoint_get_fills = DYDXGetFillsEndpoint(client)
 
-    async def get_adress_subaccounts(
+    async def get_address_subaccounts(
         self,
         address: str,
     ) -> DYDXAddressResponse | None:

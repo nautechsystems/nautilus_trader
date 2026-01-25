@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,43 +19,72 @@ use std::collections::BTreeMap;
 
 use super::{BookLevel, BookPrice, OrderBook};
 use crate::{
-    enums::{BookType, OrderSide},
+    enums::{BookType, OrderSide, OrderSideSpecified},
     orderbook::BookIntegrityError,
     types::{Price, Quantity, fixed::FIXED_SCALAR, quantity::QuantityRaw},
 };
 
 /// Calculates the estimated fill quantity for a specified price from a set of
 /// order book levels and order side.
-///
-/// # Panics
-///
-/// Panics if `order_side` is neither [`OrderSide::Buy`] nor [`OrderSide::Sell`].
 #[must_use]
 pub fn get_quantity_for_price(
     price: Price,
-    order_side: OrderSide,
+    order_side: OrderSideSpecified,
     levels: &BTreeMap<BookPrice, BookLevel>,
 ) -> f64 {
     let mut matched_size: f64 = 0.0;
 
     for (book_price, level) in levels {
         match order_side {
-            OrderSide::Buy => {
+            OrderSideSpecified::Buy => {
                 if book_price.value > price {
                     break;
                 }
             }
-            OrderSide::Sell => {
+            OrderSideSpecified::Sell => {
                 if book_price.value < price {
                     break;
                 }
             }
-            _ => panic!("Invalid `OrderSide` {order_side}"),
         }
         matched_size += level.size();
     }
 
     matched_size
+}
+
+/// Returns all price levels that would be crossed by an order at the given price.
+///
+/// Unlike `get_quantity_for_price` which returns just the total, this returns
+/// each individual level as (price, size). Used when liquidity consumption
+/// tracking needs visibility into all available levels.
+#[must_use]
+pub fn get_levels_for_price(
+    price: Price,
+    order_side: OrderSideSpecified,
+    levels: &BTreeMap<BookPrice, BookLevel>,
+    size_precision: u8,
+) -> Vec<(Price, Quantity)> {
+    let mut result = Vec::new();
+
+    for (book_price, level) in levels {
+        match order_side {
+            OrderSideSpecified::Buy => {
+                if book_price.value > price {
+                    break;
+                }
+            }
+            OrderSideSpecified::Sell => {
+                if book_price.value < price {
+                    break;
+                }
+            }
+        }
+        let level_size = Quantity::new(level.size(), size_precision);
+        result.push((level.price.value, level_size));
+    }
+
+    result
 }
 
 /// Calculates the estimated average price for a specified quantity from a set of
@@ -93,8 +122,7 @@ pub fn get_avg_px_qty_for_exposure(
     let mut cumulative_size_raw: QuantityRaw = 0;
     let mut final_price = levels
         .first_key_value()
-        .map(|(price, _)| price.value.as_f64())
-        .unwrap_or(0.0);
+        .map_or(0.0, |(price, _)| price.value.as_f64());
 
     for (book_price, level) in levels {
         let price = book_price.value.as_f64();
@@ -174,7 +202,8 @@ pub fn book_check_integrity(book: &OrderBook) -> Result<(), BookIntegrityError> 
         let best_bid = top_bid_level.price;
         let best_ask = top_ask_level.price;
 
-        if best_bid.value >= best_ask.value {
+        // Only strictly crossed books (bid > ask) are invalid; locked markets (bid == ask) are valid
+        if best_bid.value > best_ask.value {
             return Err(BookIntegrityError::OrdersCrossed(best_bid, best_ask));
         }
     }

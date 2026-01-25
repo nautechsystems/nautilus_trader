@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,20 +16,20 @@
 use nautilus_core::UnixNanos;
 use nautilus_model::instruments::Instrument;
 use nautilus_tardis::{
-    enums::Exchange,
+    enums::TardisExchange,
     http::{client::TardisHttpClient, query::InstrumentFilterBuilder},
 };
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let client = TardisHttpClient::new(None, None, None, true).unwrap();
 
     // Tardis instrument definitions
-    let resp = client.instruments_info(Exchange::Binance, None, None).await;
+    let resp = client
+        .instruments_info(TardisExchange::Binance, None, None)
+        .await;
     println!("Received: {resp:?}");
 
     let start = UnixNanos::from("2020-1-1");
@@ -39,7 +39,7 @@ async fn main() {
         .unwrap();
 
     let resp = client
-        .instruments_info(Exchange::Binance, Some("BTCUSDT"), Some(&filter))
+        .instruments_info(TardisExchange::Binance, Some("BTCUSDT"), Some(&filter))
         .await;
     println!("Received: {resp:?}");
 
@@ -48,7 +48,7 @@ async fn main() {
         .build()
         .unwrap();
     let resp = client
-        .instruments_info(Exchange::Bitmex, Some("XBTUSD"), Some(&filter))
+        .instruments_info(TardisExchange::Bitmex, Some("XBTUSD"), Some(&filter))
         .await;
 
     for inst in resp.unwrap() {
@@ -66,7 +66,7 @@ async fn main() {
     // Nautilus instrument definitions
     let resp = client
         .instruments(
-            Exchange::Bitmex,
+            TardisExchange::Bitmex,
             Some("XBTUSD"),
             Some(&filter),
             None,

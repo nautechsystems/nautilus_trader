@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,6 +22,7 @@ from nautilus_trader.risk.config import RiskEngineConfig
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
+from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport CMD
 from nautilus_trader.common.component cimport EVT
@@ -37,31 +38,32 @@ from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.model cimport AccountType
-from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport TradingState
+from nautilus_trader.core.rust.model cimport TrailingOffsetType
 from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.execution.messages cimport CancelAllOrders
-from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
+from nautilus_trader.execution.trailing cimport TrailingStopCalculator
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
-from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.events.order cimport OrderModifyRejected
 from nautilus_trader.model.functions cimport order_type_to_str
 from nautilus_trader.model.functions cimport trading_state_to_str
+from nautilus_trader.model.functions cimport trailing_offset_type_to_str
+from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.instruments.base cimport NEGATIVE_PRICE_INSTRUMENT_CLASSES
 from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -114,7 +116,9 @@ cdef class RiskEngine(Component):
     ) -> None:
         if config is None:
             config = RiskEngineConfig()
+
         Condition.type(config, RiskEngineConfig, "config")
+
         super().__init__(
             clock=clock,
             component_id=ComponentId("RiskEngine"),
@@ -188,6 +192,7 @@ cdef class RiskEngine(Component):
 
     def _initialize_risk_checks(self, config: RiskEngineConfig):
         cdef dict max_notional_config = config.max_notional_per_order
+
         for instrument_id, value in max_notional_config.items():
             self.set_max_notional_per_order(InstrumentId.from_str_c(instrument_id), Decimal(value))
 
@@ -255,10 +260,12 @@ cdef class RiskEngine(Component):
 
     cpdef void _log_state(self):
         cdef LogColor color = LogColor.BLUE
+
         if self.trading_state == TradingState.REDUCING:
             color = LogColor.YELLOW
         elif self.trading_state == TradingState.HALTED:
             color = LogColor.RED
+
         self._log.info(
             f"TradingState is {trading_state_to_str(self.trading_state)}",
             color=color,
@@ -393,6 +400,7 @@ cdef class RiskEngine(Component):
     cpdef void _execute_command(self, Command command):
         if self.debug:
             self._log.debug(f"{RECV}{CMD} {command}", LogColor.MAGENTA)
+
         self.command_count += 1
 
         if isinstance(command, SubmitOrder):
@@ -414,9 +422,11 @@ cdef class RiskEngine(Component):
 
         # Check reduce only
         cdef Position position
+
         if command.position_id is not None:
             if order.is_reduce_only:
                 position = self._cache.position(command.position_id)
+
                 if position is None or not order.would_reduce_only(position.side, position.quantity):
                     self._deny_command(
                         command=command,
@@ -426,6 +436,7 @@ cdef class RiskEngine(Component):
 
         # Get instrument for order
         cdef Instrument instrument = self._cache.instrument(order.instrument_id)
+
         if instrument is None:
             self._deny_command(
                 command=command,
@@ -452,6 +463,7 @@ cdef class RiskEngine(Component):
 
         # Get instrument for orders
         cdef Instrument instrument = self._cache.instrument(command.instrument_id)
+
         if instrument is None:
             self._deny_command(
                 command=command,
@@ -478,6 +490,7 @@ cdef class RiskEngine(Component):
         # VALIDATE COMMAND
         ########################################################################
         cdef Order order = self._cache.order(command.client_order_id)
+
         if order is None:
             self._log.error(
                 f"ModifyOrder DENIED: Order with {command.client_order_id!r} not found",
@@ -498,6 +511,7 @@ cdef class RiskEngine(Component):
 
         # Get instrument for orders
         cdef Instrument instrument = self._cache.instrument(command.instrument_id)
+
         if instrument is None:
             self._reject_modify_order(
                 order=order,
@@ -509,18 +523,21 @@ cdef class RiskEngine(Component):
 
         # Check price
         risk_msg = self._check_price(instrument, command.price)
+
         if risk_msg:
             self._reject_modify_order(order=order, reason=risk_msg)
             return  # Denied
 
         # Check trigger
         risk_msg = self._check_price(instrument, command.trigger_price)
+
         if risk_msg:
             self._reject_modify_order(order=order, reason=risk_msg)
             return  # Denied
 
         # Check quantity
-        risk_msg = self._check_quantity(instrument, command.quantity)
+        risk_msg = self._check_quantity(instrument, command.quantity, order.is_quote_quantity)
+
         if risk_msg:
             self._reject_modify_order(order=order, reason=risk_msg)
             return  # Denied
@@ -580,8 +597,10 @@ cdef class RiskEngine(Component):
         # CHECK PRICE
         ########################################################################
         cdef str risk_msg = None
+
         if order.has_price_c():
             risk_msg = self._check_price(instrument, order.price)
+
             if risk_msg:
                 self._deny_order(order=order, reason=risk_msg)
                 return False  # Denied
@@ -591,6 +610,7 @@ cdef class RiskEngine(Component):
         ########################################################################
         if order.has_trigger_price_c():
             risk_msg = self._check_price(instrument, order.trigger_price)
+
             if risk_msg:
                 self._deny_order(order=order, reason=f"trigger {risk_msg}")
                 return False  # Denied
@@ -598,7 +618,8 @@ cdef class RiskEngine(Component):
         return True  # Passed
 
     cpdef bint _check_order_quantity(self, Instrument instrument, Order order):
-        cdef str risk_msg = self._check_quantity(instrument, order.quantity)
+        cdef str risk_msg = self._check_quantity(instrument, order.quantity, order.is_quote_quantity)
+
         if risk_msg:
             self._deny_order(order=order, reason=risk_msg)
             return False  # Denied
@@ -610,6 +631,27 @@ cdef class RiskEngine(Component):
         # RISK CHECKS
         ########################################################################
 
+        # Group orders by account_id to handle multiple accounts per instrument
+        cdef dict orders_by_account = {}  # type: dict[AccountId, list]
+        cdef:
+            Order order
+            AccountId account_id
+        for order in orders:
+            if order.account_id not in orders_by_account:
+                orders_by_account[order.account_id] = []
+
+            orders_by_account[order.account_id].append(order)
+
+        # Check each account group separately
+        cdef list account_orders
+        for account_id, account_orders in orders_by_account.items():
+            if not self._check_orders_risk_for_account(instrument, account_orders, account_id):
+                return False  # Denied
+
+        return True  # All checks passed
+
+    cpdef bint _check_orders_risk_for_account(self, Instrument instrument, list orders, AccountId account_id):
+        # Check orders for a specific account (or venue-based lookup if account_id is None)
         cdef QuoteTick last_quote = None
         cdef TradeTick last_trade = None
         cdef Price last_px = None
@@ -618,22 +660,80 @@ cdef class RiskEngine(Component):
         # Determine max notional
         cdef Money max_notional = None
         max_notional_setting: Decimal | None = self._max_notional_per_order.get(instrument.id)
+
         if max_notional_setting:
             # TODO: Improve efficiency of this
             max_notional = Money(float(max_notional_setting), instrument.quote_currency)
 
         # Get account for risk checks
-        cdef Account account = self._cache.account_for_venue(instrument.id.venue)
+        cdef Account account = self._cache.account_for_venue(instrument.id.venue, account_id)
+
         if account is None:
-            self._log.debug(f"Cannot find account for venue {instrument.id.venue}")
+            self._log.debug(
+                f"Cannot find account for venue {instrument.id.venue} "
+                f"(account_id={account_id.get_issuer() if account_id is not None else None})"
+            )
             return True  # TODO: Temporary early return until handling routing/multiple venues
 
         if account.is_margin_account:
             return True  # TODO: Determine risk controls for margin
 
+        cdef bint allow_borrowing = isinstance(account, CashAccount) and account.allow_borrowing
+
         free = account.balance_free(instrument.quote_currency)
+
         if self.debug:
             self._log.debug(f"Free: {free!r}", LogColor.MAGENTA)
+
+        # Get net LONG position quantity for this instrument (for position-reducing sell checks),
+        # accounting for already submitted (but unfilled) SELL orders to prevent overselling.
+        cdef list[Position] open_longs = self._cache.positions_open(
+            None,
+            instrument.id,
+            None,
+            PositionSide.LONG,
+        )
+        cdef Quantity net_long_qty = Quantity.zero_c(instrument.size_precision)
+        cdef Position position
+        for position in open_longs:
+            net_long_qty = Quantity.from_raw_c(
+                net_long_qty._mem.raw + position.quantity._mem.raw,
+                instrument.size_precision,
+            )
+
+        # Get pending (open) SELL orders for this instrument
+        cdef list open_sell_orders = self._cache.orders_open(
+            None,
+            instrument.id,
+            None,
+            OrderSide.SELL,
+        )
+        cdef Quantity submitted_sell_qty = Quantity.zero_c(instrument.size_precision)
+        cdef Order open_order
+        for open_order in open_sell_orders:
+            submitted_sell_qty = Quantity.from_raw_c(
+                submitted_sell_qty._mem.raw + open_order.leaves_qty._mem.raw,
+                instrument.size_precision,
+            )
+
+        # Available quantity is long position minus already submitted sells
+        cdef Quantity available_long_qty
+        if submitted_sell_qty._mem.raw >= net_long_qty._mem.raw:
+            available_long_qty = Quantity.zero_c(instrument.size_precision)
+        else:
+            available_long_qty = Quantity.from_raw_c(
+                net_long_qty._mem.raw - submitted_sell_qty._mem.raw,
+                instrument.size_precision,
+            )
+
+        if self.debug and net_long_qty._mem.raw > 0:
+            self._log.debug(
+                f"Net LONG qty: {net_long_qty}, submitted sells: {submitted_sell_qty}, available: {available_long_qty}",
+                LogColor.MAGENTA,
+            )
+
+        # Track cumulative sell quantity to determine position-reducing vs position-opening sells
+        cdef Quantity cum_sell_qty = Quantity.zero_c(instrument.size_precision)
 
         cdef:
             Order order
@@ -645,6 +745,9 @@ cdef class RiskEngine(Component):
             Currency base_currency = None
             double xrate
             Quantity effective_quantity
+            Price effective_price
+            bint is_position_reducing_sell
+            Quantity pending_sell_qty
         for order in orders:
             if self.debug:
                 self._log.debug(f"Pre-trade risk check: {order}", LogColor.MAGENTA)
@@ -653,6 +756,7 @@ cdef class RiskEngine(Component):
                 if last_px is None:
                     # Determine entry price
                     last_quote = self._cache.quote_tick(instrument.id)
+
                     if last_quote is not None:
                         if order.side == OrderSide.BUY:
                             last_px = last_quote.ask_price
@@ -662,6 +766,7 @@ cdef class RiskEngine(Component):
                             raise RuntimeError(f"invalid `OrderSide`")
                     else:
                         last_trade = self._cache.trade_tick(instrument.id)
+
                         if last_trade is not None:
                             last_px = last_trade.price
                         else:
@@ -673,25 +778,116 @@ cdef class RiskEngine(Component):
                 last_px = order.trigger_price
             elif order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
                 if order.trigger_price is None:
-                    self._log.warning(
-                        f"Cannot check {order_type_to_str(order.order_type)} order risk: "
-                        f"no trigger price was set",  # TODO: Use last_trade += offset
-                    )
-                    continue  # Cannot assess risk
+                    # Validate trailing offset type is supported
+                    if order.trailing_offset_type not in (TrailingOffsetType.PRICE, TrailingOffsetType.BASIS_POINTS, TrailingOffsetType.TICKS):
+                        self._deny_order(
+                            order=order,
+                            reason=f"UNSUPPORTED_TRAILING_OFFSET_TYPE: {trailing_offset_type_to_str(order.trailing_offset_type)}",
+                        )
+                        return False
+
+                    last_trade = None
+                    last_quote = None
+
+                    if order.trigger_type == TriggerType.BID_ASK:
+                        last_quote = self._cache.quote_tick(instrument.id)
+                        if last_quote is None:
+                            self._log.warning(
+                                f"Cannot check {order_type_to_str(order.order_type)} order risk: no trigger price set and no bid/ask quotes available for {instrument.id}",
+                            )
+                            continue
+                        last_px = TrailingStopCalculator.calculate_with_bid_ask(
+                            price_increment=instrument.price_increment,
+                            trailing_offset_type=order.trailing_offset_type,
+                            side=order.side,
+                            offset=float(order.trailing_offset),
+                            bid=last_quote.bid_price,
+                            ask=last_quote.ask_price,
+                        )
+                    else:
+                        last_trade = self._cache.trade_tick(instrument.id)
+                        if last_trade is not None:
+                            last_px = TrailingStopCalculator.calculate_with_last(
+                                price_increment=instrument.price_increment,
+                                trailing_offset_type=order.trailing_offset_type,
+                                side=order.side,
+                                offset=float(order.trailing_offset),
+                                last=last_trade.price,
+                            )
+                        elif order.trigger_type == TriggerType.LAST_OR_BID_ASK:
+                            # Fallback to bid/ask when no trade data available
+                            last_quote = self._cache.quote_tick(instrument.id)
+                            if last_quote is None:
+                                self._log.warning(
+                                    f"Cannot check {order_type_to_str(order.order_type)} order risk: no trigger price set and no market data available for {instrument.id}",
+                                )
+                                continue
+                            last_px = TrailingStopCalculator.calculate_with_bid_ask(
+                                price_increment=instrument.price_increment,
+                                trailing_offset_type=order.trailing_offset_type,
+                                side=order.side,
+                                offset=float(order.trailing_offset),
+                                bid=last_quote.bid_price,
+                                ask=last_quote.ask_price,
+                            )
+                        else:
+                            self._log.warning(
+                                f"Cannot check {order_type_to_str(order.order_type)} order risk: no trigger price set and no market data available for {instrument.id}",
+                            )
+                            continue
                 else:
                     last_px = order.trigger_price
             else:
                 last_px = order.price
 
+            # For quote quantity limit orders, use worst-case execution price
+            if (
+                order.is_quote_quantity
+                and not instrument.is_inverse
+                and (order.order_type == OrderType.LIMIT or order.order_type == OrderType.STOP_LIMIT)
+            ):
+                # Get current market price for worst-case execution
+                last_quote = self._cache.quote_tick(instrument.id)
+                if last_quote is not None:
+                    if order.side == OrderSide.BUY:
+                        # BUY: could execute at best ask if below limit (more quantity)
+                        effective_price = last_px if last_px < last_quote.ask_price else last_quote.ask_price
+                    elif order.side == OrderSide.SELL:
+                        # SELL: could execute at best bid if above limit (but less quantity, so use limit)
+                        effective_price = last_px if last_px > last_quote.bid_price else last_quote.bid_price
+                    else:
+                        effective_price = last_px
+                else:
+                    effective_price = last_px  # No market data, use limit price
+            else:
+                effective_price = last_px
+
             # Convert quote quantity to base quantity if needed for balance calculations
             if order.is_quote_quantity and not instrument.is_inverse:
-                effective_quantity = instrument.calculate_base_quantity(order.quantity, last_px)
+                effective_quantity = instrument.calculate_base_quantity(order.quantity, effective_price)
+
                 if self.debug:
                     self._log.debug(f"Converted quote quantity {order.quantity} to base quantity {effective_quantity}", LogColor.MAGENTA)
             else:
                 effective_quantity = order.quantity
 
+            # Check min/max quantity against effective quantity
+            if instrument.max_quantity and effective_quantity > instrument.max_quantity:
+                self._deny_order(
+                    order=order,
+                    reason=f"QUANTITY_EXCEEDS_MAXIMUM: effective_quantity={effective_quantity}, max_quantity={instrument.max_quantity}",
+                )
+                return False  # Denied
+
+            if instrument.min_quantity and effective_quantity < instrument.min_quantity:
+                self._deny_order(
+                    order=order,
+                    reason=f"QUANTITY_BELOW_MINIMUM: effective_quantity={effective_quantity}, min_quantity={instrument.min_quantity}",
+                )
+                return False  # Denied
+
             notional = instrument.notional_value(effective_quantity, last_px, use_quote_for_inverse=True)
+
             if self.debug:
                 self._log.debug(f"Notional: {notional!r}", LogColor.MAGENTA)
 
@@ -727,10 +923,12 @@ cdef class RiskEngine(Component):
                 return False  # Denied
 
             order_balance_impact = account.balance_impact(instrument, effective_quantity, last_px, order.side)
+
             if self.debug:
                 self._log.debug(f"Balance impact: {order_balance_impact!r}", LogColor.MAGENTA)
 
-            if free is not None and (free._mem.raw + order_balance_impact._mem.raw) < 0:
+            # Skip balance check when borrowing is enabled (e.g. spot margin trading)
+            if not allow_borrowing and free is not None and (free._mem.raw + order_balance_impact._mem.raw) < 0:
                 self._deny_order(
                     order=order,
                     reason=f"NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, balance_impact={order_balance_impact}",
@@ -748,13 +946,32 @@ cdef class RiskEngine(Component):
 
                 if self.debug:
                     self._log.debug(f"Cumulative notional BUY: {cum_notional_buy!r}")
-                if free is not None and cum_notional_buy._mem.raw > free._mem.raw:
+
+                if not allow_borrowing and free is not None and cum_notional_buy._mem.raw > free._mem.raw:
                     self._deny_order(
                         order=order,
                         reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_buy}",
                     )
                     return False  # Denied
             elif order.is_sell_c():
+                pending_sell_qty = Quantity.from_raw_c(
+                    cum_sell_qty._mem.raw + effective_quantity._mem.raw,
+                    instrument.size_precision,
+                )
+                is_position_reducing_sell = (
+                    order.is_reduce_only
+                    or pending_sell_qty._mem.raw <= available_long_qty._mem.raw
+                )
+                cum_sell_qty = pending_sell_qty
+
+                if is_position_reducing_sell:
+                    if self.debug:
+                        self._log.debug(
+                            "Position-reducing SELL skips balance check",
+                            LogColor.MAGENTA,
+                        )
+                    continue
+
                 if account.base_currency is not None:
                     if cum_notional_sell is None:
                         cum_notional_sell = Money(order_balance_impact, order_balance_impact.currency)
@@ -763,7 +980,7 @@ cdef class RiskEngine(Component):
 
                     if self.debug:
                         self._log.debug(f"Cumulative notional SELL: {cum_notional_sell!r}")
-                    if free is not None and cum_notional_sell._mem.raw > free._mem.raw:
+                    if not allow_borrowing and free is not None and cum_notional_sell._mem.raw > free._mem.raw:
                         self._deny_order(
                             order=order,
                             reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}",
@@ -771,10 +988,11 @@ cdef class RiskEngine(Component):
                         return False  # Denied
                 elif base_currency is not None and account.type == AccountType.CASH:
                     cash_value = Money(effective_quantity.as_f64_c(), base_currency)
+                    free = account.balance_free(base_currency)
+
                     if self.debug:
                         total = account.balance_total(base_currency)
                         locked = account.balance_locked(base_currency)
-                        free = account.balance_free(base_currency)
                         self._log.debug(f"Cash value: {cash_value!r}", LogColor.MAGENTA)
                         self._log.debug(f"Total: {total!r}", LogColor.MAGENTA)
                         self._log.debug(f"Locked: {locked!r}", LogColor.MAGENTA)
@@ -787,7 +1005,7 @@ cdef class RiskEngine(Component):
 
                     if self.debug:
                         self._log.debug(f"Cumulative notional SELL: {cum_notional_sell!r}")
-                    if free is not None and cum_notional_sell._mem.raw > free._mem.raw:
+                    if not allow_borrowing and free is not None and cum_notional_sell._mem.raw > free._mem.raw:
                         self._deny_order(
                             order=order,
                             reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}",
@@ -801,24 +1019,33 @@ cdef class RiskEngine(Component):
         if price is None:
             # Nothing to check
             return None
+
         if price.precision > instrument.price_precision:
             # Check failed
             return f"price {price} invalid (precision {price.precision} > {instrument.price_precision})"
-        if instrument.instrument_class != InstrumentClass.OPTION:
+
+        if instrument.instrument_class not in NEGATIVE_PRICE_INSTRUMENT_CLASSES:
             if price.raw_int_c() <= 0:
                 # Check failed
                 return f"price {price} invalid (not positive)"
 
-    cpdef str _check_quantity(self, Instrument instrument, Quantity quantity):
+    cpdef str _check_quantity(self, Instrument instrument, Quantity quantity, bint is_quote_quantity=False):
         if quantity is None:
             # Nothing to check
             return None
+
         if quantity._mem.precision > instrument.size_precision:
             # Check failed
             return f"quantity {quantity} invalid (precision {quantity._mem.precision} > {instrument.size_precision})"
+
+        # Skip min/max checks for quote quantities (they will be checked in _check_orders_risk using effective_quantity)
+        if is_quote_quantity:
+            return None
+
         if instrument.max_quantity and quantity > instrument.max_quantity:
             # Check failed
             return f"quantity {quantity} invalid (> maximum trade size of {instrument.max_quantity})"
+
         if instrument.min_quantity and quantity < instrument.min_quantity:
             # Check failed
             return f"quantity {quantity} invalid (< minimum trade size of {instrument.min_quantity})"
@@ -843,9 +1070,11 @@ cdef class RiskEngine(Component):
     # Needs to be `cpdef` due being called from throttler
     cpdef void _deny_modify_order(self, ModifyOrder command):
         cdef Order order = self._cache.order(command.client_order_id)
+
         if order is None:
             self._log.error(f"Order with {command.client_order_id!r} not found")
             return
+
         self._reject_modify_order(order, reason="Exceeded MAX_ORDER_MODIFY_RATE")
 
     cpdef void _deny_order(self, Order order, str reason):
@@ -886,6 +1115,7 @@ cdef class RiskEngine(Component):
     cpdef void _execution_gateway(self, Instrument instrument, TradingCommand command):
         # Check TradingState
         cdef Order order
+
         if self.trading_state == TradingState.HALTED:
             if isinstance(command, SubmitOrder):
                 self._deny_command(
@@ -902,6 +1132,7 @@ cdef class RiskEngine(Component):
         elif self.trading_state == TradingState.REDUCING:
             if isinstance(command, SubmitOrder):
                 order = command.order
+
                 if order.is_buy_c() and self._portfolio.is_net_long(instrument.id):
                     self._deny_command(
                         command=command,
@@ -959,4 +1190,5 @@ cdef class RiskEngine(Component):
     cpdef void _handle_event(self, Event event):
         if self.debug:
             self._log.debug(f"{RECV}{EVT} {event}", LogColor.MAGENTA)
+
         self.event_count += 1

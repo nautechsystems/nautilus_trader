@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,8 +15,6 @@
 """
 Define the schemas for the GetAddress endpoint.
 """
-
-# ruff: noqa: N815
 
 import datetime
 from decimal import Decimal
@@ -38,7 +36,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Quantity
 
 
-class DYDXPerpetualPosition(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXPerpetualPosition(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the perpetual position.
     """
@@ -132,7 +130,7 @@ class DYDXPerpetualPosition(msgspec.Struct, forbid_unknown_fields=True):
         )
 
 
-class DYDXAssetPosition(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXAssetPosition(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the asset position.
     """
@@ -144,7 +142,7 @@ class DYDXAssetPosition(msgspec.Struct, forbid_unknown_fields=True):
     subaccountNumber: int
 
 
-class DYDXSubaccount(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXSubaccount(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the schema for the subaccount response.
     """
@@ -160,7 +158,7 @@ class DYDXSubaccount(msgspec.Struct, forbid_unknown_fields=True):
     latestProcessedBlockHeight: str | None = None
 
 
-class DYDXSubaccountResponse(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXSubaccountResponse(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the address response message.
     """
@@ -168,7 +166,7 @@ class DYDXSubaccountResponse(msgspec.Struct, forbid_unknown_fields=True):
     subaccount: DYDXSubaccount
 
 
-class DYDXAddressResponse(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXAddressResponse(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the address response message.
     """

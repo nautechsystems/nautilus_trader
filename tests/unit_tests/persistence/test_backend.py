@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
+import pytest
 
 from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
@@ -35,15 +36,15 @@ def test_backend_session_order_book_deltas() -> None:
     # Act
     result = session.to_query_result()
 
-    ticks = []
+    deltas = []
     for chunk in result:
-        ticks.extend(capsule_to_list(chunk))
+        deltas.extend(capsule_to_list(chunk))
 
     # Assert
-    assert pd.read_parquet(data_path).shape[0] == 1077
-    assert len(ticks) == 1077
-    is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
-    assert is_ascending
+    assert pd.read_parquet(data_path).shape[0] == 1_077
+    assert len(deltas) == 1_077
+    # TODO: deltas.parquet does not have non decreasing timestamps and so would fail the
+    # is_ascending check (bad data file)
 
 
 def test_backend_session_quotes() -> None:
@@ -59,15 +60,17 @@ def test_backend_session_quotes() -> None:
     # Act
     result = session.to_query_result()
 
-    ticks = []
+    quotes = []
     for chunk in result:
-        ticks.extend(capsule_to_list(chunk))
+        quotes.extend(capsule_to_list(chunk))
 
     # TODO: Quote tick test data currently uses incorrectly scaled prices and sizes and needs repair
     # Assert
-    assert len(ticks) == 9_500
-    assert str(ticks[-1]) == "EUR/USD.SIM,112.13000,112.13200,10000000,10000000,1577919652000000125"
-    is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
+    assert len(quotes) == 9_500
+    assert (
+        str(quotes[-1]) == "EUR/USD.SIM,112.13000,112.13200,10000000,10000000,1577919652000000125"
+    )
+    is_ascending = all(quotes[i].ts_init <= quotes[i + 1].ts_init for i in range(len(quotes) - 1))
     assert is_ascending
 
 
@@ -84,13 +87,13 @@ def test_backend_session_trades() -> None:
     # Act
     result = session.to_query_result()
 
-    ticks = []
+    trades = []
     for chunk in result:
-        ticks.extend(capsule_to_list(chunk))
+        trades.extend(capsule_to_list(chunk))
 
     # Assert
-    assert len(ticks) == 100
-    is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
+    assert len(trades) == 100
+    is_ascending = all(trades[i].ts_init <= trades[i + 1].ts_init for i in range(len(trades) - 1))
     assert is_ascending
 
 
@@ -113,7 +116,7 @@ def test_backend_session_bars() -> None:
 
     # Assert
     assert len(bars) == 10
-    is_ascending = all(bars[i].ts_init <= bars[i].ts_init for i in range(len(bars) - 1))
+    is_ascending = all(bars[i].ts_init <= bars[i + 1].ts_init for i in range(len(bars) - 1))
     assert is_ascending
 
 
@@ -133,11 +136,65 @@ def test_backend_session_multiple_types() -> None:
     # Act
     result = session.to_query_result()
 
-    ticks = []
+    data = []
     for chunk in result:
-        ticks.extend(capsule_to_list(chunk))
+        data.extend(capsule_to_list(chunk))
 
     # Assert
-    assert len(ticks) == 9_600
-    is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
+    assert len(data) == 9_600
+    is_ascending = all(data[i].ts_init <= data[i + 1].ts_init for i in range(len(data) - 1))
     assert is_ascending
+
+
+def test_backend_session_register_object_store_from_uri_local_file() -> None:
+    """
+    Test registering object store from local file URI.
+    """
+    # Arrange
+    if HIGH_PRECISION:
+        data_path = TEST_DATA_DIR / "nautilus" / "128-bit" / "trades.parquet"
+    else:
+        data_path = TEST_DATA_DIR / "nautilus" / "64-bit" / "trades.parquet"
+
+    session = DataBackendSession()
+
+    # Act - register object store from local file URI
+    file_uri = f"file://{data_path.parent}"
+    session.register_object_store_from_uri(file_uri)
+
+    # Add file using the registered object store
+    session.add_file(NautilusDataType.TradeTick, "trade_ticks", str(data_path))
+    result = session.to_query_result()
+
+    trades = []
+    for chunk in result:
+        trades.extend(capsule_to_list(chunk))
+
+    # Assert
+    assert len(trades) == 100
+    is_ascending = all(trades[i].ts_init <= trades[i + 1].ts_init for i in range(len(trades) - 1))
+    assert is_ascending
+
+
+def test_backend_session_register_object_store_from_uri_invalid_uri() -> None:
+    """
+    Test registering object store from invalid URI raises appropriate error.
+    """
+    # Arrange
+    session = DataBackendSession()
+
+    # Act & Assert - invalid URI should raise an error
+    with pytest.raises(Exception):  # The specific exception type may vary
+        session.register_object_store_from_uri("invalid://not-a-real-uri")
+
+
+def test_backend_session_register_object_store_from_uri_nonexistent_path() -> None:
+    """
+    Test registering object store from non-existent path URI.
+    """
+    # Arrange
+    session = DataBackendSession()
+
+    # Act & Assert - non-existent path should raise an error
+    with pytest.raises(Exception):  # The specific exception type may vary
+        session.register_object_store_from_uri("file:///nonexistent/path")

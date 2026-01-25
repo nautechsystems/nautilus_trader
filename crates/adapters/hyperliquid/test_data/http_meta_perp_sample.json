@@ -1,0 +1,25 @@
+{
+  "universe": [
+    {
+      "isDelisted": null,
+      "maxLeverage": 40,
+      "name": "BTC",
+      "onlyIsolated": null,
+      "szDecimals": 5
+    },
+    {
+      "isDelisted": null,
+      "maxLeverage": 25,
+      "name": "ETH",
+      "onlyIsolated": null,
+      "szDecimals": 4
+    },
+    {
+      "isDelisted": null,
+      "maxLeverage": 5,
+      "name": "ATOM",
+      "onlyIsolated": null,
+      "szDecimals": 2
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,17 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Generic, TypeVar
+from weakref import WeakSet
 
 from nautilus_trader.common.component import Clock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.core.nautilus_pyo3 import NANOSECONDS_IN_SECOND
 
 
-T = TypeVar("T")
-
-
-class ThrottledEnqueuer(Generic[T]):
+class ThrottledEnqueuer[T]:
     """
     Manages enqueuing messages of type T onto an internal asynchronous queue.
 
@@ -57,6 +54,7 @@ class ThrottledEnqueuer(Generic[T]):
         self._clock = clock
         self._log = logger
         self._ts_last_logged: int = 0
+        self._pending_tasks: WeakSet[asyncio.Task] = WeakSet()
 
     @property
     def qname(self) -> str:
@@ -114,7 +112,9 @@ class ThrottledEnqueuer(Generic[T]):
             self._loop.call_soon_threadsafe(self._enqueue_nowait_safely, self._queue, msg)
             return
 
-        self._loop.create_task(self._queue.put(msg))
+        task = self._loop.create_task(self._queue.put(msg))
+        task.add_done_callback(self._handle_task_exception)
+        self._pending_tasks.add(task)
 
         # Throttle logging to once per second
         now_ns = self._clock.timestamp_ns()
@@ -125,6 +125,26 @@ class ThrottledEnqueuer(Generic[T]):
             )
             self._ts_last_logged = now_ns
 
+    def cancel_pending_tasks(self) -> None:
+        """
+        Cancel all pending async put tasks.
+
+        This should be called during shutdown to prevent "Task was destroyed but it is
+        pending!" warnings.
+
+        """
+        for task in list(self._pending_tasks):
+            if not task.done():
+                task.cancel()
+
+    def _handle_task_exception(self, task: asyncio.Task) -> None:
+        if task.cancelled():
+            return
+
+        exc = task.exception()
+        if exc is not None:
+            self._log.error(f"Error putting message on {self._qname}: {exc!r}")
+
     def _enqueue_nowait_safely(self, queue: asyncio.Queue, msg: T) -> None:
         # Attempt put_nowait(msg) and if the queue is full,
         # schedule an async put() as a fallback.
@@ -132,10 +152,5 @@ class ThrottledEnqueuer(Generic[T]):
             queue.put_nowait(msg)
         except asyncio.QueueFull:
             task = asyncio.create_task(queue.put(msg))
-            task.add_done_callback(
-                lambda t: (
-                    self._log.error(f"Error putting on queue: {t.exception()!r}")
-                    if t.exception()
-                    else None
-                ),
-            )
+            task.add_done_callback(self._handle_task_exception)
+            self._pending_tasks.add(task)

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,10 +15,10 @@
 
 import asyncio
 import concurrent.futures
-import os
 import platform
 import signal
 import socket
+import sys
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -89,10 +89,13 @@ from nautilus_trader.trading.trader import Trader
 
 try:
     import uvloop
-
-    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 except ImportError:  # pragma: no cover
     uvloop = None
+
+# Only set uvloop policy if not running in test environment,
+# pytest-asyncio manages the event loop policy for tests via event_loop_policy fixture.
+if uvloop is not None and "pytest" not in sys.modules:
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 
 class NautilusKernel:
@@ -126,7 +129,7 @@ class NautilusKernel:
 
     """
 
-    def __init__(  # noqa (too complex)
+    def __init__(  # noqa: C901 (too complex)
         self,
         name: str,
         config: NautilusKernelConfig,
@@ -173,7 +176,7 @@ class NautilusKernel:
 
         register_component_clock(self._instance_id, self._clock)
 
-        # Initialize logging system
+        # Initialize logging subsystem
         self._log_guard: nautilus_pyo3.LogGuard | LogGuard | None = None
         logging: LoggingConfig = config.logging or LoggingConfig()
 
@@ -189,15 +192,9 @@ class NautilusKernel:
                 file_path.open("w").close()
 
         if not is_logging_initialized():
-            if "RUST_LOG" not in os.environ:
-                os.environ["RUST_LOG"] = "off"
-
             if not logging.bypass_logging:
                 if logging.use_pyo3:
                     set_logging_pyo3(True)
-
-                    # Initialize tracing for async Rust
-                    nautilus_pyo3.init_tracing()
 
                     # Initialize logging for sync Rust and Python
                     self._log_guard = nautilus_pyo3.init_logging(
@@ -205,6 +202,7 @@ class NautilusKernel:
                         instance_id=nautilus_pyo3.UUID4.from_str(self._instance_id.value),
                         level_stdout=nautilus_pyo3.LogLevel(logging.log_level),
                         level_file=nautilus_pyo3.LogLevel(logging.log_level_file or "OFF"),
+                        component_levels=logging.log_component_levels,
                         directory=logging.log_directory,
                         file_name=logging.log_file_name,
                         file_format=logging.log_file_format,
@@ -216,6 +214,7 @@ class NautilusKernel:
                         is_colored=logging.log_colors,
                         is_bypassed=logging.bypass_logging,
                         print_config=logging.print_config,
+                        log_components_only=logging.log_components_only,
                     )
                     nautilus_pyo3.log_header(
                         trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
@@ -224,6 +223,8 @@ class NautilusKernel:
                         component=name,
                     )
                 else:
+                    set_logging_pyo3(False)
+
                     # Initialize logging for sync Rust and Python
                     self._log_guard = init_logging(
                         trader_id=self._trader_id,
@@ -242,6 +243,7 @@ class NautilusKernel:
                         colors=logging.log_colors,
                         bypass=logging.bypass_logging,
                         print_config=logging.print_config,
+                        log_components_only=logging.log_components_only,
                         max_file_size=logging.log_file_max_size or 0,
                         max_backup_count=logging.log_file_max_backup_count,
                     )
@@ -257,18 +259,24 @@ class NautilusKernel:
                     "when not safe to bypass logging in a LIVE context",
                 )
 
+        if logging.use_tracing and not nautilus_pyo3.tracing_is_initialized():
+            nautilus_pyo3.init_tracing()
+
         self._log: Logger = Logger(name=name)
         self._log.info("Building system kernel")
 
         # Set up loop (if sandbox live)
         self._loop: asyncio.AbstractEventLoop | None = None
+
         if self._environment != Environment.BACKTEST:
             self._loop = loop or asyncio.get_running_loop()
+
             if loop is not None:
                 self._executor = concurrent.futures.ThreadPoolExecutor()
                 self._loop.set_default_executor(self._executor)
                 self._loop.set_debug(config.loop_debug)
                 self._loop_sig_callback = loop_sig_callback
+
                 if platform.system() != "Windows":
                     # Windows does not support signal handling
                     # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
@@ -304,7 +312,7 @@ class NautilusKernel:
                 instance_id=self._instance_id,
                 serializer=MsgSpecSerializer(
                     encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
-                    timestamps_as_str=True,  # Hard-coded for now
+                    timestamps_as_str=True,  # Hardcoded for now
                     timestamps_as_iso8601=config.cache.timestamps_as_iso8601,
                 ),
                 config=config.cache,
@@ -325,7 +333,7 @@ class NautilusKernel:
             encoding = config.message_bus.encoding.lower()
             self._msgbus_serializer = MsgSpecSerializer(
                 encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
-                timestamps_as_str=True,  # Hard-coded for now
+                timestamps_as_str=True,  # Hardcoded for now
                 timestamps_as_iso8601=config.message_bus.timestamps_as_iso8601,
             )
 
@@ -364,6 +372,7 @@ class NautilusKernel:
                     f"Cannot use `LiveDataEngineConfig` in a '{config.environment.value}' environment. "
                     "Try using a `DataEngineConfig`.",
                 )
+
             self._data_engine = LiveDataEngine(
                 loop=self.loop,
                 msgbus=self._msgbus,
@@ -377,6 +386,7 @@ class NautilusKernel:
                     f"Cannot use `DataEngineConfig` in a '{config.environment.value}' environment. "
                     "Try using a `LiveDataEngineConfig`.",
                 )
+
             self._data_engine = DataEngine(
                 msgbus=self._msgbus,
                 cache=self._cache,
@@ -393,6 +403,7 @@ class NautilusKernel:
                     f"Cannot use `LiveRiskEngineConfig` in a '{config.environment.value}' environment. "
                     "Try using a `RiskEngineConfig`.",
                 )
+
             self._risk_engine = LiveRiskEngine(
                 loop=self.loop,
                 portfolio=self._portfolio,
@@ -407,6 +418,7 @@ class NautilusKernel:
                     f"Cannot use `RiskEngineConfig` in a '{config.environment.value}' environment. "
                     "Try using a `LiveRiskEngineConfig`.",
                 )
+
             self._risk_engine = RiskEngine(
                 portfolio=self._portfolio,
                 msgbus=self._msgbus,
@@ -424,6 +436,7 @@ class NautilusKernel:
                     f"Cannot use `LiveExecEngineConfig` in a '{config.environment.value}' environment. "
                     "Try using an `ExecEngineConfig`.",
                 )
+
             self._exec_engine = LiveExecutionEngine(
                 loop=self.loop,
                 msgbus=self._msgbus,
@@ -437,6 +450,7 @@ class NautilusKernel:
                     f"Cannot use `ExecEngineConfig` in a '{config.environment.value}' environment. "
                     "Try using an `LiveExecEngineConfig`.",
                 )
+
             self._exec_engine = ExecutionEngine(
                 msgbus=self._msgbus,
                 cache=self._cache,
@@ -473,11 +487,9 @@ class NautilusKernel:
             loop=self._loop,
         )
 
-        if self._load_state:
-            self._trader.load()
-
         # Add controller
         self._controller: Controller | None = None
+
         if self._config.controller:
             self._controller = ControllerFactory.create(
                 config=self._config.controller,
@@ -487,11 +499,13 @@ class NautilusKernel:
 
         # Set up stream writer
         self._writer: StreamingFeatherWriter | None = None
+
         if config.streaming:
             self._setup_streaming(config=config.streaming)
 
         # Set up data catalog
         self._catalogs: dict[str, ParquetDataCatalog] = {}
+
         if config.catalogs:
             catalog_name_index = 0
             for catalog_config in config.catalogs:
@@ -499,8 +513,8 @@ class NautilusKernel:
                     path=catalog_config.path,
                     fs_protocol=catalog_config.fs_protocol,
                     fs_storage_options=catalog_config.fs_storage_options,
+                    fs_rust_storage_options=catalog_config.fs_rust_storage_options,
                 )
-
                 used_catalog_name = catalog_config.name
 
                 if used_catalog_name is None:
@@ -520,6 +534,9 @@ class NautilusKernel:
             strategy: Strategy = StrategyFactory.create(strategy_config)
             self._trader.add_strategy(strategy)
 
+        if self._load_state:
+            self._trader.load()
+
         # Create importable execution algorithms
         for exec_algorithm_config in config.exec_algorithms:
             exec_algorithm: ExecAlgorithm = ExecAlgorithmFactory.create(exec_algorithm_config)
@@ -529,7 +546,8 @@ class NautilusKernel:
         self._is_running = False
         self._is_stopping = False
 
-        build_time_ms = nanos_to_millis(time.time_ns() - ts_build)
+        build_time_ns = time.time_ns() - ts_build
+        build_time_ms = nanos_to_millis(build_time_ns) if build_time_ns > 0 else 0
         self._log.info(f"Initialized in {build_time_ms}ms")
 
     def __del__(self) -> None:
@@ -546,8 +564,10 @@ class NautilusKernel:
 
         signal.signal(signal.SIGINT, signal.SIG_DFL)
         signals = (signal.SIGTERM, signal.SIGINT, signal.SIGABRT)
+
         for sig in signals:
             self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
+
         self._log.debug(f"Event loop signal handling setup for {signals}")
 
     def _loop_sig_handler(self, sig: signal.Signals) -> None:
@@ -556,6 +576,7 @@ class NautilusKernel:
 
         self._loop.remove_signal_handler(signal.SIGTERM)
         self._loop.add_signal_handler(signal.SIGINT, lambda: None)
+
         if self._loop_sig_callback:
             self._loop_sig_callback(sig)
 
@@ -577,12 +598,14 @@ class NautilusKernel:
             rotation_interval=config.rotation_interval,
             rotation_time=config.rotation_time,
             rotation_timezone=config.rotation_timezone,
+            replace=config.replace_existing,
         )
         self._trader.subscribe("*", self._writer.write)
         self._log.info(f"Writing data & events to {path}")
 
         # Save a copy of the config for this kernel to the streaming folder.
         full_path = f"{self._writer.path}/config.json"
+
         with self._writer.fs.open(full_path, "wb") as f:
             f.write(self._config.json())
 
@@ -938,9 +961,9 @@ class NautilusKernel:
 
     def get_log_guard(self) -> nautilus_pyo3.LogGuard | LogGuard | None:
         """
-        Return the global logging systems log guard.
+        Return the global logging subsystems log guard.
 
-        May return ``None`` if the logging system was already initialized.
+        May return ``None`` if the logging subsystem was already initialized.
 
         Returns
         -------
@@ -998,8 +1021,11 @@ class NautilusKernel:
         if not await self._await_engines_connected():
             return
 
-        if not await self._await_execution_reconciliation():
-            return
+        if self.exec_engine.reconciliation:
+            if not await self._await_execution_reconciliation():
+                return
+        else:
+            self._log.warning("Reconciliation deactivated")
 
         self._emulator.start()
         self._initialize_portfolio()
@@ -1028,7 +1054,7 @@ class NautilusKernel:
 
         self._stop_engines()
         self._cancel_timers()
-        self._flush_writer()
+        self._close_writer()
 
         self._log.info("STOPPED")
         self._is_running = False
@@ -1069,7 +1095,7 @@ class NautilusKernel:
 
         self._stop_engines()
         self._cancel_timers()
-        self._flush_writer()
+        self._close_writer()
 
         self._log.info("STOPPED")
         self._is_running = False
@@ -1084,14 +1110,21 @@ class NautilusKernel:
         idempotent). Once called, it cannot be reversed, and no other methods should be
         called on this instance.
 
+        Notes
+        -----
+        The log guard is intentionally not disposed to support running multiple engines
+        sequentially without re-initializing logging.
+
         """
         self._stop_engines()
 
         # Dispose all engines
         if not self.data_engine.is_disposed:
             self.data_engine.dispose()
+
         if not self.risk_engine.is_disposed:
             self.risk_engine.dispose()
+
         if not self.exec_engine.is_disposed:
             self.exec_engine.dispose()
 
@@ -1165,6 +1198,7 @@ class NautilusKernel:
                     self._log.warning(
                         f"{len(still_pending)} tasks still pending after {self._config.timeout_shutdown}s timeout:",
                     )
+
                     for t in still_pending:
                         self._log.warning(f"Task '{t.get_name()}' (id={id(t)}) still pending")
 
@@ -1172,6 +1206,7 @@ class NautilusKernel:
                 for d in done:
                     try:
                         exc = d.exception()
+
                         if exc and not isinstance(exc, asyncio.CancelledError):
                             self._log.error(
                                 f"Task '{d.get_name()}' raised unexpected exception: {exc}",
@@ -1213,8 +1248,10 @@ class NautilusKernel:
     def _register_executor(self) -> None:
         for actor in self.trader.actors():
             actor.register_executor(self._loop, self._executor)
+
         for strategy in self.trader.strategies():
             strategy.register_executor(self._loop, self._executor)
+
         for exec_algorithm in self.trader.exec_algorithms():
             exec_algorithm.register_executor(self._loop, self._executor)
 
@@ -1229,10 +1266,13 @@ class NautilusKernel:
     def _stop_engines(self) -> None:
         if self._data_engine.is_running:
             self._data_engine.stop()
+
         if self._risk_engine.is_running:
             self._risk_engine.stop()
+
         if self._exec_engine.is_running:
             self._exec_engine.stop()
+
         if self._emulator.is_running:
             self._emulator.stop()
 
@@ -1258,6 +1298,7 @@ class NautilusKernel:
             f"({self._config.timeout_connection}s timeout)...",
             color=LogColor.BLUE,
         )
+
         if not await self._check_engines_connected():
             self._log.warning(
                 f"Timed out ({self._config.timeout_connection}s) waiting for engines to connect and initialize"
@@ -1272,10 +1313,10 @@ class NautilusKernel:
 
     async def _await_engines_disconnected(self) -> None:
         self._log.info(
-            f"Awaiting engine disconnections "
-            f"({self._config.timeout_disconnection}s timeout)...",
+            f"Awaiting engine disconnections ({self._config.timeout_disconnection}s timeout)...",
             color=LogColor.BLUE,
         )
+
         if not await self._check_engines_disconnected():
             self._log.error(
                 f"Timed out ({self._config.timeout_disconnection}s) waiting for engines to disconnect"
@@ -1291,7 +1332,8 @@ class NautilusKernel:
             f"({self._config.timeout_reconciliation}s timeout)...",
             color=LogColor.BLUE,
         )
-        if not await self._exec_engine.reconcile_state(
+
+        if not await self._exec_engine.reconcile_execution_state(
             timeout_secs=self._config.timeout_reconciliation,
         ):
             self._log.error("Execution state could not be reconciled")
@@ -1302,9 +1344,10 @@ class NautilusKernel:
 
     async def _await_portfolio_initialization(self) -> bool:
         self._log.info(
-            "Awaiting portfolio initialization " f"({self._config.timeout_portfolio}s timeout)...",
+            f"Awaiting portfolio initialization ({self._config.timeout_portfolio}s timeout)...",
             color=LogColor.BLUE,
         )
+
         if not await self._check_portfolio_initialized():
             self._log.warning(
                 f"Timed out ({self._config.timeout_portfolio}s) waiting for portfolio to initialize"
@@ -1334,14 +1377,19 @@ class NautilusKernel:
         # Thus any delay here will be due to blocking network I/O.
         seconds = self._config.timeout_connection
         timeout: timedelta = self.clock.utc_now() + timedelta(seconds=seconds)
+
         while True:
             await asyncio.sleep(0)
+
             if self.clock.utc_now() >= timeout:
                 return False
+
             if not self._data_engine.check_connected():
                 continue
+
             if not self._exec_engine.check_connected():
                 continue
+
             break
 
         return True
@@ -1351,12 +1399,16 @@ class NautilusKernel:
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
         while True:
             await asyncio.sleep(0)
+
             if self._clock.utc_now() >= timeout:
                 return False
+
             if not self._data_engine.check_disconnected():
                 continue
+
             if not self._exec_engine.check_disconnected():
                 continue
+
             break
 
         return True
@@ -1369,10 +1421,13 @@ class NautilusKernel:
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
         while True:
             await asyncio.sleep(0)
+
             if self._clock.utc_now() >= timeout:
                 return False
+
             if not self._portfolio.initialized:
                 continue
+
             break
 
         return True
@@ -1387,3 +1442,7 @@ class NautilusKernel:
     def _flush_writer(self) -> None:
         if self._writer is not None:
             self._writer.flush()
+
+    def _close_writer(self) -> None:
+        if self._writer is not None:
+            self._writer.close()

@@ -27,6 +27,11 @@ trading strategies. The **Strategies** guide covers how to implement strategies 
 
 The **Instruments** guide covers the different instrument definition specifications for tradable assets and contracts.
 
+## [Value Types](value_types.md)
+
+The **Value Types** guide covers the immutable numeric types (`Price`, `Quantity`, `Money`) used throughout
+the platform, including their arithmetic behavior, precision handling, and type-specific constraints.
+
 ## [Data](data.md)
 
 The NautilusTrader platform defines a range of built-in data types crafted specifically to represent
@@ -42,6 +47,12 @@ well as the flow of execution messages (commands and events).
 
 The **Orders** guide provides more details about the available order types for the platform, along with
 the execution instructions supported for each. Advanced order types and emulated orders are also covered.
+
+## [Positions](positions.md)
+
+The **Positions** guide explains how positions work in NautilusTrader, including their lifecycle,
+aggregation from order fills, profit and loss calculations, and the important concept of position
+snapshotting for netting OMS configurations.
 
 ## [Cache](cache.md)
 
@@ -60,6 +71,12 @@ The `Portfolio` serves as the central hub for managing and tracking all position
 It consolidates position data from multiple instruments, providing a unified view of your holdings, risk exposure, and overall performance.
 Explore this section to understand how NautilusTrader aggregates and updates portfolio state to support effective trading and risk management.
 
+## [Reports](reports.md)
+
+The **Reports** guide covers the reporting capabilities in NautilusTrader, including execution reports,
+portfolio analysis reports, PnL accounting considerations, and how reports are used for backtest
+post-run analysis.
+
 ## [Logging](logging.md)
 
 The platform provides logging for both backtesting and live trading using a high-performance logger implemented in Rust.
@@ -69,11 +86,17 @@ The platform provides logging for both backtesting and live trading using a high
 Backtesting with NautilusTrader is a methodical simulation process that replicates trading
 activities using a specific system implementation.
 
+## [Visualization](visualization.md)
+
+The **Visualization** guide covers the interactive tearsheet system for analyzing backtest
+results, including available charts, themes, customization options, and how to create
+custom visualizations using the extensible chart registry.
+
 ## [Live Trading](live.md)
 
 Live trading in NautilusTrader enables traders to deploy their backtested strategies in real-time
-without any code changes. This seamless transition ensures consistency and reliability, though there
-are key differences between backtesting and live trading.
+without code changes. This transition aims to maintain consistency, though there are key differences
+between backtesting and live trading.
 
 ## [Adapters](adapters.md)
 

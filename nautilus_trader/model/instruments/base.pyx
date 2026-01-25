@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -48,12 +48,18 @@ from nautilus_trader.model.tick_scheme.base cimport TICK_SCHEMES
 from nautilus_trader.model.tick_scheme.base cimport get_tick_scheme
 
 
-EXPIRING_INSTRUMENT_TYPES = {
+EXPIRING_INSTRUMENT_CLASSES = {
     InstrumentClass.FUTURE,
     InstrumentClass.FUTURES_SPREAD,
     InstrumentClass.OPTION,
     InstrumentClass.OPTION_SPREAD,
 }
+
+NEGATIVE_PRICE_INSTRUMENT_CLASSES = (
+    InstrumentClass.OPTION,
+    InstrumentClass.FUTURES_SPREAD,
+    InstrumentClass.OPTION_SPREAD,
+)
 
 
 cdef class Instrument(Data):
@@ -197,24 +203,34 @@ cdef class Instrument(Data):
         if tick_scheme_name is not None:
             Condition.valid_string(tick_scheme_name, "tick_scheme_name")
             Condition.is_in(tick_scheme_name, TICK_SCHEMES, "tick_scheme_name", "TICK_SCHEMES")
+
         if price_increment is not None:
             Condition.positive(price_increment, "price_increment")
+
         if price_precision is not None and price_increment is not None:
             Condition.equal(price_precision, price_increment.precision, "price_precision", "price_increment.precision")  # noqa
+
         if lot_size is not None:
             Condition.positive(lot_size, "lot_size")
+
         if max_quantity is not None:
             Condition.positive(max_quantity, "max_quantity")
+
         if min_quantity is not None:
             Condition.not_negative(min_quantity, "min_quantity")
+
         if max_notional is not None:
             Condition.positive(max_notional, "max_notional")
+
         if min_notional is not None:
             Condition.not_negative(min_notional, "min_notional")
+
         if max_price is not None:
             Condition.positive(max_price, "max_price")
+
         if min_price is not None:
             Condition.not_negative(min_price, "min_price")
+
         Condition.type(margin_init, Decimal, "margin_init")
         Condition.not_negative(margin_init, "margin_init")
         Condition.type(margin_maint, Decimal, "margin_maint")
@@ -258,6 +274,8 @@ cdef class Instrument(Data):
             self._tick_scheme = get_tick_scheme(self.tick_scheme_name)
 
     def __eq__(self, Instrument other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -294,6 +312,7 @@ cdef class Instrument(Data):
         cdef str min_n = values["min_notional"]
         cdef str max_p = values["max_price"]
         cdef str min_p = values["min_price"]
+
         return Instrument(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             raw_symbol=Symbol(values["raw_symbol"]),
@@ -319,6 +338,7 @@ cdef class Instrument(Data):
             taker_fee=Decimal(values["taker_fee"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            tick_scheme_name=values.get("tick_scheme_name"),
             info=values["info"],
         )
 
@@ -350,6 +370,7 @@ cdef class Instrument(Data):
             "taker_fee": str(obj.taker_fee),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "tick_scheme_name": obj.tick_scheme_name,
             "info": obj.info,
         }
 
@@ -406,6 +427,32 @@ cdef class Instrument(Data):
         """
         return self.id.venue
 
+    cpdef bint is_spread(self):
+        """
+        Return whether the instrument is a spread instrument.
+
+        Returns
+        -------
+        bool
+
+        """
+        return len(self.legs()) > 1
+
+    cpdef list legs(self):
+        """
+        Return the list of leg tuples (instrument_id, ratio) for this spread.
+
+        Base implementation returns an empty list. Override in spread instrument
+        classes to return the actual legs.
+
+        Returns
+        -------
+        list[tuple[InstrumentId, int]]
+            List of tuples containing (instrument_id, ratio) for each leg.
+
+        """
+        return [(self.id, 1)]
+
     cpdef Currency get_base_currency(self):
         """
         Return the instruments base currency (if applicable).
@@ -453,6 +500,31 @@ cdef class Instrument(Data):
         else:
             return self.quote_currency
 
+    cpdef void set_tick_scheme(self, str tick_scheme_name):
+        """
+        Set the tick scheme for the instrument.
+
+        Sets both the `tick_scheme_name` and the corresponding tick scheme implementation
+        used for price rounding and tick calculations.
+
+        This will override any previously set tick scheme, including the `tick_scheme_name` field.
+
+        Parameters
+        ----------
+        tick_scheme_name : str
+            The name of the registered tick scheme.
+
+        Raises
+        ------
+        ValueError
+            If `tick_scheme_name` is not a valid string.
+        ValueError
+            If `tick_scheme_name` is not a registered tick scheme.
+
+        """
+        self.tick_scheme_name = tick_scheme_name
+        self._tick_scheme = get_tick_scheme(tick_scheme_name)
+
     cpdef Price make_price(self, value):
         """
         Return a new price from the given value using the instruments price
@@ -469,6 +541,7 @@ cdef class Instrument(Data):
 
         """
         cdef double rounded_value = round(float(value), self._min_price_increment_precision)
+
         return Price(rounded_value, precision=self.price_precision)
 
     cpdef Price next_bid_price(self, double value, int num_ticks=0):
@@ -574,10 +647,12 @@ cdef class Instrument(Data):
         for i in range(num_ticks):
             try:
                 price = self._tick_scheme.next_bid_price(value=value, n=i)
+
                 if price is None:
                     break
                 if self.min_price is not None and price < self.min_price:
                     break
+
                 prices.append(price.as_decimal())
             except Exception:
                 break
@@ -625,10 +700,13 @@ cdef class Instrument(Data):
         for i in range(num_ticks):
             try:
                 price = self._tick_scheme.next_ask_price(value=value, n=i)
+
                 if price is None:
                     break
+
                 if self.max_price is not None and price > self.max_price:
                     break
+
                 prices.append(price.as_decimal())
             except Exception:
                 break
@@ -677,6 +755,7 @@ cdef class Instrument(Data):
                 f"due to size increment {self.size_increment} "
                 f"and size precision {self.size_precision}",
             )
+
         return Quantity(rounded_value, precision=self.size_precision)
 
     cpdef Money notional_value(
@@ -684,12 +763,17 @@ cdef class Instrument(Data):
         Quantity quantity,
         Price price,
         bint use_quote_for_inverse=False,
+        Currency target_currency=None,
+        Price conversion_price=None,
     ):
         """
         Calculate the notional value.
 
         Result will be in quote currency for standard instruments, or base
         currency for inverse instruments.
+
+        If `target_currency` and `conversion_price` are provided, the notional
+        value will be converted to the target currency.
 
         Parameters
         ----------
@@ -699,6 +783,10 @@ cdef class Instrument(Data):
             The price for the calculation.
         use_quote_for_inverse : bool
             If inverse instrument calculations use quote currency (instead of base).
+        target_currency : Currency, optional
+            The target currency for conversion.
+        conversion_price : Price, optional
+            The price to use for currency conversion.
 
         Returns
         -------
@@ -708,13 +796,20 @@ cdef class Instrument(Data):
         Condition.not_none(quantity, "quantity")
         Condition.not_none(price, "price")
 
+        cdef Money notional
         if self.is_inverse:
             if use_quote_for_inverse:
                 # Quantity is notional in quote currency
-                return Money(quantity, self.quote_currency)
-            return Money(quantity.as_f64_c() * float(self.multiplier) * (1.0 / price.as_f64_c()), self.base_currency)
+                notional = Money(quantity, self.quote_currency)
+            else:
+                notional = Money(quantity.as_f64_c() * float(self.multiplier) * (1.0 / price.as_f64_c()), self.base_currency)
         else:
-            return Money(quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(), self.quote_currency)
+            notional = Money(quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(), self.quote_currency)
+
+        if target_currency is not None and conversion_price is not None:
+            return Money(notional.as_f64_c() * conversion_price.as_f64_c(), target_currency)
+
+        return notional
 
     cpdef Quantity calculate_base_quantity(
         self,

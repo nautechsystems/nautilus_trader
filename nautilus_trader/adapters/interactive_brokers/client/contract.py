@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -68,9 +68,9 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
 
             request.handle()
 
-            return await self._await_request(request, 10, supress_timeout_warning=True)
+            return await self._await_request(request, 10, suppress_timeout_warning=True)
         else:
-            return await self._await_request(request, 10, supress_timeout_warning=True)
+            return await self._await_request(request, 10, suppress_timeout_warning=True)
 
     async def get_matching_contracts(self, pattern: str) -> list[IBContract] | None:
         """

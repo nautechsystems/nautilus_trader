@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -28,7 +28,8 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick_scheme.base cimport TickScheme
 
 
-cdef set[InstrumentClass] EXPIRING_INSTRUMENT_TYPES
+cdef set[InstrumentClass] EXPIRING_INSTRUMENT_CLASSES
+cdef tuple[InstrumentClass, InstrumentClass, InstrumentClass] NEGATIVE_PRICE_INSTRUMENT_CLASSES
 
 
 cdef class Instrument(Data):
@@ -96,16 +97,19 @@ cdef class Instrument(Data):
     @staticmethod
     cdef dict base_to_dict_c(Instrument obj)
 
+    cpdef bint is_spread(self)
+    cpdef list legs(self)
     cpdef Currency get_base_currency(self)
     cpdef Currency get_settlement_currency(self)
     cpdef Currency get_cost_currency(self)
+    cpdef void set_tick_scheme(self, str tick_scheme_name)
     cpdef Price make_price(self, value)
     cpdef Price next_bid_price(self, double value, int num_ticks=*)
     cpdef Price next_ask_price(self, double value, int num_ticks=*)
     cpdef list next_bid_prices(self, double value, int num_ticks=*)
     cpdef list next_ask_prices(self, double value, int num_ticks=*)
     cpdef Quantity make_qty(self, value, bint round_down=*)
-    cpdef Money notional_value(self, Quantity quantity, Price price, bint use_quote_for_inverse=*)
+    cpdef Money notional_value(self, Quantity quantity, Price price, bint use_quote_for_inverse=*, Currency target_currency=*, Price conversion_price=*)
     cpdef Quantity calculate_base_quantity(self, Quantity quantity, Price last_px)
 
 

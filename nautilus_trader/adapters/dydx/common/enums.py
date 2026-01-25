@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -239,10 +239,15 @@ class DYDXEnumParser:
             DYDXOrderType.MARKET: OrderType.MARKET,
             DYDXOrderType.STOP_LIMIT: OrderType.STOP_LIMIT,
             DYDXOrderType.STOP_MARKET: OrderType.STOP_MARKET,
+            DYDXOrderType.TAKE_PROFIT: OrderType.LIMIT_IF_TOUCHED,
+            DYDXOrderType.TAKE_PROFIT_MARKET: OrderType.MARKET_IF_TOUCHED,
         }
 
         self.nautilus_to_dydx_order_type = {
-            value: key for key, value in self.dydx_to_nautilus_order_type.items()
+            OrderType.LIMIT: DYDXOrderType.LIMIT,
+            OrderType.MARKET: DYDXOrderType.MARKET,
+            OrderType.STOP_LIMIT: DYDXOrderType.STOP_LIMIT,
+            OrderType.STOP_MARKET: DYDXOrderType.STOP_MARKET,
         }
 
         self.dydx_to_nautilus_order_side = {

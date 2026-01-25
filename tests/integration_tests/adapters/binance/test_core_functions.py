@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -47,8 +47,8 @@ class TestBinanceCoreFunctions:
             [BinanceAccountType.SPOT, True],
             [BinanceAccountType.MARGIN, False],
             [BinanceAccountType.ISOLATED_MARGIN, False],
-            [BinanceAccountType.USDT_FUTURE, False],
-            [BinanceAccountType.COIN_FUTURE, False],
+            [BinanceAccountType.USDT_FUTURES, False],
+            [BinanceAccountType.COIN_FUTURES, False],
         ],
     )
     def test_binance_account_type_is_spot(self, account_type, expected):
@@ -61,8 +61,8 @@ class TestBinanceCoreFunctions:
             [BinanceAccountType.SPOT, False],
             [BinanceAccountType.MARGIN, True],
             [BinanceAccountType.ISOLATED_MARGIN, True],
-            [BinanceAccountType.USDT_FUTURE, False],
-            [BinanceAccountType.COIN_FUTURE, False],
+            [BinanceAccountType.USDT_FUTURES, False],
+            [BinanceAccountType.COIN_FUTURES, False],
         ],
     )
     def test_binance_account_type_is_margin(self, account_type, expected):
@@ -75,8 +75,8 @@ class TestBinanceCoreFunctions:
             [BinanceAccountType.SPOT, True],
             [BinanceAccountType.MARGIN, True],
             [BinanceAccountType.ISOLATED_MARGIN, True],
-            [BinanceAccountType.USDT_FUTURE, False],
-            [BinanceAccountType.COIN_FUTURE, False],
+            [BinanceAccountType.USDT_FUTURES, False],
+            [BinanceAccountType.COIN_FUTURES, False],
         ],
     )
     def test_binance_account_type_is_spot_or_margin(self, account_type, expected):
@@ -89,8 +89,8 @@ class TestBinanceCoreFunctions:
             [BinanceAccountType.SPOT, False],
             [BinanceAccountType.MARGIN, False],
             [BinanceAccountType.ISOLATED_MARGIN, False],
-            [BinanceAccountType.USDT_FUTURE, True],
-            [BinanceAccountType.COIN_FUTURE, True],
+            [BinanceAccountType.USDT_FUTURES, True],
+            [BinanceAccountType.COIN_FUTURES, True],
         ],
     )
     def test_binance_account_type_is_futures(self, account_type, expected):

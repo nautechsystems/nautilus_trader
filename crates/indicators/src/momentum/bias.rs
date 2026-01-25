@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,6 +22,8 @@ use crate::{
     indicator::{Indicator, MovingAverage},
 };
 
+const MAX_PERIOD: usize = 1024;
+
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -36,7 +38,6 @@ pub struct Bias {
     pub initialized: bool,
     ma: Box<dyn MovingAverage + Send + 'static>,
     has_inputs: bool,
-    previous_close: f64,
 }
 
 impl Display for Bias {
@@ -63,7 +64,7 @@ impl Indicator for Bias {
     }
 
     fn reset(&mut self) {
-        self.previous_close = 0.0;
+        self.ma.reset();
         self.value = 0.0;
         self.count = 0;
         self.has_inputs = false;
@@ -73,14 +74,26 @@ impl Indicator for Bias {
 
 impl Bias {
     /// Creates a new [`Bias`] instance.
+    ///
+    /// # Panics
+    ///
+    /// - If `period` is less than or equal to 0.
+    /// - If `period` exceeds `MAX_PERIOD`.
     #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
+        assert!(
+            period > 0,
+            "BollingerBands: period must be > 0 (received {period})"
+        );
+        assert!(
+            period <= MAX_PERIOD,
+            "Bias: period {period} exceeds MAX_PERIOD {MAX_PERIOD}"
+        );
         Self {
             period,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
             value: 0.0,
             count: 0,
-            previous_close: 0.0,
             ma: MovingAverageFactory::create(ma_type.unwrap_or(MovingAverageType::Simple), period),
             has_inputs: false,
             initialized: false,
@@ -88,6 +101,7 @@ impl Bias {
     }
 
     pub fn update_raw(&mut self, close: f64) {
+        self.count += 1;
         self.ma.update_raw(close);
         self.value = (close / self.ma.value()) - 1.0;
         self._check_initialized();
@@ -103,9 +117,6 @@ impl Bias {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::{fixture, rstest};
@@ -153,15 +164,17 @@ mod tests {
 
     #[rstest]
     fn test_value_with_all_higher_inputs_returns_expected_value(mut bias: Bias) {
+        const EPS: f64 = 1e-12;
+        const EXPECTED: f64 = 0.000_654_735_923_177_662_8;
+
+        fn abs_diff_lt(lhs: f64, rhs: f64) -> bool {
+            (lhs - rhs).abs() < EPS
+        }
+
         let inputs = [
             109.93, 110.0, 109.77, 109.96, 110.29, 110.53, 110.27, 110.21, 110.06, 110.19, 109.83,
             109.9, 110.0, 110.03, 110.13, 109.95, 109.75, 110.15, 109.9, 110.04,
         ];
-        const EPS: f64 = 1e-12;
-        const EXPECTED: f64 = 0.000_654_735_923_177_662_8;
-        fn abs_diff_lt(lhs: f64, rhs: f64) -> bool {
-            (lhs - rhs).abs() < EPS
-        }
 
         for &price in &inputs {
             bias.update_raw(price);
@@ -184,5 +197,28 @@ mod tests {
 
         assert!(!bias.initialized());
         assert_eq!(bias.value, 0.0);
+    }
+
+    #[rstest]
+    fn test_reset_resets_moving_average_state() {
+        let mut bias = Bias::new(3, None);
+        bias.update_raw(1.0);
+        bias.update_raw(2.0);
+        bias.update_raw(3.0);
+        assert!(bias.ma.initialized());
+        bias.reset();
+        assert!(!bias.ma.initialized());
+        assert_eq!(bias.value, 0.0);
+    }
+
+    #[rstest]
+    fn test_count_increments_and_resets(mut bias: Bias) {
+        assert_eq!(bias.count, 0);
+        bias.update_raw(1.0);
+        assert_eq!(bias.count, 1);
+        bias.update_raw(1.1);
+        assert_eq!(bias.count, 2);
+        bias.reset();
+        assert_eq!(bias.count, 0);
     }
 }

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A rate limiter implementation heavily inspired by [governor](https://github.com/antifuchs/governor)
+//! A rate limiter implementation heavily inspired by [governor](https://github.com/antifuchs/governor).
 //!
-//! The governor does not support different quota for different key. It is an open [issue](https://github.com/antifuchs/governor/issues/193)
+//! The governor does not support different quota for different key. It is an open [issue](https://github.com/antifuchs/governor/issues/193).
 pub mod clock;
 mod gcra;
 mod nanos;
@@ -31,7 +31,6 @@ use std::{
 
 use dashmap::DashMap;
 use futures_util::StreamExt;
-use tokio::time::sleep;
 
 use self::{
     clock::{Clock, FakeRelativeClock, MonotonicClock},
@@ -64,6 +63,8 @@ impl InMemoryState {
         let mut prev = self.0.load(Ordering::Acquire);
         let mut decision = f(NonZeroU64::new(prev).map(|n| n.get().into()));
         while let Ok((result, new_data)) = decision {
+            // Lock-free CAS loop: retry with current value if another thread modified it,
+            // uses weak variant (faster) since spurious failures are fine in a retry loop.
             match self.0.compare_exchange_weak(
                 prev,
                 new_data.into(),
@@ -71,7 +72,7 @@ impl InMemoryState {
                 Ordering::Relaxed,
             ) {
                 Ok(_) => return Ok(result),
-                Err(next_prev) => prev = next_prev,
+                Err(e) => prev = e, // Retry with value written by another thread
             }
             decision = f(NonZeroU64::new(prev).map(|n| n.get().into()));
         }
@@ -103,8 +104,8 @@ pub trait StateStore {
     /// The closure parameter takes the old value (`None` if this is the first measurement) of the
     /// state store at the key's location, checks if the request an be accommodated and:
     ///
-    /// * If the request is rate-limited, returns `Err(E)`.
-    /// * If the request can make it through, returns `Ok(T)` (an arbitrary positive return
+    /// - If the request is rate-limited, returns `Err(E)`.
+    /// - If the request can make it through, returns `Ok(T)` (an arbitrary positive return
     ///   value) and the updated state.
     ///
     /// It is `measure_and_replace`'s job then to safely replace the value at the key - it must
@@ -136,6 +137,10 @@ impl<K: Hash + Eq + Clone> StateStore for DashMapStateStore<K> {
     }
 }
 
+/// A rate limiter that enforces different quotas per key using the GCRA algorithm.
+///
+/// This implementation allows setting different rate limits for different keys,
+/// with an optional default quota for keys that don't have specific quotas.
 pub struct RateLimiter<K, C>
 where
     C: Clock,
@@ -161,10 +166,18 @@ impl<K> RateLimiter<K, MonotonicClock>
 where
     K: Eq + Hash,
 {
+    /// Creates a new rate limiter with a base quota and keyed quotas.
+    ///
+    /// The base quota applies to all keys that don't have specific quotas.
+    /// Keyed quotas override the base quota for specific keys.
+    #[must_use]
     pub fn new_with_quota(base_quota: Option<Quota>, keyed_quotas: Vec<(K, Quota)>) -> Self {
         let clock = MonotonicClock {};
         let start = MonotonicClock::now(&clock);
-        let gcra = DashMap::from_iter(keyed_quotas.into_iter().map(|(k, q)| (k, Gcra::new(q))));
+        let gcra: DashMap<_, _> = keyed_quotas
+            .into_iter()
+            .map(|(k, q)| (k, Gcra::new(q)))
+            .collect();
         Self {
             default_gcra: base_quota.map(Gcra::new),
             state: DashMapStateStore::new(),
@@ -179,6 +192,9 @@ impl<K> RateLimiter<K, FakeRelativeClock>
 where
     K: Hash + Eq + Clone,
 {
+    /// Advances the fake clock by the specified duration.
+    ///
+    /// This is only available for testing with `FakeRelativeClock`.
     pub fn advance_clock(&self, by: Duration) {
         self.clock.advance(by);
     }
@@ -189,6 +205,7 @@ where
     K: Hash + Eq + Clone,
     C: Clock,
 {
+    /// Adds or updates a quota for a specific key.
     pub fn add_quota_for_key(&self, key: K, value: Quota) {
         self.gcra.insert(key, Gcra::new(value));
     }
@@ -207,21 +224,28 @@ where
         }
     }
 
+    /// Waits until the specified key is ready (not rate-limited).
     pub async fn until_key_ready(&self, key: &K) {
         loop {
             match self.check_key(key) {
                 Ok(()) => {
                     break;
                 }
-                Err(neg) => {
-                    sleep(neg.wait_time_from(self.clock.now())).await;
+                Err(e) => {
+                    tokio::time::sleep(e.wait_time_from(self.clock.now())).await;
                 }
             }
         }
     }
 
-    pub async fn await_keys_ready(&self, keys: Option<Vec<K>>) {
-        let keys = keys.unwrap_or_default();
+    /// Waits until all specified keys are ready (not rate-limited).
+    ///
+    /// If no keys are provided, this function returns immediately.
+    pub async fn await_keys_ready(&self, keys: Option<&[K]>) {
+        let Some(keys) = keys else {
+            return;
+        };
+
         let tasks = keys.iter().map(|key| self.until_key_ready(key));
 
         futures::stream::iter(tasks)
@@ -232,9 +256,6 @@ where
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::{num::NonZeroU32, time::Duration};
@@ -384,9 +405,40 @@ mod tests {
 
         // Wait keys to be ready and check base quota is reset
         mock_limiter.advance_clock(Duration::from_secs(1));
-        mock_limiter
-            .await_keys_ready(Some(vec!["default".to_string()]))
-            .await;
+        let keys = ["default".to_string()];
+        mock_limiter.await_keys_ready(Some(keys.as_slice())).await;
         assert!(mock_limiter.check_key(&"default".to_string()).is_ok());
+    }
+
+    #[rstest]
+    fn test_gcra_boundary_exact_replenishment() {
+        // Test GCRA boundary condition where t0 equals earliest_time exactly.
+        // This exercises the saturating_sub edge case deterministically without sleeps.
+        let mock_limiter = initialize_mock_rate_limiter();
+        let key = "boundary_test".to_string();
+
+        // Consume entire burst capacity (2 requests)
+        assert!(mock_limiter.check_key(&key).is_ok());
+        assert!(mock_limiter.check_key(&key).is_ok());
+
+        // Next request should be rate-limited
+        assert!(mock_limiter.check_key(&key).is_err());
+
+        // Advance clock by exactly one replenish interval (500ms for 2 req/sec)
+        let quota = Quota::per_second(NonZeroU32::new(2).unwrap());
+        let replenish_interval = quota.replenish_interval();
+        mock_limiter.advance_clock(replenish_interval);
+
+        // At the exact boundary (t0 == earliest_time), request should be allowed
+        assert!(
+            mock_limiter.check_key(&key).is_ok(),
+            "Request at exact replenish boundary should be allowed"
+        );
+
+        // But the next immediate request should be denied (burst exhausted again)
+        assert!(
+            mock_limiter.check_key(&key).is_err(),
+            "Immediate follow-up should be rate-limited"
+        );
     }
 }

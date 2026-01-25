@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,7 +15,7 @@
 
 from decimal import Decimal
 
-from nautilus_trader.backtest.exchange import SimulatedExchange
+from nautilus_trader.backtest.engine import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import LatencyModel
@@ -178,7 +178,8 @@ class TestL2OrderBookExchange:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Decimal("20000.0")
-        assert order.avg_px == 101.33333333333333
+        # Corrected weighted average calculation
+        assert order.avg_px == 101.5
         assert self.exchange.get_account().balance_total(USD) == Money(999999.64, USD)
 
     def test_aggressive_partial_fill(self):
@@ -207,7 +208,8 @@ class TestL2OrderBookExchange:
         # Assert
         assert order.status == OrderStatus.PARTIALLY_FILLED
         assert order.filled_qty == Quantity.from_str("60000.0")
-        assert order.avg_px == 101.93333333333334
+        # Corrected weighted average calculation
+        assert order.avg_px == 102.33333333333333
 
     def test_post_only_insert(self):
         # Arrange: Prepare market
@@ -233,6 +235,41 @@ class TestL2OrderBookExchange:
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
+
+    def test_post_only_reject_would_take(self):
+        # Arrange: Prepare market
+        self.cache.add_instrument(_USDJPY_SIM)
+        # Market is at 100.000 @ 101.000
+        snapshot = TestDataStubs.order_book_snapshot(
+            instrument=_USDJPY_SIM,
+            bid_size=100_000,
+            ask_size=100_000,
+        )
+        self.data_engine.process(snapshot)
+        self.exchange.process_order_book_deltas(snapshot)
+
+        # Act: Submit a post-only BUY order at 101.000 (would cross the spread and take)
+        order = self.strategy.order_factory.limit(
+            instrument_id=_USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(2_000),
+            price=_USDJPY_SIM.make_price(101.000),  # At ask price - would be a taker
+            post_only=True,
+        )
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Assert: Order should be rejected
+        assert order.status == OrderStatus.REJECTED
+        assert len(order.events) == 3  # Initialized, Submitted, and Rejected
+
+        # Check the rejection event has due_post_only flag set
+        rejected_event = order.events[-1]
+        from nautilus_trader.model.events import OrderRejected
+
+        assert isinstance(rejected_event, OrderRejected)
+        assert rejected_event.due_post_only is True
+        assert "POST_ONLY" in rejected_event.reason
 
     def test_passive_partial_fill_sell(self):
         # Arrange: Prepare market

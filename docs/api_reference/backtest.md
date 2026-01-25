@@ -5,14 +5,6 @@
 ```
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.backtest.auction
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-```{eval-rst}
 .. automodule:: nautilus_trader.backtest.data_client
    :show-inheritance:
    :inherited-members:
@@ -22,14 +14,6 @@
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.backtest.engine
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-```{eval-rst}
-.. automodule:: nautilus_trader.backtest.exchange
    :show-inheritance:
    :inherited-members:
    :members:

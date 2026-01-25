@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -316,12 +316,14 @@ def runner_change_to_order_book_snapshot(
     Convert a RunnerChange to a OrderBookDeltas snapshot.
     """
     # Check for incorrect data types
-    assert not (
-        rc.bdatb or rc.bdatl
-    ), "Incorrect orderbook data found (best display), should only be `atb` and `atl`"
-    assert not (
-        rc.batb or rc.batl
-    ), "Incorrect orderbook data found (best) should only be `atb` and `atl`"
+    assert not rc.bdatb, (
+        "Incorrect orderbook data found (best display), should only be `atb` and `atl`"
+    )
+    assert not rc.bdatl, (
+        "Incorrect orderbook data found (best display), should only be `atb` and `atl`"
+    )
+    assert not rc.batb, "Incorrect orderbook data found (best) should only be `atb` and `atl`"
+    assert not rc.batl, "Incorrect orderbook data found (best) should only be `atb` and `atl`"
 
     deltas: list[OrderBookDelta] = [
         OrderBookDelta.clear(
@@ -332,15 +334,20 @@ def runner_change_to_order_book_snapshot(
         ),
     ]
 
+    bids_len = len(rc.atb) if rc.atb is not None else 0
+    asks_len = len(rc.atl) if rc.atl is not None else 0
+
     # Bids are available to back (atb)
     if rc.atb is not None:
-        for bid in rc.atb:
+        for idx, bid in enumerate(rc.atb):
+            is_last = idx == bids_len - 1 and asks_len == 0
+            flags = RecordFlag.F_SNAPSHOT | RecordFlag.F_LAST if is_last else RecordFlag.F_SNAPSHOT
             book_order = _price_volume_to_book_order(bid, OrderSide.BUY)
             delta = OrderBookDelta(
                 instrument_id,
                 BookAction.UPDATE if bid.volume > 0.0 else BookAction.DELETE,
                 book_order,
-                flags=RecordFlag.F_SNAPSHOT,
+                flags=flags,
                 sequence=0,
                 ts_event=ts_event,
                 ts_init=ts_init,
@@ -349,13 +356,15 @@ def runner_change_to_order_book_snapshot(
 
     # Asks are available to back (atl)
     if rc.atl is not None:
-        for ask in rc.atl:
+        for idx, ask in enumerate(rc.atl):
+            is_last = idx == asks_len - 1
+            flags = RecordFlag.F_SNAPSHOT | RecordFlag.F_LAST if is_last else RecordFlag.F_SNAPSHOT
             book_order = _price_volume_to_book_order(ask, OrderSide.SELL)
             delta = OrderBookDelta(
                 instrument_id,
                 BookAction.UPDATE if ask.volume > 0.0 else BookAction.DELETE,
                 book_order,
-                flags=RecordFlag.F_SNAPSHOT,
+                flags=flags,
                 sequence=0,
                 ts_event=ts_event,
                 ts_init=ts_init,
@@ -406,12 +415,14 @@ def runner_change_to_order_book_deltas(
     """
     Convert a RunnerChange to a list of OrderBookDeltas.
     """
-    assert not (
-        rc.bdatb or rc.bdatl
-    ), "Incorrect orderbook data found (best display), should only be `atb` and `atl`"
-    assert not (
-        rc.batb or rc.batl
-    ), "Incorrect orderbook data found (best) should only be `atb` and `atl`"
+    assert not rc.bdatb, (
+        "Incorrect orderbook data found (best display), should only be `atb` and `atl`"
+    )
+    assert not rc.bdatl, (
+        "Incorrect orderbook data found (best display), should only be `atb` and `atl`"
+    )
+    assert not rc.batb, "Incorrect orderbook data found (best) should only be `atb` and `atl`"
+    assert not rc.batl, "Incorrect orderbook data found (best) should only be `atb` and `atl`"
 
     deltas: list[OrderBookDelta] = []
 

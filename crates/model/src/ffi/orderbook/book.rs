@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -151,18 +151,24 @@ pub extern "C" fn orderbook_clear_asks(book: &mut OrderBook_API, sequence: u64, 
 
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_apply_delta(book: &mut OrderBook_API, delta: &OrderBookDelta) {
-    book.apply_delta(delta);
+    if let Err(e) = book.apply_delta_unchecked(delta) {
+        log::error!("Failed to apply order book delta: {e}");
+    }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_apply_deltas(book: &mut OrderBook_API, deltas: &OrderBookDeltas_API) {
     // Clone will actually copy the contents of the `deltas` vec
-    book.apply_deltas(deltas.deref());
+    if let Err(e) = book.apply_deltas_unchecked(deltas.deref()) {
+        log::error!("Failed to apply order book deltas: {e}");
+    }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_apply_depth(book: &mut OrderBook_API, depth: &OrderBookDepth10) {
-    book.apply_depth(depth);
+    if let Err(e) = book.apply_depth_unchecked(depth) {
+        log::error!("Failed to apply order book depth: {e}");
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -273,6 +279,17 @@ pub extern "C" fn orderbook_get_quantity_for_price(
     book.get_quantity_for_price(price, order_side)
 }
 
+#[unsafe(no_mangle)]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
+pub extern "C" fn orderbook_get_quantity_at_level(
+    book: &OrderBook_API,
+    price: Price,
+    order_side: OrderSide,
+    size_precision: u8,
+) -> Quantity {
+    book.get_quantity_at_level(price, order_side, size_precision)
+}
+
 /// Updates the order book with a quote tick.
 ///
 /// # Panics
@@ -300,15 +317,28 @@ pub extern "C" fn orderbook_simulate_fills(book: &OrderBook_API, order: BookOrde
 }
 
 #[unsafe(no_mangle)]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
+pub extern "C" fn orderbook_get_all_crossed_levels(
+    book: &OrderBook_API,
+    order_side: OrderSide,
+    price: Price,
+    size_precision: u8,
+) -> CVec {
+    book.get_all_crossed_levels(order_side, price, size_precision)
+        .into()
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_check_integrity(book: &OrderBook_API) -> u8 {
     u8::from(book_check_integrity(book).is_ok())
 }
 
-// TODO: This struct implementation potentially leaks memory
-// TODO: Skip clippy check for now since it requires large modification
-#[allow(clippy::drop_non_drop)]
 #[unsafe(no_mangle)]
-pub extern "C" fn vec_fills_drop(v: CVec) {
+pub extern "C" fn vec_drop_fills(v: CVec) {
+    if v.ptr.is_null() {
+        return;
+    }
+
     let CVec { ptr, len, cap } = v;
     let data: Vec<(Price, Quantity)> =
         unsafe { Vec::from_raw_parts(ptr.cast::<(Price, Quantity)>(), len, cap) };
@@ -321,5 +351,5 @@ pub extern "C" fn orderbook_pprint_to_cstr(
     book: &OrderBook_API,
     num_levels: usize,
 ) -> *const c_char {
-    str_to_cstr(&book.pprint(num_levels))
+    str_to_cstr(&book.pprint(num_levels, None))
 }

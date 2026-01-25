@@ -27,25 +27,25 @@
     "publisher_id": 5,
     "dataset": "BATS.PITCH",
     "venue": "BATS",
-    "description": "Cboe BZX Depth Pitch"
+    "description": "Cboe BZX Depth"
   },
   {
     "publisher_id": 6,
     "dataset": "BATY.PITCH",
     "venue": "BATY",
-    "description": "Cboe BYX Depth Pitch"
+    "description": "Cboe BYX Depth"
   },
   {
     "publisher_id": 7,
     "dataset": "EDGA.PITCH",
     "venue": "EDGA",
-    "description": "Cboe EDGA Depth Pitch"
+    "description": "Cboe EDGA Depth"
   },
   {
     "publisher_id": 8,
     "dataset": "EDGX.PITCH",
     "venue": "EDGX",
-    "description": "Cboe EDGX Depth Pitch"
+    "description": "Cboe EDGX Depth"
   },
   {
     "publisher_id": 9,
@@ -69,7 +69,7 @@
     "publisher_id": 12,
     "dataset": "XCHI.PILLAR",
     "venue": "XCHI",
-    "description": "NYSE Chicago Integrated"
+    "description": "NYSE Texas Integrated"
   },
   {
     "publisher_id": 13,
@@ -117,19 +117,19 @@
     "publisher_id": 20,
     "dataset": "OPRA.PILLAR",
     "venue": "AMXO",
-    "description": "OPRA - NYSE American"
+    "description": "OPRA - NYSE American Options"
   },
   {
     "publisher_id": 21,
     "dataset": "OPRA.PILLAR",
     "venue": "XBOX",
-    "description": "OPRA - Boston Options Exchange"
+    "description": "OPRA - BOX Options"
   },
   {
     "publisher_id": 22,
     "dataset": "OPRA.PILLAR",
     "venue": "XCBO",
-    "description": "OPRA - Cboe Options Exchange"
+    "description": "OPRA - Cboe Options"
   },
   {
     "publisher_id": 23,
@@ -141,7 +141,7 @@
     "publisher_id": 24,
     "dataset": "OPRA.PILLAR",
     "venue": "EDGO",
-    "description": "OPRA - Cboe EDGX Options Exchange"
+    "description": "OPRA - Cboe EDGX Options"
   },
   {
     "publisher_id": 25,
@@ -165,13 +165,13 @@
     "publisher_id": 28,
     "dataset": "OPRA.PILLAR",
     "venue": "XMIO",
-    "description": "OPRA - Miami International Securities"
+    "description": "OPRA - MIAX Options"
   },
   {
     "publisher_id": 29,
     "dataset": "OPRA.PILLAR",
     "venue": "ARCO",
-    "description": "OPRA - NYSE Arca"
+    "description": "OPRA - NYSE Arca Options"
   },
   {
     "publisher_id": 30,
@@ -189,7 +189,7 @@
     "publisher_id": 32,
     "dataset": "OPRA.PILLAR",
     "venue": "XNDQ",
-    "description": "OPRA - Nasdaq Options Market"
+    "description": "OPRA - Nasdaq Options"
   },
   {
     "publisher_id": 33,
@@ -201,7 +201,7 @@
     "publisher_id": 34,
     "dataset": "OPRA.PILLAR",
     "venue": "C2OX",
-    "description": "OPRA - Cboe C2 Options Exchange"
+    "description": "OPRA - Cboe C2 Options"
   },
   {
     "publisher_id": 35,
@@ -219,7 +219,7 @@
     "publisher_id": 37,
     "dataset": "OPRA.PILLAR",
     "venue": "MXOP",
-    "description": "OPRA - MEMX Options Exchange"
+    "description": "OPRA - MEMX Options"
   },
   {
     "publisher_id": 38,
@@ -231,7 +231,7 @@
     "publisher_id": 39,
     "dataset": "DBEQ.BASIC",
     "venue": "XCHI",
-    "description": "DBEQ Basic - NYSE Chicago"
+    "description": "DBEQ Basic - NYSE Texas"
   },
   {
     "publisher_id": 40,
@@ -285,7 +285,7 @@
     "publisher_id": 48,
     "dataset": "EQUS.PLUS",
     "venue": "XCHI",
-    "description": "Databento US Equities Plus - NYSE Chicago"
+    "description": "Databento US Equities Plus - NYSE Texas"
   },
   {
     "publisher_id": 49,
@@ -339,7 +339,7 @@
     "publisher_id": 57,
     "dataset": "IFEU.IMPACT",
     "venue": "IFEU",
-    "description": "ICE Futures Europe (Commodities)"
+    "description": "ICE Europe Commodities"
   },
   {
     "publisher_id": 58,
@@ -369,7 +369,7 @@
     "publisher_id": 62,
     "dataset": "EQUS.ALL",
     "venue": "XCHI",
-    "description": "Databento US Equities (All Feeds) - NYSE Chicago"
+    "description": "Databento US Equities (All Feeds) - NYSE Texas"
   },
   {
     "publisher_id": 63,
@@ -423,25 +423,25 @@
     "publisher_id": 71,
     "dataset": "EQUS.ALL",
     "venue": "BATS",
-    "description": "Databento US Equities (All Feeds) - CBOE BZX"
+    "description": "Databento US Equities (All Feeds) - Cboe BZX"
   },
   {
     "publisher_id": 72,
     "dataset": "EQUS.ALL",
     "venue": "BATY",
-    "description": "Databento US Equities (All Feeds) - CBOE BYX"
+    "description": "Databento US Equities (All Feeds) - Cboe BYX"
   },
   {
     "publisher_id": 73,
     "dataset": "EQUS.ALL",
     "venue": "EDGA",
-    "description": "Databento US Equities (All Feeds) - CBOE EDGA"
+    "description": "Databento US Equities (All Feeds) - Cboe EDGA"
   },
   {
     "publisher_id": 74,
     "dataset": "EQUS.ALL",
     "venue": "EDGX",
-    "description": "Databento US Equities (All Feeds) - CBOE EDGX"
+    "description": "Databento US Equities (All Feeds) - Cboe EDGX"
   },
   {
     "publisher_id": 75,
@@ -501,7 +501,7 @@
     "publisher_id": 84,
     "dataset": "IFEU.IMPACT",
     "venue": "XOFF",
-    "description": "ICE Futures Europe - Off-Market Trades"
+    "description": "ICE Europe - Off-Market Trades"
   },
   {
     "publisher_id": 85,
@@ -574,5 +574,53 @@
     "dataset": "XNYS.TRADES",
     "venue": "EQUS",
     "description": "NYSE Trades - Consolidated"
+  },
+  {
+    "publisher_id": 97,
+    "dataset": "IFUS.IMPACT",
+    "venue": "IFUS",
+    "description": "ICE Futures US"
+  },
+  {
+    "publisher_id": 98,
+    "dataset": "IFUS.IMPACT",
+    "venue": "XOFF",
+    "description": "ICE Futures US - Off-Market Trades"
+  },
+  {
+    "publisher_id": 99,
+    "dataset": "IFLL.IMPACT",
+    "venue": "IFLL",
+    "description": "ICE Europe Financials"
+  },
+  {
+    "publisher_id": 100,
+    "dataset": "IFLL.IMPACT",
+    "venue": "XOFF",
+    "description": "ICE Europe Financials - Off-Market Trades"
+  },
+  {
+    "publisher_id": 101,
+    "dataset": "XEUR.EOBI",
+    "venue": "XEUR",
+    "description": "Eurex EOBI"
+  },
+  {
+    "publisher_id": 102,
+    "dataset": "XEEE.EOBI",
+    "venue": "XEEE",
+    "description": "European Energy Exchange EOBI"
+  },
+  {
+    "publisher_id": 103,
+    "dataset": "XEUR.EOBI",
+    "venue": "XOFF",
+    "description": "Eurex EOBI - Off-Market Trades"
+  },
+  {
+    "publisher_id": 104,
+    "dataset": "XEEE.EOBI",
+    "venue": "XOFF",
+    "description": "European Energy Exchange EOBI - Off-Market Trades"
   }
 ]

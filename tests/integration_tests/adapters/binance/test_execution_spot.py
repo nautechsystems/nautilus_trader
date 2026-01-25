@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,10 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import pkgutil
 
-import aiohttp
-import msgspec
 import pytest
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
@@ -51,9 +48,10 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class TestBinanceSpotExecutionClient:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
+        self.loop = request.getfixturevalue("event_loop")
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
@@ -130,69 +128,9 @@ class TestBinanceSpotExecutionClient:
             clock=self.clock,
         )
 
-    @pytest.mark.skip(reason="Pending overhaul of testing")
-    @pytest.mark.asyncio()
-    async def test_connect(self, monkeypatch):
-        # Arrange: prepare data for monkey patch
-        response1 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.http_responses",
-            resource="http_wallet_trading_fee.json",
-        )
+        return
 
-        response2 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.http_responses",
-            resource="http_spot_market_exchange_info.json",
-        )
-
-        response3 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.http_responses",
-            resource="http_spot_wallet_account.json",
-        )
-
-        response4 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.http_responses",
-            resource="http_spot_streams_listen_key.json",
-        )
-
-        http_responses = [response4, response3, response2, response1]
-
-        # Mock coroutine for patch
-        async def mock_send_request(
-            self,  # (needed for mock)
-            http_method: str,  # (needed for mock)
-            url_path: str,  # (needed for mock)
-            payload: dict[str, str],  # (needed for mock)
-        ) -> bytes:
-            response = msgspec.json.decode(http_responses.pop())
-            return response
-
-        # Mock coroutine for patch
-        async def mock_ws_connect(
-            self,  # (needed for mock)
-            url: str,  # (needed for mock)
-        ) -> bytes:
-            return b"connected"
-
-        # Apply mock coroutine to client
-        monkeypatch.setattr(
-            target=BinanceHttpClient,
-            name="send_request",
-            value=mock_send_request,
-        )
-
-        monkeypatch.setattr(
-            target=aiohttp.ClientSession,
-            name="ws_connect",
-            value=mock_ws_connect,
-        )
-
-        # Act
-        self.exec_client.connect()
-
-        # Assert
-        await eventually(lambda: self.exec_client.is_connected)
-
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_unsupported_order_logs_error(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -222,7 +160,7 @@ class TestBinanceSpotExecutionClient:
         # Assert
         assert mock_send_request.call_args is None
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_market_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -260,7 +198,7 @@ class TestBinanceSpotExecutionClient:
         assert request[1]["payload"]["newClientOrderId"] is not None
         assert request[1]["payload"]["recvWindow"] == "5000"
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_limit_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -300,7 +238,43 @@ class TestBinanceSpotExecutionClient:
         assert request[1]["payload"]["recvWindow"] == "5000"
         assert request[1]["payload"]["signature"] is not None
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
+    async def test_submit_limit_order_with_price_match_denied(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=Price.from_str("10050.80"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+            params={"price_match": "QUEUE"},
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_generate_denied.called)
+
+        # Assert
+        mock_send_request.assert_not_called()
+        mock_generate_denied.assert_called_once()
+        reason = mock_generate_denied.call_args.kwargs["reason"]
+        assert "only supported for Binance futures" in reason
+
+    @pytest.mark.asyncio
     async def test_submit_stop_limit_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -344,7 +318,7 @@ class TestBinanceSpotExecutionClient:
         assert request[1]["payload"]["recvWindow"] == "5000"
         assert request[1]["payload"]["signature"] is not None
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_limit_if_touched_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -388,7 +362,7 @@ class TestBinanceSpotExecutionClient:
         assert request[1]["payload"]["recvWindow"] == "5000"
         assert request[1]["payload"]["signature"] is not None
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_query_order(self, mocker):
         # Arrange
         mock_query_order = mocker.patch(

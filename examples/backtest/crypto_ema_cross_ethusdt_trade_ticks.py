@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,8 +20,8 @@ from decimal import Decimal
 import pandas as pd
 
 from nautilus_trader.adapters.binance import BINANCE_VENUE
+from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
 from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP
@@ -75,7 +75,7 @@ if __name__ == "__main__":
     engine.add_data(ticks)
 
     # Configure your strategy
-    config = EMACrossTWAPConfig(
+    strategy_config = EMACrossTWAPConfig(
         instrument_id=ETHUSDT_BINANCE.id,
         bar_type=BarType.from_str("ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL"),
         trade_size=Decimal("0.10"),
@@ -86,7 +86,7 @@ if __name__ == "__main__":
     )
 
     # Instantiate and add your strategy
-    strategy = EMACrossTWAP(config=config)
+    strategy = EMACrossTWAP(config=strategy_config)
     engine.add_strategy(strategy=strategy)
 
     # Instantiate and add your execution algorithm
@@ -111,6 +111,28 @@ if __name__ == "__main__":
         print(engine.trader.generate_account_report(BINANCE_VENUE))
         print(engine.trader.generate_order_fills_report())
         print(engine.trader.generate_positions_report())
+
+    # Generate interactive tearsheet (requires: pip install plotly>=6.3.1)
+    try:
+        from nautilus_trader.analysis import TearsheetConfig
+        from nautilus_trader.analysis.tearsheet import create_tearsheet
+
+        print("\nGenerating tearsheet...")
+
+        # Try different themes: "plotly_white", "plotly_dark", "nautilus", "nautilus_dark"
+        tearsheet_config = TearsheetConfig(theme="plotly_white")  # Change this to test themes!
+
+        create_tearsheet(
+            engine=engine,
+            output_path="crypto_ethusdt_tearsheet.html",
+            config=tearsheet_config,
+        )
+        print("Tearsheet saved to: crypto_ethusdt_tearsheet.html")
+        print(f"Theme: {tearsheet_config.theme}")
+        print("Open this file in your browser to view interactive charts!")
+    except ImportError:
+        print("\nPlotly not installed. Install with: pip install plotly>=6.3.1")
+        print("  Then re-run to generate tearsheets.")
 
     # For repeated backtest runs make sure to reset the engine
     engine.reset()

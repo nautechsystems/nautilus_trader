@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,17 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{any::Any, cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
+use std::{any::Any, cell::RefCell, fmt::Debug, rc::Rc};
 
-use nautilus_common::{cache::Cache, clock::Clock};
-use nautilus_data::client::DataClient;
-use nautilus_execution::client::ExecutionClient;
+use ahash::AHashMap;
+use nautilus_common::{
+    cache::Cache,
+    clients::{DataClient, ExecutionClient},
+    clock::Clock,
+};
 
 /// Configuration for creating client instances.
 ///
 /// This trait allows different client types to provide their configuration
 /// in a type-safe manner while still being usable in generic factory contexts.
-pub trait ClientConfig: Send + Sync + std::fmt::Debug {
+pub trait ClientConfig: Debug {
     /// Return the configuration as a trait object.
     fn as_any(&self) -> &dyn Any;
 }
@@ -32,7 +35,7 @@ pub trait ClientConfig: Send + Sync + std::fmt::Debug {
 ///
 /// Implementations of this trait should create specific data client types
 /// (e.g., Binance, Bybit, Databento) based on the provided configuration.
-pub trait DataClientFactory: Send + Sync + Debug {
+pub trait DataClientFactory: Debug {
     /// Create a new data client instance.
     ///
     /// # Errors
@@ -57,7 +60,7 @@ pub trait DataClientFactory: Send + Sync + Debug {
 ///
 /// Implementations of this trait should create specific execution client types
 /// (e.g., Binance, Bybit, Interactive Brokers) based on the provided configuration.
-pub trait ExecutionClientFactory: Send + Sync + std::fmt::Debug {
+pub trait ExecutionClientFactory: Debug {
     /// Create a new execution client instance.
     ///
     /// # Errors
@@ -84,7 +87,7 @@ pub trait ExecutionClientFactory: Send + Sync + std::fmt::Debug {
 /// enabling a plugin-like architecture for different data providers.
 #[derive(Debug, Default)]
 pub struct DataClientFactoryRegistry {
-    factories: std::collections::HashMap<String, Box<dyn DataClientFactory>>,
+    factories: AHashMap<String, Box<dyn DataClientFactory>>,
 }
 
 impl DataClientFactoryRegistry {
@@ -92,7 +95,7 @@ impl DataClientFactoryRegistry {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            factories: std::collections::HashMap::new(),
+            factories: AHashMap::new(),
         }
     }
 
@@ -143,7 +146,7 @@ impl DataClientFactoryRegistry {
 /// enabling a plugin-like architecture for different execution providers.
 #[derive(Debug, Default)]
 pub struct ExecutionClientFactoryRegistry {
-    factories: HashMap<String, Box<dyn ExecutionClientFactory>>,
+    factories: AHashMap<String, Box<dyn ExecutionClientFactory>>,
 }
 
 impl ExecutionClientFactoryRegistry {
@@ -151,7 +154,7 @@ impl ExecutionClientFactoryRegistry {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            factories: std::collections::HashMap::new(),
+            factories: AHashMap::new(),
         }
     }
 
@@ -191,10 +194,6 @@ impl ExecutionClientFactoryRegistry {
         self.factories.contains_key(name)
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[allow(dead_code)]
 #[cfg(test)]

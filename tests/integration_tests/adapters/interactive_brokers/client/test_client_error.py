@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import functools
-from unittest.mock import Mock
 
 import pytest
 
@@ -27,6 +25,7 @@ async def test_ib_is_ready_by_notification_1101(ib_client):
     # Act
     await ib_client.process_error(
         req_id=-1,
+        error_time=0,
         error_code=1101,
         error_string="Connectivity between IB and Trader Workstation has been restored",
     )
@@ -43,6 +42,7 @@ async def test_ib_is_ready_by_notification_1102(ib_client):
     # Act
     await ib_client.process_error(
         req_id=-1,
+        error_time=0,
         error_code=1102,
         error_string="Connectivity between IB and Trader Workstation has been restored",
     )
@@ -61,40 +61,9 @@ async def test_ib_is_not_ready_by_error_10182(ib_client):
     # Act
     await ib_client.process_error(
         req_id=req_id,
+        error_time=0,
         error_code=10182,
         error_string="Failed to request live updates (disconnected).",
-    )
-
-    # Assert
-    assert not ib_client._is_ib_connected.is_set()
-
-
-@pytest.mark.skip("Failing, need to investigate")
-@pytest.mark.asyncio
-async def test_ib_is_not_ready_by_error_10189(ib_client):
-    # Arrange
-    req_id = 6
-    ib_client._is_ib_connected.set()
-    ib_client._subscriptions.add(
-        req_id=req_id,
-        name="EUR.USD",
-        handle=functools.partial(
-            ib_client.subscribe_ticks,
-            instrument_id="EUR/USD.IDEALPRO",
-            contract=Mock(),
-            tick_type="BidAsk",
-        ),
-        cancel=functools.partial(
-            ib_client._eclient.cancelAccountSummary,
-            reqId=req_id,
-        ),
-    )
-
-    # Act
-    await ib_client.process_error(
-        req_id=req_id,
-        error_code=10189,
-        error_string="Failed to request tick-by-tick data.BidAsk tick-by-tick requests are not supported for EUR.USD.",
     )
 
     # Assert

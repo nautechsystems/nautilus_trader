@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,8 +20,8 @@ from decimal import Decimal
 
 import pandas as pd
 
+from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
@@ -58,7 +58,6 @@ if __name__ == "__main__":
     # Create a fill model (optional)
     fill_model = FillModel(
         prob_fill_on_limit=0.2,
-        prob_fill_on_stop=0.95,
         prob_slippage=0.5,
         random_seed=42,
     )
@@ -89,7 +88,7 @@ if __name__ == "__main__":
     engine.add_data(ticks)
 
     # Configure your strategy
-    config = VolatilityMarketMakerConfig(
+    strategy_config = VolatilityMarketMakerConfig(
         instrument_id=GBPUSD_SIM.id,
         bar_type=BarType.from_str("GBP/USD.SIM-5-MINUTE-BID-INTERNAL"),
         atr_period=20,
@@ -98,7 +97,7 @@ if __name__ == "__main__":
         emulation_trigger="NO_TRIGGER",
     )
     # Instantiate and add your strategy
-    strategy = VolatilityMarketMaker(config=config)
+    strategy = VolatilityMarketMaker(config=strategy_config)
     engine.add_strategy(strategy=strategy)
 
     time.sleep(0.1)

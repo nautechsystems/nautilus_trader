@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use std::hint::black_box;
+
+use criterion::{Criterion, criterion_group, criterion_main};
 use nautilus_common::cache::Cache;
 use nautilus_model::{
     identifiers::{InstrumentId, Venue},
@@ -25,7 +27,7 @@ fn cache_order_querying_venue_instrument(
     venue: &Venue,
     instrument: Option<&InstrumentId>,
 ) {
-    let _ = cache.orders(Some(venue), instrument, None, None);
+    let _ = cache.orders(Some(venue), instrument, None, None, None);
 }
 
 fn cache_orders_processing(orders: &[OrderAny]) {
@@ -43,31 +45,28 @@ fn bench_order_indexing(c: &mut Criterion) {
         cache.add_order(order, None, None, false).unwrap();
     }
 
-    c.bench_function(
-        "Cache with 100k orders - query orders with specific venue",
-        |b| {
-            b.iter(|| {
-                cache_order_querying_venue_instrument(
-                    black_box(&cache),
-                    black_box(&Venue::from("VENUE-1")),
-                    black_box(None),
-                );
-            });
-        },
-    );
+    let venue = Venue::from("VENUE-1");
+    let instrument = InstrumentId::from("SYMBOL-1.1");
 
-    c.bench_function(
-        "Cache with 100k orders - query orders with specific venue and instrument",
-        |b| {
-            b.iter(|| {
-                cache_order_querying_venue_instrument(
-                    black_box(&cache),
-                    black_box(&Venue::from("VENUE-1")),
-                    black_box(Some(&InstrumentId::from("SYMBOL-1.1"))),
-                );
-            });
-        },
-    );
+    c.bench_function("Cache query by venue", |b| {
+        b.iter(|| {
+            cache_order_querying_venue_instrument(
+                black_box(&cache),
+                black_box(&venue),
+                black_box(None),
+            );
+        });
+    });
+
+    c.bench_function("Cache query by venue + instrument", |b| {
+        b.iter(|| {
+            cache_order_querying_venue_instrument(
+                black_box(&cache),
+                black_box(&venue),
+                black_box(Some(&instrument)),
+            );
+        });
+    });
 }
 
 fn bench_order_processing(c: &mut Criterion) {

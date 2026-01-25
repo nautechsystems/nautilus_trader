@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,13 +23,13 @@ from nautilus_trader.adapters.binance.futures.http.account import BinanceFutures
 from nautilus_trader.common.component import LiveClock
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_binance_spot_account_http_client():
     clock = LiveClock()
 
     client = get_cached_binance_http_client(
         clock=clock,
-        account_type=BinanceAccountType.USDT_FUTURE,
+        account_type=BinanceAccountType.USDT_FUTURES,
         api_key=os.getenv("BINANCE_FUTURES_TESTNET_API_KEY"),
         api_secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
         is_testnet=True,
@@ -38,7 +38,7 @@ async def test_binance_spot_account_http_client():
     http_account = BinanceFuturesAccountHttpAPI(
         client=client,
         clock=clock,
-        account_type=BinanceAccountType.USDT_FUTURE,
+        account_type=BinanceAccountType.USDT_FUTURES,
     )
 
     await http_account.query_futures_hedge_mode()

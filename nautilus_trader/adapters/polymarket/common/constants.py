@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,6 +15,7 @@
 
 from typing import Final
 
+from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStatus
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
@@ -37,3 +38,8 @@ VALID_POLYMARKET_TIME_IN_FORCE: Final[set[TimeInForce]] = {
 }
 
 POLYMARKET_INVALID_API_KEY: Final[str] = "Unauthorized/Invalid api key"
+
+POLYMARKET_FINALIZED_TRADE_STATUSES: Final[tuple[PolymarketTradeStatus, ...]] = (
+    PolymarketTradeStatus.MINED,
+    PolymarketTradeStatus.CONFIRMED,
+)

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,11 +13,29 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Build script for the `nautilus-model` crate.
+//!
+//! In addition to the common tasks performed by the other build scripts (header generation,
+//! rerun-tracking, docs.rs early-exit) this script also toggles *high-precision* mode for the
+//! generated bindings based on either:
+//!
+//! 1. The `HIGH_PRECISION` environment variable, **or**
+//! 2. The compile-time `high-precision` cargo feature.
+//!
+//! When enabled the flag is forwarded to the Cython bindings via a `DEF HIGH_PRECISION` macro so
+//! that the Python layer compiles in a compatible configuration.
+
 #[cfg(feature = "ffi")]
 use std::env;
 
-#[allow(clippy::expect_used)]
-#[allow(unused_assignments)]
+#[allow(
+    clippy::expect_used,
+    reason = "Build script may panic on misconfiguration"
+)]
+#[allow(
+    unused_assignments,
+    reason = "Conditional compilation creates unused assignments"
+)]
 #[allow(unused_mut)]
 fn main() {
     // Skip file generation if we're in the docs.rs environment
@@ -49,12 +67,24 @@ fn main() {
         let mut config_c = cbindgen::Config::from_file("cbindgen.toml")
             .expect("unable to find cbindgen.toml configuration file");
 
-        #[cfg(feature = "high-precision")]
-        {
-            if let Some(mut includes) = config_c.after_includes {
-                includes.insert_str(0, "\n#define HIGH_PRECISION\n");
-                config_c.after_includes = Some(includes);
-            }
+        // Check HIGH_PRECISION environment variable for C header too
+        let high_precision_c = env::var("HIGH_PRECISION").map_or_else(
+            |_| {
+                #[cfg(feature = "high-precision")]
+                {
+                    true
+                }
+                #[cfg(not(feature = "high-precision"))]
+                {
+                    false
+                }
+            },
+            |v| v.to_lowercase() == "true" || v == "1",
+        );
+
+        if high_precision_c && let Some(mut includes) = config_c.after_includes {
+            includes.insert_str(0, "\n#define HIGH_PRECISION\n");
+            config_c.after_includes = Some(includes);
         }
 
         let c_header_path = crate_dir.join("../../nautilus_trader/core/includes/model.h");
@@ -66,10 +96,26 @@ fn main() {
         let mut config_cython = cbindgen::Config::from_file("cbindgen_cython.toml")
             .expect("unable to find cbindgen_cython.toml configuration file");
 
-        #[cfg(feature = "high-precision")]
-        let flag = Some("\nDEF HIGH_PRECISION = True  # or False".to_string());
-        #[cfg(not(feature = "high-precision"))]
-        let flag = Some("\nDEF HIGH_PRECISION = False  # or True".to_string());
+        // Check HIGH_PRECISION environment variable first, then fall back to feature flag
+        let high_precision = env::var("HIGH_PRECISION").map_or_else(
+            |_| {
+                #[cfg(feature = "high-precision")]
+                {
+                    true
+                }
+                #[cfg(not(feature = "high-precision"))]
+                {
+                    false
+                }
+            },
+            |v| v.to_lowercase() == "true" || v == "1",
+        );
+
+        let flag = if high_precision {
+            Some("\nDEF HIGH_PRECISION = True  # or False".to_string())
+        } else {
+            Some("\nDEF HIGH_PRECISION = False  # or True".to_string())
+        };
 
         // Activate Cython high-precision flag based on feature flags passed to Rust build
         config_cython.after_includes = flag;
@@ -88,7 +134,7 @@ fn main() {
         // Run the replace operation in memory
         let mut data = data.replace("cdef enum", "cpdef enum");
 
-        #[cfg(feature = "high-precision")]
+        // Always add 128-bit typedefs for compatibility (they map to 64-bit on MSVC)
         {
             let lines: Vec<&str> = data.lines().collect();
 

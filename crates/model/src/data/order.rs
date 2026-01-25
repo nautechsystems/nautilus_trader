@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -147,9 +147,6 @@ impl Display for BookOrder {
 
 impl Serializable for BookOrder {}
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -195,7 +192,7 @@ mod tests {
         let order = BookOrder::new(side, price, size, order_id);
         let exposure = order.exposure();
 
-        assert_eq!(exposure, price.as_f64() * size.as_f64());
+        assert_eq!(exposure, 100.00 * 10.0);
     }
 
     #[rstest]
@@ -206,11 +203,11 @@ mod tests {
 
         let order_buy = BookOrder::new(OrderSide::Buy, price, size, order_id);
         let signed_size_buy = order_buy.signed_size();
-        assert_eq!(signed_size_buy, size.as_f64());
+        assert_eq!(signed_size_buy, 10.0);
 
         let order_sell = BookOrder::new(OrderSide::Sell, price, size, order_id);
         let signed_size_sell = order_sell.signed_size();
-        assert_eq!(signed_size_sell, -(size.as_f64()));
+        assert_eq!(signed_size_sell, -10.0);
     }
 
     #[rstest]

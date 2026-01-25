@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -124,7 +124,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     loop_debug: bool = False
     logging: LoggingConfig | None = None
 
-    timeout_connection: PositiveFloat = 60.0
+    timeout_connection: PositiveFloat = 120.0
     timeout_reconciliation: PositiveFloat = 30.0
     timeout_portfolio: PositiveFloat = 10.0
     timeout_disconnection: PositiveFloat = 10.0

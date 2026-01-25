@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-/// Returns the environment variable for the given `key`.
+//! Cross-platform environment variable utilities.
+//!
+//! This module provides functions for safely accessing environment variables
+//! with proper error handling.
+
+/// Returns the value of the environment variable for the given `key`.
 ///
 /// # Errors
 ///
@@ -22,5 +27,148 @@ pub fn get_env_var(key: &str) -> anyhow::Result<String> {
     match std::env::var(key) {
         Ok(var) => Ok(var),
         Err(_) => anyhow::bail!("environment variable '{key}' must be set"),
+    }
+}
+
+/// Returns the provided `value` if `Some`, otherwise falls back to reading
+/// the environment variable for the given `key`.
+///
+/// Only attempts to read the environment variable when `value` is `None`,
+/// avoiding unnecessary environment variable lookups and errors.
+///
+/// # Errors
+///
+/// Returns an error if `value` is `None` and the environment variable is not set.
+pub fn get_or_env_var(value: Option<String>, key: &str) -> anyhow::Result<String> {
+    match value {
+        Some(v) => Ok(v),
+        None => get_env_var(key),
+    }
+}
+
+/// Returns the provided `value` if `Some`, otherwise falls back to reading
+/// the environment variable for the given `key`.
+///
+/// Unlike [`get_or_env_var`], this function returns `None` instead of an error
+/// when the environment variable is not set. Use this for optional credentials
+/// where missing values are acceptable (e.g., public-only API clients).
+#[must_use]
+pub fn get_or_env_var_opt(value: Option<String>, key: &str) -> Option<String> {
+    value.or_else(|| std::env::var(key).ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::*;
+
+    use super::*;
+
+    #[rstest]
+    fn test_get_env_var_success() {
+        // Test with a commonly available environment variable
+        if let Ok(path) = std::env::var("PATH") {
+            let result = get_env_var("PATH");
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), path);
+        }
+    }
+
+    #[rstest]
+    fn test_get_env_var_not_set() {
+        // Use a highly unlikely environment variable name
+        let result = get_env_var("NONEXISTENT_ENV_VAR_THAT_SHOULD_NOT_EXIST_12345");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains(
+            "environment variable 'NONEXISTENT_ENV_VAR_THAT_SHOULD_NOT_EXIST_12345' must be set"
+        ));
+    }
+
+    #[rstest]
+    fn test_get_env_var_error_message_format() {
+        let var_name = "DEFINITELY_NONEXISTENT_VAR_123456789";
+        let result = get_env_var(var_name);
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains(var_name));
+        assert!(error_msg.contains("must be set"));
+    }
+
+    #[rstest]
+    fn test_get_or_env_var_with_some_value() {
+        let provided_value = Some("provided_value".to_string());
+        let result = get_or_env_var(provided_value, "PATH");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "provided_value");
+    }
+
+    #[rstest]
+    fn test_get_or_env_var_with_none_and_env_var_set() {
+        // Test with a commonly available environment variable
+        if let Ok(path) = std::env::var("PATH") {
+            let result = get_or_env_var(None, "PATH");
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), path);
+        }
+    }
+
+    #[rstest]
+    fn test_get_or_env_var_with_none_and_env_var_not_set() {
+        let result = get_or_env_var(None, "NONEXISTENT_ENV_VAR_THAT_SHOULD_NOT_EXIST_67890");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains(
+            "environment variable 'NONEXISTENT_ENV_VAR_THAT_SHOULD_NOT_EXIST_67890' must be set"
+        ));
+    }
+
+    #[rstest]
+    fn test_get_or_env_var_empty_string_value() {
+        // Empty string is still a valid value that should be returned
+        let provided_value = Some(String::new());
+        let result = get_or_env_var(provided_value, "PATH");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "");
+    }
+
+    #[rstest]
+    fn test_get_or_env_var_priority() {
+        // When both value and env var are available, value takes precedence
+        // Using PATH as it should be available in most environments
+        if std::env::var("PATH").is_ok() {
+            let provided = Some("custom_value_takes_priority".to_string());
+            let result = get_or_env_var(provided, "PATH");
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), "custom_value_takes_priority");
+        }
+    }
+
+    #[rstest]
+    fn test_get_or_env_var_opt_with_some_value() {
+        let provided_value = Some("provided_value".to_string());
+        let result = get_or_env_var_opt(provided_value, "PATH");
+        assert_eq!(result, Some("provided_value".to_string()));
+    }
+
+    #[rstest]
+    fn test_get_or_env_var_opt_with_none_and_env_var_set() {
+        if let Ok(path) = std::env::var("PATH") {
+            let result = get_or_env_var_opt(None, "PATH");
+            assert_eq!(result, Some(path));
+        }
+    }
+
+    #[rstest]
+    fn test_get_or_env_var_opt_with_none_and_env_var_not_set() {
+        let result = get_or_env_var_opt(None, "NONEXISTENT_ENV_VAR_OPT_12345");
+        assert_eq!(result, None);
+    }
+
+    #[rstest]
+    fn test_get_or_env_var_opt_priority() {
+        // When both value and env var are available, value takes precedence
+        if std::env::var("PATH").is_ok() {
+            let provided = Some("custom_value".to_string());
+            let result = get_or_env_var_opt(provided, "PATH");
+            assert_eq!(result, Some("custom_value".to_string()));
+        }
     }
 }

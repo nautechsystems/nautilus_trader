@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,6 +29,9 @@ use super::check_client_id_or_venue;
 pub struct RequestCustomData {
     pub client_id: ClientId,
     pub data_type: DataType,
+    pub start: Option<DateTime<Utc>>,
+    pub end: Option<DateTime<Utc>>,
+    pub limit: Option<NonZeroUsize>,
     pub request_id: UUID4,
     pub ts_init: UnixNanos,
     pub params: Option<IndexMap<String, String>>,
@@ -36,9 +39,13 @@ pub struct RequestCustomData {
 
 impl RequestCustomData {
     /// Creates a new [`RequestCustomData`] instance.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         client_id: ClientId,
         data_type: DataType,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<NonZeroUsize>,
         request_id: UUID4,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
@@ -46,6 +53,9 @@ impl RequestCustomData {
         Self {
             client_id,
             data_type,
+            start,
+            end,
+            limit,
             request_id,
             ts_init,
             params,
@@ -224,6 +234,47 @@ impl RequestTrades {
             start,
             end,
             limit,
+            client_id,
+            request_id,
+            ts_init,
+            params,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct RequestBookDepth {
+    pub instrument_id: InstrumentId,
+    pub start: Option<DateTime<Utc>>,
+    pub end: Option<DateTime<Utc>>,
+    pub limit: Option<NonZeroUsize>,
+    pub depth: Option<NonZeroUsize>,
+    pub client_id: Option<ClientId>,
+    pub request_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub params: Option<IndexMap<String, String>>,
+}
+
+impl RequestBookDepth {
+    /// Creates a new [`RequestBookDepth`] instance.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<NonZeroUsize>,
+        depth: Option<NonZeroUsize>,
+        client_id: Option<ClientId>,
+        request_id: UUID4,
+        ts_init: UnixNanos,
+        params: Option<IndexMap<String, String>>,
+    ) -> Self {
+        Self {
+            instrument_id,
+            start,
+            end,
+            limit,
+            depth,
             client_id,
             request_id,
             ts_init,

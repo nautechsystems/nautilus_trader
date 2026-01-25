@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,16 +14,14 @@
 // -------------------------------------------------------------------------------------------------
 
 use clap::Parser;
-use log::LevelFilter;
 use nautilus_cli::opt::NautilusCli;
+use nautilus_common::logging::ensure_logging_initialized;
 
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().ok();
-    simple_logger::SimpleLogger::new()
-        .with_module_level("sqlx", LevelFilter::Off)
-        .init()
-        .unwrap();
+    ensure_logging_initialized();
+
     if let Err(e) = nautilus_cli::run(NautilusCli::parse()).await {
         log::error!("Error executing Nautilus CLI: {e}");
     }

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -55,6 +55,10 @@ from nautilus_trader.core.rust.model cimport order_status_from_cstr
 from nautilus_trader.core.rust.model cimport order_status_to_cstr
 from nautilus_trader.core.rust.model cimport order_type_from_cstr
 from nautilus_trader.core.rust.model cimport order_type_to_cstr
+from nautilus_trader.core.rust.model cimport oto_trigger_mode_from_cstr
+from nautilus_trader.core.rust.model cimport oto_trigger_mode_to_cstr
+from nautilus_trader.core.rust.model cimport position_adjustment_type_from_cstr
+from nautilus_trader.core.rust.model cimport position_adjustment_type_to_cstr
 from nautilus_trader.core.rust.model cimport position_side_from_cstr
 from nautilus_trader.core.rust.model cimport position_side_to_cstr
 from nautilus_trader.core.rust.model cimport price_type_from_cstr
@@ -201,6 +205,14 @@ cpdef str option_kind_to_str(OptionKind value):
     return cstr_to_pystr(option_kind_to_cstr(value))
 
 
+cpdef OtoTriggerMode oto_trigger_mode_from_str(str value):
+    return oto_trigger_mode_from_cstr(pystr_to_cstr(value))
+
+
+cpdef str oto_trigger_mode_to_str(OtoTriggerMode value):
+    return cstr_to_pystr(oto_trigger_mode_to_cstr(value))
+
+
 cpdef OrderSide order_side_from_str(str value):
     return order_side_from_cstr(pystr_to_cstr(value))
 
@@ -239,6 +251,14 @@ cpdef PositionSide position_side_from_str(str value):
 
 cpdef str position_side_to_str(PositionSide value):
     return cstr_to_pystr(position_side_to_cstr(value))
+
+
+cpdef PositionAdjustmentType position_adjustment_type_from_str(str value):
+    return position_adjustment_type_from_cstr(pystr_to_cstr(value))
+
+
+cpdef str position_adjustment_type_to_str(PositionAdjustmentType value):
+    return cstr_to_pystr(position_adjustment_type_to_cstr(value))
 
 
 cpdef PriceType price_type_from_str(str value):
@@ -365,6 +385,55 @@ cpdef time_in_force_to_pyo3(TimeInForce value):
         return nautilus_pyo3.TimeInForce.AT_THE_CLOSE
 
     raise ValueError(f"Unsupported `TimeInForce`, was '{time_in_force_to_str(value)}'")
+
+
+cpdef trigger_type_to_pyo3(TriggerType value):
+    if value == TriggerType.NO_TRIGGER:
+        return nautilus_pyo3.TriggerType.NO_TRIGGER
+    if value == TriggerType.DEFAULT:
+        return nautilus_pyo3.TriggerType.DEFAULT
+    if value == TriggerType.LAST_PRICE:
+        return nautilus_pyo3.TriggerType.LAST_PRICE
+    if value == TriggerType.MARK_PRICE:
+        return nautilus_pyo3.TriggerType.MARK_PRICE
+    if value == TriggerType.INDEX_PRICE:
+        return nautilus_pyo3.TriggerType.INDEX_PRICE
+    if value == TriggerType.BID_ASK:
+        return nautilus_pyo3.TriggerType.BID_ASK
+    if value == TriggerType.DOUBLE_LAST:
+        return nautilus_pyo3.TriggerType.DOUBLE_LAST
+    if value == TriggerType.DOUBLE_BID_ASK:
+        return nautilus_pyo3.TriggerType.DOUBLE_BID_ASK
+
+    raise ValueError(f"Unsupported `TriggerType`, was '{trigger_type_to_str(value)}'")
+
+
+cpdef trailing_offset_type_to_pyo3(TrailingOffsetType value):
+    if value == TrailingOffsetType.NO_TRAILING_OFFSET:
+        return nautilus_pyo3.TrailingOffsetType.NO_TRAILING_OFFSET
+    if value == TrailingOffsetType.PRICE:
+        return nautilus_pyo3.TrailingOffsetType.PRICE
+    if value == TrailingOffsetType.BASIS_POINTS:
+        return nautilus_pyo3.TrailingOffsetType.BASIS_POINTS
+    if value == TrailingOffsetType.TICKS:
+        return nautilus_pyo3.TrailingOffsetType.TICKS
+    if value == TrailingOffsetType.PRICE_TIER:
+        return nautilus_pyo3.TrailingOffsetType.PRICE_TIER
+
+    raise ValueError(f"Unsupported `TrailingOffsetType`, was '{trailing_offset_type_to_str(value)}'")
+
+
+cpdef contingency_type_to_pyo3(ContingencyType value):
+    if value == ContingencyType.NO_CONTINGENCY:
+        return nautilus_pyo3.ContingencyType.NO_CONTINGENCY
+    if value == ContingencyType.OCO:
+        return nautilus_pyo3.ContingencyType.OCO
+    if value == ContingencyType.OTO:
+        return nautilus_pyo3.ContingencyType.OTO
+    if value == ContingencyType.OUO:
+        return nautilus_pyo3.ContingencyType.OUO
+
+    raise ValueError(f"Unsupported `ContingencyType`, was '{contingency_type_to_str(value)}'")
 
 
 cpdef OrderSide order_side_from_pyo3(value: nautilus_pyo3.OrderSide):

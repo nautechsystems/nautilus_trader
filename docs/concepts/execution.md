@@ -26,6 +26,7 @@ methods. It also provides methods for managing orders and trade execution:
 - `cancel_all_orders(...)`
 - `close_position(...)`
 - `close_all_positions(...)`
+- `query_account(...)`
 - `query_order(...)`
 
 These methods create the necessary execution commands under the hood and send them on the message
@@ -41,34 +42,22 @@ individual order parameters (as explained below).
 
 This diagram illustrates message flow (commands and events) across the Nautilus execution components.
 
-```
-                  ┌───────────────────┐
-                  │                   │
-                  │                   │
-                  │                   │
-          ┌───────►   OrderEmulator   ├────────────┐
-          │       │                   │            │
-          │       │                   │            │
-          │       │                   │            │
-┌─────────┴──┐    └─────▲──────┬──────┘            │
-│            │          │      │           ┌───────▼────────┐   ┌─────────────────────┐   ┌─────────────────────┐
-│            │          │      │           │                │   │                     │   │                     │
-│            ├──────────┼──────┼───────────►                ├───►                     ├───►                     │
-│  Strategy  │          │      │           │                │   │                     │   │                     │
-│            │          │      │           │   RiskEngine   │   │   ExecutionEngine   │   │   ExecutionClient   │
-│            ◄──────────┼──────┼───────────┤                ◄───┤                     ◄───┤                     │
-│            │          │      │           │                │   │                     │   │                     │
-│            │          │      │           │                │   │                     │   │                     │
-└─────────┬──┘    ┌─────┴──────▼──────┐    └───────▲────────┘   └─────────────────────┘   └─────────────────────┘
-          │       │                   │            │
-          │       │                   │            │
-          │       │                   │            │
-          └───────►   ExecAlgorithm   ├────────────┘
-                  │                   │
-                  │                   │
-                  │                   │
-                  └───────────────────┘
+```mermaid
+flowchart LR
+    strategy[Strategy]
+    emulator[OrderEmulator]
+    algo[ExecAlgorithm]
+    risk[RiskEngine]
+    engine[ExecutionEngine]
+    client[ExecutionClient]
 
+    strategy <--> emulator
+    strategy <--> algo
+    strategy <--> risk
+    emulator --> risk
+    algo --> risk
+    risk <--> engine
+    engine <--> client
 ```
 
 ## Order Management System (OMS)
@@ -91,10 +80,10 @@ reality.
 
 | Strategy OMS                 | Venue OMS              | Description                                                                                                                                                |
 |:-----------------------------|:-----------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `NETTING`                    | `NETTING`              | The strategy uses the venues native OMS type, with a single position ID per instrument ID.                                                                 |
-| `HEDGING`                    | `HEDGING`              | The strategy uses the venues native OMS type, with multiple position IDs per instrument ID (both `LONG` and `SHORT`).                                      |
-| `NETTING`                    | `HEDGING`              | The strategy **overrides** the venues native OMS type. The venue tracks multiple positions per instrument ID, but Nautilus maintains a single position ID. |
-| `HEDGING`                    | `NETTING`              | The strategy **overrides** the venues native OMS type. The venue tracks a single position per instrument ID, but Nautilus maintains multiple position IDs. |
+| `NETTING`                    | `NETTING`              | The strategy uses the venue's native OMS type, with a single position ID per instrument ID.                                                                 |
+| `HEDGING`                    | `HEDGING`              | The strategy uses the venue's native OMS type, with multiple position IDs per instrument ID (both `LONG` and `SHORT`).                                      |
+| `NETTING`                    | `HEDGING`              | The strategy **overrides** the venue's native OMS type. The venue tracks multiple positions per instrument ID, but Nautilus maintains a single position ID. |
+| `HEDGING`                    | `NETTING`              | The strategy **overrides** the venue's native OMS type. The venue tracks a single position per instrument ID, but Nautilus maintains multiple position IDs. |
 
 :::note
 Configuring OMS types separately for strategies and venues increases platform complexity but allows
@@ -129,14 +118,14 @@ Every order command and event passes through the `RiskEngine` unless specificall
 
 The `RiskEngine` includes several built-in pre-trade risk checks, including:
 
-- Price precisions correct for the instrument
+- Price precisions correct for the instrument.
 - Prices are positive (unless an option type instrument)
-- Quantity precisions correct for the instrument
-- Below maximum notional for the instrument
-- Within maximum or minimum quantity for the instrument
-- Only reducing position when a `reduce_only` execution instruction is specified for the order
+- Quantity precisions correct for the instrument.
+- Below maximum notional for the instrument.
+- Within maximum or minimum quantity for the instrument.
+- Only reducing position when a `reduce_only` execution instruction is specified for the order.
 
-If any risk check fails, an `OrderDenied` event is generated, effectively closing the order and
+If any risk check fails, the system generates an `OrderDenied` event, effectively closing the order and
 preventing it from progressing further. This event includes a human-readable reason for the denial.
 
 ### Trading state
@@ -145,9 +134,9 @@ Additionally, the current trading state of a Nautilus system affects order flow.
 
 The `TradingState` enum has three variants:
 
-- `ACTIVE`: The system operates normally
-- `HALTED`: The system will not process further order commands until the state changes
-- `REDUCING`: The system will only process cancels or commands that reduce open positions
+- `ACTIVE`: Operates normally.
+- `HALTED`: Does not process further order commands until state changes.
+- `REDUCING`: Only processes cancels or commands that reduce open positions.
 
 :::info
 See the `RiskEngineConfig` [API Reference](../api_reference/config#risk) for further details.
@@ -219,7 +208,7 @@ an execution model which determines the horizon and interval.
 
 :::info
 There is no limit to the number of execution algorithm parameters you can create. The parameters
-just need to be a dictionary with string keys and primitive values (values that can be serialized
+must be a dictionary with string keys and primitive values (values that can be serialized
 over the wire, such as ints, floats, and strings).
 :::
 
@@ -229,27 +218,27 @@ To implement a custom execution algorithm you must define a class which inherits
 
 An execution algorithm is a type of `Actor`, so it's capable of the following:
 
-- Request and subscribe to data
-- Access the `Cache`
-- Set time alerts and/or timers using a `Clock`
+- Request and subscribe to data.
+- Access the `Cache`.
+- Set time alerts and/or timers using a `Clock`.
 
 Additionally it can:
 
-- Access the central `Portfolio`
-- Spawn secondary orders from a received primary (original) order
+- Access the central `Portfolio`.
+- Spawn secondary orders from a received primary (original) order.
 
 Once an execution algorithm is registered, and the system is running, it will receive orders off the
 messages bus which are addressed to its `ExecAlgorithmId` via the `exec_algorithm_id` order parameter.
 The order may also carry the `exec_algorithm_params` being a `dict[str, Any]`.
 
 :::warning
-Because of the flexibility of the `exec_algorithm_params` dictionary. It's important to thoroughly
+Because of the flexibility of the `exec_algorithm_params` dictionary, it's important to thoroughly
 validate all of the key value pairs for correct operation of the algorithm (for starters that the
 dictionary is not ``None`` and all necessary parameters actually exist).
 :::
 
 Received orders will arrive via the following `on_order(...)` method. These received orders are
-know as "primary" (original) orders when being handled by an execution algorithm.
+known as "primary" (original) orders when being handled by an execution algorithm.
 
 ```python
 from nautilus_trader.model.orders.base import Order
@@ -272,7 +261,12 @@ Each of these methods takes the primary (original) `Order` as the first argument
 quantity will be reduced by the `quantity` passed in (becoming the spawned orders quantity).
 
 :::warning
-There must be enough primary order quantity remaining (this is validated).
+The spawned quantity must not exceed the primary order's `leaves_qty` (remaining unfilled quantity).
+:::
+
+:::note
+If a spawned order is denied or rejected before acceptance, the deducted quantity is automatically
+restored to the primary order. Once accepted by the venue, the reduction is considered committed.
 :::
 
 Once the desired number of secondary orders have been spawned, and the execution routine is over,
@@ -281,7 +275,7 @@ the intention is that the algorithm will then finally send the primary (original
 ### Spawned orders
 
 All secondary orders spawned from an execution algorithm will carry a `exec_spawn_id` which is
-simply the `ClientOrderId` of the primary (original) order, and whose `client_order_id`
+the `ClientOrderId` of the primary (original) order, and whose `client_order_id`
 derives from this original identifier with the following convention:
 
 - `exec_spawn_id` (primary order `client_order_id` value)
@@ -325,3 +319,192 @@ def orders_for_exec_spawn(self, exec_spawn_id: ClientOrderId) -> list[Order]:
 :::note
 This also includes the primary (original) order.
 :::
+
+## Own order books
+
+Own order books are L3 order books that track only your own (user) orders organized by price level, maintained separately from the venue's public order books.
+
+### Purpose
+
+Own order books serve several purposes:
+
+- Monitor the state of your orders within the venue's public book in real-time.
+- Validate order placement by checking available liquidity at price levels before submission.
+- Help prevent self-trading by identifying price levels where your own orders already exist.
+- Support advanced order management strategies that depend on queue position.
+- Enable reconciliation between internal state and venue state during live trading.
+
+### Lifecycle
+
+Own order books are maintained per instrument and automatically updated as orders transition through their lifecycle.
+Orders are added when submitted or accepted, updated when modified, and removed when filled, canceled, rejected, or expired.
+
+Only orders with prices can be represented in own order books. Market orders and other order types without explicit prices are excluded since they cannot be positioned at specific price levels.
+
+### Safe cancellation queries
+
+When querying own order books for orders to cancel, use a `status` filter that **excludes** `PENDING_CANCEL` to avoid processing orders already being cancelled.
+
+:::warning
+Including `PENDING_CANCEL` in status filters can cause:
+
+- Duplicate cancel attempts on the same order.
+- Inflated open order counts (orders in `PENDING_CANCEL` remain "open" until confirmed canceled).
+- Order state explosion when multiple strategies attempt to cancel the same orders.
+
+:::
+
+The optional `accepted_buffer_ns` many methods expose is a time-based guard that only returns orders whose `ts_accepted` is at least that many nanoseconds in the past. Orders that have not yet been accepted by the venue still have `ts_accepted = 0`, so they are included once the buffer window elapses. To exclude those inflight orders you must pair the buffer with an explicit status filter (for example, restrict to `ACCEPTED` / `PARTIALLY_FILLED`).
+
+### Auditing
+
+During live trading, own order books can be periodically audited against the cache's order indexes to ensure consistency.
+The audit mechanism verifies that closed orders are properly removed and that inflight orders (submitted but not yet accepted) remain tracked during venue latency windows.
+
+The audit interval can be configured using the `own_books_audit_interval_secs` parameter in live trading configurations.
+
+## Overfills
+
+An overfill occurs when the cumulative fill quantity for an order exceeds the original order quantity.
+For example, an order for 100 units that receives fills totaling 110 units has an overfill of 10 units.
+
+### How overfills occur
+
+Overfills can result from two fundamentally different causes:
+
+- Duplicate fill events (a network/messaging issue).
+- Genuine overfills at the matching engine (a real execution outcome).
+
+**Genuine overfills at the matching engine**
+
+In some cases, the matching engine actually executes more quantity than the order requested.
+This is a real execution outcome, not a duplicate event:
+
+- **Matching engine race conditions**: In fast markets with high concurrency, an order may match
+  against multiple counterparties nearly simultaneously before being fully removed from the book.
+- **Minimum lot size constraints**: If an order's remaining quantity falls below the venue's minimum
+  tradeable lot, some matching engines fill the minimum lot anyway rather than leaving an untradeable remainder.
+- **DEX/AMM mechanics**: Decentralized exchanges using automated market makers may have execution
+  mechanics where actual fill quantities differ slightly from requested due to price impact calculations.
+- **Multi-fill atomicity**: Some venues do not guarantee atomic fill quantities across partial
+  executions, allowing aggregate fills to exceed the original order quantity.
+
+**Duplicate fill events**
+
+Separate from genuine overfills, the same fill event may be delivered multiple times:
+
+- WebSocket reconnection replaying previously received events.
+- The venue's internal retry or delivery guarantee mechanisms.
+- API timing issues in the venue's execution reporting.
+
+The system handles duplicate events via `trade_id` deduplication (see below), but duplicates with
+different `trade_id` values require overfill handling.
+
+**Race conditions with reconciliation**
+
+During live trading, the system maintains state through two parallel channels:
+
+- Real-time fill events arriving via WebSocket.
+- Periodic reconciliation polling the venue for fill history.
+
+If the same fill arrives through both channels with different identifiers before deduplication
+can occur, both may be applied to the order. This is particularly likely during:
+
+- System startup when reconciliation runs while WebSocket connections are establishing.
+- Network instability causing reconnections mid-fill.
+- High-frequency trading where fills arrive faster than reconciliation cycles.
+
+The likelihood of reconciliation race conditions increases when:
+
+- **Thresholds are reduced**: The `open_check_threshold_ms` and `inflight_check_threshold_ms` settings
+  (both default to 5,000 ms) define how long the engine waits before acting on discrepancies.
+  Reducing these below the round-trip latency to your venue increases the chance of processing
+  a fill via reconciliation before the real-time event arrives (or vice versa).
+- **Reconciliation frequency is increased**: Setting `open_check_interval_secs` to aggressive values
+  (e.g., 1-2 seconds) increases how often the system polls the venue, creating more opportunities
+  for race conditions with real-time events.
+- **Startup delay is reduced**: The `reconciliation_startup_delay_secs` setting (default 10 seconds)
+  provides time for WebSocket connections to stabilize before continuous reconciliation begins.
+  Reducing this increases the chance of duplicate fills during the startup window.
+
+See [Continuous reconciliation](live.md#continuous-reconciliation) for configuration details.
+
+### System behavior
+
+The `ExecutionEngine` checks for potential overfills before applying each fill event by comparing
+the order's current `filled_qty` plus the incoming `last_qty` against the original `quantity`.
+
+The `allow_overfills` configuration option (default: `False`) controls how overfills are handled:
+
+| `allow_overfills` | Behavior                                                                   |
+|-------------------|----------------------------------------------------------------------------|
+| `False`           | Logs an error and rejects the fill, preserving the order's current state.  |
+| `True`            | Logs a warning, applies the fill, and tracks the excess in `overfill_qty`. |
+
+When overfills are allowed, the order's `overfill_qty` field tracks the excess quantity.
+The order transitions to `FILLED` status and `leaves_qty` is clamped to zero.
+
+### Duplicate fill detection
+
+The `Order` model enforces that each `trade_id` can only be applied once. Inside `Order.apply()`,
+a hard check raises an error if the incoming fill's `trade_id` already exists on the order.
+This is the invariant that prevents double-counting executions.
+
+**Core engine path (backtest and real-time event processing)**
+
+In the core `ExecutionEngine` (used for backtests and processing real-time fill events), before
+calling `apply()`, the engine checks `Order.is_duplicate_fill()` which compares:
+
+- `trade_id`
+- `order_side`
+- `last_px`
+- `last_qty`
+
+If all fields match an existing fill exactly, the event is skipped gracefully with a warning log.
+This avoids raising an error for benign exact replays (e.g., from WebSocket reconnection).
+If the `trade_id` matches but other fields differ ("noisy replay"), the 4-field check passes
+but `Order.apply()` will raise an error due to the duplicate `trade_id`. The engine catches
+this error, logs the exception with full context, and drops the fill - it does not crash.
+
+**Live reconciliation sanitizer**
+
+During live reconciliation, `LiveExecutionEngine` pre-filters on `trade_id` alone *before*
+generating fill events. This check runs before the 4-field check described above. If a fill
+report arrives with a `trade_id` that already exists on the order, it is skipped regardless
+of whether the price or quantity differs. When the data does differ, a warning is logged to
+alert operators to potential venue data quality issues.
+
+This pre-filtering ensures that "noisy duplicates" from venue replays or reconciliation races
+are filtered out before they can trigger model integrity errors. If a venue legitimately needs
+to correct fill data, it should use proper execution report semantics rather than resending
+with the same `trade_id`.
+
+### Configuration
+
+For live trading, enable overfill tolerance in the `LiveExecEngineConfig`:
+
+```python
+from nautilus_trader.live.config import LiveExecEngineConfig
+
+config = LiveExecEngineConfig(
+    allow_overfills=True,  # Log warning instead of rejecting
+)
+```
+
+:::tip
+Enable `allow_overfills=True` when trading on venues known to emit duplicate fills or when
+position reconciliation races with exchange fill events are expected. Monitor the logs for
+overfill warnings to identify patterns that may require venue-specific handling.
+:::
+
+:::warning
+When `allow_overfills=False` (the default), rejected fills may cause position discrepancies
+between the system and the venue. Use the [reconciliation](live.md#execution-reconciliation)
+features to detect and resolve such discrepancies.
+:::
+
+## Related guides
+
+- [Orders](orders.md) - Order types and management.
+- [Positions](positions.md) - Position tracking from executions.
+- [Strategies](strategies.md) - Order submission from strategies.

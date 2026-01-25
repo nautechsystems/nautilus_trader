@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,9 +15,9 @@
 
 import pytest
 
-from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
-from nautilus_trader.indicators.average.moving_average import MovingAverageType
-from nautilus_trader.indicators.average.wma import WeightedMovingAverage
+from nautilus_trader.indicators import MovingAverageFactory
+from nautilus_trader.indicators import MovingAverageType
+from nautilus_trader.indicators import WeightedMovingAverage
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs

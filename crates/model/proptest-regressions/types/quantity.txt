@@ -1,0 +1,14 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 25dcc4e636e24baf4670fc0ddfcd3b292ad605757278da98f13583bdf9ed9dd1 # shrinks to a = 0.2964957218055781, b = 0.5765566198277999, c = 545205.4813837771, precision = 13
+cc f9de0628609510f217fea24413b906a64399075d0fa0f30ace38bb4f1e18e284 # shrinks to a = 84223.76278610702, b = 32376.357121225486, precision = 0
+cc 00f3456d37eef31c46d90689091ef1e6eac220ee707b1702f54fd68094d89c48 # shrinks to base = 1e-5, delta = 38462.00346023313, precision = 14
+cc a62e18ef519556a3a40cf5ecd0fa28df874c262bfa8a79f6fcfa5ff73623ff0b # shrinks to value = 61034.35408637954, precision1 = 10, precision2 = 11
+cc 769067c271d1a914fe977a57fcc10f42e6af61c7a4a26a1725fa1df9d4e7319c # shrinks to value = 130019.46757637699, precision = 14
+cc 7283dec04a4f59110ac6a95ec1725ab6d59ed9b0079bf036ef831f84479e0670 # shrinks to a = 810.1003158108322, b = 0.708500686821486, precision = 0
+cc a9d739140359eab61f0499aaea172863dc68af085121c7675ceb728f3a15a67d # shrinks to a = 0.8616045477873507, b = 56.625953364495025, precision = 0
+cc bff9f6dfe12861a5a1e7e16a2c659d783e446f1d733097cc8d419452d0738a04 # shrinks to value = 17014118346046.5, precision = 16

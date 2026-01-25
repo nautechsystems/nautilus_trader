@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -131,10 +131,7 @@ class PortfolioStatistic:
         # Override in implementation
 
     def _check_valid_returns(self, returns: pd.Series) -> bool:
-        if returns is None or returns.empty or returns.isna().all():
-            return False
-        else:
-            return True
+        return not (returns is None or returns.empty or returns.isna().all())
 
     def _downsample_to_daily_bins(self, returns: pd.Series) -> pd.Series:
         return returns.dropna().resample("1D").sum()

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -61,7 +61,7 @@ cdef class SyntheticInstrument(Data):
     Parameters
     ----------
     symbol : Symbol
-        The symbol for the synethic instrument.
+        The symbol for the synthetic instrument.
     price_precision : uint8_t
         The price precision for the synthetic instrument.
     components : list[InstrumentId]
@@ -107,13 +107,15 @@ cdef class SyntheticInstrument(Data):
         Condition.list_type(components, InstrumentId, "components")
         Condition.valid_string(formula, "formula")
 
-        if not synthetic_instrument_is_valid_formula(&self._mem, pystr_to_cstr(formula)):
+        comp_bytes = msgspec.json.encode([c.value for c in components])
+
+        if not synthetic_instrument_is_valid_formula(pystr_to_cstr(formula), pybytes_to_cstr(comp_bytes)):
             raise ValueError(f"invalid `formula`, was '{formula}'")
 
         self._mem = synthetic_instrument_new(
             symbol._mem,
             price_precision,
-            pybytes_to_cstr(msgspec.json.encode([c.value for c in components])),
+            pybytes_to_cstr(comp_bytes),
             pystr_to_cstr(formula),
             ts_event,
             ts_init,
@@ -146,6 +148,8 @@ cdef class SyntheticInstrument(Data):
     #     )
 
     def __eq__(self, SyntheticInstrument other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -255,7 +259,9 @@ cdef class SyntheticInstrument(Data):
         """
         Condition.valid_string(formula, "formula")
 
-        if not synthetic_instrument_is_valid_formula(&self._mem, pystr_to_cstr(formula)):
+        comp_bytes = msgspec.json.encode([c.value for c in self.components])
+
+        if not synthetic_instrument_is_valid_formula(pystr_to_cstr(formula), pybytes_to_cstr(comp_bytes)):
             raise ValueError(f"invalid `formula`, was '{formula}'")
 
         synthetic_instrument_change_formula(&self._mem, pystr_to_cstr(formula))

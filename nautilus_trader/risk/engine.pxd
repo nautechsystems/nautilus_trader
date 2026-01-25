@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -27,6 +27,7 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
+from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -87,8 +88,9 @@ cdef class RiskEngine(Component):
     cpdef bint _check_order_price(self, Instrument instrument, Order order)
     cpdef bint _check_order_quantity(self, Instrument instrument, Order order)
     cpdef bint _check_orders_risk(self, Instrument instrument, list orders)
+    cpdef bint _check_orders_risk_for_account(self, Instrument instrument, list orders, AccountId account_id)
     cpdef str _check_price(self, Instrument instrument, Price price)
-    cpdef str _check_quantity(self, Instrument instrument, Quantity quantity)
+    cpdef str _check_quantity(self, Instrument instrument, Quantity quantity, bint is_quote_quantity=*)
 
 # -- DENIALS --------------------------------------------------------------------------------------
 

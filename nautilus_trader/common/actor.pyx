@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -33,7 +33,6 @@ import cython
 
 from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ImportableActorConfig
-from nautilus_trader.common.enums import UpdateCatalogMode
 from nautilus_trader.common.executor import ActorExecutor
 from nautilus_trader.common.executor import TaskId
 from nautilus_trader.common.signal import generate_signal_class
@@ -50,6 +49,7 @@ from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.component cimport is_logging_initialized
+from nautilus_trader.common.data_topics cimport TopicCache
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
@@ -63,11 +63,14 @@ from nautilus_trader.data.messages cimport RequestBars
 from nautilus_trader.data.messages cimport RequestData
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
+from nautilus_trader.data.messages cimport RequestJoin
+from nautilus_trader.data.messages cimport RequestOrderBookDepth
 from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
 from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
 from nautilus_trader.data.messages cimport SubscribeBars
 from nautilus_trader.data.messages cimport SubscribeData
+from nautilus_trader.data.messages cimport SubscribeFundingRates
 from nautilus_trader.data.messages cimport SubscribeIndexPrices
 from nautilus_trader.data.messages cimport SubscribeInstrument
 from nautilus_trader.data.messages cimport SubscribeInstrumentClose
@@ -79,27 +82,34 @@ from nautilus_trader.data.messages cimport SubscribeQuoteTicks
 from nautilus_trader.data.messages cimport SubscribeTradeTicks
 from nautilus_trader.data.messages cimport UnsubscribeBars
 from nautilus_trader.data.messages cimport UnsubscribeData
+from nautilus_trader.data.messages cimport UnsubscribeFundingRates
 from nautilus_trader.data.messages cimport UnsubscribeIndexPrices
 from nautilus_trader.data.messages cimport UnsubscribeInstrument
+from nautilus_trader.data.messages cimport UnsubscribeInstrumentClose
 from nautilus_trader.data.messages cimport UnsubscribeInstruments
 from nautilus_trader.data.messages cimport UnsubscribeInstrumentStatus
 from nautilus_trader.data.messages cimport UnsubscribeMarkPrices
 from nautilus_trader.data.messages cimport UnsubscribeOrderBook
 from nautilus_trader.data.messages cimport UnsubscribeQuoteTicks
 from nautilus_trader.data.messages cimport UnsubscribeTradeTicks
-from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.indicators.base cimport Indicator
 from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
+from nautilus_trader.model.data cimport BarSpecification
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data cimport FundingRateUpdate
 from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport MarkPriceUpdate
+from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.events.order cimport OrderCanceled
+from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.greeks cimport GreeksCalculator
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
@@ -133,6 +143,7 @@ cdef class Actor(Component):
     def __init__(self, config: ActorConfig | None = None) -> None:
         if config is None:
             config = ActorConfig()
+
         Condition.type(config, ActorConfig, "config")
 
         if isinstance(config.component_id, str):
@@ -146,16 +157,19 @@ cdef class Actor(Component):
             config=config,
         )
 
+        self._topic_cache = TopicCache()
         self._warning_events: set[type] = set()
+        self._requests: dict[UUID4, RequestData] = {}
         self._pending_requests: dict[UUID4, Callable[[UUID4], None] | None] = {}
         self._pyo3_conversion_types = set()
         self._signal_classes: dict[str, type] = {}
 
-        # Indicators
         self._indicators: list[Indicator] = []
         self._indicators_for_quotes: dict[InstrumentId, list[Indicator]] = {}
         self._indicators_for_trades: dict[InstrumentId, list[Indicator]] = {}
-        self._indicators_for_bars: dict[BarType, list[Indicator]] = {}
+        self._indicators_for_bars: dict[tuple[InstrumentId, BarSpecification], list[Indicator]] = {}
+
+        # Topic cache
 
         # Configuration
         self._log_events = config.log_events
@@ -503,6 +517,22 @@ cdef class Actor(Component):
         """
         # Optionally override in subclass
 
+    cpdef void on_funding_rate(self, FundingRateUpdate funding_rate):
+        """
+        Actions to be performed when running and receives a funding rate update.
+
+        Parameters
+        ----------
+        funding_rate : FundingRateUpdate
+            The funding rate update received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
     cpdef void on_bar(self, Bar bar):
         """
         Actions to be performed when running and receives a bar.
@@ -571,6 +601,38 @@ cdef class Actor(Component):
         """
         # Optionally override in subclass
 
+    cpdef void on_order_filled(self, OrderFilled event):
+        """
+        Actions to be performed when running and receives an order filled event.
+
+        Parameters
+        ----------
+        event : OrderFilled
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_canceled(self, OrderCanceled event):
+        """
+        Actions to be performed when running and receives an order canceled event.
+
+        Parameters
+        ----------
+        event : OrderCanceled
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
     cpdef void on_event(self, Event event):
         """
         Actions to be performed running and receives an event.
@@ -616,6 +678,7 @@ cdef class Actor(Component):
         for indicator in self._indicators:
             if not indicator.initialized:
                 return False
+
         return True
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
@@ -687,8 +750,8 @@ cdef class Actor(Component):
         Condition.type(executor, Executor, "executor")
 
         self._executor = ActorExecutor(loop, executor, logger=self._log)
-
-        self._log.debug(f"Registered {executor}")
+        if self._log is not None:
+            self._log.debug(f"Registered {executor}")
 
     cpdef void register_warning_event(self, type event):
         """
@@ -717,8 +780,8 @@ cdef class Actor(Component):
         Condition.not_none(event, "event")
 
         self._warning_events.discard(event)
-
-        self._log.debug(f"Deregistered `{event.__name__}` from warning log levels")
+        if self._log is not None:
+            self._log.debug(f"Deregistered `{event.__name__}` from warning log levels")
 
     cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator):
         """
@@ -795,16 +858,15 @@ cdef class Actor(Component):
         if indicator not in self._indicators:
             self._indicators.append(indicator)
 
-        cdef BarType standard_bar_type = bar_type.standard()
+        cdef tuple bar_key = bar_type.id_spec_key()
+        if bar_key not in self._indicators_for_bars:
+            self._indicators_for_bars[bar_key] = []  # type: list[Indicator]
 
-        if standard_bar_type not in self._indicators_for_bars:
-            self._indicators_for_bars[standard_bar_type] = []  # type: list[Indicator]
-
-        if indicator not in self._indicators_for_bars[standard_bar_type]:
-            self._indicators_for_bars[standard_bar_type].append(indicator)
-            self.log.info(f"Registered Indicator {indicator} for {standard_bar_type} bars")
+        if indicator not in self._indicators_for_bars[bar_key]:
+            self._indicators_for_bars[bar_key].append(indicator)
+            self.log.info(f"Registered Indicator {indicator} for {bar_type.standard()} bars")
         else:
-            self.log.error(f"Indicator {indicator} already registered for {standard_bar_type} bars")
+            self.log.error(f"Indicator {indicator} already registered for {bar_type.standard()} bars")
 
 # -- ACTOR COMMANDS -------------------------------------------------------------------------------
 
@@ -831,11 +893,13 @@ cdef class Actor(Component):
             return
         try:
             self.log.debug("Saving state")
+
             user_state = self.on_save()
             if len(user_state) > 0:
                 self.log.info(f"Saved state: {list(user_state.keys())}", color=LogColor.BLUE)
             else:
                 self.log.info("No user state to save", color=LogColor.BLUE)
+
             return user_state
         except Exception as e:
             self.log.exception("Error on save", e)
@@ -954,6 +1018,7 @@ cdef class Actor(Component):
 
         if args is None:
             args = ()
+
         if kwargs is None:
             kwargs = {}
 
@@ -967,9 +1032,11 @@ cdef class Actor(Component):
                 **kwargs,
             )
 
-        self._log.info(
-            f"Executor: Queued {task_id}: {func.__name__}({args=}, {kwargs=})", LogColor.BLUE,
-        )
+        if self._log is not None:
+            self._log.debug(
+                f"Executor: Queued {task_id}: {func.__name__}({args=}, {kwargs=})", LogColor.BLUE,
+            )
+
         return task_id
 
     cpdef run_in_executor(
@@ -1012,6 +1079,7 @@ cdef class Actor(Component):
 
         if args is None:
             args = ()
+
         if kwargs is None:
             kwargs = {}
 
@@ -1025,9 +1093,11 @@ cdef class Actor(Component):
                 **kwargs,
             )
 
-        self._log.info(
-            f"Executor: Submitted {task_id}: {func.__name__}({args=}, {kwargs=})", LogColor.BLUE,
-        )
+        if self._log is not None:
+            self._log.debug(
+                f"Executor: Submitted {task_id}: {func.__name__}({args=}, {kwargs=})", LogColor.BLUE,
+            )
+
         return task_id
 
     cpdef list queued_task_ids(self):
@@ -1113,7 +1183,8 @@ cdef class Actor(Component):
 
         """
         if self._executor is None:
-            self._log.warning(f"Executor: {task_id} not found")
+            if self._log is not None:
+                self._log.warning(f"Executor: {task_id} not found")
             return
 
         self._executor.cancel_task(task_id)
@@ -1141,10 +1212,12 @@ cdef class Actor(Component):
 
         cdef str name
         for name in timer_names:
-            self._log.info(f"Canceled Timer(name={name})")
+            if self._log is not None:
+                self._log.info(f"Canceled Timer(name={name})")
 
         if self._executor is not None:
-            self._log.info(f"Canceling executor tasks")
+            if self._log is not None:
+                self._log.info(f"Canceling executor tasks")
             self._executor.cancel_all_tasks()
 
     cpdef void _resume(self):
@@ -1152,7 +1225,7 @@ cdef class Actor(Component):
 
     cpdef void _reset(self):
         self.on_reset()
-
+        self._requests.clear()
         self._pending_requests.clear()
 
         self._indicators.clear()
@@ -1161,6 +1234,7 @@ cdef class Actor(Component):
         self._indicators_for_bars.clear()
 
     cpdef void _dispose(self):
+        Component._dispose(self)  # Call base cleanup (cancels timers)
         self.on_dispose()
 
     cpdef void _degrade(self):
@@ -1175,6 +1249,8 @@ cdef class Actor(Component):
         self,
         DataType data_type,
         ClientId client_id = None,
+        InstrumentId instrument_id = None,
+        bint update_catalog = False,
         dict[str, object] params = None,
     ):
         """
@@ -1190,6 +1266,9 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The data client ID. If supplied then a `Subscribe` command will be
             sent to the corresponding data client.
+        update_catalog : bool, default False
+            Whether to update a catalog with the received data.
+            Only useful when downloading data during a backtest.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -1198,28 +1277,36 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.{data_type.topic}",
+            topic=self._topic_cache.get_custom_data_topic(data_type, instrument_id),
             handler=self.handle_data,
         )
 
-        if client_id is None:
+        # TODO during a backtest, use any ClientId for subscribing to custom data from a catalog when not using instrument_id
+        if client_id is None and instrument_id is None:
+            self.log.error("`Actor.subscribe_data`: `client_id` or `instrument_id` need to be specified")
             return
+
+        used_params = {}
+        used_params["update_catalog"] = update_catalog
+        if params:
+            used_params.update(params)
 
         cdef SubscribeData command = SubscribeData(
             data_type=data_type,
+            instrument_id=instrument_id,
             client_id=client_id,
-            venue=None,
+            venue=instrument_id.venue if instrument_id else None,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
 
     cpdef void subscribe_instruments(
         self,
         Venue venue,
         ClientId client_id = None,
+        bint update_catalog = False,
         dict[str, object] params = None,
     ):
         """
@@ -1235,6 +1322,9 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue.
+        update_catalog : bool, default False
+            Whether to update a catalog with the received data.
+            Only useful when downloading data during a backtest.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -1243,24 +1333,29 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.instrument.{venue}.*",
+            topic=self._topic_cache.get_instruments_topic(venue),
             handler=self.handle_instrument,
         )
+
+        used_params = {}
+        used_params["update_catalog"] = update_catalog
+        if params:
+            used_params.update(params)
 
         cdef SubscribeInstruments command = SubscribeInstruments(
             client_id=client_id,
             venue=venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
 
     cpdef void subscribe_instrument(
         self,
         InstrumentId instrument_id,
         ClientId client_id = None,
+        bint update_catalog = False,
         dict[str, object] params = None,
     ):
         """
@@ -1276,6 +1371,9 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        update_catalog : bool, default False
+            Whether to update a catalog with the received data.
+            Only useful when downloading data during a backtest.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -1284,11 +1382,14 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.instrument"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_instrument_topic(instrument_id),
             handler=self.handle_instrument,
         )
+
+        used_params = {}
+        used_params["update_catalog"] = update_catalog
+        if params:
+            used_params.update(params)
 
         cdef SubscribeInstrument command = SubscribeInstrument(
             instrument_id=instrument_id,
@@ -1296,9 +1397,8 @@ cdef class Actor(Component):
             venue=instrument_id.venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
 
     cpdef void subscribe_order_book_deltas(
@@ -1345,26 +1445,27 @@ cdef class Actor(Component):
             self._pyo3_conversion_types.add(OrderBookDeltas)
 
         self._msgbus.subscribe(
-            topic=f"data.book.deltas"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_deltas_topic(instrument_id),
             handler=self.handle_order_book_deltas,
         )
 
+        used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef SubscribeOrderBook command = SubscribeOrderBook(
             instrument_id=instrument_id,
+            book_data_type=OrderBookDelta,
             book_type=book_type,
             depth=depth,
             managed=managed,
-            interval_ms=1000,
-            only_deltas=True,
+            interval_ms=0,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
 
     cpdef void subscribe_order_book_depth(
@@ -1375,6 +1476,7 @@ cdef class Actor(Component):
         ClientId client_id = None,
         bint managed = True,
         bint pyo3_conversion = False,
+        bint update_catalog = False,
         dict[str, object] params = None,
     ):
         """
@@ -1397,6 +1499,9 @@ cdef class Actor(Component):
         pyo3_conversion : bool, default False
             If received deltas should be converted to `nautilus_pyo3.OrderBookDepth`
             prior to being passed to the `on_order_book_depth` handler.
+        update_catalog : bool, default False
+            Whether to update a catalog with the received data.
+            Only useful when downloading data during a backtest.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -1408,26 +1513,28 @@ cdef class Actor(Component):
             self._pyo3_conversion_types.add(OrderBookDepth10)
 
         self._msgbus.subscribe(
-            topic=f"data.book.depth"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_depth_topic(instrument_id),
             handler=self.handle_order_book_depth,
         )
 
+        used_params = {}
+        used_params["update_catalog"] = update_catalog
+        if params:
+            used_params.update(params)
+
         cdef SubscribeOrderBook command = SubscribeOrderBook(
             instrument_id=instrument_id,
+            book_data_type=OrderBookDepth10,
             book_type=book_type,
             depth=depth,
             managed=managed,
-            interval_ms=1000,
-            only_deltas=False,
+            interval_ms=0,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
 
     cpdef void subscribe_order_book_at_interval(
@@ -1437,7 +1544,6 @@ cdef class Actor(Component):
         int depth = 0,
         int interval_ms = 1000,
         ClientId client_id = None,
-        bint managed = True,
         dict[str, object] params = None,
     ):
         """
@@ -1463,8 +1569,6 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        managed : bool, default True
-            If an order book should be managed by the data engine based on the subscribed feed.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -1493,33 +1597,35 @@ cdef class Actor(Component):
             return
 
         self._msgbus.subscribe(
-            topic=f"data.book.snapshots"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}"
-                  f".{interval_ms}",
+            topic=self._topic_cache.get_snapshots_topic(instrument_id, interval_ms),
             handler=self.handle_order_book,
         )
 
+        used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef SubscribeOrderBook command = SubscribeOrderBook(
             instrument_id=instrument_id,
+            book_data_type=OrderBookDelta,
             book_type=book_type,
             depth=depth,
-            managed=managed,
+            managed=True,  # Must be managed by DataEngine to provide snapshots at interval
             interval_ms=interval_ms,
-            only_deltas=False,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
 
     cpdef void subscribe_quote_ticks(
         self,
         InstrumentId instrument_id,
         ClientId client_id = None,
+        bint update_catalog = False,
+        bint aggregate_spread_quotes = False,
         dict[str, object] params = None,
     ):
         """
@@ -1535,6 +1641,12 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        update_catalog : bool, default False
+            Whether to update a catalog with the received data.
+            Only useful when downloading data during a backtest.
+        aggregate_spread_quotes : bool, default False
+            Whether to activate a spread quote aggregator from leg quotes.
+            Only applicable when the instrument_id is a spread instrument.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -1543,11 +1655,15 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.quotes"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_quotes_topic(instrument_id),
             handler=self.handle_quote_tick,
         )
+
+        used_params = {}
+        used_params["update_catalog"] = update_catalog
+        used_params["aggregate_spread_quotes"] = aggregate_spread_quotes
+        if params:
+            used_params.update(params)
 
         cdef SubscribeQuoteTicks command = SubscribeQuoteTicks(
             instrument_id=instrument_id,
@@ -1555,15 +1671,15 @@ cdef class Actor(Component):
             venue=instrument_id.venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
 
     cpdef void subscribe_trade_ticks(
         self,
         InstrumentId instrument_id,
         ClientId client_id = None,
+        bint update_catalog = False,
         dict[str, object] params = None,
     ):
         """
@@ -1579,6 +1695,9 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        update_catalog : bool, default False
+            Whether to update a catalog with the received data.
+            Only useful when downloading data during a backtest.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -1587,11 +1706,14 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.trades"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_trades_topic(instrument_id),
             handler=self.handle_trade_tick,
         )
+
+        used_params = {}
+        used_params["update_catalog"] = update_catalog
+        if params:
+            used_params.update(params)
 
         cdef SubscribeTradeTicks command = SubscribeTradeTicks(
             instrument_id=instrument_id,
@@ -1599,9 +1721,8 @@ cdef class Actor(Component):
             venue=instrument_id.venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
 
     cpdef void subscribe_mark_prices(
@@ -1631,11 +1752,13 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.mark_prices"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_mark_prices_topic(instrument_id),
             handler=self.handle_mark_price,
         )
+
+        used_params = {}
+        if params:
+            used_params.update(params)
 
         cdef SubscribeMarkPrices command = SubscribeMarkPrices(
             instrument_id=instrument_id,
@@ -1643,9 +1766,8 @@ cdef class Actor(Component):
             venue=instrument_id.venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
 
     cpdef void subscribe_index_prices(
@@ -1675,11 +1797,13 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.index_prices"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_index_prices_topic(instrument_id),
             handler=self.handle_index_price,
         )
+
+        used_params = {}
+        if params:
+            used_params.update(params)
 
         cdef SubscribeIndexPrices command = SubscribeIndexPrices(
             instrument_id=instrument_id,
@@ -1687,16 +1811,60 @@ cdef class Actor(Component):
             venue=instrument_id.venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
+        )
+        self._send_data_cmd(command)
+
+    cpdef void subscribe_funding_rates(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Subscribe to streaming `FundingRateUpdate` data for the given instrument ID.
+
+        Once subscribed, any matching funding rate updates published on the message bus are forwarded
+        to the `on_funding_rate` handler.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to subscribe to.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_funding_rates_topic(instrument_id),
+            handler=self.handle_funding_rate,
         )
 
+        used_params = {}
+        if params:
+            used_params.update(params)
+
+        cdef SubscribeFundingRates command = SubscribeFundingRates(
+            instrument_id=instrument_id,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            params=used_params,
+        )
         self._send_data_cmd(command)
 
     cpdef void subscribe_bars(
         self,
         BarType bar_type,
         ClientId client_id = None,
-        bint await_partial = False,
+        bint update_catalog = False,
         dict[str, object] params = None,
     ):
         """
@@ -1712,9 +1880,9 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        await_partial : bool, default False
-            If the bar aggregator should await the arrival of a historical partial bar prior
-            to actively aggregating new bars.
+        update_catalog : bool, default False
+            Whether to update a catalog with the received data.
+            Only useful when downloading data during a backtest.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -1723,20 +1891,23 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.bars.{bar_type.standard()}",
+            topic=self._topic_cache.get_bars_topic(bar_type.standard()),
             handler=self.handle_bar,
         )
 
+        used_params = {}
+        used_params["update_catalog"] = update_catalog
+        if params:
+            used_params.update(params)
+
         cdef SubscribeBars command = SubscribeBars(
             bar_type=bar_type,
-            await_partial=await_partial,
             client_id=client_id,
             venue=bar_type.instrument_id.venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
 
     cpdef void subscribe_instrument_status(
@@ -1766,9 +1937,13 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.status.{instrument_id.venue}.{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_status_topic(instrument_id),
             handler=self.handle_instrument_status,
         )
+
+        used_params = {}
+        if params:
+            used_params.update(params)
 
         cdef SubscribeInstrumentStatus command = SubscribeInstrumentStatus(
             instrument_id=instrument_id,
@@ -1776,9 +1951,8 @@ cdef class Actor(Component):
             venue=instrument_id.venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
         self._log.info(f"Subscribed to {instrument_id} InstrumentStatus")
 
@@ -1809,9 +1983,13 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.venue.close_price.{instrument_id.to_str()}",
+            topic=self._topic_cache.get_close_prices_topic(instrument_id),
             handler=self.handle_instrument_close,
         )
+
+        used_params = {}
+        if params:
+            used_params.update(params)
 
         cdef SubscribeInstrumentClose command = SubscribeInstrumentClose(
             instrument_id=instrument_id,
@@ -1819,15 +1997,57 @@ cdef class Actor(Component):
             venue=instrument_id.venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
+        )
+        self._send_data_cmd(command)
+
+    cpdef void subscribe_order_fills(self, InstrumentId instrument_id):
+        """
+        Subscribe to all order fills for the given instrument ID.
+
+        Once subscribed, any matching order fills published on the message bus are forwarded
+        to the `on_order_filled` handler.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to subscribe to fills for.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.subscribe(
+            topic=f"events.fills.{instrument_id}",
+            handler=self._handle_order_filled,
         )
 
-        self._send_data_cmd(command)
+    cpdef void subscribe_order_cancels(self, InstrumentId instrument_id):
+        """
+        Subscribe to all order cancels for the given instrument ID.
+
+        Once subscribed, any matching order cancels published on the message bus are forwarded
+        to the `on_order_canceled` handler.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to subscribe to cancels for.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.subscribe(
+            topic=f"events.cancels.{instrument_id}",
+            handler=self._handle_order_canceled,
+        )
 
     cpdef void unsubscribe_data(
         self,
         DataType data_type,
         ClientId client_id = None,
+        InstrumentId instrument_id = None,
         dict[str, object] params = None,
     ):
         """
@@ -1848,22 +2068,28 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.{data_type.topic}",
+            topic=self._topic_cache.get_custom_data_topic(data_type, instrument_id),
             handler=self.handle_data,
         )
 
-        if client_id is None:
+        # TODO during a backtest, use any ClientId for subscribing to custom data from a catalog when not using instrument_id
+        if client_id is None and instrument_id is None:
+            self.log.error("`Actor.unsubscribe_data`: `client_id` or `instrument_id` need to be specified")
             return
+
+        used_params = {}
+        if params:
+            used_params.update(params)
 
         cdef UnsubscribeData command = UnsubscribeData(
             data_type=data_type,
+            instrument_id=instrument_id,
             client_id=client_id,
-            venue=None,
+            venue=instrument_id.venue if instrument_id else None,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
 
     cpdef void unsubscribe_instruments(
@@ -1890,18 +2116,21 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.instrument.{venue}.*",
+            topic=self._topic_cache.get_instruments_topic(venue),
             handler=self.handle_instrument,
         )
+
+        used_params = {}
+        if params:
+            used_params.update(params)
 
         cdef UnsubscribeInstruments command = UnsubscribeInstruments(
             client_id=client_id,
             venue=venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
 
     cpdef void unsubscribe_instrument(
@@ -1928,11 +2157,13 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.instrument"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_instrument_topic(instrument_id),
             handler=self.handle_instrument,
         )
+
+        used_params = {}
+        if params:
+            used_params.update(params)
 
         cdef UnsubscribeInstrument command = UnsubscribeInstrument(
             instrument_id=instrument_id,
@@ -1940,9 +2171,8 @@ cdef class Actor(Component):
             venue=instrument_id.venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
 
     cpdef void unsubscribe_order_book_deltas(
@@ -1969,22 +2199,23 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.book.deltas"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_deltas_topic(instrument_id),
             handler=self.handle_order_book_deltas,
         )
 
+        used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef UnsubscribeOrderBook command = UnsubscribeOrderBook(
             instrument_id=instrument_id,
-            only_deltas=True,
+            book_data_type=OrderBookDelta,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
 
     cpdef void unsubscribe_order_book_depth(
@@ -2011,22 +2242,23 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.book.depth"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_depth_topic(instrument_id),
             handler=self.handle_order_book_depth,
         )
 
+        used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef UnsubscribeOrderBook command = UnsubscribeOrderBook(
             instrument_id=instrument_id,
-            only_deltas=True,
+            book_data_type=OrderBookDepth10,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
 
     cpdef void unsubscribe_order_book_at_interval(
@@ -2058,29 +2290,30 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.book.snapshots"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}"
-                  f".{interval_ms}",
+            topic=self._topic_cache.get_snapshots_topic(instrument_id, interval_ms),
             handler=self.handle_order_book,
         )
 
+        used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef UnsubscribeOrderBook command = UnsubscribeOrderBook(
             instrument_id=instrument_id,
-            only_deltas=False,
+            book_data_type=OrderBookDelta,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
 
     cpdef void unsubscribe_quote_ticks(
         self,
         InstrumentId instrument_id,
         ClientId client_id = None,
+        bint aggregate_spread_quotes = False,
         dict[str, object] params = None,
     ):
         """
@@ -2093,6 +2326,9 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        aggregate_spread_quotes : bool, default False
+            Whether to unsubscribe from a spread quote aggregator.
+            Only applicable when the instrument_id is a spread instrument.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2101,11 +2337,14 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.quotes"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_quotes_topic(instrument_id),
             handler=self.handle_quote_tick,
         )
+
+        used_params = {}
+        used_params["aggregate_spread_quotes"] = aggregate_spread_quotes
+        if params:
+            used_params.update(params)
 
         cdef UnsubscribeQuoteTicks command = UnsubscribeQuoteTicks(
             instrument_id=instrument_id,
@@ -2113,9 +2352,8 @@ cdef class Actor(Component):
             venue=instrument_id.venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
 
     cpdef void unsubscribe_trade_ticks(
@@ -2142,11 +2380,13 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.trades"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_trades_topic(instrument_id),
             handler=self.handle_trade_tick,
         )
+
+        used_params = {}
+        if params:
+            used_params.update(params)
 
         cdef UnsubscribeTradeTicks command = UnsubscribeTradeTicks(
             instrument_id=instrument_id,
@@ -2154,9 +2394,8 @@ cdef class Actor(Component):
             venue=instrument_id.venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
 
     cpdef void unsubscribe_mark_prices(
@@ -2182,12 +2421,14 @@ cdef class Actor(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
-        self._msgbus.subscribe(
-            topic=f"data.mark_prices"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+        self._msgbus.unsubscribe(
+            topic=self._topic_cache.get_mark_prices_topic(instrument_id),
             handler=self.handle_mark_price,
         )
+
+        used_params = {}
+        if params:
+            used_params.update(params)
 
         cdef UnsubscribeMarkPrices command = UnsubscribeMarkPrices(
             instrument_id=instrument_id,
@@ -2195,9 +2436,8 @@ cdef class Actor(Component):
             venue=instrument_id.venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
 
     cpdef void unsubscribe_index_prices(
@@ -2223,12 +2463,14 @@ cdef class Actor(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
-        self._msgbus.subscribe(
-            topic=f"data.index_prices"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.topic()}",
+        self._msgbus.unsubscribe(
+            topic=self._topic_cache.get_index_prices_topic(instrument_id),
             handler=self.handle_index_price,
         )
+
+        used_params = {}
+        if params:
+            used_params.update(params)
 
         cdef UnsubscribeIndexPrices command = UnsubscribeIndexPrices(
             instrument_id=instrument_id,
@@ -2236,9 +2478,50 @@ cdef class Actor(Component):
             venue=instrument_id.venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
+        )
+        self._send_data_cmd(command)
+
+    cpdef void unsubscribe_funding_rates(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Unsubscribe from streaming `FundingRateUpdate` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to unsubscribe from.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.unsubscribe(
+            topic=self._topic_cache.get_funding_rates_topic(instrument_id),
+            handler=self.handle_funding_rate,
         )
 
+        used_params = {}
+        if params:
+            used_params.update(params)
+
+        cdef UnsubscribeFundingRates command = UnsubscribeFundingRates(
+            instrument_id=instrument_id,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            params=used_params,
+        )
         self._send_data_cmd(command)
 
     cpdef void unsubscribe_bars(
@@ -2264,24 +2547,25 @@ cdef class Actor(Component):
         Condition.not_none(bar_type, "bar_type")
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
-        standard_bar_type = bar_type.standard()
-
         self._msgbus.unsubscribe(
-            topic=f"data.bars.{standard_bar_type}",
+            topic=self._topic_cache.get_bars_topic(bar_type.standard()),
             handler=self.handle_bar,
         )
 
+        used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef UnsubscribeBars command = UnsubscribeBars(
-            bar_type=standard_bar_type,
+            bar_type=bar_type,
             client_id=client_id,
             venue=bar_type.instrument_id.venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
-        self._log.info(f"Unsubscribed from {standard_bar_type} bar data")
+        self._log.info(f"Unsubscribed from {bar_type} bar data")
 
     cpdef void unsubscribe_instrument_status(
         self,
@@ -2290,12 +2574,12 @@ cdef class Actor(Component):
         dict[str, object] params = None,
     ):
         """
-        Unsubscribe to status updates of the given venue.
+        Unsubscribe from status updates for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument to unsubscribe to status updates for.
+            The instrument to unsubscribe from status updates for.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue.
@@ -2307,9 +2591,13 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.status.{instrument_id.venue}.{instrument_id.symbol.topic()}",
+            topic=self._topic_cache.get_status_topic(instrument_id),
             handler=self.handle_instrument_status,
         )
+
+        used_params = {}
+        if params:
+            used_params.update(params)
 
         cdef UnsubscribeInstrumentStatus command = UnsubscribeInstrumentStatus(
             instrument_id=instrument_id,
@@ -2317,11 +2605,89 @@ cdef class Actor(Component):
             venue=instrument_id.venue,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
         )
-
         self._send_data_cmd(command)
         self._log.info(f"Unsubscribed from {instrument_id} InstrumentStatus")
+
+    cpdef void unsubscribe_instrument_close(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Unsubscribe from close updates for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to unsubscribe from close updates for.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.unsubscribe(
+            topic=f"data.venue.close_price.{instrument_id.to_str()}",
+            handler=self.handle_instrument_close,
+        )
+
+        used_params = {}
+        if params:
+            used_params.update(params)
+
+        cdef UnsubscribeInstrumentClose command = UnsubscribeInstrumentClose(
+            instrument_id=instrument_id,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            params=used_params,
+        )
+        self._send_data_cmd(command)
+        self._log.info(f"Unsubscribed from {instrument_id} InstrumentClose")
+
+    cpdef void unsubscribe_order_fills(self, InstrumentId instrument_id):
+        """
+        Unsubscribe from all order fills for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to unsubscribe from fills for.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.unsubscribe(
+            topic=f"events.fills.{instrument_id}",
+            handler=self._handle_order_filled,
+        )
+
+    cpdef void unsubscribe_order_cancels(self, InstrumentId instrument_id):
+        """
+        Unsubscribe from all order cancels for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to unsubscribe from cancels for.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.unsubscribe(
+            topic=f"events.cancels.{instrument_id}",
+            handler=self._handle_order_canceled,
+        )
 
     cpdef void publish_data(self, DataType data_type, Data data):
         """
@@ -2340,7 +2706,7 @@ cdef class Actor(Component):
         Condition.type(data, data_type.type, "data", "data.type")
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
-        self._msgbus.publish_c(topic=f"data.{data_type.topic}", msg=data)
+        self._msgbus.publish_c(topic=self._topic_cache.get_custom_data_topic(data_type), msg=data)
 
     cpdef void publish_signal(self, str name, value, uint64_t ts_event = 0):
         """
@@ -2365,6 +2731,7 @@ cdef class Actor(Component):
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         cdef type cls = self._signal_classes.get(name)
+
         if cls is None:
             cls = generate_signal_class(name=name, value_type=type(value))
             self._signal_classes[name] = cls
@@ -2395,10 +2762,8 @@ cdef class Actor(Component):
         """
         Condition.not_none(name, "name")
 
-        cdef str topic = f"Signal{name.title()}*"
-
         self._msgbus.subscribe(
-            topic=f"data.{topic}",
+            topic=self._topic_cache.get_signal_topic(name),
             handler=self.handle_signal,
         )
 
@@ -2408,11 +2773,14 @@ cdef class Actor(Component):
         self,
         DataType data_type,
         ClientId client_id,
+        InstrumentId instrument_id = None,
         datetime start = None,
         datetime end = None,
         int limit = 0,
         callback: Callable[[UUID4], None] | None = None,
-        update_catalog_mode: UpdateCatalogMode | None = None,
+        bint update_catalog = False,
+        bint join_request = False,
+        UUID4 request_id = None,
         dict[str, object] params = None,
     ):
         """
@@ -2429,24 +2797,25 @@ cdef class Actor(Component):
             The data type for the request.
         client_id : ClientId
             The data client ID.
-        start : datetime, optional
+        start : datetime
             The start datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            Cannot be `None`.
+            Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
         end : datetime, optional
             The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            If `None` then will be replaced with the current UTC time.
+            Should be right-inclusive (value <= end), but inclusiveness is not currently guaranteed.
         limit : int, optional
             The limit on the amount of data points received.
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has
             completed processing.
-        update_catalog_mode : UpdateCatalogMode, optional
-            If not None, then updates the catalog with new data received from a client.
-            Recommended catalog write modes are:
-            - UpdateCatalogMode.MODIFY (appends or prepends new data to the catalog by concatenating it to the existing unique parquet file).
-            - UpdateCatalogMode.NEWFILE (appends new data to the catalog by creating a new parquet file).
-            It is assumed that the data in a catalog for an instrument id is contiguous in time.
-            Be mindful not to create data "holes" when appending new data and using non empty start and end parameters at the same time.
+        update_catalog : bool, default False
+            Whether to update a catalog with the received data.
+        join_request: bool, optional, default to False
+            If a request should be joined and sorted with another one by using request_join.
+        request_id : UUID4, optional
+            The UUID to use for the request ID. If `None`, a new UUID will be generated.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2458,43 +2827,55 @@ cdef class Actor(Component):
         Raises
         ------
         TypeError
+            If `start` is `None`.
+        ValueError
+            If `start` is > current timestamp (now).
+        ValueError
+            If `end` is > current timestamp (now).
+        ValueError
+            If `start` is > `end`.
+        TypeError
             If `callback` is not `None` and not of type `Callable`.
 
         """
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(client_id, "client_id")
         Condition.not_none(data_type, "data_type")
-
-        cdef datetime now = self.clock.utc_now()
-        if start is not None:
-            Condition.is_true(start <= now, "start was > now")
-        if end is not None:
-            Condition.is_true(end <= now, "end was > now")
-        if start is not None and end is not None:
-            Condition.is_true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
 
-        params = params if params else {}
-        params["update_catalog_mode"] = update_catalog_mode
+        start, end = self._validate_datetime_range(start, end)
 
-        cdef UUID4 request_id = UUID4()
+        used_params = {}
+        used_params["update_catalog"] = update_catalog
+        used_params["join_request"] = join_request
+        if params:
+            used_params.update(params)
+
+        cdef UUID4 used_request_id = request_id if request_id else UUID4()
         cdef RequestData request = RequestData(
             data_type=data_type,
+            instrument_id=instrument_id,
             start=start,
             end=end,
             limit=limit,
             client_id=client_id,
             venue=None,
             callback=self._handle_data_response,
-            request_id=request_id,
+            request_id=used_request_id,
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
+        )
+        self._requests[used_request_id] = request
+        self._pending_requests[used_request_id] = callback
+
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_custom_data_topic(data_type, instrument_id, historical=True),
+            handler=self.handle_historical_data,
         )
 
-        self._pending_requests[request_id] = callback
         self._send_data_req(request)
 
-        return request_id
+        return used_request_id
 
     cpdef UUID4 request_instrument(
         self,
@@ -2503,7 +2884,9 @@ cdef class Actor(Component):
         datetime end = None,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
-        update_catalog_mode: UpdateCatalogMode | None = None,
+        bint update_catalog = False,
+        bint join_request = False,
+        UUID4 request_id = None,
         dict[str, object] params = None,
     ):
         """
@@ -2532,11 +2915,12 @@ cdef class Actor(Component):
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has
             completed processing.
-        update_catalog_mode : UpdateCatalogMode, optional
-            If not None, then updates the catalog with new data received from a client.
-            Recommended catalog write modes are:
-            - UpdateCatalogMode.MODIFY (appends or prepends new data to the catalog by concatenating it to the existing unique parquet file).
-            - UpdateCatalogMode.NEWFILE (appends new data to the catalog by creating a new parquet file).
+        update_catalog : bool, default False
+            Whether to update a catalog with the received data.
+        join_request: bool, optional, default to False
+            If a request should be joined and sorted with another one by using request_join.
+        request_id : UUID4, optional
+            The UUID to use for the request ID. If `None`, a new UUID will be generated.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2559,36 +2943,48 @@ cdef class Actor(Component):
         """
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(instrument_id, "instrument_id")
-
-        cdef datetime now = self.clock.utc_now()
-        if start is not None:
-            Condition.is_true(start <= now, "start was > now")
-        if end is not None:
-            Condition.is_true(end <= now, "end was > now")
-        if start is not None and end is not None:
-            Condition.is_true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
 
-        params = params if params else {}
-        params["update_catalog_mode"] = update_catalog_mode
+        cdef datetime now = self.clock.utc_now()
 
-        cdef UUID4 request_id = UUID4()
+        if start is not None:
+            Condition.is_true(start <= now, "start was > now")
+
+        if end is not None:
+            Condition.is_true(end <= now, "end was > now")
+
+        if start is not None and end is not None:
+            Condition.is_true(start <= end, "start was > end")
+
+        used_params = {}
+        used_params["update_catalog"] = update_catalog
+        used_params["join_request"] = join_request
+        if params:
+            used_params.update(params)
+
+        cdef UUID4 used_request_id = request_id if request_id else UUID4()
         cdef RequestInstrument request = RequestInstrument(
             instrument_id=instrument_id,
             start=start,
             end=end,
             client_id=client_id,
             venue=instrument_id.venue,
-            callback=self._handle_instrument_response,
-            request_id=request_id,
+            callback=self._handle_instruments_response,
+            request_id=used_request_id,
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
+        )
+        self._requests[used_request_id] = request
+        self._pending_requests[used_request_id] = callback
+
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_instrument_topic(instrument_id),
+            handler=self.handle_instrument,
         )
 
-        self._pending_requests[request_id] = callback
         self._send_data_req(request)
 
-        return request_id
+        return used_request_id
 
     cpdef UUID4 request_instruments(
         self,
@@ -2597,7 +2993,9 @@ cdef class Actor(Component):
         datetime end = None,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
-        update_catalog_mode: UpdateCatalogMode | None = None,
+        bint update_catalog = False,
+        bint join_request = False,
+        UUID4 request_id = None,
         dict[str, object] params = None,
     ):
         """
@@ -2626,13 +3024,15 @@ cdef class Actor(Component):
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has
             completed processing.
-        update_catalog_mode : UpdateCatalogMode, optional
-            If not None, then updates the catalog with new data received from a client.
-            Recommended catalog write modes are:
-            - UpdateCatalogMode.MODIFY (appends or prepends new data to the catalog by concatenating it to the existing unique parquet file).
-            - UpdateCatalogMode.NEWFILE (appends new data to the catalog by creating a new parquet file).
+        update_catalog : bool, default False
+            Whether to update a catalog with the received data.
+        join_request: bool, optional, default to False
+            If a request should be joined and sorted with another one by using request_join.
+        request_id : UUID4, optional
+            The UUID to use for the request ID. If `None`, a new UUID will be generated.
         params : dict[str, Any], optional
-            Additional parameters potentially used by a specific client.
+            Additional parameters potentially used by a specific client:
+            - `only_last` (default `True`) retains only the latest instrument record per instrument_id, based on the most recent ts_init.
 
         Returns
         -------
@@ -2653,35 +3053,47 @@ cdef class Actor(Component):
         """
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(venue, "venue")
-
-        cdef datetime now = self.clock.utc_now()
-        if start is not None:
-            Condition.is_true(start <= now, "start was > now")
-        if end is not None:
-            Condition.is_true(end <= now, "end was > now")
-        if start is not None and end is not None:
-            Condition.is_true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
 
-        params = params if params else {}
-        params["update_catalog_mode"] = update_catalog_mode
+        cdef datetime now = self.clock.utc_now()
 
-        cdef UUID4 request_id = UUID4()
+        if start is not None:
+            Condition.is_true(start <= now, "start was > now")
+
+        if end is not None:
+            Condition.is_true(end <= now, "end was > now")
+
+        if start is not None and end is not None:
+            Condition.is_true(start <= end, "start was > end")
+
+        used_params = {}
+        used_params["update_catalog"] = update_catalog
+        used_params["join_request"] = join_request
+        if params:
+            used_params.update(params)
+
+        cdef UUID4 used_request_id = request_id if request_id else UUID4()
         cdef RequestInstruments request = RequestInstruments(
             start=start,
             end=end,
             client_id=client_id,
             venue=venue,
             callback=self._handle_instruments_response,
-            request_id=request_id,
+            request_id=used_request_id,
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
+        )
+        self._requests[used_request_id] = request
+        self._pending_requests[used_request_id] = callback
+
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_instruments_topic(venue),
+            handler=self.handle_instrument,
         )
 
-        self._pending_requests[request_id] = callback
         self._send_data_req(request)
 
-        return request_id
+        return used_request_id
 
     cpdef UUID4 request_order_book_snapshot(
         self,
@@ -2689,6 +3101,8 @@ cdef class Actor(Component):
         int limit = 0,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
+        bint join_request = False,
+        UUID4 request_id = None,
         dict[str, object] params = None,
     ):
         """
@@ -2710,6 +3124,10 @@ cdef class Actor(Component):
             If None, it will be inferred from the venue in the instrument ID.
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has completed processing.
+        join_request: bool, optional, default to False
+            If a request should be joined and sorted with another one by using request_join.
+        request_id : UUID4, optional
+            The UUID to use for the request ID. If `None`, a new UUID will be generated.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2730,32 +3148,146 @@ cdef class Actor(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.callable_or_none(callback, "callback")
 
-        cdef UUID4 request_id = UUID4()
+        used_params = {}
+        used_params["join_request"] = join_request
+        if params:
+            used_params.update(params)
+
+        cdef UUID4 used_request_id = request_id if request_id else UUID4()
         cdef RequestOrderBookSnapshot request = RequestOrderBookSnapshot(
             instrument_id=instrument_id,
             limit=limit,
             client_id=client_id,
             venue=instrument_id.venue,
-            callback=self._handle_data_response,
-            request_id=request_id,
+            callback=self._handle_order_book_snapshot_response,
+            request_id=used_request_id,
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
+        )
+        self._requests[used_request_id] = request
+        self._pending_requests[used_request_id] = callback
+
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_deltas_topic(instrument_id, historical=True),
+            handler=self.handle_historical_data,
         )
 
-        self._pending_requests[request_id] = callback
         self._send_data_req(request)
 
-        return request_id
+        return used_request_id
+
+    cpdef UUID4 request_order_book_depth(
+        self,
+        InstrumentId instrument_id,
+        datetime start,
+        datetime end = None,
+        int limit = 0,
+        int depth = 10,
+        ClientId client_id = None,
+        callback: Callable[[UUID4], None] | None = None,
+        bint update_catalog = False,
+        bint join_request = False,
+        UUID4 request_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Request historical `OrderBookDepth10` snapshots.
+
+        Once the response is received, the order book depth data is forwarded from the message bus
+        to the `on_historical_data` handler.
+
+        If the request fails, then an error is logged.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the order book depths request.
+        start : datetime
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime, optional
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
+        limit : int, optional
+            The limit on the amount of depth snapshots received.
+        depth : int, optional
+            The maximum depth for the returned order book data (default is 10).
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If None, it will be inferred from the venue in the instrument ID.
+        callback : Callable[[UUID4], None], optional
+            The registered callback, to be called with the request ID when the response has completed processing.
+        update_catalog : bool, default False
+            If the data catalog should be updated with the received data.
+        join_request: bool, optional, default to False
+            If a request should be joined and sorted with another one by using request_join.
+        request_id : UUID4, optional
+            The UUID to use for the request ID. If `None`, a new UUID will be generated.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        Returns
+        -------
+        UUID4
+            The `request_id` for the request.
+
+        Raises
+        ------
+        ValueError
+            If the instrument_id is None.
+        TypeError
+            If callback is not None and not of type Callable.
+
+        """
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.callable_or_none(callback, "callback")
+
+        start, end = self._validate_datetime_range(start, end)
+
+        used_params = {}
+        used_params["update_catalog"] = update_catalog
+        used_params["join_request"] = join_request
+        if params:
+            used_params.update(params)
+
+        cdef UUID4 used_request_id = request_id if request_id else UUID4()
+        cdef RequestOrderBookDepth request = RequestOrderBookDepth(
+            instrument_id=instrument_id,
+            start=start,
+            end=end,
+            limit=limit,
+            depth=depth,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            callback=self._handle_order_book_depth_response,
+            request_id=used_request_id,
+            ts_init=self._clock.timestamp_ns(),
+            params=used_params,
+        )
+        self._requests[used_request_id] = request
+        self._pending_requests[used_request_id] = callback
+
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_depth_topic(instrument_id, historical=True),
+            handler=self.handle_historical_order_book_depth,
+        )
+
+        self._send_data_req(request)
+
+        return used_request_id
 
     cpdef UUID4 request_quote_ticks(
         self,
         InstrumentId instrument_id,
-        datetime start = None,
+        datetime start,
         datetime end = None,
         int limit = 0,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
-        update_catalog_mode: UpdateCatalogMode | None = None,
+        bint update_catalog = False,
+        bint aggregate_spread_quotes = False,
+        bint join_request = False,
+        UUID4 request_id = None,
         dict[str, object] params = None,
     ):
         """
@@ -2772,12 +3304,13 @@ cdef class Actor(Component):
         ----------
         instrument_id : InstrumentId
             The tick instrument ID for the request.
-        start : datetime, optional
+        start : datetime
             The start datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
         end : datetime, optional
             The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            If `None` then will be replaced with the current UTC time.
+            Should be right-inclusive (value <= end), but inclusiveness is not currently guaranteed.
         limit : int, optional
             The limit on the amount of quote ticks received.
         client_id : ClientId, optional
@@ -2786,13 +3319,15 @@ cdef class Actor(Component):
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has
             completed processing.
-        update_catalog_mode : UpdateCatalogMode, optional
-            If not None, then updates the catalog with new data received from a client.
-            Recommended catalog write modes are:
-            - UpdateCatalogMode.MODIFY (appends or prepends new data to the catalog by concatenating it to the existing unique parquet file).
-            - UpdateCatalogMode.NEWFILE (appends new data to the catalog by creating a new parquet file).
-            It is assumed that the data in a catalog for an instrument_id is contiguous in time.
-            Be mindful not to create data "holes" when appending new data and using non empty start and end parameters at the same time.
+        update_catalog : bool, default False
+            Whether to update a catalog with the received data.
+        aggregate_spread_quotes : bool, default False
+            Whether to activate a spread quote aggregator from leg quotes.
+            Only applicable when the instrument_id is a spread instrument.
+        join_request: bool, optional, default to False
+            If a request should be joined and sorted with another one by using request_join.
+        request_id : UUID4, optional
+            The UUID to use for the request ID. If `None`, a new UUID will be generated.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2803,32 +3338,32 @@ cdef class Actor(Component):
 
         Raises
         ------
+        TypeError
+            If `start` is `None`.
         ValueError
-            If `start` is not `None` and > current timestamp (now).
+            If `start` is > current timestamp (now).
         ValueError
-            If `end` is not `None` and > current timestamp (now).
+            If `end` is > current timestamp (now).
         ValueError
-            If `start` and `end` are not `None` and `start` is >= `end`.
+            If `start` is > `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
 
         """
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(instrument_id, "instrument_id")
-
-        cdef datetime now = self.clock.utc_now()
-        if start is not None:
-            Condition.is_true(start <= now, "start was > now")
-        if end is not None:
-            Condition.is_true(end <= now, "end was > now")
-        if start is not None and end is not None:
-            Condition.is_true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
 
-        params = params if params else {}
-        params["update_catalog_mode"] = update_catalog_mode
+        start, end = self._validate_datetime_range(start, end)
 
-        cdef UUID4 request_id = UUID4()
+        used_params = {}
+        used_params["update_catalog"] = update_catalog
+        used_params["join_request"] = join_request
+        used_params["aggregate_spread_quotes"] = aggregate_spread_quotes
+        if params:
+            used_params.update(params)
+
+        cdef UUID4 used_request_id = request_id if request_id else UUID4()
         cdef RequestQuoteTicks request = RequestQuoteTicks(
             instrument_id=instrument_id,
             start=start,
@@ -2837,25 +3372,33 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             callback=self._handle_quote_ticks_response,
-            request_id=request_id,
+            request_id=used_request_id,
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
+        )
+        self._requests[used_request_id] = request
+        self._pending_requests[used_request_id] = callback
+
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_quotes_topic(instrument_id, historical=True),
+            handler=self.handle_historical_quote_tick,
         )
 
-        self._pending_requests[request_id] = callback
         self._send_data_req(request)
 
-        return request_id
+        return used_request_id
 
     cpdef UUID4 request_trade_ticks(
         self,
         InstrumentId instrument_id,
-        datetime start = None,
+        datetime start,
         datetime end = None,
         int limit = 0,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
-        update_catalog_mode: UpdateCatalogMode | None = None,
+        bint update_catalog = False,
+        bint join_request = False,
+        UUID4 request_id = None,
         dict[str, object] params = None,
     ):
         """
@@ -2872,12 +3415,13 @@ cdef class Actor(Component):
         ----------
         instrument_id : InstrumentId
             The tick instrument ID for the request.
-        start : datetime, optional
+        start : datetime
             The start datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
         end : datetime, optional
             The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            If `None` then will be replaced with the current UTC time.
+            Should be right-inclusive (value <= end), but inclusiveness is not currently guaranteed.
         limit : int, optional
             The limit on the amount of trade ticks received.
         client_id : ClientId, optional
@@ -2886,13 +3430,12 @@ cdef class Actor(Component):
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has
             completed processing.
-        update_catalog_mode : UpdateCatalogMode, optional
-            If not None, then updates the catalog with new data received from a client.
-            Recommended catalog write modes are:
-            - UpdateCatalogMode.MODIFY (appends or prepends new data to the catalog by concatenating it to the existing unique parquet file).
-            - UpdateCatalogMode.NEWFILE (appends new data to the catalog by creating a new parquet file).
-            It is assumed that the data in a catalog for an instrument id is contiguous in time.
-            Be mindful not to create data "holes" when appending new data and using non empty start and end parameters at the same time.
+        update_catalog : bool, default False
+            Whether to update a catalog with the received data.
+        join_request: bool, optional, default to False
+            If a request should be joined and sorted with another one by using request_join.
+        request_id : UUID4, optional
+            The UUID to use for the request ID. If `None`, a new UUID will be generated.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -2903,32 +3446,31 @@ cdef class Actor(Component):
 
         Raises
         ------
+        TypeError
+            If `start` is `None`.
         ValueError
-            If `start` is not `None` and > current timestamp (now).
+            If `start` is > current timestamp (now).
         ValueError
-            If `end` is not `None` and > current timestamp (now).
+            If `end` is > current timestamp (now).
         ValueError
-            If `start` and `end` are not `None` and `start` is >= `end`.
+            If `start` is > `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
 
         """
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(instrument_id, "instrument_id")
-
-        cdef datetime now = self.clock.utc_now()
-        if start is not None:
-            Condition.is_true(start <= now, "start was > now")
-        if end is not None:
-            Condition.is_true(end <= now, "end was > now")
-        if start is not None and end is not None:
-            Condition.is_true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
 
-        params = params if params else {}
-        params["update_catalog_mode"] = update_catalog_mode
+        start, end = self._validate_datetime_range(start, end)
 
-        cdef UUID4 request_id = UUID4()
+        used_params = {}
+        used_params["update_catalog"] = update_catalog
+        used_params["join_request"] = join_request
+        if params:
+            used_params.update(params)
+
+        cdef UUID4 used_request_id = request_id if request_id else UUID4()
         cdef RequestTradeTicks request = RequestTradeTicks(
             instrument_id=instrument_id,
             start=start,
@@ -2937,25 +3479,33 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             callback=self._handle_trade_ticks_response,
-            request_id=request_id,
+            request_id=used_request_id,
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
+        )
+        self._requests[used_request_id] = request
+        self._pending_requests[used_request_id] = callback
+
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_trades_topic(instrument_id, historical=True),
+            handler=self.handle_historical_trade_tick,
         )
 
-        self._pending_requests[request_id] = callback
         self._send_data_req(request)
 
-        return request_id
+        return used_request_id
 
     cpdef UUID4 request_bars(
         self,
         BarType bar_type,
-        datetime start = None,
+        datetime start,
         datetime end = None,
         int limit = 0,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
-        update_catalog_mode: UpdateCatalogMode | None = None,
+        bint update_catalog = False,
+        bint join_request = False,
+        UUID4 request_id = None,
         dict[str, object] params = None,
     ):
         """
@@ -2972,12 +3522,13 @@ cdef class Actor(Component):
         ----------
         bar_type : BarType
             The bar type for the request.
-        start : datetime, optional
+        start : datetime
             The start datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
         end : datetime, optional
             The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            If `None` then will be replaced with the current UTC time.
+            Should be right-inclusive (value <= end), but inclusiveness is not currently guaranteed.
         limit : int, optional
             The limit on the amount of bars received.
         client_id : ClientId, optional
@@ -2986,13 +3537,12 @@ cdef class Actor(Component):
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has
             completed processing.
-        update_catalog_mode : UpdateCatalogMode, optional
-            If not None, then updates the catalog with new data received from a client.
-            Recommended catalog write modes are:
-            - UpdateCatalogMode.MODIFY (appends or prepends new data to the catalog by concatenating it to the existing unique parquet file).
-            - UpdateCatalogMode.NEWFILE (appends new data to the catalog by creating a new parquet file).
-            It is assumed that the data in a catalog for an instrument id is contiguous in time.
-            Be mindful not to create data "holes" when appending new data and using non empty start and end parameters at the same time.
+        update_catalog : bool, default False
+            Whether to update a catalog with the received data.
+        join_request: bool, optional, default to False
+            If a request should be joined and sorted with another one by using request_join.
+        request_id : UUID4, optional
+            The UUID to use for the request ID. If `None`, a new UUID will be generated.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -3003,32 +3553,33 @@ cdef class Actor(Component):
 
         Raises
         ------
+        TypeError
+            If `start` is `None`.
         ValueError
-            If `start` is not `None` and > current timestamp (now).
+            If `start` is > current timestamp (now).
         ValueError
-            If `end` is not `None` and > current timestamp (now).
+            If `end` is > current timestamp (now).
         ValueError
-            If `start` and `end` are not `None` and `start` is >= `end`.
+            If `start` is > `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
 
         """
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(bar_type, "bar_type")
-
-        cdef datetime now = self.clock.utc_now()
-        if start is not None:
-            Condition.is_true(start <= now, "start was > now")
-        if end is not None:
-            Condition.is_true(end <= now, "end was > now")
-        if start is not None and end is not None:
-            Condition.is_true(start < end, "start was >= end")
+        Condition.is_true(bar_type.is_standard(), "Use a standard bar type with request_bars. Composite bar types can be used with request_aggregated_bars")
         Condition.callable_or_none(callback, "callback")
 
-        params = params if params else {}
-        params["update_catalog_mode"] = update_catalog_mode
+        start, end = self._validate_datetime_range(start, end)
 
-        cdef UUID4 request_id = UUID4()
+        used_params = {}
+        used_params["update_catalog"] = update_catalog
+        used_params["join_request"] = join_request
+        if params:
+            used_params.update(params)
+
+        cdef UUID4 used_request_id = request_id if request_id else UUID4()
+        cdef BarType standard_bar_type = bar_type.standard()
         cdef RequestBars request = RequestBars(
             bar_type=bar_type,
             start=start,
@@ -3037,27 +3588,35 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=bar_type.instrument_id.venue,
             callback=self._handle_bars_response,
-            request_id=request_id,
+            request_id=used_request_id,
             ts_init=self._clock.timestamp_ns(),
-            params=params,
+            params=used_params,
+        )
+        self._requests[used_request_id] = request
+        self._pending_requests[used_request_id] = callback
+
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_bars_topic(standard_bar_type, historical=True),
+            handler=self.handle_historical_bar,
         )
 
-        self._pending_requests[request_id] = callback
         self._send_data_req(request)
 
-        return request_id
+        return used_request_id
 
     cpdef UUID4 request_aggregated_bars(
         self,
         list bar_types,
-        datetime start = None,
+        datetime start,
         datetime end = None,
         int limit = 0,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
         bint include_external_data = False,
         bint update_subscriptions = False,
-        update_catalog_mode: UpdateCatalogMode | None = None,
+        bint update_catalog = False,
+        bint aggregate_spread_quotes = False,
+        UUID4 request_id = None,
         dict[str, object] params = None,
     ):
         """
@@ -3080,12 +3639,13 @@ cdef class Actor(Component):
         bar_types : list[BarType]
             The list of bar types for the request. Composite bars can also be used and need to
             figure in the list after a BarType on which it depends.
-        start : datetime, optional
+        start : datetime
             The start datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
         end : datetime, optional
             The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            If `None` then will be replaced with the current UTC time.
+            Should be right-inclusive (value <= end), but inclusiveness is not currently guaranteed.
         limit : int, optional
             The limit on the amount of data received (quote ticks, trade ticks or bars).
         client_id : ClientId, optional
@@ -3097,14 +3657,15 @@ cdef class Actor(Component):
         include_external_data : bool, default False
             If True, includes the queried external data in the response.
         update_subscriptions : bool, default False
-            If True, updates the aggregators of any existing or future subscription with the queried external data.
-        update_catalog_mode : UpdateCatalogMode, optional
-            If not None, then updates the catalog with new data received from a client.
-            Recommended catalog write modes are:
-            - UpdateCatalogMode.MODIFY (appends or prepends new data to the catalog by concatenating it to the existing unique parquet file).
-            - UpdateCatalogMode.NEWFILE (appends new data to the catalog by creating a new parquet file).
-            It is assumed that the data in a catalog for an instrument id is contiguous in time.
-            Be mindful not to create data "holes" when appending new data and using non empty start and end parameters at the same time.
+            If True, persists the aggregator of each bar_type so it's up to date for a subsequent
+            market data subscription.
+        update_catalog : bool, default False
+            Whether to update a catalog with the received data.
+        aggregate_spread_quotes : bool, default False
+            Whether to activate a spread quote aggregator from leg quotes.
+            Only applicable when requesting quote ticks for spread instruments.
+        request_id : UUID4, optional
+            The UUID to use for the request ID. If `None`, a new UUID will be generated.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -3115,12 +3676,14 @@ cdef class Actor(Component):
 
         Raises
         ------
+        TypeError
+            If `start` is `None`.
         ValueError
-            If `start` is not `None` and > current timestamp (now).
+            If `start` is > current timestamp (now).
         ValueError
-            If `end` is not `None` and > current timestamp (now).
+            If `end` is > current timestamp (now).
         ValueError
-            If `start` and `end` are not `None` and `start` is >= `end`.
+            If `start` is > `end`.
         ValueError
             If `bar_types` is empty.
         TypeError
@@ -3128,37 +3691,46 @@ cdef class Actor(Component):
         TypeError
             If `bar_types` is empty or contains elements not of type `BarType`.
 
+        Notes
+        -----
+        - Make sure no subscription is active for the same underlying market data as the requested bar types.
+        - A subscription can follow request_aggregated_bars and use an up to date aggregator when
+          using the `update_subscriptions` parameter.
+        - Subscribe to market data as a callback to request_aggregated_bars.
+
         """
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_empty(bar_types, "bar_types")
         Condition.list_type(bar_types, BarType, "bar_types")
-
-        cdef datetime now = self.clock.utc_now()
-        if start is not None:
-            Condition.is_true(start <= now, "start was > now")
-        if end is not None:
-            Condition.is_true(end <= now, "end was > now")
-        if start is not None and end is not None:
-            Condition.is_true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
+
+        start, end = self._validate_datetime_range(start, end)
 
         for bar_type in bar_types:
             if not bar_type.is_internally_aggregated():
                 self._log.error(f"request_aggregated_bars: {bar_type} must be internally aggregated")
                 return
 
-        cdef UUID4 request_id = UUID4()
+        cdef UUID4 used_request_id = request_id if request_id else UUID4()
         cdef BarType first_bar_type = bar_types[0]
 
-        params = params if params else {}
-        params["bar_type"] = first_bar_type.composite()
-        params["bar_types"] = tuple(bar_types)
-        params["include_external_data"] = include_external_data
-        params["update_subscriptions"] = update_subscriptions
-        params["update_catalog_mode"] = update_catalog_mode
+        used_params = {}
+        used_params["bar_types"] = tuple(bar_types)
+        used_params["include_external_data"] = include_external_data
+        used_params["update_subscriptions"] = update_subscriptions
+        used_params["update_catalog"] = update_catalog
+        used_params["aggregate_spread_quotes"] = aggregate_spread_quotes
+        if params:
+            used_params.update(params)
+
+        # Subscribe to all requested bar types (historical topics for aggregated bars)
+        for bar_type in bar_types:
+            self._msgbus.subscribe(
+                topic=self._topic_cache.get_bars_topic(bar_type.standard(), historical=True),
+                handler=self.handle_historical_bar,
+            )
 
         if first_bar_type.is_composite():
-            params["bars_market_data_type"] = "bars"
             request = RequestBars(
                 bar_type=first_bar_type.composite(),
                 start=start,
@@ -3167,12 +3739,17 @@ cdef class Actor(Component):
                 client_id=client_id,
                 venue=first_bar_type.instrument_id.venue,
                 callback=self._handle_aggregated_bars_response,
-                request_id=request_id,
+                request_id=used_request_id,
                 ts_init=self._clock.timestamp_ns(),
-                params=params,
+                params=used_params,
             )
+
+            if include_external_data:
+                self._msgbus.subscribe(
+                    topic=self._topic_cache.get_bars_topic(first_bar_type.composite(), historical=True),
+                    handler=self.handle_historical_bar,
+                )
         elif first_bar_type.spec.price_type == PriceType.LAST:
-            params["bars_market_data_type"] = "trade_ticks"
             request = RequestTradeTicks(
                 instrument_id=first_bar_type.instrument_id,
                 start=start,
@@ -3181,12 +3758,17 @@ cdef class Actor(Component):
                 client_id=client_id,
                 venue=first_bar_type.instrument_id.venue,
                 callback=self._handle_aggregated_bars_response,
-                request_id=request_id,
+                request_id=used_request_id,
                 ts_init=self._clock.timestamp_ns(),
-                params=params,
+                params=used_params,
             )
+
+            if include_external_data:
+                self._msgbus.subscribe(
+                    topic=self._topic_cache.get_trades_topic(first_bar_type.instrument_id, historical=True),
+                    handler=self.handle_historical_trade_tick,
+                )
         else:
-            params["bars_market_data_type"] = "quote_ticks"
             request = RequestQuoteTicks(
                 instrument_id=first_bar_type.instrument_id,
                 start=start,
@@ -3195,15 +3777,141 @@ cdef class Actor(Component):
                 client_id=client_id,
                 venue=first_bar_type.instrument_id.venue,
                 callback=self._handle_aggregated_bars_response,
-                request_id=request_id,
+                request_id=used_request_id,
                 ts_init=self._clock.timestamp_ns(),
-                params=params,
+                params=used_params,
             )
 
-        self._pending_requests[request_id] = callback
+            if include_external_data:
+                self._msgbus.subscribe(
+                    topic=self._topic_cache.get_quotes_topic(first_bar_type.instrument_id, historical=True),
+                    handler=self.handle_historical_quote_tick,
+                )
+
+        self._pending_requests[used_request_id] = callback
         self._send_data_req(request)
 
-        return request_id
+        return used_request_id
+
+    cpdef UUID4 request_join(
+        self,
+        tuple request_ids,
+        datetime start,
+        datetime end = None,
+        ClientId client_id = None,
+        Venue venue = None,
+        callback: Callable[[UUID4], None] | None = None,
+        UUID4 request_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Request a join of multiple data requests.
+
+        This method creates a RequestJoin message that will coordinate multiple
+        sub-requests and combine their results.
+
+        Parameters
+        ----------
+        request_ids : tuple[UUID4]
+            The tuple of request IDs to join.
+        start : datetime
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime, optional
+            The end datetime (UTC) of request time range.
+            If `None` then will be replaced with the current UTC time.
+        client_id : ClientId, optional
+            The data client ID for the request.
+        venue : Venue, optional
+            The venue for the request.
+        callback : Callable[[UUID4], None], optional
+            The registered callback, to be called with the request ID when the response has
+            completed processing.
+        request_id : UUID4, optional
+            The UUID to use for the request ID. If `None`, a new UUID will be generated.
+        params : dict[str, Any], optional
+            Additional parameters for the request.
+
+        Returns
+        -------
+        UUID4
+            The `request_id` for the request.
+
+        Raises
+        ------
+        ValueError
+            If both `client_id` and `venue` are both ``None`` (not enough routing info).
+        TypeError
+            If `callback` is not `None` and not of type `Callable`.
+
+        """
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+        Condition.not_none(request_ids, "request_ids")
+        Condition.callable_or_none(callback, "callback")
+
+        start, end = self._validate_datetime_range(start, end)
+
+        used_params = {}
+        if params:
+            used_params.update(params)
+
+        cdef UUID4 used_request_id = request_id if request_id else UUID4()
+        cdef RequestJoin request = RequestJoin(
+            request_ids=request_ids,
+            start=start,
+            end=end,
+            callback=self._handle_join_response,
+            request_id=used_request_id,
+            ts_init=self._clock.timestamp_ns(),
+            params=used_params,
+        )
+        self._pending_requests[used_request_id] = callback
+        self._send_data_req(request)
+
+        return used_request_id
+
+    cdef tuple _validate_datetime_range(
+        self,
+        datetime start,
+        datetime end,
+    ):
+        """
+        Validate datetime range parameters.
+
+        Parameters
+        ----------
+        start : datetime
+            The start datetime (UTC) of request time range.
+        end : datetime, optional
+            The end datetime (UTC) of request time range.
+
+        Returns
+        -------
+        tuple[datetime, datetime]
+            The validated start and end datetimes. If `end` was None,
+            it will be replaced with the current UTC time.
+
+        Raises
+        ------
+        TypeError
+            If `start` is None.
+        ValueError
+            If `start` is > current timestamp (now).
+        ValueError
+            If `end` is > current timestamp (now).
+        ValueError
+            If `start` is > `end`.
+
+        """
+        cdef datetime now = self.clock.utc_now()
+        if end is None:
+            end = now
+
+        Condition.not_none(start, "start")
+        Condition.is_true(start <= now, "start was > now")
+        Condition.is_true(end <= now, "end was > now")
+        Condition.is_true(start <= end, "start was > end")
+
+        return (start, end)
 
     cpdef bint is_pending_request(self, UUID4 request_id):
         """
@@ -3265,43 +3973,11 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument, "instrument")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self._fsm.state in (ComponentState.STARTING, ComponentState.RUNNING):
             try:
                 self.on_instrument(instrument)
             except Exception as e:
                 self._log.exception(f"Error on handling {repr(instrument)}", e)
-                raise
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void handle_instruments(self, list instruments):
-        """
-        Handle the given instruments data by handling each instrument individually.
-
-        Parameters
-        ----------
-        instruments : list[Instrument]
-            The instruments received.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(instruments, "instruments")  # Could be empty
-
-        cdef int length = len(instruments)
-        cdef Instrument first = instruments[0] if length > 0 else None
-        cdef InstrumentId instrument_id = first.id if first is not None else None
-
-        if length > 0:
-            self._log.info(f"Received <Instrument[{length}]> data for {instrument_id.venue}")
-        else:
-            self._log.warning("Received <Instrument[]> data with no instruments")
-
-        cdef int i
-        for i in range(length):
-            self.handle_instrument(instruments[i])
 
     cpdef void handle_order_book_deltas(self, deltas):
         """
@@ -3333,7 +4009,10 @@ cdef class Actor(Component):
                 self._log.exception(f"Error on handling {repr(deltas)}", e)
                 raise
 
-    cpdef void handle_order_book_depth(self, OrderBookDepth10 depth):
+    cpdef void handle_historical_order_book_depth(self, OrderBookDepth10 depth):
+        self.handle_order_book_depth(depth, True)
+
+    cpdef void handle_order_book_depth(self, OrderBookDepth10 depth, bint historical=False):
         """
         Handle the given order book depth
 
@@ -3351,7 +4030,9 @@ cdef class Actor(Component):
         """
         Condition.not_none(depth, "depth")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if historical:
+            self.handle_historical_data(depth)
+        elif self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_order_book_depth(depth)
             except Exception as e:
@@ -3383,7 +4064,10 @@ cdef class Actor(Component):
                 self._log.exception(f"Error on handling {repr(order_book)}", e)
                 raise
 
-    cpdef void handle_quote_tick(self, QuoteTick tick):
+    cpdef void handle_historical_quote_tick(self, QuoteTick tick):
+        self.handle_quote_tick(tick, True)
+
+    cpdef void handle_quote_tick(self, QuoteTick tick, bint historical=False):
         """
         Handle the given quote tick.
 
@@ -3406,54 +4090,24 @@ cdef class Actor(Component):
         if indicators:
             self._handle_indicators_for_quote(indicators, tick)
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if historical:
+            self.handle_historical_data(tick)
+        elif self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_quote_tick(tick)
             except Exception as e:
                 self.log.exception(f"Error on handling {repr(tick)}", e)
                 raise
 
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void handle_quote_ticks(self, list ticks):
-        """
-        Handle the given historical quote tick data by handling each tick individually.
+    cpdef void _handle_indicators_for_quote(self, list indicators, QuoteTick tick):
+        cdef Indicator indicator
+        for indicator in indicators:
+            indicator.handle_quote_tick(tick)
 
-        Parameters
-        ----------
-        ticks : list[QuoteTick]
-            The ticks received.
+    cpdef void handle_historical_trade_tick(self, TradeTick tick):
+        self.handle_trade_tick(tick, True)
 
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(ticks, "ticks")  # Could be empty
-
-        cdef int length = len(ticks)
-        cdef QuoteTick first = ticks[0] if length > 0 else None
-        cdef InstrumentId instrument_id = first.instrument_id if first is not None else None
-
-        if length > 0:
-            self._log.info(f"Received <QuoteTick[{length}]> data for {instrument_id}")
-        else:
-            self._log.warning("Received <QuoteTick[]> data with no ticks")
-            return
-
-        # Update indicators
-        cdef list indicators = self._indicators_for_quotes.get(first.instrument_id)
-
-        cdef:
-            int i
-            QuoteTick tick
-        for i in range(length):
-            tick = ticks[i]
-            if indicators:
-                self._handle_indicators_for_quote(indicators, tick)
-            self.handle_historical_data(tick)
-
-    cpdef void handle_trade_tick(self, TradeTick tick):
+    cpdef void handle_trade_tick(self, TradeTick tick, bint historical=False):
         """
         Handle the given trade tick.
 
@@ -3476,12 +4130,19 @@ cdef class Actor(Component):
         if indicators:
             self._handle_indicators_for_trade(indicators, tick)
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if historical:
+            self.handle_historical_data(tick)
+        elif self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_trade_tick(tick)
             except Exception as e:
                 self.log.exception(f"Error on handling {repr(tick)}", e)
                 raise
+
+    cpdef void _handle_indicators_for_trade(self, list indicators, TradeTick tick):
+        cdef Indicator indicator
+        for indicator in indicators:
+            indicator.handle_trade_tick(tick)
 
     cpdef void handle_mark_price(self, MarkPriceUpdate mark_price):
         """
@@ -3533,47 +4194,35 @@ cdef class Actor(Component):
                 self.log.exception(f"Error on handling {repr(index_price)}", e)
                 raise
 
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void handle_trade_ticks(self, list ticks):
+    cpdef void handle_funding_rate(self, FundingRateUpdate funding_rate):
         """
-        Handle the given historical trade tick data by handling each tick individually.
+        Handle the given funding rate update.
+
+        If state is ``RUNNING`` then passes to `on_funding_rate`.
 
         Parameters
         ----------
-        ticks : list[TradeTick]
-            The ticks received.
+        funding_rate : FundingRateUpdate
+            The funding rate update received.
 
         Warnings
         --------
         System method (not intended to be called by user code).
 
         """
-        Condition.not_none(ticks, "ticks")  # Could be empty
+        Condition.not_none(funding_rate, "funding_rate")
 
-        cdef int length = len(ticks)
-        cdef TradeTick first = ticks[0] if length > 0 else None
-        cdef InstrumentId instrument_id = first.instrument_id if first is not None else None
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_funding_rate(funding_rate)
+            except Exception as e:
+                self.log.exception(f"Error on handling {repr(funding_rate)}", e)
+                raise
 
-        if length > 0:
-            self._log.info(f"Received <TradeTick[{length}]> data for {instrument_id}")
-        else:
-            self._log.warning("Received <TradeTick[]> data with no ticks")
-            return
+    cpdef void handle_historical_bar(self, Bar bar):
+        self.handle_bar(bar, True)
 
-        # Update indicators
-        cdef list indicators = self._indicators_for_trades.get(first.instrument_id)
-
-        cdef:
-            int i
-            TradeTick tick
-        for i in range(length):
-            tick = ticks[i]
-            if indicators:
-                self._handle_indicators_for_trade(indicators, tick)
-            self.handle_historical_data(tick)
-
-    cpdef void handle_bar(self, Bar bar):
+    cpdef void handle_bar(self, Bar bar, bint historical=False):
         """
         Handle the given bar data.
 
@@ -3592,64 +4241,23 @@ cdef class Actor(Component):
         Condition.not_none(bar, "bar")
 
         # Update indicators
-        cdef list indicators = self._indicators_for_bars.get(bar.bar_type)
+        cdef list indicators = self._indicators_for_bars.get(bar.bar_type.id_spec_key())
         if indicators:
             self._handle_indicators_for_bar(indicators, bar)
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if historical:
+            self.handle_historical_data(bar)
+        elif self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_bar(bar)
             except Exception as e:
                 self.log.exception(f"Error on handling {repr(bar)}", e)
                 raise
 
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void handle_bars(self, list bars):
-        """
-        Handle the given historical bar data by handling each bar individually.
-
-        Parameters
-        ----------
-        bars : list[Bar]
-            The bars to handle.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        Raises
-        ------
-        RuntimeError
-            If bar data has incorrectly sorted timestamps (not monotonically increasing).
-
-        """
-        Condition.not_none(bars, "bars")  # Can be empty
-
-        cdef int length = len(bars)
-        cdef Bar first = bars[0] if length > 0 else None
-        cdef Bar last = bars[length - 1] if length > 0 else None
-
-        if length > 0:
-            self._log.info(f"Received <Bar[{length}]> data for {first.bar_type}")
-        else:
-            self._log.error(f"Received <Bar[{length}]> data for unknown bar type")
-            return
-
-        if length > 0 and first.ts_init > last.ts_init:
-            raise RuntimeError(f"cannot handle <Bar[{length}]> data: incorrectly sorted")
-
-        # Update indicators
-        cdef list indicators = self._indicators_for_bars.get(first.bar_type)
-
-        cdef:
-            int i
-            Bar bar
-        for i in range(length):
-            bar = bars[i]
-            if indicators:
-                self._handle_indicators_for_bar(indicators, bar)
-            self.handle_historical_data(bar)
+    cpdef void _handle_indicators_for_bar(self, list indicators, Bar bar):
+        cdef Indicator indicator
+        for indicator in indicators:
+            indicator.handle_bar(bar)
 
     cpdef void handle_instrument_status(self, InstrumentStatus data):
         """
@@ -3699,6 +4307,32 @@ cdef class Actor(Component):
                 self.on_instrument_close(update)
             except Exception as e:
                 self._log.exception(f"Error on handling {repr(update)}", e)
+                raise
+
+    cpdef void _handle_order_filled(self, OrderFilled event):
+        if str(event.strategy_id) == str(self.id):
+            # This represents a strategies automatic subscription to it's own
+            # order events, so we don't need to pass this event to the handler twice
+            return
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_order_filled(event)
+            except Exception as e:
+                self._log.exception(f"Error on handling {repr(event)}", e)
+                raise
+
+    cpdef void _handle_order_canceled(self, OrderCanceled event):
+        if str(event.strategy_id) == str(self.id):
+            # This represents a strategies automatic subscription to it's own
+            # order events, so we don't need to pass this event to the handler twice
+            return
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_order_canceled(event)
+            except Exception as e:
+                self._log.exception(f"Error on handling {repr(event)}", e)
                 raise
 
     cpdef void handle_data(self, Data data):
@@ -3767,11 +4401,12 @@ cdef class Actor(Component):
         """
         Condition.not_none(data, "data")
 
-        try:
-            self.on_historical_data(data)
-        except Exception as e:
-            self._log.exception(f"Error on handling {repr(data)}", e)
-            raise
+        if self._fsm.state in (ComponentState.STARTING, ComponentState.RUNNING):
+            try:
+                self.on_historical_data(data)
+            except Exception as e:
+                self._log.exception(f"Error on handling {repr(data)}", e)
+                raise
 
     cpdef void handle_event(self, Event event):
         """
@@ -3799,74 +4434,180 @@ cdef class Actor(Component):
                 raise
 
     cpdef void _handle_data_response(self, DataResponse response):
-        if isinstance(response.data, list):
-            for data in response.data:
-                self.handle_historical_data(data)
-        else:
-            self.handle_historical_data(response.data)
+        cdef RequestData request = self._requests.pop(response.correlation_id, None)
+        if request is not None:
+            self._msgbus.unsubscribe(
+                topic=self._topic_cache.get_custom_data_topic(request.data_type, request.instrument_id, historical=True),
+                handler=self.handle_historical_data,
+            )
+
         self._finish_response(response.correlation_id)
 
-    cpdef void _handle_instrument_response(self, DataResponse response):
-        self.handle_instrument(response.data)
+    cpdef void _handle_join_response(self, DataResponse response):
         self._finish_response(response.correlation_id)
 
     cpdef void _handle_instruments_response(self, DataResponse response):
-        self.handle_instruments(response.data)
+        cdef RequestData request = self._requests.pop(response.correlation_id, None)
+        if request is not None:
+            if isinstance(request, RequestInstruments):
+                self._msgbus.unsubscribe(
+                    topic=self._topic_cache.get_instruments_topic(request.venue),
+                    handler=self.handle_instrument,
+                )
+            else:
+                self._msgbus.unsubscribe(
+                    topic=self._topic_cache.get_instrument_topic(request.instrument_id),
+                    handler=self.handle_instrument,
+                )
+
         self._finish_response(response.correlation_id)
 
     cpdef void _handle_quote_ticks_response(self, DataResponse response):
-        self.handle_quote_ticks(response.data)
+        cdef RequestQuoteTicks request = self._requests.pop(response.correlation_id, None)
+        if request is not None:
+            self._msgbus.unsubscribe(
+                topic=self._topic_cache.get_quotes_topic(request.instrument_id, historical=True),
+                handler=self.handle_historical_quote_tick,
+            )
+
+        cdef int length = response.params.get("data_count", 0)
+        cdef InstrumentId instrument_id = request.instrument_id
+
+        if length > 0:
+            self._log.info(f"Received <QuoteTick[{length}]> data for {instrument_id}")
+        else:
+            self._log.warning(f"Received <QuoteTick[]> data with no ticks for {instrument_id}")
+
         self._finish_response(response.correlation_id)
 
     cpdef void _handle_trade_ticks_response(self, DataResponse response):
-        self.handle_trade_ticks(response.data)
+        cdef RequestTradeTicks request = self._requests.pop(response.correlation_id, None)
+        if request is not None:
+            self._msgbus.unsubscribe(
+                topic=self._topic_cache.get_trades_topic(request.instrument_id, historical=True),
+                handler=self.handle_historical_trade_tick,
+            )
+
+        cdef int length = response.params.get("data_count", 0)
+        cdef InstrumentId instrument_id = request.instrument_id
+
+        if length > 0:
+            self._log.info(f"Received <TradeTick[{length}]> data for {instrument_id}")
+        else:
+            self._log.warning(f"Received <TradeTick[]> data with no ticks for {instrument_id}")
+
+        self._finish_response(response.correlation_id)
+
+    cpdef void _handle_order_book_depth_response(self, DataResponse response):
+        cdef RequestOrderBookDepth request = self._requests.pop(response.correlation_id, None)
+        if request is not None:
+            self._msgbus.unsubscribe(
+                topic=self._topic_cache.get_depth_topic(request.instrument_id, historical=True),
+                handler=self.handle_historical_order_book_depth,
+            )
+
+        cdef int length = response.params.get("data_count", 0)
+        cdef InstrumentId instrument_id = request.instrument_id
+
+        if length > 0:
+            self._log.info(f"Received <OrderBookDepth10[{length}]> data for {instrument_id}")
+        else:
+            self._log.warning(f"Received <OrderBookDepth10[]> data with no ticks for {instrument_id}")
+
+        self._finish_response(response.correlation_id)
+
+    cpdef void _handle_order_book_snapshot_response(self, DataResponse response):
+        cdef RequestOrderBookSnapshot request = self._requests.pop(response.correlation_id, None)
+        if request is not None:
+            self._msgbus.unsubscribe(
+                topic=self._topic_cache.get_deltas_topic(request.instrument_id, historical=True),
+                handler=self.handle_historical_data,
+            )
+
+        cdef int length = response.params.get("data_count", 0)
+        cdef InstrumentId instrument_id = request.instrument_id
+
+        if length > 0:
+            self._log.info(f"Received <OrderBookDeltas[{length}]> data for {instrument_id}")
+        else:
+            self._log.warning(f"Received <OrderBookDeltas[]> data with no deltas for {instrument_id}")
+
         self._finish_response(response.correlation_id)
 
     cpdef void _handle_bars_response(self, DataResponse response):
-        self.handle_bars(response.data)
+        cdef RequestBars request = self._requests.pop(response.correlation_id, None)
+        if request is not None:
+            self._msgbus.unsubscribe(
+                topic=self._topic_cache.get_bars_topic(request.bar_type.standard(), historical=True),
+                handler=self.handle_historical_bar,
+            )
+
+        cdef int length = response.params.get("data_count", 0)
+        cdef BarType bar_type = request.bar_type
+
+        if length > 0:
+            self._log.info(f"Received <Bar[{length}]> data for {bar_type}")
+        else:
+            self._log.warning(f"Received <Bar[]> data with no bar for {bar_type}")
+
         self._finish_response(response.correlation_id)
 
     cpdef void _handle_aggregated_bars_response(self, DataResponse response):
-        if "bars" in response.data:
-            for bars in response.data["bars"].values():
-                self.handle_bars(bars)
+        # Can be useful to keep subscriptions in place for example for later requesting order books that convert to quotes
+        keep_subscriptions = response.params.get("keep_subscriptions", False)
 
-        if "quote_ticks" in response.data:
-            self.handle_quote_ticks(response.data["quote_ticks"])
-
-        if "trade_ticks" in response.data:
-            self.handle_trade_ticks(response.data["trade_ticks"])
+        if not keep_subscriptions:
+            bar_types = response.params.get("bar_types", ())
+            include_external_data = response.params.get("include_external_data", False)
+            self._unsubscribe_historical_aggregated_bars(bar_types, include_external_data)
 
         self._finish_response(response.correlation_id)
+
+    cpdef void _unsubscribe_historical_aggregated_bars(self, tuple bar_types, bint include_external_data = False):
+        # Unsubscribe from all aggregated bar types (historical topics)
+        for bar_type in bar_types:
+            self._msgbus.unsubscribe(
+                topic=self._topic_cache.get_bars_topic(bar_type.standard(), historical=True),
+                handler=self.handle_historical_bar,
+            )
+
+        # Unsubscribe from underlying data topic based on first bar type (historical topics)
+        first_bar_type = bar_types[0] if bar_types else None
+        if include_external_data and first_bar_type is not None:
+            if first_bar_type.is_composite():
+                # Unsubscribe from composite bar topic
+                self._msgbus.unsubscribe(
+                    topic=self._topic_cache.get_bars_topic(first_bar_type.composite().standard(), historical=True),
+                    handler=self.handle_historical_bar,
+                )
+            elif first_bar_type.spec.price_type == PriceType.LAST:
+                # Unsubscribe from trade ticks topic
+                self._msgbus.unsubscribe(
+                    topic=self._topic_cache.get_trades_topic(first_bar_type.instrument_id, historical=True),
+                    handler=self.handle_historical_trade_tick,
+                )
+            else:
+                # Unsubscribe from quote ticks topic
+                self._msgbus.unsubscribe(
+                    topic=self._topic_cache.get_quotes_topic(first_bar_type.instrument_id, historical=True),
+                    handler=self.handle_historical_quote_tick,
+                )
 
     cpdef void _finish_response(self, UUID4 request_id):
         callback: Callable | None = self._pending_requests.pop(request_id, None)
         if callback is not None:
             callback(request_id)
 
-    cpdef void _handle_indicators_for_quote(self, list indicators, QuoteTick tick):
-        cdef Indicator indicator
-        for indicator in indicators:
-            indicator.handle_quote_tick(tick)
-
-    cpdef void _handle_indicators_for_trade(self, list indicators, TradeTick tick):
-        cdef Indicator indicator
-        for indicator in indicators:
-            indicator.handle_trade_tick(tick)
-
-    cpdef void _handle_indicators_for_bar(self, list indicators, Bar bar):
-        cdef Indicator indicator
-        for indicator in indicators:
-            indicator.handle_bar(bar)
-
 # -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _send_data_cmd(self, DataCommand command):
         if self._log_commands and is_logging_initialized():
             self._log.info(f"{CMD}{SENT} {command}")
+
         self._msgbus.send(endpoint="DataEngine.execute", msg=command)
 
     cdef void _send_data_req(self, RequestData request):
         if is_logging_initialized():
             self._log.info(f"{REQ}{SENT} {request}")
+
         self._msgbus.request(endpoint="DataEngine.request", request=request)

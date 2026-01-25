@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,10 +32,12 @@ from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesM
 from nautilus_trader.adapters.binance.futures.http.user import BinanceFuturesUserDataHttpAPI
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAccountInfo
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAlgoOrder
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesDualSidePosition
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesLeverage
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesPositionRisk
 from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesAccountUpdateWrapper
+from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesAlgoUpdateWrapper
 from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesOrderUpdateWrapper
 from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesTradeLiteWrapper
 from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesUserMsgWrapper
@@ -47,12 +49,18 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import BatchCancelOrders
+from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import GenerateOrderStatusReport
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
+from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import order_type_to_str
 from nautilus_trader.model.enums import time_in_force_to_str
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.orders import Order
 
@@ -79,7 +87,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         The base URL for the WebSocket client.
     config : BinanceExecClientConfig
         The configuration for the client.
-    account_type : BinanceAccountType, default 'USDT_FUTURE'
+    account_type : BinanceAccountType, default 'USDT_FUTURES'
         The account type for the client.
     name : str, optional
         The custom client ID.
@@ -96,12 +104,12 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         instrument_provider: BinanceFuturesInstrumentProvider,
         base_url_ws: str,
         config: BinanceExecClientConfig,
-        account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
+        account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURES,
         name: str | None = None,
     ) -> None:
         PyCondition.is_true(
             account_type.is_futures,
-            "account_type was not USDT_FUTURE or COIN_FUTURE",
+            "account_type was not USDT_FUTURES or COIN_FUTURES",
         )
 
         # Futures HTTP API
@@ -138,6 +146,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             BinanceFuturesEventType.ACCOUNT_CONFIG_UPDATE: self._handle_account_config_update,
             BinanceFuturesEventType.LISTEN_KEY_EXPIRED: self._handle_listen_key_expired,
             BinanceFuturesEventType.TRADE_LITE: self._handle_trade_lite,
+            BinanceFuturesEventType.ALGO_UPDATE: self._handle_algo_update,
         }
 
         self._use_trade_lite = config.use_trade_lite
@@ -158,6 +167,9 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         self._decoder_futures_trade_lite_wrapper = msgspec.json.Decoder(
             BinanceFuturesTradeLiteWrapper,
         )
+        self._decoder_futures_algo_update_wrapper = msgspec.json.Decoder(
+            BinanceFuturesAlgoUpdateWrapper,
+        )
 
     async def _update_account_state(self) -> None:
         account_info: BinanceFuturesAccountInfo = (
@@ -165,7 +177,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         )
         if account_info.canTrade:
             self._log.info("Binance API key authenticated", LogColor.GREEN)
-            self._log.info(f"API key {self._http_client.api_key} has trading permissions")
+            self._log.info(f"API key {self._http_client.api_key_masked} has trading permissions")
         else:
             self._log.error("Binance API key does not have trading permissions")
         self.generate_account_state(
@@ -173,9 +185,20 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             margins=account_info.parse_to_margin_balances(),
             reported=True,
             ts_event=millis_to_nanos(account_info.updateTime),
+            info={
+                "total_wallet_balance": account_info.totalWalletBalance,
+                "total_margin_balance": account_info.totalMarginBalance,
+                "total_initial_margin": account_info.totalInitialMargin,
+                "total_maint_margin": account_info.totalMaintMargin,
+                "total_unrealized_profit": account_info.totalUnrealizedProfit,
+                "total_cross_wallet_balance": account_info.totalCrossWalletBalance,
+                "total_cross_unpnl": account_info.totalCrossUnPnl,
+                "available_balance": account_info.availableBalance,
+                "max_withdraw_amount": account_info.maxWithdrawAmount,
+            },
         )
-        while self.get_account() is None:
-            await asyncio.sleep(0.1)
+
+        await self._await_account_registered(log_registered=False)
 
         if self._leverages:
             async with TaskGroup() as tg:
@@ -200,13 +223,19 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             for _, symbol, type_ in margin_tasks:
                 self._log.info(f"Set {symbol} margin type to {type_.value}")
 
+        # Initialize leverage for all symbols using symbolConfig endpoint
+        # This ensures leverage is set correctly even for symbols without active positions
         account: MarginAccount = self.get_account()
-        position_risks = await self._futures_http_account.query_futures_position_risk()
-        for position in position_risks:
-            instrument_id: InstrumentId = self._get_cached_instrument_id(position.symbol)
-            leverage = Decimal(position.leverage)
-            account.set_leverage(instrument_id, leverage)
-            self._log.debug(f"Set leverage {position.symbol} {leverage}X")
+        symbol_configs = await self._futures_http_account.query_futures_symbol_config()
+        for config in symbol_configs:
+            try:
+                instrument_id: InstrumentId = self._get_cached_instrument_id(config.symbol)
+                leverage = Decimal(config.leverage)
+                account.set_leverage(instrument_id, leverage)
+                self._log.debug(f"Set leverage {config.symbol} {leverage}X")
+            except KeyError:
+                # Symbol not loaded in instrument provider, skip
+                continue
 
     async def _init_dual_side_position(self) -> None:
         binance_futures_dual_side_position: BinanceFuturesDualSidePosition = (
@@ -260,50 +289,318 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             active_symbols.add(position.symbol)
         return active_symbols
 
+    async def generate_order_status_report(
+        self,
+        command: GenerateOrderStatusReport,
+    ) -> OrderStatusReport | None:
+        report = await super().generate_order_status_report(command)
+        if report is not None:
+            return report
+
+        client_order_id = command.client_order_id.value if command.client_order_id else None
+        venue_order_id = int(command.venue_order_id.value) if command.venue_order_id else None
+
+        if client_order_id is None and venue_order_id is None:
+            return None
+
+        try:
+            algo_order = await self._futures_http_account.query_algo_order(
+                algo_id=venue_order_id,
+                client_algo_id=client_order_id,
+            )
+        except BinanceError as e:
+            self._log.debug(f"Algo order query also failed: {e.message}")
+            return None
+
+        if algo_order is None:
+            return None
+
+        try:
+            report = algo_order.parse_to_order_status_report(
+                account_id=self.account_id,
+                instrument_id=self._get_cached_instrument_id(algo_order.symbol),
+                report_id=UUID4(),
+                enum_parser=self._futures_enum_parser,
+                ts_init=self._clock.timestamp_ns(),
+            )
+        except ValueError as e:
+            self._log.warning(f"Cannot parse algo order: {e}")
+            return None
+
+        self._log.debug(f"Received algo {report}")
+        return report
+
+    async def generate_order_status_reports(
+        self,
+        command: GenerateOrderStatusReports,
+    ) -> list[OrderStatusReport]:
+        reports = await super().generate_order_status_reports(command)
+
+        # Reuses cached result from base class call above
+        symbol = command.instrument_id.symbol.value if command.instrument_id is not None else None
+        active_symbols, _ = await self._build_active_symbols(symbol)
+
+        start_ms = secs_to_millis(command.start.timestamp()) if command.start else None
+        end_ms = secs_to_millis(command.end.timestamp()) if command.end else None
+
+        try:
+            algo_reports = await self._generate_algo_order_status_reports(
+                symbol=symbol,
+                active_symbols=active_symbols,
+                open_only=command.open_only,
+                start_ms=start_ms,
+                end_ms=end_ms,
+            )
+            reports.extend(algo_reports)
+        except BinanceError as e:
+            self._log.warning(f"Cannot generate algo OrderStatusReports: {e.message}")
+        finally:
+            self._active_symbols_cache = None
+
+        return reports
+
+    async def _generate_algo_order_status_reports(
+        self,
+        symbol: str | None,
+        active_symbols: set[str],
+        open_only: bool,
+        start_ms: int | None,
+        end_ms: int | None,
+    ) -> list[OrderStatusReport]:
+        algo_orders, seen_algo_ids = await self._fetch_algo_orders(symbol)
+        self._log.debug(f"Fetched {len(algo_orders)} open algo orders")
+
+        # For historical mode, also fetch from allAlgoOrders (limited to 7 days by Binance)
+        if not open_only:
+            for active_symbol in active_symbols:
+                response = await self._futures_http_account.query_all_algo_orders(
+                    symbol=active_symbol,
+                    start_time=start_ms,
+                    end_time=end_ms,
+                    limit=1000,
+                )
+                # Deduplicate - open orders may appear in both endpoints
+                for order in response:
+                    if order.algoId not in seen_algo_ids:
+                        algo_orders.append(order)
+                        seen_algo_ids.add(order.algoId)
+            self._log.debug(f"Total {len(algo_orders)} algo orders after historical merge")
+
+        reports: list[OrderStatusReport] = []
+        for algo_order in algo_orders:
+            report = self._parse_algo_order_report(algo_order, start_ms, end_ms)
+            if report is not None:
+                reports.append(report)
+
+        return reports
+
+    async def _fetch_algo_orders(
+        self,
+        symbol: str | None,
+    ) -> tuple[list[BinanceFuturesAlgoOrder], set[int]]:
+        algo_orders: list[BinanceFuturesAlgoOrder] = []
+        seen_algo_ids: set[int] = set()
+
+        # The openAlgoOrders endpoint has no time limit, unlike allAlgoOrders (7-day limit)
+        open_orders = await self._futures_http_account.query_open_algo_orders(symbol)
+        for order in open_orders:
+            algo_orders.append(order)
+            seen_algo_ids.add(order.algoId)
+
+        return algo_orders, seen_algo_ids
+
+    def _parse_algo_order_report(
+        self,
+        algo_order: BinanceFuturesAlgoOrder,
+        start_ms: int | None,
+        end_ms: int | None,
+    ) -> OrderStatusReport | None:
+        if start_ms is not None and algo_order.createTime < start_ms:
+            return None
+        if end_ms is not None and algo_order.createTime > end_ms:
+            return None
+
+        # Skip triggered algo orders - the regular orders API provides accurate
+        # fill data for these
+        if algo_order.actualOrderId:
+            if algo_order.clientAlgoId:
+                self._triggered_algo_order_ids.add(ClientOrderId(algo_order.clientAlgoId))
+            self._log.debug(
+                f"Skipping triggered algo order {algo_order.clientAlgoId} "
+                f"(actualOrderId={algo_order.actualOrderId}) - using regular order data",
+            )
+            return None
+
+        try:
+            report = algo_order.parse_to_order_status_report(
+                account_id=self.account_id,
+                instrument_id=self._get_cached_instrument_id(algo_order.symbol),
+                report_id=UUID4(),
+                enum_parser=self._futures_enum_parser,
+                ts_init=self._clock.timestamp_ns(),
+            )
+        except ValueError as e:
+            self._log.warning(f"Skipping algo order during reconciliation: {e}")
+            return None
+
+        self._log.debug(f"Received algo {report}")
+        return report
+
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
-    def _check_order_validity(self, order: Order) -> None:
+    def _check_order_validity(self, order: Order) -> str | None:
         # Check order type valid
         if order.order_type not in self._futures_enum_parser.futures_valid_order_types:
-            self._log.error(
-                f"Cannot submit order: {order_type_to_str(order.order_type)} "
-                f"orders not supported by the Binance exchange for FUTURES accounts. "
-                f"Use any of {[order_type_to_str(t) for t in self._futures_enum_parser.futures_valid_order_types]}",
+            valid_types = [
+                order_type_to_str(t) for t in self._futures_enum_parser.futures_valid_order_types
+            ]
+            return (
+                f"UNSUPPORTED_ORDER_TYPE: {order_type_to_str(order.order_type)} "
+                f"not supported for FUTURES accounts (valid: {valid_types})"
             )
-            return
+
         # Check time in force valid
         if order.time_in_force not in self._futures_enum_parser.futures_valid_time_in_force:
-            self._log.error(
-                f"Cannot submit order: "
-                f"{time_in_force_to_str(order.time_in_force)} "
-                f"not supported by the exchange. "
-                f"Use any of {[time_in_force_to_str(t) for t in self._futures_enum_parser.futures_valid_time_in_force]}",
+            valid_tifs = [
+                time_in_force_to_str(t)
+                for t in self._futures_enum_parser.futures_valid_time_in_force
+            ]
+            return (
+                f"UNSUPPORTED_TIME_IN_FORCE: {time_in_force_to_str(order.time_in_force)} "
+                f"not supported for FUTURES accounts (valid: {valid_tifs})"
             )
-            return
+
         # Check post-only
         if order.is_post_only and order.order_type != OrderType.LIMIT:
-            self._log.error(
-                f"Cannot submit order: {order_type_to_str(order.order_type)} `post_only` order. "
-                "Only LIMIT `post_only` orders supported by the Binance exchange for FUTURES accounts",
+            return (
+                f"UNSUPPORTED_POST_ONLY: {order_type_to_str(order.order_type)} post_only order "
+                "not supported (only LIMIT post_only orders supported for FUTURES accounts)"
             )
-            return
+
+        return None
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
-        # TODO: Iterate batches of 10 order cancels, also validate order is not already closed
+        valid_cancels = self._filter_valid_cancels(command.cancels)
+        if not valid_cancels:
+            self._log.info("No valid orders to cancel in batch")
+            return
+
+        successful_cancels, failed_cancels = await self._process_cancel_batches(
+            valid_cancels,
+            command.instrument_id.symbol.value,
+        )
+
+        self._log.info(
+            f"Batch cancel completed: {len(successful_cancels)} successful, "
+            f"{len(failed_cancels)} failed out of {len(valid_cancels)} valid orders",
+        )
+
+    def _filter_valid_cancels(self, cancels: list[CancelOrder]) -> list[CancelOrder]:
+        # Filter out orders that are already closed or not found
+        valid_cancels = []
+        for cancel in cancels:
+            order = self._cache.order(cancel.client_order_id)
+            if order is None:
+                # Note: Following single cancel behavior - log error but don't emit cancel rejected event
+                # for orders not found in cache (may have been cancelled/filled via other means)
+                self._log.error(f"{cancel.client_order_id!r} not found to cancel")
+                continue
+
+            if order.is_closed:
+                self._log.warning(
+                    f"BatchCancelOrders command for {cancel.client_order_id!r} when order already {order.status_string()} "
+                    "(will not send to exchange)",
+                )
+                continue
+
+            valid_cancels.append(cancel)
+        return valid_cancels
+
+    async def _process_cancel_batches(
+        self,
+        valid_cancels: list[CancelOrder],
+        symbol: str,
+    ) -> tuple[list[CancelOrder], list[CancelOrder]]:
+        # Process cancel orders in batches of 10 (Binance API limit)
+        batch_size = 10
+        batches = [
+            valid_cancels[i : i + batch_size] for i in range(0, len(valid_cancels), batch_size)
+        ]
+
+        # Process all batches concurrently for better latency
+        batch_results = await asyncio.gather(
+            *[self._cancel_order_batch(batch, symbol) for batch in batches],
+            return_exceptions=True,
+        )
+
+        successful_cancels: list[CancelOrder] = []
+        failed_cancels: list[CancelOrder] = []
+
+        for result in batch_results:
+            if isinstance(result, Exception):
+                # If a batch failed with an exception, treat all orders in that batch as failed
+                # This shouldn't normally happen as exceptions are handled in _cancel_order_batch
+                self._log.error(f"Unexpected batch processing exception: {result}")
+                continue
+
+            success, failure = result  # type: ignore[misc]
+            successful_cancels.extend(success)
+            failed_cancels.extend(failure)
+
+        return successful_cancels, failed_cancels
+
+    async def _cancel_order_batch(
+        self,
+        batch: list[CancelOrder],
+        symbol: str,
+    ) -> tuple[list[CancelOrder], list[CancelOrder]]:
+        batch_client_order_ids = [c.client_order_id.value for c in batch]
+        self._log.debug(
+            f"Attempting to cancel batch of {len(batch)} orders: {batch_client_order_ids}",
+        )
+
+        retry_manager = await self._retry_manager_pool.acquire()
         try:
-            await self._futures_http_account.cancel_multiple_orders(
-                symbol=command.instrument_id.symbol.value,
-                client_order_ids=[c.client_order_id.value for c in command.cancels],
+            await retry_manager.run(
+                "cancel_multiple_orders",
+                batch_client_order_ids,
+                self._futures_http_account.cancel_multiple_orders,
+                symbol=symbol,
+                client_order_ids=batch_client_order_ids,
             )
+
+            if retry_manager.result:
+                self._log.debug(f"Successfully cancelled batch: {batch_client_order_ids}")
+                return batch, []
+            else:
+                self._log.error(
+                    f"Failed to cancel batch: {batch_client_order_ids}, reason: {retry_manager.message}",
+                )
+                self._generate_cancel_rejected_events(batch, retry_manager.message)
+                return [], batch
+
         except BinanceError as e:
             error_code = BinanceErrorCode(int(e.message["code"]))
             if error_code == BinanceErrorCode.CANCEL_REJECTED:
-                self._log.warning(f"Cancel rejected: {e.message}")
+                self._log.warning(f"Cancel batch rejected: {e.message}")
             else:
-                self._log.exception(
-                    f"Cannot cancel multiple orders: {e.message}",
-                    e,
-                )
+                self._log.exception(f"Cannot cancel batch of orders: {e.message}", e)
+
+            self._generate_cancel_rejected_events(batch, f"Batch cancel failed: {e.message}")
+            return [], batch
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
+
+    def _generate_cancel_rejected_events(self, cancels: list[CancelOrder], reason: str) -> None:
+        for cancel in cancels:
+            self.generate_order_cancel_rejected(
+                cancel.strategy_id,
+                cancel.instrument_id,
+                cancel.client_order_id,
+                cancel.venue_order_id,
+                reason,
+                self._clock.timestamp_ns(),
+            )
 
     # -- WEBSOCKET EVENT HANDLERS --------------------------------------------------------------------
 
@@ -344,3 +641,13 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             return
         order_data = trade_lite.data.to_order_data()
         order_data.handle_order_trade_update(self)
+
+    def _handle_algo_update(self, raw: bytes) -> None:
+        algo_update = self._decoder_futures_algo_update_wrapper.decode(raw)
+        order_data = algo_update.data.o
+        self._log.debug(
+            f"ALGO_UPDATE received: caid={order_data.caid}, aid={order_data.aid}, "
+            f"status={order_data.X}, symbol={order_data.s}",
+        )
+        ts_event = millis_to_nanos(algo_update.data.T)
+        order_data.handle_algo_update(self, ts_event)

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import pytest
-from pandas.core.generic import pickle
 
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -206,23 +205,3 @@ def test_synthetic_instrument_from_dict():
 
     # Assert
     assert result == synthetic
-
-
-@pytest.mark.skip(reason="Currently not possible to pickle synthetic instruments")
-def test_pickling_round_trip_results_in_expected_tick():
-    # Arrange
-    synthetic = SyntheticInstrument(
-        symbol=Symbol("BTC-ETH"),
-        price_precision=8,
-        components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
-        formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
-        ts_event=0,
-        ts_init=0,
-    )
-
-    # Act
-    pickled = pickle.dumps(synthetic)
-    unpickled = pickle.loads(pickled)
-
-    # Assert
-    assert synthetic == unpickled

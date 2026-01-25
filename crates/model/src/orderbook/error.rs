@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,7 +18,10 @@
 use nautilus_core::UnixNanos;
 
 use super::ladder::BookPrice;
-use crate::enums::{BookType, OrderSide};
+use crate::{
+    enums::{BookType, OrderSide},
+    identifiers::InstrumentId,
+};
 
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum InvalidBookOperation {
@@ -36,10 +39,14 @@ pub enum BookIntegrityError {
     OrderNotFound(u64, u64, UnixNanos),
     #[error("Integrity error: invalid `NoOrderSide` in book")]
     NoOrderSide,
+    #[error("Integrity error: order_id={0} not found in book for side resolution")]
+    OrderNotFoundForSideResolution(u64),
     #[error("Integrity error: orders in cross [{0} {1}]")]
     OrdersCrossed(BookPrice, BookPrice),
     #[error("Integrity error: number of {0} orders at level > 1 for L2_MBP book, was {1}")]
     TooManyOrders(OrderSide, usize),
     #[error("Integrity error: number of {0} levels > 1 for L1_MBP book, was {1}")]
     TooManyLevels(OrderSide, usize),
+    #[error("Integrity error: instrument ID mismatch: book={0}, delta={1}")]
+    InstrumentMismatch(InstrumentId, InstrumentId),
 }

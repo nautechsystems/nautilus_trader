@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,10 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import math
+
 import pandas as pd
 from numpy import float64
 
-from nautilus_trader.analysis.statistics.loser_avg import AvgLoser
+from nautilus_trader.analysis import AvgLoser
 
 
 class TestAvgLoserPortfolioStatistic:
@@ -30,7 +32,7 @@ class TestAvgLoserPortfolioStatistic:
         # Assert
         assert result == "Avg Loser"
 
-    def test_calculate_given_empty_series_returns_zero(self):
+    def test_calculate_given_empty_series_returns_nan(self):
         # Arrange
         stat = AvgLoser()
         data = pd.Series(dtype=float64)
@@ -39,7 +41,7 @@ class TestAvgLoserPortfolioStatistic:
         result = stat.calculate_from_realized_pnls(data)
 
         # Assert
-        assert result == 0.0
+        assert math.isnan(result)
 
     def test_calculate_given_mix_of_pnls_returns_expected(self):
         # Arrange

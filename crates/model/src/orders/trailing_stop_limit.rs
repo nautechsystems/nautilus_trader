@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -46,6 +46,7 @@ use crate::{
 )]
 pub struct TrailingStopLimitOrder {
     core: OrderCore,
+    pub activation_price: Option<Price>,
     pub price: Price,
     pub trigger_price: Price,
     pub trigger_type: TriggerType,
@@ -56,6 +57,7 @@ pub struct TrailingStopLimitOrder {
     pub is_post_only: bool,
     pub display_qty: Option<Quantity>,
     pub trigger_instrument_id: Option<InstrumentId>,
+    pub is_activated: bool,
     pub is_triggered: bool,
     pub ts_triggered: Option<UnixNanos>,
 }
@@ -144,6 +146,7 @@ impl TrailingStopLimitOrder {
 
         Ok(Self {
             core: OrderCore::new(init_order),
+            activation_price: None,
             price,
             trigger_price,
             trigger_type,
@@ -154,6 +157,7 @@ impl TrailingStopLimitOrder {
             is_post_only: post_only,
             display_qty,
             trigger_instrument_id,
+            is_activated: false,
             is_triggered: false,
             ts_triggered: None,
         })
@@ -231,11 +235,19 @@ impl TrailingStopLimitOrder {
         )
         .expect(FAILED)
     }
+
+    pub fn has_activation_price(&self) -> bool {
+        self.activation_price.is_some()
+    }
+
+    pub fn set_activated(&mut self) {
+        debug_assert!(!self.is_activated, "double activation");
+        self.is_activated = true;
+    }
 }
 
 impl Deref for TrailingStopLimitOrder {
     type Target = OrderCore;
-
     fn deref(&self) -> &Self::Target {
         &self.core
     }
@@ -248,6 +260,9 @@ impl DerefMut for TrailingStopLimitOrder {
 }
 
 impl Order for TrailingStopLimitOrder {
+    fn activation_price(&self) -> Option<Price> {
+        self.activation_price
+    }
     fn into_any(self) -> OrderAny {
         OrderAny::TrailingStopLimit(self)
     }
@@ -412,6 +427,10 @@ impl Order for TrailingStopLimitOrder {
         self.leaves_qty
     }
 
+    fn overfill_qty(&self) -> Quantity {
+        self.overfill_qty
+    }
+
     fn avg_px(&self) -> Option<f64> {
         self.avg_px
     }
@@ -463,14 +482,26 @@ impl Order for TrailingStopLimitOrder {
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
         if let OrderEventAny::Updated(ref event) = event {
             self.update(event);
-        };
+        }
+
         let is_order_filled = matches!(event, OrderEventAny::Filled(_));
+        let is_order_triggered = matches!(event, OrderEventAny::Triggered(_));
+        let ts_event = if is_order_triggered {
+            Some(event.ts_event())
+        } else {
+            None
+        };
 
         self.core.apply(event)?;
 
+        if is_order_triggered {
+            self.is_triggered = true;
+            self.ts_triggered = ts_event;
+        }
+
         if is_order_filled {
             self.core.set_slippage(self.price);
-        };
+        }
 
         Ok(())
     }
@@ -479,13 +510,11 @@ impl Order for TrailingStopLimitOrder {
         if let Some(price) = event.price {
             self.price = price;
         }
-
         if let Some(trigger_price) = event.trigger_price {
             self.trigger_price = trigger_price;
         }
-
         self.quantity = event.quantity;
-        self.leaves_qty = self.quantity - self.filled_qty;
+        self.leaves_qty = self.quantity.saturating_sub(self.filled_qty);
     }
 
     fn is_triggered(&self) -> Option<bool> {
@@ -513,7 +542,7 @@ impl Order for TrailingStopLimitOrder {
     }
 
     fn set_liquidity_side(&mut self, liquidity_side: LiquiditySide) {
-        self.liquidity_side = Some(liquidity_side)
+        self.liquidity_side = Some(liquidity_side);
     }
 
     fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
@@ -529,16 +558,7 @@ impl Display for TrailingStopLimitOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "TrailingStopLimitOrder(\
-            {} {} {} {} {}, \
-            status={}, \
-            client_order_id={}, \
-            venue_order_id={}, \
-            position_id={}, \
-            exec_algorithm_id={}, \
-            exec_spawn_id={}, \
-            tags={:?}\
-            )",
+            "TrailingStopLimitOrder({} {} {} {} {}, status={}, client_order_id={}, venue_order_id={}, position_id={}, exec_algorithm_id={}, exec_spawn_id={}, tags={:?}, activation_price={:?}, is_activated={})",
             self.side,
             self.quantity.to_formatted_string(),
             self.instrument_id,
@@ -546,19 +566,17 @@ impl Display for TrailingStopLimitOrder {
             self.time_in_force,
             self.status,
             self.client_order_id,
-            self.venue_order_id.map_or_else(
-                || "None".to_string(),
-                |venue_order_id| format!("{venue_order_id}")
-            ),
-            self.position_id.map_or_else(
-                || "None".to_string(),
-                |position_id| format!("{position_id}")
-            ),
+            self.venue_order_id
+                .map_or_else(|| "None".to_string(), |id| format!("{id}")),
+            self.position_id
+                .map_or_else(|| "None".to_string(), |id| format!("{id}")),
             self.exec_algorithm_id
                 .map_or_else(|| "None".to_string(), |id| format!("{id}")),
             self.exec_spawn_id
                 .map_or_else(|| "None".to_string(), |id| format!("{id}")),
-            self.tags
+            self.tags,
+            self.activation_price,
+            self.is_activated
         )
     }
 }
@@ -573,19 +591,17 @@ impl From<OrderInitialized> for TrailingStopLimitOrder {
             event.order_side,
             event.quantity,
             event
-                .price // TODO: Improve this error, model order domain errors
-                .expect("Error initializing order: `price` was `None` for `TrailingStopLimitOrder`"),
+                .price
+                .expect("Error initializing order: price is None"),
             event
-                .trigger_price // TODO: Improve this error, model order domain errors
-                .expect(
-                    "Error initializing order: `trigger_price` was `None` for `TrailingStopLimitOrder`",
-                ),
+                .trigger_price
+                .expect("Error initializing order: trigger_price is None"),
             event
                 .trigger_type
-                .expect("Error initializing order: `trigger_type` was `None` for `TrailingStopLimitOrder`"),
-            event.limit_offset.unwrap(),  // TODO
-            event.trailing_offset.unwrap(),  // TODO
-            event.trailing_offset_type.unwrap(),  // TODO
+                .expect("Error initializing order: trigger_type is None"),
+            event.limit_offset.unwrap(),
+            event.trailing_offset.unwrap(),
+            event.trailing_offset_type.unwrap(),
             event.time_in_force,
             event.expire_time,
             event.post_only,
@@ -608,9 +624,6 @@ impl From<OrderInitialized> for TrailingStopLimitOrder {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//  Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -628,6 +641,7 @@ mod tests {
 
     #[rstest]
     fn test_initialize(_audusd_sim: CurrencyPair) {
+        // Create and accept a basic trailing stop limit order
         let order = OrderTestBuilder::new(OrderType::TrailingStopLimit)
             .instrument_id(_audusd_sim.id)
             .side(OrderSide::Buy)
@@ -665,7 +679,7 @@ mod tests {
 
         assert_eq!(
             order.to_string(),
-            "TrailingStopLimitOrder(BUY 1 AUD/USD.SIM TRAILING_STOP_LIMIT GTC, status=INITIALIZED, client_order_id=O-19700101-000000-001-001-1, venue_order_id=None, position_id=None, exec_algorithm_id=None, exec_spawn_id=None, tags=None)"
+            "TrailingStopLimitOrder(BUY 1 AUD/USD.SIM TRAILING_STOP_LIMIT GTC, status=INITIALIZED, client_order_id=O-19700101-000000-001-001-1, venue_order_id=None, position_id=None, exec_algorithm_id=None, exec_spawn_id=None, tags=None, activation_price=None, is_activated=false)"
         );
     }
 
@@ -721,9 +735,8 @@ mod tests {
             .build();
     }
 
-    #[test]
+    #[rstest]
     fn test_trailing_stop_limit_order_update() {
-        // Create and accept a basic trailing stop limit order
         let order = OrderTestBuilder::new(OrderType::TrailingStopLimit)
             .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
             .quantity(Quantity::from(10))
@@ -736,7 +749,6 @@ mod tests {
 
         let mut accepted_order = TestOrderStubs::make_accepted_order(&order);
 
-        // Update with new values
         let updated_trigger_price = Price::new(90.0, 2);
         let updated_quantity = Quantity::from(5);
 
@@ -750,14 +762,12 @@ mod tests {
 
         accepted_order.apply(OrderEventAny::Updated(event)).unwrap();
 
-        // Verify updates were applied correctly
         assert_eq!(accepted_order.quantity(), updated_quantity);
         assert_eq!(accepted_order.trigger_price(), Some(updated_trigger_price));
     }
 
-    #[test]
+    #[rstest]
     fn test_trailing_stop_limit_order_trigger_instrument_id() {
-        // Create a new TrailingStopLimitOrder with a trigger instrument ID
         let trigger_instrument_id = InstrumentId::from("ETH-USDT.BINANCE");
         let order = OrderTestBuilder::new(OrderType::TrailingStopLimit)
             .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
@@ -767,16 +777,14 @@ mod tests {
             .limit_offset(dec!(2.0))
             .trailing_offset(dec!(1.0))
             .trailing_offset_type(TrailingOffsetType::Price)
-            .trigger_instrument_id(trigger_instrument_id.clone())
+            .trigger_instrument_id(trigger_instrument_id)
             .build();
 
-        // Assert that the trigger instrument ID is set correctly
         assert_eq!(order.trigger_instrument_id(), Some(trigger_instrument_id));
     }
 
-    #[test]
+    #[rstest]
     fn test_trailing_stop_limit_order_from_order_initialized() {
-        // Create an OrderInitialized event with all required fields for a TrailingStopLimitOrder
         let order_initialized = OrderInitializedBuilder::default()
             .order_type(OrderType::TrailingStopLimit)
             .price(Some(Price::new(100.0, 2)))
@@ -788,18 +796,14 @@ mod tests {
             .build()
             .unwrap();
 
-        // Convert the OrderInitialized event into a TrailingStopLimitOrder
         let order: TrailingStopLimitOrder = order_initialized.clone().into();
 
-        // Assert essential fields match the OrderInitialized fields
         assert_eq!(order.trader_id(), order_initialized.trader_id);
         assert_eq!(order.strategy_id(), order_initialized.strategy_id);
         assert_eq!(order.instrument_id(), order_initialized.instrument_id);
         assert_eq!(order.client_order_id(), order_initialized.client_order_id);
         assert_eq!(order.order_side(), order_initialized.order_side);
         assert_eq!(order.quantity(), order_initialized.quantity);
-
-        // Assert specific fields for TrailingStopLimitOrder
         assert_eq!(order.price, order_initialized.price.unwrap());
         assert_eq!(
             order.trigger_price,

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -180,19 +180,21 @@ class BinanceTrade(msgspec.Struct, frozen=True):
     def parse_to_trade_tick(
         self,
         instrument_id: InstrumentId,
-        ts_init: int,
+        ts_init: int | None = None,
     ) -> TradeTick:
         """
         Parse Binance trade to internal TradeTick.
         """
+        ts_event = millis_to_nanos(self.time)
+
         return TradeTick(
             instrument_id=instrument_id,
             price=Price.from_str(self.price),
             size=Quantity.from_str(self.qty),
             aggressor_side=AggressorSide.SELLER if self.isBuyerMaker else AggressorSide.BUYER,
             trade_id=TradeId(str(self.id)),
-            ts_event=millis_to_nanos(self.time),
-            ts_init=ts_init,
+            ts_event=ts_event,
+            ts_init=(ts_init or ts_event),
         )
 
 
@@ -213,19 +215,21 @@ class BinanceAggTrade(msgspec.Struct, frozen=True):
     def parse_to_trade_tick(
         self,
         instrument_id: InstrumentId,
-        ts_init: int,
+        ts_init: int | None = None,
     ) -> TradeTick:
         """
         Parse Binance trade to internal TradeTick.
         """
+        ts_event = millis_to_nanos(self.T)
+
         return TradeTick(
             instrument_id=instrument_id,
             price=Price.from_str(self.p),
             size=Quantity.from_str(self.q),
             aggressor_side=AggressorSide.SELLER if self.m else AggressorSide.BUYER,
             trade_id=TradeId(str(self.a)),
-            ts_event=millis_to_nanos(self.T),
-            ts_init=ts_init,
+            ts_event=ts_event,
+            ts_init=(ts_init or ts_event),
         )
 
 
@@ -250,11 +254,13 @@ class BinanceKline(msgspec.Struct, array_like=True):
     def parse_to_binance_bar(
         self,
         bar_type: BarType,
-        ts_init: int,
+        ts_init: int | None = None,
     ) -> BinanceBar:
         """
         Parse kline to BinanceBar.
         """
+        ts_event = millis_to_nanos(self.close_time)
+
         return BinanceBar(
             bar_type=bar_type,
             open=Price.from_str(self.open),
@@ -266,8 +272,8 @@ class BinanceKline(msgspec.Struct, array_like=True):
             count=self.trades_count,
             taker_buy_base_volume=Decimal(self.taker_base_volume),
             taker_buy_quote_volume=Decimal(self.taker_quote_volume),
-            ts_event=millis_to_nanos(self.close_time),
-            ts_init=ts_init,
+            ts_event=ts_event,
+            ts_init=(ts_init or ts_event),
         )
 
 
@@ -313,6 +319,7 @@ class BinanceTickerPrice(msgspec.Struct, frozen=True):
     symbol: str | None
     price: str | None
     time: int | None = None  # FUTURES only
+    pair: str | None = None  # USDT-M FUTURES only (v2 endpoint)
     ps: str | None = None  # COIN-M FUTURES only, pair
 
 
@@ -426,7 +433,7 @@ class BinanceOrderBookData(msgspec.Struct, frozen=True):
             delta = bid.parse_to_order_book_delta(
                 instrument_id=instrument_id,
                 side=OrderSide.BUY,
-                flags=RecordFlag.SNAPSHOT if snapshot else flags,
+                flags=(RecordFlag.F_SNAPSHOT | flags) if snapshot else flags,
                 sequence=self.u,
                 ts_event=ts_event,
                 ts_init=ts_init,
@@ -443,7 +450,7 @@ class BinanceOrderBookData(msgspec.Struct, frozen=True):
             delta = ask.parse_to_order_book_delta(
                 instrument_id=instrument_id,
                 side=OrderSide.SELL,
-                flags=RecordFlag.SNAPSHOT if snapshot else flags,
+                flags=(RecordFlag.F_SNAPSHOT | flags) if snapshot else flags,
                 sequence=self.u,
                 ts_event=ts_event,
                 ts_init=ts_init,
@@ -481,16 +488,18 @@ class BinanceQuoteData(msgspec.Struct, frozen=True):
     def parse_to_quote_tick(
         self,
         instrument_id: InstrumentId,
-        ts_init: int,
+        ts_init: int | None = None,
     ) -> QuoteTick:
+        ts_event = millis_to_nanos(self.T) if self.T else ts_init
+
         return QuoteTick(
             instrument_id=instrument_id,
             bid_price=Price.from_str(self.b),
             ask_price=Price.from_str(self.a),
             bid_size=Quantity.from_str(self.B),
             ask_size=Quantity.from_str(self.A),
-            ts_event=millis_to_nanos(self.T) if self.T else ts_init,
-            ts_init=ts_init,
+            ts_event=ts_event,
+            ts_init=(ts_init or ts_event),
         )
 
 
@@ -522,16 +531,18 @@ class BinanceAggregatedTradeData(msgspec.Struct, frozen=True):
     def parse_to_trade_tick(
         self,
         instrument_id: InstrumentId,
-        ts_init: int,
+        ts_init: int | None = None,
     ) -> TradeTick:
+        ts_event = millis_to_nanos(self.T)
+
         return TradeTick(
             instrument_id=instrument_id,
             price=Price.from_str(self.p),
             size=Quantity.from_str(self.q),
             aggressor_side=AggressorSide.SELLER if self.m else AggressorSide.BUYER,
             trade_id=TradeId(str(self.a)),
-            ts_event=millis_to_nanos(self.T),
-            ts_init=ts_init,
+            ts_event=ts_event,
+            ts_init=(ts_init or ts_event),
         )
 
 
@@ -689,13 +700,15 @@ class BinanceCandlestick(msgspec.Struct, frozen=True):
         self,
         instrument_id: InstrumentId,
         enum_parser: BinanceEnumParser,
-        ts_init: int,
+        ts_init: int | None = None,
     ) -> BinanceBar:
         bar_type = BarType(
             instrument_id=instrument_id,
             bar_spec=enum_parser.parse_binance_kline_interval_to_bar_spec(self.i),
             aggregation_source=AggregationSource.EXTERNAL,
         )
+        ts_event = millis_to_nanos(self.T)
+
         return BinanceBar(
             bar_type=bar_type,
             open=Price.from_str(self.o),
@@ -707,8 +720,8 @@ class BinanceCandlestick(msgspec.Struct, frozen=True):
             count=self.n,
             taker_buy_base_volume=Decimal(self.V),
             taker_buy_quote_volume=Decimal(self.Q),
-            ts_event=millis_to_nanos(self.T),
-            ts_init=ts_init,
+            ts_event=ts_event,
+            ts_init=(ts_init or ts_event),
         )
 
 

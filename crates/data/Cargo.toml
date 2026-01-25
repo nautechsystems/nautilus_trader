@@ -6,12 +6,15 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description.workspace = true
+description = "Core data handling machinery for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+
+[lints]
+workspace = true
 
 [lib]
 name = "nautilus_data"
@@ -19,28 +22,16 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
-extension-module = [
-  "pyo3/extension-module",
-  "nautilus-common/extension-module",
-  "nautilus-core/extension-module",
-  "nautilus-model/extension-module",
-  "nautilus-persistence/extension-module",
-]
+streaming = ["nautilus-persistence"]
 ffi = [
   "nautilus-common/ffi",
   "nautilus-core/ffi",
   "nautilus-model/ffi",
   "nautilus-persistence/ffi",
+  "streaming",
 ]
-python = [
-  "pyo3",
-  "nautilus-common/python",
-  "nautilus-core/python",
-  "nautilus-model/python",
-  "nautilus-persistence/python",
-]
-clock_v2 = ["nautilus-common/clock_v2"]
 high-precision = ["nautilus-model/high-precision"]
+defi = ["nautilus-common/defi", "nautilus-model/defi", "alloy-primitives"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -50,16 +41,19 @@ rustdoc-args = ["--cfg", "docsrs"]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
-nautilus-persistence = { workspace = true }
+nautilus-persistence = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
+futures = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
 ustr = { workspace = true }
+
+alloy-primitives = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "macros", "rt"] }

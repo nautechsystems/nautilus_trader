@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,11 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Trading performance statistics and portfolio metrics.
+
+pub mod cagr;
+pub mod calmar_ratio;
 pub mod expectancy;
 pub mod long_ratio;
 pub mod loser_avg;
 pub mod loser_max;
 pub mod loser_min;
+pub mod max_drawdown;
 pub mod profit_factor;
 pub mod returns_avg;
 pub mod returns_avg_loss;

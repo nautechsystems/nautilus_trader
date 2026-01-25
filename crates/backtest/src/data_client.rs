@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,22 +23,27 @@ use std::{cell::RefCell, rc::Rc};
 
 use nautilus_common::{
     cache::Cache,
+    clients::DataClient,
     messages::data::{
         RequestBars, RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
         RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-        SubscribeBookSnapshots, SubscribeCustomData, SubscribeIndexPrices, SubscribeInstrument,
-        SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
-        SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
+        SubscribeCustomData, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
+        SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
         UnsubscribeCustomData, UnsubscribeIndexPrices, UnsubscribeInstrument,
         UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
         UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
     },
 };
-use nautilus_data::client::DataClient;
 use nautilus_model::identifiers::{ClientId, Venue};
 
 #[derive(Debug)]
+/// Data client implementation for backtesting market data operations.
+///
+/// The `BacktestDataClient` provides a data client interface specifically designed
+/// for backtesting environments. It handles market data subscriptions and requests
+/// during backtesting, coordinating with the backtesting engine to provide
+/// historical data replay functionality.
 pub struct BacktestDataClient {
     pub client_id: ClientId,
     pub venue: Venue,
@@ -55,7 +60,7 @@ impl BacktestDataClient {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl DataClient for BacktestDataClient {
     fn client_id(&self) -> ClientId {
         self.client_id
@@ -65,27 +70,19 @@ impl DataClient for BacktestDataClient {
         Some(self.venue)
     }
 
-    fn start(&self) -> anyhow::Result<()> {
+    fn start(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn stop(&self) -> anyhow::Result<()> {
+    fn stop(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn reset(&self) -> anyhow::Result<()> {
+    fn reset(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn dispose(&self) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    async fn connect(&self) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    async fn disconnect(&self) -> anyhow::Result<()> {
+    fn dispose(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -116,10 +113,6 @@ impl DataClient for BacktestDataClient {
     }
 
     fn subscribe_book_depth10(&mut self, _cmd: &SubscribeBookDepth10) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn subscribe_book_snapshots(&mut self, _cmd: &SubscribeBookSnapshots) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -177,13 +170,6 @@ impl DataClient for BacktestDataClient {
         Ok(())
     }
 
-    fn unsubscribe_book_snapshots(
-        &mut self,
-        _cmd: &UnsubscribeBookSnapshots,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
-
     fn unsubscribe_quotes(&mut self, _cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
         Ok(())
     }
@@ -220,37 +206,31 @@ impl DataClient for BacktestDataClient {
 
     // -- DATA REQUEST HANDLERS ---------------------------------------------------------------------------
 
-    fn request_data(&self, request: &RequestCustomData) -> anyhow::Result<()> {
+    fn request_data(&self, _request: RequestCustomData) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_instruments(&self, request: &RequestInstruments) -> anyhow::Result<()> {
+    fn request_instruments(&self, _request: RequestInstruments) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_instrument(&self, request: &RequestInstrument) -> anyhow::Result<()> {
+    fn request_instrument(&self, _request: RequestInstrument) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_book_snapshot(&self, request: &RequestBookSnapshot) -> anyhow::Result<()> {
+    fn request_book_snapshot(&self, _request: RequestBookSnapshot) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_quotes(&self, request: &RequestQuotes) -> anyhow::Result<()> {
+    fn request_quotes(&self, _request: RequestQuotes) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_trades(&self, request: &RequestTrades) -> anyhow::Result<()> {
+    fn request_trades(&self, _request: RequestTrades) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_bars(&self, request: &RequestBars) -> anyhow::Result<()> {
+    fn request_bars(&self, _request: RequestBars) -> anyhow::Result<()> {
         todo!()
     }
 }
-
-// SAFETY: Cannot be sent across thread boundaries
-#[allow(unsafe_code)]
-unsafe impl Send for BacktestDataClient {}
-#[allow(unsafe_code)]
-unsafe impl Sync for BacktestDataClient {}

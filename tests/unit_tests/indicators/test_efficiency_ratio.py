@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.indicators.efficiency_ratio import EfficiencyRatio
+from nautilus_trader.indicators import EfficiencyRatio
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
@@ -45,7 +45,7 @@ class TestEfficiencyRatio:
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange, Act
-        for _i in range(10):
+        for _ in range(10):
             self.er.update_raw(1.00000)
 
         # Assert
@@ -76,7 +76,7 @@ class TestEfficiencyRatio:
         initial_price = 1.00000
 
         # Act
-        for _i in range(10):
+        for _ in range(10):
             initial_price += 0.00001
             self.er.update_raw(initial_price)
 
@@ -88,7 +88,7 @@ class TestEfficiencyRatio:
         initial_price = 1.00000
 
         # Act
-        for _i in range(10):
+        for _ in range(10):
             initial_price -= 0.00001
             self.er.update_raw(initial_price)
 
@@ -132,7 +132,7 @@ class TestEfficiencyRatio:
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for _i in range(10):
+        for _ in range(10):
             self.er.update_raw(1.00000)
 
         # Act

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,6 +22,7 @@ import msgspec
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.common.component import Logger
+from nautilus_trader.common.functions import get_event_loop
 from nautilus_trader.core.nautilus_pyo3 import SocketClient
 from nautilus_trader.core.nautilus_pyo3 import SocketConfig
 
@@ -56,7 +57,7 @@ class BetfairStreamClient:
         self.use_ssl = True
         self.certs_dir = certs_dir or os.environ.get("BETFAIR_CERTS_DIR")
 
-        self._loop = asyncio.get_event_loop()
+        self._loop = get_event_loop()
         self._http_client = http_client
         self._client: SocketClient | None = None
         self._log = Logger(type(self).__name__)
@@ -93,11 +94,16 @@ class BetfairStreamClient:
     async def reconnect(self):
         try:
             if self._client is None:
-                self._log.warning("Cannot reconnect: not connected")
+                self._log.warning("Cannot reconnect: not connected, attempting fresh connection")
+                await self.connect()
                 return
 
             if not self._client.is_active():
-                self._log.warning(f"Cannot reconnect: client in {self._client.mode()} mode")
+                mode = self._client.mode()
+                self._log.warning(f"Client stuck in {mode} mode, forcing fresh connection")
+                await self._client.close()
+                self._client = None
+                await self.connect()
                 return
 
             self._log.info("Reconnecting...")
@@ -317,7 +323,13 @@ class BetfairMarketStreamClient(BetfairStreamClient):
             country_codes,
             race_types,
         )
-        assert any(filters), "Must pass at least one filter"
+        # Betfair supports subscribing without filters (using only application credentials)
+        # but log a warning as it may be inefficient or unintended
+        if not any(filters):
+            self._log.warning(
+                "Subscribing to Betfair market stream without any filters - "
+                "this will receive updates for all available markets",
+            )
         assert any(
             (subscribe_book_updates, subscribe_trade_updates),
         ), "Must subscribe to either book updates or trades"

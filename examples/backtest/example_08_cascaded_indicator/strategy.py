@@ -3,8 +3,8 @@ from collections import deque
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.datetime import unix_nanos_to_dt
-from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
-from nautilus_trader.indicators.average.ma_factory import MovingAverageType
+from nautilus_trader.indicators import MovingAverageFactory
+from nautilus_trader.indicators import MovingAverageType
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.instruments import Instrument
@@ -63,9 +63,7 @@ class DemoStrategy(Strategy):
         # Count processed bars
         self.bars_processed += 1
         self.log.info(
-            f"Bar #{self.bars_processed} | "
-            f"Bar: {bar} | "
-            f"Time={unix_nanos_to_dt(bar.ts_event)}",
+            f"Bar #{self.bars_processed} | Bar: {bar} | Time={unix_nanos_to_dt(bar.ts_event)}",
             color=LogColor.YELLOW,
         )
 

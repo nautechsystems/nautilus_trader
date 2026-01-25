@@ -6,12 +6,15 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description.workspace = true
+description = "Cryptographic primitives and management for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+
+[lints]
+workspace = true
 
 [lib]
 name = "nautilus_cryptography"
@@ -20,13 +23,11 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 [features]
 default = []
 extension-module = [
-  "pyo3/extension-module",
   "nautilus-core/extension-module",
+  "python",
+  "pyo3/extension-module",
 ]
-python = [
-  "pyo3",
-  "nautilus-core/python",
-]
+python = ["nautilus-core/python", "pyo3"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -36,15 +37,16 @@ rustdoc-args = ["--cfg", "docsrs"]
 nautilus-core = { workspace = true }
 
 anyhow = { workspace = true }
+aws-lc-rs = { workspace = true }
 base64 = { workspace = true }
+ed25519-dalek = { workspace = true }
 hex = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-rand = { workspace = true }
-ring = { workspace = true }
+log = { workspace = true }
+pem = { workspace = true }
 rustls = { workspace = true }
-tracing = { workspace = true }
-rustls-platform-verifier = "0.5.1"
-pem = "3.0.5"
+webpki-roots = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

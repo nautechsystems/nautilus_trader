@@ -1,0 +1,83 @@
+# =============================================================================
+# NautilusTrader Code Owners
+# =============================================================================
+# These files require explicit review to prevent supply chain attacks,
+# configuration errors, and unauthorized changes to critical infrastructure.
+#
+# More info: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# =============================================================================
+# GitHub Actions & Workflows - HIGH SECURITY RISK
+# =============================================================================
+/.github/workflows/              @nautechsystems/core
+/.github/actions/                @nautechsystems/core
+/.github/dependabot.yml          @nautechsystems/core
+/.github/CODEOWNERS              @nautechsystems/core
+
+# =============================================================================
+# Rust Build & Dependencies - SUPPLY CHAIN RISK
+# =============================================================================
+/Cargo.toml                      @nautechsystems/core
+/Cargo.lock                      @nautechsystems/core
+/crates/Cargo.toml               @nautechsystems/core
+/crates/**/Cargo.toml            @nautechsystems/core
+/.cargo/config.toml              @nautechsystems/core
+/rust-toolchain.toml             @nautechsystems/core
+/deny.toml                       @nautechsystems/core
+
+# =============================================================================
+# Python Build & Dependencies - SUPPLY CHAIN RISK
+# =============================================================================
+# Root Python project
+/pyproject.toml                  @nautechsystems/core
+/uv.lock                         @nautechsystems/core
+
+# Python nautilus_trader v2 system
+/python/pyproject.toml           @nautechsystems/core
+/python/uv.lock                  @nautechsystems/core
+
+# =============================================================================
+# Build & CI Configuration
+# =============================================================================
+/Makefile                        @nautechsystems/core
+/.config/nextest.toml            @nautechsystems/core
+
+# =============================================================================
+# Code Quality & Formatting Configuration
+# =============================================================================
+/.pre-commit-config.yaml         @nautechsystems/core
+/.pre-commit-hooks/              @nautechsystems/core
+/rustfmt.toml                    @nautechsystems/core
+/clippy.toml                     @nautechsystems/core
+/.taplo.toml                     @nautechsystems/core
+/.markdownlint.jsonc             @nautechsystems/core
+/.gitlint                        @nautechsystems/core
+/.yamllint.yaml                  @nautechsystems/core
+
+# =============================================================================
+# Git Configuration
+# =============================================================================
+/.gitignore                      @nautechsystems/core
+/.gitattributes                  @nautechsystems/core
+
+# =============================================================================
+# Container Build & Docker - SUPPLY CHAIN RISK
+# =============================================================================
+/.docker/                        @nautechsystems/core
+/.dockerignore                   @nautechsystems/core
+
+# =============================================================================
+# Scripts - HIGH SECURITY RISK
+# =============================================================================
+/scripts/                        @nautechsystems/core
+
+# =============================================================================
+# Build Automation & Reporting
+# =============================================================================
+/build.py                        @nautechsystems/core
+/.codecov.yml                    @nautechsystems/core
+
+# =============================================================================
+# Security & Documentation
+# =============================================================================
+/SECURITY.md                     @nautechsystems/core

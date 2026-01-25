@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,7 +29,7 @@ use crate::{
 impl OrderUpdated {
     #[allow(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, quantity, event_id, ts_event, ts_init, reconciliation, venue_order_id=None, account_id=None, price=None, trigger_price=None))]
+    #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, quantity, event_id, ts_event, ts_init, reconciliation, venue_order_id=None, account_id=None, price=None, trigger_price=None, protection_price=None))]
     fn py_new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -44,6 +44,7 @@ impl OrderUpdated {
         account_id: Option<AccountId>,
         price: Option<Price>,
         trigger_price: Option<Price>,
+        protection_price: Option<Price>,
     ) -> Self {
         Self::new(
             trader_id,
@@ -59,6 +60,7 @@ impl OrderUpdated {
             account_id,
             price,
             trigger_price,
+            protection_price,
         )
     }
 
@@ -84,8 +86,86 @@ impl OrderUpdated {
         from_dict_pyo3(py, values)
     }
 
+    #[getter]
+    #[pyo3(name = "trader_id")]
+    fn py_trader_id(&self) -> TraderId {
+        self.trader_id
+    }
+
+    #[getter]
+    #[pyo3(name = "strategy_id")]
+    fn py_strategy_id(&self) -> StrategyId {
+        self.strategy_id
+    }
+
+    #[getter]
+    #[pyo3(name = "instrument_id")]
+    fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    #[getter]
+    #[pyo3(name = "client_order_id")]
+    fn py_client_order_id(&self) -> ClientOrderId {
+        self.client_order_id
+    }
+
+    #[getter]
+    #[pyo3(name = "venue_order_id")]
+    fn py_venue_order_id(&self) -> Option<VenueOrderId> {
+        self.venue_order_id
+    }
+
+    #[getter]
+    #[pyo3(name = "account_id")]
+    fn py_account_id(&self) -> Option<AccountId> {
+        self.account_id
+    }
+
+    #[getter]
+    #[pyo3(name = "quantity")]
+    fn py_quantity(&self) -> Quantity {
+        self.quantity
+    }
+
+    #[getter]
+    #[pyo3(name = "price")]
+    fn py_price(&self) -> Option<Price> {
+        self.price
+    }
+
+    #[getter]
+    #[pyo3(name = "trigger_price")]
+    fn py_trigger_price(&self) -> Option<Price> {
+        self.trigger_price
+    }
+
+    #[getter]
+    #[pyo3(name = "event_id")]
+    fn py_event_id(&self) -> UUID4 {
+        self.event_id
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
+    }
+
+    #[getter]
+    #[pyo3(name = "reconciliation")]
+    fn py_reconciliation(&self) -> bool {
+        self.reconciliation != 0
+    }
+
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(OrderUpdated))?;
         dict.set_item("trader_id", self.trader_id.to_string())?;

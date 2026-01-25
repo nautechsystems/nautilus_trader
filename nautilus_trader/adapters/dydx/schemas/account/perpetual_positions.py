@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,14 +16,12 @@
 Define the schemas for the GetPerpetualPositions endpoint.
 """
 
-# ruff: noqa: N815
-
 import msgspec
 
 from nautilus_trader.adapters.dydx.schemas.account.address import DYDXPerpetualPosition
 
 
-class DYDXPerpetualPositionsResponse(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXPerpetualPositionsResponse(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the schema for the asset positions response.
     """

@@ -6,26 +6,37 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description.workspace = true
+description = "Infrastructure components for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
 
+[lints]
+workspace = true
+
 [lib]
 name = "nautilus_infrastructure"
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = ["redis"]  # redis needed by `nautilus_trader` by default for now
+default = ["redis"] # redis needed by `nautilus_trader` by default for now
 extension-module = [
-  "pyo3/extension-module",
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
+  "python",
+  "pyo3/extension-module",
 ]
-python = ["pyo3", "pyo3-async-runtimes"]
+python = [
+  "nautilus-common/python",
+  "nautilus-core/python",
+  "nautilus-model/python",
+  "pyo3",
+  "pyo3-async-runtimes",
+  "pyo3-stub-gen",
+]
 redis = ["dep:redis"]
 postgres = ["dep:sqlx"]
 
@@ -34,11 +45,12 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-common = { workspace = true, features = ["python"] }
-nautilus-core = { workspace = true, features = ["python"] }
+nautilus-common = { workspace = true, features = ["live"] }
+nautilus-core = { workspace = true }
 nautilus-cryptography = { workspace = true }
-nautilus-model = { workspace = true, features = ["python", "stubs"] }
+nautilus-model = { workspace = true, features = ["stubs"] }
 
+ahash = { workspace = true }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
@@ -47,28 +59,21 @@ chrono = { workspace = true }
 derive_builder = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
 log = { workspace = true }
+regex = { workspace = true }
 rmp-serde = { workspace = true }
 rust_decimal = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-sqlx = { workspace = true, optional = true }
 tokio = { workspace = true }
-tracing = { workspace = true }
 ustr = { workspace = true }
-redis = { version = "0.31.0", features = [
-  "connection-manager",
-  "keep-alive",
-  "sentinel",
-  "streams",
-  "tokio-comp",
-  "tokio-rustls-comp",
-  "tls-rustls",
-  "tls-rustls-webpki-roots",
-], optional = true }
+
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
+redis = { workspace = true, optional = true }
+sqlx = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

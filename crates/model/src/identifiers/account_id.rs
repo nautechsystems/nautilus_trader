@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,11 +16,11 @@
 //! Represents a valid account ID.
 
 use std::{
-    fmt::{Debug, Display, Formatter},
+    fmt::{Debug, Display},
     hash::Hash,
 };
 
-use nautilus_core::correctness::{FAILED, check_string_contains, check_valid_string};
+use nautilus_core::correctness::{FAILED, check_string_contains, check_valid_string_ascii};
 use ustr::Ustr;
 
 use super::Venue;
@@ -45,16 +45,29 @@ impl AccountId {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - `value` is not a valid string.
-    /// - `value` length is greater than 36.
+    /// - `value` is not a valid ASCII string.
+    /// - `value` does not contain a hyphen '-' separator.
+    /// - Either the issuer or account part (before/after the hyphen) is empty.
     ///
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
         let value = value.as_ref();
-        check_valid_string(value, stringify!(value))?;
+        check_valid_string_ascii(value, stringify!(value))?;
         check_string_contains(value, "-", stringify!(value))?;
+
+        if let Some((issuer, account)) = value.split_once('-') {
+            anyhow::ensure!(
+                !issuer.is_empty(),
+                "`value` issuer part (before '-') cannot be empty"
+            );
+            anyhow::ensure!(
+                !account.is_empty(),
+                "`value` account part (after '-') cannot be empty"
+            );
+        }
+
         Ok(Self(Ustr::from(value)))
     }
 
@@ -68,7 +81,7 @@ impl AccountId {
     }
 
     /// Sets the inner identifier value.
-    #[allow(dead_code)]
+    #[cfg_attr(not(feature = "python"), allow(dead_code))]
     pub(crate) fn set_inner(&mut self, value: &str) {
         self.0 = Ustr::from(value);
     }
@@ -109,20 +122,17 @@ impl AccountId {
 }
 
 impl Debug for AccountId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.0)
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "\"{}\"", self.0)
     }
 }
 
 impl Display for AccountId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -163,5 +173,27 @@ mod tests {
     #[rstest]
     fn test_get_issuers_id(account_ib: AccountId) {
         assert_eq!(account_ib.get_issuers_id(), "1234567890");
+    }
+
+    #[rstest]
+    #[should_panic(expected = "issuer part (before '-') cannot be empty")]
+    fn test_new_with_empty_issuer_panics() {
+        let _ = AccountId::new("-123456");
+    }
+
+    #[rstest]
+    #[should_panic(expected = "account part (after '-') cannot be empty")]
+    fn test_new_with_empty_account_panics() {
+        let _ = AccountId::new("IB-");
+    }
+
+    #[rstest]
+    fn test_new_checked_with_empty_issuer_returns_error() {
+        assert!(AccountId::new_checked("-123456").is_err());
+    }
+
+    #[rstest]
+    fn test_new_checked_with_empty_account_returns_error() {
+        assert!(AccountId::new_checked("IB-").is_err());
     }
 }

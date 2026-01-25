@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -59,7 +59,6 @@ def run():
     # Create a fill model (optional)
     fill_model = FillModel(
         prob_fill_on_limit=0.2,
-        prob_fill_on_stop=0.95,
         prob_slippage=0.5,
         random_seed=42,
     )
@@ -107,7 +106,7 @@ def run():
     # input("Press Enter to continue...")
 
     # Run the engine (from start to end of data)
-    engine.run(end=datetime(2012, 2, 10))
+    engine.run(end=datetime(2012, 2, 10, tzinfo=datetime.UTC))
 
     # Optionally view reports
     # with pd.option_context(

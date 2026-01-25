@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,31 +14,57 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Common message types.
+//!
+//! The [`Params`] type uses `IndexMap<String, String>` for consistent ordering
+//! and simpler, predictable serialization.
+
+use indexmap::IndexMap;
 
 use crate::{UUID4, UnixNanos};
 
+/// Additional parameters for messages.
+pub type Params = IndexMap<String, String>;
+
+/// Represents different types of messages in the system.
 #[derive(Debug, Clone)]
 pub enum Message {
+    /// A command message with an identifier and initialization timestamp.
     Command {
+        /// The unique identifier for this command.
         id: UUID4,
+        /// The initialization timestamp.
         ts_init: UnixNanos,
     },
+    /// A document message with an identifier and initialization timestamp.
     Document {
+        /// The unique identifier for this document.
         id: UUID4,
+        /// The initialization timestamp.
         ts_init: UnixNanos,
     },
+    /// An event message with identifiers and timestamps.
     Event {
+        /// The unique identifier for this event.
         id: UUID4,
+        /// The initialization timestamp.
         ts_init: UnixNanos,
+        /// The event timestamp.
         ts_event: UnixNanos,
     },
+    /// A request message with an identifier and initialization timestamp.
     Request {
+        /// The unique identifier for this request.
         id: UUID4,
+        /// The initialization timestamp.
         ts_init: UnixNanos,
     },
+    /// A response message with identifiers, timestamps, and correlation.
     Response {
+        /// The unique identifier for this response.
         id: UUID4,
+        /// The initialization timestamp.
         ts_init: UnixNanos,
+        /// The correlation identifier linking this response to a request.
         correlation_id: UUID4,
     },
 }

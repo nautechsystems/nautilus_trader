@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,7 +26,7 @@ use nautilus_core::{
     },
 };
 use pyo3::{
-    Bound, Py, PyAny, PyObject, PyResult, Python,
+    Bound, Py, PyAny, PyResult, Python,
     basic::CompareOp,
     pymethods,
     types::{PyAnyMethods, PyDict, PyList},
@@ -117,7 +117,7 @@ impl MarketOrder {
     #[staticmethod]
     #[pyo3(name = "create")]
     fn py_create(init: OrderInitialized) -> PyResult<Self> {
-        Ok(MarketOrder::from(init))
+        Ok(Self::from(init))
     }
 
     #[staticmethod]
@@ -286,7 +286,7 @@ impl MarketOrder {
 
     #[getter]
     #[pyo3(name = "events")]
-    fn py_events(&self, py: Python<'_>) -> PyResult<Vec<PyObject>> {
+    fn py_events(&self, py: Python<'_>) -> PyResult<Vec<Py<PyAny>>> {
         self.events()
             .into_iter()
             .map(|event| order_event_to_pyobject(py, event.clone()))
@@ -304,9 +304,9 @@ impl MarketOrder {
     }
 
     #[pyo3(name = "apply")]
-    fn py_apply(&mut self, event: PyObject, py: Python<'_>) -> PyResult<()> {
+    fn py_apply(&mut self, event: Py<PyAny>, py: Python<'_>) -> PyResult<()> {
         let event_any = pyobject_to_order_event(py, event).unwrap();
-        self.apply(event_any).map(|_| ()).map_err(to_pyruntime_err)
+        self.apply(event_any).map_err(to_pyruntime_err)
     }
 
     #[staticmethod]
@@ -314,8 +314,7 @@ impl MarketOrder {
     fn py_from_dict(values: &Bound<'_, PyDict>) -> PyResult<Self> {
         let trader_id = TraderId::from(get_required_string(values, "trader_id")?.as_str());
         let strategy_id = StrategyId::from(get_required_string(values, "strategy_id")?.as_str());
-        let instrument_id =
-            InstrumentId::from(get_required_string(values, "instrument_id")?.as_str());
+        let instrument_id = InstrumentId::from(get_required_string(values, "instrument_id")?);
         let client_order_id =
             ClientOrderId::from(get_required_string(values, "client_order_id")?.as_str());
         let order_side = get_required_parsed(values, "side", |s| {
@@ -325,9 +324,7 @@ impl MarketOrder {
         let time_in_force = get_required_parsed(values, "time_in_force", |s| {
             s.parse::<TimeInForce>().map_err(|e| e.to_string())
         })?;
-        let init_id = get_required_parsed(values, "init_id", |s| {
-            s.parse::<UUID4>().map_err(|e| e.to_string())
-        })?;
+        let init_id = get_required_parsed(values, "init_id", |s| s.parse::<UUID4>())?;
         let ts_init = get_required::<u64>(values, "ts_init")?;
         let is_reduce_only = get_required::<bool>(values, "is_reduce_only")?;
         let is_quote_quantity = get_required::<bool>(values, "is_quote_quantity")?;
@@ -382,7 +379,7 @@ impl MarketOrder {
     }
 
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("trader_id", self.trader_id.to_string())?;
         dict.set_item("strategy_id", self.strategy_id.to_string())?;
@@ -422,13 +419,9 @@ impl MarketOrder {
         self.linked_order_ids.clone().map_or_else(
             || dict.set_item("linked_order_ids", py.None()),
             |linked_order_ids| {
-                let linked_order_ids_list = PyList::new(
-                    py,
-                    linked_order_ids
-                        .iter()
-                        .map(std::string::ToString::to_string),
-                )
-                .expect("Invalid `ExactSizeIterator`");
+                let linked_order_ids_list =
+                    PyList::new(py, linked_order_ids.iter().map(ToString::to_string))
+                        .expect("Invalid `ExactSizeIterator`");
                 dict.set_item("linked_order_ids", linked_order_ids_list)
             },
         )?;

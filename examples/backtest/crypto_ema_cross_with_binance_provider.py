@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,8 +24,8 @@ from nautilus_trader.adapters.binance import BINANCE_VENUE
 from nautilus_trader.adapters.binance import get_cached_binance_http_client
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
+from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LoggingConfig
@@ -50,7 +50,7 @@ async def create_provider():
 
     client = get_cached_binance_http_client(
         clock=clock,
-        account_type=BinanceAccountType.USDT_FUTURE,
+        account_type=BinanceAccountType.USDT_FUTURES,
         is_testnet=True,
     )
 
@@ -103,10 +103,10 @@ if __name__ == "__main__":
     engine.add_data(ticks)
 
     # Configure your strategy
-    config = EMACrossTrailingStopConfig(
+    strategy_config = EMACrossTrailingStopConfig(
         instrument_id=instrument.id,
         bar_type=bar_type,
-        trade_size=Decimal("1"),
+        trade_size=Decimal(1),
         fast_ema_period=10,
         slow_ema_period=20,
         atr_period=20,
@@ -115,7 +115,7 @@ if __name__ == "__main__":
         trigger_type="LAST_PRICE",
     )
     # Instantiate and add your strategy
-    strategy = EMACrossTrailingStop(config=config)
+    strategy = EMACrossTrailingStop(config=strategy_config)
     engine.add_strategy(strategy=strategy)
 
     time.sleep(0.1)

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,15 +15,17 @@
 
 from decimal import Decimal
 
-from nautilus_trader.backtest.exchange import SimulatedExchange
+from nautilus_trader.backtest.engine import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import LatencyModel
 from nautilus_trader.backtest.models import MakerTakerFeeModel
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
+from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data import QuoteTick
@@ -32,6 +34,7 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import OtoTriggerMode
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Quantity
@@ -239,6 +242,52 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         assert tp_order.status == OrderStatus.ACCEPTED
         assert sl_order.trigger_price == new_sl_trigger_price
         assert tp_order.price == new_tp_price
+
+    def test_submit_bracket_limit_entry_with_immediate_modify_accepts_sl_and_tp(self):
+        # Arrange: Prepare market
+        tick = QuoteTick(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            bid_price=ETHUSDT_PERP_BINANCE.make_price(3090.2),
+            ask_price=ETHUSDT_PERP_BINANCE.make_price(3090.5),
+            bid_size=ETHUSDT_PERP_BINANCE.make_qty(15.100),
+            ask_size=ETHUSDT_PERP_BINANCE.make_qty(15.100),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        # Create bracket order with LIMIT entry that won't fill immediately
+        bracket = self.strategy.order_factory.bracket(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(10.000),
+            entry_order_type=OrderType.LIMIT,
+            entry_price=ETHUSDT_PERP_BINANCE.make_price(3080.0),  # Below current market
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(3050.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(3150.0),
+        )
+
+        entry_order = bracket.orders[0]
+        sl_order = bracket.orders[1]
+        tp_order = bracket.orders[2]
+
+        new_sl_trigger_price = ETHUSDT_PERP_BINANCE.make_price(3040.0)
+        new_tp_price = ETHUSDT_PERP_BINANCE.make_price(3160.0)
+
+        # Act: Submit bracket order and immediately modify TP/SL while entry is not filled
+        self.strategy.submit_order_list(bracket)
+        self.strategy.modify_order(sl_order, trigger_price=new_sl_trigger_price)
+        self.strategy.modify_order(tp_order, price=new_tp_price)
+        self.exchange.process(0)
+
+        # Assert: Entry order should be ACCEPTED, TP/SL should be PENDING_UPDATE after modification
+        assert entry_order.status == OrderStatus.ACCEPTED
+        assert sl_order.status == OrderStatus.PENDING_UPDATE  # Modified while entry not filled
+        assert tp_order.status == OrderStatus.PENDING_UPDATE  # Modified while entry not filled
+        assert sl_order.trigger_price == new_sl_trigger_price  # Modification should work
+        assert tp_order.price == new_tp_price  # Modification should work
 
     def test_submit_bracket_market_entry_with_immediate_cancel(self):
         # Arrange: Prepare market
@@ -641,9 +690,10 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.exchange.process(0)
 
         # Act
+        new_qty = ETHUSDT_PERP_BINANCE.make_qty(5)
         self.strategy.modify_order(
             order=sl,
-            quantity=Quantity.from_int(5),
+            quantity=new_qty,
             trigger_price=sl.trigger_price,
         )
         self.exchange.process(0)
@@ -652,8 +702,8 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         assert en.status == OrderStatus.FILLED
         assert sl.status == OrderStatus.ACCEPTED
         assert tp.status == OrderStatus.ACCEPTED
-        assert sl.quantity == Quantity.from_int(5)
-        assert tp.quantity == Quantity.from_int(5)
+        assert sl.quantity == new_qty
+        assert tp.quantity == new_qty
         assert len(self.exchange.get_open_orders()) == 2
         assert len(self.exchange.cache.positions_open()) == 1
 
@@ -748,3 +798,206 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         assert tp.quantity == ETHUSDT_PERP_BINANCE.make_qty(5.000)
         assert len(self.exchange.get_open_orders()) == 2
         assert len(self.exchange.cache.positions_open()) == 1
+
+
+class TestSimulatedExchangeOtoFullTriggerMode:
+    def setup(self):
+        # Fixture Setup
+        self.clock = TestClock()
+        self.trader_id = TestIdStubs.trader_id()
+        self.strategy_id = TestIdStubs.strategy_id()
+
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+
+        self.cache = TestComponentStubs.cache()
+
+        self.portfolio = Portfolio(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        self.exec_engine = ExecutionEngine(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        self.exchange = SimulatedExchange(
+            venue=BINANCE,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            base_currency=None,  # Multi-asset wallet
+            starting_balances=[Money(200, ETH), Money(1_000_000, USDT)],
+            default_leverage=Decimal(10),
+            leverages={},
+            modules=[],
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            latency_model=LatencyModel(0),
+            oto_trigger_mode=OtoTriggerMode.FULL,
+        )
+        self.exchange.add_instrument(ETHUSDT_PERP_BINANCE)
+
+        self.exec_client = BacktestExecClient(
+            exchange=self.exchange,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Wire up components
+        self.exec_engine.register_client(self.exec_client)
+        self.exchange.register_client(self.exec_client)
+
+        self.cache.add_instrument(ETHUSDT_PERP_BINANCE)
+
+        # Start components
+        self.exchange.reset()
+        self.exec_engine.start()
+
+    def test_partial_fill_entry_does_not_trigger_oto_children_until_filled(self):
+        # Arrange
+        order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            clock=self.clock,
+        )
+
+        bracket = order_factory.bracket(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(10.000),
+            entry_price=ETHUSDT_PERP_BINANCE.make_price(3090.5),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(3050.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(3150.0),
+            entry_order_type=OrderType.LIMIT,
+        )
+
+        entry_order = bracket.orders[0]
+        sl_order = bracket.orders[1]
+        tp_order = bracket.orders[2]
+
+        # Act: Submit (orders should not fill yet without market data)
+        submit_command = SubmitOrderList(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            order_list=bracket,
+            command_id=TestIdStubs.uuid(),
+            ts_init=0,
+        )
+        self.exec_engine.execute(submit_command)
+        self.exchange.process(0)
+
+        # Act: Provide market with limited liquidity to force partial fill
+        tick1 = QuoteTick(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            bid_price=ETHUSDT_PERP_BINANCE.make_price(3090.2),
+            ask_price=ETHUSDT_PERP_BINANCE.make_price(3090.5),
+            bid_size=ETHUSDT_PERP_BINANCE.make_qty(15.100),
+            ask_size=ETHUSDT_PERP_BINANCE.make_qty(5.000),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.exchange.process_quote_tick(tick1)
+        self.exchange.process(0)
+
+        # Assert: Entry partially filled, children remain pending (not accepted / on-book)
+        assert entry_order.status == OrderStatus.PARTIALLY_FILLED
+        assert sl_order.status == OrderStatus.SUBMITTED
+        assert tp_order.status == OrderStatus.SUBMITTED
+        assert self.exchange.get_open_orders() == [entry_order]
+
+        # Act: Provide additional liquidity to complete the entry fill
+        tick2 = QuoteTick(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            bid_price=ETHUSDT_PERP_BINANCE.make_price(3090.2),
+            ask_price=ETHUSDT_PERP_BINANCE.make_price(3090.5),
+            bid_size=ETHUSDT_PERP_BINANCE.make_qty(15.100),
+            ask_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        self.exchange.process_quote_tick(tick2)
+        self.exchange.process(0)
+
+        # Assert: Entry filled, children accepted and now open on exchange
+        assert entry_order.status == OrderStatus.FILLED
+        assert sl_order.status == OrderStatus.ACCEPTED
+        assert tp_order.status == OrderStatus.ACCEPTED
+        assert len(self.exchange.get_open_orders()) == 2
+        assert sl_order in self.exchange.get_open_orders()
+        assert tp_order in self.exchange.get_open_orders()
+
+
+class TestOtoTriggerModeValidation:
+    def test_oto_trigger_mode_full(self):
+        # Arrange
+        clock = TestClock()
+        trader_id = TestIdStubs.trader_id()
+        msgbus = MessageBus(trader_id=trader_id, clock=clock)
+        cache = TestComponentStubs.cache()
+        portfolio = Portfolio(msgbus=msgbus, cache=cache, clock=clock)
+
+        # Act
+        exchange = SimulatedExchange(
+            venue=BINANCE,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            base_currency=None,
+            starting_balances=[Money(1_000_000, USDT)],
+            default_leverage=Decimal(10),
+            leverages={},
+            modules=[],
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            portfolio=portfolio,
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+            latency_model=LatencyModel(0),
+            oto_trigger_mode=OtoTriggerMode.FULL,
+        )
+
+        # Assert
+        assert exchange.oto_full_trigger is True
+
+    def test_oto_trigger_mode_partial(self):
+        # Arrange
+        clock = TestClock()
+        trader_id = TestIdStubs.trader_id()
+        msgbus = MessageBus(trader_id=trader_id, clock=clock)
+        cache = TestComponentStubs.cache()
+        portfolio = Portfolio(msgbus=msgbus, cache=cache, clock=clock)
+
+        # Act
+        exchange = SimulatedExchange(
+            venue=BINANCE,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            base_currency=None,
+            starting_balances=[Money(1_000_000, USDT)],
+            default_leverage=Decimal(10),
+            leverages={},
+            modules=[],
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            portfolio=portfolio,
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+            latency_model=LatencyModel(0),
+            oto_trigger_mode=OtoTriggerMode.PARTIAL,
+        )
+
+        # Assert
+        assert exchange.oto_full_trigger is False

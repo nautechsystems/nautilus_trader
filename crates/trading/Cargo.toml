@@ -6,12 +6,15 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description.workspace = true
+description = "Strategy machinery and controllers for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+
+[lints]
+workspace = true
 
 [lib]
 name = "nautilus_trading"
@@ -19,21 +22,22 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
+defi = ["nautilus-model/defi"]
+high-precision = ["nautilus-model/high-precision"]
 extension-module = [
-  "pyo3/extension-module",
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
-  "nautilus-data/extension-module",
   "nautilus-execution/extension-module",
   "nautilus-model/extension-module",
+  "python",
+  "pyo3/extension-module",
 ]
 python = [
-  "pyo3",
   "nautilus-common/python",
   "nautilus-core/python",
-  "nautilus-data/python",
   "nautilus-execution/python",
   "nautilus-model/python",
+  "pyo3",
 ]
 
 [package.metadata.docs.rs]
@@ -43,19 +47,22 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
-nautilus-data = { workspace = true }
 nautilus-execution = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-portfolio = { workspace = true }
-nautilus-risk = { workspace = true }
 
+ahash = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
+indexmap = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive"] }
 strum = { workspace = true }
 ustr = { workspace = true }
 
+pyo3 = { workspace = true, optional = true }
+
 [dev-dependencies]
 rstest = { workspace = true }
+serde_json = { workspace = true }

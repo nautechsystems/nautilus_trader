@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -244,7 +244,7 @@ class TestCondition:
 
     @pytest.mark.parametrize(
         "value",
-        [Decimal("-1"), -float("inf"), -0.0000000001, 0, 0.0],
+        [Decimal(-1), -float("inf"), -0.0000000001, 0, 0.0],
     )
     def test_positive_when_args_negative_or_zero_raises_value_error(self, value):
         # Arrange, Act, Assert
@@ -253,7 +253,7 @@ class TestCondition:
 
     @pytest.mark.parametrize(
         "value",
-        [Decimal("1"), float("inf"), 1e-22, 1, 1.0],
+        [Decimal(1), float("inf"), 1e-22, 1, 1.0],
     )
     def test_positive_when_args_positive_does_nothing(self, value):
         # Arrange, Act, Assert: AssertionError not raised

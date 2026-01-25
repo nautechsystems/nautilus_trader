@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,8 +12,6 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
-use std::ops::{AddAssign, SubAssign};
 
 use crate::types::quantity::{Quantity, QuantityRaw};
 
@@ -38,24 +36,6 @@ pub extern "C" fn quantity_as_f64(qty: &Quantity) -> f64 {
 
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn quantity_add_assign(mut a: Quantity, b: Quantity) {
-    a.add_assign(b);
-}
-
-#[unsafe(no_mangle)]
-#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn quantity_add_assign_u64(mut a: Quantity, b: u64) {
-    a.add_assign(b);
-}
-
-#[unsafe(no_mangle)]
-#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn quantity_sub_assign(mut a: Quantity, b: Quantity) {
-    a.sub_assign(b);
-}
-
-#[unsafe(no_mangle)]
-#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn quantity_sub_assign_u64(mut a: Quantity, b: u64) {
-    a.sub_assign(b);
+pub extern "C" fn quantity_saturating_sub(a: Quantity, b: Quantity) -> Quantity {
+    a.saturating_sub(b)
 }

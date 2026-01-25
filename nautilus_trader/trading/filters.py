@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -85,6 +85,16 @@ class NewsEvent(Data):
     @property
     def ts_init(self) -> int:
         return self._ts_init
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"impact={self.impact}, "
+            f"name={self.name}, "
+            f"currency={self.currency}, "
+            f"ts_event={self.ts_event}, "
+            f"ts_init={self.ts_init})"
+        )
 
 
 class EconomicNewsEventFilter:

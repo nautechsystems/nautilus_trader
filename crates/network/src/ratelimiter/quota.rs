@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,8 +15,6 @@
 
 use std::{num::NonZeroU32, prelude::v1::*, time::Duration};
 
-use nonzero_ext::nonzero;
-
 use super::nanos::Nanos;
 
 /// A rate-limiting quota.
@@ -27,11 +25,11 @@ use super::nanos::Nanos;
 ///
 /// Neither the number of cells nor the replenishment unit of time may be zero.
 ///
-/// # Burst sizes
+/// # Burst Sizes
 /// There are multiple ways of expressing the same quota: a quota given as `Quota::per_second(1)`
 /// allows, on average, the same number of cells through as a quota given as `Quota::per_minute(60)`.
 /// The quota of `Quota::per_minute(60)` has a burst size of 60 cells, meaning it is
-/// possible to accomodate 60 cells in one go, after which the equivalent of a minute of inactivity
+/// possible to accommodate 60 cells in one go, after which the equivalent of a minute of inactivity
 /// is required for the burst allowance to be fully restored.
 ///
 /// Burst size gets really important when you construct a rate limiter that should allow multiple
@@ -79,8 +77,7 @@ impl Quota {
     /// of cells is also assumed to be the maximum burst size.
     #[must_use]
     pub const fn per_hour(max_burst: NonZeroU32) -> Self {
-        let replenish_interval_ns =
-            Duration::from_secs(60 * 60).as_nanos() / (max_burst.get() as u128);
+        let replenish_interval_ns = Duration::from_hours(1).as_nanos() / (max_burst.get() as u128);
         Self {
             max_burst,
             replenish_1_per: Duration::from_nanos(replenish_interval_ns as u64),
@@ -100,8 +97,10 @@ impl Quota {
         if replenish_1_per.as_nanos() == 0 {
             None
         } else {
+            // SAFETY: Unwrap is safe because 1 is always non-zero
+            #[allow(clippy::missing_panics_doc)]
             Some(Self {
-                max_burst: nonzero!(1u32),
+                max_burst: NonZeroU32::new(1).unwrap(),
                 replenish_1_per,
             })
         }
@@ -174,16 +173,30 @@ impl Quota {
     /// This is useful mainly for [`crate::middleware::RateLimitingMiddleware`]
     /// where custom code may want to construct information based on
     /// the amount of burst balance remaining.
-    #[allow(unsafe_code)]
+    ///
+    /// # Panics
+    ///
+    /// Panics if the division result is 0 or exceeds `u32::MAX`.
     pub(crate) fn from_gcra_parameters(t: Nanos, tau: Nanos) -> Self {
-        // Safety assurance: As we're calling this from this crate
-        // only, and we do not allow creating a Gcra from 0
-        // parameters, this is, in fact, safe.
-        //
-        // The casts may look a little sketch, but again, they're
-        // constructed from parameters that came from the crate
-        // exactly like that.
-        let max_burst = unsafe { NonZeroU32::new_unchecked((tau.as_u64() / t.as_u64()) as u32) };
+        let t_u64 = t.as_u64();
+        let tau_u64 = tau.as_u64();
+
+        // Validate division won't be zero or overflow
+        assert!(t_u64 != 0, "Invalid GCRA parameter: t cannot be zero");
+
+        let division_result = tau_u64 / t_u64;
+        assert!(
+            division_result != 0,
+            "Invalid GCRA parameters: tau/t results in zero burst capacity"
+        );
+        assert!(
+            u32::try_from(division_result).is_ok(),
+            "Invalid GCRA parameters: tau/t exceeds u32::MAX"
+        );
+
+        // We've verified the result is non-zero and fits in u32
+        let max_burst = NonZeroU32::new(division_result as u32)
+            .expect("Division result should be non-zero after validation");
         let replenish_1_per = t.into();
         Self {
             max_burst,
@@ -192,9 +205,6 @@ impl Quota {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 // #[cfg(test)]
 // mod test {
 //     use nonzero_ext::nonzero;

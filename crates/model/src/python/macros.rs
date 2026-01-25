@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,19 +26,19 @@ macro_rules! identifier_for_python {
             }
 
             fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
-                let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+                let py_tuple: &Bound<'_, PyTuple> = state.cast::<PyTuple>()?;
                 let bindings = py_tuple.get_item(0)?;
-                let value = bindings.downcast::<PyString>()?.extract::<&str>()?;
+                let value = bindings.cast::<PyString>()?.extract::<&str>()?;
                 self.set_inner(value);
                 Ok(())
             }
 
-            fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+            fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
                 use pyo3::IntoPyObjectExt;
                 (self.to_string(),).into_py_any(py)
             }
 
-            fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+            fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
                 use pyo3::IntoPyObjectExt;
                 let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
                 let state = self.__getstate__(py)?;

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -38,9 +38,11 @@ class DYDXDataClientConfig(LiveDataClientConfig, frozen=True):
     max_retries : PositiveInt, optional
         The maximum number of retries for HTTP retries or websocket reconnects.
     retry_delay_initial_ms : PositiveInt, optional
-        The initial delay (milliseconds) between Hretries. Short delays with frequent retries may result in account bans.
+        The initial delay (milliseconds) between retries. Short delays with frequent retries may result in account bans.
     retry_delay_max_ms : PositiveInt, optional
         The maximum delay (milliseconds) between retries.
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
 
     """
 
@@ -50,6 +52,7 @@ class DYDXDataClientConfig(LiveDataClientConfig, frozen=True):
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = None
     retry_delay_max_ms: PositiveInt | None = None
+    proxy_url: str | None = None
 
 
 class DYDXExecClientConfig(LiveExecClientConfig, frozen=True):
@@ -82,6 +85,12 @@ class DYDXExecClientConfig(LiveExecClientConfig, frozen=True):
         The initial delay (milliseconds) between retries. Short delays with frequent retries may result in account bans.
     retry_delay_max_ms : PositiveInt, optional
         The maximum delay (milliseconds) between retries.
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
+    track_cancel_timeout_secs : float, default 60
+        The maximum time (seconds) to track an order after sending a cancel request.
+    track_cancel_interval_secs : float, default 0.1
+        The interval (seconds) between checking the order status after sending a cancel request.
 
     """
 
@@ -94,3 +103,6 @@ class DYDXExecClientConfig(LiveExecClientConfig, frozen=True):
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = None
     retry_delay_max_ms: PositiveInt | None = None
+    proxy_url: str | None = None
+    track_cancel_timeout_secs: float = 60
+    track_cancel_interval_secs: float = 0.1

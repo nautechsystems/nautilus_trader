@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,38 +13,66 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::statistic::PortfolioStatistic;
+use std::fmt::Display;
+
+use nautilus_model::position::Position;
+
+use crate::{Returns, statistic::PortfolioStatistic};
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
 )]
 pub struct MaxWinner {}
 
+impl Display for MaxWinner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Max Winner")
+    }
+}
+
 impl PortfolioStatistic for MaxWinner {
     type Item = f64;
 
     fn name(&self) -> String {
-        stringify!(MaxWinner).to_string()
+        self.to_string()
     }
 
     fn calculate_from_realized_pnls(&self, realized_pnls: &[f64]) -> Option<Self::Item> {
         if realized_pnls.is_empty() {
-            return Some(0.0);
+            return Some(f64::NAN);
         }
 
-        realized_pnls
+        let winners: Vec<f64> = realized_pnls
             .iter()
+            .filter(|&&pnl| pnl > 0.0)
             .copied()
-            .filter(|&pnl| pnl > 0.0)
+            .collect();
+
+        if winners.is_empty() {
+            return Some(f64::NAN);
+        }
+
+        winners
+            .iter()
             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .copied()
+    }
+
+    fn calculate_from_returns(&self, _returns: &Returns) -> Option<Self::Item> {
+        None
+    }
+
+    fn calculate_from_positions(&self, _positions: &[Position]) -> Option<Self::Item> {
+        None
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::approx_eq;
     use rstest::rstest;
 
     use super::*;
@@ -54,7 +82,7 @@ mod tests {
         let max_winner = MaxWinner {};
         let result = max_winner.calculate_from_realized_pnls(&[]);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 0.0);
+        assert!(result.unwrap().is_nan());
     }
 
     #[rstest]
@@ -62,7 +90,8 @@ mod tests {
         let max_winner = MaxWinner {};
         let realized_pnls = vec![-100.0, -50.0, -200.0];
         let result = max_winner.calculate_from_realized_pnls(&realized_pnls);
-        assert!(result.is_none());
+        assert!(result.is_some());
+        assert!(result.unwrap().is_nan());
     }
 
     #[rstest]
@@ -71,7 +100,7 @@ mod tests {
         let realized_pnls = vec![100.0, 50.0, 200.0];
         let result = max_winner.calculate_from_realized_pnls(&realized_pnls);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 200.0);
+        assert!(approx_eq!(f64, result.unwrap(), 200.0, epsilon = 1e-9));
     }
 
     #[rstest]
@@ -80,12 +109,12 @@ mod tests {
         let realized_pnls = vec![100.0, -50.0, 200.0, -100.0];
         let result = max_winner.calculate_from_realized_pnls(&realized_pnls);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 200.0);
+        assert!(approx_eq!(f64, result.unwrap(), 200.0, epsilon = 1e-9));
     }
 
     #[rstest]
     fn test_name() {
         let max_winner = MaxWinner {};
-        assert_eq!(max_winner.name(), "MaxWinner");
+        assert_eq!(max_winner.name(), "Max Winner");
     }
 }

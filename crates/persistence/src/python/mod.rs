@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,6 +34,7 @@ pub fn persistence(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<catalog::ParquetDataCatalogV2>()?;
     m.add_class::<wranglers::bar::BarDataWrangler>()?;
     m.add_class::<wranglers::delta::OrderBookDeltaDataWrangler>()?;
+    m.add_class::<wranglers::depth::OrderBookDepth10DataWrangler>()?;
     m.add_class::<wranglers::quote::QuoteTickDataWrangler>()?;
     m.add_class::<wranglers::trade::TradeTickDataWrangler>()?;
     Ok(())

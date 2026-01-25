@@ -1,12 +1,5 @@
 # Coinbase International
 
-**This guide will walk you through using Coinbase International with NautilusTrader for data ingest and/or live trading**.
-
-:::warning
-The Coinbase International integration is currently in a beta testing phase.
-Exercise caution and report any issues on GitHub.
-:::
-
 [Coinbase International Exchange](https://www.coinbase.com/en/international-exchange) provides non-US institutional clients with access to cryptocurrency perpetual futures and spot markets.
 The exchange serves European and international traders by providing leveraged crypto derivatives, often restricted or unavailable in these regions.
 
@@ -55,7 +48,7 @@ for market data and execution.
 - `CoinbaseIntxLiveExecClientFactory`: Factory for Coinbase International execution clients.
 
 :::note
-Most users will simply define a configuration for a live trading node (described below),
+Most users will define a configuration for a live trading node (described below),
 and won't necessarily need to work with the above components directly.
 :::
 
@@ -134,7 +127,7 @@ To specify a portfolio for trading, set the `COINBASE_INTX_PORTFOLIO_ID` environ
 the desired `portfolio_id`. If you're using multiple execution clients, you can alternatively define
 the `portfolio_id` in the execution configuration for each client.
 
-## Capability Matrix
+## Orders capability
 
 Coinbase International offers market, limit, and stop order types, enabling a broad range of strategies.
 
@@ -157,9 +150,9 @@ Coinbase International offers market, limit, and stop order types, enabling a br
 | `post_only`   | ✓           | ✓    | Ensures orders only provide liquidity.           |
 | `reduce_only` | ✓           | ✓    | Ensures orders only reduce existing positions.   |
 
-### Time-in-Force Options
+### Time in force options
 
-| Time-in-Force | Derivatives | Spot | Notes                                            |
+| Time in force | Derivatives | Spot | Notes                                            |
 |---------------|-------------|------|--------------------------------------------------|
 | `GTC`         | ✓           | ✓    | Good Till Canceled.                              |
 | `GTD`         | ✓           | ✓    | Good Till Date.                                  |
@@ -174,16 +167,42 @@ Coinbase International offers market, limit, and stop order types, enabling a br
 | Bracket/OCO Orders | ?           | ?    | Requires further investigation.              |
 | Iceberg Orders     | ✓           | ✓    | Available via FIX protocol.                 |
 
-### Configuration Options
+### Batch operations
 
-The following execution client configuration options are available:
+| Operation          | Derivatives | Spot | Notes                                       |
+|--------------------|-------------|------|---------------------------------------------|
+| Batch Submit       | -           | -    | *Not supported*.                            |
+| Batch Modify       | -           | -    | *Not supported*.                            |
+| Batch Cancel       | -           | -    | *Not supported*.                            |
 
-| Option                       | Default | Description                                          |
-|------------------------------|---------|------------------------------------------------------|
-| `portfolio_id`               | `None`  | Specifies the Coinbase International portfolio to trade. Required for execution. |
-| `http_timeout_secs`          | `60`    | Default timeout for HTTP requests in seconds. |
+### Position management
 
-### FIX Drop Copy Integration
+| Feature              | Derivatives | Spot | Notes                                       |
+|--------------------|-------------|------|---------------------------------------------|
+| Query positions     | ✓           | -    | Real-time position updates for derivatives.  |
+| Position mode       | -           | -    | Single position mode only.                   |
+| Leverage control    | ✓           | -    | Per-portfolio leverage settings.             |
+| Margin mode         | ✓           | -    | Cross margin only.                           |
+
+### Order querying
+
+| Feature             | Derivatives | Spot | Notes                                       |
+|---------------------|-------------|------|---------------------------------------------|
+| Query open orders   | ✓           | ✓    | List all active orders.                      |
+| Query order history | ✓           | ✓    | Historical order data.                       |
+| Order status updates| ✓           | ✓    | Real-time updates via FIX drop copy.       |
+| Trade history       | ✓           | ✓    | Execution and fill reports.                 |
+
+### Contingent orders
+
+| Feature              | Derivatives | Spot | Notes                                       |
+|--------------------|-------------|------|---------------------------------------------|
+| Order lists         | -           | -    | *Not supported*.                            |
+| OCO orders          | ?           | ?    | Requires further investigation.              |
+| Bracket orders      | ?           | ?    | Requires further investigation.              |
+| Conditional orders  | ✓           | ✓    | Stop and stop-limit orders.                |
+
+### FIX drop copy integration
 
 The Coinbase International adapter includes a FIX (Financial Information eXchange) [drop copy](https://docs.cdp.coinbase.com/intx/docs/fix-msg-drop-copy) client.
 This provides reliable, low-latency execution updates directly from Coinbase's matching engine.
@@ -210,7 +229,7 @@ No additional configuration is required beyond providing valid API credentials.
 The REST client handles processing `REJECTED` and `ACCEPTED` status execution messages on order submission.
 :::
 
-### Account and Position Management
+### Account and position management
 
 On startup, the execution client requests and loads your current account and execution state including:
 
@@ -231,6 +250,31 @@ To comply, set the `use_uuid_client_order_ids=True` config option in your strate
 
 See the Coinbase International [Create order](https://docs.cdp.coinbase.com/intx/reference/createorder) REST API documentation for further details.
 :::
+
+### Data client configuration options
+
+| Option            | Default        | Description |
+|-------------------|----------------|-------------|
+| `venue`           | `COINBASE_INTX`| Venue identifier registered for the data client. |
+| `api_key`         | `None`         | API key; loaded from `COINBASE_INTX_API_KEY` (or testnet variant) when omitted. |
+| `api_secret`      | `None`         | API secret; loaded from `COINBASE_INTX_API_SECRET` (or testnet variant) when omitted. |
+| `api_passphrase`  | `None`         | API passphrase; loaded from `COINBASE_INTX_API_PASSPHRASE` when omitted. |
+| `base_url_http`   | `None`         | Override for the REST base URL. |
+| `base_url_ws`     | `None`         | Override for the WebSocket base URL. |
+| `http_timeout_secs` | `60`        | Default timeout (seconds) applied to REST calls. |
+
+### Execution client configuration options
+
+| Option             | Default        | Description |
+|--------------------|----------------|-------------|
+| `venue`            | `COINBASE_INTX`| Venue identifier registered for the execution client. |
+| `api_key`          | `None`         | API key; loaded from `COINBASE_INTX_API_KEY` (or testnet variant) when omitted. |
+| `api_secret`       | `None`         | API secret; loaded from `COINBASE_INTX_API_SECRET` (or testnet variant) when omitted. |
+| `api_passphrase`   | `None`         | API passphrase; loaded from `COINBASE_INTX_API_PASSPHRASE` when omitted. |
+| `portfolio_id`     | `None`         | Portfolio identifier to trade; required for order submission. |
+| `base_url_http`    | `None`         | Override for the REST base URL. |
+| `base_url_ws`      | `None`         | Override for the WebSocket base URL. |
+| `http_timeout_secs`| `60`           | Default timeout (seconds) applied to REST calls. |
 
 An example configuration could be:
 
@@ -305,7 +349,19 @@ credentials are valid and have trading permissions.
 ## Implementation notes
 
 - **Heartbeats**: The adapter maintains heartbeats on both the WebSocket and FIX connections to ensure reliable connectivity.
-- **Rate Limits**: The REST API client is configured to limit requests to the 40/second, as specified by Coinbase International.
+- **Rate Limits**: The REST API client is configured to limit requests to 100 per second, matching the Coinbase International REST allowance. See <https://docs.cdp.coinbase.com/intx/docs/rate-limits> for the official guidance.
+
+:::warning
+Coinbase International returns HTTP 429 when you exceed the 100 requests/sec allowance and can throttle the API key for several seconds, so keep bursts below the documented ceiling.
+:::
+
 - **Graceful Shutdown**: The adapter properly handles graceful shutdown, ensuring all pending messages are processed before disconnecting.
 - **Thread Safety**: All adapter components are thread-safe, allowing them to be used from multiple threads concurrently.
 - **Execution Model**: The adapter can be configured with a single Coinbase International portfolio per execution client. For trading multiple portfolios, you can create multiple execution clients.
+
+## Contributing
+
+:::info
+For additional features or to contribute to the Coinbase International adapter, please see our
+[contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).
+:::

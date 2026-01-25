@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,6 +20,7 @@ from nautilus_trader.adapters.dydx import DYDXDataClientConfig
 from nautilus_trader.adapters.dydx import DYDXExecClientConfig
 from nautilus_trader.adapters.dydx import DYDXLiveDataClientFactory
 from nautilus_trader.adapters.dydx import DYDXLiveExecClientFactory
+from nautilus_trader.adapters.dydx_v4.constants import DYDX
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
@@ -70,14 +71,14 @@ config_node = TradingNodeConfig(
     #     heartbeat_interval_secs=1,
     # ),
     data_clients={
-        "DYDX": DYDXDataClientConfig(
+        DYDX: DYDXDataClientConfig(
             wallet_address=None,  # 'DYDX_WALLET_ADDRESS' env var
             instrument_provider=InstrumentProviderConfig(load_all=True),
             is_testnet=True,  # If client uses the testnet API
         ),
     },
     exec_clients={
-        "DYDX": DYDXExecClientConfig(
+        DYDX: DYDXExecClientConfig(
             wallet_address=None,  # 'DYDX_WALLET_ADDRESS' env var
             mnemonic=None,  # 'DYDX_MNEMONIC' env var
             base_url_http=None,  # Override with custom endpoint
@@ -98,8 +99,8 @@ node = TradingNode(config=config_node)
 
 # Configure your strategy
 strat_config = VolatilityMarketMakerConfig(
-    instrument_id=InstrumentId.from_str(f"{symbol}.DYDX"),
-    external_order_claims=[InstrumentId.from_str(f"{symbol}.DYDX")],
+    instrument_id=InstrumentId.from_str(f"{symbol}.{DYDX}"),
+    external_order_claims=[InstrumentId.from_str(f"{symbol}.{DYDX}")],
     bar_type=BarType.from_str(f"{symbol}.DYDX-1-MINUTE-LAST-EXTERNAL"),
     atr_period=20,
     atr_multiple=3.0,
@@ -112,8 +113,8 @@ strategy = VolatilityMarketMaker(config=strat_config)
 node.trader.add_strategy(strategy)
 
 # Register your client factories with the node (can take user-defined factories)
-node.add_data_client_factory("DYDX", DYDXLiveDataClientFactory)
-node.add_exec_client_factory("DYDX", DYDXLiveExecClientFactory)
+node.add_data_client_factory(DYDX, DYDXLiveDataClientFactory)
+node.add_exec_client_factory(DYDX, DYDXLiveExecClientFactory)
 node.build()
 
 

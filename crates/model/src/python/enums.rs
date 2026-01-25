@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,8 +25,8 @@ use crate::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BetSide,
         BookAction, BookType, ContingencyType, CurrencyType, InstrumentClass, InstrumentCloseType,
         LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OptionKind, OrderSide,
-        OrderStatus, OrderType, PositionSide, PriceType, RecordFlag, TimeInForce, TradingState,
-        TrailingOffsetType, TriggerType,
+        OrderStatus, OrderType, OtoTriggerMode, PositionAdjustmentType, PositionSide, PriceType,
+        RecordFlag, TimeInForce, TradingState, TrailingOffsetType, TriggerType,
     },
     python::common::EnumIterator,
 };
@@ -37,10 +37,6 @@ impl AccountType {
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
-    }
-
-    fn __hash__(&self) -> isize {
-        *self as isize
     }
 
     fn __repr__(&self) -> String {
@@ -101,7 +97,7 @@ impl AccountType {
 }
 
 #[pymethods]
-impl AggregationSource {
+impl PositionAdjustmentType {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
@@ -110,6 +106,65 @@ impl AggregationSource {
 
     fn __hash__(&self) -> isize {
         *self as isize
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<{}.{}: '{}'>",
+            stringify!(PositionAdjustmentType),
+            self.name(),
+            self.value(),
+        )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn name(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn value(&self) -> u8 {
+        *self as u8
+    }
+
+    #[classmethod]
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
+        EnumIterator::new::<Self>(py)
+    }
+
+    #[classmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
+        let tokenized = data_str.to_uppercase();
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
+    }
+
+    #[classattr]
+    #[pyo3(name = "COMMISSION")]
+    fn py_commission() -> Self {
+        Self::Commission
+    }
+
+    #[classattr]
+    #[pyo3(name = "FUNDING")]
+    fn py_funding() -> Self {
+        Self::Funding
+    }
+}
+
+#[pymethods]
+impl AggregationSource {
+    #[new]
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __repr__(&self) -> String {
@@ -169,10 +224,6 @@ impl AggressorSide {
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
-    }
-
-    fn __hash__(&self) -> isize {
-        *self as isize
     }
 
     fn __repr__(&self) -> String {
@@ -238,10 +289,6 @@ impl AssetClass {
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
-    }
-
-    fn __hash__(&self) -> isize {
-        *self as isize
     }
 
     fn __repr__(&self) -> String {
@@ -331,10 +378,6 @@ impl InstrumentClass {
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
-    }
-
-    fn __hash__(&self) -> isize {
-        *self as isize
     }
 
     fn __repr__(&self) -> String {
@@ -436,10 +479,6 @@ impl BarAggregation {
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
-    }
-
-    fn __hash__(&self) -> isize {
-        *self as isize
     }
 
     fn __repr__(&self) -> String {
@@ -574,6 +613,18 @@ impl BarAggregation {
     fn py_month() -> Self {
         Self::Month
     }
+
+    #[classattr]
+    #[pyo3(name = "YEAR")]
+    fn py_year() -> Self {
+        Self::Year
+    }
+
+    #[classattr]
+    #[pyo3(name = "RENKO")]
+    fn py_renko() -> Self {
+        Self::Renko
+    }
 }
 
 #[pymethods]
@@ -582,10 +633,6 @@ impl BetSide {
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
-    }
-
-    fn __hash__(&self) -> isize {
-        *self as isize
     }
 
     fn __repr__(&self) -> String {
@@ -656,10 +703,6 @@ impl BookAction {
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
-    }
-
-    fn __hash__(&self) -> isize {
-        *self as isize
     }
 
     fn __repr__(&self) -> String {
@@ -733,10 +776,6 @@ impl ContingencyType {
         Self::py_from_str(&t, value)
     }
 
-    fn __hash__(&self) -> isize {
-        *self as isize
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -808,10 +847,6 @@ impl CurrencyType {
         Self::py_from_str(&t, value)
     }
 
-    fn __hash__(&self) -> isize {
-        *self as isize
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -877,10 +912,6 @@ impl InstrumentCloseType {
         Self::py_from_str(&t, value)
     }
 
-    fn __hash__(&self) -> isize {
-        *self as isize
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -940,14 +971,10 @@ impl LiquiditySide {
         Self::py_from_str(&t, value)
     }
 
-    fn __hash__(&self) -> isize {
-        *self as isize
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
-            stringify!(LiquditySide),
+            stringify!(LiquiditySide),
             self.name(),
             self.value(),
         )
@@ -1007,10 +1034,6 @@ impl MarketStatus {
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
-    }
-
-    fn __hash__(&self) -> isize {
-        *self as isize
     }
 
     fn __repr__(&self) -> String {
@@ -1095,10 +1118,6 @@ impl MarketStatusAction {
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
-    }
-
-    fn __hash__(&self) -> isize {
-        *self as isize
     }
 
     fn __repr__(&self) -> String {
@@ -1244,10 +1263,6 @@ impl OmsType {
         Self::py_from_str(&t, value)
     }
 
-    fn __hash__(&self) -> isize {
-        *self as isize
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -1313,10 +1328,6 @@ impl OptionKind {
         Self::py_from_str(&t, value)
     }
 
-    fn __hash__(&self) -> isize {
-        *self as isize
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -1369,15 +1380,70 @@ impl OptionKind {
 }
 
 #[pymethods]
-impl OrderSide {
+impl OtoTriggerMode {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
     }
 
-    fn __hash__(&self) -> isize {
-        *self as isize
+    fn __repr__(&self) -> String {
+        format!(
+            "<{}.{}: '{}'>",
+            stringify!(OtoTriggerMode),
+            self.name(),
+            self.value(),
+        )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn name(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn value(&self) -> u8 {
+        *self as u8
+    }
+
+    #[classmethod]
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
+        EnumIterator::new::<Self>(py)
+    }
+
+    #[classmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
+        let tokenized = data_str.to_uppercase();
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
+    }
+
+    #[classattr]
+    #[pyo3(name = "PARTIAL")]
+    fn py_partial() -> Self {
+        Self::Partial
+    }
+
+    #[classattr]
+    #[pyo3(name = "FULL")]
+    fn py_full() -> Self {
+        Self::Full
+    }
+}
+
+#[pymethods]
+impl OrderSide {
+    #[new]
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __repr__(&self) -> String {
@@ -1443,10 +1509,6 @@ impl OrderStatus {
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
-    }
-
-    fn __hash__(&self) -> isize {
-        *self as isize
     }
 
     fn __repr__(&self) -> String {
@@ -1580,10 +1642,6 @@ impl OrderType {
         Self::py_from_str(&t, value)
     }
 
-    fn __hash__(&self) -> isize {
-        *self as isize
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -1685,10 +1743,6 @@ impl PositionSide {
         Self::py_from_str(&t, value)
     }
 
-    fn __hash__(&self) -> isize {
-        *self as isize
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -1758,10 +1812,6 @@ impl PriceType {
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
-    }
-
-    fn __hash__(&self) -> isize {
-        *self as isize
     }
 
     fn __repr__(&self) -> String {
@@ -1848,10 +1898,6 @@ impl RecordFlag {
         Self::py_from_str(&t, value)
     }
 
-    fn __hash__(&self) -> isize {
-        *self as isize
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -1926,10 +1972,6 @@ impl TimeInForce {
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
-    }
-
-    fn __hash__(&self) -> isize {
-        *self as isize
     }
 
     fn __repr__(&self) -> String {
@@ -2021,10 +2063,6 @@ impl TrailingOffsetType {
         Self::py_from_str(&t, value)
     }
 
-    fn __hash__(&self) -> isize {
-        *self as isize
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -2100,10 +2138,6 @@ impl TriggerType {
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
-    }
-
-    fn __hash__(&self) -> isize {
-        *self as isize
     }
 
     fn __repr__(&self) -> String {
@@ -2213,10 +2247,6 @@ impl BookType {
         Self::py_from_str(&t, value)
     }
 
-    fn __hash__(&self) -> isize {
-        *self as isize
-    }
-
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
@@ -2280,10 +2310,6 @@ impl TradingState {
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
-    }
-
-    fn __hash__(&self) -> isize {
-        *self as isize
     }
 
     fn __repr__(&self) -> String {

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
 
@@ -23,6 +24,7 @@ import pytz
 from nautilus_trader.core.datetime import as_utc_index
 from nautilus_trader.core.datetime import as_utc_timestamp
 from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.core.datetime import format_iso8601
 from nautilus_trader.core.datetime import format_optional_iso8601
 from nautilus_trader.core.datetime import is_datetime_utc
@@ -261,7 +263,7 @@ class TestDatetimeFunctions:
 
     def test_is_datetime_utc_given_tz_naive_datetime_returns_false(self):
         # Arrange
-        dt = datetime(2013, 1, 1, 1, 0)
+        dt = datetime(2013, 1, 1, 1, 0, tzinfo=UTC)
 
         # Act, Assert
         assert is_datetime_utc(dt) is False
@@ -287,7 +289,7 @@ class TestDatetimeFunctions:
             {"timestamp": ["2019-05-21T12:00:00+00:00", "2019-05-21T12:15:00+00:00"]},
         )
         time_object3.set_index("timestamp")
-        time_object3.index = pd.to_datetime(time_object3.index)
+        time_object3.index = pd.to_datetime(time_object3.index, utc=True)
 
         # Act, Assert
         assert is_tz_aware(time_object1) is True
@@ -299,8 +301,8 @@ class TestDatetimeFunctions:
 
     def test_is_tz_awareness_with_various_objects_returns_false(self):
         # Arrange
-        time_object1 = datetime(1970, 1, 1, 0, 0, 0, 0)
-        time_object2 = pd.Timestamp(datetime(1970, 1, 1, 0, 0, 0, 0))
+        time_object1 = datetime(1970, 1, 1, 0, 0, 0, 0)  # noqa: DTZ001
+        time_object2 = pd.Timestamp(datetime(1970, 1, 1, 0, 0, 0, 0))  # noqa: DTZ001
 
         # Act, Assert
         assert is_tz_aware(time_object1) is False
@@ -335,7 +337,7 @@ class TestDatetimeFunctions:
         ("value", "expected"),
         [
             [None, "None"],
-            [pd.to_datetime(0), "1970-01-01T00:00:00.000000000Z"],
+            [pd.to_datetime(0, utc=True), "1970-01-01T00:00:00.000000000Z"],
         ],
     )
     def test_format_optional_iso8601(self, value: pd.Timestamp | None, expected: str):
@@ -347,7 +349,7 @@ class TestDatetimeFunctions:
 
     def test_datetime_and_pd_timestamp_equality(self):
         # Arrange
-        timestamp1 = datetime(1970, 1, 1, 0, 0, 0, 0)
+        timestamp1 = datetime(1970, 1, 1, 0, 0, 0, 0)  # noqa: DTZ001
         timestamp2 = pd.Timestamp(1970, 1, 1, 0, 0, 0, 0)
         min1 = timedelta(minutes=1)
 
@@ -364,9 +366,9 @@ class TestDatetimeFunctions:
         assert timestamp2.tz is None
         assert timestamp5 == timestamp6
 
-    def test_as_utc_timestamp_given_tz_naive_datetime(self):
+    def test_as_utc_timestamp_given_tz_naive_datetime(self, tzinfo=UTC):
         # Arrange
-        timestamp = datetime(2013, 2, 1, 0, 0, 0, 0)
+        timestamp = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=UTC)
 
         # Act
         result = as_utc_timestamp(timestamp)
@@ -386,7 +388,7 @@ class TestDatetimeFunctions:
         assert result == pd.Timestamp("2013-02-01 00:00:00+00:00")
         assert result.tzinfo == pytz.utc
 
-    def test_as_utc_timestamp_given_tz_aware_datetime(self):
+    def test_as_utc_timestamp_given_tz_aware_datetime(self, tzinfo=UTC):
         # Arrange
         timestamp = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
@@ -410,7 +412,7 @@ class TestDatetimeFunctions:
 
     def test_as_utc_timestamp_equality(self):
         # Arrange
-        timestamp1 = datetime(1970, 1, 1, 0, 0, 0, 0)
+        timestamp1 = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=UTC)
         timestamp2 = UNIX_EPOCH
         timestamp3 = pd.Timestamp(1970, 1, 1, 0, 0, 0, 0)
         timestamp4 = pd.Timestamp(1970, 1, 1, 0, 0, 0, 0).tz_localize("UTC")
@@ -442,7 +444,7 @@ class TestDatetimeFunctions:
             {"timestamp": ["2019-05-21T12:00:00+00:00", "2019-05-21T12:15:00+00:00"]},
         )
         data.set_index("timestamp")
-        data.index = pd.to_datetime(data.index)
+        data.index = pd.to_datetime(data.index, utc=True)
 
         # Act
         result = as_utc_index(data)
@@ -468,13 +470,13 @@ class TestDatetimeFunctions:
         # Arrange
         data1 = pd.DataFrame({"timestamp": ["2019-05-21 12:00:00", "2019-05-21 12:15:00"]})
         data1.set_index("timestamp")
-        data1.index = pd.to_datetime(data1.index)
+        data1.index = pd.to_datetime(data1.index, utc=True)
 
         data2 = pd.DataFrame(
             {
                 "timestamp": [
-                    datetime(1970, 1, 1, 0, 0, 0, 0),
-                    datetime(1970, 1, 1, 0, 0, 0, 0),
+                    datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=UTC),
+                    datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=UTC),
                 ],
             },
         )
@@ -488,3 +490,89 @@ class TestDatetimeFunctions:
         # Assert
         assert result1.index[0] == result2.index[0]
         assert result1.index.tz == result2.index.tz
+
+    def test_ensure_pydatetime_utc_given_none_returns_none(self):
+        # Arrange, Act
+        result = ensure_pydatetime_utc(None)
+
+        # Assert
+        assert result is None
+
+    def test_ensure_pydatetime_utc_unix_epoch(self):
+        # Arrange
+        timestamp = UNIX_EPOCH
+
+        # Act
+        result = ensure_pydatetime_utc(timestamp)
+
+        # Assert
+        assert isinstance(result, datetime)
+        assert str(result.tzinfo) == "UTC"
+        assert result.year == 1970
+        assert result.month == 1
+        assert result.day == 1
+        assert result.hour == 0
+        assert result.minute == 0
+        assert result.second == 0
+
+    def test_ensure_pydatetime_utc_given_utc_timestamp_returns_pydatetime(self, tzinfo=UTC):
+        # Arrange
+        timestamp = pd.Timestamp("2023-01-15 14:30:00", tz="UTC")
+
+        # Act
+        result = ensure_pydatetime_utc(timestamp)
+
+        # Assert
+        assert isinstance(result, datetime)
+        assert str(result.tzinfo) == "UTC"
+        assert result.year == 2023
+        assert result.month == 1
+        assert result.day == 15
+        assert result.hour == 14
+        assert result.minute == 30
+        assert result.second == 0
+
+    def test_ensure_pydatetime_utc_given_non_utc_timestamp_converts_to_utc(self):
+        # Arrange
+        est = pytz.timezone("US/Eastern")
+        timestamp = pd.Timestamp("2023-06-15 10:30:00", tz=est)
+
+        # Act
+        result = ensure_pydatetime_utc(timestamp)
+
+        # Assert
+        assert isinstance(result, datetime)
+        assert str(result.tzinfo) == "UTC"
+        # EST is UTC-5, but in June it's EDT (UTC-4), so 10:30 EST becomes 14:30 UTC
+        assert result.hour == 14
+        assert result.minute == 30
+
+    def test_ensure_pydatetime_utc_given_naive_timestamp_raises_error(self):
+        # Arrange
+        timestamp = pd.Timestamp("2023-01-15 14:30:00")
+
+        # Act & Assert
+        with pytest.raises(TypeError, match="Cannot convert tz-naive Timestamp"):
+            ensure_pydatetime_utc(timestamp)
+
+    @pytest.mark.parametrize(
+        ("timezone", "expected_hour"),
+        [
+            ("UTC", 12),
+            ("US/Pacific", 20),  # UTC-8, so 12:00 PST becomes 20:00 UTC
+            ("Europe/London", 12),  # UTC+0 in winter
+            ("Asia/Tokyo", 3),  # UTC+9, so 12:00 JST becomes 03:00 UTC (next day)
+        ],
+    )
+    def test_ensure_pydatetime_utc_timezone_conversion(self, timezone, expected_hour):
+        # Arrange
+        tz = pytz.timezone(timezone)
+        timestamp = pd.Timestamp("2023-01-15 12:00:00", tz=tz)
+
+        # Act
+        result = ensure_pydatetime_utc(timestamp)
+
+        # Assert
+        assert isinstance(result, datetime)
+        assert str(result.tzinfo) == "UTC"
+        assert result.hour == expected_hour

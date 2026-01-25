@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -414,13 +414,21 @@ class TestDataStubs:
 
     @staticmethod
     def order_book_depth10(
+        instrument: Instrument | None = None,
         instrument_id: InstrumentId | None = None,
         flags: int = 0,
         sequence: int = 0,
         ts_event: int = 0,
         ts_init: int = 0,
         levels: int = 10,
+        price_precision: int = 2,  # Override
+        size_precision: int = 0,  # Override
     ) -> OrderBookDepth10:
+        if instrument is not None:
+            instrument_id = instrument.id
+            price_precision = instrument.price_precision
+            size_precision = instrument.size_precision
+
         bids: list[BookOrder] = []
         asks: list[BookOrder] = []
 
@@ -432,8 +440,8 @@ class TestDataStubs:
         for _ in range(levels):
             order = BookOrder(
                 OrderSide.BUY,
-                Price(price, 2),
-                Quantity(quantity, 0),
+                Price(price, price_precision),
+                Quantity(quantity, size_precision),
                 order_id,
             )
 
@@ -451,8 +459,8 @@ class TestDataStubs:
         for _ in range(levels):
             order = BookOrder(
                 OrderSide.SELL,
-                Price(price, 2),
-                Quantity(quantity, 0),
+                Price(price, price_precision),
+                Quantity(quantity, size_precision),
                 order_id,
             )
 
@@ -514,10 +522,7 @@ class TestDataStubs:
             book_type=book_type,
         )
 
-        bids_counter: int = 0
-        asks_counter: int = 0
-
-        for price, size in bids or []:
+        for bids_counter, (price, size) in enumerate(bids or []):
             order = BookOrder(
                 side=OrderSide.BUY,
                 price=Price(price, instrument.price_precision),
@@ -525,8 +530,7 @@ class TestDataStubs:
                 order_id=bids_counter,
             )
             book.add(order, 0)
-            bids_counter += 1
-        for price, size in asks or []:
+        for asks_counter, (price, size) in enumerate(asks or []):
             order = BookOrder(
                 side=OrderSide.SELL,
                 price=Price(price, instrument.price_precision),
@@ -534,7 +538,6 @@ class TestDataStubs:
                 order_id=asks_counter,
             )
             book.add(order, 0)
-            asks_counter += 1
 
         return book
 

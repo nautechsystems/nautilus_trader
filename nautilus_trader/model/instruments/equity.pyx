@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -60,6 +60,8 @@ cdef class Equity(Instrument):
         The fee rate for liquidity takers as a percentage of order value.
     isin : str, optional
         The instruments International Securities Identification Number (ISIN).
+    tick_scheme_name : str, optional
+        The name of the tick scheme.
     info : dict[str, object], optional
         The additional instrument information.
 
@@ -97,6 +99,7 @@ cdef class Equity(Instrument):
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
         str isin: str | None = None,
+        str tick_scheme_name = None,
         dict info = None,
     ) -> None:
         if isin is not None:
@@ -126,6 +129,7 @@ cdef class Equity(Instrument):
             taker_fee=taker_fee or Decimal(0),
             ts_event=ts_event,
             ts_init=ts_init,
+            tick_scheme_name=tick_scheme_name,
             info=info,
         )
 
@@ -148,6 +152,7 @@ cdef class Equity(Instrument):
             taker_fee=Decimal(values.get("taker_fee", 0))  if values.get("taker_fee") is not None else None,
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            tick_scheme_name=values.get("tick_scheme_name"),
             info=values["info"],
         )
 
@@ -173,6 +178,7 @@ cdef class Equity(Instrument):
             "min_quantity": str(obj.min_quantity) if obj.min_quantity is not None else None,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "tick_scheme_name": obj.tick_scheme_name,
             "info": obj.info,
         }
 
@@ -184,12 +190,14 @@ cdef class Equity(Instrument):
             currency=Currency.from_str_c(pyo3_instrument.quote_currency.code),
             price_precision=pyo3_instrument.price_precision,
             price_increment=Price.from_raw_c(pyo3_instrument.price_increment.raw, pyo3_instrument.price_precision),
-            lot_size=Quantity.from_raw_c(pyo3_instrument.lot_size.raw, pyo3_instrument.lot_size.precision),
+            lot_size=Quantity.from_raw_c(pyo3_instrument.lot_size.raw, pyo3_instrument.lot_size.precision) if pyo3_instrument.lot_size is not None else Quantity.from_int_c(1),
+            max_quantity=Quantity.from_raw_c(pyo3_instrument.max_quantity.raw, pyo3_instrument.max_quantity.precision) if pyo3_instrument.max_quantity is not None else None,
+            min_quantity=Quantity.from_raw_c(pyo3_instrument.min_quantity.raw, pyo3_instrument.min_quantity.precision) if pyo3_instrument.min_quantity is not None else None,
+            margin_init=Decimal(pyo3_instrument.margin_init),
+            margin_maint=Decimal(pyo3_instrument.margin_maint),
+            maker_fee=Decimal(pyo3_instrument.maker_fee),
+            taker_fee=Decimal(pyo3_instrument.taker_fee),
             isin=pyo3_instrument.isin,
-            margin_init=None,  # None for now
-            margin_maint=None,  # None for now
-            maker_fee=None,  # None for now
-            taker_fee=None,  # None for now
             ts_event=pyo3_instrument.ts_event,
             ts_init=pyo3_instrument.ts_init,
             info=pyo3_instrument.info,

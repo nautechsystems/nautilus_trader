@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,6 +12,8 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+//! Connection mode enumeration for socket clients.
 
 use std::sync::atomic::{AtomicU8, Ordering};
 
@@ -57,7 +59,9 @@ impl ConnectionMode {
         }
     }
 
+    /// Load a [`ConnectionMode`] from an [`AtomicU8`] using sequential consistency ordering.
     #[inline]
+    #[must_use]
     pub fn from_atomic(value: &AtomicU8) -> Self {
         Self::from_u8(value.load(Ordering::SeqCst))
     }

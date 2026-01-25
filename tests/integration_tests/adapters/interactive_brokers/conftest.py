@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,31 +12,77 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import sys
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
 
-# fmt: off
-from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
-from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
-from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
-from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
-from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
-from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
-from nautilus_trader.model.events import AccountState
-from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.test_kit.stubs.events import TestEventStubs
-from tests.integration_tests.adapters.interactive_brokers.mock_client import MockInteractiveBrokersClient
-from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
+
+def pytest_ignore_collect(collection_path, config):
+    """
+    Prevent collection of test files on Python 3.14.
+    """
+    if sys.version_info >= (3, 14):
+        return True
+    return False
 
 
-# fmt: on
+# Add pytestmark to skip all IB tests on Python 3.14 due to nautilus-ibapi compatibility
+pytestmark = pytest.mark.skipif(
+    sys.version_info >= (3, 14),
+    reason="Interactive Brokers adapter requires Python < 3.14 (nautilus-ibapi incompatibility)",
+)
+
+# Skip imports if Python 3.14+ to avoid ImportError during collection
+if sys.version_info < (3, 14):
+    from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
+    from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
+    from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
+    from nautilus_trader.adapters.interactive_brokers.config import (
+        InteractiveBrokersDataClientConfig,
+    )
+    from nautilus_trader.adapters.interactive_brokers.config import (
+        InteractiveBrokersExecClientConfig,
+    )
+    from nautilus_trader.adapters.interactive_brokers.config import (
+        InteractiveBrokersInstrumentProviderConfig,
+    )
+    from nautilus_trader.adapters.interactive_brokers.factories import (
+        InteractiveBrokersLiveDataClientFactory,
+    )
+    from nautilus_trader.adapters.interactive_brokers.factories import (
+        InteractiveBrokersLiveExecClientFactory,
+    )
+    from nautilus_trader.adapters.interactive_brokers.providers import (
+        InteractiveBrokersInstrumentProvider,
+    )
+    from nautilus_trader.model.events import AccountState
+    from nautilus_trader.model.identifiers import AccountId
+    from nautilus_trader.model.identifiers import Venue
+    from nautilus_trader.test_kit.stubs.events import TestEventStubs
+    from tests.integration_tests.adapters.interactive_brokers.mock_client import (
+        MockInteractiveBrokersClient,
+    )
+    from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
+else:
+    # Dummy imports for Python 3.14+ to avoid NameError
+    InteractiveBrokersClient = None
+    IB_VENUE = None
+    DockerizedIBGatewayConfig = None
+    InteractiveBrokersDataClientConfig = None
+    InteractiveBrokersExecClientConfig = None
+    InteractiveBrokersInstrumentProviderConfig = None
+    InteractiveBrokersLiveDataClientFactory = None
+    InteractiveBrokersLiveExecClientFactory = None
+    InteractiveBrokersInstrumentProvider = None
+    AccountState = None
+    AccountId = None
+    Venue = None
+    TestEventStubs = None
+    MockInteractiveBrokersClient = None
+    IBTestContractStubs = None
 
 
 def mocked_ib_client(
@@ -61,17 +107,17 @@ def mocked_ib_client(
     return client
 
 
-@pytest.fixture()
+@pytest.fixture
 def venue():
     return IB_VENUE
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument():
     return IBTestContractStubs.aapl_instrument()
 
 
-@pytest.fixture()
+@pytest.fixture
 def gateway_config():
     return DockerizedIBGatewayConfig(
         username="test",
@@ -79,7 +125,7 @@ def gateway_config():
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_client_config():
     return InteractiveBrokersDataClientConfig(
         ibg_host="127.0.0.1",
@@ -88,7 +134,7 @@ def data_client_config():
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def exec_client_config():
     return InteractiveBrokersExecClientConfig(
         ibg_host="127.0.0.1",
@@ -98,7 +144,7 @@ def exec_client_config():
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def ib_client(data_client_config, event_loop, msgbus, cache, clock):
     client = InteractiveBrokersClient(
         loop=event_loop,
@@ -114,25 +160,32 @@ def ib_client(data_client_config, event_loop, msgbus, cache, clock):
         client._stop()
 
 
-@pytest.fixture()
+@pytest.fixture
 def ib_client_running(ib_client):
     ib_client._connect = AsyncMock()
     ib_client._eclient = MagicMock()
     ib_client._eclient.startApi = MagicMock(side_effect=ib_client._is_ib_connected.set)
-    ib_client._account_ids = {"DU123456,"}
+    ib_client._account_ids = {"DU123456"}
     ib_client.start()
     yield ib_client
 
+    # Cleanup: stop the client and cancel its background tasks
+    if not ib_client.is_stopped:
+        ib_client.stop()
 
-@pytest.fixture()
+
+@pytest.fixture
 def instrument_provider(ib_client):
+    from nautilus_trader.common.component import LiveClock
+
     return InteractiveBrokersInstrumentProvider(
         client=ib_client,
+        clock=LiveClock(),
         config=InteractiveBrokersInstrumentProviderConfig(),
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 @patch(
     "nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client",
     new=mocked_ib_client,
@@ -152,11 +205,11 @@ def data_client(data_client_config, venue, event_loop, msgbus, cache, clock):
     )
     client._client._is_ib_connected.set()
     client._client._connect = AsyncMock()
-    client._client._account_ids = {"DU123456,"}
+    client._client._account_ids = {"DU123456"}
     return client
 
 
-@pytest.fixture()
+@pytest.fixture
 @patch(
     "nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client",
     new=mocked_ib_client,
@@ -176,10 +229,104 @@ def exec_client(exec_client_config, venue, event_loop, msgbus, cache, clock):
     )
     client._client._is_ib_connected.set()
     client._client._connect = AsyncMock()
-    client._client._account_ids = {"DU123456,"}
+    client._client._account_ids = {"DU123456"}
     return client
 
 
-@pytest.fixture()
+@pytest.fixture
 def account_state(venue: Venue) -> AccountState:
     return TestEventStubs.cash_account_state(account_id=AccountId(f"{venue.value}-001"))
+
+
+@pytest.fixture
+def mock_connection_setup(mocker, exec_client):
+    """
+    Fixture to set up common mock connection patterns for IB execution client tests.
+
+    This fixture patches:
+    - reqAccountSummary
+    - wait_until_ready
+    - instrument_provider.initialize
+    - _connect method
+
+    Returns a function that can be called to apply the mocks to an exec_client.
+
+    """
+    from functools import partial
+
+    from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
+
+    def account_summary_setup(client, **kwargs):
+        account_values = IBTestDataStubs.account_values()
+        for summary in account_values:
+            client.accountSummary(
+                req_id=kwargs["reqId"],
+                account=summary["account"],
+                tag=summary["tag"],
+                value=summary["value"],
+                currency=summary["currency"],
+            )
+
+    def _setup_mocks(client=None):
+        """
+        Apply mocks to the provided client or exec_client.
+        """
+        target_client = client or exec_client
+
+        # Mock reqAccountSummary
+        mocker.patch.object(
+            target_client._client._eclient,
+            "reqAccountSummary",
+            side_effect=partial(account_summary_setup, target_client._client),
+        )
+
+        # Mock wait_until_ready
+        async def mock_wait_until_ready(timeout):
+            target_client._client._is_client_ready.set()
+            target_client._client._is_ib_connected.set()
+
+        mocker.patch.object(
+            target_client._client,
+            "wait_until_ready",
+            side_effect=mock_wait_until_ready,
+        )
+
+        # Mock instrument provider initialize
+        mocker.patch.object(
+            target_client.instrument_provider,
+            "initialize",
+            return_value=None,
+        )
+
+        # Set account_summary_loaded to prevent hanging
+        target_client._account_summary_loaded.set()
+
+        # Mock _connect with event handlers
+        async def mock_connect():
+            # Register event handlers as the real _connect does
+            account = target_client.account_id.get_id()
+            target_client._client.subscribe_event(
+                f"accountSummary-{account}",
+                target_client._on_account_summary,
+            )
+            target_client._client.subscribe_event(
+                f"openOrder-{account}",
+                target_client._on_open_order,
+            )
+            target_client._client.subscribe_event(
+                f"orderStatus-{account}",
+                target_client._on_order_status,
+            )
+            target_client._client.subscribe_event(
+                f"execDetails-{account}",
+                target_client._on_exec_details,
+            )
+            target_client._set_connected(True)
+
+        mocker.patch.object(
+            target_client,
+            "_connect",
+            side_effect=mock_connect,
+        )
+
+    return _setup_mocks

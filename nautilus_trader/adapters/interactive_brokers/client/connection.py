@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,6 +24,7 @@ from ibapi.const import NO_VALID_ID
 from ibapi.errors import CONNECT_FAIL
 from ibapi.server_versions import MAX_CLIENT_VER
 from ibapi.server_versions import MIN_CLIENT_VER
+from ibapi.utils import currentTimeMillis
 
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 from nautilus_trader.common.enums import LogColor
@@ -61,19 +62,52 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
             )
             await self._receive_server_info()
             self._eclient.setConnState(EClient.CONNECTED)
+            conn_time_str = self._msgspec_decoding_hook(self._eclient.connTime)
             self._log.info(
                 f"Connected to Interactive Brokers (v{self._eclient.serverVersion_}) "
-                f"at {self._eclient.connTime.decode()} from {self._host}:{self._port} "
-                f"with client id: {self._client_id}.",
+                f"at {conn_time_str} from {self._host}:{self._port} "
+                f"with client id: {self._client_id}",
             )
+        except ConnectionError:
+            self._log.error("Connection failed")
+            if self._eclient.wrapper:
+                self._eclient.wrapper.error(
+                    NO_VALID_ID,
+                    currentTimeMillis(),
+                    CONNECT_FAIL.code(),
+                    CONNECT_FAIL.msg(),
+                )
+        except TimeoutError:
+            self._log.warning("Connection timeout")
+            if self._eclient.wrapper:
+                self._eclient.wrapper.error(
+                    NO_VALID_ID,
+                    currentTimeMillis(),
+                    CONNECT_FAIL.code(),
+                    CONNECT_FAIL.msg(),
+                )
         except asyncio.CancelledError:
-            self._log.info("Connection cancelled.")
-            await self._disconnect()
+            self._log.info("Connection cancelled")
         except Exception as e:
             self._log.exception("Connection failed", e)
             if self._eclient.wrapper:
-                self._eclient.wrapper.error(NO_VALID_ID, CONNECT_FAIL.code(), CONNECT_FAIL.msg())
-            await self._handle_reconnect()
+                self._eclient.wrapper.error(
+                    NO_VALID_ID,
+                    currentTimeMillis(),
+                    CONNECT_FAIL.code(),
+                    CONNECT_FAIL.msg(),
+                )
+
+    def _msgspec_decoding_hook(self, byte_data: bytes) -> str:
+        """
+        Decode connection time from the server for possible more languages.
+        """
+        for enc in ["utf-8", "gbk", "latin-1", "cp1252"]:
+            try:
+                return byte_data.decode(enc)
+            except UnicodeDecodeError:
+                continue
+        return byte_data.decode("utf-8", errors="replace")
 
     async def _disconnect(self) -> None:
         """
@@ -83,10 +117,10 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
             self._eclient.disconnect()
 
             if self._is_ib_connected.is_set():
-                self._log.debug("`_is_ib_connected` unset by `_disconnect`.", LogColor.BLUE)
+                self._log.debug("`_is_ib_connected` unset by `_disconnect`", LogColor.BLUE)
                 self._is_ib_connected.clear()
 
-            self._log.info("Disconnected from Interactive Brokers API.")
+            self._log.info("Disconnected from Interactive Brokers API")
         except Exception as e:
             self._log.exception("Disconnection failed", e)
 
@@ -122,7 +156,13 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         self._log.info(
             f"Connecting to {self._host}:{self._port} with client id: {self._client_id}",
         )
-        await asyncio.to_thread(self._eclient.conn.connect)
+        await asyncio.to_thread(self._connect_socket_safe)
+
+    def _connect_socket_safe(self) -> None:
+        try:
+            self._eclient.conn.connect()
+        except Exception:
+            raise ConnectionError("Failed to connect to TWS/Gateway.")
 
     async def _send_version_info(self) -> None:
         """
@@ -139,7 +179,7 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         if self._eclient.connectOptions:
             v100version += f" {self._eclient.connectOptions}"
 
-        msg = comm.make_msg(v100version)
+        msg = comm.make_initial_msg(v100version)
         msg2 = str.encode(v100prefix, "ascii") + msg
         await asyncio.to_thread(functools.partial(self._eclient.conn.sendMsg, msg2))
 
@@ -166,7 +206,7 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
                 _, msg, _ = comm.read_msg(buf)
                 fields.extend(comm.read_fields(msg))
             else:
-                self._log.debug("Received empty buffer.")
+                self._log.debug("Received empty buffer")
 
             if len(fields) == 2:
                 self._process_server_version(fields)
@@ -174,8 +214,8 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
 
             retries_remaining -= 1
             self._log.warning(
-                "Failed to receive server version information. "
-                f"Retries remaining: {retries_remaining}.",
+                "Failed to receive server version information, "
+                f"retries remaining: {retries_remaining}",
             )
             await asyncio.sleep(1)
 
@@ -215,5 +255,5 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
                 future.set_exception(ConnectionError("Socket disconnected."))
 
         if self._is_ib_connected.is_set():
-            self._log.debug("`_is_ib_connected` unset by `connectionClosed`.", LogColor.BLUE)
+            self._log.debug("`_is_ib_connected` unset by `connectionClosed`", LogColor.BLUE)
             self._is_ib_connected.clear()

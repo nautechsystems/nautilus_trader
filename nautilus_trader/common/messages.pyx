@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,6 +22,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.common.component cimport component_state_from_str
 from nautilus_trader.common.component cimport component_state_to_str
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.common cimport ComponentState
 from nautilus_trader.core.rust.model cimport TradingState
@@ -58,8 +59,9 @@ cdef class ShutdownSystem(Command):
         UUID4 command_id not None,
         uint64_t ts_init,
         str reason = None,
+        UUID4 correlation_id = None,
     ) -> None:
-        super().__init__(command_id, ts_init)
+        super().__init__(command_id, ts_init, correlation_id)
         self.trader_id = trader_id
         self.component_id = component_id
         self.reason = reason
@@ -67,6 +69,8 @@ cdef class ShutdownSystem(Command):
         self._ts_init = ts_init
 
     def __eq__(self, Command other) -> bool:
+        if other is None:
+            return False
         return self._command_id == other.id
 
     def __hash__(self) -> int:
@@ -100,6 +104,7 @@ cdef class ShutdownSystem(Command):
             reason=values["reason"],
             command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
+            correlation_id=UUID4.from_str_c(values["correlation_id"]) if values.get("correlation_id") else None,
         )
 
     @staticmethod
@@ -190,6 +195,8 @@ cdef class ComponentStateChanged(Event):
         self._ts_init = ts_init
 
     def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
         return self._event_id == other.id
 
     def __hash__(self) -> int:
@@ -342,6 +349,8 @@ cdef class RiskEvent(Event):
         self._ts_init = ts_init
 
     def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
         return self._event_id == other.id
 
     def __hash__(self) -> int:

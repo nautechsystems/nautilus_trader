@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,10 +26,8 @@ import cython
 import msgspec
 import numpy as np
 import pandas as pd
-import pyarrow
 import pytz
 
-from nautilus_trader.common.config import InvalidConfiguration
 from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.rust.common import ComponentState as PyComponentState
@@ -38,13 +36,11 @@ cimport numpy as np
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from cpython.datetime cimport tzinfo
-from cpython.object cimport PyCallable_Check
 from cpython.object cimport PyObject
 from cpython.pycapsule cimport PyCapsule_GetPointer
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint32_t
 from libc.stdint cimport uint64_t
-from libc.stdio cimport printf
 
 from nautilus_trader.common.messages cimport ComponentStateChanged
 from nautilus_trader.common.messages cimport ShutdownSystem
@@ -89,11 +85,9 @@ from nautilus_trader.core.rust.common cimport logging_clock_set_realtime_mode
 from nautilus_trader.core.rust.common cimport logging_clock_set_static_mode
 from nautilus_trader.core.rust.common cimport logging_clock_set_static_time
 from nautilus_trader.core.rust.common cimport logging_init
-from nautilus_trader.core.rust.common cimport logging_is_colored
 from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.common cimport logging_log_header
 from nautilus_trader.core.rust.common cimport logging_log_sysinfo
-from nautilus_trader.core.rust.common cimport logging_shutdown
 from nautilus_trader.core.rust.common cimport test_clock_advance_time
 from nautilus_trader.core.rust.common cimport test_clock_cancel_timer
 from nautilus_trader.core.rust.common cimport test_clock_cancel_timers
@@ -114,8 +108,6 @@ from nautilus_trader.core.rust.common cimport time_event_new
 from nautilus_trader.core.rust.common cimport time_event_to_cstr
 from nautilus_trader.core.rust.common cimport vec_time_event_handlers_drop
 from nautilus_trader.core.rust.core cimport CVec
-from nautilus_trader.core.rust.core cimport nanos_to_millis
-from nautilus_trader.core.rust.core cimport nanos_to_secs
 from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.core.rust.core cimport uuid4_from_cstr
 from nautilus_trader.core.string cimport cstr_to_pystr
@@ -563,7 +555,6 @@ cpdef void register_component_clock(UUID4 instance_id, Clock clock):
     Condition.not_none(clock, "clock")
 
     cdef list[Clock] clocks = _COMPONENT_CLOCKS.get(instance_id)
-
     if clocks is None:
         clocks = []
         _COMPONENT_CLOCKS[instance_id] = clocks
@@ -956,6 +947,7 @@ cdef class LiveClock(Clock):
 
     cpdef uint64_t next_time_ns(self, str name):
         Condition.valid_string(name, "name")
+
         return live_clock_next_time(&self._mem, pystr_to_cstr(name))
 
     cpdef void cancel_timer(self, str name):
@@ -1031,6 +1023,8 @@ cdef class TimeEvent(Event):
         return ustr_to_pystr(self._mem.name)
 
     def __eq__(self, TimeEvent other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -1066,6 +1060,7 @@ cdef class TimeEvent(Event):
         """
         cdef UUID4 uuid4 = UUID4.__new__(UUID4)
         uuid4._mem = self._mem.event_id
+
         return uuid4
 
     @property
@@ -1096,6 +1091,7 @@ cdef class TimeEvent(Event):
     cdef TimeEvent from_mem_c(TimeEvent_t mem):
         cdef TimeEvent event = TimeEvent.__new__(TimeEvent)
         event._mem = mem
+
         return event
 
 
@@ -1103,39 +1099,60 @@ cdef inline TimeEvent capsule_to_time_event(capsule):
     cdef TimeEvent_t* ptr = <TimeEvent_t*>PyCapsule_GetPointer(capsule, NULL)
     cdef TimeEvent event = TimeEvent.__new__(TimeEvent)
     event._mem = ptr[0]
+
     return event
 
 
 cdef class TimeEventHandler:
     """
     Represents a time event with its associated handler.
+
+    Parameters
+    ----------
+    event : TimeEvent
+        The time event to handle
+    handler : Callable[[TimeEvent], None]
+        The handler to call.
+
     """
 
     def __init__(
         self,
         TimeEvent event not None,
         handler not None: Callable[[TimeEvent], None],
-    ):
+    ) -> None:
         self.event = event
         self._handler = handler
 
     cpdef void handle(self):
-        """Call the handler with the contained time event."""
+        """
+        Call the handler with the contained time event.
+        """
         self._handler(self.event)
 
     def __eq__(self, TimeEventHandler other) -> bool:
+        if other is None:
+            return False
         return self.event.ts_event == other.event.ts_event
 
     def __lt__(self, TimeEventHandler other) -> bool:
+        if other is None:
+            return NotImplemented
         return self.event.ts_event < other.event.ts_event
 
     def __le__(self, TimeEventHandler other) -> bool:
+        if other is None:
+            return NotImplemented
         return self.event.ts_event <= other.event.ts_event
 
     def __gt__(self, TimeEventHandler other) -> bool:
+        if other is None:
+            return NotImplemented
         return self.event.ts_event > other.event.ts_event
 
     def __ge__(self, TimeEventHandler other) -> bool:
+        if other is None:
+            return NotImplemented
         return self.event.ts_event >= other.event.ts_event
 
     def __repr__(self) -> str:
@@ -1186,7 +1203,7 @@ cpdef str log_level_to_str(LogLevel value):
 cdef class LogGuard:
     """
     Provides a `LogGuard` which serves as a token to signal the initialization
-    of the logging system. It also ensures that the global logger is flushed
+    of the logging subsystem. It also ensures that the global logger is flushed
     of any buffered records when the instance is destroyed.
     """
 
@@ -1204,7 +1221,8 @@ cpdef LogGuard init_logging(
     str directory = None,
     str file_name = None,
     str file_format = None,
-    dict component_levels: dict[ComponentId, LogLevel] = None,
+    dict component_levels = None,
+    bint log_components_only = False,
     bint colors = True,
     bint bypass = False,
     bint print_config = False,
@@ -1212,9 +1230,9 @@ cpdef LogGuard init_logging(
     uint32_t max_backup_count = 5,
 ):
     """
-    Initialize the logging system.
+    Initialize the logging subsystem.
 
-    Provides an interface into the logging system implemented in Rust.
+    Provides an interface into the logging subsystem implemented in Rust.
 
     This function should only be called once per process, at the beginning of the application
     run. Subsequent calls will raise a `RuntimeError`, as there can only be one `LogGuard`
@@ -1237,17 +1255,21 @@ cpdef LogGuard init_logging(
         If ``None`` then will write to the current working directory.
     file_name : str, optional
         The custom log file name (will use a '.log' suffix for plain text or '.json' for JSON).
-        If ``None`` will not log to a file (unless `file_auto` is True).
+        If ``None`` will not log to a file.
     file_format : str { 'JSON' }, optional
         The log file format. If ``None`` (default) then will log in plain text.
         If set to 'JSON' then logs will be in JSON format.
-    component_levels : dict[ComponentId, LogLevel]
+    component_levels : dict[str, str], optional
         The additional per component log level filters, where keys are component
-        IDs (e.g. actor/strategy IDs) and values are log levels.
+        IDs as strings (e.g. actor/strategy IDs) and values are log level strings (case-insensitive).
+    log_components_only : bool, default False
+        If only components with explicit component-level filters should be logged.
+        When enabled, only log messages from components that have been explicitly
+        configured in `component_levels` will be output.
     colors : bool, default True
         If ANSI codes should be used to produce colored log lines.
     bypass : bool, default False
-        If the output for the core logging system is bypassed (useful for logging tests).
+        If the output for the core logging subsystem is bypassed (useful for logging tests).
     print_config : bool, default False
         If the core logging configuration should be printed to stdout on initialization.
     max_file_size : uint64_t, default 0
@@ -1263,7 +1285,7 @@ cpdef LogGuard init_logging(
     Raises
     ------
     RuntimeError
-        If the logging system has already been initialized.
+        If the logging subsystem has already been initialized.
 
     """
     if trader_id is None:
@@ -1274,7 +1296,7 @@ cpdef LogGuard init_logging(
         instance_id = UUID4()
 
     if logging_is_initialized():
-        raise RuntimeError("Logging system already initialized")
+        raise RuntimeError("Logging subsystem already initialized")
 
     cdef LogGuard_API log_guard_api = logging_init(
         trader_id._mem,
@@ -1288,12 +1310,14 @@ cpdef LogGuard init_logging(
         colors,
         bypass,
         print_config,
+        log_components_only,
         max_file_size,
         max_backup_count,
     )
 
     cdef LogGuard log_guard = LogGuard.__new__(LogGuard)
     log_guard._mem = log_guard_api
+
     return log_guard
 
 
@@ -1321,7 +1345,7 @@ cpdef void flush_logger():
 
 cdef class Logger:
     """
-    Provides a logger adapter into the logging system.
+    Provides a logger adapter into the logging subsystem.
 
     Parameters
     ----------
@@ -1535,7 +1559,6 @@ cpdef void log_sysinfo(str component):
     logging_log_sysinfo(pystr_to_cstr(component))
 
 
-
 cpdef ComponentState component_state_from_str(str value):
     return component_state_from_cstr(pystr_to_cstr(value))
 
@@ -1668,8 +1691,10 @@ cdef class Component:
     ):
         if component_id is None:
             component_id = ComponentId(type(self).__name__)
+
         if component_name is None:
             component_name = component_id.value
+
         Condition.valid_string(component_name, "component_name")
         Condition.type_or_none(config, NautilusConfig, "config")
 
@@ -1687,6 +1712,8 @@ cdef class Component:
             self._initialize()
 
     def __eq__(self, Component other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -1833,8 +1860,11 @@ cdef class Component:
         pass
 
     cpdef void _dispose(self):
+        # Cancel all active timers to prevent post-disposal execution
+        if self._clock is not None:
+            self._clock.cancel_timers()
+
         # Optionally override in subclass
-        pass
 
     cpdef void _degrade(self):
         # Optionally override in subclass
@@ -2209,11 +2239,15 @@ cdef class MessageBus:
 
         if instance_id is None:
             instance_id = UUID4()
+
         if name is None:
             name = type(self).__name__
+
         Condition.valid_string(name, "name")
+
         if config is None:
             config = MessageBusConfig()
+
         Condition.type(config, MessageBusConfig, "config")
 
         self.trader_id = trader_id
@@ -2253,9 +2287,11 @@ cdef class MessageBus:
         self._patterns: dict[str, Subscription[:]] = {}
         self._subscriptions: dict[Subscription, list[str]] = {}
         self._correlation_index: dict[UUID4, Callable[[Any], None]] = {}
+
         self._publishable_types = tuple(_EXTERNAL_PUBLISHABLE_TYPES)
         if types_filter is not None:
             self._publishable_types = tuple(o for o in _EXTERNAL_PUBLISHABLE_TYPES if o not in types_filter)
+
         self._streaming_types = set()
         self._resolved = False
 
@@ -2304,9 +2340,21 @@ cdef class MessageBus:
         """
         if pattern is None:
             pattern = "*"  # Wildcard
+
         Condition.valid_string(pattern, "pattern")
 
         return [s for s in self._subscriptions if is_matching(s.topic, pattern)]
+
+    cpdef set streaming_types(self):
+        """
+        Return all types registered for external streaming -> internal publishing.
+
+        Returns
+        -------
+        set[type]
+
+        """
+        return self._streaming_types.copy()
 
     cpdef bint has_subscribers(self, str pattern = None):
         """
@@ -2534,7 +2582,8 @@ cdef class MessageBus:
             )
             return  # Do not handle duplicates
 
-        self._correlation_index[request.id] = request.callback
+        if request.callback is not None:
+            self._correlation_index[request.id] = request.callback
 
         handler = self._endpoints.get(endpoint)
         if handler is None:
@@ -2562,13 +2611,12 @@ cdef class MessageBus:
 
         callback = self._correlation_index.pop(response.correlation_id, None)
         if callback is None:
-            self._log.error(
-                f"Cannot handle response: "
-                f"callback not found for correlation_id {response.correlation_id}",
-            )
-            return  # Cannot handle
+            self._log.debug(
+                f"No callback for correlation_id {response.correlation_id}",
+            )  # Cannot handle
+        else:
+            callback(response)
 
-        callback(response)
         self.res_count += 1
 
     cpdef void subscribe(
@@ -2626,9 +2674,9 @@ cdef class MessageBus:
 
         cdef list matches = []
         cdef list patterns = list(self._patterns.keys())
-
         cdef str pattern
         cdef list subs
+
         for pattern in patterns:
             if is_matching(topic, pattern):
                 subs = list(self._patterns[pattern])
@@ -2668,9 +2716,8 @@ cdef class MessageBus:
 
         cdef Subscription sub = Subscription(topic=topic, handler=handler)
 
+        # Check if patterns exist for sub
         cdef list patterns = self._subscriptions.get(sub)
-
-        # Check if exists
         if patterns is None:
             self._log.warning(f"{sub} not found")
             return
@@ -2760,6 +2807,7 @@ cdef class MessageBus:
     cdef Subscription[:] _resolve_subscriptions(self, str topic):
         cdef list subs_list = []
         cdef Subscription existing_sub
+
         # Copy to handle subscription changes on iteration
         for existing_sub in self._subscriptions.copy():
             if is_matching(topic, existing_sub.topic):
@@ -2772,8 +2820,10 @@ cdef class MessageBus:
         cdef list matches
         for sub in subs_array:
             matches = self._subscriptions.get(sub, [])
+
             if topic not in matches:
                 matches.append(topic)
+
             self._subscriptions[sub] = sorted(matches)
 
         return subs_array
@@ -2834,6 +2884,8 @@ cdef class Subscription:
         self.priority = priority
 
     def __eq__(self, Subscription other) -> bool:
+        if other is None:
+            return False
         return self.topic == other.topic and self.handler == other.handler
 
     def __lt__(self, Subscription other) -> bool:
@@ -3018,9 +3070,11 @@ cdef class Throttler:
         if not self._warm:
             if self.sent_count < self.limit:
                 return 0
+
             self._warm = True
 
         cdef int64_t diff = self._clock.timestamp_ns() - self._timestamps[-1]
+
         return self._interval_ns - diff
 
     cdef void _limit_msg(self, msg):
@@ -3060,6 +3114,7 @@ cdef class Throttler:
         while self._buffer:
             delta_next = self._delta_next()
             msg = self._buffer.pop()
+
             if delta_next <= 0:
                 self._send_msg(msg)
             else:

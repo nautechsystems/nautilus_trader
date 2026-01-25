@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,6 +21,7 @@ pub mod close;
 pub mod delta;
 pub mod deltas;
 pub mod depth;
+pub mod funding;
 pub mod greeks;
 pub mod order;
 pub mod prices;
@@ -34,13 +35,14 @@ use nautilus_core::ffi::cvec::CVec;
 use pyo3::{exceptions::PyValueError, prelude::*, types::PyCapsule};
 
 use crate::data::{
-    Bar, Data, DataType, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, QuoteTick, TradeTick,
-    close::InstrumentClose, is_monotonically_increasing_by_init,
+    Bar, Data, DataType, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta,
+    QuoteTick, TradeTick, close::InstrumentClose, is_monotonically_increasing_by_init,
 };
 
 const ERROR_MONOTONICITY: &str = "`data` was not monotonically increasing by the `ts_init` field";
 
 #[pymethods]
+#[cfg_attr(feature = "python", pyo3_stub_gen::derive::gen_stub_pymethods)]
 impl DataType {
     #[new]
     #[pyo3(signature = (type_name, metadata=None))]
@@ -74,7 +76,7 @@ impl DataType {
 ///
 /// # Panics
 ///
-/// This function will panic if the `PyCapsule` creation fails, which may occur if
+/// This function panics if the `PyCapsule` creation fails, which may occur if
 /// there are issues with memory allocation or if the `Data` instance cannot be
 /// properly encapsulated.
 ///
@@ -86,8 +88,11 @@ impl DataType {
 /// encapsulated `Data` safely, especially when converting the capsule back to a
 /// Rust data structure.
 #[must_use]
-pub fn data_to_pycapsule(py: Python, data: Data) -> PyObject {
-    let capsule = PyCapsule::new(py, data, None).expect("Error creating `PyCapsule`");
+pub fn data_to_pycapsule(py: Python, data: Data) -> Py<PyAny> {
+    // Register a destructor which simply drops the `Data` value once the
+    // capsule is released by Python.
+    let capsule = PyCapsule::new_with_destructor(py, data, None, |_, _| {})
+        .expect("Error creating `PyCapsule`");
     capsule.into_any().unbind()
 }
 
@@ -107,21 +112,21 @@ pub fn data_to_pycapsule(py: Python, data: Data) -> PyObject {
 /// This function is unsafe as it involves raw pointer dereferencing and manual memory
 /// management. The caller must ensure the `PyCapsule` contains a valid `CVec` pointer.
 /// Incorrect usage can lead to memory corruption or undefined behavior.
+#[cfg(feature = "ffi")]
 #[pyfunction]
 #[allow(unsafe_code)]
-#[cfg(feature = "ffi")]
 pub fn drop_cvec_pycapsule(capsule: &Bound<'_, PyAny>) {
     let capsule: &Bound<'_, PyCapsule> = capsule
-        .downcast::<PyCapsule>()
+        .cast::<PyCapsule>()
         .expect("Error on downcast to `&PyCapsule`");
-    let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
+    let cvec: &CVec = unsafe { &*(capsule.pointer_checked(None).unwrap().as_ptr() as *const CVec) };
     let data: Vec<Data> =
         unsafe { Vec::from_raw_parts(cvec.ptr.cast::<Data>(), cvec.len, cvec.cap) };
     drop(data);
 }
 
-#[pyfunction]
 #[cfg(not(feature = "ffi"))]
+#[pyfunction]
 /// Drops a Python `PyCapsule` containing a `CVec` when the `ffi` feature is not enabled.
 ///
 /// # Panics
@@ -265,4 +270,23 @@ pub fn pyobjects_to_instrument_closes(
     }
 
     Ok(closes)
+}
+
+/// Transforms the given Python objects into a vector of [`FundingRateUpdate`] objects.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
+pub fn pyobjects_to_funding_rates(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<FundingRateUpdate>> {
+    let funding_rates: Vec<FundingRateUpdate> = data
+        .into_iter()
+        .map(|obj| FundingRateUpdate::from_pyobject(&obj))
+        .collect::<PyResult<Vec<FundingRateUpdate>>>()?;
+
+    // Validate monotonically increasing
+    if !is_monotonically_increasing_by_init(&funding_rates) {
+        return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+    }
+
+    Ok(funding_rates)
 }

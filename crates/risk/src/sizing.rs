@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -135,7 +135,7 @@ mod tests {
             1,
         );
 
-        assert_eq!(result.as_f64(), 0.0);
+        assert_eq!(result, Quantity::from("0.0"));
     }
 
     #[rstest]
@@ -157,7 +157,7 @@ mod tests {
             1,
         );
 
-        assert_eq!(result.as_f64(), 0.0);
+        assert_eq!(result, Quantity::from("0.0"));
     }
 
     #[rstest]
@@ -178,7 +178,7 @@ mod tests {
             1,
         );
 
-        assert_eq!(result.as_f64(), 0.0);
+        assert_eq!(result, Quantity::from("0.0"));
     }
 
     #[rstest]
@@ -200,7 +200,7 @@ mod tests {
             1,
         );
 
-        assert_eq!(result.as_f64(), 1_000_000.0);
+        assert_eq!(result, Quantity::from("1000000.0"));
     }
 
     #[rstest]
@@ -222,7 +222,7 @@ mod tests {
             1,
         );
 
-        assert_eq!(result.as_f64(), 1_000_000.0);
+        assert_eq!(result, Quantity::from("1000000.0"));
     }
 
     #[rstest]
@@ -244,7 +244,7 @@ mod tests {
             1,
         );
 
-        assert_eq!(result.as_f64(), 0.0);
+        assert_eq!(result, Quantity::from("0.0"));
     }
 
     #[rstest]
@@ -266,7 +266,7 @@ mod tests {
             1,
         );
 
-        assert_eq!(result.as_f64(), 500_000.0);
+        assert_eq!(result, Quantity::from("500000.0"));
     }
 
     #[rstest]
@@ -288,7 +288,7 @@ mod tests {
             3, // 3 units
         );
 
-        assert_eq!(result.as_f64(), 1000000.0);
+        assert_eq!(result, Quantity::from("1000000.0"));
     }
 
     #[rstest]
@@ -310,7 +310,7 @@ mod tests {
             4, // 4 units
         );
 
-        assert_eq!(result.as_f64(), 275000.0);
+        assert_eq!(result, Quantity::from("275000.0"));
     }
 
     #[rstest]
@@ -332,6 +332,6 @@ mod tests {
             1,
         );
 
-        assert_eq!(result.as_f64(), 1000000.0);
+        assert_eq!(result, Quantity::from("1000000.0"));
     }
 }

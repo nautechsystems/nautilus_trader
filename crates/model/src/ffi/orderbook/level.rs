@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -59,6 +59,15 @@ impl DerefMut for BookLevel_API {
     }
 }
 
+impl Drop for BookLevel_API {
+    fn drop(&mut self) {
+        // The Box<BookLevel> inside self.0 will be automatically dropped here.
+        // This is critical for preventing memory leaks when BookLevel_API instances
+        // are stored in CVecs, as each BookLevel may contain many BookOrder objects
+        // in its IndexMap which need to be properly deallocated.
+    }
+}
+
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn level_new(order_side: OrderSide, price: Price, orders: CVec) -> BookLevel_API {
@@ -69,7 +78,7 @@ pub extern "C" fn level_new(order_side: OrderSide, price: Price, orders: CVec) -
         side: order_side.as_specified(),
     };
     let mut level = BookLevel::new(price);
-    level.add_bulk(orders);
+    level.add_bulk(&orders);
     BookLevel_API::new(level)
 }
 
@@ -110,19 +119,47 @@ pub extern "C" fn level_exposure(level: &BookLevel_API) -> f64 {
     level.exposure()
 }
 
-#[allow(clippy::drop_non_drop)]
+/// Drops a `CVec` of `BookLevel_API` values.
+///
+/// # Panics
+///
+/// Panics if `CVec` invariants are violated (corrupted metadata).
 #[unsafe(no_mangle)]
-pub extern "C" fn vec_levels_drop(v: CVec) {
+pub extern "C" fn vec_drop_book_levels(v: CVec) {
+    if v.ptr.is_null() {
+        return;
+    }
+
     let CVec { ptr, len, cap } = v;
+
+    assert!(
+        len <= cap,
+        "vec_drop_book_levels: len ({len}) > cap ({cap})"
+    );
+
     let data: Vec<BookLevel_API> =
         unsafe { Vec::from_raw_parts(ptr.cast::<BookLevel_API>(), len, cap) };
     drop(data); // Memory freed here
 }
 
-#[allow(clippy::drop_non_drop)]
+/// Drops a `CVec` of `BookOrder` values.
+///
+/// # Panics
+///
+/// Panics if `CVec` invariants are violated (corrupted metadata).
 #[unsafe(no_mangle)]
-pub extern "C" fn vec_orders_drop(v: CVec) {
+pub extern "C" fn vec_drop_book_orders(v: CVec) {
+    if v.ptr.is_null() {
+        return;
+    }
+
     let CVec { ptr, len, cap } = v;
+
+    assert!(
+        len <= cap,
+        "vec_drop_book_orders: len ({len}) > cap ({cap})"
+    );
+
     let orders: Vec<BookOrder> = unsafe { Vec::from_raw_parts(ptr.cast::<BookOrder>(), len, cap) };
     drop(orders); // Memory freed here
 }

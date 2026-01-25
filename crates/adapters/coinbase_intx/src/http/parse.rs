@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::str::FromStr;
+
 use nautilus_core::{UUID4, nanos::UnixNanos};
 use nautilus_model::{
     enums::{
@@ -22,7 +24,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, Symbol, TradeId, VenueOrderId},
     instruments::{CryptoPerpetual, CurrencyPair, any::InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{AccountBalance, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 
@@ -57,8 +59,9 @@ pub fn parse_spot_instrument(
 
     let price_increment = Price::from(&definition.quote_increment);
     let size_increment = Quantity::from(&definition.base_increment);
-
+    let multiplier = None;
     let lot_size = None;
+
     let max_quantity = None;
     let min_quantity = None;
     let max_notional = None;
@@ -75,6 +78,7 @@ pub fn parse_spot_instrument(
         size_increment.precision,
         price_increment,
         size_increment,
+        multiplier,
         lot_size,
         max_quantity,
         min_quantity,
@@ -177,7 +181,7 @@ pub fn parse_instrument_any(
     match result {
         Ok(instrument) => instrument,
         Err(e) => {
-            tracing::warn!(
+            log::warn!(
                 "Failed to parse instrument {}: {e}",
                 instrument.instrument_id,
             );
@@ -198,7 +202,7 @@ pub fn parse_account_state(
 ) -> anyhow::Result<AccountState> {
     let mut balances = Vec::new();
     for b in coinbase_balances {
-        let currency = Currency::from(b.asset_name);
+        let currency = get_currency(&b.asset_name);
         let total = Money::new(b.quantity.parse::<f64>()?, currency);
         let locked = Money::new(b.hold.parse::<f64>()?, currency);
         let free = total - locked;
@@ -245,7 +249,7 @@ fn parse_order_status(coinbase_order: &CoinbaseIntxOrder) -> anyhow::Result<Orde
                 CoinbaseIntxOrderEventType::Replaced => OrderStatus::Accepted,
                 // Safety fallback
                 _ => {
-                    tracing::debug!(
+                    log::debug!(
                         "Unexpected order status and last event type: {:?} {:?}",
                         coinbase_order.order_status,
                         coinbase_order.event_type
@@ -265,7 +269,7 @@ fn parse_order_status(coinbase_order: &CoinbaseIntxOrder) -> anyhow::Result<Orde
                 CoinbaseIntxOrderEventType::Expired => OrderStatus::Expired,
                 // Safety fallback
                 _ => {
-                    tracing::debug!(
+                    log::debug!(
                         "Unexpected order status and last event type: {:?} {:?}",
                         coinbase_order.order_status,
                         coinbase_order.event_type
@@ -353,7 +357,7 @@ pub fn parse_order_status_report(
         let avg_px = avg_price
             .parse::<f64>()
             .map_err(|e| anyhow::anyhow!("Invalid value for `avg_px`: {e}"))?;
-        report = report.with_avg_px(avg_px);
+        report = report.with_avg_px(avg_px)?;
     }
 
     if let Some(text) = coinbase_order.text {
@@ -426,24 +430,23 @@ pub fn parse_position_status_report(
         .net_size
         .parse::<f64>()
         .map_err(|e| anyhow::anyhow!("Invalid value for `net_size`: {e}"))?;
-    let position_side = parse_position_side(Some(net_size));
+    let position_side = parse_position_side(Some(net_size)).as_specified();
     let quantity = Quantity::new(net_size.abs(), size_precision);
+    let avg_px_open = Some(Decimal::from_str(&coinbase_position.entry_vwap)?);
 
     Ok(PositionStatusReport::new(
         account_id,
         instrument_id,
         position_side,
         quantity,
-        None, // Position ID not applicable on Coinbase Intx
         ts_init,
         ts_init,
         None, // Will generate a UUID4
+        None, // Position ID not applicable on Coinbase Intx
+        avg_px_open,
     ))
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use nautilus_model::types::Money;

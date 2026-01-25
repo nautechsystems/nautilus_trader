@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,167 +13,178 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Execution client implementations for trading venue connectivity.
+
+use std::{
+    fmt::Debug,
+    ops::{Deref, DerefMut},
+};
+
 use nautilus_common::messages::execution::{
-    BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-    GenerateOrderStatusReport, GeneratePositionReports, ModifyOrder, QueryOrder, SubmitOrder,
-    SubmitOrderList,
+    GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports,
+    GeneratePositionStatusReports,
 };
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    accounts::AccountAny,
     enums::OmsType,
-    identifiers::{AccountId, ClientId, Venue},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
+    },
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, MarginBalance},
 };
 
 pub mod base;
 
-pub trait ExecutionClient {
-    fn is_connected(&self) -> bool;
-    fn client_id(&self) -> ClientId;
-    fn account_id(&self) -> AccountId;
-    fn venue(&self) -> Venue;
-    fn oms_type(&self) -> OmsType;
-    fn get_account(&self) -> Option<AccountAny>;
+use nautilus_common::clients::ExecutionClient;
 
-    /// Generates and publishes the account state event.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if generating the account state fails.
-    fn generate_account_state(
-        &self,
-        balances: Vec<AccountBalance>,
-        margins: Vec<MarginBalance>,
-        reported: bool,
-        ts_event: UnixNanos,
-    ) -> anyhow::Result<()>;
-
-    /// Starts the execution client.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the client fails to start.
-    fn start(&mut self) -> anyhow::Result<()>;
-
-    /// Stops the execution client.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the client fails to stop.
-    fn stop(&mut self) -> anyhow::Result<()>;
-
-    /// Submits a single order command to the execution venue.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if submission fails.
-    fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()>;
-
-    /// Submits a list of orders to the execution venue.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if submission fails.
-    fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()>;
-
-    /// Modifies an existing order.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if modification fails.
-    fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()>;
-
-    /// Cancels a specific order.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if cancellation fails.
-    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()>;
-
-    /// Cancels all orders.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if cancellation fails.
-    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()>;
-
-    /// Cancels a batch of orders.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if batch cancellation fails.
-    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()>;
-
-    /// Queries the status of an order.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the query fails.
-    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()>;
+/// Wraps an [`ExecutionClient`], managing its lifecycle and providing access to the client.
+pub struct ExecutionClientAdapter {
+    pub(crate) client: Box<dyn ExecutionClient>,
+    pub client_id: ClientId,
+    pub venue: Venue,
+    pub account_id: AccountId,
+    pub oms_type: OmsType,
 }
 
-pub trait LiveExecutionClient: ExecutionClient {
-    /// Establishes a connection for live execution.
+impl Deref for ExecutionClientAdapter {
+    type Target = Box<dyn ExecutionClient>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.client
+    }
+}
+
+impl DerefMut for ExecutionClientAdapter {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.client
+    }
+}
+
+impl Debug for ExecutionClientAdapter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(ExecutionClientAdapter))
+            .field("client_id", &self.client_id)
+            .field("venue", &self.venue)
+            .field("account_id", &self.account_id)
+            .field("oms_type", &self.oms_type)
+            .finish()
+    }
+}
+
+impl ExecutionClientAdapter {
+    /// Creates a new [`ExecutionClientAdapter`] with the given client.
+    #[must_use]
+    pub fn new(client: Box<dyn ExecutionClient>) -> Self {
+        let client_id = client.client_id();
+        let venue = client.venue();
+        let account_id = client.account_id();
+        let oms_type = client.oms_type();
+
+        Self {
+            client,
+            client_id,
+            venue,
+            account_id,
+            oms_type,
+        }
+    }
+
+    /// Connects the execution client to the venue.
     ///
     /// # Errors
     ///
     /// Returns an error if connection fails.
-    fn connect(&self) -> anyhow::Result<()>;
+    pub async fn connect(&mut self) -> anyhow::Result<()> {
+        self.client.connect().await
+    }
 
-    /// Disconnects the live execution client.
+    /// Disconnects the execution client from the venue.
     ///
     /// # Errors
     ///
     /// Returns an error if disconnection fails.
-    fn disconnect(&self) -> anyhow::Result<()>;
+    pub async fn disconnect(&mut self) -> anyhow::Result<()> {
+        self.client.disconnect().await
+    }
 
     /// Generates a single order status report.
     ///
     /// # Errors
     ///
     /// Returns an error if report generation fails.
-    fn generate_order_status_report(
+    pub async fn generate_order_status_report(
         &self,
         cmd: &GenerateOrderStatusReport,
-    ) -> anyhow::Result<Option<OrderStatusReport>>;
+    ) -> anyhow::Result<Option<OrderStatusReport>> {
+        self.client.generate_order_status_report(cmd).await
+    }
 
     /// Generates multiple order status reports.
     ///
     /// # Errors
     ///
     /// Returns an error if report generation fails.
-    fn generate_order_status_reports(
+    pub async fn generate_order_status_reports(
         &self,
-        cmd: &GenerateOrderStatusReport,
-    ) -> anyhow::Result<Vec<OrderStatusReport>>;
+        cmd: &GenerateOrderStatusReports,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        self.client.generate_order_status_reports(cmd).await
+    }
 
     /// Generates fill reports based on execution results.
     ///
     /// # Errors
     ///
     /// Returns an error if fill report generation fails.
-    fn generate_fill_reports(&self, report: GenerateFillReports)
-    -> anyhow::Result<Vec<FillReport>>;
+    pub async fn generate_fill_reports(
+        &self,
+        cmd: GenerateFillReports,
+    ) -> anyhow::Result<Vec<FillReport>> {
+        self.client.generate_fill_reports(cmd).await
+    }
 
     /// Generates position status reports.
     ///
     /// # Errors
     ///
     /// Returns an error if generation fails.
-    fn generate_position_status_reports(
+    pub async fn generate_position_status_reports(
         &self,
-        cmd: &GeneratePositionReports,
-    ) -> anyhow::Result<Vec<PositionStatusReport>>;
+        cmd: &GeneratePositionStatusReports,
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        self.client.generate_position_status_reports(cmd).await
+    }
 
     /// Generates mass status for executions.
     ///
     /// # Errors
     ///
     /// Returns an error if status generation fails.
-    fn generate_mass_status(
+    pub async fn generate_mass_status(
         &self,
         lookback_mins: Option<u64>,
-    ) -> anyhow::Result<Option<ExecutionMassStatus>>;
+    ) -> anyhow::Result<Option<ExecutionMassStatus>> {
+        self.client.generate_mass_status(lookback_mins).await
+    }
+
+    /// Registers an external order for tracking by the execution client.
+    ///
+    /// This is called after reconciliation creates an external order, allowing the
+    /// execution client to track it for subsequent events (e.g., cancellations).
+    pub fn register_external_order(
+        &self,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        instrument_id: InstrumentId,
+        strategy_id: StrategyId,
+        ts_init: UnixNanos,
+    ) {
+        self.client.register_external_order(
+            client_order_id,
+            venue_order_id,
+            instrument_id,
+            strategy_id,
+            ts_init,
+        );
+    }
 }

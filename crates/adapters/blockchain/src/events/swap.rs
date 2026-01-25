@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,6 +14,11 @@
 // -------------------------------------------------------------------------------------------------
 
 use alloy::primitives::{Address, I256, U160};
+use nautilus_core::UnixNanos;
+use nautilus_model::{
+    defi::{PoolIdentifier, PoolSwap, SharedChain, SharedDex},
+    identifiers::InstrumentId,
+};
 
 /// Represents a token swap event from liquidity pools emitted from smart contract.
 ///
@@ -21,8 +26,18 @@ use alloy::primitives::{Address, I256, U160};
 /// exchanges (DEXs) that use automated market maker (AMM) protocols.
 #[derive(Debug, Clone)]
 pub struct SwapEvent {
+    /// The decentralized exchange where the event happened.
+    pub dex: SharedDex,
+    /// The unique identifier for the pool.
+    pub pool_identifier: PoolIdentifier,
     /// The block number in which this swap transaction was included.
     pub block_number: u64,
+    /// The unique hash identifier of the transaction containing this event.
+    pub transaction_hash: String,
+    /// The position of this transaction within the block.
+    pub transaction_index: u32,
+    /// The position of this event log within the transaction.
+    pub log_index: u32,
     /// The address that initiated the swap transaction.
     pub sender: Address,
     /// The address that received the swapped tokens.
@@ -36,26 +51,75 @@ pub struct SwapEvent {
     /// The square root of the price ratio encoded as a Q64.96 fixed-point number.
     /// This represents the price of token1 in terms of token0 after the swap.
     pub sqrt_price_x96: U160,
+    /// The liquidity of the pool after the swap occurred.
+    pub liquidity: u128,
+    /// The current tick of the pool after the swap occurred.
+    pub tick: i32,
 }
 
 impl SwapEvent {
     /// Creates a new [`SwapEvent`] instance with the specified parameters.
     #[must_use]
-    pub const fn new(
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        dex: SharedDex,
+        pool_identifier: PoolIdentifier,
         block_number: u64,
+        transaction_hash: String,
+        transaction_index: u32,
+        log_index: u32,
         sender: Address,
         receiver: Address,
         amount0: I256,
         amount1: I256,
         sqrt_price_x96: U160,
+        liquidity: u128,
+        tick: i32,
     ) -> Self {
         Self {
+            dex,
+            pool_identifier,
             block_number,
+            transaction_hash,
+            transaction_index,
+            log_index,
             sender,
             receiver,
             amount0,
             amount1,
             sqrt_price_x96,
+            liquidity,
+            tick,
         }
+    }
+
+    /// Converts a swap event into a `PoolSwap`.
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub fn to_pool_swap(
+        &self,
+        chain: SharedChain,
+        instrument_id: InstrumentId,
+        pool_identifier: PoolIdentifier,
+        timestamp: Option<UnixNanos>,
+    ) -> PoolSwap {
+        PoolSwap::new(
+            chain,
+            self.dex.clone(),
+            instrument_id,
+            pool_identifier,
+            self.block_number,
+            self.transaction_hash.clone(),
+            self.transaction_index,
+            self.log_index,
+            timestamp,
+            self.sender,
+            self.receiver,
+            self.amount0,
+            self.amount1,
+            self.sqrt_price_x96,
+            self.liquidity,
+            self.tick,
+        )
     }
 }

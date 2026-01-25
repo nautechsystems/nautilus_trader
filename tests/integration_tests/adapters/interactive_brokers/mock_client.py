@@ -1,13 +1,29 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 import asyncio
 from collections.abc import Callable
 
 from ibapi.client import EClient
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.client.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.client.wrapper import InteractiveBrokersEWrapper
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ib_contract_to_instrument_id
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
+    ib_contract_to_instrument_id,
+)
 from nautilus_trader.common.enums import LogColor
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
 
@@ -28,7 +44,8 @@ class MockEClient(EClient):
         self._next_valid_counter = 0
 
     def _handle_task(self, handler: Callable, **kwargs):
-        loop = asyncio.get_event_loop()
+        # Get the running loop from pytest-asyncio (session-scoped)
+        loop = asyncio.get_running_loop()
         if loop.is_running():
             loop.create_task(handler(**kwargs))  # noqa: RUF006
         else:
@@ -63,7 +80,8 @@ class MockEClient(EClient):
     #########################################################################
 
     def reqContractDetails(self, reqId: int, contract: IBContract):
-        instrument_id = ib_contract_to_instrument_id(contract)
+        instrument_id = ib_contract_to_instrument_id(contract, contract.exchange)
+
         match instrument_id.value:
             case "AAPL.NASDAQ":
                 self._handle_task(

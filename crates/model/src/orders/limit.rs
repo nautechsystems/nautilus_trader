@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -133,7 +133,7 @@ impl LimitOrder {
         Ok(Self {
             core: OrderCore::new(init_order),
             price,
-            expire_time: expire_time.or(Some(UnixNanos::default())),
+            expire_time,
             is_post_only: post_only,
             display_qty,
             trigger_instrument_id,
@@ -389,6 +389,10 @@ impl Order for LimitOrder {
         self.leaves_qty
     }
 
+    fn overfill_qty(&self) -> Quantity {
+        self.overfill_qty
+    }
+
     fn avg_px(&self) -> Option<f64> {
         self.avg_px
     }
@@ -464,7 +468,7 @@ impl Order for LimitOrder {
         }
 
         self.quantity = event.quantity;
-        self.leaves_qty = self.quantity - self.filled_qty;
+        self.leaves_qty = self.quantity.saturating_sub(self.filled_qty);
     }
 
     fn is_triggered(&self) -> Option<bool> {
@@ -492,7 +496,7 @@ impl Order for LimitOrder {
     }
 
     fn set_liquidity_side(&mut self, liquidity_side: LiquiditySide) {
-        self.liquidity_side = Some(liquidity_side)
+        self.liquidity_side = Some(liquidity_side);
     }
 
     fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
@@ -577,9 +581,6 @@ impl From<OrderInitialized> for LimitOrder {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use nautilus_core::UnixNanos;
@@ -656,7 +657,7 @@ mod tests {
             .build();
     }
 
-    #[test]
+    #[rstest]
     fn test_limit_order_creation() {
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
@@ -672,7 +673,7 @@ mod tests {
         assert_eq!(order.order_side(), OrderSide::Buy);
     }
 
-    #[test]
+    #[rstest]
     fn test_limit_order_with_expire_time() {
         let expire_time = UnixNanos::from(1_700_000_000_000_000);
         let order = OrderTestBuilder::new(OrderType::Limit)
@@ -687,7 +688,7 @@ mod tests {
         assert_eq!(order.time_in_force(), TimeInForce::Gtd);
     }
 
-    #[test]
+    #[rstest]
     #[should_panic(expected = "Condition failed: `expire_time` is required for `GTD` order")]
     fn test_limit_order_missing_expire_time() {
         let _ = OrderTestBuilder::new(OrderType::Limit)
@@ -698,7 +699,7 @@ mod tests {
             .build();
     }
 
-    #[test]
+    #[rstest]
     fn test_limit_order_post_only() {
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
@@ -710,7 +711,7 @@ mod tests {
         assert!(order.is_post_only());
     }
 
-    #[test]
+    #[rstest]
     fn test_limit_order_display_quantity() {
         let display_qty = Quantity::from(5);
         let order = OrderTestBuilder::new(OrderType::Limit)
@@ -723,7 +724,7 @@ mod tests {
         assert_eq!(order.display_qty(), Some(display_qty));
     }
 
-    #[test]
+    #[rstest]
     fn test_limit_order_update() {
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
@@ -750,7 +751,7 @@ mod tests {
         assert_eq!(accepted_order.price(), Some(updated_price));
     }
 
-    #[test]
+    #[rstest]
     fn test_limit_order_expire_time() {
         let expire_time = UnixNanos::from(1_700_000_000_000_000);
         let order = OrderTestBuilder::new(OrderType::Limit)

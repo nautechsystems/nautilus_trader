@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,6 +26,7 @@ from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import FIXED_PRECISION
 from nautilus_trader.model.objects import MONEY_MAX
 from nautilus_trader.model.objects import MONEY_MIN
 from nautilus_trader.model.objects import AccountBalance
@@ -223,6 +224,448 @@ class TestMoney:
         # Assert
         assert result1 == result2
         assert result1 == expected
+
+    @pytest.mark.parametrize(
+        ("value", "expected_amount", "expected_currency"),
+        [
+            # Scientific notation tests
+            ["1e6 USD", "1000000.00", USD],
+            ["1E6 USD", "1000000.00", USD],
+            ["2.5e4 USD", "25000.00", USD],
+            ["3.5E-2 USD", "0.04", USD],
+            ["1.23456e-1 AUD", "0.12", AUD],
+            ["7.89E1 USDT", "78.90000000", USDT],
+            # Underscore handling
+            ["1_000 USD", "1000.00", USD],
+            ["1_000.25 USD", "1000.25", USD],
+            ["9_876_543.21 USD", "9876543.21", USD],
+            ["0.000_123 USDT", "0.00012300", USDT],
+            # Combined underscores and scientific notation
+            ["1_000e2 USD", "100000.00", USD],
+            ["2_345.6e-3 USDT", "2.34560000", USDT],
+            # Negative values
+            ["-1e6 USD", "-1000000.00", USD],
+            ["-2.5E-2 USD", "-0.02", USD],
+            ["-1_000.50 USD", "-1000.50", USD],
+            # Zero representations
+            ["0e0 USD", "0.00", USD],
+            ["0.0e5 USD", "0.00", USD],
+            ["0E-3 USDT", "0.00000000", USDT],
+            # Edge cases with precision
+            ["0.125 USD", "0.12", USD],
+            ["0.135 USD", "0.14", USD],
+            ["0.145 USD", "0.14", USD],
+            ["0.155 USD", "0.16", USD],
+            ["0.165 USD", "0.16", USD],
+            # Small numbers with high precision currency
+            ["1e-6 USDT", "0.00000100", USDT],
+            ["1.234567e-3 USDT", "0.00123457", USDT],
+        ],
+    )
+    def test_from_str_comprehensive(self, value, expected_amount, expected_currency):
+        # Arrange, Act
+        money = Money.from_str(value)
+
+        # Assert
+        assert str(money) == f"{expected_amount} {expected_currency.code}"
+        assert money.currency == expected_currency
+
+    @pytest.mark.parametrize(
+        "invalid_input",
+        [
+            "not_a_number USD",
+            "1.2.3 USD",
+            "++1 USD",
+            "--1 USD",
+            "1e USD",
+            "e10 USD",
+            "1e1e1 USD",
+            "",
+            "USD",  # No amount
+            "100",  # No currency
+            "nan USD",
+            "inf USD",
+            "-inf USD",
+            "1e1000 USD",  # Overflow
+            "1.23",  # Missing currency
+            "1.23 ",  # Missing currency
+            " USD",  # Missing amount
+        ],
+    )
+    def test_from_str_invalid_input_raises_value_error(self, invalid_input):
+        # Arrange, Act, Assert
+        with pytest.raises(Exception):  # Various exceptions can be raised for invalid input
+            Money.from_str(invalid_input)
+
+    def test_from_str_precision_handling(self):
+        # Test that precision is correctly handled for different currencies
+
+        # USD has 2 decimal places
+        money_usd = Money.from_str("100.123 USD")
+        assert str(money_usd) == "100.12 USD"  # Rounded to 2 decimal places
+
+        # USDT has 8 decimal places
+        money_usdt = Money.from_str("100.1234567 USDT")
+        assert str(money_usdt) == "100.12345670 USDT"  # USDT has 8 decimal places
+
+        # Scientific notation with precision
+        money_sci = Money.from_str("1.23456789e2 USD")
+        assert str(money_sci) == "123.46 USD"  # Rounded to 2 decimal places
+
+        # Underscores don't affect precision
+        money_under = Money.from_str("1_000.123456 USDT")
+        assert str(money_under) == "1000.12345600 USDT"
+
+    @pytest.mark.parametrize(
+        ("input_val", "expected"),
+        [
+            ("1.115 USD", "1.12 USD"),  # Round up
+            ("1.125 USD", "1.12 USD"),  # Round to even (down)
+            ("1.135 USD", "1.14 USD"),  # Round up
+            ("1.145 USD", "1.14 USD"),  # Round to even (down)
+            ("1.155 USD", "1.16 USD"),  # Round up
+            ("1.165 USD", "1.16 USD"),  # Round to even (down)
+            ("1.175 USD", "1.18 USD"),  # Round up
+            ("1.185 USD", "1.18 USD"),  # Round to even (down)
+            ("1.195 USD", "1.20 USD"),  # Round up
+        ],
+    )
+    def test_from_str_rounding_behavior(self, input_val, expected):
+        # Test banker's rounding (ROUND_HALF_EVEN) is applied correctly
+        # Arrange, Act
+        money = Money.from_str(input_val)
+
+        # Assert
+        assert str(money) == expected
+
+    def test_from_str_boundary_values(self):
+        # Test values near the boundaries of the Money type
+
+        # Test reasonable large values
+        money_large = Money.from_str("1000000000 USD")
+        assert str(money_large) == "1000000000.00 USD"
+
+        # Test negative values
+        money_neg = Money.from_str("-1000000 USD")
+        assert str(money_neg) == "-1000000.00 USD"
+
+        # Zero (should work)
+        money_zero = Money.from_str("0 USD")
+        assert money_zero.as_double() == 0
+        assert str(money_zero) == "0.00 USD"
+
+    def test_from_decimal_returns_expected_value(self):
+        # Arrange, Act
+        money = Money.from_decimal(Decimal("100.50"), USD)
+
+        # Assert
+        assert money == Money(100.50, USD)
+        assert str(money) == "100.50 USD"
+        assert money.currency == USD
+
+    def test_from_decimal_with_integer_value(self):
+        # Arrange, Act
+        money = Money.from_decimal(Decimal(1000), USD)
+
+        # Assert
+        assert money == Money(1000, USD)
+        assert str(money) == "1000.00 USD"
+        assert money.currency == USD
+
+    def test_from_decimal_with_high_precision_currency(self):
+        # USDT has 8 decimal places
+        # Arrange, Act
+        money = Money.from_decimal(Decimal("100.12345678"), USDT)
+
+        # Assert
+        assert str(money) == "100.12345678 USDT"
+        assert money.currency == USDT
+
+    def test_from_decimal_equivalent_to_from_str(self):
+        test_values = [
+            (Decimal(1), USD),
+            (Decimal("0.5"), USD),
+            (Decimal("100.25"), USD),
+            (Decimal("0.01"), USD),
+            (Decimal("1234.56"), USD),
+            (Decimal("-99.99"), USD),
+            (Decimal("100.12345678"), USDT),
+        ]
+
+        for decimal_val, currency in test_values:
+            money_from_decimal = Money.from_decimal(decimal_val, currency)
+            money_from_str = Money.from_str(f"{decimal_val} {currency.code}")
+            assert money_from_decimal == money_from_str
+            assert money_from_decimal.currency == money_from_str.currency
+
+    def test_from_decimal_with_zero(self):
+        # Arrange, Act
+        money = Money.from_decimal(Decimal(0), USD)
+
+        # Assert
+        assert money.as_double() == 0
+        assert str(money) == "0.00 USD"
+
+    def test_from_decimal_with_negative_value(self):
+        # Arrange, Act
+        money = Money.from_decimal(Decimal("-50.25"), USD)
+
+        # Assert
+        assert money.as_double() == -50.25
+        assert str(money) == "-50.25 USD"
+
+    def test_from_decimal_respects_currency_precision(self):
+        # USD has 2 decimal places
+        money_usd = Money.from_decimal(Decimal("100.123"), USD)
+        assert str(money_usd) == "100.12 USD"  # Rounded to 2 decimal places
+
+        # USDT has 8 decimal places
+        money_usdt = Money.from_decimal(Decimal("100.1234567"), USDT)
+        assert str(money_usdt) == "100.12345670 USDT"  # USDT has 8 decimal places
+
+    @pytest.mark.parametrize(
+        ("decimal_val", "currency", "expected_str"),
+        [
+            (Decimal("1e-2"), USD, "0.01 USD"),
+            (Decimal("1.23e1"), USD, "12.30 USD"),
+            (Decimal("5e-5"), USDT, "0.00005000 USDT"),
+        ],
+    )
+    def test_from_decimal_with_scientific_notation(
+        self,
+        decimal_val,
+        currency,
+        expected_str,
+    ):
+        # Arrange, Act
+        money = Money.from_decimal(decimal_val, currency)
+
+        # Assert
+        assert str(money) == expected_str
+
+    def test_from_decimal_with_very_small_values(self):
+        if FIXED_PRECISION <= 9:
+            # Windows with 9 decimal max
+            money = Money.from_decimal(Decimal("0.000000001"), USDT)
+            assert str(money) == "0.00000000 USDT"  # Rounded to 8 decimal places (USDT precision)
+        else:
+            # Linux/Mac with 16 decimal max
+            money = Money.from_decimal(Decimal("0.0000000000000001"), USDT)
+            assert str(money) == "0.00000000 USDT"  # Rounded to 8 decimal places (USDT precision)
+
+    def test_from_decimal_with_high_precision_rounds_to_currency(self):
+        # High precision decimals are rounded to the currency's precision
+        # USD has 2 decimal places
+        money = Money.from_decimal(Decimal("1.01234567890123456"), USD)
+        assert str(money) == "1.01 USD"
+
+        # USDT has 8 decimal places
+        money_usdt = Money.from_decimal(Decimal("100.123456789012345"), USDT)
+        assert str(money_usdt) == "100.12345679 USDT"  # Rounded to 8 decimals
+
+    def test_from_decimal_with_different_currencies(self):
+        # Test that the currency parameter is correctly used
+        money_usd = Money.from_decimal(Decimal("100.50"), USD)
+        money_aud = Money.from_decimal(Decimal("100.50"), AUD)
+
+        assert money_usd.currency == USD
+        assert money_aud.currency == AUD
+
+        # Comparing Money with different currencies raises ValueError
+        with pytest.raises(ValueError, match=r"currency USD != other\.currency AUD"):
+            _ = money_usd == money_aud
+
+    def test_money_equality_with_none_returns_false(self):
+        # Arrange
+        money = Money(100.0, USD)
+
+        # Act, Assert
+        assert (money == None) is False  # noqa: E711
+        assert (money != None) is True  # noqa: E711
+
+    def test_money_ordering_comparison_with_none_raises_type_error(self):
+        # Arrange
+        money = Money(100.0, USD)
+
+        # Act, Assert
+        with pytest.raises(TypeError):
+            _ = money < None
+        with pytest.raises(TypeError):
+            _ = money <= None
+        with pytest.raises(TypeError):
+            _ = money > None
+        with pytest.raises(TypeError):
+            _ = money >= None
+
+    @pytest.mark.parametrize(
+        ("value1", "value2", "expected_type", "expected_value"),
+        [
+            # Money + Money -> Money
+            [Money(0, USD), Money(0, USD), Money, Money(0, USD)],
+            [Money(100, USD), Money(50, USD), Money, Money(150, USD)],
+            [Money(1.5, USD), Money(2.5, USD), Money, Money(4.0, USD)],
+            # Money + int -> Decimal
+            [Money(100, USD), 50, Decimal, Decimal(150)],
+            [Money(0, USD), 1, Decimal, Decimal(1)],
+            # int + Money -> Decimal
+            [50, Money(100, USD), Decimal, Decimal(150)],
+            [0, Money(1, USD), Decimal, Decimal(1)],
+            # Money + float -> float
+            [Money(100, USD), 50.5, float, 150.5],
+            [Money(0, USD), 1.1, float, 1.1],
+            # float + Money -> float
+            [50.5, Money(100, USD), float, 150.5],
+            [1.1, Money(0, USD), float, 1.1],
+            # Money + Decimal -> Decimal
+            [Money(100, USD), Decimal("50.5"), Decimal, Decimal("150.5")],
+            # Decimal + Money -> Decimal
+            [Decimal("50.5"), Money(100, USD), Decimal, Decimal("150.5")],
+        ],
+    )
+    def test_addition_with_various_types_returns_expected_result(
+        self,
+        value1,
+        value2,
+        expected_type,
+        expected_value,
+    ):
+        # Arrange, Act
+        result = value1 + value2
+
+        # Assert
+        assert isinstance(result, expected_type)
+        assert result == expected_value
+
+    @pytest.mark.parametrize(
+        ("value1", "value2", "expected_type", "expected_value"),
+        [
+            # Money - Money -> Money
+            [Money(0, USD), Money(0, USD), Money, Money(0, USD)],
+            [Money(150, USD), Money(50, USD), Money, Money(100, USD)],
+            [Money(4.0, USD), Money(1.5, USD), Money, Money(2.5, USD)],
+            [
+                Money(50, USD),
+                Money(100, USD),
+                Money,
+                Money(-50, USD),
+            ],  # Negative result OK for Money
+            # Money - int -> Decimal
+            [Money(100, USD), 50, Decimal, Decimal(50)],
+            [Money(0, USD), 1, Decimal, Decimal(-1)],
+            # int - Money -> Decimal
+            [150, Money(100, USD), Decimal, Decimal(50)],
+            [0, Money(1, USD), Decimal, Decimal(-1)],
+            # Money - float -> float
+            [Money(100, USD), 50.5, float, 49.5],
+            [Money(0, USD), 1.1, float, -1.1],
+            # float - Money -> float
+            [150.5, Money(100, USD), float, 50.5],
+            [0.0, Money(1, USD), float, -1.0],
+            # Money - Decimal -> Decimal
+            [Money(100, USD), Decimal("50.5"), Decimal, Decimal("49.5")],
+            # Decimal - Money -> Decimal
+            [Decimal("150.5"), Money(100, USD), Decimal, Decimal("50.5")],
+        ],
+    )
+    def test_subtraction_with_various_types_returns_expected_result(
+        self,
+        value1,
+        value2,
+        expected_type,
+        expected_value,
+    ):
+        # Arrange, Act
+        result = value1 - value2
+
+        # Assert
+        assert isinstance(result, expected_type)
+        assert result == expected_value
+
+    @pytest.mark.parametrize(
+        ("value1", "value2", "expected_type", "expected_value"),
+        [
+            # Money * int -> Decimal
+            [Money(100, USD), 2, Decimal, Decimal(200)],
+            [Money(0, USD), 5, Decimal, Decimal(0)],
+            # int * Money -> Decimal
+            [2, Money(100, USD), Decimal, Decimal(200)],
+            [0, Money(100, USD), Decimal, Decimal(0)],
+            # Money * float -> float
+            [Money(100, USD), 2.5, float, 250.0],
+            [Money(0, USD), 1.1, float, 0.0],
+            # float * Money -> float
+            [2.5, Money(100, USD), float, 250.0],
+            [0.0, Money(100, USD), float, 0.0],
+            # Money * Decimal -> Decimal
+            [Money(100, USD), Decimal("2.5"), Decimal, Decimal("250.0")],
+            # Decimal * Money -> Decimal
+            [Decimal("2.5"), Money(100, USD), Decimal, Decimal("250.0")],
+        ],
+    )
+    def test_multiplication_with_various_types_returns_expected_result(
+        self,
+        value1,
+        value2,
+        expected_type,
+        expected_value,
+    ):
+        # Arrange, Act
+        result = value1 * value2
+
+        # Assert
+        assert isinstance(result, expected_type)
+        assert result == expected_value
+
+    @pytest.mark.parametrize(
+        ("value1", "value2", "expected_type", "expected_value"),
+        [
+            # Money / int -> Decimal
+            [Money(100, USD), 2, Decimal, Decimal(50)],
+            [Money(0, USD), 5, Decimal, Decimal(0)],
+            # int / Money -> Decimal
+            [200, Money(100, USD), Decimal, Decimal(2)],
+            # Money / float -> float
+            [Money(100, USD), 2.0, float, 50.0],
+            [Money(0, USD), 1.0, float, 0.0],
+            # float / Money -> float
+            [200.0, Money(100, USD), float, 2.0],
+            # Money / Decimal -> Decimal
+            [Money(100, USD), Decimal(2), Decimal, Decimal(50)],
+            # Decimal / Money -> Decimal
+            [Decimal(200), Money(100, USD), Decimal, Decimal(2)],
+        ],
+    )
+    def test_division_with_various_types_returns_expected_result(
+        self,
+        value1,
+        value2,
+        expected_type,
+        expected_value,
+    ):
+        # Arrange, Act
+        result = value1 / value2
+
+        # Assert
+        assert isinstance(result, expected_type)
+        assert result == expected_value
+
+    def test_addition_with_different_currencies_raises_value_error(self):
+        # Arrange
+        money_usd = Money(100, USD)
+        money_aud = Money(50, AUD)
+
+        # Act, Assert
+        with pytest.raises(ValueError, match="currency"):
+            _ = money_usd + money_aud
+
+    def test_subtraction_with_different_currencies_raises_value_error(self):
+        # Arrange
+        money_usd = Money(100, USD)
+        money_aud = Money(50, AUD)
+
+        # Act, Assert
+        with pytest.raises(ValueError, match="currency"):
+            _ = money_usd - money_aud
 
 
 class TestAccountBalance:

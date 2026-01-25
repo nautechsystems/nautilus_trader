@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,8 +22,20 @@ def get_polymarket_instrument_id(condition_id: str, token_id: str | int) -> Inst
 
 
 def get_polymarket_condition_id(instrument_id: InstrumentId) -> str:
-    return instrument_id.symbol.value.partition("-")[0]
+    parts = instrument_id.symbol.value.split("-")
+    if len(parts) != 2 or not parts[0]:
+        raise ValueError(
+            f"Invalid Polymarket instrument ID format: expected "
+            f"'{{condition_id}}-{{token_id}}', was '{instrument_id.symbol.value}'",
+        )
+    return parts[0]
 
 
 def get_polymarket_token_id(instrument_id: InstrumentId) -> str:
-    return instrument_id.symbol.value.partition("-")[2]
+    parts = instrument_id.symbol.value.split("-")
+    if len(parts) != 2 or not parts[1]:
+        raise ValueError(
+            f"Invalid Polymarket instrument ID format: expected "
+            f"'{{condition_id}}-{{token_id}}', was '{instrument_id.symbol.value}'",
+        )
+    return parts[1]

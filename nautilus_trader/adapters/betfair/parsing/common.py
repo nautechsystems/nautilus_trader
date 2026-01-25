@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,6 +15,7 @@
 
 import hashlib
 from functools import lru_cache
+from typing import NamedTuple
 
 import msgspec
 from betfair_parser.spec.common import Handicap
@@ -29,8 +30,11 @@ from nautilus_trader.core.nautilus_pyo3 import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BettingInstrument
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments.betting import make_symbol
 from nautilus_trader.model.instruments.betting import null_handicap
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import Order
 
 
 @lru_cache
@@ -116,3 +120,13 @@ def min_fill_size(time_in_force) -> Size | None:
 def hash_market_trade(timestamp: int, price: float, volume: float) -> str:
     data = (timestamp, price, volume)
     return hashlib.shake_256(msgspec.json.encode(data)).hexdigest(18)
+
+
+class FillQtyResult(NamedTuple):
+    fill_qty: Quantity
+    total_matched_qty: Quantity
+
+
+class FillContext(NamedTuple):
+    order: Order | None
+    instrument: Instrument | None

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,6 +29,8 @@ from nautilus_trader.common.config import resolve_path
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.execution.config import ExecEngineConfig
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.system.config import NautilusKernelConfig
@@ -43,10 +45,14 @@ class LiveDataEngineConfig(DataEngineConfig, frozen=True):
     ----------
     qsize : PositiveInt, default 100_000
         The queue size for the engines internal queue buffers.
+    graceful_shutdown_on_exception : bool, default False
+        If the system should perform a graceful shutdown when an unexpected exception
+        occurs during message queue processing (does not include user actor/strategy exceptions).
 
     """
 
     qsize: PositiveInt = 100_000
+    graceful_shutdown_on_exception: bool = False
 
 
 class LiveRiskEngineConfig(RiskEngineConfig, frozen=True):
@@ -57,10 +63,14 @@ class LiveRiskEngineConfig(RiskEngineConfig, frozen=True):
     ----------
     qsize : PositiveInt, default 100_000
         The queue size for the engines internal queue buffers.
+    graceful_shutdown_on_exception : bool, default False
+        If the system should perform a graceful shutdown when an unexpected exception
+        occurs during message queue processing (does not include user actor/strategy exceptions).
 
     """
 
     qsize: PositiveInt = 100_000
+    graceful_shutdown_on_exception: bool = False
 
 
 class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
@@ -74,16 +84,22 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     Parameters
     ----------
     reconciliation : bool, default True
-        If reconciliation is active at start-up.
+        If execution reconciliation is active at start-up.
     reconciliation_lookback_mins : NonNegativeInt, optional
-        The maximum lookback minutes to reconcile state for.
+        The maximum lookback minutes to reconcile execution state for.
         If ``None`` or 0 then will use the maximum lookback available from the venues.
+    reconciliation_instrument_ids : list[InstrumentId], optional
+        An include list of instrument IDs for execution reconciliation.
+        If provided, only these instruments are reconciled.
+        If ``None`` or empty then all instruments are reconciled.
     filter_unclaimed_external_orders : bool, default False
         If unclaimed order events with an EXTERNAL strategy ID should be filtered/dropped.
     filter_position_reports : bool, default False
         If position status reports are filtered from reconciliation.
         This may be applicable when other nodes are trading the same instrument(s), on the same
         account - which could cause conflicts in position status.
+    filtered_client_order_ids : list[ClientOrderId], optional
+        A list of client order IDs to filter from reconciliation.
     generate_missing_orders : bool, default True
         If MARKET order events will be generated during reconciliation to align discrepancies
         between internal and external positions.
@@ -106,12 +122,41 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
         The interval (seconds) between checks for open orders at the venue.
         If there is a discrepancy then an order status report is generated and reconciled.
         A recommended setting is between 5-10 seconds, consider API rate limits and the additional
-        request weights.
-        If no value is specified then the open order checking task is not started.
+        request weights. If no value is specified then the open order checking task is not started.
     open_check_open_only : bool, default True
         If True, the **check_open_orders** requests only currently open orders from the venue.
         If False, it requests the entire order history, which can be a heavy API call.
         This parameter only applies if the **check_open_orders** task is running.
+    open_check_lookback_mins : PositiveInt, default 60
+        The lookback window (minutes) for order status polling during continuous reconciliation.
+        Only orders modified within this time window will be considered for reconciliation.
+    open_check_threshold_ms : NonNegativeInt, default 5_000
+        The minimum elapsed time (milliseconds) since the order's last cached event before the
+        open-order check acts on venue discrepancies (missing, status drift, etc.).
+    open_check_missing_retries : NonNegativeInt, default 5
+        The maximum number of retries before resolving an order that is open in cache but
+        not found at the venue. This prevents race conditions where orders are resolved too
+        quickly due to network delays or venue processing time.
+    max_single_order_queries_per_cycle : PositiveInt, default 10
+        The maximum number of single-order queries to perform per reconciliation cycle.
+        Prevents rate limit exhaustion when many orders fail bulk query checks.
+    single_order_query_delay_ms : NonNegativeInt, default 100
+        The delay (milliseconds) between single-order queries to prevent rate limit exhaustion.
+    position_check_interval_secs : PositiveFloat, optional
+        The interval (seconds) between checks for position discrepancies between cache and venue.
+        When a discrepancy is detected, the system queries for missing fills that may have been lost.
+        A recommended setting is between 30-60 seconds. If no value is specified then position
+        checking is not started.
+    position_check_lookback_mins : PositiveInt, default 60
+        The lookback window (minutes) for querying fill reports when a position discrepancy is detected.
+        Only fills within this window will be requested from the venue.
+    position_check_threshold_ms : NonNegativeInt, default 5_000
+        The minimum elapsed time (milliseconds) since the position's last local activity before
+        the position check acts on discrepancies. This prevents race conditions with in-flight fills.
+    reconciliation_startup_delay_secs : PositiveFloat, default 10.0
+        The additional delay (seconds) applied AFTER startup reconciliation
+        completes before starting the continuous reconciliation loop. This provides time
+        for additional system stabilization after initial reconciliation.
     purge_closed_orders_interval_mins : PositiveInt, optional
         The interval (minutes) between purging closed orders from the in-memory cache,
         **will not purge from the database**. If None, closed orders will **not** be automatically purged.
@@ -130,21 +175,29 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
         A recommended setting is 60 minutes for HFT.
     purge_account_events_interval_mins : PositiveInt, optional
         The interval (minutes) between purging account events from the in-memory cache,
-        **will not purge from the database**. If None, closed orders will **not** be automatically purged.
+        **will not purge from the database**. If None, account events will **not** be automatically purged.
         A recommended setting is 10-15 minutes for HFT.
     purge_account_events_lookback_mins : NonNegativeInt, optional
         The time buffer (minutes) from when an account event occurred before it can be purged.
         Only events outside the lookback window will be purged.
         A recommended setting is 60 minutes for HFT.
+    purge_from_database : bool, default False
+        If purging operations will also delete from the backing database, in addition to the in-memory cache.
+        **Note:** Currently account events are not purged from the database - pending reimplementation.
     qsize : PositiveInt, default 100_000
         The queue size for the engines internal queue buffers.
+    graceful_shutdown_on_exception : bool, default False
+        If the system should perform a graceful shutdown when an unexpected exception
+        occurs during message queue processing (does not include user actor/strategy exceptions).
 
     """
 
     reconciliation: bool = True
     reconciliation_lookback_mins: NonNegativeInt | None = None
+    reconciliation_instrument_ids: list[InstrumentId] | None = None
     filter_unclaimed_external_orders: bool = False
     filter_position_reports: bool = False
+    filtered_client_order_ids: list[ClientOrderId] | None = None
     generate_missing_orders: bool = True
     inflight_check_interval_ms: NonNegativeInt = 2_000
     inflight_check_threshold_ms: NonNegativeInt = 5_000
@@ -152,13 +205,24 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     own_books_audit_interval_secs: PositiveFloat | None = None
     open_check_interval_secs: PositiveFloat | None = None
     open_check_open_only: bool = True
+    open_check_lookback_mins: PositiveInt = 60
+    open_check_threshold_ms: NonNegativeInt = 5_000
+    open_check_missing_retries: NonNegativeInt = 5
+    max_single_order_queries_per_cycle: PositiveInt = 10
+    single_order_query_delay_ms: NonNegativeInt = 100
+    position_check_interval_secs: PositiveFloat | None = None
+    position_check_lookback_mins: PositiveInt = 60
+    position_check_threshold_ms: NonNegativeInt = 5_000
+    reconciliation_startup_delay_secs: PositiveFloat = 10.0
     purge_closed_orders_interval_mins: PositiveInt | None = None
     purge_closed_orders_buffer_mins: NonNegativeInt | None = None
     purge_closed_positions_interval_mins: PositiveInt | None = None
     purge_closed_positions_buffer_mins: NonNegativeInt | None = None
     purge_account_events_interval_mins: PositiveInt | None = None
     purge_account_events_lookback_mins: NonNegativeInt | None = None
+    purge_from_database: bool = False
     qsize: PositiveInt = 100_000
+    graceful_shutdown_on_exception: bool = False
 
 
 class RoutingConfig(NautilusConfig, frozen=True):

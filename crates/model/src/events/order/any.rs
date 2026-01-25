@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,9 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Display;
+
 use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
-use strum::Display;
 use ustr::Ustr;
 
 use super::{OrderEvent, OrderEventType};
@@ -30,8 +31,8 @@ use crate::{
 };
 
 /// Wraps an `OrderEvent` allowing polymorphism.
-#[allow(clippy::large_enum_variant)] // TODO fix
-#[derive(Clone, PartialEq, Eq, Display, Debug, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum OrderEventAny {
     Initialized(OrderInitialized),
     Denied(OrderDenied),
@@ -55,22 +56,22 @@ impl OrderEventAny {
     #[must_use]
     pub fn into_boxed(self) -> Box<dyn OrderEvent> {
         match self {
-            OrderEventAny::Initialized(event) => Box::new(event),
-            OrderEventAny::Denied(event) => Box::new(event),
-            OrderEventAny::Emulated(event) => Box::new(event),
-            OrderEventAny::Released(event) => Box::new(event),
-            OrderEventAny::Submitted(event) => Box::new(event),
-            OrderEventAny::Accepted(event) => Box::new(event),
-            OrderEventAny::Rejected(event) => Box::new(event),
-            OrderEventAny::Canceled(event) => Box::new(event),
-            OrderEventAny::Expired(event) => Box::new(event),
-            OrderEventAny::Triggered(event) => Box::new(event),
-            OrderEventAny::PendingUpdate(event) => Box::new(event),
-            OrderEventAny::PendingCancel(event) => Box::new(event),
-            OrderEventAny::ModifyRejected(event) => Box::new(event),
-            OrderEventAny::CancelRejected(event) => Box::new(event),
-            OrderEventAny::Updated(event) => Box::new(event),
-            OrderEventAny::Filled(event) => Box::new(event),
+            Self::Initialized(event) => Box::new(event),
+            Self::Denied(event) => Box::new(event),
+            Self::Emulated(event) => Box::new(event),
+            Self::Released(event) => Box::new(event),
+            Self::Submitted(event) => Box::new(event),
+            Self::Accepted(event) => Box::new(event),
+            Self::Rejected(event) => Box::new(event),
+            Self::Canceled(event) => Box::new(event),
+            Self::Expired(event) => Box::new(event),
+            Self::Triggered(event) => Box::new(event),
+            Self::PendingUpdate(event) => Box::new(event),
+            Self::PendingCancel(event) => Box::new(event),
+            Self::ModifyRejected(event) => Box::new(event),
+            Self::CancelRejected(event) => Box::new(event),
+            Self::Updated(event) => Box::new(event),
+            Self::Filled(event) => Box::new(event),
         }
     }
 
@@ -280,10 +281,33 @@ impl OrderEventAny {
 /// Panics if `event` is not a `Filled` variant.
 impl From<OrderEventAny> for OrderFilled {
     #[inline]
-    fn from(event: OrderEventAny) -> OrderFilled {
+    fn from(event: OrderEventAny) -> Self {
         match event {
             OrderEventAny::Filled(event) => event,
             _ => panic!("Invalid `OrderEventAny` not `OrderFilled`, was {event:?}"),
+        }
+    }
+}
+
+impl Display for OrderEventAny {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Initialized(e) => write!(f, "{e}"),
+            Self::Denied(e) => write!(f, "{e}"),
+            Self::Emulated(e) => write!(f, "{e}"),
+            Self::Released(e) => write!(f, "{e}"),
+            Self::Submitted(e) => write!(f, "{e}"),
+            Self::Accepted(e) => write!(f, "{e}"),
+            Self::Rejected(e) => write!(f, "{e}"),
+            Self::Canceled(e) => write!(f, "{e}"),
+            Self::Expired(e) => write!(f, "{e}"),
+            Self::Triggered(e) => write!(f, "{e}"),
+            Self::PendingUpdate(e) => write!(f, "{e}"),
+            Self::PendingCancel(e) => write!(f, "{e}"),
+            Self::ModifyRejected(e) => write!(f, "{e}"),
+            Self::CancelRejected(e) => write!(f, "{e}"),
+            Self::Updated(e) => write!(f, "{e}"),
+            Self::Filled(e) => write!(f, "{e}"),
         }
     }
 }

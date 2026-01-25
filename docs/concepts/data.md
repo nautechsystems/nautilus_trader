@@ -1,6 +1,6 @@
 # Data
 
-The NautilusTrader platform provides a set of built-in data types specifically designed to represent a trading domain.
+NautilusTrader provides a set of built-in data types specifically designed to represent a trading domain.
 These data types include:
 
 - `OrderBookDelta` (L1/L2/L3): Represents the most granular order book updates.
@@ -9,6 +9,9 @@ These data types include:
 - `QuoteTick`: Represents the best bid and ask prices along with their sizes at the top-of-book.
 - `TradeTick`: A single trade/match event between counterparties.
 - `Bar`: OHLCV (Open, High, Low, Close, Volume) bar/candle, aggregated using a specified *aggregation method*.
+- `MarkPriceUpdate`: The current mark price for an instrument (typically used in derivatives trading).
+- `IndexPriceUpdate`: The index price for an instrument (underlying price used for mark price calculations).
+- `FundingRateUpdate`: The funding rate for perpetual contracts (periodic payments between long and short positions).
 - `InstrumentStatus`: An instrument-level status event.
 - `InstrumentClose`: The closing price of an instrument.
 
@@ -32,26 +35,59 @@ Top-of-book data, such as `QuoteTick`, `TradeTick` and `Bar`, can also be used f
 
 ## Instruments
 
-The following instrument definitions are available:
+NautilusTrader supports a variety of instrument types across spot, derivatives, and specialty markets:
 
-- `Betting`: Represents an instrument in a betting market.
-- `BinaryOption`: Represents a generic binary option instrument.
-- `Cfd`: Represents a Contract for Difference (CFD) instrument.
-- `Commodity`:  Represents a commodity instrument in a spot/cash market.
-- `CryptoFuture`: Represents a deliverable futures contract instrument, with crypto assets as underlying and for settlement.
-- `CryptoPerpetual`: Represents a crypto perpetual futures contract instrument (a.k.a. perpetual swap).
-- `CurrencyPair`: Represents a generic currency pair instrument in a spot/cash market.
-- `Equity`: Represents a generic equity instrument.
-- `FuturesContract`: Represents a generic deliverable futures contract instrument.
-- `FuturesSpread`: Represents a generic deliverable futures spread instrument.
-- `Index`: Represents a generic index instrument.
-- `OptionContract`: Represents a generic option contract instrument.
-- `OptionSpread`: Represents a generic option spread instrument.
-- `Synthetic`: Represents a synthetic instrument with prices derived from component instruments using a formula.
+```mermaid
+flowchart TD
+    I[Instrument Types]
+    I --> Spot
+    I --> Derivatives
+    I --> Other
+
+    Spot --> Equity
+    Spot --> CurrencyPair
+    Spot --> Commodity
+    Spot --> IndexInstrument
+
+    Derivatives --> Futures
+    Derivatives --> Options
+    Derivatives --> Cfd
+
+    Futures --> FuturesContract
+    Futures --> FuturesSpread
+    Futures --> CryptoFuture
+    Futures --> CryptoPerpetual
+
+    Options --> OptionContract
+    Options --> OptionSpread
+    Options --> CryptoOption
+    Options --> BinaryOption
+
+    Other --> BettingInstrument
+    Other --> SyntheticInstrument
+```
+
+| Instrument           | Description                                                                      |
+|----------------------|----------------------------------------------------------------------------------|
+| `Equity`             | Generic equity instrument.                                                       |
+| `CurrencyPair`       | Currency pair in a spot/cash market.                                             |
+| `Commodity`          | Commodity in a spot/cash market.                                                 |
+| `IndexInstrument`    | Spot index (reference price, not directly tradable).                             |
+| `FuturesContract`    | Generic deliverable futures contract.                                            |
+| `FuturesSpread`      | Deliverable futures spread.                                                      |
+| `CryptoFuture`       | Deliverable futures with crypto assets as underlying and settlement.             |
+| `CryptoPerpetual`    | Crypto perpetual futures (perpetual swap).                                       |
+| `OptionContract`     | Generic option contract.                                                         |
+| `OptionSpread`       | Generic option spread.                                                           |
+| `CryptoOption`       | Crypto option contract.                                                          |
+| `BinaryOption`       | Binary option instrument.                                                        |
+| `Cfd`                | Contract for Difference (CFD).                                                   |
+| `BettingInstrument`  | Instrument in a betting market.                                                  |
+| `SyntheticInstrument`| Synthetic instrument with prices derived from component instruments via formula. |
 
 ## Bars and aggregation
 
-### Introduction to Bars
+### Introduction to bars
 
 A *bar* (also known as a candle, candlestick or kline) is a data structure that represents
 price and volume information over a specific period, including:
@@ -62,7 +98,7 @@ price and volume information over a specific period, including:
 - Closing price
 - Traded volume (or ticks as a volume proxy)
 
-These bars are generated using an *aggregation method*, which groups data based on specific criteria.
+The system generates bars using an *aggregation method* that groups data by specific criteria.
 
 ### Purpose of data aggregation
 
@@ -87,6 +123,7 @@ The platform implements various aggregation methods:
 | `VALUE`            | Aggregation of the notional value of trades (also known as "Dollar bars"). | Threshold    |
 | `VALUE_IMBALANCE`  | Aggregation of the buy/sell imbalance of trading by notional value.        | Information  |
 | `VALUE_RUNS`       | Aggregation of sequential buy/sell runs of trading by notional value.      | Threshold    |
+| `RENKO`            | Aggregation based on fixed price movements (brick size in ticks).          | Threshold    |
 | `MILLISECOND`      | Aggregation of time intervals with millisecond granularity.                | Time         |
 | `SECOND`           | Aggregation of time intervals with second granularity.                     | Time         |
 | `MINUTE`           | Aggregation of time intervals with minute granularity.                     | Time         |
@@ -94,6 +131,7 @@ The platform implements various aggregation methods:
 | `DAY`              | Aggregation of time intervals with day granularity.                        | Time         |
 | `WEEK`             | Aggregation of time intervals with week granularity.                       | Time         |
 | `MONTH`            | Aggregation of time intervals with month granularity.                      | Time         |
+| `YEAR`             | Aggregation of time intervals with year granularity.                       | Time         |
 
 ### Types of aggregation
 
@@ -111,7 +149,7 @@ NautilusTrader implements three distinct data aggregation methods:
    - Use case: For resampling existing smaller timeframe bars (1-minute) into larger timeframes (5-minute, hourly).
    - Always requires the `@` symbol in the specification.
 
-### Bar types and Components
+### Bar types
 
 NautilusTrader defines a unique *bar type* (`BarType` class) based on the following components:
 
@@ -120,7 +158,7 @@ NautilusTrader defines a unique *bar type* (`BarType` class) based on the follow
   - `step`: Defines the interval or frequency of each bar.
   - `aggregation`: Specifies the method used for data aggregation (see the above table).
   - `price_type`: Indicates the price basis of the bar (e.g., bid, ask, mid, last).
-- **Aggregation Source** (`AggregationSource`): Indicates whether the bar was aggregated internally (within Nautilus)
+- **Aggregation Source** (`AggregationSource`): Indicates whether the bar was aggregated internally (within Nautilus).
 - or externally (by a trading venue or data provider).
 
 Bar types can also be classified as either *standard* or *composite*:
@@ -139,7 +177,7 @@ For bar-to-bar aggregation, the target bar type is always `INTERNAL` (since you'
 but the source bars can be either `INTERNAL` or `EXTERNAL`, i.e., you can aggregate externally provided bars or already
 aggregated internal bars.
 
-### Defining Bar Types with String Syntax
+### Defining bar types with *string syntax*
 
 #### Standard bars
 
@@ -254,7 +292,7 @@ intermediate_bar_type = BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL@1-MIN
 hourly_bar_type = BarType.from_str("6EH4.XCME-1-HOUR-LAST-INTERNAL@5-MINUTE-INTERNAL")
 ```
 
-### Working with Bars: Request vs. Subscribe
+### Working with bars: request vs. subscribe
 
 NautilusTrader provides two distinct operations for working with bars:
 
@@ -316,13 +354,13 @@ If historical aggregated bars are needed, you can use specialized request `reque
 
 ```python
 # Request bars that are aggregated from historical trade ticks
-self.request_aggregated_bars(BarType.from_str("6EH4.XCME-100-VOLUME-LAST-INTERNAL"))
+self.request_aggregated_bars([BarType.from_str("6EH4.XCME-100-VOLUME-LAST-INTERNAL")])
 
 # Request bars that are aggregated from other bars
-self.request_aggregated_bars(BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL"))
+self.request_aggregated_bars([BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")])
 ```
 
-### Common Pitfalls
+### Common pitfalls
 
 **Register indicators before requesting data**: Ensure indicators are registered before requesting historical data so they get updated properly.
 
@@ -358,7 +396,7 @@ These timestamps serve distinct purposes and help maintain precise timing inform
 | Custom event     | Time when event conditions actually occurred.         | Time when the event object was created (if internal event) or received (if external event) in Nautilus. |
 
 :::note
-The `ts_init` field represents a more general concept than just the "time of reception" for events.
+The `ts_init` field represents a more general concept than "time of reception" for events.
 It denotes the timestamp when an object, such as a data point or command, was initialized within Nautilus.
 This distinction is important because `ts_init` is not exclusive to "received events" — it applies to any internal
 initialization process.
@@ -375,7 +413,7 @@ The dual timestamp system enables latency analysis within the platform:
 - This difference represents total system latency, including network transmission time, processing overhead, and any queueing delays.
 - It's important to remember that the clocks producing these timestamps are likely not synchronized.
 
-### Environment specific behavior
+### Environment-specific behavior
 
 #### Backtesting environment
 
@@ -384,7 +422,7 @@ The dual timestamp system enables latency analysis within the platform:
 
 #### Live trading environment
 
-- Data is processed as it arrives, ensuring minimal latency and allowing for real-time decision-making.
+- The system processes data as it arrives to minimize latency and enable real-time decisions.
   - `ts_init` field records the exact moment when data is received by Nautilus in real-time.
   - `ts_event` reflects the time the event occurred externally, enabling accurate comparisons between external event timing and system reception.
 - We can use the difference between `ts_init` and `ts_event` to detect network or processing delays.
@@ -397,13 +435,13 @@ The dual timestamp system enables latency analysis within the platform:
   - The initialization of an object happens at the same time as the event itself.
   - The concept of an external event time does not apply.
 
-#### Persisted Data
+#### Persisted data
 
 The `ts_init` field indicates when the message was originally received.
 
 ## Data flow
 
-The platform ensures consistency by flowing data through the same pathways across all system [environment contexts](/concepts/architecture.md#environment-contexts)
+The platform ensures consistency by flowing data through the same pathways across all system [environment contexts](architecture.md#environment-contexts)
 (e.g., `backtest`, `sandbox`, `live`). Data is primarily transported via the `MessageBus` to the `DataEngine`
 and then distributed to subscribed or registered handlers.
 
@@ -422,8 +460,8 @@ Regardless of the destination, the process remains the same: converting diverse 
 
 To achieve this, two main components are necessary:
 
-- A type of DataLoader (normally specific per raw source/format) which can read the data and return a `pd.DataFrame` with the correct schema for the desired Nautilus object
-- A type of DataWrangler (specific per data type) which takes this `pd.DataFrame` and returns a `list[Data]` of Nautilus objects
+- A type of DataLoader (normally specific per raw source/format) which can read the data and return a `pd.DataFrame` with the correct schema for the desired Nautilus object.
+- A type of DataWrangler (specific per data type) which takes this `pd.DataFrame` and returns a `list[Data]` of Nautilus objects.
 
 ### Data loaders
 
@@ -436,6 +474,7 @@ Data wranglers are implemented per specific Nautilus data type, and can be found
 Currently there exists:
 
 - `OrderBookDeltaDataWrangler`
+- `OrderBookDepth10DataWrangler`
 - `QuoteTickDataWrangler`
 - `TradeTickDataWrangler`
 - `BarDataWrangler`
@@ -446,6 +485,44 @@ with a different fixed width Nautilus Arrow v2 schema, and output PyO3 Nautilus 
 of the Nautilus core, currently in development.
 
 **These PyO3 provided data objects are not compatible where the legacy Cython objects are currently used (e.g., adding directly to a `BacktestEngine`).**
+:::
+
+### Fixed-point precision and raw values
+
+NautilusTrader uses fixed-point arithmetic for `Price` and `Quantity` types to ensure precise financial calculations without floating-point errors. Understanding how raw values work is essential when creating data or working with catalogs.
+
+#### Raw value requirements
+
+When constructing `Price` or `Quantity` using `from_raw()`, the raw value **must** be a valid multiple of the scale factor for the given precision. Valid raw values should come from:
+
+- Accessing the `.raw` field of an existing value (e.g., `price.raw`).
+- Using the Nautilus fixed-point conversion functions.
+- Values from Nautilus-produced Arrow data.
+
+:::warning
+Raw values that are not valid multiples will cause a panic. The raw value must be divisible by `10^(FIXED_PRECISION - precision)` where `FIXED_PRECISION` is 9 (standard mode) or 16 (high-precision mode).
+:::
+
+#### Legacy catalog data and floating-point errors
+
+Data written to catalogs using V2 wranglers before 16th December 2025 may contain raw values with floating-point precision errors. This occurred because the wranglers used:
+
+```python
+int(value * FIXED_SCALAR)  # Introduces floating-point errors
+```
+
+For example, `int(0.67068 * 1e9)` produces `670680000000001` instead of the expected `670680000000000`. The correct approach is:
+
+```python
+round(value * 10**precision) * scale  # Correct precision-aware conversion
+```
+
+#### Automatic correction during catalog reads
+
+To maintain backward compatibility with existing catalog data, the Arrow decode path automatically corrects raw values by rounding them to the nearest valid multiple. This ensures that legacy catalogs continue to work without requiring data migration.
+
+:::note
+This automatic correction adds a small amount of overhead during data decoding. In a future version, once catalogs have been repaired or migrated, this correction will become opt-in. A catalog repair/migration script may be provided to permanently fix legacy data.
 :::
 
 ### Transformation pipeline
@@ -459,17 +536,16 @@ of the Nautilus core, currently in development.
 
 The following diagram illustrates how raw data is transformed into Nautilus data structures:
 
-```
-  ┌──────────┐    ┌──────────────────────┐                  ┌──────────────────────┐
-  │          │    │                      │                  │                      │
-  │          │    │                      │                  │                      │
-  │ Raw data │    │                      │  `pd.DataFrame`  │                      │
-  │ (CSV)    ├───►│      DataLoader      ├─────────────────►│     DataWrangler     ├───► Nautilus `list[Data]`
-  │          │    │                      │                  │                      │
-  │          │    │                      │                  │                      │
-  │          │    │                      │                  │                      │
-  └──────────┘    └──────────────────────┘                  └──────────────────────┘
+```mermaid
+flowchart LR
+    raw["Raw data (CSV)"]
+    loader[DataLoader]
+    wrangler[DataWrangler]
+    output["Nautilus list[Data]"]
 
+    raw --> loader
+    loader -->|"pd.DataFrame"| wrangler
+    wrangler --> output
 ```
 
 Concretely, this would involve:
@@ -500,24 +576,54 @@ deltas = wrangler.process(df)
 
 ## Data catalog
 
-The data catalog is a central store for Nautilus data, persisted in the [Parquet](https://parquet.apache.org) file format.
+The data catalog is a central store for Nautilus data, persisted in the [Parquet](https://parquet.apache.org) file format. It serves as the primary data management system for both backtesting and live trading scenarios, providing efficient storage, retrieval, and streaming capabilities for market data.
 
-We have chosen Parquet as the storage format for the following reasons:
+### Overview and architecture
 
-- It performs much better than CSV/JSON/HDF5/etc in terms of compression ratio (storage size) and read performance.
-- It does not require any separate running components (for example a database).
-- It is quick and simple to get up and running with.
+The NautilusTrader data catalog is built on a dual-backend architecture that combines the performance of Rust with the flexibility of Python:
 
-The Arrow schemas used for the Parquet format are either single sourced in the core `persistence` Rust crate, or available
-from the `/serialization/arrow/schema.py` module.
+**Core components:**
+
+- **ParquetDataCatalog**: The main Python interface for data operations.
+- **Rust backend**: High-performance query engine for core data types (OrderBookDelta, QuoteTick, TradeTick, Bar, MarkPriceUpdate).
+- **PyArrow backend**: Flexible fallback for custom data types and advanced filtering.
+- **fsspec integration**: Support for local and cloud storage (S3, GCS, Azure, etc.).
+
+**Key benefits**:
+
+- **Performance**: Rust backend provides optimized query performance for core market data types.
+- **Flexibility**: PyArrow backend handles custom data types and complex filtering scenarios.
+- **Scalability**: Efficient compression and columnar storage reduce storage costs and improve I/O performance.
+- **Cloud native**: Built-in support for cloud storage providers through fsspec.
+- **No dependencies**: Self-contained solution requiring no external databases or services.
+
+**Storage format advantages:**
+
+- Superior compression ratio and read performance compared to CSV/JSON/HDF5.
+- Columnar storage enables efficient filtering and aggregation.
+- Schema evolution support for data model changes.
+- Cross-language compatibility (Python, Rust, Java, C++, etc.).
+
+The Arrow schemas used for the Parquet format are primarily single-sourced in the core `persistence` Rust crate, with some legacy schemas available from the `/serialization/arrow/schema.py` module.
 
 :::note
-2023-10-14: The current plan is to eventually phase out the Python schemas module, so that all schemas are single sourced in the Rust core.
+The current plan is to eventually phase out the Python schemas module, so that all schemas are single sourced in the Rust core for consistency and performance.
 :::
 
 ### Initializing
 
 The data catalog can be initialized from a `NAUTILUS_PATH` environment variable, or by explicitly passing in a path like object.
+
+:::note NAUTILUS_PATH environment variable
+The `NAUTILUS_PATH` environment variable should point to the **root** directory containing your Nautilus data. The catalog will automatically append `/catalog` to this path.
+
+For example:
+
+- If `NAUTILUS_PATH=/home/user/trading_data`.
+- Then the catalog will be located at `/home/user/trading_data/catalog`.
+
+This is a common pattern when using `ParquetDataCatalog.from_env()` - make sure your `NAUTILUS_PATH` points to the parent directory, not the catalog directory itself.
+:::
 
 The following example shows how to initialize a data catalog where there is pre-existing data already written to disk at the given path.
 
@@ -530,98 +636,696 @@ CATALOG_PATH = Path.cwd() / "catalog"
 
 # Create a new catalog instance
 catalog = ParquetDataCatalog(CATALOG_PATH)
+
+# Alternative: Environment-based initialization
+catalog = ParquetDataCatalog.from_env()  # Uses NAUTILUS_PATH environment variable
+```
+
+### Filesystem protocols and storage options
+
+The catalog supports multiple filesystem protocols through fsspec integration, enabling seamless operation across local and cloud storage systems.
+
+#### Supported filesystem protocols
+
+**Local filesystem (`file`):**
+
+```python
+catalog = ParquetDataCatalog(
+    path="/path/to/catalog",
+    fs_protocol="file",  # Default protocol
+)
+```
+
+**Amazon S3 (`s3`):**
+
+```python
+catalog = ParquetDataCatalog(
+    path="s3://my-bucket/nautilus-data/",
+    fs_protocol="s3",
+    fs_storage_options={
+        "key": "your-access-key-id",
+        "secret": "your-secret-access-key",
+        "endpoint_url": "https://s3.amazonaws.com",  # Optional custom endpoint
+    }
+)
+```
+
+**Google Cloud Storage (`gcs`):**
+
+```python
+catalog = ParquetDataCatalog(
+    path="gcs://my-bucket/nautilus-data/",
+    fs_protocol="gcs",
+    fs_storage_options={
+        "project": "my-project-id",
+        "token": "/path/to/service-account.json",  # Or "cloud" for default credentials
+    }
+)
+```
+
+**Azure Blob Storage :**
+
+`abfs` protocol
+
+```python
+catalog = ParquetDataCatalog(
+    path="abfs://container@account.dfs.core.windows.net/nautilus-data/",
+    fs_protocol="abfs",
+    fs_storage_options={
+        "account_name": "your-storage-account",
+        "account_key": "your-account-key",
+        # Or use SAS token: "sas_token": "your-sas-token"
+    }
+)
+```
+
+`az` protocol
+
+```python
+catalog = ParquetDataCatalog(
+    path="az://container/nautilus-data/",
+    fs_protocol="az",
+    fs_storage_options={
+        "account_name": "your-storage-account",
+        "account_key": "your-account-key",
+        # Or use SAS token: "sas_token": "your-sas-token"
+    }
+)
+```
+
+#### URI-based initialization
+
+For convenience, you can use URI strings that automatically parse protocol and storage options:
+
+```python
+# Local filesystem
+catalog = ParquetDataCatalog.from_uri("/path/to/catalog")
+
+# S3 bucket
+catalog = ParquetDataCatalog.from_uri("s3://my-bucket/nautilus-data/")
+
+# With storage options
+catalog = ParquetDataCatalog.from_uri(
+    "s3://my-bucket/nautilus-data/",
+    storage_options={
+        "access_key_id": "your-key",
+        "secret_access_key": "your-secret"
+    }
+)
 ```
 
 ### Writing data
 
-New data can be stored in the catalog, which is effectively writing the given data to disk in the Nautilus-specific Parquet format.
-All Nautilus built-in `Data` objects are supported, and any data which inherits from `Data` can be written.
-
-The following example shows the above list of Binance `OrderBookDelta` objects being written:
+Store data in the catalog using the `write_data()` method. All Nautilus built-in `Data` objects are supported, and any data which inherits from `Data` can be written.
 
 ```python
-catalog.write_data(deltas)
+# Write a list of data objects
+catalog.write_data(quote_ticks)
+
+# Write with custom timestamp range
+catalog.write_data(
+    trade_ticks,
+    start=1704067200000000000,  # Optional start timestamp override (UNIX nanoseconds)
+    end=1704153600000000000,    # Optional end timestamp override (UNIX nanoseconds)
+)
+
+# Skip disjoint check for overlapping data
+catalog.write_data(bars, skip_disjoint_check=True)
 ```
 
-### Basename template
+### File naming and data organization
 
-Nautilus makes no assumptions about how data may be partitioned between files for a particular
-data type and instrument ID.
+The catalog automatically generates filenames based on the timestamp range of the data being written. Files are named using the pattern `{start_timestamp}_{end_timestamp}.parquet` where timestamps are in ISO format.
 
-The `basename_template` keyword argument is an additional optional naming component for the output files.
-The template should include placeholders that will be filled in with actual values at runtime.
-These values can be automatically derived from the data or provided as additional keyword arguments.
+Data is organized in directories by data type and instrument ID:
 
-For example, using a basename template like `"{date}"` for AUD/USD.SIM quote tick data,
-and assuming `"date"` is a provided or derivable field, could result in a filename like
-`"2023-01-01.parquet"` under the `"quote_tick/audusd.sim/"` catalog directory.
-If not provided, a default naming scheme will be applied. This parameter should be specified as a
-keyword argument, like `write_data(data, basename_template="{date}")`.
+```
+catalog/
+├── data/
+│   ├── quote_ticks/
+│   │   └── eurusd.sim/
+│   │       └── 20240101T000000000000000_20240101T235959999999999.parquet
+│   └── trade_ticks/
+│       └── btcusd.binance/
+│           └── 20240101T000000000000000_20240101T235959999999999.parquet
+```
+
+**Rust backend data types (enhanced performance):**
+
+The following data types use optimized Rust implementations:
+
+- `OrderBookDelta`.
+- `OrderBookDeltas`.
+- `OrderBookDepth10`.
+- `QuoteTick`.
+- `TradeTick`.
+- `Bar`.
+- `MarkPriceUpdate`.
 
 :::warning
-Any data which already exists under a filename will be overwritten.
-If a `basename_template` is not provided, then its very likely existing data for the data type and instrument ID will
-be overwritten. To prevent data loss, ensure that the `basename_template` (or the default naming scheme)
-generates unique filenames for different data sets.
-:::
-
-Rust Arrow schema implementations are available for the follow data types (enhanced performance):
-
-- `OrderBookDelta`
-- `QuoteTick`
-- `TradeTick`
-- `Bar`
-
-:::warning
-By default any data which already exists under a filename will be overwritten.
-
-You can use one of the following write mode with catalog.write_data:
-
-- CatalogWriteMode.OVERWRITE
-- CatalogWriteMode.APPEND
-- CatalogWriteMode.PREPEND
-- CatalogWriteMode.NEWFILE, which will create a file name of the form `part-{i}.parquet` where `i` is an integer starting at 0.
-
+By default, data that overlaps with existing files will cause an assertion error to maintain data integrity. Use `skip_disjoint_check=True` in `write_data()` to bypass this check when needed.
 :::
 
 ### Reading data
 
-Any stored data can then be read back into memory:
+Use the `query()` method to read data back from the catalog:
 
 ```python
-from nautilus_trader.core.datetime import dt_to_unix_nanos
-import pandas as pd
-import pytz
+from nautilus_trader.model import QuoteTick, TradeTick
 
+# Query quote ticks for a specific instrument and time range
+quotes = catalog.query(
+    data_cls=QuoteTick,
+    identifiers=["EUR/USD.SIM"],
+    start="2024-01-01T00:00:00Z",
+    end="2024-01-02T00:00:00Z"
+)
 
-start = dt_to_unix_nanos(pd.Timestamp("2020-01-03", tz=pytz.utc))
-end =  dt_to_unix_nanos(pd.Timestamp("2020-01-04", tz=pytz.utc))
-
-deltas = catalog.order_book_deltas(instrument_ids=[instrument.id.value], start=start, end=end)
-```
-
-### Streaming data
-
-When running backtests in streaming mode with a `BacktestNode`, the data catalog can be used to stream the data in batches.
-
-The following example shows how to achieve this by initializing a `BacktestDataConfig` configuration object:
-
-```python
-from nautilus_trader.config import BacktestDataConfig
-from nautilus_trader.model import OrderBookDelta
-
-
-data_config = BacktestDataConfig(
-    catalog_path=str(catalog.path),
-    data_cls=OrderBookDelta,
-    instrument_id=instrument.id,
-    start_time=start,
-    end_time=end,
+# Query trade ticks with filtering
+trades = catalog.query(
+    data_cls=TradeTick,
+    identifiers=["BTC/USD.BINANCE"],
+    start="2024-01-01",
+    end="2024-01-02",
+    where="price > 50000"
 )
 ```
 
-This configuration object can then be passed into a `BacktestRunConfig` and then in turn passed into a `BacktestNode` as part of a run.
-See the [Backtest (high-level API)](../getting_started/backtest_high_level.md) tutorial for further details.
+### `BacktestDataConfig` - data specification for backtests
+
+The `BacktestDataConfig` class is the primary mechanism for specifying data requirements before a backtest starts. It defines what data should be loaded from the catalog and how it should be filtered and processed during the backtest execution.
+
+#### Core parameters
+
+**Required parameters:**
+
+- `catalog_path`: Path to the data catalog directory.
+- `data_cls`: The data type class (e.g., QuoteTick, TradeTick, OrderBookDelta, Bar).
+
+**Optional parameters:**
+
+- `catalog_fs_protocol`: Filesystem protocol ('file', 's3', 'gcs', etc.).
+- `catalog_fs_storage_options`: Storage-specific options (credentials, region, etc.).
+- `instrument_id`: Specific instrument to load data for.
+- `instrument_ids`: List of instruments (alternative to single instrument_id).
+- `start_time`: Start time for data filtering (ISO string or UNIX nanoseconds).
+- `end_time`: End time for data filtering (ISO string or UNIX nanoseconds).
+- `filter_expr`: Additional PyArrow filter expressions.
+- `client_id`: Client ID for custom data types.
+- `metadata`: Additional metadata for data queries.
+- `bar_spec`: Bar specification for bar data (e.g., "1-MINUTE-LAST").
+- `bar_types`: List of bar types (alternative to bar_spec).
+
+#### Basic usage examples
+
+**Loading quote ticks:**
+
+```python
+from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.model import QuoteTick, InstrumentId
+
+data_config = BacktestDataConfig(
+    catalog_path="/path/to/catalog",
+    data_cls=QuoteTick,
+    instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
+    start_time="2024-01-01T00:00:00Z",
+    end_time="2024-01-02T00:00:00Z",
+)
+```
+
+**Loading multiple instruments:**
+
+```python
+data_config = BacktestDataConfig(
+    catalog_path="/path/to/catalog",
+    data_cls=TradeTick,
+    instrument_ids=["BTC/USD.BINANCE", "ETH/USD.BINANCE"],
+    start_time="2024-01-01T00:00:00Z",
+    end_time="2024-01-02T00:00:00Z",
+)
+```
+
+**Loading Bar Data:**
+
+```python
+data_config = BacktestDataConfig(
+    catalog_path="/path/to/catalog",
+    data_cls=Bar,
+    instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
+    bar_spec="5-MINUTE-LAST",
+    start_time="2024-01-01",
+    end_time="2024-01-31",
+)
+```
+
+#### Advanced configuration examples
+
+**Cloud Storage with Custom Filtering:**
+
+```python
+data_config = BacktestDataConfig(
+    catalog_path="s3://my-bucket/nautilus-data/",
+    catalog_fs_protocol="s3",
+    catalog_fs_storage_options={
+        "key": "your-access-key",
+        "secret": "your-secret-key",
+        "region": "us-east-1"
+    },
+    data_cls=OrderBookDelta,
+    instrument_id=InstrumentId.from_str("BTC/USD.COINBASE"),
+    start_time="2024-01-01T09:30:00Z",
+    end_time="2024-01-01T16:00:00Z",
+)
+```
+
+**Custom Data with Client ID:**
+
+```python
+data_config = BacktestDataConfig(
+    catalog_path="/path/to/catalog",
+    data_cls="my_package.data.NewsEventData",
+    client_id="NewsClient",
+    metadata={"source": "reuters", "category": "earnings"},
+    start_time="2024-01-01",
+    end_time="2024-01-31",
+)
+```
+
+#### Integration with BacktestRunConfig
+
+The `BacktestDataConfig` objects are integrated into the backtesting framework through `BacktestRunConfig`:
+
+```python
+from nautilus_trader.config import BacktestRunConfig, BacktestVenueConfig
+
+# Define multiple data configurations
+data_configs = [
+    BacktestDataConfig(
+        catalog_path="/path/to/catalog",
+        data_cls=QuoteTick,
+        instrument_id="EUR/USD.SIM",
+        start_time="2024-01-01",
+        end_time="2024-01-02",
+    ),
+    BacktestDataConfig(
+        catalog_path="/path/to/catalog",
+        data_cls=TradeTick,
+        instrument_id="EUR/USD.SIM",
+        start_time="2024-01-01",
+        end_time="2024-01-02",
+    ),
+]
+
+# Create backtest run configuration
+run_config = BacktestRunConfig(
+    venues=[BacktestVenueConfig(name="SIM", oms_type="HEDGING")],
+    data=data_configs,  # List of data configurations
+    start="2024-01-01T00:00:00Z",
+    end="2024-01-02T00:00:00Z",
+)
+```
+
+#### Data loading process
+
+When a backtest runs, the `BacktestNode` processes each `BacktestDataConfig`:
+
+1. **Catalog Loading**: Creates a `ParquetDataCatalog` instance from the config.
+2. **Query Construction**: Builds query parameters from config attributes.
+3. **Data Retrieval**: Executes catalog queries using the appropriate backend.
+4. **Instrument Loading**: Loads instrument definitions if needed.
+5. **Engine Integration**: Adds data to the backtest engine with proper sorting.
+
+The system automatically handles:
+
+- Instrument ID resolution and validation.
+- Data type validation and conversion.
+- Memory-efficient streaming for large datasets.
+- Error handling and logging.
+
+### DataCatalogConfig - on-the-fly data loading
+
+The `DataCatalogConfig` class provides configuration for on-the-fly data loading scenarios, particularly useful for backtests where the number of possible instruments is vast,
+Unlike `BacktestDataConfig` which pre-specifies data for backtests, `DataCatalogConfig` enables flexible catalog access during runtime.
+Catalogs defined this way can also be used for requesting historical data.
+
+#### Core parameters
+
+**Required Parameters:**
+
+- `path`: Path to the data catalog directory.
+
+**Optional Parameters:**
+
+- `fs_protocol`: Filesystem protocol ('file', 's3', 'gcs', 'azure', etc.).
+- `fs_storage_options`: Protocol-specific storage options.
+- `name`: Optional name identifier for the catalog configuration.
+
+#### Basic usage examples
+
+**Local Catalog Configuration:**
+
+```python
+from nautilus_trader.persistence.config import DataCatalogConfig
+
+catalog_config = DataCatalogConfig(
+    path="/path/to/catalog",
+    fs_protocol="file",
+    name="local_market_data"
+)
+
+# Convert to catalog instance
+catalog = catalog_config.as_catalog()
+```
+
+**Cloud storage configuration:**
+
+```python
+catalog_config = DataCatalogConfig(
+    path="s3://my-bucket/market-data/",
+    fs_protocol="s3",
+    fs_storage_options={
+        "key": "your-access-key",
+        "secret": "your-secret-key",
+        "region": "us-west-2",
+        "endpoint_url": "https://s3.us-west-2.amazonaws.com"
+    },
+    name="cloud_market_data"
+)
+```
+
+#### Integration with live trading
+
+`DataCatalogConfig` is commonly used in live trading configurations for historical data access:
+
+```python
+from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.persistence.config import DataCatalogConfig
+
+# Configure catalog for live system
+catalog_config = DataCatalogConfig(
+    path="/data/nautilus/catalog",
+    fs_protocol="file",
+    name="historical_data"
+)
+
+# Use in trading node configuration
+node_config = TradingNodeConfig(
+    # ... other configurations
+    catalog=catalog_config,  # Enable historical data access
+)
+```
+
+#### Streaming configuration
+
+For streaming data to catalogs during live trading or backtesting, use `StreamingConfig`:
+
+```python
+from nautilus_trader.persistence.config import StreamingConfig, RotationMode
+import pandas as pd
+
+streaming_config = StreamingConfig(
+    catalog_path="/path/to/streaming/catalog",
+    fs_protocol="file",
+    flush_interval_ms=1000,  # Flush every second
+    replace_existing=False,
+    rotation_mode=RotationMode.DAILY,
+    rotation_interval=pd.Timedelta(hours=1),
+    max_file_size=1024 * 1024 * 100,  # 100MB max file size
+)
+```
+
+#### Use cases
+
+**Historical Data Analysis:**
+
+- Load historical data during live trading for strategy calculations.
+- Access reference data for instrument lookups.
+- Retrieve past performance metrics.
+
+**Dynamic data loading:**
+
+- Load data based on runtime conditions.
+- Implement custom data loading strategies.
+- Support multiple catalog sources.
+
+**Research and development:**
+
+- Interactive data exploration in Jupyter notebooks.
+- Ad-hoc analysis and backtesting.
+- Data quality validation and monitoring.
+
+### Query system and dual backend architecture
+
+The catalog's query system leverages a sophisticated dual-backend architecture that automatically selects the optimal query engine based on data type and query parameters.
+
+#### Backend selection logic
+
+**Rust backend (high performance):**
+
+- **Supported Types**: OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick, Bar, MarkPriceUpdate.
+- **Conditions**: Used when `files` parameter is None (automatic file discovery).
+- **Benefits**: Optimized performance, memory efficiency, native Arrow integration.
+
+**PyArrow backend (flexible):**
+
+- **Supported Types**: All data types including custom data classes.
+- **Conditions**: Used for custom data types or when `files` parameter is specified.
+- **Benefits**: Advanced filtering, custom data support, complex query expressions.
+
+#### Query methods and parameters
+
+**Core query parameters:**
+
+```python
+catalog.query(
+    data_cls=QuoteTick,                    # Data type to query
+    identifiers=["EUR/USD.SIM"],           # Instrument identifiers
+    start="2024-01-01T00:00:00Z",         # Start time (various formats supported)
+    end="2024-01-02T00:00:00Z",           # End time
+    where="bid > 1.1000",                 # PyArrow filter expression
+    files=None,                           # Specific files (forces PyArrow backend)
+)
+```
+
+**Time format support:**
+
+- ISO 8601 strings: `"2024-01-01T00:00:00Z"`.
+- UNIX nanoseconds: `1704067200000000000` (or ISO format: `"2024-01-01T00:00:00Z"`).
+- Pandas Timestamps: `pd.Timestamp("2024-01-01", tz="UTC")`.
+- Python datetime objects (timezone-aware recommended).
+
+**Advanced filtering examples:**
+
+```python
+# Complex PyArrow expressions
+catalog.query(
+    data_cls=TradeTick,
+    identifiers=["BTC/USD.BINANCE"],
+    where="price > 50000 AND size > 1.0",
+    start="2024-01-01",
+    end="2024-01-02",
+)
+
+# Multiple instruments with metadata filtering
+catalog.query(
+    data_cls=Bar,
+    identifiers=["AAPL.NASDAQ", "MSFT.NASDAQ"],
+    where="volume > 1000000",
+    metadata={"bar_type": "1-MINUTE-LAST"},
+)
+```
+
+### Catalog operations
+
+The catalog provides several operation functions for maintaining and organizing data files. These operations help optimize storage, improve query performance, and ensure data integrity.
+
+#### Reset file names
+
+Reset parquet file names to match their actual content timestamps. This ensures filename-based filtering works correctly.
+
+**Reset all files in catalog:**
+
+```python
+# Reset all parquet files in the catalog
+catalog.reset_all_file_names()
+```
+
+**Reset specific data type:**
+
+```python
+# Reset filenames for all quote tick files
+catalog.reset_data_file_names(QuoteTick)
+
+# Reset filenames for specific instrument's trade files
+catalog.reset_data_file_names(TradeTick, "BTC/USD.BINANCE")
+```
+
+#### Consolidate catalog
+
+Combine multiple small parquet files into larger files to improve query performance and reduce storage overhead.
+
+**Consolidate entire catalog:**
+
+```python
+# Consolidate all files in the catalog
+catalog.consolidate_catalog()
+
+# Consolidate files within a specific time range
+catalog.consolidate_catalog(
+    start="2024-01-01T00:00:00Z",
+    end="2024-01-02T00:00:00Z",
+    ensure_contiguous_files=True
+)
+```
+
+**Consolidate specific data type:**
+
+```python
+# Consolidate all quote tick files
+catalog.consolidate_data(QuoteTick)
+
+# Consolidate specific instrument's files
+catalog.consolidate_data(
+    TradeTick,
+    identifier="BTC/USD.BINANCE",
+    start="2024-01-01",
+    end="2024-01-31"
+)
+```
+
+#### Consolidate catalog by period
+
+Split data files into fixed time periods for standardized file organization.
+
+**Consolidate entire catalog by period:**
+
+```python
+import pandas as pd
+
+# Consolidate all files by 1-day periods
+catalog.consolidate_catalog_by_period(
+    period=pd.Timedelta(days=1)
+)
+
+# Consolidate by 1-hour periods within time range
+catalog.consolidate_catalog_by_period(
+    period=pd.Timedelta(hours=1),
+    start="2024-01-01T00:00:00Z",
+    end="2024-01-02T00:00:00Z"
+)
+```
+
+**Consolidate specific data by period:**
+
+```python
+# Consolidate quote data by 4-hour periods
+catalog.consolidate_data_by_period(
+    data_cls=QuoteTick,
+    period=pd.Timedelta(hours=4)
+)
+
+# Consolidate specific instrument by 30-minute periods
+catalog.consolidate_data_by_period(
+    data_cls=TradeTick,
+    identifier="EUR/USD.SIM",
+    period=pd.Timedelta(minutes=30),
+    start="2024-01-01",
+    end="2024-01-31"
+)
+```
+
+#### Delete data range
+
+Remove data within a specified time range for specific data types and instruments. This operation permanently deletes data and handles file intersections intelligently.
+
+**Delete entire catalog range:**
+
+```python
+# Delete all data within a time range across the entire catalog
+catalog.delete_catalog_range(
+    start="2024-01-01T00:00:00Z",
+    end="2024-01-02T00:00:00Z"
+)
+
+# Delete all data from the beginning up to a specific time
+catalog.delete_catalog_range(end="2024-01-01T00:00:00Z")
+```
+
+**Delete specific data type:**
+
+```python
+# Delete all quote tick data for a specific instrument
+catalog.delete_data_range(
+    data_cls=QuoteTick,
+    identifier="BTC/USD.BINANCE"
+)
+
+# Delete trade data within a specific time range
+catalog.delete_data_range(
+    data_cls=TradeTick,
+    identifier="EUR/USD.SIM",
+    start="2024-01-01T00:00:00Z",
+    end="2024-01-31T23:59:59Z"
+)
+```
+
+:::warning
+Delete operations permanently remove data and cannot be undone. Files that partially overlap the deletion range are split to preserve data outside the range.
+:::
+
+### Feather streaming and conversion
+
+The catalog supports streaming data to temporary feather files during backtests, which can then be converted to permanent parquet format for efficient querying.
+
+**Example: option greeks streaming**
+
+```python
+from option_trader.greeks import GreeksData
+from nautilus_trader.persistence.config import StreamingConfig
+
+# 1. Configure streaming for custom data
+streaming = StreamingConfig(
+    catalog_path=catalog.path,
+    include_types=[GreeksData],
+    flush_interval_ms=1000,
+)
+
+# 2. Run backtest with streaming enabled
+engine_config = BacktestEngineConfig(streaming=streaming)
+results = node.run()
+
+# 3. Convert streamed data to permanent catalog
+catalog.convert_stream_to_data(
+    results[0].instance_id,
+    GreeksData,
+)
+
+# 4. Query converted data
+greeks_data = catalog.query(
+    data_cls=GreeksData,
+    start="2024-01-01",
+    end="2024-01-31",
+    where="delta > 0.5",
+)
+```
+
+### Catalog summary
+
+The NautilusTrader data catalog provides comprehensive market data management:
+
+**Core features**:
+
+- **Dual Backend**: Rust performance + Python flexibility.
+- **Multi-Protocol**: Local, S3, GCS, Azure storage.
+- **Streaming**: Feather → Parquet conversion pipeline.
+- **Operations**: Reset file names, consolidate data, period-based organization.
+
+**Key use cases**:
+
+- **Backtesting**: Pre-configured data loading via BacktestDataConfig.
+- **Live Trading**: On-demand data access via DataCatalogConfig.
+- **Maintenance**: File consolidation and organization operations.
+- **Research**: Interactive querying and analysis.
 
 ## Data migrations
 
@@ -656,12 +1360,12 @@ Converts Parquet files to JSON while preserving metadata:
 
 Converts JSON back to Parquet format:
 
-- Reads both the data JSON and metadata JSON files
-- Preserves row group sizes from original metadata
-- Uses ZSTD compression
-- Creates `<input>.parquet`
+- Reads both the data JSON and metadata JSON files.
+- Preserves row group sizes from original metadata.
+- Uses ZSTD compression.
+- Creates `<input>.parquet`.
 
-### Migration Process
+### Migration process
 
 The following migration examples both use trades data (you can also migrate the other data types in the same way).
 All commands should be run from the root of the `persistence` crate directory.
@@ -722,14 +1426,14 @@ cargo run --features high-precision --bin to_parquet trades.json
 
 This will create a `trades.parquet` file with the new schema.
 
-### Best Practices
+### Best practices
 
 - Always test migrations with a small dataset first.
 - Maintain backups of original files.
 - Verify data integrity after migration.
 - Perform migrations in a staging environment before applying them to production data.
 
-## Custom Data
+## Custom data
 
 Due to the modular nature of the Nautilus design, it is possible to set up systems
 with very flexible data streams, including custom user-defined data types. This
@@ -875,7 +1579,7 @@ def on_signal(self, signal):
     print("Signal", data)
 ```
 
-### Option Greeks example
+### Option greeks example
 
 This example demonstrates how to create a custom data type for option Greeks, specifically the delta.
 By following these steps, you can create custom data types, subscribe to them, publish them, and store
@@ -969,7 +1673,7 @@ def subscribe_to_greeks(self):
     self.subscribe_data(DataType(GreeksData))
 
 def on_data(self, data):
-    if isinstance(GreeksData):
+    if isinstance(data, GreeksData):
         print("Data", data)
 ```
 
@@ -1054,3 +1758,9 @@ class GreeksData(Data):
         delta: float = 0.0,
   ) -> GreeksData: ...
 ```
+
+## Related guides
+
+- [Instruments](instruments.md) - Financial instruments referenced by data.
+- [Cache](cache.md) - Data storage and retrieval.
+- [Adapters](adapters.md) - Data sources and connectivity.

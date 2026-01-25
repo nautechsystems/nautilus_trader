@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,17 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Debug;
+use std::{fmt::Debug, time::Duration};
 
 use nautilus_common::{
     cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
     msgbus::database::MessageBusConfig,
 };
-use nautilus_core::UUID4;
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::engine::config::ExecutionEngineConfig;
 use nautilus_model::identifiers::TraderId;
-use nautilus_persistence::config::StreamingConfig;
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
 
@@ -41,18 +40,18 @@ pub trait NautilusKernelConfig: Debug {
     fn logging(&self) -> LoggerConfig;
     /// Returns the unique instance identifier for the kernel.
     fn instance_id(&self) -> Option<UUID4>;
-    /// Returns the timeout (seconds) for all clients to connect and initialize.
-    fn timeout_connection(&self) -> u32;
-    /// Returns the timeout (seconds) for execution state to reconcile.
-    fn timeout_reconciliation(&self) -> u32;
-    /// Returns the timeout (seconds) for portfolio to initialize margins and unrealized pnls.
-    fn timeout_portfolio(&self) -> u32;
-    /// Returns the timeout (seconds) for all engine clients to disconnect.
-    fn timeout_disconnection(&self) -> u32;
-    /// Returns the timeout (seconds) after stopping the node to await residual events before final shutdown.
-    fn timeout_post_stop(&self) -> u32;
-    /// Returns the timeout (seconds) to await pending tasks cancellation during shutdown.
-    fn timeout_shutdown(&self) -> u32;
+    /// Returns the timeout for all clients to connect and initialize.
+    fn timeout_connection(&self) -> Duration;
+    /// Returns the timeout for execution state to reconcile.
+    fn timeout_reconciliation(&self) -> Duration;
+    /// Returns the timeout for portfolio to initialize margins and unrealized pnls.
+    fn timeout_portfolio(&self) -> Duration;
+    /// Returns the timeout for all engine clients to disconnect.
+    fn timeout_disconnection(&self) -> Duration;
+    /// Returns the timeout after stopping the node to await residual events before final shutdown.
+    fn delay_post_stop(&self) -> Duration;
+    /// Returns the timeout to await pending tasks cancellation during shutdown.
+    fn timeout_shutdown(&self) -> Duration;
     /// Returns the cache configuration.
     fn cache(&self) -> Option<CacheConfig>;
     /// Returns the message bus configuration.
@@ -84,18 +83,18 @@ pub struct KernelConfig {
     pub logging: LoggerConfig,
     /// The unique instance identifier for the kernel
     pub instance_id: Option<UUID4>,
-    /// The timeout (seconds) for all clients to connect and initialize.
-    pub timeout_connection: u32,
-    /// The timeout (seconds) for execution state to reconcile.
-    pub timeout_reconciliation: u32,
-    /// The timeout (seconds) for portfolio to initialize margins and unrealized pnls.
-    pub timeout_portfolio: u32,
-    /// The timeout (seconds) for all engine clients to disconnect.
-    pub timeout_disconnection: u32,
-    /// The timeout (seconds) after stopping the node to await residual events before final shutdown.
-    pub timeout_post_stop: u32,
-    /// The timeout (seconds) to await pending tasks cancellation during shutdown.
-    pub timeout_shutdown: u32,
+    /// The timeout for all clients to connect and initialize.
+    pub timeout_connection: Duration,
+    /// The timeout for execution state to reconcile.
+    pub timeout_reconciliation: Duration,
+    /// The timeout for portfolio to initialize margins and unrealized pnls.
+    pub timeout_portfolio: Duration,
+    /// The timeout for all engine clients to disconnect.
+    pub timeout_disconnection: Duration,
+    /// The delay after stopping the node to await residual events before final shutdown.
+    pub delay_post_stop: Duration,
+    /// The delay to await pending tasks cancellation during shutdown.
+    pub timeout_shutdown: Duration,
     /// The cache configuration.
     pub cache: Option<CacheConfig>,
     /// The message bus configuration.
@@ -137,27 +136,27 @@ impl NautilusKernelConfig for KernelConfig {
         self.instance_id
     }
 
-    fn timeout_connection(&self) -> u32 {
+    fn timeout_connection(&self) -> Duration {
         self.timeout_connection
     }
 
-    fn timeout_reconciliation(&self) -> u32 {
+    fn timeout_reconciliation(&self) -> Duration {
         self.timeout_reconciliation
     }
 
-    fn timeout_portfolio(&self) -> u32 {
+    fn timeout_portfolio(&self) -> Duration {
         self.timeout_portfolio
     }
 
-    fn timeout_disconnection(&self) -> u32 {
+    fn timeout_disconnection(&self) -> Duration {
         self.timeout_disconnection
     }
 
-    fn timeout_post_stop(&self) -> u32 {
-        self.timeout_post_stop
+    fn delay_post_stop(&self) -> Duration {
+        self.delay_post_stop
     }
 
-    fn timeout_shutdown(&self) -> u32 {
+    fn timeout_shutdown(&self) -> Duration {
         self.timeout_shutdown
     }
 
@@ -199,12 +198,12 @@ impl Default for KernelConfig {
             save_state: false,
             logging: LoggerConfig::default(),
             instance_id: None,
-            timeout_connection: 60,
-            timeout_reconciliation: 30,
-            timeout_portfolio: 10,
-            timeout_disconnection: 10,
-            timeout_post_stop: 10,
-            timeout_shutdown: 5,
+            timeout_connection: Duration::from_secs(60),
+            timeout_reconciliation: Duration::from_secs(30),
+            timeout_portfolio: Duration::from_secs(10),
+            timeout_disconnection: Duration::from_secs(10),
+            delay_post_stop: Duration::from_secs(10),
+            timeout_shutdown: Duration::from_secs(5),
             cache: None,
             msgbus: None,
             data_engine: None,
@@ -212,6 +211,65 @@ impl Default for KernelConfig {
             exec_engine: None,
             portfolio: None,
             streaming: None,
+        }
+    }
+}
+
+/// Configuration for file rotation in streaming output.
+#[derive(Debug, Clone)]
+pub enum RotationConfig {
+    /// Rotate based on file size.
+    Size {
+        /// Maximum buffer size in bytes before rotation.
+        max_size: u64,
+    },
+    /// Rotate based on a time interval.
+    Interval {
+        /// Interval in nanoseconds.
+        interval_ns: u64,
+    },
+    /// Rotate based on scheduled dates.
+    ScheduledDates {
+        /// Interval in nanoseconds.
+        interval_ns: u64,
+        /// Start of the scheduled rotation period.
+        schedule_ns: UnixNanos,
+    },
+    /// No automatic rotation.
+    NoRotation,
+}
+
+/// Configuration for streaming live or backtest runs to the catalog in feather format.
+#[derive(Debug, Clone)]
+pub struct StreamingConfig {
+    /// The path to the data catalog.
+    pub catalog_path: String,
+    /// The `fsspec` filesystem protocol for the catalog.
+    pub fs_protocol: String,
+    /// The flush interval (milliseconds) for writing chunks.
+    pub flush_interval_ms: u64,
+    /// If any existing feather files should be replaced.
+    pub replace_existing: bool,
+    /// Rotation configuration.
+    pub rotation_config: RotationConfig,
+}
+
+impl StreamingConfig {
+    /// Creates a new [`StreamingConfig`] instance.
+    #[must_use]
+    pub const fn new(
+        catalog_path: String,
+        fs_protocol: String,
+        flush_interval_ms: u64,
+        replace_existing: bool,
+        rotation_config: RotationConfig,
+    ) -> Self {
+        Self {
+            catalog_path,
+            fs_protocol,
+            flush_interval_ms,
+            replace_existing,
+            rotation_config,
         }
     }
 }

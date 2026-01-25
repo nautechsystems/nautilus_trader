@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,7 +22,7 @@ from nautilus_trader.core.message import Event
 from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.core.rust.model import TimeInForce
 from nautilus_trader.core.rust.model import TriggerType
-from nautilus_trader.indicators.macd import MovingAverageConvergenceDivergence
+from nautilus_trader.indicators import MovingAverageConvergenceDivergence
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Position
 from nautilus_trader.model import TradeTick
@@ -93,20 +93,22 @@ class MACDStrategy(Strategy):
         self.unsubscribe_trade_ticks(instrument_id=self.config.instrument_id)
 
     def on_order_accepted(self, event: OrderAccepted) -> None:
-        if self._limit_order is not None:
-            if self._limit_order.client_order_id == event.client_order_id:
-                if self.account.is_margin_account:
-                    self.log.info(
-                        f"After limit order accepted with qty {self._limit_order.quantity} balances locked: "
-                        + f"{self.account.balances_locked()[self.account.base_currency].as_double()}",
-                        LogColor.MAGENTA,
-                    )
-                    return
+        if (
+            self._limit_order is not None
+            and self._limit_order.client_order_id == event.client_order_id
+            and self.account.is_margin_account
+        ):
+            self.log.info(
+                f"After limit order accepted with qty {self._limit_order.quantity} balances locked: "
+                f"{self.account.balances_locked()[self.account.base_currency].as_double()}",
+                LogColor.MAGENTA,
+            )
+            return
 
         if self.account.is_margin_account:
             self.log.info(
                 "After unidentified order accepted balances locked: "
-                + f"{self.account.balances_locked()[self.account.base_currency].as_double()}",
+                f"{self.account.balances_locked()[self.account.base_currency].as_double()}",
                 LogColor.MAGENTA,
             )
 
@@ -114,7 +116,7 @@ class MACDStrategy(Strategy):
         if self.account.is_margin_account:
             self.log.info(
                 f"After filled qty {event.last_qty} balances locked: "
-                + f"{self.account.balances_locked()[self.account.base_currency].as_double()}",
+                f"{self.account.balances_locked()[self.account.base_currency].as_double()}",
                 LogColor.CYAN,
             )
 
@@ -225,7 +227,7 @@ class MACDStrategy(Strategy):
         if self.account.is_margin_account:
             self.log.info(
                 f"After position changed to amount {self._position.quantity} balances locked: "
-                + f"{self.account.balances_locked()[self.account.base_currency].as_double()}",
+                f"{self.account.balances_locked()[self.account.base_currency].as_double()}",
                 LogColor.CYAN,
             )
 

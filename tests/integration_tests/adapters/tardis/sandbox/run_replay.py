@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,30 +12,50 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Utility script to launch a local Tardis-Machine replay from Python.
+
+The location of the example JSON configuration file changed when the Rust
+crates were moved out of the Python package directory in April-2025.  The
+script now references the new path directly (``crates/adapters/tardis/bin``).
+
+To start a server first run (example):
+
+    docker run -p 8000:8000 -p 8001:8001 \
+        -e "TM_API_KEY=YOUR_API_KEY" \
+        -d tardisdev/tardis-machine
+
+Then execute this file:
+
+    python tests/integration_tests/adapters/tardis/sandbox/run_replay.py
+
+Export ``NAUTILUS_LOG=debug`` for verbose Rust logging (defaults to INFO).
+
+"""
+
+from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.core import nautilus_pyo3
 
 
-# Run the following to start the tardis-machine server:
-# docker run -p 8000:8000 -p 8001:8001 -e "TM_API_KEY=YOUR_API_KEY" -d tardisdev/tardis-machine
-#
-# Export RUST_LOG=debug to see logging
-
-
-async def run():
-    config_filepath = (
-        PACKAGE_ROOT
-        / "nautilus_core"
+async def run() -> None:
+    config_filepath: Path = (
+        PACKAGE_ROOT  # project root
+        / "crates"
         / "adapters"
-        / "src"
         / "tardis"
         / "bin"
         / "example_config.json"
-    )
-    await nautilus_pyo3.run_tardis_machine_replay(str(config_filepath.resolve()))
+    ).resolve()
+
+    if not config_filepath.is_file():
+        raise FileNotFoundError(f"Unable to locate example_config.json at {config_filepath}")
+
+    await nautilus_pyo3.run_tardis_machine_replay(str(config_filepath))
 
 
 if __name__ == "__main__":

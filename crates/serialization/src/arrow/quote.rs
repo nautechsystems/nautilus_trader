@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,15 +21,11 @@ use arrow::{
     error::ArrowError,
     record_batch::RecordBatch,
 };
-use nautilus_model::{
-    data::QuoteTick,
-    identifiers::InstrumentId,
-    types::{Price, Quantity, fixed::PRECISION_BYTES},
-};
+use nautilus_model::{data::QuoteTick, identifiers::InstrumentId, types::fixed::PRECISION_BYTES};
 
 use super::{
     DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
-    KEY_SIZE_PRECISION, extract_column, get_raw_price, get_raw_quantity,
+    KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -138,7 +134,7 @@ impl EncodeToRecordBatch for QuoteTick {
     }
 
     fn metadata(&self) -> HashMap<String, String> {
-        QuoteTick::get_metadata(
+        Self::get_metadata(
             &self.instrument_id,
             self.bid_price.precision,
             self.bid_size.precision,
@@ -181,37 +177,49 @@ impl DecodeFromRecordBatch for QuoteTick {
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 4, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 5, DataType::UInt64)?;
 
-        assert_eq!(
-            bid_price_values.value_length(),
-            PRECISION_BYTES,
-            "Price precision uses {PRECISION_BYTES} byte value"
-        );
-        assert_eq!(
-            ask_price_values.value_length(),
-            PRECISION_BYTES,
-            "Price precision uses {PRECISION_BYTES} byte value"
-        );
+        if bid_price_values.value_length() != PRECISION_BYTES {
+            return Err(EncodingError::ParseError(
+                "bid_price",
+                format!(
+                    "Invalid value length: expected {PRECISION_BYTES}, found {}",
+                    bid_price_values.value_length()
+                ),
+            ));
+        }
+        if ask_price_values.value_length() != PRECISION_BYTES {
+            return Err(EncodingError::ParseError(
+                "ask_price",
+                format!(
+                    "Invalid value length: expected {PRECISION_BYTES}, found {}",
+                    ask_price_values.value_length()
+                ),
+            ));
+        }
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|row| {
+                let bid_price = decode_price(
+                    bid_price_values.value(row),
+                    price_precision,
+                    "bid_price",
+                    row,
+                )?;
+                let ask_price = decode_price(
+                    ask_price_values.value(row),
+                    price_precision,
+                    "ask_price",
+                    row,
+                )?;
+                let bid_size =
+                    decode_quantity(bid_size_values.value(row), size_precision, "bid_size", row)?;
+                let ask_size =
+                    decode_quantity(ask_size_values.value(row), size_precision, "ask_size", row)?;
                 Ok(Self {
                     instrument_id,
-                    bid_price: Price::from_raw(
-                        get_raw_price(bid_price_values.value(row)),
-                        price_precision,
-                    ),
-                    ask_price: Price::from_raw(
-                        get_raw_price(ask_price_values.value(row)),
-                        price_precision,
-                    ),
-                    bid_size: Quantity::from_raw(
-                        get_raw_quantity(bid_size_values.value(row)),
-                        size_precision,
-                    ),
-                    ask_size: Quantity::from_raw(
-                        get_raw_quantity(ask_size_values.value(row)),
-                        size_precision,
-                    ),
+                    bid_price,
+                    ask_price,
+                    bid_size,
+                    ask_size,
                     ts_event: ts_event_values.value(row).into(),
                     ts_init: ts_init_values.value(row).into(),
                 })
@@ -232,19 +240,18 @@ impl DecodeDataFromRecordBatch for QuoteTick {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::{collections::HashMap, sync::Arc};
 
     use arrow::{array::Array, record_batch::RecordBatch};
-    use nautilus_model::types::{fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw};
+    use nautilus_model::types::{
+        Price, Quantity, fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw,
+    };
     use rstest::rstest;
 
     use super::*;
-    use crate::arrow::get_raw_price;
+    use crate::arrow::{get_raw_price, get_raw_quantity};
 
     #[rstest]
     fn test_get_schema() {
@@ -398,15 +405,14 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = QuoteTick::get_metadata(&instrument_id, 2, 0);
 
+        let raw_bid1 = (100.00 * FIXED_SCALAR) as PriceRaw;
+        let raw_bid2 = (99.00 * FIXED_SCALAR) as PriceRaw;
+        let raw_ask1 = (101.00 * FIXED_SCALAR) as PriceRaw;
+        let raw_ask2 = (100.00 * FIXED_SCALAR) as PriceRaw;
+
         let (bid_price, ask_price) = (
-            FixedSizeBinaryArray::from(vec![
-                &(10000 as PriceRaw).to_le_bytes(),
-                &(9900 as PriceRaw).to_le_bytes(),
-            ]),
-            FixedSizeBinaryArray::from(vec![
-                &(10100 as PriceRaw).to_le_bytes(),
-                &(10000 as PriceRaw).to_le_bytes(),
-            ]),
+            FixedSizeBinaryArray::from(vec![&raw_bid1.to_le_bytes(), &raw_bid2.to_le_bytes()]),
+            FixedSizeBinaryArray::from(vec![&raw_ask1.to_le_bytes(), &raw_ask2.to_le_bytes()]),
         );
 
         let bid_size = FixedSizeBinaryArray::from(vec![
@@ -437,9 +443,212 @@ mod tests {
         assert_eq!(decoded_data.len(), 2);
 
         // Verify decoded values
-        assert_eq!(decoded_data[0].bid_price, Price::from_raw(10000, 2));
-        assert_eq!(decoded_data[0].ask_price, Price::from_raw(10100, 2));
-        assert_eq!(decoded_data[1].bid_price, Price::from_raw(9900, 2));
-        assert_eq!(decoded_data[1].ask_price, Price::from_raw(10000, 2));
+        assert_eq!(decoded_data[0].bid_price, Price::from_raw(raw_bid1, 2));
+        assert_eq!(decoded_data[0].ask_price, Price::from_raw(raw_ask1, 2));
+        assert_eq!(decoded_data[1].bid_price, Price::from_raw(raw_bid2, 2));
+        assert_eq!(decoded_data[1].ask_price, Price::from_raw(raw_ask2, 2));
+    }
+
+    #[rstest]
+    fn test_decode_batch_invalid_bid_price_returns_error() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let metadata = QuoteTick::get_metadata(&instrument_id, 2, 0);
+
+        let invalid_price: PriceRaw = PriceRaw::MAX - 1000;
+        let valid_price = (100.00 * FIXED_SCALAR) as PriceRaw;
+
+        let bid_price = FixedSizeBinaryArray::from(vec![&invalid_price.to_le_bytes()]);
+        let ask_price = FixedSizeBinaryArray::from(vec![&valid_price.to_le_bytes()]);
+        let bid_size = FixedSizeBinaryArray::from(vec![
+            &((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
+        let ask_size = FixedSizeBinaryArray::from(vec![
+            &((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
+        let ts_event = UInt64Array::from(vec![1]);
+        let ts_init = UInt64Array::from(vec![2]);
+
+        let record_batch = RecordBatch::try_new(
+            QuoteTick::get_schema(Some(metadata.clone())).into(),
+            vec![
+                Arc::new(bid_price),
+                Arc::new(ask_price),
+                Arc::new(bid_size),
+                Arc::new(ask_size),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        let result = QuoteTick::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("bid_price") && err.to_string().contains("row 0"),
+            "Expected bid_price error at row 0, was: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_batch_invalid_ask_size_returns_error() {
+        use nautilus_model::types::quantity::QUANTITY_RAW_MAX;
+
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let metadata = QuoteTick::get_metadata(&instrument_id, 2, 0);
+
+        let valid_price = (100.00 * FIXED_SCALAR) as PriceRaw;
+        let bid_price = FixedSizeBinaryArray::from(vec![&valid_price.to_le_bytes()]);
+        let ask_price = FixedSizeBinaryArray::from(vec![&valid_price.to_le_bytes()]);
+        let bid_size = FixedSizeBinaryArray::from(vec![
+            &((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
+
+        let invalid_size = QUANTITY_RAW_MAX + 1;
+        let ask_size = FixedSizeBinaryArray::from(vec![&invalid_size.to_le_bytes()]);
+        let ts_event = UInt64Array::from(vec![1]);
+        let ts_init = UInt64Array::from(vec![2]);
+
+        let record_batch = RecordBatch::try_new(
+            QuoteTick::get_schema(Some(metadata.clone())).into(),
+            vec![
+                Arc::new(bid_price),
+                Arc::new(ask_price),
+                Arc::new(bid_size),
+                Arc::new(ask_size),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        let result = QuoteTick::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("ask_size") && err.to_string().contains("row 0"),
+            "Expected ask_size error at row 0, was: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_batch_missing_instrument_id_returns_error() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut metadata = QuoteTick::get_metadata(&instrument_id, 2, 0);
+        metadata.remove(KEY_INSTRUMENT_ID);
+
+        let valid_price = (100.00 * FIXED_SCALAR) as PriceRaw;
+        let bid_price = FixedSizeBinaryArray::from(vec![&valid_price.to_le_bytes()]);
+        let ask_price = FixedSizeBinaryArray::from(vec![&valid_price.to_le_bytes()]);
+        let bid_size = FixedSizeBinaryArray::from(vec![
+            &((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
+        let ask_size = FixedSizeBinaryArray::from(vec![
+            &((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
+        let ts_event = UInt64Array::from(vec![1]);
+        let ts_init = UInt64Array::from(vec![2]);
+
+        let record_batch = RecordBatch::try_new(
+            QuoteTick::get_schema(Some(metadata.clone())).into(),
+            vec![
+                Arc::new(bid_price),
+                Arc::new(ask_price),
+                Arc::new(bid_size),
+                Arc::new(ask_size),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        let result = QuoteTick::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("instrument_id"),
+            "Expected missing instrument_id error, was: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_batch_missing_price_precision_returns_error() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut metadata = QuoteTick::get_metadata(&instrument_id, 2, 0);
+        metadata.remove(KEY_PRICE_PRECISION);
+
+        let valid_price = (100.00 * FIXED_SCALAR) as PriceRaw;
+        let bid_price = FixedSizeBinaryArray::from(vec![&valid_price.to_le_bytes()]);
+        let ask_price = FixedSizeBinaryArray::from(vec![&valid_price.to_le_bytes()]);
+        let bid_size = FixedSizeBinaryArray::from(vec![
+            &((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
+        let ask_size = FixedSizeBinaryArray::from(vec![
+            &((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
+        let ts_event = UInt64Array::from(vec![1]);
+        let ts_init = UInt64Array::from(vec![2]);
+
+        let record_batch = RecordBatch::try_new(
+            QuoteTick::get_schema(Some(metadata.clone())).into(),
+            vec![
+                Arc::new(bid_price),
+                Arc::new(ask_price),
+                Arc::new(bid_size),
+                Arc::new(ask_size),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        let result = QuoteTick::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("price_precision"),
+            "Expected missing price_precision error, was: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_encode_decode_round_trip() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let metadata = QuoteTick::get_metadata(&instrument_id, 2, 0);
+
+        let tick1 = QuoteTick {
+            instrument_id,
+            bid_price: Price::from("100.10"),
+            ask_price: Price::from("100.20"),
+            bid_size: Quantity::from(1000),
+            ask_size: Quantity::from(500),
+            ts_event: 1_000_000_000.into(),
+            ts_init: 1_000_000_001.into(),
+        };
+
+        let tick2 = QuoteTick {
+            instrument_id,
+            bid_price: Price::from("100.15"),
+            ask_price: Price::from("100.25"),
+            bid_size: Quantity::from(750),
+            ask_size: Quantity::from(250),
+            ts_event: 2_000_000_000.into(),
+            ts_init: 2_000_000_001.into(),
+        };
+
+        let original = vec![tick1, tick2];
+        let record_batch = QuoteTick::encode_batch(&metadata, &original).unwrap();
+        let decoded = QuoteTick::decode_batch(&metadata, record_batch).unwrap();
+
+        assert_eq!(decoded.len(), original.len());
+        for (orig, dec) in original.iter().zip(decoded.iter()) {
+            assert_eq!(dec.instrument_id, orig.instrument_id);
+            assert_eq!(dec.bid_price, orig.bid_price);
+            assert_eq!(dec.ask_price, orig.ask_price);
+            assert_eq!(dec.bid_size, orig.bid_size);
+            assert_eq!(dec.ask_size, orig.ask_size);
+            assert_eq!(dec.ts_event, orig.ts_event);
+            assert_eq!(dec.ts_init, orig.ts_init);
+        }
     }
 }

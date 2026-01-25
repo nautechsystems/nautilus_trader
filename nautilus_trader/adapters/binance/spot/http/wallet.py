@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,7 +29,8 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
     """
     Endpoint of maker/taker trade fee information.
 
-    `GET /sapi/v1/asset/tradeFee`
+    `GET /sapi/v1/asset/tradeFee` (Binance.com)
+    `GET /sapi/v1/asset/query/trading-fee` (Binance.US)
 
     References
     ----------
@@ -45,12 +46,18 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
         methods = {
             HttpMethod.GET: BinanceSecurityType.USER_DATA,
         }
+
+        # Check if Binance.US based on base URL
+        if ".us" in client.base_url:
+            endpoint_path = base_endpoint + "query/trading-fee"
+        else:
+            endpoint_path = base_endpoint + "tradeFee"
+
         super().__init__(
             client,
             methods,
-            base_endpoint + "tradeFee",
+            endpoint_path,
         )
-        self._get_obj_resp_decoder = msgspec.json.Decoder(BinanceSpotTradeFee)
         self._get_arr_resp_decoder = msgspec.json.Decoder(list[BinanceSpotTradeFee])
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
@@ -75,10 +82,7 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
     async def get(self, params: GetParameters) -> list[BinanceSpotTradeFee]:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, params)
-        if params.symbol is not None:
-            return [self._get_obj_resp_decoder.decode(raw)]
-        else:
-            return self._get_arr_resp_decoder.decode(raw)
+        return self._get_arr_resp_decoder.decode(raw)
 
 
 class BinanceSpotWalletHttpAPI:

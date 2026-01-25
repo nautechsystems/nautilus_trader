@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,7 +26,10 @@ use nautilus_core::{
         serialization::{from_dict_pyo3, to_dict_pyo3},
         to_pyvalue_err,
     },
-    serialization::Serializable,
+    serialization::{
+        Serializable,
+        msgpack::{FromMsgPack, ToMsgPack},
+    },
 };
 use pyo3::{
     IntoPyObjectExt,
@@ -120,20 +123,20 @@ impl QuoteTick {
     }
 
     fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
-        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+        let py_tuple: &Bound<'_, PyTuple> = state.cast::<PyTuple>()?;
         let binding = py_tuple.get_item(0)?;
-        let instrument_id_str: &str = binding.downcast::<PyString>()?.extract()?;
-        let bid_price_raw: PriceRaw = py_tuple.get_item(1)?.downcast::<PyInt>()?.extract()?;
-        let ask_price_raw: PriceRaw = py_tuple.get_item(2)?.downcast::<PyInt>()?.extract()?;
-        let bid_price_prec: u8 = py_tuple.get_item(3)?.downcast::<PyInt>()?.extract()?;
-        let ask_price_prec: u8 = py_tuple.get_item(4)?.downcast::<PyInt>()?.extract()?;
+        let instrument_id_str: &str = binding.cast::<PyString>()?.extract()?;
+        let bid_price_raw: PriceRaw = py_tuple.get_item(1)?.cast::<PyInt>()?.extract()?;
+        let ask_price_raw: PriceRaw = py_tuple.get_item(2)?.cast::<PyInt>()?.extract()?;
+        let bid_price_prec: u8 = py_tuple.get_item(3)?.cast::<PyInt>()?.extract()?;
+        let ask_price_prec: u8 = py_tuple.get_item(4)?.cast::<PyInt>()?.extract()?;
 
-        let bid_size_raw: QuantityRaw = py_tuple.get_item(5)?.downcast::<PyInt>()?.extract()?;
-        let ask_size_raw: QuantityRaw = py_tuple.get_item(6)?.downcast::<PyInt>()?.extract()?;
-        let bid_size_prec: u8 = py_tuple.get_item(7)?.downcast::<PyInt>()?.extract()?;
-        let ask_size_prec: u8 = py_tuple.get_item(8)?.downcast::<PyInt>()?.extract()?;
-        let ts_event: u64 = py_tuple.get_item(9)?.downcast::<PyInt>()?.extract()?;
-        let ts_init: u64 = py_tuple.get_item(10)?.downcast::<PyInt>()?.extract()?;
+        let bid_size_raw: QuantityRaw = py_tuple.get_item(5)?.cast::<PyInt>()?.extract()?;
+        let ask_size_raw: QuantityRaw = py_tuple.get_item(6)?.cast::<PyInt>()?.extract()?;
+        let bid_size_prec: u8 = py_tuple.get_item(7)?.cast::<PyInt>()?.extract()?;
+        let ask_size_prec: u8 = py_tuple.get_item(8)?.cast::<PyInt>()?.extract()?;
+        let ts_event: u64 = py_tuple.get_item(9)?.cast::<PyInt>()?.extract()?;
+        let ts_init: u64 = py_tuple.get_item(10)?.cast::<PyInt>()?.extract()?;
 
         self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
         self.bid_price = Price::from_raw(bid_price_raw, bid_price_prec);
@@ -146,7 +149,7 @@ impl QuoteTick {
         Ok(())
     }
 
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         (
             self.instrument_id.to_string(),
             self.bid_price.raw,
@@ -163,7 +166,7 @@ impl QuoteTick {
             .into_py_any(py)
     }
 
-    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+    fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
         (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
@@ -351,7 +354,7 @@ impl QuoteTick {
     /// The function will panic if the `PyCapsule` creation fails, which can occur if the
     /// `Data::Quote` object cannot be converted into a raw pointer.
     #[pyo3(name = "as_pycapsule")]
-    fn py_as_pycapsule(&self, py: Python<'_>) -> PyObject {
+    fn py_as_pycapsule(&self, py: Python<'_>) -> Py<PyAny> {
         data_to_pycapsule(py, Data::Quote(*self))
     }
 
@@ -376,9 +379,6 @@ impl QuoteTick {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use nautilus_core::python::IntoPyObjectNautilusExt;
@@ -393,16 +393,16 @@ mod tests {
 
     #[rstest]
     #[case(
-    Price::from_raw(10_000_000, 6),
-    Price::from_raw(10_001_000, 7), // Mismatched precision
-    Quantity::from_raw(1_000_000, 6),
-    Quantity::from_raw(1_000_000, 6),
+    Price::new(0.010000, 6),
+    Price::new(0.0100010, 7), // Mismatched precision
+    Quantity::new(0.001000, 6),
+    Quantity::new(0.001000, 6),
 )]
     #[case(
-    Price::from_raw(10_000_000, 6),
-    Price::from_raw(10_001_000, 6),
-    Quantity::from_raw(1_000_000, 6),
-    Quantity::from_raw(1_000_000, 7), // Mismatched precision
+    Price::new(0.010000, 6),
+    Price::new(0.010001, 6),
+    Quantity::new(0.001000, 6),
+    Quantity::new(0.0010000, 7), // Mismatched precision
 )]
     fn test_quote_tick_py_new_invalid_precisions(
         #[case] bid_price: Price,
@@ -410,8 +410,6 @@ mod tests {
         #[case] bid_size: Quantity,
         #[case] ask_size: Quantity,
     ) {
-        pyo3::prepare_freethreaded_python();
-
         let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
         let ts_event = 0;
         let ts_init = 1;
@@ -431,10 +429,10 @@ mod tests {
 
     #[rstest]
     fn test_to_dict(quote_ethusdt_binance: QuoteTick) {
-        pyo3::prepare_freethreaded_python();
         let quote = quote_ethusdt_binance;
 
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let dict_string = quote.py_to_dict(py).unwrap().to_string();
             let expected_string = r"{'type': 'QuoteTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'bid_price': '10000.0000', 'ask_price': '10001.0000', 'bid_size': '1.00000000', 'ask_size': '1.00000000', 'ts_event': 0, 'ts_init': 1}";
             assert_eq!(dict_string, expected_string);
@@ -443,10 +441,10 @@ mod tests {
 
     #[rstest]
     fn test_from_dict(quote_ethusdt_binance: QuoteTick) {
-        pyo3::prepare_freethreaded_python();
         let quote = quote_ethusdt_binance;
 
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let dict = quote.py_to_dict(py).unwrap();
             let parsed = QuoteTick::py_from_dict(py, dict).unwrap();
             assert_eq!(parsed, quote);
@@ -455,10 +453,10 @@ mod tests {
 
     #[rstest]
     fn test_from_pyobject(quote_ethusdt_binance: QuoteTick) {
-        pyo3::prepare_freethreaded_python();
         let quote = quote_ethusdt_binance;
 
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let tick_pyobject = quote.into_py_any_unwrap(py);
             let parsed_tick = QuoteTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_tick, quote);

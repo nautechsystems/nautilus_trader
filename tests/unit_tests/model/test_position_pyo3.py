@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import pytest
 
 from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
@@ -23,6 +25,8 @@ from nautilus_trader.core.nautilus_pyo3 import OrderFilled
 from nautilus_trader.core.nautilus_pyo3 import OrderSide
 from nautilus_trader.core.nautilus_pyo3 import OrderType
 from nautilus_trader.core.nautilus_pyo3 import Position
+from nautilus_trader.core.nautilus_pyo3 import PositionAdjusted
+from nautilus_trader.core.nautilus_pyo3 import PositionAdjustmentType
 from nautilus_trader.core.nautilus_pyo3 import PositionId
 from nautilus_trader.core.nautilus_pyo3 import PositionSide
 from nautilus_trader.core.nautilus_pyo3 import PositionSnapshot
@@ -57,7 +61,7 @@ def test_position_hash_str_repr():
         order=order,
         instrument=AUDUSD_SIM,
         position_id=PositionId("P-123456"),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_str("1.00001"),
     )
 
@@ -80,7 +84,7 @@ def test_position_snapshot():
         order=order,
         instrument=AUDUSD_SIM,
         position_id=PositionId("P-123456"),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_str("1.00001"),
     )
 
@@ -103,6 +107,7 @@ def test_position_to_from_dict():
     assert result_dict == {
         "type": "Position",
         "account_id": "SIM-000",
+        "adjustments": [],
         "avg_px_close": None,
         "avg_px_open": 1.00001,
         "base_currency": "AUD",
@@ -279,7 +284,7 @@ def test_position_partial_fills_with_sell_order() -> None:
         position_id=TestIdProviderPyo3.position_id(),
         last_px=Price.from_str("1.00001"),
         last_qty=Quantity.from_int(50_000),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     fill2 = TestEventsProviderPyo3.order_filled(
         instrument=instrument,
@@ -329,7 +334,7 @@ def test_position_filled_with_buy_order_then_sell_order():
 
     fill2 = OrderFilled(
         trader_id=TestIdProviderPyo3.trader_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         instrument_id=order.instrument_id,
         client_order_id=order.client_order_id,
         venue_order_id=VenueOrderId("2"),
@@ -392,7 +397,7 @@ def test_position_filled_with_sell_order_then_buy_order():
         instrument=instrument,
         order=order1,
         position_id=PositionId("P-19700101-000000-000-001-1"),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=AUDUSD_SIM, fill=fill1)
     fill2 = TestEventsProviderPyo3.order_filled(
@@ -517,14 +522,14 @@ def test_position_long_with_multiple_filled_orders():
         instrument=instrument,
         order=order1,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
-        trade_id=TradeId("1"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     fill2 = TestEventsProviderPyo3.order_filled(
         instrument=instrument,
         order=order2,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_str("1.00001"),
         trade_id=TradeId("2"),
     )
@@ -532,7 +537,7 @@ def test_position_long_with_multiple_filled_orders():
         instrument=instrument,
         order=order3,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_str("1.00010"),
         trade_id=TradeId("3"),
     )
@@ -577,9 +582,9 @@ def test_pnl_calculation_from_trading_technologies_example():
         instrument=instrument,
         order=order1,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(100),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill1)
     order2 = TestOrderProviderPyo3.market_order(
@@ -591,7 +596,7 @@ def test_pnl_calculation_from_trading_technologies_example():
         instrument=instrument,
         order=order2,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(99),
         trade_id=TradeId("2"),
     )
@@ -608,7 +613,7 @@ def test_pnl_calculation_from_trading_technologies_example():
         instrument=instrument,
         order=order3,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(101),
         trade_id=TradeId("3"),
     )
@@ -625,7 +630,7 @@ def test_pnl_calculation_from_trading_technologies_example():
         instrument=instrument,
         order=order4,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(105),
         trade_id=TradeId("4"),
     )
@@ -642,7 +647,7 @@ def test_pnl_calculation_from_trading_technologies_example():
         instrument=instrument,
         order=order5,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(103),
         trade_id=TradeId("5"),
     )
@@ -669,7 +674,7 @@ def test_position_closed_and_reopened() -> None:
     position = Position(instrument=AUDUSD_SIM, fill=fill1)
     fill2 = OrderFilled(
         trader_id=order.trader_id,
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         instrument_id=order.instrument_id,
         client_order_id=order.client_order_id,
         venue_order_id=VenueOrderId("2"),
@@ -693,7 +698,7 @@ def test_position_closed_and_reopened() -> None:
 
     fill3 = OrderFilled(
         trader_id=order.trader_id,
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         instrument_id=order.instrument_id,
         client_order_id=order.client_order_id,
         venue_order_id=VenueOrderId("2"),
@@ -753,9 +758,9 @@ def test_position_realized_pnl_with_interleaved_order_sides():
         instrument=instrument,
         order=order1,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(10000),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill1)
     order2 = TestOrderProviderPyo3.market_order(
@@ -767,7 +772,7 @@ def test_position_realized_pnl_with_interleaved_order_sides():
         instrument=instrument,
         order=order2,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(9999),
         trade_id=TradeId("2"),
     )
@@ -784,7 +789,7 @@ def test_position_realized_pnl_with_interleaved_order_sides():
         instrument=instrument,
         order=order3,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(10001),
         trade_id=TradeId("3"),
     )
@@ -801,7 +806,7 @@ def test_position_realized_pnl_with_interleaved_order_sides():
         instrument=instrument,
         order=order4,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(10003),
         trade_id=TradeId("4"),
     )
@@ -819,7 +824,7 @@ def test_position_realized_pnl_with_interleaved_order_sides():
         instrument=instrument,
         order=order5,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(10005),
         trade_id=TradeId("5"),
     )
@@ -841,9 +846,9 @@ def test_calculate_pnl_when_given_position_side_flat_returns_zero():
         instrument=instrument,
         order=order,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(10500),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill)
     result = position.calculate_pnl(10500.0, 10500.0, Quantity.from_int(100_000))
@@ -861,9 +866,9 @@ def test_calculate_pnl_for_long_position_win() -> None:
         instrument=instrument,
         order=order,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(10500),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill)
     pnl = position.calculate_pnl(
@@ -891,9 +896,9 @@ def test_calculate_pnl_for_long_position_loss() -> None:
         instrument=instrument,
         order=order,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(10500),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill)
     pnl = position.calculate_pnl(
@@ -921,9 +926,9 @@ def test_calculate_pnl_for_short_position_winning() -> None:
         instrument=instrument,
         order=order,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(10500),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill)
 
@@ -951,9 +956,9 @@ def test_calculate_pnl_for_short_position_loss() -> None:
         instrument=instrument,
         order=order,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(10500),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill)
     pnl = position.calculate_pnl(
@@ -981,9 +986,9 @@ def test_calculate_pnl_for_inverse1() -> None:
         instrument=instrument,
         order=order,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(10000),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill)
     pnl = position.calculate_pnl(
@@ -1009,9 +1014,9 @@ def test_calculate_pnl_for_inverse2() -> None:
         instrument=instrument,
         order=order,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_str("375.95"),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill)
 
@@ -1036,7 +1041,7 @@ def test_calculate_unrealized_pnl_for_long() -> None:
         order=order1,
         position_id=TestIdProviderPyo3.position_id(),
         last_px=Price.from_int(10500),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     fill2 = TestEventsProviderPyo3.order_filled(
         instrument=instrument,
@@ -1067,7 +1072,7 @@ def test_calculate_unrealized_pnl_for_short() -> None:
         order=order,
         position_id=TestIdProviderPyo3.position_id(),
         last_px=Price.from_str("10505.60"),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill)
     pnl = position.unrealized_pnl(Price.from_str("10407.15"))
@@ -1089,7 +1094,7 @@ def test_calculate_unrealized_pnl_for_long_inverse() -> None:
         order=order,
         position_id=TestIdProviderPyo3.position_id(),
         last_px=Price.from_str("10500.00"),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill)
     pnl = position.unrealized_pnl(Price.from_str("11505.60"))
@@ -1112,7 +1117,7 @@ def test_calculate_unrealized_pnl_for_short_inverse() -> None:
         order=order,
         position_id=TestIdProviderPyo3.position_id(),
         last_px=Price.from_str("15500.00"),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill)
     pnl = position.unrealized_pnl(Price.from_str("12506.65"))
@@ -1146,7 +1151,7 @@ def test_signed_qty_decimal_qty_for_equity(
         order,
         instrument=instrument,
         position_id=PositionId("P-123456"),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_str("100"),
     )
 
@@ -1155,3 +1160,711 @@ def test_signed_qty_decimal_qty_for_equity(
 
     # Assert
     assert position.signed_qty == expected_signed_qty
+
+
+def test_position_adjustment_creation_and_serialization() -> None:
+    # Arrange
+    adjustment = PositionAdjusted(
+        trader_id=TestIdProviderPyo3.trader_id(),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
+        instrument_id=TestIdProviderPyo3.audusd_id(),
+        position_id=PositionId("P-123456"),
+        account_id=TestIdProviderPyo3.account_id(),
+        adjustment_type=PositionAdjustmentType.COMMISSION,
+        quantity_change=float(Decimal("-0.001")),
+        pnl_change=None,
+        reason="test_order_id",
+        event_id=TestIdProviderPyo3.uuid(),
+        ts_event=1_000_000_000,
+        ts_init=2_000_000_000,
+    )
+
+    # Act
+    adj_dict = adjustment.to_dict()
+    reconstructed = PositionAdjusted.from_dict(adj_dict)
+
+    # Assert
+    assert adjustment == reconstructed
+    assert adj_dict["type"] == "PositionAdjusted"
+    assert adj_dict["adjustment_type"] == "COMMISSION"  # Should be string, not enum
+    assert adj_dict["quantity_change"] == "-0.001"
+    assert adj_dict["pnl_change"] is None
+    assert adj_dict["reason"] == "test_order_id"
+
+
+def test_position_with_adjustments_tracking() -> None:
+    # Arrange
+    instrument = TestInstrumentProviderPyo3.btcusdt_binance()
+    order = TestOrderProviderPyo3.market_order(
+        instrument_id=instrument.id,
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("1.0"),
+    )
+    fill = TestEventsProviderPyo3.order_filled(
+        instrument=instrument,
+        order=order,
+        position_id=TestIdProviderPyo3.position_id(),
+        last_px=Price.from_int(50000),
+        trade_id=TestIdProviderPyo3.trade_id(),
+    )
+    position = Position(instrument=instrument, fill=fill)
+
+    # Act
+    adjustment = PositionAdjusted(
+        trader_id=TestIdProviderPyo3.trader_id(),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
+        instrument_id=instrument.id,
+        position_id=TestIdProviderPyo3.position_id(),
+        account_id=TestIdProviderPyo3.account_id(),
+        adjustment_type=PositionAdjustmentType.COMMISSION,
+        quantity_change=float(Decimal("-0.001")),
+        pnl_change=None,
+        reason="commission_adjustment",
+        event_id=TestIdProviderPyo3.uuid(),
+        ts_event=1_000_000_000,
+        ts_init=2_000_000_000,
+    )
+    position.apply_adjustment(adjustment)
+
+    # Assert
+    assert len(position.adjustments) == 1
+    assert position.adjustments[0].adjustment_type == PositionAdjustmentType.COMMISSION
+    assert position.adjustments[0].quantity_change == Decimal("-0.001")
+    assert position.quantity == Quantity.from_str("0.999")
+
+
+def test_position_adjustment_funding_only_no_quantity_change() -> None:
+    """
+    Test creating a funding adjustment with quantity_change=None.
+    """
+    # Arrange & Act
+    adjustment = PositionAdjusted(
+        trader_id=TestIdProviderPyo3.trader_id(),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
+        instrument_id=TestIdProviderPyo3.btcusdt_binance_id(),
+        position_id=PositionId("P-123456"),
+        account_id=TestIdProviderPyo3.account_id(),
+        adjustment_type=PositionAdjustmentType.FUNDING,
+        quantity_change=None,  # Funding-only adjustment
+        pnl_change=Money(5.50, USD),
+        reason="funding_2024_01_15",
+        event_id=TestIdProviderPyo3.uuid(),
+        ts_event=1_000_000_000,
+        ts_init=2_000_000_000,
+    )
+
+    # Assert
+    assert adjustment.adjustment_type == PositionAdjustmentType.FUNDING
+    assert adjustment.quantity_change is None
+    assert adjustment.pnl_change == Money(5.50, USD)
+    assert adjustment.reason == "funding_2024_01_15"
+
+
+def test_position_adjustment_json_serialization_round_trip() -> None:
+    """
+    Test full JSON serialization round-trip for PositionAdjusted.
+    """
+    import json
+
+    # Arrange
+    adjustment = PositionAdjusted(
+        trader_id=TestIdProviderPyo3.trader_id(),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
+        instrument_id=TestIdProviderPyo3.audusd_id(),
+        position_id=PositionId("P-123456"),
+        account_id=TestIdProviderPyo3.account_id(),
+        adjustment_type=PositionAdjustmentType.COMMISSION,
+        quantity_change=float(Decimal("-0.001")),
+        pnl_change=None,
+        reason="test_commission",
+        event_id=TestIdProviderPyo3.uuid(),
+        ts_event=1_000_000_000,
+        ts_init=2_000_000_000,
+    )
+
+    # Act - Full JSON round-trip
+    adj_dict = adjustment.to_dict()
+    json_str = json.dumps(adj_dict)  # Should not raise (enum must be string)
+    parsed_dict = json.loads(json_str)
+    reconstructed = PositionAdjusted.from_dict(parsed_dict)
+
+    # Assert
+    assert reconstructed.adjustment_type == PositionAdjustmentType.COMMISSION
+    assert reconstructed.quantity_change == Decimal("-0.001")
+    assert reconstructed.pnl_change is None
+    assert parsed_dict["adjustment_type"] == "COMMISSION"  # Must be string not enum
+
+
+def test_position_adjustment_funding_json_serialization() -> None:
+    """
+    Test JSON serialization for funding adjustment with None quantity_change.
+    """
+    import json
+
+    # Arrange
+    adjustment = PositionAdjusted(
+        trader_id=TestIdProviderPyo3.trader_id(),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
+        instrument_id=TestIdProviderPyo3.btcusdt_binance_id(),
+        position_id=PositionId("P-123456"),
+        account_id=TestIdProviderPyo3.account_id(),
+        adjustment_type=PositionAdjustmentType.FUNDING,
+        quantity_change=None,
+        pnl_change=Money(-5.50, USD),
+        reason="funding_payment",
+        event_id=TestIdProviderPyo3.uuid(),
+        ts_event=1_000_000_000,
+        ts_init=2_000_000_000,
+    )
+
+    # Act
+    adj_dict = adjustment.to_dict()
+    json_str = json.dumps(adj_dict)
+    parsed_dict = json.loads(json_str)
+    reconstructed = PositionAdjusted.from_dict(parsed_dict)
+
+    # Assert
+    assert reconstructed.adjustment_type == PositionAdjustmentType.FUNDING
+    assert reconstructed.quantity_change is None  # Must preserve None
+    assert reconstructed.pnl_change == Money(-5.50, USD)
+    assert parsed_dict["quantity_change"] is None
+    assert parsed_dict["adjustment_type"] == "FUNDING"
+
+
+def test_position_close_and_reopen_clears_adjustments() -> None:
+    """
+    Test that closing then reopening a position clears adjustment history.
+    """
+    # Arrange - Open position with base currency commission (creates adjustment)
+    instrument = TestInstrumentProviderPyo3.btcusdt_binance()
+    buy_order = TestOrderProviderPyo3.market_order(
+        instrument_id=instrument.id,
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("1.0"),
+    )
+    buy_fill = OrderFilled(
+        trader_id=TestIdProviderPyo3.trader_id(),
+        strategy_id=buy_order.strategy_id,
+        instrument_id=instrument.id,
+        client_order_id=buy_order.client_order_id,
+        venue_order_id=VenueOrderId("1"),
+        account_id=TestIdProviderPyo3.account_id(),
+        trade_id=TestIdProviderPyo3.trade_id(),
+        position_id=TestIdProviderPyo3.position_id(),
+        order_side=OrderSide.BUY,
+        order_type=OrderType.MARKET,
+        last_qty=Quantity.from_str("1.0"),
+        last_px=Price.from_int(50000),
+        currency=BTC,  # Base currency commission creates adjustment
+        commission=Money(-0.001, BTC),
+        liquidity_side=LiquiditySide.TAKER,
+        reconciliation=False,
+        event_id=TestIdProviderPyo3.uuid(),
+        ts_event=0,
+        ts_init=0,
+    )
+    position = Position(instrument=instrument, fill=buy_fill)
+
+    # Verify initial state
+    assert len(position.adjustments) == 1
+    assert position.adjustments[0].quantity_change == Decimal("-0.001")
+
+    # Close position
+    sell_order = TestOrderProviderPyo3.market_order(
+        instrument_id=instrument.id,
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("0.999"),  # Account for commission
+    )
+    sell_fill = OrderFilled(
+        trader_id=TestIdProviderPyo3.trader_id(),
+        strategy_id=sell_order.strategy_id,
+        instrument_id=instrument.id,
+        client_order_id=sell_order.client_order_id,
+        venue_order_id=VenueOrderId("2"),
+        account_id=TestIdProviderPyo3.account_id(),
+        trade_id=TradeId("2"),
+        position_id=TestIdProviderPyo3.position_id(),
+        order_side=OrderSide.SELL,
+        order_type=OrderType.MARKET,
+        last_qty=Quantity.from_str("0.999"),
+        last_px=Price.from_int(51000),
+        currency=USDT,  # Quote currency commission - no adjustment
+        commission=Money(-50.0, USDT),
+        liquidity_side=LiquiditySide.TAKER,
+        reconciliation=False,
+        event_id=TestIdProviderPyo3.uuid(),
+        ts_event=0,
+        ts_init=0,
+    )
+    position.apply(sell_fill)
+
+    assert position.is_closed
+    assert len(position.adjustments) == 1  # Only buy had adjustment
+
+    # Reopen position - adjustments should be cleared
+    buy_order2 = TestOrderProviderPyo3.market_order(
+        instrument_id=instrument.id,
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("2.0"),
+    )
+    buy_fill2 = OrderFilled(
+        trader_id=TestIdProviderPyo3.trader_id(),
+        strategy_id=buy_order2.strategy_id,
+        instrument_id=instrument.id,
+        client_order_id=buy_order2.client_order_id,
+        venue_order_id=VenueOrderId("3"),
+        account_id=TestIdProviderPyo3.account_id(),
+        trade_id=TradeId("3"),
+        position_id=TestIdProviderPyo3.position_id(),
+        order_side=OrderSide.BUY,
+        order_type=OrderType.MARKET,
+        last_qty=Quantity.from_str("2.0"),
+        last_px=Price.from_int(52000),
+        currency=BTC,
+        commission=Money(-0.002, BTC),
+        liquidity_side=LiquiditySide.TAKER,
+        reconciliation=False,
+        event_id=TestIdProviderPyo3.uuid(),
+        ts_event=0,
+        ts_init=0,
+    )
+    position.apply(buy_fill2)
+
+    # Assert - old adjustments cleared, only new adjustment
+    assert position.is_open
+    assert len(position.adjustments) == 1
+    assert position.adjustments[0].quantity_change == Decimal("-0.002")
+    assert len(position.events) == 1  # Events also cleared
+
+
+def test_position_purge_events_clears_adjustments() -> None:
+    """
+    Test that purging events clears corresponding adjustments.
+    """
+    # Arrange - Create position with two fills, each with adjustment
+    instrument = TestInstrumentProviderPyo3.btcusdt_binance()
+
+    order1_id = ClientOrderId("O-001")
+    order1 = TestOrderProviderPyo3.market_order(
+        instrument_id=instrument.id,
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("1.0"),
+    )
+    fill1 = OrderFilled(
+        trader_id=TestIdProviderPyo3.trader_id(),
+        strategy_id=order1.strategy_id,
+        instrument_id=instrument.id,
+        client_order_id=order1_id,
+        venue_order_id=VenueOrderId("1"),
+        account_id=TestIdProviderPyo3.account_id(),
+        trade_id=TestIdProviderPyo3.trade_id(),
+        position_id=TestIdProviderPyo3.position_id(),
+        order_side=OrderSide.BUY,
+        order_type=OrderType.MARKET,
+        last_qty=Quantity.from_str("1.0"),
+        last_px=Price.from_int(50000),
+        currency=BTC,
+        commission=Money(-0.001, BTC),
+        liquidity_side=LiquiditySide.TAKER,
+        reconciliation=False,
+        event_id=TestIdProviderPyo3.uuid(),
+        ts_event=0,
+        ts_init=0,
+    )
+    position = Position(instrument=instrument, fill=fill1)
+
+    order2_id = ClientOrderId("O-002")
+    order2 = TestOrderProviderPyo3.market_order(
+        instrument_id=instrument.id,
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("2.0"),
+    )
+    fill2 = OrderFilled(
+        trader_id=TestIdProviderPyo3.trader_id(),
+        strategy_id=order2.strategy_id,
+        instrument_id=instrument.id,
+        client_order_id=order2_id,
+        venue_order_id=VenueOrderId("2"),
+        account_id=TestIdProviderPyo3.account_id(),
+        trade_id=TradeId("2"),
+        position_id=TestIdProviderPyo3.position_id(),
+        order_side=OrderSide.BUY,
+        order_type=OrderType.MARKET,
+        last_qty=Quantity.from_str("2.0"),
+        last_px=Price.from_int(51000),
+        currency=BTC,
+        commission=Money(-0.002, BTC),
+        liquidity_side=LiquiditySide.TAKER,
+        reconciliation=False,
+        event_id=TestIdProviderPyo3.uuid(),
+        ts_event=0,
+        ts_init=0,
+    )
+    position.apply(fill2)
+
+    assert len(position.adjustments) == 2
+    assert len(position.events) == 2
+
+    # Act - Purge first order
+    position.purge_events_for_order(order1_id)  # type: ignore[attr-defined]
+
+    # Assert - Only second adjustment remains
+    assert len(position.events) == 1
+    assert len(position.adjustments) == 1
+    assert position.adjustments[0].quantity_change == Decimal("-0.002")  # From order2
+
+
+def test_position_sell_base_currency_commission_reduces_short() -> None:
+    """
+    Test that base currency commission on SELL correctly reduces the short position.
+
+    When selling with commission paid in base currency, the commission should reduce the
+    effective short exposure (make it less negative).
+
+    """
+    # Arrange
+    instrument = TestInstrumentProviderPyo3.btcusdt_binance()
+
+    # Create a SELL fill with base currency (BTC) commission
+    sell_fill = OrderFilled(
+        trader_id=TestIdProviderPyo3.trader_id(),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-001"),
+        venue_order_id=VenueOrderId("1"),
+        account_id=TestIdProviderPyo3.account_id(),
+        trade_id=TestIdProviderPyo3.trade_id(),
+        position_id=TestIdProviderPyo3.position_id(),
+        order_side=OrderSide.SELL,
+        order_type=OrderType.MARKET,
+        last_qty=Quantity.from_str("1.0"),
+        last_px=Price.from_int(50000),
+        currency=BTC,  # Base currency commission
+        commission=Money(-0.001, BTC),  # Negative = cost
+        liquidity_side=LiquiditySide.TAKER,
+        reconciliation=False,
+        event_id=TestIdProviderPyo3.uuid(),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    # Act
+    position = Position(instrument=instrument, fill=sell_fill)
+
+    # Assert
+    # Should have created one adjustment event for base currency commission
+    assert len(position.adjustments) == 1
+
+    # The adjustment should be NEGATIVE (-0.001) to increase the short
+    # (commission is already negative, passed through unchanged)
+    assert position.adjustments[0].quantity_change == Decimal("-0.001")
+
+    # The final position should be -1.001 (sold 1.0 + paid 0.001 commission)
+    # This represents the true short exposure: you sold and paid commission
+    assert abs(position.signed_qty - (-1.001)) < 1e-9
+    assert abs(position.quantity.as_double() - 1.001) < 1e-9
+
+
+def test_position_flattens_with_quote_currency_commission_on_close() -> None:
+    """
+    Test that positions flatten correctly when closing with quote currency commission.
+
+    This is the realistic scenario: when selling BTC to close a long, commission is
+    paid in USDT (quote currency), not BTC. The position should flatten to zero.
+
+    """
+    # Arrange
+    instrument = TestInstrumentProviderPyo3.btcusdt_binance()
+
+    # BUY fill with base currency commission
+    fill1 = OrderFilled(
+        trader_id=TestIdProviderPyo3.trader_id(),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-001"),
+        venue_order_id=VenueOrderId("1"),
+        account_id=TestIdProviderPyo3.account_id(),
+        trade_id=TestIdProviderPyo3.trade_id(),
+        position_id=TestIdProviderPyo3.position_id(),
+        order_side=OrderSide.BUY,
+        order_type=OrderType.MARKET,
+        last_qty=Quantity.from_str("1.0"),
+        last_px=Price.from_int(50000),
+        currency=BTC,
+        commission=Money(-0.001, BTC),  # Base currency commission on open
+        liquidity_side=LiquiditySide.TAKER,
+        reconciliation=False,
+        event_id=TestIdProviderPyo3.uuid(),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    # Act: Open position
+    position = Position(instrument=instrument, fill=fill1)
+
+    # Assert: Position should be 0.999 long after commission
+    assert abs(position.signed_qty - 0.999) < 1e-9
+    assert position.side == PositionSide.LONG
+    assert len(position.adjustments) == 1
+
+    # Act: Close by selling position.quantity with QUOTE currency commission (realistic)
+    fill2 = OrderFilled(
+        trader_id=TestIdProviderPyo3.trader_id(),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-002"),
+        venue_order_id=VenueOrderId("2"),
+        account_id=TestIdProviderPyo3.account_id(),
+        trade_id=TradeId("2"),
+        position_id=TestIdProviderPyo3.position_id(),
+        order_side=OrderSide.SELL,
+        order_type=OrderType.MARKET,
+        last_qty=position.quantity,  # Sell exact quantity (0.999)
+        last_px=Price.from_int(50100),
+        currency=USDT,  # Quote currency commission - the realistic case
+        commission=Money(-50.0, USDT),  # Commission paid in USDT, not BTC
+        liquidity_side=LiquiditySide.TAKER,
+        reconciliation=False,
+        event_id=TestIdProviderPyo3.uuid(),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    position.apply(fill2)
+
+    # Assert: Position should be FLAT with quote currency commission
+    assert position.side == PositionSide.FLAT
+    assert abs(position.signed_qty) < 1e-9
+    assert position.is_closed
+    # Only 1 adjustment (from open) - no adjustment on close with quote commission
+    assert len(position.adjustments) == 1
+
+
+def test_position_flattens_with_base_currency_commission_on_close() -> None:
+    """
+    Test that closing with base currency commission creates a small short position.
+
+    When you SELL with base currency commission, the commission is additional asset
+    you must pay. If you sell exactly what you have, the commission pushes you short.
+    This is the correct behavior - on a real exchange you'd need slightly more asset
+    to fully close.
+
+    """
+    # Arrange
+    instrument = TestInstrumentProviderPyo3.btcusdt_binance()
+
+    # BUY fill with base currency commission
+    fill1 = OrderFilled(
+        trader_id=TestIdProviderPyo3.trader_id(),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-001"),
+        venue_order_id=VenueOrderId("1"),
+        account_id=TestIdProviderPyo3.account_id(),
+        trade_id=TestIdProviderPyo3.trade_id(),
+        position_id=TestIdProviderPyo3.position_id(),
+        order_side=OrderSide.BUY,
+        order_type=OrderType.MARKET,
+        last_qty=Quantity.from_str("1.0"),
+        last_px=Price.from_int(50000),
+        currency=BTC,
+        commission=Money(-0.001, BTC),  # Base currency commission
+        liquidity_side=LiquiditySide.TAKER,
+        reconciliation=False,
+        event_id=TestIdProviderPyo3.uuid(),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    # Act: Open position
+    position = Position(instrument=instrument, fill=fill1)
+
+    # Assert: Position should be 0.999 long after commission
+    assert abs(position.signed_qty - 0.999) < 1e-9
+    assert position.side == PositionSide.LONG
+    assert len(position.adjustments) == 1
+
+    # Act: Sell exact quantity with base currency commission
+    fill2 = OrderFilled(
+        trader_id=TestIdProviderPyo3.trader_id(),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-002"),
+        venue_order_id=VenueOrderId("2"),
+        account_id=TestIdProviderPyo3.account_id(),
+        trade_id=TradeId("2"),
+        position_id=TestIdProviderPyo3.position_id(),
+        order_side=OrderSide.SELL,
+        order_type=OrderType.MARKET,
+        last_qty=position.quantity,  # Sell exact quantity (0.999)
+        last_px=Price.from_int(50100),
+        currency=BTC,
+        commission=Money(-0.000999, BTC),  # Base currency commission on sell
+        liquidity_side=LiquiditySide.TAKER,
+        reconciliation=False,
+        event_id=TestIdProviderPyo3.uuid(),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    position.apply(fill2)
+
+    # Assert: Position goes SHORT due to commission
+    # SELL 0.999 BTC → signed_qty goes to 0
+    # Commission -0.000999 BTC applied → signed_qty goes to -0.000999
+    assert position.side == PositionSide.SHORT
+    assert abs(position.signed_qty - (-0.000999)) < 1e-9
+    assert position.is_open
+    # Should have 2 adjustments: both with quantity changes
+    assert len(position.adjustments) == 2
+    assert position.adjustments[0].quantity_change == Decimal("-0.001")
+    assert position.adjustments[1].quantity_change == Decimal("-0.000999")
+
+
+def test_position_flip_short_to_long_applies_full_commission() -> None:
+    """
+    Test that when flipping from SHORT to LONG, the full commission is applied to the
+    newly opened position, not scaled proportionally.
+
+    Scenario:
+    - Start SHORT 1 BTC
+    - BUY 1.5 BTC with -0.001 BTC commission
+    - Should end LONG 0.499 BTC (not 0.499667)
+
+    """
+    # Arrange: Create BTC/USDT instrument
+    btcusdt = TestInstrumentProviderPyo3.btcusdt_binance()
+
+    # Create SELL order to go short 1 BTC
+    order1 = TestOrderProviderPyo3.market_order(
+        instrument_id=btcusdt.id,
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("1.0"),
+    )
+
+    fill1 = TestEventsProviderPyo3.order_filled(
+        order1,
+        instrument=btcusdt,
+        position_id=PositionId("P-1"),
+        strategy_id=StrategyId("S-1"),
+        last_px=Price.from_int(50_000),
+    )
+
+    position = Position(btcusdt, fill1)
+
+    # Act: BUY 1.5 BTC with base currency commission to flip to long
+    order2 = TestOrderProviderPyo3.market_order(
+        instrument_id=btcusdt.id,
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("1.5"),
+    )
+
+    fill2 = OrderFilled(
+        trader_id=TestIdProviderPyo3.trader_id(),
+        strategy_id=StrategyId("S-1"),
+        instrument_id=btcusdt.id,
+        client_order_id=order2.client_order_id,
+        venue_order_id=VenueOrderId("2"),
+        account_id=TestIdProviderPyo3.account_id(),
+        trade_id=TradeId("E-2"),
+        order_side=OrderSide.BUY,
+        order_type=OrderType.MARKET,
+        last_qty=Quantity.from_str("1.5"),
+        last_px=Price.from_int(50_000),
+        currency=BTC,
+        commission=Money(-0.001, BTC),  # Base currency commission
+        liquidity_side=LiquiditySide.TAKER,
+        reconciliation=False,
+        event_id=TestIdProviderPyo3.uuid(),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    position.apply(fill2)
+
+    # Assert: Position should be LONG 0.499 BTC (0.5 opening - 0.001 commission)
+    # NOT 0.499667 (which would be if commission was scaled proportionally)
+    assert position.side == PositionSide.LONG
+    assert position.signed_qty == pytest.approx(0.499, abs=1e-9)
+    assert position.quantity == Quantity.from_str("0.499")
+    assert position.is_open
+
+    # Should have 1 adjustment from the flip (full commission applied to opening)
+    assert len(position.adjustments) == 1
+    assert position.adjustments[0].adjustment_type == PositionAdjustmentType.COMMISSION
+    assert position.adjustments[0].quantity_change == Decimal("-0.001")
+
+
+def test_position_flip_long_to_short_applies_full_commission() -> None:
+    """
+    Test that when flipping from LONG to SHORT, the full commission is applied to the
+    newly opened position, not scaled proportionally.
+
+    Scenario:
+    - Start LONG 1 ETH
+    - SELL 1.5 ETH with -0.001 ETH commission
+    - Should end SHORT 0.499 ETH (not 0.499667)
+
+    """
+    # Arrange: Create ETH/USDT instrument
+    ethusdt = TestInstrumentProviderPyo3.ethusdt_binance()
+
+    # Create BUY order to go long 1 ETH
+    order1 = TestOrderProviderPyo3.market_order(
+        instrument_id=ethusdt.id,
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("1.0"),
+    )
+
+    fill1 = TestEventsProviderPyo3.order_filled(
+        order1,
+        instrument=ethusdt,
+        position_id=PositionId("P-1"),
+        strategy_id=StrategyId("S-1"),
+        last_px=Price.from_int(3000),
+    )
+
+    position = Position(ethusdt, fill1)
+
+    # Act: SELL 1.5 ETH with base currency commission to flip to short
+    order2 = TestOrderProviderPyo3.market_order(
+        instrument_id=ethusdt.id,
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("1.5"),
+    )
+
+    fill2 = OrderFilled(
+        trader_id=TestIdProviderPyo3.trader_id(),
+        strategy_id=StrategyId("S-1"),
+        instrument_id=ethusdt.id,
+        client_order_id=order2.client_order_id,
+        venue_order_id=VenueOrderId("2"),
+        account_id=TestIdProviderPyo3.account_id(),
+        trade_id=TradeId("E-2"),
+        order_side=OrderSide.SELL,
+        order_type=OrderType.MARKET,
+        last_qty=Quantity.from_str("1.5"),
+        last_px=Price.from_int(3000),
+        currency=ETH,
+        commission=Money(-0.001, ETH),  # Base currency commission
+        liquidity_side=LiquiditySide.TAKER,
+        reconciliation=False,
+        event_id=TestIdProviderPyo3.uuid(),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    position.apply(fill2)
+
+    # Assert: Position should be SHORT 0.501 ETH (0.5 opening + 0.001 commission)
+    # For SHORT positions, base currency commission increases the position (you owe more)
+    # NOT 0.500333 (which would be if commission was scaled proportionally)
+    assert position.side == PositionSide.SHORT
+    assert position.signed_qty == pytest.approx(-0.501, abs=1e-9)
+    assert position.quantity == Quantity.from_str("0.501")
+    assert position.is_open
+
+    # Should have 1 adjustment from the flip (full commission applied to opening)
+    assert len(position.adjustments) == 1
+    assert position.adjustments[0].adjustment_type == PositionAdjustmentType.COMMISSION
+    assert position.adjustments[0].quantity_change == Decimal("-0.001")

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,12 +20,16 @@ import pytest
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.rust.model import AggregationSource
 from nautilus_trader.model.currencies import AUD
+from nautilus_trader.model.currencies import BTC
+from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import EUR
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import PriceType
@@ -94,6 +98,172 @@ class TestCache:
     def test_audit_own_order_books_with_no_orders(self):
         # Arrange, Act, Assert
         self.cache.audit_own_order_books()  # Should not raise
+
+    def test_update_own_order_book_with_market_order_does_not_raise(self):
+        # Arrange
+        from nautilus_trader.model.enums import OrderSide
+        from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+        from nautilus_trader.test_kit.stubs.events import TestEventStubs
+
+        order_factory = TestComponentStubs.order_factory()
+
+        # First, create a LIMIT order to establish an own book for the instrument
+        limit_order = order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100),
+            price=Price.from_str("1.00000"),
+        )
+        self.cache.add_order(limit_order)
+        self.cache.update_own_order_book(limit_order)
+
+        # Verify own book now exists
+        assert self.cache.own_order_book(AUDUSD_SIM.id) is not None
+
+        # Create a MARKET order (no price) and apply events to close it
+        market_order = order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(50),
+        )
+        self.cache.add_order(market_order)
+
+        # Transition market order through valid states: INITIALIZED -> SUBMITTED -> ACCEPTED -> FILLED
+        submitted = TestEventStubs.order_submitted(market_order)
+        market_order.apply(submitted)
+
+        accepted = TestEventStubs.order_accepted(market_order)
+        market_order.apply(accepted)
+
+        fill = TestEventStubs.order_filled(market_order, instrument=AUDUSD_SIM)
+        market_order.apply(fill)
+
+        # Act: update_own_order_book with closed MARKET order should gracefully skip
+        # Previously this raised: TypeError: Cannot initialize MARKET order as `nautilus_pyo3.OwnBookOrder`, no price
+        # The bug occurred because the bypass (own_book is not None and order.is_closed_c()) allowed
+        # MARKET orders through, then to_own_book_order() raised TypeError
+        self.cache.update_own_order_book(market_order)  # Should not raise
+
+        # Assert: own order book still exists (from limit order) but market order not added
+        assert self.cache.own_order_book(AUDUSD_SIM.id) is not None
+
+    def test_force_remove_from_own_order_book_cleans_up_indexes(self):
+        from nautilus_trader.model.enums import OrderSide
+        from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+        from nautilus_trader.test_kit.stubs.events import TestEventStubs
+
+        order_factory = TestComponentStubs.order_factory()
+
+        # Create and add a limit order
+        limit_order = order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100),
+            price=Price.from_str("1.00000"),
+        )
+        self.cache.add_order(limit_order)
+        self.cache.update_own_order_book(limit_order)
+
+        # Transition to SUBMITTED (inflight)
+        submitted = TestEventStubs.order_submitted(limit_order)
+        limit_order.apply(submitted)
+        self.cache.update_order(limit_order)
+
+        # Verify order is in inflight index
+        assert limit_order in self.cache.orders_inflight()
+        assert self.cache.own_order_book(AUDUSD_SIM.id) is not None
+
+        # Force remove the order
+        self.cache.force_remove_from_own_order_book(limit_order.client_order_id)
+
+        # Assert all indexes are cleaned up
+        assert limit_order not in self.cache.orders_open()
+        assert limit_order not in self.cache.orders_inflight()
+        assert limit_order not in self.cache.orders_emulated()
+        assert not self.cache.is_order_pending_cancel_local(limit_order.client_order_id)
+        assert limit_order in self.cache.orders_closed()
+
+    def test_audit_own_order_books_preserves_inflight_orders(self):
+        from nautilus_trader.model.enums import OrderSide
+        from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+        from nautilus_trader.test_kit.stubs.events import TestEventStubs
+
+        order_factory = TestComponentStubs.order_factory()
+
+        # Create and add a limit order
+        limit_order = order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100),
+            price=Price.from_str("1.00000"),
+        )
+        self.cache.add_order(limit_order)
+        self.cache.update_own_order_book(limit_order)
+
+        # Transition to SUBMITTED (inflight)
+        submitted = TestEventStubs.order_submitted(limit_order)
+        limit_order.apply(submitted)
+        self.cache.update_order(limit_order)
+
+        # Verify own book has the order
+        own_book = self.cache.own_order_book(AUDUSD_SIM.id)
+        assert own_book is not None
+        assert len(own_book.bids_to_list()) > 0
+
+        # Run audit - should NOT remove inflight orders
+        self.cache.audit_own_order_books()
+
+        # Assert order still in own book
+        own_book = self.cache.own_order_book(AUDUSD_SIM.id)
+        assert own_book is not None
+        assert len(own_book.bids_to_list()) > 0
+
+    def test_audit_own_order_books_removes_closed_orders(self):
+        from nautilus_trader.model.enums import OrderSide
+        from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+        from nautilus_trader.test_kit.stubs.events import TestEventStubs
+
+        order_factory = TestComponentStubs.order_factory()
+
+        # Create and add a limit order
+        limit_order = order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100),
+            price=Price.from_str("1.00000"),
+        )
+        self.cache.add_order(limit_order)
+        self.cache.update_own_order_book(limit_order)
+
+        # Transition through states to ACCEPTED
+        submitted = TestEventStubs.order_submitted(limit_order)
+        limit_order.apply(submitted)
+        self.cache.update_order(limit_order)
+
+        accepted = TestEventStubs.order_accepted(limit_order)
+        limit_order.apply(accepted)
+        self.cache.update_order(limit_order)
+
+        # Verify own book has the order
+        own_book = self.cache.own_order_book(AUDUSD_SIM.id)
+        assert own_book is not None
+        assert len(own_book.bids_to_list()) > 0
+
+        # Cancel the order (transition to closed)
+        canceled = TestEventStubs.order_canceled(limit_order)
+        limit_order.apply(canceled)
+        self.cache.update_order(limit_order)
+
+        # Manually add to own book to simulate stale state
+        self.cache.update_own_order_book(limit_order)
+
+        # Run audit - should remove closed orders
+        self.cache.audit_own_order_books()
+
+        # Assert order removed from own book
+        own_book = self.cache.own_order_book(AUDUSD_SIM.id)
+        assert own_book is not None
+        assert len(own_book.bids_to_list()) == 0
 
     @pytest.mark.parametrize(
         ("price_type"),
@@ -245,6 +415,55 @@ class TestCache:
         # Assert
         assert result == [instrument1]
 
+    def test_add_instrument_registers_currencies_for_currency_pair(self):
+        # Arrange
+        instrument = TestInstrumentProvider.ethusdt_binance()
+
+        # Act
+        self.cache.add_instrument(instrument)
+
+        # Assert (instrument has expected currencies)
+        assert instrument.get_base_currency() == ETH
+        assert instrument.quote_currency == USDT
+        assert instrument.get_settlement_currency() == USDT
+
+    def test_add_instrument_registers_currencies_for_linear_perpetual(self):
+        # Arrange
+        instrument = TestInstrumentProvider.btcusdt_perp_binance()
+
+        # Act
+        self.cache.add_instrument(instrument)
+
+        # Assert (instrument has expected currencies)
+        assert instrument.get_base_currency() == BTC
+        assert instrument.quote_currency == USDT
+        assert instrument.get_settlement_currency() == USDT
+
+    def test_add_instrument_registers_currencies_for_inverse_perpetual(self):
+        # Arrange (inverse perpetual: base=BTC, quote=USD, settlement=BTC)
+        instrument = TestInstrumentProvider.xbtusd_bitmex()
+
+        # Act
+        self.cache.add_instrument(instrument)
+
+        # Assert (instrument has expected currencies)
+        assert instrument.get_base_currency() == BTC
+        assert instrument.quote_currency == USD
+        assert instrument.get_settlement_currency() == BTC
+
+    def test_add_instrument_registers_non_standard_currency(self):
+        # Arrange (uses 1000RATS which is a non-standard currency)
+        from nautilus_trader.model.objects import Currency
+
+        instrument = TestInstrumentProvider.onethousandrats_perp_binance()
+
+        # Act
+        self.cache.add_instrument(instrument)
+
+        # Assert (non-standard currency is registered and accessible)
+        assert instrument.get_base_currency().code == "1000RATS"
+        assert Currency.from_str("1000RATS") is not None
+
     def test_synthetic_ids_when_one_synthetic_instrument_returns_expected_list(self):
         # Arrange
         synthetic = TestInstrumentProvider.synthetic_instrument()
@@ -307,6 +526,79 @@ class TestCache:
         # Assert
         assert result == {instrument_id: value}
 
+    def test_add_funding_rate(self):
+        # Arrange
+        instrument_id = InstrumentId.from_str("ETH-USD-SWAP.OKX")
+        rate = Decimal("0.0001")  # 0.01% funding rate
+        funding_rate = FundingRateUpdate(
+            instrument_id=instrument_id,
+            rate=rate,
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.cache.add_funding_rate(funding_rate)
+
+        # Act
+        result = self.cache.funding_rate(instrument_id)
+
+        # Assert
+        assert result == funding_rate
+
+    def test_funding_rate_when_no_funding_rate_returns_none(self):
+        # Arrange
+        instrument_id = InstrumentId.from_str("ETH-USD-SWAP.OKX")
+
+        # Act
+        result = self.cache.funding_rate(instrument_id)
+
+        # Assert
+        assert result is None
+
+    def test_add_funding_rate_updates_existing(self):
+        # Arrange
+        instrument_id = InstrumentId.from_str("ETH-USD-SWAP.OKX")
+
+        funding_rate1 = FundingRateUpdate(
+            instrument_id=instrument_id,
+            rate=Decimal("0.0001"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        funding_rate2 = FundingRateUpdate(
+            instrument_id=instrument_id,
+            rate=Decimal("0.0002"),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        # Act
+        self.cache.add_funding_rate(funding_rate1)
+        self.cache.add_funding_rate(funding_rate2)
+        result = self.cache.funding_rate(instrument_id)
+
+        # Assert
+        assert result == funding_rate2
+        assert result.rate == Decimal("0.0002")
+
+    def test_reset_clears_funding_rates(self):
+        # Arrange
+        instrument_id = InstrumentId.from_str("ETH-USD-SWAP.OKX")
+        funding_rate = FundingRateUpdate(
+            instrument_id=instrument_id,
+            rate=Decimal("0.0001"),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_funding_rate(funding_rate)
+
+        # Act
+        self.cache.reset()
+
+        # Assert
+        assert self.cache.funding_rate(instrument_id) is None
+
     def test_quote_ticks_when_one_tick_returns_expected_list(self):
         # Arrange
         tick = TestDataStubs.quote_tick()
@@ -319,18 +611,20 @@ class TestCache:
         # Assert
         assert result == [tick]
 
-    def test_add_quote_ticks_when_identical_ticks_does_not_add(self):
+    def test_add_quote_ticks_when_older_quote_does_not_add(self):
         # Arrange
-        tick = TestDataStubs.quote_tick()
+        tick1 = TestDataStubs.quote_tick(ts_event=1000, ts_init=1000)
+        self.cache.add_quote_tick(tick1)
 
-        self.cache.add_quote_tick(tick)
+        # Try to add older tick
+        tick2 = TestDataStubs.quote_tick(ts_event=500, ts_init=500)
 
         # Act
-        self.cache.add_quote_ticks([tick])
-        result = self.cache.quote_ticks(tick.instrument_id)
+        self.cache.add_quote_ticks([tick2])
+        result = self.cache.quote_ticks(tick1.instrument_id)
 
-        # Assert
-        assert result == [tick]
+        # Assert - older tick should not be added
+        assert result == [tick1]
 
     def test_add_quote_ticks_when_older_quotes(self):
         # Arrange
@@ -346,6 +640,22 @@ class TestCache:
         # Assert
         assert result == [tick2, tick1]
 
+    def test_add_quote_ticks_same_timestamp_adds_all(self):
+        # Arrange - multiple quotes at same timestamp
+        tick1 = TestDataStubs.quote_tick(bid_price=1.00001, ts_event=1000, ts_init=1000)
+        self.cache.add_quote_tick(tick1)
+
+        # Add two more ticks with same timestamp but different prices
+        tick2 = TestDataStubs.quote_tick(bid_price=1.00002, ts_event=1000, ts_init=1000)
+        tick3 = TestDataStubs.quote_tick(bid_price=1.00003, ts_event=1000, ts_init=1000)
+
+        # Act
+        self.cache.add_quote_ticks([tick2, tick3])
+        result = self.cache.quote_ticks(tick1.instrument_id)
+
+        # Assert - all three ticks should be in cache
+        assert len(result) == 3
+
     def test_trade_ticks_when_one_tick_returns_expected_list(self):
         # Arrange
         tick = TestDataStubs.trade_tick()
@@ -358,18 +668,20 @@ class TestCache:
         # Assert
         assert result == [tick]
 
-    def test_add_trade_ticks_when_identical_ticks_does_not_add(self):
+    def test_add_trade_ticks_when_older_trade_does_not_add(self):
         # Arrange
-        tick = TestDataStubs.trade_tick()
+        tick1 = TestDataStubs.trade_tick(trade_id="1", ts_event=1000, ts_init=1000)
+        self.cache.add_trade_tick(tick1)
 
-        self.cache.add_trade_tick(tick)
+        # Try to add older tick
+        tick2 = TestDataStubs.trade_tick(trade_id="2", ts_event=500, ts_init=500)
 
         # Act
-        self.cache.add_trade_ticks([tick])
-        result = self.cache.trade_ticks(tick.instrument_id)
+        self.cache.add_trade_ticks([tick2])
+        result = self.cache.trade_ticks(tick1.instrument_id)
 
-        # Assert
-        assert result == [tick]
+        # Assert - older tick should not be added
+        assert result == [tick1]
 
     def test_add_trade_ticks_when_older_trades(self):
         # Arrange
@@ -386,6 +698,25 @@ class TestCache:
         # Assert
         assert result == [tick2, tick1]
 
+    def test_add_trade_ticks_same_timestamp_adds_all(self):
+        # Arrange - multiple trades at same timestamp (e.g., large order sweeping levels)
+        tick1 = TestDataStubs.trade_tick(trade_id="1", ts_event=1000, ts_init=1000)
+        self.cache.add_trade_tick(tick1)
+
+        # Add two more ticks with same timestamp but different trade_ids
+        tick2 = TestDataStubs.trade_tick(trade_id="2", ts_event=1000, ts_init=1000)
+        tick3 = TestDataStubs.trade_tick(trade_id="3", ts_event=1000, ts_init=1000)
+
+        # Act
+        self.cache.add_trade_ticks([tick2, tick3])
+        result = self.cache.trade_ticks(tick1.instrument_id)
+
+        # Assert - all three ticks should be in cache
+        assert len(result) == 3
+        assert tick1 in result
+        assert tick2 in result
+        assert tick3 in result
+
     def test_bars_when_one_bar_returns_expected_list(self):
         # Arrange
         bar = TestDataStubs.bar_5decimal()
@@ -398,33 +729,51 @@ class TestCache:
         # Assert
         assert result == [bar]
 
-    def test_add_bars_when_already_identical_bar_does_not_add(self):
+    def test_add_bars_when_older_bar_does_not_add(self):
         # Arrange
-        bar = TestDataStubs.bar_5decimal()
-
-        self.cache.add_bar(bar)
-
-        # Act
-        self.cache.add_bars([bar])
-        result = self.cache.bars(bar.bar_type)
-
-        # Assert
-        assert result == [bar]
-
-    def test_add_bars_when_older_cached_bars(self):
-        # Arrange
-        bar1 = TestDataStubs.bar_5decimal()
+        bar1 = TestDataStubs.bar_5decimal(ts_event=1000)
         self.cache.add_bar(bar1)
 
-        bar2 = TestDataStubs.bar_5decimal(ts_event=1)
-        self.cache.add_bar(bar2)
+        # Try to add older bar
+        bar2 = TestDataStubs.bar_5decimal(ts_event=500)
 
         # Act
         self.cache.add_bars([bar2])
         result = self.cache.bars(bar1.bar_type)
 
-        # Assert
-        assert result == [bar2, bar1]
+        # Assert - older bar should not be added
+        assert result == [bar1]
+
+    def test_add_bars_when_newer_bar_adds(self):
+        # Arrange
+        bar1 = TestDataStubs.bar_5decimal(ts_event=0)
+        self.cache.add_bar(bar1)
+
+        bar2 = TestDataStubs.bar_5decimal(ts_event=1)
+
+        # Act
+        self.cache.add_bars([bar2])
+        result = self.cache.bars(bar1.bar_type)
+
+        # Assert - newer bar is added
+        assert len(result) == 2
+        assert result[0] == bar2  # newest first
+
+    def test_add_bars_same_timestamp_adds_all(self):
+        # Arrange - multiple bars at same timestamp
+        bar1 = TestDataStubs.bar_5decimal(ts_event=1000)
+        self.cache.add_bar(bar1)
+
+        # Add two more bars with same timestamp
+        bar2 = TestDataStubs.bar_5decimal(ts_event=1000)
+        bar3 = TestDataStubs.bar_5decimal(ts_event=1000)
+
+        # Act
+        self.cache.add_bars([bar2, bar3])
+        result = self.cache.bars(bar1.bar_type)
+
+        # Assert - all three bars should be in cache
+        assert len(result) == 3
 
     def test_instrument_when_no_instrument_returns_none(self):
         # Arrange, Act
@@ -788,7 +1137,7 @@ class TestCache:
         result = self.cache.get_xrate(SIM, AUD, AUD)
 
         # Assert
-        assert result == Decimal("1")
+        assert result == Decimal(1)
 
     def test_get_xrate_with_conversion(self):
         # Arrange

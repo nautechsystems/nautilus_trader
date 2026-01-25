@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,6 +12,8 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+//! Domain model representing a *Bet* used by betting-market integrations (e.g. prediction markets).
 
 use std::fmt::Display;
 
@@ -77,9 +79,10 @@ impl Bet {
     ///
     /// Panics if the side is not [BetSide::Lay].
     pub fn from_liability(price: Decimal, liability: Decimal, side: BetSide) -> Self {
-        if side != BetSide::Lay {
-            panic!("Liability-based betting is only applicable for Lay side.");
-        }
+        assert!(
+            side == BetSide::Lay,
+            "Liability-based betting is only applicable for Lay side."
+        );
         let adjusted_volume = liability / (price - Decimal::ONE);
         Self::new(price, adjusted_volume, side)
     }
@@ -144,6 +147,7 @@ impl Bet {
     }
 
     /// Creates a hedging bet for a given price.
+    #[must_use]
     pub fn hedging_bet(&self, price: Decimal) -> Self {
         Self::new(price, self.hedging_stake(price), self.side.opposite())
     }
@@ -374,9 +378,6 @@ pub fn inverse_probability_to_bet(
     probability_to_bet(inverse_probability, volume, inverse_side)
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -409,7 +410,7 @@ mod tests {
     #[rstest]
     fn test_display_bet() {
         let bet = Bet::new(dec!(2.0), dec!(100.0), BetSide::Back);
-        let formatted = format!("{}", bet);
+        let formatted = format!("{bet}");
         assert!(formatted.contains("Back"));
         assert!(formatted.contains("2.00"));
         assert!(formatted.contains("100.00"));
@@ -515,7 +516,7 @@ mod tests {
         let mut position = BetPosition::default();
         let bet = Bet::new(dec!(2.0), dec!(100.0), BetSide::Back);
         position.add_bet(bet);
-        let formatted = format!("{}", position);
+        let formatted = format!("{position}");
 
         assert!(formatted.contains("price"));
         assert!(formatted.contains("exposure"));

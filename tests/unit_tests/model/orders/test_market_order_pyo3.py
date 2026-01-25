@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,22 +16,20 @@
 import pytest
 
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.nautilus_pyo3 import AccountId
 from nautilus_trader.core.nautilus_pyo3 import InstrumentId
 from nautilus_trader.core.nautilus_pyo3 import OrderSide
 from nautilus_trader.core.nautilus_pyo3 import PositionSide
 from nautilus_trader.core.nautilus_pyo3 import Quantity
-from nautilus_trader.core.nautilus_pyo3 import StrategyId
 from nautilus_trader.core.nautilus_pyo3 import TimeInForce
-from nautilus_trader.core.nautilus_pyo3 import TraderId
 from nautilus_trader.model.orders import MarketOrder
+from nautilus_trader.test_kit.rust.identifiers_pyo3 import TestIdProviderPyo3
 from nautilus_trader.test_kit.rust.orders_pyo3 import TestOrderProviderPyo3
 
 
 AUDUSD_SIM = InstrumentId.from_str("AUD/USD.SIM")
-trader_id = TraderId("TESTER-000")
-strategy_id = StrategyId("S-001")
-account_id = AccountId("SIM-000")
+trader_id = TestIdProviderPyo3.trader_id()
+strategy_id = TestIdProviderPyo3.strategy_id()
+account_id = TestIdProviderPyo3.account_id()
 
 
 ################################################################################

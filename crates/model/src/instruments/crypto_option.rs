@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -127,6 +127,7 @@ impl CryptoOption {
         price_increment: Price,
         size_increment: Quantity,
         multiplier: Option<Quantity>,
+        lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_notional: Option<Money>,
@@ -173,7 +174,7 @@ impl CryptoOption {
             price_increment,
             size_increment,
             multiplier: multiplier.unwrap_or(Quantity::from(1)),
-            lot_size: Quantity::from(1),
+            lot_size: lot_size.unwrap_or(Quantity::from(1)),
             margin_init: margin_init.unwrap_or_default(),
             margin_maint: margin_maint.unwrap_or_default(),
             maker_fee: maker_fee.unwrap_or_default(),
@@ -211,6 +212,7 @@ impl CryptoOption {
         price_increment: Price,
         size_increment: Quantity,
         multiplier: Option<Quantity>,
+        lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_notional: Option<Money>,
@@ -240,6 +242,7 @@ impl CryptoOption {
             price_increment,
             size_increment,
             multiplier,
+            lot_size,
             max_quantity,
             min_quantity,
             max_notional,
@@ -309,7 +312,7 @@ impl Instrument for CryptoOption {
     }
 
     fn is_inverse(&self) -> bool {
-        false
+        self.is_inverse
     }
 
     fn isin(&self) -> Option<Ustr> {
@@ -393,9 +396,6 @@ impl Instrument for CryptoOption {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

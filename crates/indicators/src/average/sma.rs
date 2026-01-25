@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -137,11 +137,9 @@ impl SimpleMovingAverage {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use arraydeque::{ArrayDeque, Wrapping};
     use nautilus_model::{
         data::{QuoteTick, TradeTick},
         enums::PriceType,
@@ -239,7 +237,7 @@ mod tests {
             assert_eq!(
                 sma.count(),
                 expected,
-                "period={period}, step={i}, expected={expected}, got={}",
+                "period={period}, step={i}, expected={expected}, was={}",
                 sma.count()
             );
         }
@@ -287,7 +285,7 @@ mod tests {
             sma.update_raw(p);
             assert!(
                 (sma.value() - expect_avg[i]).abs() < 1e-9,
-                "step {i}: expected {}, got {}",
+                "step {i}: expected {}, was {}",
                 expect_avg[i],
                 sma.value()
             );
@@ -329,7 +327,7 @@ mod tests {
             sma.update_raw(price);
             assert!(
                 (sma.value() - exp_mean).abs() < 1e-12,
-                "input={price}, expected={exp_mean}, got={}",
+                "input={price}, expected={exp_mean}, was={}",
                 sma.value()
             );
         }
@@ -339,7 +337,7 @@ mod tests {
     fn sma_matches_reference_implementation() {
         const PERIOD: usize = 5;
         let mut sma = SimpleMovingAverage::new(PERIOD, None);
-        let mut window = std::collections::VecDeque::<f64>::with_capacity(PERIOD);
+        let mut window: ArrayDeque<f64, PERIOD, Wrapping> = ArrayDeque::new();
 
         for step in 0..20 {
             let price = f64::from(step) * 10.0;
@@ -348,12 +346,12 @@ mod tests {
             if window.len() == PERIOD {
                 window.pop_front();
             }
-            window.push_back(price);
+            let _ = window.push_back(price);
 
             let ref_mean: f64 = window.iter().sum::<f64>() / window.len() as f64;
             assert!(
                 (sma.value() - ref_mean).abs() < 1e-12,
-                "step={step}, expected={ref_mean}, got={}",
+                "step={step}, expected={ref_mean}, was={}",
                 sma.value()
             );
         }
@@ -415,7 +413,7 @@ mod tests {
             assert!(
                 sma.buf.len() <= PERIOD,
                 "step {i}: buf.len()={}, exceeds PERIOD={PERIOD}",
-                sma.buf.len()
+                sma.buf.len(),
             );
         }
         assert!(

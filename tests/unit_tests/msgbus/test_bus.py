@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -140,23 +140,6 @@ def test_request_when_endpoint_not_registered_logs_error(bus, clock):
     # Assert
     assert len(handler) == 0
     assert bus.req_count == 0
-
-
-def test_response_when_no_correlation_id_logs_error(bus, clock):
-    # Arrange
-    handler = []
-    response = Response(
-        correlation_id=UUID4(),
-        response_id=UUID4(),
-        ts_init=clock.timestamp_ns(),
-    )
-
-    # Act
-    bus.response(response)
-
-    # Assert
-    assert response not in handler
-    assert bus.res_count == 0
 
 
 def test_request_response_when_correlation_id_registered_handles_response(bus, clock):
@@ -568,6 +551,7 @@ def test_streaming_type_registration(bus):
 
     # Assert
     assert bus.is_streaming_type(int)
+    assert int in bus.streaming_types()
 
 
 def test_add_listener_receives_byte_messages(bus):

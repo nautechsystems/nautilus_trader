@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -80,6 +80,7 @@ from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.data import bar_aggregation_not_implemented_message
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
@@ -221,7 +222,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._decoder_candlestick_msg = msgspec.json.Decoder(BinanceCandlestickMsg)
         self._decoder_agg_trade_msg = msgspec.json.Decoder(BinanceAggregatedTradeMsg)
 
-        # Retry logic (hard-coded for now)
+        # Retry logic (hardcoded for now)
         self._max_retries: int = 3
         self._retry_delay: float = 1.0
         self._retry_errors: set[BinanceErrorCode] = {
@@ -287,13 +288,11 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         await self._ws_client.disconnect()
 
     def _should_retry(self, error_code: BinanceErrorCode, retries: int) -> bool:
-        if (
+        return not (
             error_code not in self._retry_errors
             or not self._max_retries
             or retries > self._max_retries
-        ):
-            return False
-        return True
+        )
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
@@ -358,9 +357,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         await self._subscribe_order_book(command)
 
-    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
-        await self._subscribe_order_book(command)
-
     async def _subscribe_order_book(self, command: SubscribeOrderBook) -> None:
         update_speed: int | None = command.params.get("update_speed")
 
@@ -387,20 +383,22 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
             return
 
-        if not command.depth:
-            # Reasonable default for full book, which works for Spot and Futures
-            depth = 1000
+        # Use the depth requested on the command, otherwise fall back to the
+        # Binance maximum (1000). Note that a depth of ``0`` means *full book*
+        # in NautilusTrader semantics, which we translate to 1000; the maximum
+        # value accepted by the Binance partial book snapshot endpoint.
+        depth: int = command.depth if command.depth else 1000
 
         if 0 < depth <= 20:
             if depth not in (5, 10, 20):
                 self._log.error(
                     "Cannot subscribe to order book snapshots: "
                     f"invalid `depth`, was {depth}. "
-                    "Valid depths are 5, 10 or 20",
+                    "Valid depths are 5, 10, or 20",
                 )
                 return
             await self._ws_client.subscribe_partial_book_depth(
-                symbol=command.vinstrument_id.symbol.value,
+                symbol=command.instrument_id.symbol.value,
                 depth=depth,
                 speed=update_speed,
             )
@@ -497,14 +495,14 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         pass  # TODO: Unsubscribe from Binance if no other subscriptions
 
-    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
-        pass  # TODO: Unsubscribe from Binance if no other subscriptions
-
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         await self._ws_client.unsubscribe_book_ticker(command.instrument_id.symbol.value)
 
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
-        await self._ws_client.unsubscribe_trades(command.instrument_id.symbol.value)
+        if self._use_agg_trade_ticks:
+            await self._ws_client.unsubscribe_agg_trades(command.instrument_id.symbol.value)
+        else:
+            await self._ws_client.unsubscribe_trades(command.instrument_id.symbol.value)
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         if not command.bar_type.spec.is_time_aggregated():
@@ -552,7 +550,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             self._log.error(f"Cannot find instrument for {request.instrument_id}")
             return
 
-        self._handle_instrument(instrument, request.id, request.params)
+        self._handle_instrument(instrument, request.id, request.start, request.end, request.params)
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         self._log.error(
@@ -565,34 +563,34 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             limit = 1000
 
         if not self._use_agg_trade_ticks:
-            if request.start is not None or request.end is not None:
-                self._log.warning(
-                    "Trades have been requested with a from/to time range, "
-                    f"however the request will be for the most recent {limit}: "
-                    "consider using aggregated trades (`use_agg_trade_ticks`)",
-                )
+            self._log.warning(
+                "Trades have been requested with a from/to time range, "
+                f"however the request will be for the most recent {limit}: "
+                "consider using aggregated trades (`use_agg_trade_ticks`)",
+            )
             ticks = await self._http_market.request_trade_ticks(
                 instrument_id=request.instrument_id,
                 limit=limit,
-                ts_init=self._clock.timestamp_ns(),
             )
         else:
             # Convert from timestamps to milliseconds
-            start_time_ms = None
-            end_time_ms = None
-            if request.start:
-                start_time_ms = int(request.start.timestamp() * 1000)
-            if request.end:
-                end_time_ms = int(request.end.timestamp() * 1000)
+            start_time_ms = secs_to_millis(request.start.timestamp())
+            end_time_ms = secs_to_millis(request.end.timestamp())
             ticks = await self._http_market.request_agg_trade_ticks(
                 instrument_id=request.instrument_id,
                 limit=limit,
                 start_time=start_time_ms,
                 end_time=end_time_ms,
-                ts_init=self._clock.timestamp_ns(),
             )
 
-        self._handle_trade_ticks(request.instrument_id, ticks, request.id, request.params)
+        self._handle_trade_ticks(
+            request.instrument_id,
+            ticks,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     async def _request_bars(self, request: RequestBars) -> None:
         if request.bar_type.spec.price_type != PriceType.LAST:
@@ -602,13 +600,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
             return
 
-        start_time_ms = None
-        if request.start is not None:
-            start_time_ms = secs_to_millis(request.start.timestamp())
-
-        end_time_ms = None
-        if request.end is not None:
-            end_time_ms = secs_to_millis(request.end.timestamp())
+        start_time_ms = secs_to_millis(request.start.timestamp())
+        end_time_ms = secs_to_millis(request.end.timestamp())
 
         if (
             request.bar_type.is_externally_aggregated()
@@ -643,7 +636,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 start_time=start_time_ms,
                 end_time=end_time_ms,
                 limit=request.limit if request.limit > 0 else None,
-                ts_init=self._clock.timestamp_ns(),
             )
 
             if request.bar_type.is_internally_aggregated():
@@ -666,8 +658,32 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 limit=request.limit if request.limit > 0 else None,
             )
 
-        partial: Bar = bars.pop()
-        self._handle_bars(request.bar_type, bars, partial, request.id, request.params)
+        if not bars:
+            self._log.warning(
+                f"No bars returned for {request.bar_type} between "
+                f"{request.start} and {request.end}",
+            )
+            return
+
+        # Filter out incomplete bars where close_time >= current_time
+        # Binance may return the current forming bar which should be excluded from historical data
+        current_time_ns = self._clock.timestamp_ns()
+        complete_bars = [bar for bar in bars if bar.ts_event < current_time_ns]
+
+        if not complete_bars:
+            self._log.warning(
+                f"No complete bars available for {request.bar_type} (all bars were incomplete)",
+            )
+            return
+
+        self._handle_bars(
+            request.bar_type,
+            complete_bars,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
         if request.limit not in [5, 10, 20, 50, 100, 500, 1000]:
@@ -686,12 +702,14 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
             data_type = DataType(
                 OrderBookDeltas,
-                metadata=({"instrument_id": request.instrument_id}),
+                metadata={"instrument_id": request.instrument_id},
             )
             self._handle_data_response(
                 data_type=data_type,
-                data=snapshot,
+                data=[snapshot],
                 correlation_id=request.id,
+                start=None,
+                end=None,
                 params=request.params,
             )
 
@@ -720,7 +738,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             interval=BinanceKlineInterval.MINUTE_1,
             start_time=start_time_ms,
             end_time=end_time_ms,
-            ts_init=self._clock.timestamp_ns(),
             limit=limit,
         )
 
@@ -746,11 +763,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 handler=bars.append,
             )
         else:
-            raise RuntimeError(  # pragma: no cover (design-time error)
-                f"Cannot start aggregator: "  # pragma: no cover (design-time error)
-                f"BarAggregation.{bar_type.spec.aggregation_string_c()} "  # pragma: no cover (design-time error)
-                f"not supported in open-source",  # pragma: no cover (design-time error)
-            )
+            msg = bar_aggregation_not_implemented_message(bar_type.spec.aggregation)
+            raise NotImplementedError(f"Inferring bars from Binance klines failed: {msg}")
 
         for binance_bar in binance_bars:
             if binance_bar.count == 0:
@@ -857,7 +871,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             instrument_id=instrument.id,
             start_time=start_time_ms,
             end_time=end_time_ms,
-            ts_init=self._clock.timestamp_ns(),
             limit=limit,
         )
 
@@ -881,10 +894,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 handler=bars.append,
             )
         else:
-            raise RuntimeError(  # pragma: no cover (design-time error)
-                f"Cannot start aggregator: "  # pragma: no cover (design-time error)
-                f"BarAggregation.{bar_type.spec.aggregation_string_c()} "  # pragma: no cover (design-time error)
-                f"not supported in open-source",  # pragma: no cover (design-time error)
+            msg = bar_aggregation_not_implemented_message(bar_type.spec.aggregation)
+            raise NotImplementedError(
+                f"Inferring bars from Binance aggregated trades failed: {msg}",
             )
 
         for tick in ticks:

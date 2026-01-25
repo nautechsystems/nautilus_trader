@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,11 +18,12 @@ use pyo3::prelude::*;
 use ustr::Ustr;
 
 use crate::{
-    enums::Exchange, machine::types::InstrumentMiniInfo, parse::bar_spec_to_tardis_trade_bar_string,
+    enums::TardisExchange, machine::types::TardisInstrumentMiniInfo,
+    parse::bar_spec_to_tardis_trade_bar_string,
 };
 
 #[pymethods]
-impl InstrumentMiniInfo {
+impl TardisInstrumentMiniInfo {
     #[new]
     fn py_new(
         instrument_id: InstrumentId,
@@ -31,7 +32,7 @@ impl InstrumentMiniInfo {
         price_precision: u8,
         size_precision: u8,
     ) -> PyResult<Self> {
-        let exchange: Exchange = exchange
+        let exchange: TardisExchange = exchange
             .parse()
             .expect("`exchange` should be Tardis convention");
         Ok(Self::new(
@@ -74,8 +75,13 @@ impl InstrumentMiniInfo {
     }
 }
 
-#[must_use]
+/// Converts a bar specification to a Tardis trade bar string.
+///
+/// # Errors
+///
+/// Returns an error if the bar specification cannot be converted to a Tardis format.
 #[pyfunction(name = "bar_spec_to_tardis_trade_bar_string")]
-pub fn py_bar_spec_to_tardis_trade_bar_string(bar_spec: &BarSpecification) -> String {
+pub fn py_bar_spec_to_tardis_trade_bar_string(bar_spec: &BarSpecification) -> PyResult<String> {
     bar_spec_to_tardis_trade_bar_string(bar_spec)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))
 }

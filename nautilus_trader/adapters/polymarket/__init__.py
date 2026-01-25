@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,6 +31,7 @@ from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MAX_
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MAX_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MIN_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
+from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.config import PolymarketDataClientConfig
 from nautilus_trader.adapters.polymarket.config import PolymarketExecClientConfig
@@ -38,6 +39,7 @@ from nautilus_trader.adapters.polymarket.factories import PolymarketLiveDataClie
 from nautilus_trader.adapters.polymarket.factories import PolymarketLiveExecClientFactory
 from nautilus_trader.adapters.polymarket.factories import get_polymarket_http_client
 from nautilus_trader.adapters.polymarket.factories import get_polymarket_instrument_provider
+from nautilus_trader.adapters.polymarket.loaders import PolymarketDataLoader
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProvider
 
 
@@ -50,6 +52,7 @@ __all__ = [
     "POLYMARKET_MIN_PRICE",
     "POLYMARKET_VENUE",
     "PolymarketDataClientConfig",
+    "PolymarketDataLoader",
     "PolymarketExecClientConfig",
     "PolymarketInstrumentProvider",
     "PolymarketLiveDataClientFactory",
@@ -57,4 +60,5 @@ __all__ = [
     "get_polymarket_http_client",
     "get_polymarket_instrument_id",
     "get_polymarket_instrument_provider",
+    "parse_polymarket_instrument",
 ]

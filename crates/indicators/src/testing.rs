@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,8 +18,8 @@
 /// Checks if two floating-point numbers are approximately equal within the
 /// margin of floating-point precision.
 ///
-/// * `a`: The first floating-point number.
-/// * `b`: The second floating-point number.
+/// - `a`: The first floating-point number.
+/// - `b`: The second floating-point number.
 ///
 /// # Returns
 ///

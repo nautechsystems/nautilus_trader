@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -28,6 +28,7 @@ use pyo3::{
 
 use crate::identifier_for_python;
 
+identifier_for_python!(crate::identifiers::ActorId);
 identifier_for_python!(crate::identifiers::AccountId);
 identifier_for_python!(crate::identifiers::ClientId);
 identifier_for_python!(crate::identifiers::ClientOrderId);

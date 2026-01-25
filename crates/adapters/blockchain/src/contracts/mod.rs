@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,4 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Smart contract interfaces and utilities for blockchain interactions.
+//!
+//! This module provides tools for interacting with various smart contracts on EVM-compatible
+//! blockchains, including standard token contracts (ERC20) and DeFi protocol contracts.
+
+pub mod base;
 pub mod erc20;
+pub mod uniswap_v3_pool;

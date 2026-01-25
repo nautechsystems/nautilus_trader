@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,7 +22,7 @@ from zipfile import is_zipfile
 
 import pandas as pd
 
-from nautilus_trader.adapters.bybit.common.enums import BybitProductType
+from nautilus_trader.core.nautilus_pyo3 import BybitProductType
 from nautilus_trader.model.enums import RecordFlag
 
 
@@ -64,53 +64,52 @@ class BybitOrderBookDeltaDataLoader:
         orderbook_keys = ["a", "b"]
         rows = []
 
-        with ZipFile(file_path, "r") as zipfile:
-            with zipfile.open(zipfile.namelist()[0]) as f:
-                for i, row in enumerate(f):
-                    if nrows is not None and i >= nrows:
-                        break
-                    obj = json.loads(row.strip())
-                    timestamp_ns = int(float(obj["ts"]) * 1_000_000)
-                    timestamp = pd.to_datetime(timestamp_ns, unit="ns", utc=True)
+        with ZipFile(file_path, "r") as zipfile, zipfile.open(zipfile.namelist()[0]) as f:
+            for i, row in enumerate(f):
+                if nrows is not None and i >= nrows:
+                    break
+                obj = json.loads(row.strip())
+                timestamp_ns = int(float(obj["ts"]) * 1_000_000)
+                timestamp = pd.to_datetime(timestamp_ns, unit="ns", utc=True)
 
-                    data = obj["data"]
-                    instrument_id = f"{data['s']}-{product_type.value.upper()}.BYBIT"
-                    update_type = obj["type"]
-                    sequence = data["seq"]
+                data = obj["data"]
+                instrument_id = f"{data['s']}-{product_type.value.upper()}.BYBIT"
+                update_type = obj["type"]
+                sequence = data["seq"]
 
-                    for key in orderbook_keys:
-                        if key in data:
-                            if update_type == "snapshot":
-                                rows.append(
-                                    {
-                                        "timestamp": timestamp,
-                                        "instrument_id": instrument_id,
-                                        "action": "CLEAR",
-                                        "side": cls.map_sides(key),
-                                        "order_id": 0,
-                                        "flags": 0,
-                                        "price": data[key][-1][0],
-                                        "size": 0,
-                                        "sequence": sequence,
-                                    },
-                                )
-
-                            rows.extend(
-                                [
-                                    {
-                                        "timestamp": timestamp,
-                                        "instrument_id": instrument_id,
-                                        "action": cls.map_actions(update_type, float(qty)),
-                                        "side": cls.map_sides(key),
-                                        "order_id": 0,
-                                        "flags": cls.map_flags(update_type),
-                                        "price": px,
-                                        "size": qty,
-                                        "sequence": sequence,
-                                    }
-                                    for px, qty in data[key]
-                                ],
+                for key in orderbook_keys:
+                    if key in data:
+                        if update_type == "snapshot":
+                            rows.append(
+                                {
+                                    "timestamp": timestamp,
+                                    "instrument_id": instrument_id,
+                                    "action": "CLEAR",
+                                    "side": cls.map_sides(key),
+                                    "order_id": 0,
+                                    "flags": 0,
+                                    "price": data[key][-1][0],
+                                    "size": 0,
+                                    "sequence": sequence,
+                                },
                             )
+
+                        rows.extend(
+                            [
+                                {
+                                    "timestamp": timestamp,
+                                    "instrument_id": instrument_id,
+                                    "action": cls.map_actions(update_type, float(qty)),
+                                    "side": cls.map_sides(key),
+                                    "order_id": 0,
+                                    "flags": cls.map_flags(update_type),
+                                    "price": px,
+                                    "size": qty,
+                                    "sequence": sequence,
+                                }
+                                for px, qty in data[key]
+                            ],
+                        )
 
         df = pd.DataFrame(rows)
 

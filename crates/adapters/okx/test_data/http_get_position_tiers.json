@@ -1,0 +1,20 @@
+{
+  "code": "0",
+  "msg": "",
+  "data": [
+    {
+      "baseMaxLoan": "50",
+      "imr": "0.1",
+      "instId": "BTC-USDT",
+      "maxLever": "10",
+      "maxSz": "50",
+      "minSz": "0",
+      "mmr": "0.03",
+      "optMgnFactor": "0",
+      "quoteMaxLoan": "500000",
+      "tier": "1",
+      "uly": "",
+      "instFamily": ""
+    }
+  ]
+}

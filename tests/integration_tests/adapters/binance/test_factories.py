@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 
 import pytest
 
@@ -36,9 +35,10 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestBinanceFactories:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
+        self.loop = request.getfixturevalue("event_loop")
         self.clock = LiveClock()
         self.trader_id = TestIdStubs.trader_id()
         self.strategy_id = TestIdStubs.strategy_id()
@@ -54,6 +54,8 @@ class TestBinanceFactories:
         self.cache = Cache(
             database=self.cache_db,
         )
+
+        return
 
     @pytest.mark.parametrize(
         ("account_type", "is_testnet", "is_us", "expected"),
@@ -77,13 +79,13 @@ class TestBinanceFactories:
                 "https://sapi.binance.com",
             ],
             [
-                BinanceAccountType.USDT_FUTURE,
+                BinanceAccountType.USDT_FUTURES,
                 False,
                 False,
                 "https://fapi.binance.com",
             ],
             [
-                BinanceAccountType.COIN_FUTURE,
+                BinanceAccountType.COIN_FUTURES,
                 False,
                 False,
                 "https://dapi.binance.com",
@@ -107,13 +109,13 @@ class TestBinanceFactories:
                 "https://sapi.binance.us",
             ],
             [
-                BinanceAccountType.USDT_FUTURE,
+                BinanceAccountType.USDT_FUTURES,
                 False,
                 True,
                 "https://fapi.binance.us",
             ],
             [
-                BinanceAccountType.COIN_FUTURE,
+                BinanceAccountType.COIN_FUTURES,
                 False,
                 True,
                 "https://dapi.binance.us",
@@ -137,7 +139,7 @@ class TestBinanceFactories:
                 "https://testnet.binance.vision",
             ],
             [
-                BinanceAccountType.USDT_FUTURE,
+                BinanceAccountType.USDT_FUTURES,
                 True,
                 False,
                 "https://testnet.binancefuture.com",
@@ -173,13 +175,13 @@ class TestBinanceFactories:
                 "wss://stream.binance.com:9443",
             ],
             [
-                BinanceAccountType.USDT_FUTURE,
+                BinanceAccountType.USDT_FUTURES,
                 False,
                 False,
                 "wss://fstream.binance.com",
             ],
             [
-                BinanceAccountType.COIN_FUTURE,
+                BinanceAccountType.COIN_FUTURES,
                 False,
                 False,
                 "wss://dstream.binance.com",
@@ -203,13 +205,13 @@ class TestBinanceFactories:
                 "wss://stream.binance.us:9443",
             ],
             [
-                BinanceAccountType.USDT_FUTURE,
+                BinanceAccountType.USDT_FUTURES,
                 False,
                 True,
                 "wss://fstream.binance.us",
             ],
             [
-                BinanceAccountType.COIN_FUTURE,
+                BinanceAccountType.COIN_FUTURES,
                 False,
                 True,
                 "wss://dstream.binance.us",
@@ -218,22 +220,22 @@ class TestBinanceFactories:
                 BinanceAccountType.SPOT,
                 True,
                 False,
-                "wss://testnet.binance.vision",
+                "wss://stream.testnet.binance.vision",
             ],
             [
                 BinanceAccountType.MARGIN,
                 True,
                 False,
-                "wss://testnet.binance.vision",
+                "wss://stream.testnet.binance.vision",
             ],
             [
                 BinanceAccountType.ISOLATED_MARGIN,
                 True,
                 False,
-                "wss://testnet.binance.vision",
+                "wss://stream.testnet.binance.vision",
             ],
             [
-                BinanceAccountType.USDT_FUTURE,
+                BinanceAccountType.USDT_FUTURES,
                 True,
                 False,
                 "wss://stream.binancefuture.com",
@@ -252,7 +254,7 @@ class TestBinanceFactories:
         data_client = BinanceLiveDataClientFactory.create(
             loop=self.loop,
             name="BINANCE",
-            config=BinanceDataClientConfig(  # (S106 Possible hard-coded password)
+            config=BinanceDataClientConfig(  # (S106 Possible hardcoded password)
                 api_key="SOME_BINANCE_API_KEY",  # Do not remove or will fail in CI
                 api_secret="SOME_BINANCE_API_SECRET",  # Do not remove or will fail in CI
                 account_type=BinanceAccountType.SPOT,
@@ -269,10 +271,10 @@ class TestBinanceFactories:
         data_client = BinanceLiveDataClientFactory.create(
             loop=self.loop,
             name="BINANCE",
-            config=BinanceDataClientConfig(  # (S106 Possible hard-coded password)
+            config=BinanceDataClientConfig(  # (S106 Possible hardcoded password)
                 api_key="SOME_BINANCE_API_KEY",  # Do not remove or will fail in CI
                 api_secret="SOME_BINANCE_API_SECRET",  # Do not remove or will fail in CI
-                account_type=BinanceAccountType.USDT_FUTURE,
+                account_type=BinanceAccountType.USDT_FUTURES,
             ),
             msgbus=self.msgbus,
             cache=self.cache,
@@ -286,7 +288,7 @@ class TestBinanceFactories:
         exec_client = BinanceLiveExecClientFactory.create(
             loop=self.loop,
             name="BINANCE",
-            config=BinanceExecClientConfig(  # (S106 Possible hard-coded password)
+            config=BinanceExecClientConfig(  # (S106 Possible hardcoded password)
                 api_key="SOME_BINANCE_API_KEY",  # Do not remove or will fail in CI
                 api_secret="SOME_BINANCE_API_SECRET",  # Do not remove or will fail in CI
                 account_type=BinanceAccountType.SPOT,
@@ -303,10 +305,10 @@ class TestBinanceFactories:
         exec_client = BinanceLiveExecClientFactory.create(
             loop=self.loop,
             name="BINANCE",
-            config=BinanceExecClientConfig(  # (S106 Possible hard-coded password)
+            config=BinanceExecClientConfig(  # (S106 Possible hardcoded password)
                 api_key="SOME_BINANCE_API_KEY",
                 api_secret="SOME_BINANCE_API_SECRET",
-                account_type=BinanceAccountType.USDT_FUTURE,
+                account_type=BinanceAccountType.USDT_FUTURES,
             ),
             msgbus=self.msgbus,
             cache=self.cache,

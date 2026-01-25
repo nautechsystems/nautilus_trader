@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,6 +18,7 @@ from typing import Final
 
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.model.identifiers import VenueOrderId
 
 
 class InteractiveBrokersClientErrorMixin(BaseMixin):
@@ -62,7 +63,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
             Indicates whether the message is a warning or an error.
 
         """
-        msg = f"{error_string} (code: {error_code}, {req_id=})."
+        msg = f"{error_string} (code: {error_code}, {req_id=})"
 
         if error_code in self.SUPPRESS_ERROR_LOGGING_CODES:
             self._log.debug(msg)
@@ -73,6 +74,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
         self,
         *,
         req_id: int,
+        error_time: int,
         error_code: int,
         error_string: str,
         advanced_order_reject_json: str = "",
@@ -86,6 +88,8 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
         ----------
         req_id : int
             The request ID associated with the error.
+        error_time : int
+            The timestamp when the error occurred.
         error_code : int
             The error code.
         error_string : str
@@ -103,24 +107,23 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
                 await self._handle_subscription_error(req_id, error_code, error_string)
             elif self._requests.get(req_id=req_id):
                 await self._handle_request_error(req_id, error_code, error_string)
-            elif req_id in self._order_id_to_order_ref:
+            elif VenueOrderId(str(req_id)) in self._order_id_to_order_ref:
                 await self._handle_order_error(req_id, error_code, error_string)
             else:
                 self._log.warning(f"Unhandled error: {error_code} for req_id {req_id}")
         elif error_code in self.CLIENT_ERRORS or error_code in self.CONNECTIVITY_LOST_CODES:
             if self._is_ib_connected.is_set():
                 self._log.debug(
-                    f"`_is_ib_connected` unset by code {error_code} in `_process_error`.",
+                    f"`_is_ib_connected` unset by code {error_code} in `_process_error`",
                     LogColor.BLUE,
                 )
                 self._is_ib_connected.clear()
-        elif error_code in self.CONNECTIVITY_RESTORED_CODES:
-            if not self._is_ib_connected.is_set():
-                self._log.debug(
-                    f"`_is_ib_connected` set by code {error_code} in `_process_error`.",
-                    LogColor.BLUE,
-                )
-                self._is_ib_connected.set()
+        elif error_code in self.CONNECTIVITY_RESTORED_CODES and not self._is_ib_connected.is_set():
+            self._log.debug(
+                f"`_is_ib_connected` set by code {error_code} in `_process_error`",
+                LogColor.BLUE,
+            )
+            self._is_ib_connected.set()
 
     async def _handle_subscription_error(
         self,
@@ -163,7 +166,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
 
             if self._is_ib_connected.is_set():
                 self._log.info(
-                    f"`_is_ib_connected` unset by {subscription.name} in `_handle_subscription_error`.",
+                    f"`_is_ib_connected` unset by {subscription.name} in `_handle_subscription_error`",
                 )
                 self._is_ib_connected.clear()
         else:
@@ -211,7 +214,8 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
             The error message string.
 
         """
-        order_ref = self._order_id_to_order_ref.get(req_id, None)
+        # Use VenueOrderId as dict key (for orders we placed, req_id is the valid orderId)
+        order_ref = self._order_id_to_order_ref.get(VenueOrderId(str(req_id)), None)
 
         if not order_ref:
             self._log.warning(f"Order reference not found for req_id {req_id}")

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,35 +13,40 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! System-level components and orchestration for NautilusTrader.
+//! System-level components and orchestration for [NautilusTrader](http://nautilustrader.io).
 //!
-//! This crate provides the core system architecture for orchestrating trading systems,
+//! The `nautilus-system` crate provides the core system architecture for orchestrating trading systems,
 //! including the kernel that manages all engines, configuration management,
-//! and system-level factories for creating components.
+//! and system-level factories for creating components:
 //!
-//! The main components include:
-//! - [`NautilusKernel`] - Core system orchestrator managing engines and components.
-//! - [`NautilusKernelConfig`] - Configuration for kernel initialization.
+//! - `NautilusKernel` - Core system orchestrator managing engines and components.
+//! - `NautilusKernelConfig` - Configuration for kernel initialization.
 //! - System builders and factories for component creation.
 //!
-//! [`NautilusKernel`]: kernel::NautilusKernel
+//! # Platform
 //!
 //! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.
 //!
-//! # Feature flags
+//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
+//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
+//!
+//! # Feature Flags
 //!
 //! This crate provides feature flags to control source code inclusion during compilation,
 //! depending on the intended use case, i.e. whether to provide Python bindings
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `streaming`: Enables `persistence` dependency for streaming configuration.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) (auto-enables `streaming`).
+//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
+#![deny(unsafe_op_in_unsafe_fn)]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]
 #![deny(clippy::missing_errors_doc)]
@@ -52,6 +57,15 @@ pub mod builder;
 pub mod config;
 pub mod factories;
 pub mod kernel;
+pub mod trader;
+
+#[cfg(feature = "python")]
+pub mod python;
 
 // Re-exports
-pub use config::NautilusKernelConfig;
+pub use builder::NautilusKernelBuilder;
+pub use config::{NautilusKernelConfig, RotationConfig, StreamingConfig};
+pub use factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
+pub use kernel::NautilusKernel;
+#[cfg(feature = "python")]
+pub use python::{FactoryRegistry, get_global_pyo3_registry};

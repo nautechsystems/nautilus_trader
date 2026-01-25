@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,6 +15,7 @@
 
 import math
 import pickle
+import sys
 from decimal import Decimal
 
 import pytest
@@ -88,7 +89,7 @@ class TestQuantity:
     @pytest.mark.parametrize(
         ("value", "precision", "expected"),
         [
-            [Quantity(2.15, precision=2), 0, Decimal("2")],
+            [Quantity(2.15, precision=2), 0, Decimal(2)],
             [Quantity(2.15, precision=2), 1, Decimal("2.2")],
             [Quantity(2.255, precision=3), 2, Decimal("2.26")],
         ],
@@ -103,9 +104,9 @@ class TestQuantity:
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
-            [Quantity(-0, precision=0), Decimal("0")],
-            [Quantity(0, precision=0), Decimal("0")],
-            [Quantity(1, precision=0), Decimal("1")],
+            [Quantity(-0, precision=0), Decimal(0)],
+            [Quantity(0, precision=0), Decimal(0)],
+            [Quantity(1, precision=0), Decimal(1)],
         ],
     )
     def test_abs_with_various_values_returns_expected_decimal(self, value, expected):
@@ -118,8 +119,8 @@ class TestQuantity:
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
-            [Quantity(1, precision=0), Decimal("-1")],
-            [Quantity(0, precision=0), Decimal("0")],
+            [Quantity(1, precision=0), Decimal(-1)],
+            [Quantity(0, precision=0), Decimal(0)],
         ],
     )
     def test_neg_with_various_values_returns_expected_decimal(self, value, expected):
@@ -247,12 +248,17 @@ class TestQuantity:
     @pytest.mark.parametrize(
         ("value1", "value2", "expected_type", "expected_value"),
         [
-            [Quantity(0, precision=0), Quantity(0, precision=0), Decimal, 0],
+            [
+                Quantity(0, precision=0),
+                Quantity(0, precision=0),
+                Quantity,
+                Quantity(0, precision=0),
+            ],
             [
                 Quantity(0, precision=0),
                 Quantity(1.1, precision=1),
-                Decimal,
-                Decimal("1.1"),
+                Quantity,
+                Quantity(1.1, precision=1),
             ],
             [Quantity(0, precision=0), 0, Decimal, 0],
             [Quantity(0, precision=0), 1, Decimal, 1],
@@ -265,8 +271,8 @@ class TestQuantity:
             [
                 Quantity(1, precision=0),
                 Quantity(1.1, precision=1),
-                Decimal,
-                Decimal("2.1"),
+                Quantity,
+                Quantity(2.1, precision=1),
             ],
             [Quantity(1, precision=0), Decimal("1.1"), Decimal, Decimal("2.1")],
         ],
@@ -288,13 +294,8 @@ class TestQuantity:
     @pytest.mark.parametrize(
         ("value1", "value2", "expected_type", "expected_value"),
         [
-            [Quantity(0, precision=0), Quantity(0, precision=0), Decimal, 0],
-            [
-                Quantity(0, precision=0),
-                Quantity(1.1, precision=1),
-                Decimal,
-                Decimal("-1.1"),
-            ],
+            [Quantity(0, precision=0), Quantity(0, precision=0), Quantity, Quantity(0, 0)],
+            [Quantity(1.1, precision=1), Quantity(0, precision=0), Quantity, Quantity(1.1, 1)],
             [Quantity(0, precision=0), 0, Decimal, 0],
             [Quantity(0, precision=0), 1, Decimal, -1],
             [0, Quantity(0, precision=0), Decimal, 0],
@@ -303,12 +304,7 @@ class TestQuantity:
             [Quantity(0, precision=0), 1.1, float, -1.1],
             [0.1, Quantity(1, precision=0), float, -0.9],
             [1.1, Quantity(1, precision=0), float, 0.10000000000000009],
-            [
-                Quantity(1, precision=0),
-                Quantity(1.1, precision=1),
-                Decimal,
-                Decimal("-0.1"),
-            ],
+            [Quantity(2.1, precision=1), Quantity(1.1, precision=1), Quantity, Quantity(1.0, 1)],
             [Quantity(1, precision=0), Decimal("1.1"), Decimal, Decimal("-0.1")],
         ],
     )
@@ -325,6 +321,15 @@ class TestQuantity:
         # Assert
         assert isinstance(result, expected_type)
         assert result == expected_value
+
+    def test_subtraction_negative_result_raises_value_error(self):
+        # Arrange
+        qty1 = Quantity(100, 0)
+        qty2 = Quantity(150, 0)
+
+        # Act, Assert
+        with pytest.raises(ValueError, match="negative value"):
+            _ = qty1 - qty2
 
     @pytest.mark.parametrize(
         ("value1", "value2", "expected_type", "expected_value"),
@@ -616,6 +621,229 @@ class TestQuantity:
         assert qty.precision == 3
 
     @pytest.mark.parametrize(
+        ("value", "expected_str", "expected_precision"),
+        [
+            # Scientific notation tests
+            ["1e6", "1000000", 0],
+            ["1E6", "1000000", 0],
+            ["2.5e4", "25000.000", 3],
+            ["3.5E-2", "0.04", 2],
+            ["1.23456e-3", "0.001", 3],
+            ["7.89E1", "78.9000", 4],
+            # Underscore handling
+            ["1_000", "1000", 0],
+            ["1_000.25", "1000.25", 2],
+            ["9_876_543.21", "9876543.21", 2],
+            ["0.000_123", "0.000123", 6],
+            # Combined underscores and scientific notation
+            ["1_000e2", "100000", 0],
+            ["2_345.6e-3", "2.346", 3],
+            # Edge cases for precision
+            [
+                "0.123456789012345" if FIXED_PRECISION > 9 else "0.123456789",
+                "0.123456789012345" if FIXED_PRECISION > 9 else "0.123456789",
+                min(15, FIXED_PRECISION),
+            ],
+            ["987654321.123456789", "987654321.123456789", 9],  # Full precision preserved
+            # Rounding behavior verification
+            ["2.115", "2.115", 3],
+            ["2.125", "2.125", 3],
+            ["2.135", "2.135", 3],
+            ["2.145", "2.145", 3],
+            ["2.155", "2.155", 3],
+            # Zero representations
+            ["0e0", "0", 0],
+            ["0.0e5", "0.000", 3],
+            ["0E-3", "0.000", 3],
+            # Small numbers
+            [
+                "1e-15" if FIXED_PRECISION > 9 else "1e-9",
+                "0.000000000000001" if FIXED_PRECISION > 9 else "0.000000001",
+                min(15, FIXED_PRECISION) if FIXED_PRECISION > 9 else 9,
+            ],
+        ],
+    )
+    def test_from_str_comprehensive(self, value, expected_str, expected_precision):
+        # Arrange, Act
+        qty = Quantity.from_str(value)
+
+        # Assert
+        assert str(qty) == expected_str
+        assert qty.precision == expected_precision
+
+    @pytest.mark.parametrize(
+        "invalid_input",
+        [
+            "not_a_number",
+            "1.2.3",
+            "++1",
+            "--1",
+            "-1",  # Negative values not allowed for Quantity
+            "-0.5",
+            "-1e3",
+            "1e",
+            "e10",
+            "1e1e1",
+            "",
+            "nan",
+            "inf",
+            "-inf",
+            "1e1000",  # Overflow
+        ],
+    )
+    def test_from_str_invalid_input_raises_value_error(self, invalid_input):
+        # Arrange, Act, Assert
+        with pytest.raises(Exception):  # Various exceptions can be raised for invalid input
+            Quantity.from_str(invalid_input)
+
+    def test_from_str_with_negative_value_raises_value_error(self):
+        with pytest.raises(ValueError, match="invalid negative quantity"):
+            Quantity.from_str("-1.0")
+        with pytest.raises(ValueError, match="invalid negative quantity"):
+            Quantity.from_str("-0.001")
+
+    def test_from_str_with_precision_exceeding_max_raises_value_error(self):
+        if FIXED_PRECISION <= 9:
+            # On Windows with 9 decimal max
+            with pytest.raises(ValueError, match="invalid `precision` greater than max"):
+                Quantity.from_str("1." + "0" * 10)  # 10 decimals > 9
+        else:
+            # On Linux/Mac with 16 decimal max
+            with pytest.raises(ValueError, match="invalid `precision` greater than max"):
+                Quantity.from_str("1." + "0" * 17)  # 17 decimals > 16
+
+    def test_from_str_precision_preservation(self):
+        # Whole numbers should have precision 0
+        assert Quantity.from_str("100").precision == 0
+        assert Quantity.from_str("1000000").precision == 0
+
+        # Decimal places should determine precision
+        assert Quantity.from_str("100.0").precision == 1
+        assert Quantity.from_str("100.00").precision == 2
+        assert Quantity.from_str("100.12345").precision == 5
+
+        # Scientific notation with decimal results
+        qty = Quantity.from_str("1.23e-2")
+        assert str(qty) == "0.01"
+        assert qty.precision == 2
+
+        # Underscores shouldn't affect precision
+        assert Quantity.from_str("1_000.123").precision == 3
+        assert Quantity.from_str("1_000").precision == 0
+
+    @pytest.mark.parametrize(
+        ("input_val", "expected"),
+        [
+            # Test that values are preserved exactly
+            ("1.115", "1.115"),
+            ("1.125", "1.125"),
+            ("1.135", "1.135"),
+            ("1.145", "1.145"),
+            # High precision values preserved up to FIXED_PRECISION
+            (
+                "0.9999999999999999" if FIXED_PRECISION > 9 else "0.999999999",
+                "0.9999999999999999" if FIXED_PRECISION > 9 else "0.999999999",
+            ),
+            (
+                "1.0000000000000001" if FIXED_PRECISION > 9 else "1.000000001",
+                "1.0000000000000001" if FIXED_PRECISION > 9 else "1.000000001",
+            ),
+        ],
+    )
+    def test_from_str_rounding_behavior(self, input_val, expected):
+        qty = Quantity.from_str(input_val)
+        assert str(qty) == expected
+
+    def test_from_str_boundary_values(self):
+        # Test values near the boundaries of the Quantity type
+
+        # Maximum value (should work)
+        # Test reasonable large values
+        qty_large = Quantity.from_str("1000000000")
+        assert str(qty_large) == "1000000000"
+
+        # Zero (should work)
+        qty_zero = Quantity.from_str("0")
+        assert qty_zero.as_double() == 0
+        assert str(qty_zero) == "0"
+
+        # Negative values should raise errors (Quantity is unsigned)
+        with pytest.raises(ValueError):
+            Quantity.from_str("-1")
+
+        with pytest.raises(ValueError):
+            Quantity.from_str("-0.001")
+
+    def test_from_decimal_returns_expected_value(self):
+        # Arrange, Act
+        qty = Quantity.from_decimal(Decimal("0.511"))
+
+        # Assert
+        assert qty == Quantity(0.511, precision=3)
+        assert str(qty) == "0.511"
+        assert qty.precision == 3
+
+    def test_from_decimal_with_integer_value(self):
+        # Arrange, Act
+        qty = Quantity.from_decimal(Decimal(1))
+
+        # Assert
+        assert qty == Quantity(1, precision=0)
+        assert str(qty) == "1"
+        assert qty.precision == 0
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="High precision not supported on Windows")
+    def test_from_decimal_with_high_precision(self):
+        # Arrange, Act
+        qty = Quantity.from_decimal(Decimal("1.234567890123456"))
+
+        # Assert
+        assert qty.precision == 15
+        assert str(qty) == "1.234567890123456"
+
+    def test_from_decimal_equivalent_to_from_str(self):
+        # Test that from_decimal produces the same result as from_str
+        test_values = [
+            Decimal(1),
+            Decimal("0.5"),
+            Decimal("100.25"),
+            Decimal("0.001"),
+            Decimal("1234.5678"),
+        ]
+
+        for decimal_val in test_values:
+            qty_from_decimal = Quantity.from_decimal(decimal_val)
+            qty_from_str = Quantity.from_str(str(decimal_val))
+            assert qty_from_decimal == qty_from_str
+            assert qty_from_decimal.precision == qty_from_str.precision
+
+    def test_from_decimal_with_negative_value_raises_value_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError, match="invalid negative quantity"):
+            Quantity.from_decimal(Decimal("-1.0"))
+        with pytest.raises(ValueError, match="invalid negative quantity"):
+            Quantity.from_decimal(Decimal("-0.001"))
+
+    def test_from_decimal_precision_preservation(self):
+        # Whole numbers should have precision 0
+        assert Quantity.from_decimal(Decimal(100)).precision == 0
+        assert Quantity.from_decimal(Decimal(1000000)).precision == 0
+
+        # Decimal places should determine precision
+        assert Quantity.from_decimal(Decimal("100.0")).precision == 1
+        assert Quantity.from_decimal(Decimal("100.00")).precision == 2
+        assert Quantity.from_decimal(Decimal("100.12345")).precision == 5
+
+    def test_from_decimal_with_zero(self):
+        # Arrange, Act
+        qty = Quantity.from_decimal(Decimal(0))
+
+        # Assert
+        assert qty.as_double() == 0
+        assert str(qty) == "0"
+        assert qty.precision == 0
+
+    @pytest.mark.parametrize(
         ("value", "expected"),
         [
             ["0", "0"],
@@ -652,3 +880,11 @@ class TestQuantity:
 
         # Assert
         assert pickle.loads(pickled) == quantity  # noqa: S301 (testing pickle)
+
+    def test_quantity_equality_with_none_returns_false(self):
+        # Arrange
+        quantity = Quantity(100.0, 2)
+
+        # Act, Assert
+        assert (quantity == None) is False  # noqa: E711
+        assert (quantity != None) is True  # noqa: E711

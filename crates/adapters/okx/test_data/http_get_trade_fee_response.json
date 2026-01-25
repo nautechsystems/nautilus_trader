@@ -1,0 +1,21 @@
+{
+  "code": "0",
+  "msg": "",
+  "data": [
+    {
+      "category": "1",
+      "delivery": "",
+      "exercise": "",
+      "instType": "SPOT",
+      "level": "Lv1",
+      "maker": "-0.0008",
+      "makerU": "",
+      "makerUSDC": "",
+      "taker": "-0.001",
+      "takerU": "",
+      "takerUSDC": "",
+      "ts": "1608623626000",
+      "uly": ""
+    }
+  ]
+}

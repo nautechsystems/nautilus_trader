@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,9 +24,14 @@ from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookDepth
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
+from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeQuoteTicks
+from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import ClientId
@@ -79,31 +84,78 @@ class MockMarketDataClient(MarketDataClient):
         self.quote_ticks: list[QuoteTick] = []
         self.trade_ticks: list[TradeTick] = []
         self.bars: list[Bar] = []
+        self.order_book_depths: list[OrderBookDepth10] = []
 
     def request_instrument(self, request: RequestInstrument) -> None:
-        self._handle_instrument(self.instrument, request.id, request.params)
+        self._handle_instrument(
+            self.instrument,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     def request_instruments(self, request: RequestInstruments) -> None:
-        self._handle_instruments(request.venue, self.instruments, request.id, request.params)
+        self._handle_instruments(
+            request.venue,
+            self.instruments,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     def request_quote_ticks(self, request: RequestQuoteTicks) -> None:
-        self._handle_quote_ticks(
+        self._handle_quote_ticks_py(
             request.instrument_id,
             self.quote_ticks,
             request.id,
+            request.start,
+            request.end,
             request.params,
         )
 
     def request_trade_ticks(self, request: RequestTradeTicks) -> None:
-        self._handle_trade_ticks(
+        self._handle_trade_ticks_py(
             request.instrument_id,
             self.trade_ticks,
             request.id,
+            request.start,
+            request.end,
             request.params,
         )
 
     def request_bars(self, request: RequestBars) -> None:
-        self._handle_bars(request.bar_type, self.bars, None, request.id, request.params)
+        self._handle_bars_py(
+            request.bar_type,
+            self.bars,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
+
+    def request_order_book_depth(self, request: RequestOrderBookDepth) -> None:
+        self._handle_order_book_depths_py(
+            request.instrument_id,
+            self.order_book_depths,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
+
+    def subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
+        """Subscribe to quote ticks - mock implementation that just tracks the subscription."""
+        self._add_subscription_quote_ticks(command.instrument_id)
+
+    def subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
+        """Subscribe to trade ticks - mock implementation that just tracks the subscription."""
+        self._add_subscription_trade_ticks(command.instrument_id)
+
+    def subscribe_bars(self, command: SubscribeBars) -> None:
+        """Subscribe to bars - mock implementation that just tracks the subscription."""
+        self._add_subscription_bars(command.bar_type)
 
 
 _AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -118,23 +170,18 @@ class NewsEventData(NewsEvent):
 
 def setup_catalog(
     protocol: Literal["memory", "file"],
-    path: Path | str | None = None,
+    path: Path | str,
 ) -> ParquetDataCatalog:
     if protocol not in ("memory", "file"):
         raise ValueError("`protocol` should only be one of `memory` or `file` for testing")
 
     if isinstance(path, str):
         path = Path(path)
+    path = path.resolve()
 
     clear_singleton_instances(ParquetDataCatalog)
 
-    path = Path.cwd() / "catalog" if path is None else path.resolve()
-
     catalog = ParquetDataCatalog(path=path.as_posix(), fs_protocol=protocol)
-
-    if catalog.fs.exists(catalog.path):
-        catalog.fs.rm(catalog.path, recursive=True)
-
     catalog.fs.mkdir(catalog.path, create_parents=True)
 
     assert catalog.fs.isdir(catalog.path)

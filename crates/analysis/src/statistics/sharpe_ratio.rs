@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,15 +13,33 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Display;
+
+use nautilus_model::position::Position;
+
 use crate::{Returns, statistic::PortfolioStatistic};
 
+/// Calculates the Sharpe ratio for portfolio returns.
+///
+/// The Sharpe ratio measures risk-adjusted return and is calculated as:
+/// `(Mean Return - Risk-free Rate) / Standard Deviation of Returns * sqrt(period)`
+///
+/// This implementation assumes a risk-free rate of 0 and annualizes the ratio
+/// using the square root of the specified period (default: 252 trading days).
+///
+/// # References
+///
+/// - Sharpe, W. F. (1966). "Mutual Fund Performance". *Journal of Business*, 39(1), 119-138.
+/// - Sharpe, W. F. (1994). "The Sharpe Ratio". *Journal of Portfolio Management*, 21(1), 49-58.
+/// - CFA Institute Investment Foundations, 3rd Edition
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
 )]
 pub struct SharpeRatio {
+    /// The annualization period (default: 252 for daily data).
     period: usize,
 }
 
@@ -35,11 +53,17 @@ impl SharpeRatio {
     }
 }
 
+impl Display for SharpeRatio {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Sharpe Ratio ({} days)", self.period)
+    }
+}
+
 impl PortfolioStatistic for SharpeRatio {
     type Item = f64;
 
     fn name(&self) -> String {
-        stringify!(SharpeRatio).to_string()
+        self.to_string()
     }
 
     fn calculate_from_returns(&self, raw_returns: &Returns) -> Option<Self::Item> {
@@ -59,13 +83,20 @@ impl PortfolioStatistic for SharpeRatio {
 
         Some(annualized_ratio)
     }
+    fn calculate_from_realized_pnls(&self, _realized_pnls: &[f64]) -> Option<Self::Item> {
+        None
+    }
+
+    fn calculate_from_positions(&self, _positions: &[Position]) -> Option<Self::Item> {
+        None
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UnixNanos, approx_eq};
     use rstest::rstest;
 
     use super::*;
@@ -107,12 +138,17 @@ mod tests {
         let returns = create_returns(vec![0.01, -0.02, 0.015, -0.005, 0.025]);
         let result = ratio.calculate_from_returns(&returns);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), 4.48998886412873);
+        assert!(approx_eq!(
+            f64,
+            result.unwrap(),
+            4.48998886412873,
+            epsilon = 1e-9
+        ));
     }
 
     #[rstest]
     fn test_name() {
         let ratio = SharpeRatio::new(None);
-        assert_eq!(ratio.name(), "SharpeRatio");
+        assert_eq!(ratio.name(), "Sharpe Ratio (252 days)");
     }
 }

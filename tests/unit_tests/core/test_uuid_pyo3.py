@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -57,7 +57,7 @@ class TestUUID:
         # Act, Assert
         assert uuid.value == "2d89666b-1a1e-4a75-b193-4eb3b454c758"
         assert str(uuid) == "2d89666b-1a1e-4a75-b193-4eb3b454c758"
-        assert repr(uuid) == "UUID4('2d89666b-1a1e-4a75-b193-4eb3b454c758')"
+        assert repr(uuid) == "UUID4(2d89666b-1a1e-4a75-b193-4eb3b454c758)"
 
     def test_uuid4_produces_valid_uuid4(self):
         # Arrange, Act

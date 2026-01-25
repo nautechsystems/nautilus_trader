@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,8 +20,8 @@ from decimal import Decimal
 
 from strategy import DemoStrategy
 
+from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.data.config import DataEngineConfig
@@ -74,7 +74,7 @@ def generate_artificial_bars(instrument: Instrument, bar_type: BarType) -> list[
     # --------------------------------------------
 
     # Add some INCREASING bars
-    for i in range(10):
+    for _ in range(10):
         last_bar = Bar(
             bar_type=first_bar.bar_type,
             open=instrument.make_price(first_bar.open + PRICE_CHANGE),
@@ -88,7 +88,7 @@ def generate_artificial_bars(instrument: Instrument, bar_type: BarType) -> list[
         generated_bars.append(last_bar)
 
     # Add some DECREASING bars
-    for i in range(10):
+    for _ in range(10):
         last_bar = Bar(
             bar_type=first_bar.bar_type,
             open=instrument.make_price(first_bar.open - PRICE_CHANGE),
@@ -149,7 +149,7 @@ def run_backtest():
     # Step 4a: Prepare BarType
     EURUSD_1MIN_BARTYPE = BarType.from_str(f"{EURUSD_FUTURE.id}-1-MINUTE-LAST-EXTERNAL")
 
-    # Step 4b: Prepare bar data as List[Bar]
+    # Step 4b: Prepare bar data as list[Bar]
     bars: list[Bar] = generate_artificial_bars(
         instrument=EURUSD_FUTURE,
         bar_type=EURUSD_1MIN_BARTYPE,

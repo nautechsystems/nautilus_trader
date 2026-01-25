@@ -1,11 +1,15 @@
 [general]
 ignore=body-is-missing,body-min-length
+regex-style-search=True
 
 [title-max-length]
 line-length=60
 
+[ignore-by-title]
+regex=.* \(#\d+\)$
+
 [title-min-length]
-min-length=5
+min-length=10
 
 [body-max-line-length]
-line-length=100
+line-length=79

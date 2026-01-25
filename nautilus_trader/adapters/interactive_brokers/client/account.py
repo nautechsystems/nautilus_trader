@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,6 +17,7 @@ import functools
 from decimal import Decimal
 
 from ibapi.account_summary_tags import AccountSummaryTags
+from ibapi.contract import Contract
 
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 from nautilus_trader.adapters.interactive_brokers.client.common import IBPosition
@@ -81,6 +82,39 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
 
         subscription.handle()
 
+    def subscribe_positions(self) -> None:
+        """
+        Subscribe to real-time position updates for all accounts.
+
+        This enables automatic detection of position changes from option exercises and
+        other external events.
+
+        """
+        name = "PositionUpdates"
+
+        if not (subscription := self._subscriptions.get(name=name)):
+            subscription = self._subscriptions.add(
+                req_id=self._next_req_id(),
+                name=name,
+                handle=self._eclient.reqPositions,
+                cancel=self._eclient.cancelPositions,
+            )
+
+        if not subscription:
+            return
+
+        subscription.handle()
+
+    def unsubscribe_positions(self) -> None:
+        """
+        Unsubscribe from real-time position updates.
+        """
+        name = "PositionUpdates"
+
+        if subscription := self._subscriptions.get(name=name):
+            self._subscriptions.remove(subscription.req_id)
+            self._eclient.cancelPositions()
+
     def unsubscribe_account_summary(self, account_id: str) -> None:
         """
         Unsubscribe from the account summary for the specified account. This method is
@@ -101,7 +135,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         else:
             self._log.debug(f"Subscription doesn't exist for {name}")
 
-    async def get_positions(self, account_id: str) -> list[Position] | None:
+    async def get_positions(self, account_id: str) -> list[Position]:
         """
         Fetch open positions for a specified account.
 
@@ -112,7 +146,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
 
         Returns
         -------
-        list[Position] | ``None``
+        list[Position]
 
         """
         self._log.debug(f"Requesting open positions for {account_id}")
@@ -126,7 +160,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
             )
 
             if not request:
-                return None
+                return []
 
             request.handle()
             all_positions = await self._await_request(request, 30)
@@ -134,7 +168,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
             all_positions = await self._await_request(request, 30)
 
         if not all_positions:
-            return None
+            return []
 
         positions = []
 
@@ -169,8 +203,12 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
 
         """
         self._account_ids = {a for a in accounts_list.split(",") if a}
-        self._log.debug(f"Managed accounts set: {self._account_ids}")
+        self._log.debug(
+            f"Managed accounts set: {self._account_ids}, next_valid_order_id: {self._next_valid_order_id}",
+        )
 
+        # Set connection flag if we have next valid order id
+        # Accounts may be empty in some cases, but nextValidId is required
         if self._next_valid_order_id >= 0 and not self._is_ib_connected.is_set():
             self._log.debug("`_is_ib_connected` set by `managedAccounts`", LogColor.BLUE)
             self._is_ib_connected.set()
@@ -179,7 +217,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         self,
         *,
         account_id: str,
-        contract: IBContract,
+        contract: Contract,
         position: Decimal,
         avg_cost: float,
     ) -> None:
@@ -187,7 +225,17 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         Provide the portfolio's open positions.
         """
         if request := self._requests.get(name="OpenPositions"):
-            request.result.append(IBPosition(account_id, contract, position, avg_cost))
+            # Handle position updates for requests (get_positions)
+            ib_contract = IBContract(**contract.__dict__)
+            request.result.append(IBPosition(account_id, ib_contract, position, avg_cost))
+        elif self._subscriptions.get(name="PositionUpdates"):
+            # Handle real-time position updates from subscription
+            ib_contract = IBContract(**contract.__dict__)
+            ib_position = IBPosition(account_id, ib_contract, position, avg_cost)
+
+            # Emit position update event for registered clients
+            if handler := self._event_subscriptions.get(f"positionUpdate-{account_id}", None):
+                handler(ib_position)
 
     async def process_position_end(self) -> None:
         """

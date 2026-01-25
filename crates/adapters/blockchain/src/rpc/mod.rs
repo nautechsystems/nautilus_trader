@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,6 +12,13 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+//! RPC client implementations for blockchain network communication.
+//!
+//! This module provides JSON-RPC client implementations for communicating with various
+//! blockchain networks via HTTP and WebSocket connections. It includes specialized
+//! clients for different networks (Ethereum, Polygon, Arbitrum, Base) and common
+//! utilities for handling RPC requests and responses.
 
 use enum_dispatch::enum_dispatch;
 
@@ -27,17 +34,19 @@ use crate::rpc::{
 pub mod chains;
 pub mod core;
 pub mod error;
+pub mod helpers;
 pub mod http;
+pub mod providers;
 pub mod types;
 pub mod utils;
 
 #[enum_dispatch(BlockchainRpcClient)]
 #[derive(Debug)]
 pub enum BlockchainRpcClientAny {
+    Arbitrum(ArbitrumRpcClient),
+    Base(BaseRpcClient),
     Ethereum(EthereumRpcClient),
     Polygon(PolygonRpcClient),
-    Base(BaseRpcClient),
-    Arbitrum(ArbitrumRpcClient),
 }
 
 #[async_trait::async_trait]
@@ -45,6 +54,12 @@ pub enum BlockchainRpcClientAny {
 pub trait BlockchainRpcClient {
     async fn connect(&mut self) -> anyhow::Result<()>;
     async fn subscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError>;
+    async fn subscribe_swaps(&mut self) -> Result<(), BlockchainRpcClientError> {
+        todo!("Not implemented")
+    }
     async fn unsubscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError>;
+    async fn unsubscribe_swaps(&mut self) -> Result<(), BlockchainRpcClientError> {
+        todo!("Not implemented")
+    }
     async fn next_rpc_message(&mut self) -> Result<BlockchainMessage, BlockchainRpcClientError>;
 }

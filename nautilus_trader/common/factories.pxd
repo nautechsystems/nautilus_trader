@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -59,6 +59,8 @@ cdef class OrderFactory:
     """The order factories trading strategy ID.\n\n:returns: `StrategyId`"""
     cdef readonly bint use_uuid_client_order_ids
     """If UUID4's should be used for client order ID values.\n\n:returns: `bool`"""
+    cdef readonly bint use_hyphens_in_client_order_ids
+    """If hyphens should be used in generated client order ID values.\n\n:returns: `bool`"""
 
     cpdef get_client_order_id_count(self)
     cpdef get_order_list_id_count(self)

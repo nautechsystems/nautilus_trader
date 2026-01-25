@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -37,7 +37,7 @@ def _config(socket_server, handler):
     )
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_connect_and_disconnect(socket_server):
     # Arrange
     store = []
@@ -51,7 +51,7 @@ async def test_connect_and_disconnect(socket_server):
     await eventually(lambda: not client.is_active())
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_client_send_recv(socket_server):
     # Arrange
     store = []
@@ -96,7 +96,7 @@ async def test_client_send_recv(socket_server):
 #     await eventually(lambda: not client.is_alive())
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_reconnect_after_close(closing_socket_server):
     # Arrange
     store = []

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,13 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import sys
 from dataclasses import dataclass
 from typing import Any
 
 import msgspec
 import pyarrow as pa
 
-from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.core.datetime import unix_nanos_to_iso8601
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.serialization.arrow.serializer import register_arrow
@@ -60,7 +60,7 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
 
                 time_repr = (
                     f"{', ' if has_fields else ''}ts_event={unix_nanos_to_iso8601(self._ts_event)}, "
-                    + f"ts_init={unix_nanos_to_iso8601(self._ts_init)})"
+                    f"ts_init={unix_nanos_to_iso8601(self._ts_init)})"
                 )
 
                 return repr[:-1] + time_repr
@@ -85,8 +85,17 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
 
         if "to_dict" not in cls.__dict__:
 
-            def to_dict(self, to_arrow=False) -> dict[str, Any]:
-                result = {attr: getattr(self, attr) for attr in self.__annotations__}
+            def to_dict(self) -> dict[str, Any]:
+                # Python 3.14+ uses PEP 649 lazy annotations
+                if (
+                    sys.version_info >= (3, 14)
+                    and hasattr(self.__class__, "__annotate__")
+                    and self.__class__.__annotate__
+                ):
+                    annotations = self.__class__.__annotate__(1)  # 1 = eval annotations
+                else:
+                    annotations = getattr(self.__class__, "__annotations__", {})
+                result = {attr: getattr(self, attr) for attr in annotations}
 
                 if hasattr(self, "instrument_id"):
                     result["instrument_id"] = self.instrument_id.value
@@ -94,9 +103,6 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
                 result["type"] = str(cls.__name__)
                 result["ts_event"] = self._ts_event
                 result["ts_init"] = self._ts_init
-
-                if to_arrow:
-                    result["date"] = int(unix_nanos_to_dt(result["ts_event"]).strftime("%Y%m%d"))
 
                 return result
 
@@ -107,7 +113,6 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
             @classmethod
             def from_dict(cls, data: dict[str, Any]) -> cls:
                 data.pop("type", None)
-                data.pop("date", None)
 
                 if "instrument_id" in data:
                     data["instrument_id"] = InstrumentId.from_str(data["instrument_id"])
@@ -134,7 +139,7 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
         if "to_arrow" not in cls.__dict__:
 
             def to_arrow(self) -> pa.RecordBatch:
-                return pa.RecordBatch.from_pylist([self.to_dict(to_arrow=True)], schema=cls._schema)
+                return pa.RecordBatch.from_pylist([self.to_dict()], schema=cls._schema)
 
             cls.to_arrow = to_arrow
 
@@ -166,7 +171,6 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
                     "type": pa.string(),
                     "ts_event": pa.int64(),
                     "ts_init": pa.int64(),
-                    "date": pa.int32(),
                 },
             )
 

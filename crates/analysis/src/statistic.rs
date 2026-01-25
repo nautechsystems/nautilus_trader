@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,16 +21,32 @@ use crate::Returns;
 
 const IMPL_ERR: &str = "is not implemented for";
 
+/// Trait for portfolio performance statistics that can be calculated from different data sources.
+///
+/// This trait provides a flexible framework for implementing various financial performance
+/// metrics that can operate on returns, realized PnLs, orders, or positions data.
+/// Each statistic implementation should override the relevant calculation methods.
 #[allow(unused_variables)]
 pub trait PortfolioStatistic: Debug {
     type Item;
 
+    /// Returns the name of this statistic for display and identification purposes.
     fn name(&self) -> String;
 
+    /// Calculates the statistic from time-indexed returns data.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this method is not implemented for the specific statistic.
     fn calculate_from_returns(&self, returns: &Returns) -> Option<Self::Item> {
         panic!("`calculate_from_returns` {IMPL_ERR} `{}`", self.name());
     }
 
+    /// Calculates the statistic from realized profit and loss values.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this method is not implemented for the specific statistic.
     fn calculate_from_realized_pnls(&self, realized_pnls: &[f64]) -> Option<Self::Item> {
         panic!(
             "`calculate_from_realized_pnls` {IMPL_ERR} `{}`",
@@ -38,19 +54,31 @@ pub trait PortfolioStatistic: Debug {
         );
     }
 
+    /// Calculates the statistic from order data.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this method is not implemented for the specific statistic.
     #[allow(dead_code)]
     fn calculate_from_orders(&self, orders: Vec<Box<dyn Order>>) -> Option<Self::Item> {
         panic!("`calculate_from_orders` {IMPL_ERR} `{}`", self.name());
     }
 
+    /// Calculates the statistic from position data.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this method is not implemented for the specific statistic.
     fn calculate_from_positions(&self, positions: &[Position]) -> Option<Self::Item> {
         panic!("`calculate_from_positions` {IMPL_ERR} `{}`", self.name());
     }
 
+    /// Validates that returns data is not empty.
     fn check_valid_returns(&self, returns: &Returns) -> bool {
         !returns.is_empty()
     }
 
+    /// Downsamples high-frequency returns to daily bins for daily statistics calculation.
     fn downsample_to_daily_bins(&self, returns: &Returns) -> Returns {
         let nanos_per_day = 86_400_000_000_000; // Number of nanoseconds in a day
         let mut daily_bins = BTreeMap::new();
@@ -66,6 +94,7 @@ pub trait PortfolioStatistic: Debug {
         daily_bins
     }
 
+    /// Calculates the standard deviation of returns with Bessel's correction.
     fn calculate_std(&self, returns: &Returns) -> f64 {
         let n = returns.len() as f64;
         if n < 2.0 {

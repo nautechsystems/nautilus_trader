@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,7 +24,7 @@ use serde::{Deserialize, Deserializer};
 use ustr::Ustr;
 use uuid::Uuid;
 
-use super::enums::{Exchange, InstrumentType, OptionType};
+use super::enums::{TardisExchange, TardisInstrumentType, TardisOptionType};
 
 /// Deserialize a string and convert to uppercase `Ustr`.
 ///
@@ -63,42 +63,46 @@ where
 #[inline]
 pub fn normalize_symbol_str(
     symbol: Ustr,
-    exchange: &Exchange,
-    instrument_type: &InstrumentType,
+    exchange: &TardisExchange,
+    instrument_type: &TardisInstrumentType,
     is_inverse: Option<bool>,
 ) -> Ustr {
     match exchange {
-        Exchange::Binance
-        | Exchange::BinanceFutures
-        | Exchange::BinanceUs
-        | Exchange::BinanceDex
-        | Exchange::BinanceJersey
-            if instrument_type == &InstrumentType::Perpetual =>
+        TardisExchange::Binance
+        | TardisExchange::BinanceFutures
+        | TardisExchange::BinanceUs
+        | TardisExchange::BinanceDex
+        | TardisExchange::BinanceJersey
+            if instrument_type == &TardisInstrumentType::Perpetual =>
         {
             append_suffix(symbol, "-PERP")
         }
 
-        Exchange::Bybit | Exchange::BybitSpot | Exchange::BybitOptions => match instrument_type {
-            InstrumentType::Spot => append_suffix(symbol, "-SPOT"),
-            InstrumentType::Perpetual if !is_inverse.unwrap_or(false) => {
-                append_suffix(symbol, "-LINEAR")
+        TardisExchange::Bybit | TardisExchange::BybitSpot | TardisExchange::BybitOptions => {
+            match instrument_type {
+                TardisInstrumentType::Spot => append_suffix(symbol, "-SPOT"),
+                TardisInstrumentType::Perpetual if !is_inverse.unwrap_or(false) => {
+                    append_suffix(symbol, "-LINEAR")
+                }
+                TardisInstrumentType::Future if !is_inverse.unwrap_or(false) => {
+                    append_suffix(symbol, "-LINEAR")
+                }
+                TardisInstrumentType::Perpetual if is_inverse == Some(true) => {
+                    append_suffix(symbol, "-INVERSE")
+                }
+                TardisInstrumentType::Future if is_inverse == Some(true) => {
+                    append_suffix(symbol, "-INVERSE")
+                }
+                TardisInstrumentType::Option => append_suffix(symbol, "-OPTION"),
+                _ => symbol,
             }
-            InstrumentType::Future if !is_inverse.unwrap_or(false) => {
-                append_suffix(symbol, "-LINEAR")
-            }
-            InstrumentType::Perpetual if is_inverse == Some(true) => {
-                append_suffix(symbol, "-INVERSE")
-            }
-            InstrumentType::Future if is_inverse == Some(true) => append_suffix(symbol, "-INVERSE"),
-            InstrumentType::Option => append_suffix(symbol, "-OPTION"),
-            _ => symbol,
-        },
+        }
 
-        Exchange::Dydx if instrument_type == &InstrumentType::Perpetual => {
+        TardisExchange::Dydx if instrument_type == &TardisInstrumentType::Perpetual => {
             append_suffix(symbol, "-PERP")
         }
 
-        Exchange::GateIoFutures if instrument_type == &InstrumentType::Perpetual => {
+        TardisExchange::GateIoFutures if instrument_type == &TardisInstrumentType::Perpetual => {
             append_suffix(symbol, "-PERP")
         }
 
@@ -114,16 +118,16 @@ fn append_suffix(symbol: Ustr, suffix: &str) -> Ustr {
 
 /// Parses a Nautilus instrument ID from the given Tardis `exchange` and `symbol` values.
 #[must_use]
-pub fn parse_instrument_id(exchange: &Exchange, symbol: Ustr) -> InstrumentId {
+pub fn parse_instrument_id(exchange: &TardisExchange, symbol: Ustr) -> InstrumentId {
     InstrumentId::new(Symbol::from_ustr_unchecked(symbol), exchange.as_venue())
 }
 
 /// Parses a Nautilus instrument ID with a normalized symbol from the given Tardis `exchange` and `symbol` values.
 #[must_use]
 pub fn normalize_instrument_id(
-    exchange: &Exchange,
+    exchange: &TardisExchange,
     symbol: Ustr,
-    instrument_type: &InstrumentType,
+    instrument_type: &TardisInstrumentType,
     is_inverse: Option<bool>,
 ) -> InstrumentId {
     let symbol = normalize_symbol_str(symbol, exchange, instrument_type, is_inverse);
@@ -131,10 +135,24 @@ pub fn normalize_instrument_id(
 }
 
 /// Normalizes the given amount by truncating it to the specified decimal precision.
+///
+/// Uses rounding to the nearest integer before truncation to avoid floating-point
+/// precision issues (e.g., `0.1 * 10` becoming `0.9999999999`).
 #[must_use]
 pub fn normalize_amount(amount: f64, precision: u8) -> f64 {
     let factor = 10_f64.powi(i32::from(precision));
-    (amount * factor).trunc() / factor
+    // Round to nearest integer first to handle floating-point precision issues,
+    // then truncate toward zero to maintain the original truncation semantics
+    let scaled = amount * factor;
+    let rounded = scaled.round();
+    // If the rounded value is very close to scaled, use it; otherwise use trunc
+    // This handles edge cases like 0.1 * 10 = 0.9999999999... -> 1.0
+    let result = if (rounded - scaled).abs() < 1e-9 {
+        rounded.trunc()
+    } else {
+        scaled.trunc()
+    };
+    result / factor
 }
 
 /// Parses a Nautilus price from the given `value`.
@@ -171,17 +189,22 @@ pub fn parse_aggressor_side(value: &str) -> AggressorSide {
 
 /// Parses a Nautilus option kind from the given Tardis enum `value`.
 #[must_use]
-pub const fn parse_option_kind(value: OptionType) -> OptionKind {
+pub const fn parse_option_kind(value: TardisOptionType) -> OptionKind {
     match value {
-        OptionType::Call => OptionKind::Call,
-        OptionType::Put => OptionKind::Put,
+        TardisOptionType::Call => OptionKind::Call,
+        TardisOptionType::Put => OptionKind::Put,
     }
 }
 
 /// Parses a UNIX nanoseconds timestamp from the given Tardis microseconds `value_us`.
 #[must_use]
 pub fn parse_timestamp(value_us: u64) -> UnixNanos {
-    UnixNanos::from(value_us * NANOSECONDS_IN_MICROSECOND)
+    value_us
+        .checked_mul(NANOSECONDS_IN_MICROSECOND)
+        .map_or_else(|| {
+            log::error!("Timestamp overflow: {value_us} microseconds exceeds maximum representable value");
+            UnixNanos::max()
+        }, UnixNanos::from)
 }
 
 /// Parses a Nautilus book action inferred from the given Tardis values.
@@ -200,20 +223,23 @@ pub fn parse_book_action(is_snapshot: bool, amount: f64) -> BookAction {
 ///
 /// The [`PriceType`] is always `LAST` for Tardis trade bars.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if the specification format is invalid or if the aggregation suffix is unsupported.
-#[must_use]
-pub fn parse_bar_spec(value: &str) -> BarSpecification {
+/// Returns an error if the specification format is invalid or if the aggregation suffix is unsupported.
+pub fn parse_bar_spec(value: &str) -> anyhow::Result<BarSpecification> {
     let parts: Vec<&str> = value.split('_').collect();
-    let last_part = parts.last().expect("Invalid bar spec");
+    let last_part = parts
+        .last()
+        .ok_or_else(|| anyhow::anyhow!("Invalid bar spec: empty string"))?;
     let split_idx = last_part
         .chars()
         .position(|c| !c.is_ascii_digit())
-        .expect("Invalid bar spec");
+        .ok_or_else(|| anyhow::anyhow!("Invalid bar spec: no aggregation suffix in '{value}'"))?;
 
     let (step_str, suffix) = last_part.split_at(split_idx);
-    let step: usize = step_str.parse().expect("Invalid step");
+    let step: usize = step_str
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Invalid step in bar spec '{value}': {e}"))?;
 
     let aggregation = match suffix {
         "ms" => BarAggregation::Millisecond,
@@ -221,50 +247,45 @@ pub fn parse_bar_spec(value: &str) -> BarSpecification {
         "m" => BarAggregation::Minute,
         "ticks" => BarAggregation::Tick,
         "vol" => BarAggregation::Volume,
-        _ => panic!("Unsupported bar aggregation type"),
+        _ => anyhow::bail!("Unsupported bar aggregation type: '{suffix}'"),
     };
 
-    BarSpecification::new(step, aggregation, PriceType::Last)
+    Ok(BarSpecification::new(step, aggregation, PriceType::Last))
 }
 
 /// Converts a Nautilus `BarSpecification` to the Tardis trade bar string convention.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if the bar aggregation kind is unsupported.
-#[must_use]
-pub fn bar_spec_to_tardis_trade_bar_string(bar_spec: &BarSpecification) -> String {
+/// Returns an error if the bar aggregation kind is unsupported.
+pub fn bar_spec_to_tardis_trade_bar_string(bar_spec: &BarSpecification) -> anyhow::Result<String> {
     let suffix = match bar_spec.aggregation {
         BarAggregation::Millisecond => "ms",
         BarAggregation::Second => "s",
         BarAggregation::Minute => "m",
         BarAggregation::Tick => "ticks",
         BarAggregation::Volume => "vol",
-        _ => panic!("Unsupported bar aggregation type {}", bar_spec.aggregation),
+        _ => anyhow::bail!("Unsupported bar aggregation type: {}", bar_spec.aggregation),
     };
-    format!("trade_bar_{}{}", bar_spec.step, suffix)
+    Ok(format!("trade_bar_{}{}", bar_spec.step, suffix))
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
-    use nautilus_model::enums::AggressorSide;
     use rstest::rstest;
 
     use super::*;
 
     #[rstest]
-    #[case(Exchange::Binance, "ETHUSDT", "ETHUSDT.BINANCE")]
-    #[case(Exchange::Bitmex, "XBTUSD", "XBTUSD.BITMEX")]
-    #[case(Exchange::Bybit, "BTCUSDT", "BTCUSDT.BYBIT")]
-    #[case(Exchange::OkexFutures, "BTC-USD-200313", "BTC-USD-200313.OKEX")]
-    #[case(Exchange::HuobiDmLinearSwap, "FOO-BAR", "FOO-BAR.HUOBI")]
+    #[case(TardisExchange::Binance, "ETHUSDT", "ETHUSDT.BINANCE")]
+    #[case(TardisExchange::Bitmex, "XBTUSD", "XBTUSD.BITMEX")]
+    #[case(TardisExchange::Bybit, "BTCUSDT", "BTCUSDT.BYBIT")]
+    #[case(TardisExchange::OkexFutures, "BTC-USD-200313", "BTC-USD-200313.OKEX")]
+    #[case(TardisExchange::HuobiDmLinearSwap, "FOO-BAR", "FOO-BAR.HUOBI")]
     fn test_parse_instrument_id(
-        #[case] exchange: Exchange,
+        #[case] exchange: TardisExchange,
         #[case] symbol: Ustr,
         #[case] expected: &str,
     ) {
@@ -275,51 +296,51 @@ mod tests {
 
     #[rstest]
     #[case(
-        Exchange::Binance,
+        TardisExchange::Binance,
         "SOLUSDT",
-        InstrumentType::Spot,
+        TardisInstrumentType::Spot,
         None,
         "SOLUSDT.BINANCE"
     )]
     #[case(
-        Exchange::BinanceFutures,
+        TardisExchange::BinanceFutures,
         "SOLUSDT",
-        InstrumentType::Perpetual,
+        TardisInstrumentType::Perpetual,
         None,
         "SOLUSDT-PERP.BINANCE"
     )]
     #[case(
-        Exchange::Bybit,
+        TardisExchange::Bybit,
         "BTCUSDT",
-        InstrumentType::Spot,
+        TardisInstrumentType::Spot,
         None,
         "BTCUSDT-SPOT.BYBIT"
     )]
     #[case(
-        Exchange::Bybit,
+        TardisExchange::Bybit,
         "BTCUSDT",
-        InstrumentType::Perpetual,
+        TardisInstrumentType::Perpetual,
         None,
         "BTCUSDT-LINEAR.BYBIT"
     )]
     #[case(
-        Exchange::Bybit,
+        TardisExchange::Bybit,
         "BTCUSDT",
-        InstrumentType::Perpetual,
+        TardisInstrumentType::Perpetual,
         Some(true),
         "BTCUSDT-INVERSE.BYBIT"
     )]
     #[case(
-        Exchange::Dydx,
+        TardisExchange::Dydx,
         "BTC-USD",
-        InstrumentType::Perpetual,
+        TardisInstrumentType::Perpetual,
         None,
         "BTC-USD-PERP.DYDX"
     )]
     fn test_normalize_instrument_id(
-        #[case] exchange: Exchange,
+        #[case] exchange: TardisExchange,
         #[case] symbol: Ustr,
-        #[case] instrument_type: InstrumentType,
+        #[case] instrument_type: TardisInstrumentType,
         #[case] is_inverse: Option<bool>,
         #[case] expected: &str,
     ) {
@@ -338,6 +359,30 @@ mod tests {
     fn test_normalize_amount(#[case] amount: f64, #[case] precision: u8, #[case] expected: f64) {
         let result = normalize_amount(amount, precision);
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_normalize_amount_floating_point_edge_cases() {
+        // Test that floating-point edge cases are handled correctly
+        // 0.1 * 10 can become 0.9999999... due to IEEE 754
+        let result = normalize_amount(0.1, 1);
+        assert_eq!(result, 0.1);
+
+        // Test with values that could have precision issues
+        let result = normalize_amount(0.7, 1);
+        assert_eq!(result, 0.7);
+
+        // Test large precision
+        let result = normalize_amount(1.123456789, 9);
+        assert_eq!(result, 1.123456789);
+
+        // Test zero
+        let result = normalize_amount(0.0, 8);
+        assert_eq!(result, 0.0);
+
+        // Test negative values
+        let result = normalize_amount(-0.1, 1);
+        assert_eq!(result, -0.1);
     }
 
     #[rstest]
@@ -391,31 +436,23 @@ mod tests {
         #[case] expected_step: usize,
         #[case] expected_aggregation: BarAggregation,
     ) {
-        let spec = parse_bar_spec(value);
+        let spec = parse_bar_spec(value).unwrap();
         assert_eq!(spec.step.get(), expected_step);
         assert_eq!(spec.aggregation, expected_aggregation);
         assert_eq!(spec.price_type, PriceType::Last);
     }
 
     #[rstest]
-    #[case("trade_bar_10unknown")]
-    #[should_panic(expected = "Unsupported bar aggregation type")]
-    fn test_parse_bar_spec_invalid_suffix(#[case] value: &str) {
-        let _ = parse_bar_spec(value);
-    }
-
-    #[rstest]
-    #[case("")]
-    #[should_panic(expected = "Invalid bar spec")]
-    fn test_parse_bar_spec_empty(#[case] value: &str) {
-        let _ = parse_bar_spec(value);
-    }
-
-    #[rstest]
-    #[case("trade_bar_notanumberms")]
-    #[should_panic(expected = "Invalid step")]
-    fn test_parse_bar_spec_invalid_step(#[case] value: &str) {
-        let _ = parse_bar_spec(value);
+    #[case("trade_bar_10unknown", "Unsupported bar aggregation type")]
+    #[case("", "no aggregation suffix")]
+    #[case("trade_bar_notanumberms", "Invalid step")]
+    fn test_parse_bar_spec_errors(#[case] value: &str, #[case] expected_error: &str) {
+        let result = parse_bar_spec(value);
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().to_string().contains(expected_error),
+            "Expected error containing '{expected_error}'"
+        );
     }
 
     #[rstest]
@@ -436,6 +473,9 @@ mod tests {
         "trade_bar_100000vol"
     )]
     fn test_to_tardis_string(#[case] bar_spec: BarSpecification, #[case] expected: &str) {
-        assert_eq!(bar_spec_to_tardis_trade_bar_string(&bar_spec), expected);
+        assert_eq!(
+            bar_spec_to_tardis_trade_bar_string(&bar_spec).unwrap(),
+            expected
+        );
     }
 }

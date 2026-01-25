@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -55,6 +55,7 @@ pub fn get_nautilus_test_data_file_path(filename: &str) -> String {
     path.join(filename).to_str().unwrap().to_string()
 }
 
+/// Returns the path to the checksums file for large test data files.
 #[must_use]
 pub fn get_test_data_large_checksums_filepath() -> PathBuf {
     get_test_data_path().join("large").join("checksums.json")
@@ -69,46 +70,46 @@ pub fn get_test_data_large_checksums_filepath() -> PathBuf {
 pub fn ensure_test_data_exists(filename: &str, url: &str) -> PathBuf {
     let filepath = get_test_data_path().join("large").join(filename);
     let checksums_filepath = get_test_data_large_checksums_filepath();
-    ensure_file_exists_or_download_http(&filepath, url, Some(&checksums_filepath)).unwrap();
+    ensure_file_exists_or_download_http(&filepath, url, Some(&checksums_filepath), None).unwrap();
     filepath
 }
 
+/// Returns the path to the Tardis Deribit incremental book L2 test data.
 #[must_use]
-pub fn ensure_data_exists_tardis_deribit_book_l2() -> PathBuf {
-    let filename = "tardis_deribit_incremental_book_L2_2020-04-01_BTC-PERPETUAL.csv.gz";
-    let base_url = "https://datasets.tardis.dev";
-    let url = format!("{base_url}/v1/deribit/incremental_book_L2/2020/04/01/BTC-PERPETUAL.csv.gz");
-    ensure_test_data_exists(filename, &url)
+pub fn get_tardis_deribit_book_l2_path() -> PathBuf {
+    get_test_data_path()
+        .join("tardis")
+        .join("deribit_incremental_book_L2_BTC-PERPETUAL.csv")
 }
 
+/// Returns the path to the Tardis Binance Futures book snapshot (depth 5) test data.
 #[must_use]
-pub fn ensure_data_exists_tardis_binance_snapshot5() -> PathBuf {
-    let filename = "tardis_binance-futures_book_snapshot_5_2020-09-01_BTCUSDT.csv.gz";
-    let base_url = "https://datasets.tardis.dev";
-    let url = format!("{base_url}/v1/binance-futures/book_snapshot_5/2020/09/01/BTCUSDT.csv.gz");
-    ensure_test_data_exists(filename, &url)
+pub fn get_tardis_binance_snapshot5_path() -> PathBuf {
+    get_test_data_path()
+        .join("tardis")
+        .join("binance-futures_book_snapshot_5_BTCUSDT.csv")
 }
 
+/// Returns the path to the Tardis Binance Futures book snapshot (depth 25) test data.
 #[must_use]
-pub fn ensure_data_exists_tardis_binance_snapshot25() -> PathBuf {
-    let filename = "tardis_binance-futures_book_snapshot_25_2020-09-01_BTCUSDT.csv.gz";
-    let base_url = "https://datasets.tardis.dev";
-    let url = format!("{base_url}/v1/binance-futures/book_snapshot_25/2020/09/01/BTCUSDT.csv.gz");
-    ensure_test_data_exists(filename, &url)
+pub fn get_tardis_binance_snapshot25_path() -> PathBuf {
+    get_test_data_path()
+        .join("tardis")
+        .join("binance-futures_book_snapshot_25_BTCUSDT.csv")
 }
 
+/// Returns the path to the Tardis Huobi quotes test data.
 #[must_use]
-pub fn ensure_data_exists_tardis_huobi_quotes() -> PathBuf {
-    let filename = "tardis_huobi-dm-swap_quotes_2020-05-01_BTC-USD.csv.gz";
-    let base_url = "https://datasets.tardis.dev";
-    let url = format!("{base_url}/v1/huobi-dm-swap/quotes/2020/05/01/BTC-USD.csv.gz");
-    ensure_test_data_exists(filename, &url)
+pub fn get_tardis_huobi_quotes_path() -> PathBuf {
+    get_test_data_path()
+        .join("tardis")
+        .join("huobi-dm-swap_quotes_BTC-USD.csv")
 }
 
+/// Returns the path to the Tardis Bitmex trades test data.
 #[must_use]
-pub fn ensure_data_exists_tardis_bitmex_trades() -> PathBuf {
-    let filename = "tardis_bitmex_trades_2020-03-01_XBTUSD.csv.gz";
-    let base_url = "https://datasets.tardis.dev";
-    let url = format!("{base_url}/v1/bitmex/trades/2020/03/01/XBTUSD.csv.gz");
-    ensure_test_data_exists(filename, &url)
+pub fn get_tardis_bitmex_trades_path() -> PathBuf {
+    get_test_data_path()
+        .join("tardis")
+        .join("bitmex_trades_XBTUSD.csv")
 }

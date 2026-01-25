@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,5 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Blockchain event data structures and parsers.
+//!
+//! This module provides types and utilities for parsing and handling various blockchain events
+//! emitted by smart contracts, particularly DeFi protocol events such as swaps, mints, burns,
+//! and pool creation events.
+
+pub mod burn;
+pub mod collect;
+pub mod flash;
+pub mod initialize;
+pub mod mint;
 pub mod pool_created;
 pub mod swap;

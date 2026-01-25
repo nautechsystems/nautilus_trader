@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,25 +25,24 @@ use std::{
 
 use ahash::AHashMap;
 use databento::{
-    dbn::{self},
+    dbn::{self, decode::DbnMetadata},
     historical::timeseries::GetRangeParams,
 };
 use indexmap::IndexMap;
-use nautilus_core::{UnixNanos, time::AtomicTime};
+use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT, time::AtomicTime};
 use nautilus_model::{
-    data::{Bar, Data, InstrumentStatus, QuoteTick, TradeTick},
+    data::{Bar, Data, InstrumentStatus, OrderBookDepth10, QuoteTick, TradeTick},
     enums::BarAggregation,
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::InstrumentAny,
     types::Currency,
 };
-use tokio::sync::Mutex;
 
 use crate::{
     common::get_date_time_range,
     decode::{
-        decode_imbalance_msg, decode_instrument_def_msg, decode_record, decode_statistics_msg,
-        decode_status_msg,
+        decode_imbalance_msg, decode_instrument_def_msg, decode_mbp10_msg, decode_record,
+        decode_statistics_msg, decode_status_msg,
     },
     symbology::{
         MetadataCache, check_consistent_symbology, decode_nautilus_instrument_id,
@@ -60,7 +59,7 @@ use crate::{
 pub struct DatabentoHistoricalClient {
     pub key: String,
     clock: &'static AtomicTime,
-    inner: Arc<Mutex<databento::HistoricalClient>>,
+    inner: Arc<tokio::sync::Mutex<databento::HistoricalClient>>,
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
     symbol_venue_map: Arc<RwLock<AHashMap<Symbol, Venue>>>,
     use_exchange_as_venue: bool,
@@ -97,6 +96,7 @@ impl DatabentoHistoricalClient {
         use_exchange_as_venue: bool,
     ) -> anyhow::Result<Self> {
         let client = databento::HistoricalClient::builder()
+            .user_agent_extension(NAUTILUS_USER_AGENT.into())
             .key(key.clone())
             .map_err(|e| anyhow::anyhow!("Failed to create client builder: {e}"))?
             .build()
@@ -112,7 +112,7 @@ impl DatabentoHistoricalClient {
 
         Ok(Self {
             clock,
-            inner: Arc::new(Mutex::new(client)),
+            inner: Arc::new(tokio::sync::Mutex::new(client)),
             publisher_venue_map: Arc::new(publisher_venue_map),
             symbol_venue_map: Arc::new(RwLock::new(AHashMap::new())),
             key,
@@ -203,7 +203,7 @@ impl DatabentoHistoricalClient {
 
             match decode_instrument_def_msg(msg, instrument_id, None) {
                 Ok(instrument) => instruments.push(instrument),
-                Err(e) => tracing::error!("Failed to decode instrument: {e:?}"),
+                Err(e) => log::error!("Failed to decode instrument: {e:?}"),
             }
         }
 
@@ -234,8 +234,15 @@ impl DatabentoHistoricalClient {
         let dbn_schema = dbn::Schema::from_str(&schema)?;
 
         match dbn_schema {
-            dbn::Schema::Mbp1 | dbn::Schema::Bbo1S | dbn::Schema::Bbo1M => (),
-            _ => anyhow::bail!("Invalid schema. Must be one of: mbp-1, bbo-1s, bbo-1m"),
+            dbn::Schema::Mbp1
+            | dbn::Schema::Bbo1S
+            | dbn::Schema::Bbo1M
+            | dbn::Schema::Cmbp1
+            | dbn::Schema::Cbbo1S
+            | dbn::Schema::Cbbo1M => (),
+            _ => anyhow::bail!(
+                "Invalid schema. Must be one of: mbp-1, bbo-1s, bbo-1m, cmbp-1, cbbo-1s, cbbo-1m"
+            ),
         }
 
         let range_params = GetRangeParams::builder()
@@ -282,17 +289,21 @@ impl DatabentoHistoricalClient {
             )?;
 
             match data {
-                Some(Data::Quote(quote)) => {
-                    result.push(quote);
-                    Ok(())
-                }
+                Some(Data::Quote(quote)) => result.push(quote),
+                None => {} // Skip records with undefined bid/ask prices
                 _ => anyhow::bail!("Invalid data element not `QuoteTick`, was {data:?}"),
             }
+            Ok(())
         };
 
         match dbn_schema {
             dbn::Schema::Mbp1 => {
                 while let Ok(Some(msg)) = decoder.decode_record::<dbn::Mbp1Msg>().await {
+                    process_record(dbn::RecordRef::from(msg))?;
+                }
+            }
+            dbn::Schema::Cmbp1 => {
+                while let Ok(Some(msg)) = decoder.decode_record::<dbn::Cmbp1Msg>().await {
                     process_record(dbn::RecordRef::from(msg))?;
                 }
             }
@@ -306,7 +317,88 @@ impl DatabentoHistoricalClient {
                     process_record(dbn::RecordRef::from(msg))?;
                 }
             }
+            dbn::Schema::Cbbo1S | dbn::Schema::Cbbo1M => {
+                while let Ok(Some(msg)) = decoder.decode_record::<dbn::CbboMsg>().await {
+                    process_record(dbn::RecordRef::from(msg))?;
+                }
+            }
             _ => anyhow::bail!("Invalid schema {dbn_schema}"),
+        }
+
+        Ok(result)
+    }
+
+    /// Fetches order book depth10 snapshots for the given parameters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request or data processing fails.
+    pub async fn get_range_order_book_depth10(
+        &self,
+        params: RangeQueryParams,
+        depth: Option<usize>,
+    ) -> anyhow::Result<Vec<OrderBookDepth10>> {
+        let symbols: Vec<&str> = params.symbols.iter().map(String::as_str).collect();
+        check_consistent_symbology(&symbols)?;
+
+        let first_symbol = params
+            .symbols
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("No symbols provided"))?;
+        let stype_in = infer_symbology_type(first_symbol);
+        let end = params.end.unwrap_or_else(|| self.clock.get_time_ns());
+        let time_range = get_date_time_range(params.start, end)?;
+
+        // For now, only support MBP_10 schema for depth 10
+        let _depth = depth.unwrap_or(10);
+        if _depth != 10 {
+            anyhow::bail!("Only depth=10 is currently supported for order book depths");
+        }
+
+        let range_params = GetRangeParams::builder()
+            .dataset(params.dataset)
+            .date_time_range(time_range)
+            .symbols(symbols)
+            .stype_in(stype_in)
+            .schema(dbn::Schema::Mbp10)
+            .limit(params.limit.and_then(NonZeroU64::new))
+            .build();
+
+        let price_precision = params.price_precision.unwrap_or(Currency::USD().precision);
+
+        let mut client = self.inner.lock().await;
+        let mut decoder = client
+            .timeseries()
+            .get_range(&range_params)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to get range: {e}"))?;
+
+        let metadata = decoder.metadata().clone();
+        let mut metadata_cache = MetadataCache::new(metadata);
+        let mut result: Vec<OrderBookDepth10> = Vec::new();
+
+        let mut process_record = |record: dbn::RecordRef| -> anyhow::Result<()> {
+            let sym_map = self
+                .symbol_venue_map
+                .read()
+                .map_err(|e| anyhow::anyhow!("symbol_venue_map lock poisoned: {e}"))?;
+            let instrument_id = decode_nautilus_instrument_id(
+                &record,
+                &mut metadata_cache,
+                &self.publisher_venue_map,
+                &sym_map,
+            )?;
+
+            if let Some(msg) = record.get::<dbn::Mbp10Msg>() {
+                let depth = decode_mbp10_msg(msg, instrument_id, price_precision, None)?;
+                result.push(depth);
+            }
+
+            Ok(())
+        };
+
+        while let Ok(Some(msg)) = decoder.decode_record::<dbn::Mbp10Msg>().await {
+            process_record(dbn::RecordRef::from(msg))?;
         }
 
         Ok(result)

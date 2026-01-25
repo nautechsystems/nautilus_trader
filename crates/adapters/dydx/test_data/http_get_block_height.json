@@ -1,0 +1,9 @@
+{
+  "requestId": "http_get_block_height-req",
+  "status": "success",
+  "isoTimestamp": "2025-12-08T16:12:00.000Z",
+  "result": {
+    "height": "66624132",
+    "time": "2025-12-08T16:11:59.450Z"
+  }
+}

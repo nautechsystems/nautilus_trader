@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -155,10 +155,10 @@ class BinanceUserDataHttpAPI:
         elif account_type == BinanceAccountType.ISOLATED_MARGIN:
             self.base_endpoint = "/sapi/v1/"
             listen_key_url = self.base_endpoint + "userDataStream/isolated"
-        elif account_type == BinanceAccountType.USDT_FUTURE:
+        elif account_type == BinanceAccountType.USDT_FUTURES:
             self.base_endpoint = "/fapi/v1/"
             listen_key_url = self.base_endpoint + "listenKey"
-        elif account_type == BinanceAccountType.COIN_FUTURE:
+        elif account_type == BinanceAccountType.COIN_FUTURES:
             self.base_endpoint = "/dapi/v1/"
             listen_key_url = self.base_endpoint + "listenKey"
         else:

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,22 +15,71 @@
 
 use std::sync::LazyLock;
 
+use alloy::primitives::Address;
 use nautilus_model::defi::{
+    PoolIdentifier,
     chain::chains,
-    dex::{AmmType, Dex},
+    dex::{AmmType, Dex, DexType},
+};
+use ustr::Ustr;
+
+use crate::{
+    events::pool_created::PoolCreatedEvent,
+    exchanges::extended::DexExtended,
+    hypersync::{
+        HypersyncLog,
+        helpers::{
+            extract_address_from_topic, extract_block_number, validate_event_signature_hash,
+        },
+    },
 };
 
-use crate::exchanges::extended::DexExtended;
+const POOL_CREATED_EVENT_SIGNATURE_HASH: &str =
+    "91ccaa7a278130b65168c3a0c8d3bcae84cf5e43704342bd3ec0b59e59c036db";
 
 /// Camelot V3 DEX on Arbitrum.
 pub static CAMELOT_V3: LazyLock<DexExtended> = LazyLock::new(|| {
-    let dex = Dex::new(
+    let mut dex = DexExtended::new(Dex::new(
         chains::ARBITRUM.clone(),
-        "Camelot V3",
-        "0x1a3c9b1d2f0529d97f2afc5136cc23e58f1fd35b",
+        DexType::CamelotV3,
+        "0x1a3c9B1d2F0529D97f2afC5136Cc23e58f1FD35B",
+        102286676,
         AmmType::CLAMM,
+        "Pool(address,address,address)",
         "",
         "",
-    );
-    DexExtended::new(dex)
+        "",
+        "",
+    ));
+    dex.set_pool_created_event_hypersync_parsing(parse_camelot_v3_pool_created_event_hypersync);
+    dex
 });
+
+fn parse_camelot_v3_pool_created_event_hypersync(
+    log: HypersyncLog,
+) -> anyhow::Result<PoolCreatedEvent> {
+    validate_event_signature_hash("Pool", POOL_CREATED_EVENT_SIGNATURE_HASH, &log)?;
+
+    let block_number = extract_block_number(&log)?;
+    let token = extract_address_from_topic(&log, 1, "token0")?;
+    let token1 = extract_address_from_topic(&log, 2, "token1")?;
+
+    if let Some(data) = log.data {
+        let data_bytes = data.as_ref();
+
+        // Extract pool address (only 32 bytes)
+        let pool_address = Address::from_slice(&data_bytes[12..32]);
+        let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
+        Ok(PoolCreatedEvent::new(
+            block_number,
+            token,
+            token1,
+            pool_address,
+            pool_identifier,
+            None,
+            None,
+        ))
+    } else {
+        anyhow::bail!("Missing data in the pool created event log")
+    }
+}

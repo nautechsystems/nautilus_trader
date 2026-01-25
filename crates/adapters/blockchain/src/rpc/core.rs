@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,12 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use nautilus_core::consts::NAUTILUS_USER_AGENT;
-use nautilus_model::defi::{block::Block, chain::Chain, rpc::RpcNodeWssResponse};
-use nautilus_network::websocket::{Consumer, WebSocketClient, WebSocketConfig};
-use reqwest::header::USER_AGENT;
+use nautilus_model::defi::{Block, Chain, rpc::RpcNodeWssResponse};
+use nautilus_network::{
+    RECONNECTED,
+    http::USER_AGENT,
+    websocket::{WebSocketClient, WebSocketConfig, channel_message_handler},
+};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::rpc::{
@@ -30,12 +33,13 @@ use crate::rpc::{
 };
 
 /// Core implementation of a blockchain RPC client that serves as the base for all chain-specific clients.
-/// It provides a shared implementation of common blockchain RPC functionality. It handles:
-/// - WebSocket connection management with blockchain RPC node
-/// - Subscription lifecycle (creation, tracking, and termination)
-/// - Message serialization and deserialization of RPC messages
-/// - Event type mapping and dispatching
-#[derive(Debug)]
+///
+/// It provides a shared implementation of common blockchain RPC functionality, handling:
+/// - WebSocket connection management with blockchain RPC node.
+/// - Subscription lifecycle (creation, tracking, and termination).
+/// - Message serialization and deserialization of RPC messages.
+/// - Event type mapping and dispatching.
+/// - Automatic subscription re-establishment on reconnection.
 pub struct CoreBlockchainRpcClient {
     /// The blockchain network type this client connects to.
     chain: Chain,
@@ -51,7 +55,33 @@ pub struct CoreBlockchainRpcClient {
     /// The active WebSocket client connection.
     wss_client: Option<Arc<WebSocketClient>>,
     /// Channel receiver for consuming WebSocket messages.
-    wss_consumer_rx: Option<tokio::sync::mpsc::Receiver<Message>>,
+    wss_consumer_rx: Option<tokio::sync::mpsc::UnboundedReceiver<Message>>,
+    /// Tracks confirmed subscriptions that need to be re-established on reconnection.
+    subscriptions: Arc<tokio::sync::RwLock<HashMap<RpcEventType, String>>>,
+}
+
+impl Debug for CoreBlockchainRpcClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(CoreBlockchainRpcClient))
+            .field("chain", &self.chain)
+            .field("wss_rpc_url", &self.wss_rpc_url)
+            .field("request_id", &self.request_id)
+            .field(
+                "pending_subscription_request",
+                &self.pending_subscription_request,
+            )
+            .field("subscription_event_types", &self.subscription_event_types)
+            .field(
+                "wss_client",
+                &self.wss_client.as_ref().map(|_| "<WebSocketClient>"),
+            )
+            .field(
+                "wss_consumer_rx",
+                &self.wss_consumer_rx.as_ref().map(|_| "<Receiver>"),
+            )
+            .field("confirmed_subscriptions", &"<RwLock<HashMap>>")
+            .finish()
+    }
 }
 
 impl CoreBlockchainRpcClient {
@@ -65,45 +95,40 @@ impl CoreBlockchainRpcClient {
             pending_subscription_request: HashMap::new(),
             subscription_event_types: HashMap::new(),
             wss_consumer_rx: None,
+            subscriptions: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
         }
     }
 
     /// Establishes a WebSocket connection to the blockchain node and sets up the message channel.
     ///
+    /// Configures automatic reconnection with exponential backoff and subscription re-establishment.
+    /// Reconnection is handled via the `RECONNECTED` message in the message stream.
+    ///
     /// # Errors
     ///
     /// Returns an error if the WebSocket connection fails.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
-        let (tx, rx) = tokio::sync::mpsc::channel(100);
+        let (handler, rx) = channel_message_handler();
         let user_agent = (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string());
-        // Most of the blockchain rpc nodes require a heartbeat to keep the connection alive
+
+        // Most blockchain RPC nodes require a heartbeat to keep the connection alive
         let heartbeat_interval = 30;
+
         let config = WebSocketConfig {
             url: self.wss_rpc_url.clone(),
             headers: vec![user_agent],
             heartbeat: Some(heartbeat_interval),
             heartbeat_msg: None,
-            handler: Consumer::Rust(tx),
-            #[cfg(feature = "python")]
-            ping_handler: None,
-            reconnect_timeout_ms: Some(5_000),
-            reconnect_delay_initial_ms: None,
-            reconnect_jitter_ms: None,
-            reconnect_backoff_factor: None,
-            reconnect_delay_max_ms: None,
+            reconnect_timeout_ms: Some(10_000),
+            reconnect_delay_initial_ms: Some(1_000),
+            reconnect_delay_max_ms: Some(30_000),
+            reconnect_backoff_factor: Some(2.0),
+            reconnect_jitter_ms: Some(1_000),
+            reconnect_max_attempts: None,
         };
-        let client = WebSocketClient::connect(
-            config,
-            #[cfg(feature = "python")]
-            None,
-            #[cfg(feature = "python")]
-            None,
-            #[cfg(feature = "python")]
-            None,
-            vec![],
-            None,
-        )
-        .await?;
+
+        let client =
+            WebSocketClient::connect(config, Some(handler), None, None, vec![], None).await?;
 
         self.wss_client = Some(Arc::new(client));
         self.wss_consumer_rx = Some(rx);
@@ -118,7 +143,11 @@ impl CoreBlockchainRpcClient {
         subscription_id: String,
     ) -> Result<(), BlockchainRpcClientError> {
         if let Some(client) = &self.wss_client {
-            log::info!("Subscribing to new blocks on chain {}", self.chain.name);
+            log::info!(
+                "Subscribing to '{}' on chain '{}'",
+                subscription_id,
+                self.chain.name
+            );
             let msg = serde_json::json!({
                 "method": "eth_subscribe",
                 "id": self.request_id,
@@ -126,17 +155,75 @@ impl CoreBlockchainRpcClient {
                 "params": [subscription_id]
             });
             self.pending_subscription_request
-                .insert(self.request_id, event_type);
+                .insert(self.request_id, event_type.clone());
             self.request_id += 1;
-            if let Err(err) = client.send_text(msg.to_string(), None).await {
-                log::error!("Error sending subscribe message: {err:?}");
+            if let Err(e) = client.send_text(msg.to_string(), None).await {
+                log::error!("Error sending subscribe message: {e:?}");
             }
+
+            // Track subscription for re-establishment on reconnect
+            let mut confirmed = self.subscriptions.write().await;
+            confirmed.insert(event_type, subscription_id);
+
             Ok(())
         } else {
             Err(BlockchainRpcClientError::ClientError(String::from(
                 "Client not connected",
             )))
         }
+    }
+
+    /// Re-establishes all confirmed subscriptions after reconnection.
+    async fn resubscribe_all(&mut self) -> Result<(), BlockchainRpcClientError> {
+        let subscriptions = self.subscriptions.read().await;
+
+        if subscriptions.is_empty() {
+            log::debug!(
+                "No subscriptions to re-establish for chain '{}'",
+                self.chain.name
+            );
+            return Ok(());
+        }
+
+        log::info!(
+            "Re-establishing {} subscription(s) for chain '{}'",
+            subscriptions.len(),
+            self.chain.name
+        );
+
+        let subs_to_restore: Vec<(RpcEventType, String)> = subscriptions
+            .iter()
+            .map(|(event_type, sub_id)| (event_type.clone(), sub_id.clone()))
+            .collect();
+
+        drop(subscriptions);
+
+        for (event_type, subscription_id) in subs_to_restore {
+            if let Some(client) = &self.wss_client {
+                log::debug!(
+                    "Re-subscribing to '{}' on chain '{}'",
+                    subscription_id,
+                    self.chain.name
+                );
+
+                let msg = serde_json::json!({
+                    "method": "eth_subscribe",
+                    "id": self.request_id,
+                    "jsonrpc": "2.0",
+                    "params": [subscription_id]
+                });
+
+                self.pending_subscription_request
+                    .insert(self.request_id, event_type);
+                self.request_id += 1;
+
+                if let Err(e) = client.send_text(msg.to_string(), None).await {
+                    log::error!("Error re-subscribing after reconnection: {e:?}");
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Terminates a subscription with the blockchain node using the provided subscription ID.
@@ -152,8 +239,8 @@ impl CoreBlockchainRpcClient {
                 "jsonrpc": "2.0",
                 "params": [subscription_id]
             });
-            if let Err(err) = client.send_text(msg.to_string(), None).await {
-                log::error!("Error sending unsubscribe message: {err:?}");
+            if let Err(e) = client.send_text(msg.to_string(), None).await {
+                log::error!("Error sending unsubscribe message: {e:?}");
             }
             Ok(())
         } else {
@@ -173,6 +260,8 @@ impl CoreBlockchainRpcClient {
 
     /// Retrieves, parses, and returns the next blockchain RPC message as a structured `BlockchainRpcMessage` type.
     ///
+    /// Handles subscription confirmations, events, and reconnection signals automatically.
+    ///
     /// # Panics
     ///
     /// Panics if expected fields (`id`, `result`) are missing or cannot be converted when handling subscription confirmations or events.
@@ -185,67 +274,82 @@ impl CoreBlockchainRpcClient {
     ) -> Result<BlockchainMessage, BlockchainRpcClientError> {
         while let Some(msg) = self.wait_on_rpc_channel().await {
             match msg {
-                Message::Text(text) => match serde_json::from_str::<serde_json::Value>(&text) {
-                    Ok(json) => {
-                        if is_subscription_confirmation_response(&json) {
-                            let subscription_request_id = json.get("id").unwrap().as_u64().unwrap();
-                            let result = json.get("result").unwrap().as_str().unwrap();
-                            let event_type = self
-                                .pending_subscription_request
-                                .get(&subscription_request_id)
-                                .unwrap();
-                            self.subscription_event_types
-                                .insert(result.to_string(), event_type.clone());
-                            self.pending_subscription_request
-                                .remove(&subscription_request_id);
-                            continue;
-                        } else if is_subscription_event(&json) {
-                            let subscription_id = match extract_rpc_subscription_id(&json) {
-                                Some(id) => id,
-                                None => {
-                                    return Err(BlockchainRpcClientError::InternalRpcClientError(
+                Message::Text(text) => {
+                    if text == RECONNECTED {
+                        log::info!("Detected reconnection for chain '{}'", self.chain.name);
+                        if let Err(e) = self.resubscribe_all().await {
+                            log::error!("Failed to re-establish subscriptions: {e:?}");
+                        }
+                        continue;
+                    }
+
+                    match serde_json::from_str::<serde_json::Value>(&text) {
+                        Ok(json) => {
+                            if is_subscription_confirmation_response(&json) {
+                                let subscription_request_id =
+                                    json.get("id").unwrap().as_u64().unwrap();
+                                let result = json.get("result").unwrap().as_str().unwrap();
+                                let event_type = self
+                                    .pending_subscription_request
+                                    .get(&subscription_request_id)
+                                    .unwrap();
+                                self.subscription_event_types
+                                    .insert(result.to_string(), event_type.clone());
+                                self.pending_subscription_request
+                                    .remove(&subscription_request_id);
+                                continue;
+                            } else if is_subscription_event(&json) {
+                                let subscription_id = match extract_rpc_subscription_id(&json) {
+                                    Some(id) => id,
+                                    None => {
+                                        return Err(BlockchainRpcClientError::InternalRpcClientError(
                                         "Error parsing subscription id from valid rpc response"
                                             .to_string(),
                                     ));
-                                }
-                            };
-                            if let Some(event_type) =
-                                self.subscription_event_types.get(subscription_id)
-                            {
-                                match event_type {
-                                    RpcEventType::NewBlock => {
-                                        return match serde_json::from_value::<
-                                            RpcNodeWssResponse<Block>,
-                                        >(json)
-                                        {
-                                            Ok(block_response) => {
-                                                let mut block = block_response.params.result;
-                                                block.set_chain(self.chain.clone());
-                                                Ok(BlockchainMessage::Block(block))
-                                            }
-                                            Err(e) => {
-                                                Err(BlockchainRpcClientError::MessageParsingError(
-                                                    format!(
-                                                        "Error parsing rpc response to block with error {e}"
+                                    }
+                                };
+                                if let Some(event_type) =
+                                    self.subscription_event_types.get(subscription_id)
+                                {
+                                    match event_type {
+                                        RpcEventType::NewBlock => {
+                                            return match serde_json::from_value::<
+                                                RpcNodeWssResponse<Block>,
+                                            >(
+                                                json
+                                            ) {
+                                                Ok(block_response) => {
+                                                    let block = block_response.params.result;
+                                                    Ok(BlockchainMessage::Block(block))
+                                                }
+                                                Err(e) => Err(
+                                                    BlockchainRpcClientError::MessageParsingError(
+                                                        format!(
+                                                            "Error parsing rpc response to block with error {e}"
+                                                        ),
                                                     ),
-                                                ))
-                                            }
-                                        };
+                                                ),
+                                            };
+                                        }
                                     }
                                 }
+                                return Err(BlockchainRpcClientError::InternalRpcClientError(
+                                    format!(
+                                        "Event type not found for defined subscription id {subscription_id}"
+                                    ),
+                                ));
                             }
-                            return Err(BlockchainRpcClientError::InternalRpcClientError(format!(
-                                "Event type not found for defined subscription id {subscription_id}"
-                            )));
+                            return Err(BlockchainRpcClientError::UnsupportedRpcResponseType(
+                                json.to_string(),
+                            ));
                         }
-                        return Err(BlockchainRpcClientError::UnsupportedRpcResponseType(
-                            json.to_string(),
-                        ));
+                        Err(e) => {
+                            return Err(BlockchainRpcClientError::MessageParsingError(
+                                e.to_string(),
+                            ));
+                        }
                     }
-                    Err(e) => {
-                        return Err(BlockchainRpcClientError::MessageParsingError(e.to_string()));
-                    }
-                },
+                }
                 Message::Pong(_) => {
                     continue;
                 }
@@ -278,7 +382,6 @@ impl CoreBlockchainRpcClient {
     pub async fn unsubscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
         self.unsubscribe_events(String::from("newHeads")).await?;
 
-        // Find and remove the subscription ID associated with the newBlock event type
         let subscription_ids_to_remove: Vec<String> = self
             .subscription_event_types
             .iter()
@@ -289,6 +392,10 @@ impl CoreBlockchainRpcClient {
         for id in subscription_ids_to_remove {
             self.subscription_event_types.remove(&id);
         }
+
+        let mut confirmed = self.subscriptions.write().await;
+        confirmed.remove(&RpcEventType::NewBlock);
+
         Ok(())
     }
 }

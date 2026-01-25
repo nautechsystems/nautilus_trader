@@ -6,12 +6,15 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description.workspace = true
+description = "Core backtesting machinery for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+
+[lints]
+workspace = true
 
 [lib]
 name = "nautilus_backtest"
@@ -19,12 +22,15 @@ crate-type = ["rlib", "staticlib"]
 
 [features]
 default = []
+streaming = ["nautilus-persistence", "nautilus-system/streaming"]
 extension-module = [
-  "pyo3/extension-module",
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-execution/extension-module",
   "nautilus-model/extension-module",
+  "python",
+  "pyo3/extension-module",
+  "streaming",
 ]
 ffi = [
   "cbindgen",
@@ -34,13 +40,13 @@ ffi = [
   "nautilus-model/ffi",
 ]
 python = [
-  "pyo3",
-  "nautilus-core/python",
   "nautilus-common/python",
+  "nautilus-core/python",
   "nautilus-execution/python",
   "nautilus-model/python",
+  "pyo3",
+  "streaming",
 ]
-"clock_v2" = []
 
 [package.metadata.docs.rs]
 all-features = true
@@ -52,22 +58,23 @@ nautilus-core = { workspace = true }
 nautilus-data = { workspace = true }
 nautilus-execution = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
-nautilus-persistence = { workspace = true }
+nautilus-persistence = { workspace = true, optional = true }
 nautilus-portfolio = { workspace = true }
 nautilus-risk = { workspace = true }
 nautilus-system = { workspace = true }
 
+ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-chrono = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-ustr = { workspace = true }
 rust_decimal = { workspace = true }
+ustr = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
+rstest = { workspace = true }
 tempfile = { workspace = true }
-rstest = { workspace = true}
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -75,6 +75,7 @@ def test_pyo3_cython_conversion():
     futures_contract_pyo3_dict = futures_contract_pyo3.to_dict()
     futures_contract_cython = FuturesContract.from_pyo3(futures_contract_pyo3)
     futures_contract_cython_dict = FuturesContract.to_dict(futures_contract_cython)
+    del futures_contract_cython_dict["tick_scheme_name"]  # TODO: Under development
     futures_contract_pyo3_back = nautilus_pyo3.FuturesContract.from_dict(
         futures_contract_cython_dict,
     )

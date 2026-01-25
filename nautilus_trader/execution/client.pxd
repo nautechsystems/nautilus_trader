@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -27,6 +27,7 @@ from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport QueryAccount
 from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
@@ -75,6 +76,7 @@ cdef class ExecutionClient(Component):
     cpdef void cancel_order(self, CancelOrder command)
     cpdef void cancel_all_orders(self, CancelAllOrders command)
     cpdef void batch_cancel_orders(self, BatchCancelOrders command)
+    cpdef void query_account(self, QueryAccount command)
     cpdef void query_order(self, QueryOrder command)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
@@ -86,6 +88,14 @@ cdef class ExecutionClient(Component):
         bint reported,
         uint64_t ts_event,
         dict info=*,
+    )
+    cpdef void generate_order_denied(
+        self,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
+        ClientOrderId client_order_id,
+        str reason,
+        uint64_t ts_event,
     )
     cpdef void generate_order_submitted(
         self,
@@ -101,6 +111,7 @@ cdef class ExecutionClient(Component):
         ClientOrderId client_order_id,
         str reason,
         uint64_t ts_event,
+        bint due_post_only=*,
     )
     cpdef void generate_order_accepted(
         self,
@@ -190,3 +201,4 @@ cdef class ExecutionClient(Component):
     cpdef void _send_mass_status_report(self, report)
     cpdef void _send_order_status_report(self, report)
     cpdef void _send_fill_report(self, report)
+    cpdef void _send_position_status_report(self, report)

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,7 +34,7 @@ use crate::{
 impl CurrencyPair {
     #[allow(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (instrument_id, raw_symbol, base_currency, quote_currency, price_precision, size_precision, price_increment, size_increment, ts_event, ts_init, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None))]
+    #[pyo3(signature = (instrument_id, raw_symbol, base_currency, quote_currency, price_precision, size_precision, price_increment, size_increment, ts_event, ts_init, multiplier=None, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None))]
     fn py_new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -46,6 +46,7 @@ impl CurrencyPair {
         size_increment: Quantity,
         ts_event: u64,
         ts_init: u64,
+        multiplier: Option<Quantity>,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
@@ -67,6 +68,7 @@ impl CurrencyPair {
             size_precision,
             price_increment,
             size_increment,
+            multiplier,
             lot_size,
             max_quantity,
             min_quantity,
@@ -152,6 +154,12 @@ impl CurrencyPair {
     }
 
     #[getter]
+    #[pyo3(name = "multiplier")]
+    fn py_multiplier(&self) -> Quantity {
+        self.multiplier
+    }
+
+    #[getter]
     #[pyo3(name = "lot_size")]
     fn py_lot_size(&self) -> Option<Quantity> {
         self.lot_size
@@ -231,7 +239,7 @@ impl CurrencyPair {
 
     #[getter]
     #[pyo3(name = "info")]
-    fn py_info(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_info(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(PyDict::new(py).into())
     }
 
@@ -242,7 +250,7 @@ impl CurrencyPair {
     }
 
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(CurrencyPair))?;
         dict.set_item("id", self.id.to_string())?;
@@ -253,6 +261,7 @@ impl CurrencyPair {
         dict.set_item("size_precision", self.size_precision)?;
         dict.set_item("price_increment", self.price_increment.to_string())?;
         dict.set_item("size_increment", self.size_increment.to_string())?;
+        dict.set_item("multiplier", self.multiplier.to_string())?;
         dict.set_item("maker_fee", self.maker_fee.to_string())?;
         dict.set_item("taker_fee", self.taker_fee.to_string())?;
         dict.set_item("margin_init", self.margin_init.to_string())?;

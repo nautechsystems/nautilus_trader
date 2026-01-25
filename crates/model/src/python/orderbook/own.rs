@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -50,7 +50,7 @@ impl OwnBookOrder {
         ts_init: u64,
         venue_order_id: Option<VenueOrderId>,
     ) -> PyResult<Self> {
-        Ok(OwnBookOrder::new(
+        Ok(Self::new(
             trader_id,
             client_order_id,
             venue_order_id,
@@ -234,8 +234,8 @@ impl OwnOrderBook {
 
         all_orders.extend(
             self.bids()
-                .flat_map(|level| level.orders.values().cloned())
-                .chain(self.asks().flat_map(|level| level.orders.values().cloned())),
+                .flat_map(|level| level.orders.values().copied())
+                .chain(self.asks().flat_map(|level| level.orders.values().copied())),
         );
 
         all_orders
@@ -244,14 +244,14 @@ impl OwnOrderBook {
     #[pyo3(name = "bids_to_list")]
     fn py_bids_to_list(&self) -> Vec<OwnBookOrder> {
         self.bids()
-            .flat_map(|level| level.orders.values().cloned())
+            .flat_map(|level| level.orders.values().copied())
             .collect()
     }
 
     #[pyo3(name = "asks_to_list")]
     fn py_asks_to_list(&self) -> Vec<OwnBookOrder> {
         self.asks()
-            .flat_map(|level| level.orders.values().cloned())
+            .flat_map(|level| level.orders.values().copied())
             .collect()
     }
 
@@ -263,7 +263,11 @@ impl OwnOrderBook {
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
-        self.bids_as_map(status, accepted_buffer_ns, ts_now)
+        self.bids_as_map(
+            status.map(|s| s.into_iter().collect()),
+            accepted_buffer_ns,
+            ts_now,
+        )
     }
 
     #[pyo3(name = "asks_to_dict")]
@@ -274,65 +278,59 @@ impl OwnOrderBook {
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
-        self.asks_as_map(status, accepted_buffer_ns, ts_now)
+        self.asks_as_map(
+            status.map(|s| s.into_iter().collect()),
+            accepted_buffer_ns,
+            ts_now,
+        )
     }
 
     #[pyo3(name = "bid_quantity")]
-    #[pyo3(signature = (status=None, accepted_buffer_ns=None, ts_now=None))]
+    #[pyo3(signature = (status=None, depth=None, group_size=None, accepted_buffer_ns=None, ts_now=None))]
     fn py_bid_quantity(
         &self,
         status: Option<HashSet<OrderStatus>>,
+        depth: Option<usize>,
+        group_size: Option<Decimal>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
-        self.bid_quantity(status, accepted_buffer_ns, ts_now)
+        self.bid_quantity(
+            status.map(|s| s.into_iter().collect()),
+            depth,
+            group_size,
+            accepted_buffer_ns,
+            ts_now,
+        )
     }
 
     #[pyo3(name = "ask_quantity")]
-    #[pyo3(signature = (status=None, accepted_buffer_ns=None, ts_now=None))]
+    #[pyo3(signature = (status=None, depth=None, group_size=None, accepted_buffer_ns=None, ts_now=None))]
     fn py_ask_quantity(
         &self,
         status: Option<HashSet<OrderStatus>>,
-        accepted_buffer_ns: Option<u64>,
-        ts_now: Option<u64>,
-    ) -> IndexMap<Decimal, Decimal> {
-        self.ask_quantity(status, accepted_buffer_ns, ts_now)
-    }
-
-    #[pyo3(name = "group_bids")]
-    #[pyo3(signature = (group_size, depth=None, status=None, accepted_buffer_ns=None, ts_now=None))]
-    fn py_group_bids(
-        &self,
-        group_size: Decimal,
         depth: Option<usize>,
-        status: Option<HashSet<OrderStatus>>,
+        group_size: Option<Decimal>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
-        self.group_bids(group_size, depth, status, accepted_buffer_ns, ts_now)
-    }
-
-    #[pyo3(name = "group_asks")]
-    #[pyo3(signature = (group_size, depth=None, status=None, accepted_buffer_ns=None, ts_now=None))]
-    fn py_group_asks(
-        &self,
-        group_size: Decimal,
-        depth: Option<usize>,
-        status: Option<HashSet<OrderStatus>>,
-        accepted_buffer_ns: Option<u64>,
-        ts_now: Option<u64>,
-    ) -> IndexMap<Decimal, Decimal> {
-        self.group_asks(group_size, depth, status, accepted_buffer_ns, ts_now)
+        self.ask_quantity(
+            status.map(|s| s.into_iter().collect()),
+            depth,
+            group_size,
+            accepted_buffer_ns,
+            ts_now,
+        )
     }
 
     #[pyo3(name = "audit_open_orders")]
     fn py_audit_open_orders(&mut self, open_order_ids: HashSet<ClientOrderId>) {
-        self.audit_open_orders(&open_order_ids)
+        self.audit_open_orders(&open_order_ids.into_iter().collect());
     }
 
     #[pyo3(name = "pprint")]
-    #[pyo3(signature = (num_levels=3))]
-    fn py_pprint(&self, num_levels: usize) -> String {
-        self.pprint(num_levels)
+    #[pyo3(signature = (num_levels=3, group_size=None))]
+    fn py_pprint(&self, num_levels: usize, group_size: Option<Decimal>) -> String {
+        self.pprint(num_levels, group_size)
     }
 }

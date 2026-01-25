@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,8 +15,6 @@
 """
 Define the instrument info endpoint.
 """
-
-# ruff: noqa: N815
 
 from decimal import Decimal
 
@@ -52,7 +50,7 @@ class ListPerpetualMarketsGetParams(msgspec.Struct, omit_defaults=True):
     ticker: str | None = None
 
 
-class DYDXPerpetualMarketResponseObject(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXPerpetualMarketResponseObject(msgspec.Struct, forbid_unknown_fields=False):
     """
     Represent the dYdX perpetual market response object.
     """
@@ -160,7 +158,7 @@ class DYDXPerpetualMarketResponseObject(msgspec.Struct, forbid_unknown_fields=Tr
         )
 
 
-class DYDXListPerpetualMarketsResponse(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXListPerpetualMarketsResponse(msgspec.Struct, forbid_unknown_fields=False):
     """
     Represent the dYdX list perpetual markets response object.
     """

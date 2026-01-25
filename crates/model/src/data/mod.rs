@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,10 +17,12 @@
 
 pub mod bar;
 pub mod bet;
+pub mod black_scholes;
 pub mod close;
 pub mod delta;
 pub mod deltas;
 pub mod depth;
+pub mod funding;
 pub mod greeks;
 pub mod order;
 pub mod prices;
@@ -28,7 +30,7 @@ pub mod quote;
 pub mod status;
 pub mod trade;
 
-#[cfg(feature = "stubs")]
+#[cfg(any(test, feature = "stubs"))]
 pub mod stubs;
 
 use std::{
@@ -37,7 +39,6 @@ use std::{
     str::FromStr,
 };
 
-use close::InstrumentClose;
 use indexmap::IndexMap;
 use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
@@ -46,12 +47,15 @@ use serde_json::to_string;
 // Re-exports
 #[rustfmt::skip]  // Keep these grouped
 pub use bar::{Bar, BarSpecification, BarType};
+pub use black_scholes::Greeks;
+pub use close::InstrumentClose;
 pub use delta::OrderBookDelta;
 pub use deltas::{OrderBookDeltas, OrderBookDeltas_API};
 pub use depth::{DEPTH10_LEN, OrderBookDepth10};
+pub use funding::FundingRateUpdate;
 pub use greeks::{
     BlackScholesGreeksResult, GreeksData, PortfolioGreeks, YieldCurveData, black_scholes_greeks,
-    imply_vol_and_greeks,
+    imply_vol_and_greeks, refine_vol_and_greeks,
 };
 pub use order::{BookOrder, NULL_ORDER};
 pub use prices::{IndexPriceUpdate, MarkPriceUpdate};
@@ -114,6 +118,10 @@ impl_try_from_data!(MarkPriceUpdate, MarkPriceUpdate);
 impl_try_from_data!(IndexPriceUpdate, IndexPriceUpdate);
 impl_try_from_data!(InstrumentClose, InstrumentClose);
 
+/// Converts a vector of `Data` items to a specific variant type.
+///
+/// Filters and converts the data vector, keeping only items that can be
+/// successfully converted to the target type `T`.
 pub fn to_variant<T: TryFrom<Data>>(data: Vec<Data>) -> Vec<T> {
     data.into_iter()
         .filter_map(|d| T::try_from(d).ok())
@@ -142,11 +150,17 @@ impl Data {
     }
 }
 
-pub trait GetTsInit {
+/// Marker trait for types that carry a creation timestamp.
+///
+/// `ts_init` is the moment (UNIX nanoseconds) when this value was first generated or
+/// ingested by Nautilus. It can be used for sequencing, latency measurements,
+/// or monitoring data-pipeline delays.
+pub trait HasTsInit {
+    /// Returns the UNIX timestamp (nanoseconds) when the instance was created.
     fn ts_init(&self) -> UnixNanos;
 }
 
-impl GetTsInit for Data {
+impl HasTsInit for Data {
     fn ts_init(&self) -> UnixNanos {
         match self {
             Self::Delta(d) => d.ts_init,
@@ -162,7 +176,10 @@ impl GetTsInit for Data {
     }
 }
 
-pub fn is_monotonically_increasing_by_init<T: GetTsInit>(data: &[T]) -> bool {
+/// Checks if the data slice is monotonically increasing by initialization timestamp.
+///
+/// Returns `true` if each element's `ts_init` is less than or equal to the next element's `ts_init`.
+pub fn is_monotonically_increasing_by_init<T: HasTsInit>(data: &[T]) -> bool {
     data.windows(2)
         .all(|window| window[0].ts_init() <= window[1].ts_init())
 }
@@ -227,6 +244,10 @@ impl From<InstrumentClose> for Data {
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct DataType {
     type_name: String,
     metadata: Option<IndexMap<String, String>>,
@@ -241,10 +262,10 @@ impl DataType {
         let topic = if let Some(ref meta) = metadata {
             let meta_str = meta
                 .iter()
-                .map(|(k, v)| format!("{}={}", k, v))
+                .map(|(k, v)| format!("{k}={v}"))
                 .collect::<Vec<_>>()
                 .join(".");
-            format!("{}.{}", type_name, meta_str)
+            format!("{type_name}.{meta_str}")
         } else {
             type_name.to_string()
         };
@@ -273,10 +294,10 @@ impl DataType {
 
     /// Returns a string representation of the metadata.
     pub fn metadata_str(&self) -> String {
-        self.metadata
-            .as_ref()
-            .map(|metadata| to_string(metadata).unwrap_or_default())
-            .unwrap_or_else(|| "null".to_string())
+        self.metadata.as_ref().map_or_else(
+            || "null".to_string(),
+            |metadata| to_string(metadata).unwrap_or_default(),
+        )
     }
 
     /// Returns the messaging topic for the data type.
@@ -399,9 +420,6 @@ impl Debug for DataType {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::hash::DefaultHasher;
@@ -510,7 +528,7 @@ mod tests {
         );
 
         let data_type1 = DataType::new("ExampleType", metadata.clone());
-        let data_type2 = DataType::new("ExampleType", metadata.clone());
+        let data_type2 = DataType::new("ExampleType", metadata);
 
         let mut hasher1 = DefaultHasher::new();
         data_type1.hash(&mut hasher1);
@@ -533,7 +551,7 @@ mod tests {
         );
         let data_type = DataType::new("ExampleType", metadata);
 
-        assert_eq!(format!("{}", data_type), "ExampleType.key1=value1");
+        assert_eq!(format!("{data_type}"), "ExampleType.key1=value1");
     }
 
     #[rstest]

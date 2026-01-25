@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,51 +13,63 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    sync::{Arc, atomic::Ordering},
-    time::Duration,
-};
+use std::{sync::atomic::Ordering, time::Duration};
 
-use nautilus_core::python::to_pyruntime_err;
-use pyo3::prelude::*;
+use nautilus_core::python::{clone_py_object, to_pyruntime_err};
+use pyo3::{Py, prelude::*};
 use tokio_tungstenite::tungstenite::stream::Mode;
 
 use crate::{
     mode::ConnectionMode,
-    socket::{SocketClient, SocketConfig, WriterCommand},
+    socket::{SocketClient, SocketConfig, TcpMessageHandler, WriterCommand},
 };
 
 #[pymethods]
 impl SocketConfig {
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (url, ssl, suffix, handler, heartbeat=None, reconnect_timeout_ms=10_000, reconnect_delay_initial_ms=2_000, reconnect_delay_max_ms=30_000, reconnect_backoff_factor=1.5, reconnect_jitter_ms=100, certs_dir=None))]
+    #[pyo3(signature = (url, ssl, suffix, handler, heartbeat=None, reconnect_timeout_ms=10_000, reconnect_delay_initial_ms=2_000, reconnect_delay_max_ms=30_000, reconnect_backoff_factor=1.5, reconnect_jitter_ms=100, connection_max_retries=5, certs_dir=None, reconnect_max_attempts=None))]
     fn py_new(
         url: String,
         ssl: bool,
         suffix: Vec<u8>,
-        handler: PyObject,
+        handler: Py<PyAny>,
         heartbeat: Option<(u64, Vec<u8>)>,
         reconnect_timeout_ms: Option<u64>,
         reconnect_delay_initial_ms: Option<u64>,
         reconnect_delay_max_ms: Option<u64>,
         reconnect_backoff_factor: Option<f64>,
         reconnect_jitter_ms: Option<u64>,
+        connection_max_retries: Option<u32>,
         certs_dir: Option<String>,
+        reconnect_max_attempts: Option<u32>,
     ) -> Self {
         let mode = if ssl { Mode::Tls } else { Mode::Plain };
+
+        // Create function pointer that calls Python handler
+        let handler_clone = clone_py_object(&handler);
+        let message_handler: TcpMessageHandler = std::sync::Arc::new(move |data: &[u8]| {
+            Python::attach(|py| {
+                if let Err(e) = handler_clone.call1(py, (data,)) {
+                    log::error!("Error calling Python message handler: {e}");
+                }
+            });
+        });
+
         Self {
             url,
             mode,
             suffix,
-            py_handler: Some(Arc::new(handler)),
+            message_handler: Some(message_handler),
             heartbeat,
             reconnect_timeout_ms,
             reconnect_delay_initial_ms,
             reconnect_delay_max_ms,
             reconnect_backoff_factor,
             reconnect_jitter_ms,
+            connection_max_retries,
             certs_dir,
+            reconnect_max_attempts,
         }
     }
 }
@@ -74,18 +86,51 @@ impl SocketClient {
     #[pyo3(signature = (config, post_connection=None, post_reconnection=None, post_disconnection=None))]
     fn py_connect(
         config: SocketConfig,
-        post_connection: Option<PyObject>,
-        post_reconnection: Option<PyObject>,
-        post_disconnection: Option<PyObject>,
+        post_connection: Option<Py<PyAny>>,
+        post_reconnection: Option<Py<PyAny>>,
+        post_disconnection: Option<Py<PyAny>>,
         py: Python<'_>,
-    ) -> PyResult<Bound<PyAny>> {
+    ) -> PyResult<Bound<'_, PyAny>> {
+        // Convert Python callbacks to function pointers
+        let post_connection_fn = post_connection.map(|callback| {
+            let callback_clone = clone_py_object(&callback);
+            std::sync::Arc::new(move || {
+                Python::attach(|py| {
+                    if let Err(e) = callback_clone.call0(py) {
+                        log::error!("Error calling post_connection handler: {e}");
+                    }
+                });
+            }) as std::sync::Arc<dyn Fn() + Send + Sync>
+        });
+
+        let post_reconnection_fn = post_reconnection.map(|callback| {
+            let callback_clone = clone_py_object(&callback);
+            std::sync::Arc::new(move || {
+                Python::attach(|py| {
+                    if let Err(e) = callback_clone.call0(py) {
+                        log::error!("Error calling post_reconnection handler: {e}");
+                    }
+                });
+            }) as std::sync::Arc<dyn Fn() + Send + Sync>
+        });
+
+        let post_disconnection_fn = post_disconnection.map(|callback| {
+            let callback_clone = clone_py_object(&callback);
+            std::sync::Arc::new(move || {
+                Python::attach(|py| {
+                    if let Err(e) = callback_clone.call0(py) {
+                        log::error!("Error calling post_disconnection handler: {e}");
+                    }
+                });
+            }) as std::sync::Arc<dyn Fn() + Send + Sync>
+        });
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             Self::connect(
                 config,
-                None, // Rust handler
-                post_connection,
-                post_reconnection,
-                post_disconnection,
+                post_connection_fn,
+                post_reconnection_fn,
+                post_disconnection_fn,
             )
             .await
             .map_err(to_pyruntime_err)
@@ -131,18 +176,18 @@ impl SocketClient {
     fn py_reconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let mode = slf.connection_mode.clone();
         let mode_str = ConnectionMode::from_atomic(&mode).to_string();
-        tracing::debug!("Reconnect from mode {mode_str}");
+        log::debug!("Reconnect from mode {mode_str}");
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             match ConnectionMode::from_atomic(&mode) {
                 ConnectionMode::Reconnect => {
-                    tracing::warn!("Cannot reconnect - socket already reconnecting");
+                    log::warn!("Cannot reconnect - socket already reconnecting");
                 }
                 ConnectionMode::Disconnect => {
-                    tracing::warn!("Cannot reconnect - socket disconnecting");
+                    log::warn!("Cannot reconnect - socket disconnecting");
                 }
                 ConnectionMode::Closed => {
-                    tracing::warn!("Cannot reconnect - socket closed");
+                    log::warn!("Cannot reconnect - socket closed");
                 }
                 _ => {
                     mode.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
@@ -169,15 +214,15 @@ impl SocketClient {
     fn py_close<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let mode = slf.connection_mode.clone();
         let mode_str = ConnectionMode::from_atomic(&mode).to_string();
-        tracing::debug!("Close from mode {mode_str}");
+        log::debug!("Close from mode {mode_str}");
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             match ConnectionMode::from_atomic(&mode) {
                 ConnectionMode::Closed => {
-                    tracing::warn!("Socket already closed");
+                    log::debug!("Socket already closed");
                 }
                 ConnectionMode::Disconnect => {
-                    tracing::warn!("Socket already disconnecting");
+                    log::debug!("Socket already disconnecting");
                 }
                 _ => {
                     mode.store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
@@ -202,7 +247,7 @@ impl SocketClient {
         data: Vec<u8>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        tracing::trace!("Sending {}", String::from_utf8_lossy(&data));
+        log::trace!("Sending {}", String::from_utf8_lossy(&data));
 
         let mode = slf.connection_mode.clone();
         let writer_tx = slf.writer_tx.clone();
@@ -222,7 +267,7 @@ impl SocketClient {
             let check_interval = Duration::from_millis(1);
 
             if !ConnectionMode::from_atomic(&mode).is_active() {
-                tracing::debug!("Waiting for client to become ACTIVE before sending (2s)...");
+                log::debug!("Waiting for client to become ACTIVE before sending (2s)...");
                 match tokio::time::timeout(timeout, async {
                     while !ConnectionMode::from_atomic(&mode).is_active() {
                         if matches!(
@@ -239,7 +284,7 @@ impl SocketClient {
                 })
                 .await
                 {
-                    Ok(Ok(())) => tracing::debug!("Client now active"),
+                    Ok(Ok(())) => log::debug!("Client now active"),
                     Ok(Err(e)) => {
                         let err_msg = format!(
                             "Failed sending data ({}): {e}",

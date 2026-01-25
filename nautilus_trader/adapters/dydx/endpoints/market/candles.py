@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,8 +15,6 @@
 """
 Define the candles / bars endpoint.
 """
-
-# ruff: noqa: N815
 
 import datetime
 
@@ -41,7 +39,7 @@ class DYDXCandlesGetParams(msgspec.Struct, omit_defaults=True):
     toISO: datetime.datetime | None = None
 
 
-class DYDXCandlesResponse(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXCandlesResponse(msgspec.Struct, forbid_unknown_fields=False):
     """
     Represent the dYdX candles response object.
     """

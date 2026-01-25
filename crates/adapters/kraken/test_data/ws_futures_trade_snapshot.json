@@ -1,0 +1,28 @@
+{
+  "feed": "trade_snapshot",
+  "product_id": "PI_XBTUSD",
+  "trades": [
+    {
+      "feed": "trade",
+      "product_id": "PI_XBTUSD",
+      "uid": "caa9c653-420b-4c24-a9f1-462a054d86f1",
+      "side": "sell",
+      "type": "fill",
+      "seq": 655508,
+      "time": 1612269657781,
+      "qty": 440,
+      "price": 34893
+    },
+    {
+      "feed": "trade",
+      "product_id": "PI_XBTUSD",
+      "uid": "45ee9737-1877-4682-bc68-e4ef818ef88a",
+      "side": "sell",
+      "type": "fill",
+      "seq": 655507,
+      "time": 1612269656839,
+      "qty": 9643,
+      "price": 34891
+    }
+  ]
+}

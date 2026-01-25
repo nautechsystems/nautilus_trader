@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -40,6 +40,7 @@ from nautilus_trader.common.component import remove_instance_component_clocks
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import StrategyId
@@ -168,7 +169,7 @@ class Trader(Component):
         """
         return list(self._strategies.values())
 
-    def exec_algorithms(self) -> list[Any]:  # ExecutonAlgorithm (circular import issues)
+    def exec_algorithms(self) -> list[Any]:  # ExecutionAlgorithm (circular import issues)
         """
         Return the execution algorithms loaded in the trader.
 
@@ -254,16 +255,19 @@ class Trader(Component):
         for actor in list(self._actors.values()):
             if is_backtest:
                 actor.clock.set_time(now_ns)
+
             actor.start()
 
         for strategy in list(self._strategies.values()):
             if is_backtest:
                 strategy.clock.set_time(now_ns)
+
             strategy.start()
 
         for exec_algorithm in list(self._exec_algorithms.values()):
             if is_backtest:
                 exec_algorithm.clock.set_time(now_ns)
+
             exec_algorithm.start()
 
     def _stop(self) -> None:
@@ -301,7 +305,6 @@ class Trader(Component):
         self.clear_actors()
         self.clear_strategies()
         self.clear_exec_algorithms()
-
         remove_instance_component_clocks(self._instance_id)
 
     # --------------------------------------------------------------------------------------------------
@@ -346,9 +349,7 @@ class Trader(Component):
             cache=self._cache,
             clock=clock,
         )
-
         self._actors[actor.id] = actor
-
         self._log.info(f"Registered Component {actor}")
 
     def add_actors(self, actors: list[Actor]) -> None:
@@ -498,7 +499,6 @@ class Trader(Component):
             cache=self._cache,
             clock=clock,
         )
-
         self._exec_algorithms[exec_algorithm.id] = exec_algorithm
 
         self._log.info(f"Registered ExecAlgorithm {exec_algorithm}")
@@ -541,6 +541,7 @@ class Trader(Component):
         PyCondition.not_none(actor_id, "actor_id")
 
         actor = self._actors.get(actor_id)
+
         if actor is None:
             raise ValueError(f"Cannot start actor, {actor_id} not found.")
 
@@ -568,6 +569,7 @@ class Trader(Component):
         PyCondition.not_none(strategy_id, "strategy_id")
 
         strategy = self._strategies.get(strategy_id)
+
         if strategy is None:
             raise ValueError(f"Cannot start strategy, {strategy_id} not found.")
 
@@ -595,6 +597,7 @@ class Trader(Component):
         PyCondition.not_none(actor_id, "actor_id")
 
         actor = self._actors.get(actor_id)
+
         if actor is None:
             raise ValueError(f"Cannot stop actor, {actor_id} not found.")
 
@@ -622,6 +625,7 @@ class Trader(Component):
         PyCondition.not_none(strategy_id, "strategy_id")
 
         strategy = self._strategies.get(strategy_id)
+
         if strategy is None:
             raise ValueError(f"Cannot stop strategy, {strategy_id} not found.")
 
@@ -651,6 +655,7 @@ class Trader(Component):
         PyCondition.not_none(actor_id, "actor_id")
 
         actor = self._actors.get(actor_id)
+
         if actor is None:
             raise ValueError(f"Cannot remove actor, {actor_id} not found.")
 
@@ -680,6 +685,7 @@ class Trader(Component):
         PyCondition.not_none(strategy_id, "strategy_id")
 
         strategy = self._strategies.get(strategy_id)
+
         if strategy is None:
             raise ValueError(f"Cannot remove strategy, {strategy_id} not found.")
 
@@ -708,7 +714,7 @@ class Trader(Component):
             deregister_component_clock(self._instance_id, actor.clock)
 
         self._actors.clear()
-        self._log.info("Cleared all actors")
+        self._log.info("Cleared actors")
 
     def clear_strategies(self) -> None:
         """
@@ -729,7 +735,7 @@ class Trader(Component):
             deregister_component_clock(self._instance_id, strategy.clock)
 
         self._strategies.clear()
-        self._log.info("Cleared all trading strategies")
+        self._log.info("Cleared trading strategies")
 
     def clear_exec_algorithms(self) -> None:
         """
@@ -750,7 +756,7 @@ class Trader(Component):
             deregister_component_clock(self._instance_id, exec_algorithm.clock)
 
         self._exec_algorithms.clear()
-        self._log.info("Cleared all execution algorithms")
+        self._log.info("Cleared execution algorithms")
 
     def subscribe(self, topic: str, handler: Callable[[Any], None]) -> None:
         """
@@ -848,19 +854,38 @@ class Trader(Component):
         pd.DataFrame
 
         """
-        positions = self._cache.positions() + self._cache.position_snapshots()
-        return ReportProvider.generate_positions_report(positions)
+        positions = self._cache.positions()
+        snapshots = self._cache.position_snapshots()
 
-    def generate_account_report(self, venue: Venue) -> pd.DataFrame:
+        # Generate report with positions and snapshots
+        return ReportProvider.generate_positions_report(positions, snapshots)
+
+    def generate_account_report(
+        self,
+        venue: Venue = None,
+        account_id: AccountId = None,
+    ) -> pd.DataFrame:
         """
         Generate an account report.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue for the account (used if account_id is not provided).
+        account_id : AccountId, optional
+            The account ID (takes priority if both venue and account_id are provided).
 
         Returns
         -------
         pd.DataFrame
 
         """
-        account = self._cache.account_for_venue(venue)
+        if account_id is None and venue is None:
+            raise ValueError("At least one of 'venue' or 'account_id' must be provided")
+
+        account = self._cache.account_for_venue(venue=venue, account_id=account_id)
+
         if account is None:
             return pd.DataFrame()
+
         return ReportProvider.generate_account_report(account)

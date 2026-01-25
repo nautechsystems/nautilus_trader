@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -74,6 +74,13 @@ pub enum ComponentState {
     Faulting = 12,
     /// When a component has successfully shut down due to a detected fault.
     Faulted = 13,
+}
+
+impl ComponentState {
+    pub fn variant_name(&self) -> String {
+        let s = self.to_string();
+        format!("{}{}", s[0..1].to_uppercase(), s[1..].to_lowercase())
+    }
 }
 
 /// A trigger condition for a component within the system.

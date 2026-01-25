@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
+use ahash::HashMap;
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::enums::PriceType;
 use pyo3::prelude::*;
@@ -45,8 +44,8 @@ pub fn py_get_exchange_rate(
         Ustr::from(from_currency),
         Ustr::from(to_currency),
         price_type,
-        quotes_bid,
-        quotes_ask,
+        quotes_bid.into_iter().collect(),
+        quotes_ask.into_iter().collect(),
     )
     .map_err(to_pyvalue_err)
 }

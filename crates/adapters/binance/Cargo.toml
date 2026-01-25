@@ -1,0 +1,125 @@
+[package]
+name = "nautilus-binance"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Binance exchange integration adapter for the Nautilus trading engine"
+categories.workspace = true
+keywords.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false # Do not publish to crates.io yet
+
+[lints]
+workspace = true
+
+[lib]
+name = "nautilus_binance"
+crate-type = ["rlib", "cdylib"]
+
+[features]
+default = ["high-precision"]
+high-precision = ["nautilus-model/high-precision"]
+extension-module = [
+  "nautilus-common/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-model/extension-module",
+  "nautilus-network/extension-module",
+  "python",
+  "pyo3/extension-module",
+]
+python = [
+  "nautilus-common/python",
+  "nautilus-core/python",
+  "nautilus-model/python",
+  "nautilus-network/python",
+  "pyo3",
+  "pyo3-async-runtimes",
+]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+nautilus-common = { workspace = true, features = ["live"] }
+nautilus-core = { workspace = true }
+nautilus-live = { workspace = true }
+nautilus-model = { workspace = true }
+nautilus-network = { workspace = true }
+nautilus-system = { workspace = true }
+
+ahash = { workspace = true }
+anyhow = { workspace = true }
+arc-swap = { workspace = true }
+async-stream = { workspace = true }
+async-trait = { workspace = true }
+aws-lc-rs = { workspace = true }
+base64 = { workspace = true }
+chrono = { workspace = true }
+dashmap = { workspace = true }
+derive_builder = { workspace = true }
+ed25519-dalek = { workspace = true }
+futures-util = { workspace = true }
+hex = { workspace = true }
+log = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_urlencoded = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+tokio-util = { workspace = true }
+ustr = { workspace = true }
+zeroize = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
+
+[dev-dependencies]
+nautilus-testkit = { workspace = true }
+
+axum = { workspace = true }
+criterion = { workspace = true }
+dotenvy = { workspace = true }
+rstest = { workspace = true }
+rust_decimal_macros = { workspace = true }
+url = { workspace = true }
+
+[[bin]]
+name = "binance-spot-http-public"
+path = "bin/http_public.rs"
+doc = false
+
+[[bin]]
+name = "binance-spot-ws-data"
+path = "bin/ws_spot_data.rs"
+doc = false
+
+# Run with `cargo run --example binance-spot-data-tester --package nautilus-binance`
+[[example]]
+name = "binance-spot-data-tester"
+path = "examples/spot/node_data_tester.rs"
+doc = false
+
+# Run with `cargo run --example binance-spot-exec-tester --package nautilus-binance`
+[[example]]
+name = "binance-spot-exec-tester"
+path = "examples/spot/node_exec_tester.rs"
+doc = false
+
+# Run with `cargo run --example binance-futures-data-tester --package nautilus-binance`
+[[example]]
+name = "binance-futures-data-tester"
+path = "examples/futures/node_data_tester.rs"
+doc = false
+
+# Run with `cargo run --example binance-futures-exec-tester --package nautilus-binance`
+[[example]]
+name = "binance-futures-exec-tester"
+path = "examples/futures/node_exec_tester.rs"
+doc = false

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,6 +17,7 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
+from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport CancelAllOrders
@@ -54,7 +55,8 @@ cdef class OrderManager:
     cdef readonly bint log_events
     cdef readonly bint log_commands
 
-    cdef dict _submit_order_commands
+    cdef dict[ClientOrderId, SubmitOrder] _submit_order_commands
+    cdef dict[ClientOrderId, Quantity] _oto_target_quantities
     cdef object _submit_order_handler
     cdef object _cancel_order_handler
     cdef object _modify_order_handler
@@ -88,6 +90,6 @@ cdef class OrderManager:
     cpdef void send_emulator_command(self, TradingCommand command)
     cpdef void send_algo_command(self, TradingCommand command, ExecAlgorithmId exec_algorithm_id)
     cpdef void send_risk_command(self, TradingCommand command)
-    cpdef void send_exec_command(self, TradingCommand command)
+    cpdef void send_exec_command(self, Command command)
     cpdef void send_risk_event(self, OrderEvent event)
     cpdef void send_exec_event(self, OrderEvent event)

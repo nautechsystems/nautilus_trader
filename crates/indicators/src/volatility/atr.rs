@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,7 +22,7 @@ use crate::{
     indicator::{Indicator, MovingAverage},
 };
 
-/// An indicator which calculates a Average True Range (ATR) across a rolling window.
+/// An indicator which calculates an Average True Range (ATR) across a rolling window.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -143,9 +143,6 @@ impl AverageTrueRange {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -195,7 +192,7 @@ mod tests {
     #[rstest]
     fn test_value_with_epsilon_input() {
         let mut atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None);
-        let epsilon = std::f64::EPSILON;
+        let epsilon = f64::EPSILON;
         atr.update_raw(epsilon, epsilon, epsilon);
         assert_eq!(atr.value, 0.0);
     }

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,6 +34,7 @@ from nautilus_trader.model.events.order import OrderReleased
 from nautilus_trader.model.events.order import OrderSubmitted
 from nautilus_trader.model.events.order import OrderTriggered
 from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.events.position import PositionAdjusted
 from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionEvent
@@ -59,6 +60,7 @@ __all__ = [
     "OrderSubmitted",
     "OrderTriggered",
     "OrderUpdated",
+    "PositionAdjusted",
     "PositionChanged",
     "PositionClosed",
     "PositionEvent",

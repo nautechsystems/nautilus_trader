@@ -71,6 +71,21 @@ cdef extern from "../includes/common.h":
         # A trigger when the component has successfully faulted.
         FAULT_COMPLETED # = 15,
 
+    # The log level for log messages.
+    cpdef enum LogLevel:
+        # The **OFF** log level. A level lower than all other log levels (off).
+        OFF # = 0,
+        # The **TRACE** log level. Only available in Rust for debug/development builds.
+        TRACE # = 1,
+        # The **DEBUG** log level.
+        DEBUG # = 2,
+        # The **INFO** log level.
+        INFO # = 3,
+        # The **WARNING** log level.
+        WARNING # = 4,
+        # The **ERROR** log level.
+        ERROR # = 5,
+
     # The log color for log messages.
     cpdef enum LogColor:
         # The default/normal log color.
@@ -88,33 +103,52 @@ cdef extern from "../includes/common.h":
         # The red log color, typically used with [`LogLevel::Error`] level.
         RED # = 6,
 
-    # The log level for log messages.
-    cpdef enum LogLevel:
-        # The **OFF** log level. A level lower than all other log levels (off).
-        OFF # = 0,
-        # The **TRACE** log level. Only available in Rust for debug/development builds.
-        TRACE # = 1,
-        # The **DEBUG** log level.
-        DEBUG # = 2,
-        # The **INFO** log level.
-        INFO # = 3,
-        # The **WARNING** log level.
-        WARNING # = 4,
-        # The **ERROR** log level.
-        ERROR # = 5,
-
     # A real-time clock which uses system time.
     #
     # Timestamps are guaranteed to be unique and monotonically increasing.
+    #
+    # # Threading
+    #
+    # The clock holds thread-local runtime state and must remain on its originating thread.
     cdef struct LiveClock:
         pass
 
+    # A guard that manages the lifecycle of the logging subsystem.
+    #
+    # `LogGuard` ensures the logging thread remains active while instances exist and properly
+    # terminates when all guards are dropped. The system uses reference counting to track active
+    # guards - when the last `LogGuard` is dropped, the logging thread is joined to ensure all
+    # pending log messages are written before the process terminates.
+    #
+    # # Reference Counting
+    #
+    # The logging system maintains a global atomic counter of active `LogGuard` instances. This
+    # ensures that:
+    # - The logging thread remains active as long as at least one `LogGuard` exists.
+    # - All log messages are properly flushed when intermediate guards are dropped.
+    # - The logging thread is cleanly terminated and joined when the last guard is dropped.
+    #
+    # # Shutdown Behavior
+    #
+    # When the last guard is dropped, the logging thread is signaled to close, drains pending
+    # messages, and is joined to ensure all logs are written before process termination.
+    #
+    # **Python on Windows:** Non-deterministic GC order during interpreter shutdown can
+    # occasionally prevent proper thread join, resulting in truncated logs.
+    #
+    # # Limits
+    #
+    # The system supports a maximum of 255 concurrent `LogGuard` instances.
     cdef struct LogGuard:
         pass
 
     # A static test clock.
     #
     # Stores the current timestamp internally which can be advanced.
+    #
+    # # Threading
+    #
+    # This clock is thread-affine; use it only from the thread that created it.
     cdef struct TestClock:
         pass
 
@@ -163,14 +197,12 @@ cdef extern from "../includes/common.h":
         UUID4_t event_id;
         # UNIX timestamp (nanoseconds) when the event occurred.
         uint64_t ts_event;
-        # UNIX timestamp (nanoseconds) when the instance was initialized.
+        # UNIX timestamp (nanoseconds) when the instance was created.
         uint64_t ts_init;
 
-    # Legacy time event handler for Cython/FFI inter-operatbility
+    # FFI time event handler for Cython interoperability.
     #
-    # TODO: Remove once Cython is deprecated
-    #
-    # `TimeEventHandler` associates a `TimeEvent` with a callback function that is triggered
+    # Associates a `TimeEvent` with a callback function that is triggered
     # when the event's timestamp is reached.
     cdef struct TimeEventHandler_t:
         # The time event.
@@ -239,6 +271,11 @@ cdef extern from "../includes/common.h":
     # - `name_ptr` is a valid C string pointer.
     # - `callback_ptr` is a valid `PyCallable` pointer.
     #
+    # # Parameters
+    #
+    # - `start_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "use current time".
+    # - `stop_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "no stop time".
+    #
     # # Panics
     #
     # Panics if `callback_ptr` is null or represents the Python `None` object.
@@ -256,6 +293,11 @@ cdef extern from "../includes/common.h":
     # Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
     CVec test_clock_advance_time(TestClock_API *clock, uint64_t to_time_ns, uint8_t set_time);
 
+    # Drops a `CVec` of `TimeEventHandler_API` values.
+    #
+    # # Panics
+    #
+    # Panics if `CVec` invariants are violated (corrupted metadata).
     void vec_time_event_handlers_drop(CVec v);
 
     # # Safety
@@ -317,6 +359,11 @@ cdef extern from "../includes/common.h":
     # This function assumes:
     # - `name_ptr` is a valid C string pointer.
     # - `callback_ptr` is a valid `PyCallable` pointer.
+    #
+    # # Parameters
+    #
+    # - `start_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "use current time".
+    # - `stop_time_ns`: UNIX timestamp in nanoseconds. Use `0` to indicate "no stop time".
     #
     # # Panics
     #
@@ -428,6 +475,7 @@ cdef extern from "../includes/common.h":
                               uint8_t is_colored,
                               uint8_t is_bypassed,
                               uint8_t print_config,
+                              uint8_t log_components_only,
                               uint64_t max_file_size,
                               uint32_t max_backup_count);
 
@@ -481,6 +529,13 @@ cdef extern from "../includes/common.h":
     void logging_clock_set_static_mode();
 
     void logging_clock_set_static_time(uint64_t time_ns);
+
+    # Drops a `TimeEventHandler_API`, releasing any Python callback reference.
+    #
+    # # Safety
+    #
+    # The handler must be valid and not previously dropped.
+    void time_event_handler_drop(TimeEventHandler_t handler);
 
     # # Safety
     #

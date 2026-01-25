@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,10 +14,19 @@
 // -------------------------------------------------------------------------------------------------
 
 use derive_builder::Builder;
+use regex::Regex;
 use sqlx::{ConnectOptions, PgPool, postgres::PgConnectOptions};
 
 #[derive(Debug, Clone, Builder)]
 #[builder(default)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.infrastructure")
+)]
 pub struct PostgresConnectOptions {
     pub host: String,
     pub port: u16,
@@ -62,7 +71,7 @@ impl PostgresConnectOptions {
         Self::new(
             String::from("localhost"),
             5432,
-            String::from("postgres"),
+            String::from("nautilus"),
             String::from("pass"),
             String::from("nautilus"),
         )
@@ -207,22 +216,33 @@ pub async fn init_postgres(
 
     // Execute all the sql files in schema dir
     let schema_dir = schema_dir.unwrap_or_else(|| get_schema_dir().unwrap());
-    let mut sql_files =
-        std::fs::read_dir(schema_dir)?.collect::<Result<Vec<_>, std::io::Error>>()?;
-    for file in &mut sql_files {
-        let file_name = file.file_name();
+    let sql_files = vec!["types.sql", "functions.sql", "partitions.sql", "tables.sql"];
+    let plpgsql_regex =
+        Regex::new(r"\$\$ LANGUAGE plpgsql(?:[ \t\r\n]+SECURITY[ \t\r\n]+DEFINER)?;")?;
+    for file_name in &sql_files {
         log::info!("Executing schema file: {file_name:?}");
-        let file_path = file.path();
-        let sql_content = std::fs::read_to_string(file_path.clone())?;
-        // if filename is functions.sql, split by plpgsql; if not then by ;
-        let delimiter = match file_name.to_str() {
-            Some("functions.sql") => "$$ LANGUAGE plpgsql;",
-            _ => ";",
+        let file_path = format!("{schema_dir}/{file_name}");
+        let sql_content = std::fs::read_to_string(&file_path)?;
+        let sql_statements: Vec<String> = match *file_name {
+            "functions.sql" | "partitions.sql" => {
+                let mut statements = Vec::new();
+                let mut last_end = 0;
+
+                for mat in plpgsql_regex.find_iter(&sql_content) {
+                    let statement = sql_content[last_end..mat.end()].to_string();
+                    if !statement.trim().is_empty() {
+                        statements.push(statement);
+                    }
+                    last_end = mat.end();
+                }
+                statements
+            }
+            _ => sql_content
+                .split(';')
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| format!("{s};"))
+                .collect(),
         };
-        let sql_statements = sql_content
-            .split(delimiter)
-            .filter(|s| !s.trim().is_empty())
-            .map(|s| format!("{s}{delimiter}"));
 
         for sql_statement in sql_statements {
             sqlx::query(&sql_statement)
@@ -305,7 +325,14 @@ pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> 
         .await
     {
         Ok(_) => log::info!("Dropped owned objects by role {database}"),
-        Err(e) => log::error!("Error dropping owned by role {database}: {e:?}"),
+        Err(e) => {
+            let err_msg = e.to_string();
+            if err_msg.contains("2BP01") || err_msg.contains("required by the database system") {
+                log::warn!("Skipping system-required objects for role {database}");
+            } else {
+                log::error!("Error dropping owned by role {database}: {e:?}");
+            }
+        }
     }
 
     // Revoke connect
@@ -343,7 +370,14 @@ pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> 
         .await
     {
         Ok(_) => log::info!("Dropped role {database}"),
-        Err(e) => log::error!("Error dropping role {database}: {e:?}"),
+        Err(e) => {
+            let err_msg = e.to_string();
+            if err_msg.contains("55006") || err_msg.contains("current user cannot be dropped") {
+                log::warn!("Cannot drop currently connected role {database}");
+            } else {
+                log::error!("Error dropping role {database}: {e:?}");
+            }
+        }
     }
     Ok(())
 }

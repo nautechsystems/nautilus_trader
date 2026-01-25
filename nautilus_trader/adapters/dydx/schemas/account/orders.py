@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,8 +15,6 @@
 """
 Define the schemas for the GetOrders endpoint.
 """
-
-# ruff: noqa: N815
 
 import datetime
 from decimal import Decimal
@@ -41,7 +39,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
 
-class DYDXOrderResponse(msgspec.Struct, forbid_unknown_fields=True):
+class DYDXOrderResponse(msgspec.Struct, forbid_unknown_fields=False):
     """
     Define the schema for the order response.
     """
@@ -69,6 +67,7 @@ class DYDXOrderResponse(msgspec.Struct, forbid_unknown_fields=True):
     goodTilBlockTime: str | None = None
     createdAtHeight: str | None = None
     triggerPrice: str | None = None
+    orderRouterAddress: str | None = None
 
     def base_currency(self) -> str:
         """
@@ -100,7 +99,7 @@ class DYDXOrderResponse(msgspec.Struct, forbid_unknown_fields=True):
         filled_qty = (
             Quantity(Decimal(self.totalFilled), size_precision)
             if self.totalFilled is not None
-            else Quantity(Decimal("0"), size_precision)
+            else Quantity(Decimal(0), size_precision)
         )
         ts_last = dt_to_unix_nanos(self.updatedAt) if self.updatedAt is not None else ts_init
         trigger_type = (

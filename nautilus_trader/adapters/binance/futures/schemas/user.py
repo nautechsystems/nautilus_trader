@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,6 +31,7 @@ from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesWorking
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -41,6 +42,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
@@ -48,6 +50,7 @@ from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import Order
 
 
 ################################################################################
@@ -224,6 +227,8 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
     ss: int  # ignore
     rp: str  # Realized Profit of the trade
     gtd: int  # TIF GTD order auto cancel time
+    W: int | None = None  # Working Time (when order was added to the book)
+    V: str | None = None  # Self-Trade Prevention Mode
 
     def parse_to_order_status_report(
         self,
@@ -250,7 +255,7 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
             order_side=order_side,
             order_type=enum_parser.parse_binance_order_type(self.o),
             time_in_force=enum_parser.parse_binance_time_in_force(self.f),
-            order_status=OrderStatus.ACCEPTED,
+            order_status=enum_parser.parse_binance_order_status(self.X),
             expire_time=expire_time,
             price=price,
             trigger_price=trigger_price,
@@ -279,12 +284,38 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
         ts_event = millis_to_nanos(self.T)
         venue_order_id = VenueOrderId(str(self.i))
         instrument_id = exec_client._get_cached_instrument_id(self.s)
-
         strategy_id = None
+
+        # Check for exchange-generated liquidation/ADL orders
+        is_liquidation = self.c.startswith("autoclose-") if self.c else False
+        is_adl = self.c.startswith("adl_autoclose") if self.c else False
+        is_settlement = self.c.startswith("settlement_autoclose-") if self.c else False
+
         if client_order_id:
             strategy_id = exec_client._cache.strategy_id_for_order(client_order_id)
 
-        if strategy_id is None:
+        # Log exchange-generated liquidation/ADL/settlement orders
+        if is_liquidation:
+            exec_client._log.warning(
+                f"Received liquidation order: {self.c}, "
+                f"symbol={self.s}, side={self.S.value}, "
+                f"exec_type={self.x.value}, status={self.X.value}",
+            )
+        elif is_adl:
+            exec_client._log.warning(
+                f"Received ADL order: {self.c}, "
+                f"symbol={self.s}, side={self.S.value}, "
+                f"exec_type={self.x.value}, status={self.X.value}",
+            )
+        elif is_settlement:
+            exec_client._log.warning(
+                f"Received settlement order: {self.c}, "
+                f"symbol={self.s}, side={self.S.value}, "
+                f"exec_type={self.x.value}, status={self.X.value}",
+            )
+
+        # For exchange-generated orders without strategy, still need to process fills
+        if strategy_id is None and not (is_liquidation or is_adl or is_settlement):
             report = self.parse_to_order_status_report(
                 account_id=exec_client.account_id,
                 instrument_id=instrument_id,
@@ -299,19 +330,119 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
 
         instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
         if instrument is None:
-            raise ValueError(f"Cannot handle trade: instrument {instrument_id} not found")
+            raise ValueError(
+                f"Cannot process event for {instrument_id}: instrument not found in cache",
+            )
 
         price_precision = instrument.price_precision
         size_precision = instrument.size_precision
 
+        # Handle exchange-generated liquidation/ADL/settlement orders that may not be in cache
+        # Check for CALCULATED execution type (liquidation fills) OR special client order IDs
+        # Binance sends liquidation/ADL fills with x=CALCULATED and X=FILLED
+        if (is_liquidation or is_adl or is_settlement) and (
+            self.x == BinanceExecutionType.CALCULATED
+            or self.X == BinanceOrderStatus.NEW_ADL
+            or self.X == BinanceOrderStatus.NEW_INSURANCE
+            or self.X == BinanceOrderStatus.FILLED
+        ):
+            # These are special exchange-generated fills without a pre-existing order
+            if Decimal(self.l) == 0:
+                exec_client._log.warning(
+                    f"Received {self.X.value} status with l=0 for "
+                    f"{'liquidation' if is_liquidation else 'ADL' if is_adl else 'settlement'} "
+                    f"order {venue_order_id}, skipping",
+                )
+                return
+
+            # Send OrderStatusReport first to seed the cache
+            order_report = self.parse_to_order_status_report(
+                account_id=exec_client.account_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=ts_event,
+                ts_init=exec_client._clock.timestamp_ns(),
+                enum_parser=exec_client._enum_parser,
+            )
+            exec_client._send_order_status_report(order_report)
+
+            # Generate fill report directly for exchange-generated liquidation/ADL
+            liq_commission_asset: str | None = self.N
+            liq_commission_amount: str | float | None = self.n
+            liq_last_qty = Quantity(float(self.l), size_precision)
+            liq_last_px = Price(float(self.L), price_precision)
+
+            if liq_commission_asset is not None:
+                liq_commission = Money.from_str(f"{liq_commission_amount} {liq_commission_asset}")
+            else:
+                # Liquidations and ADL are always taker
+                liq_fee = instrument.taker_fee
+                liq_commission_asset = instrument.quote_currency
+                liq_commission_amount = float(liq_last_qty * liq_last_px * liq_fee)
+                liq_commission = Money(liq_commission_amount, liq_commission_asset)
+
+            liq_venue_position_id: PositionId | None = None
+            if exec_client.use_position_ids:
+                liq_venue_position_id = PositionId(f"{instrument_id}-{self.ps.value}")
+
+            # Note: We cannot use generate_order_filled without strategy_id and cached order
+            # Send FillReport directly for exchange-generated liquidation/ADL orders
+            fill_report = FillReport(
+                account_id=exec_client.account_id,
+                instrument_id=instrument_id,
+                venue_order_id=venue_order_id,
+                trade_id=TradeId(str(self.t)),
+                order_side=exec_client._enum_parser.parse_binance_order_side(self.S),
+                last_qty=liq_last_qty,
+                last_px=liq_last_px,
+                commission=liq_commission,
+                liquidity_side=LiquiditySide.TAKER,  # Liquidations/ADL are always taker
+                report_id=UUID4(),
+                ts_event=ts_event,
+                ts_init=exec_client._clock.timestamp_ns(),
+                venue_position_id=liq_venue_position_id,
+                client_order_id=client_order_id,
+            )
+            exec_client._send_fill_report(fill_report)
+            return
+
         order = exec_client._cache.order(client_order_id)
         if not order:
-            exec_client._log.error(f"Cannot find order {client_order_id!r}")
+            # For non-special exchange orders, we need the order in cache
+            if is_liquidation or is_adl or is_settlement:
+                exec_client._log.warning(
+                    f"Cannot find order for "
+                    f"{'liquidation' if is_liquidation else 'ADL' if is_adl else 'settlement'} "
+                    f"{client_order_id!r}, status={self.X.value}",
+                )
+            else:
+                exec_client._log.error(f"Cannot find order {client_order_id!r}")
             return
 
         if self.x == BinanceExecutionType.NEW:
             if order.order_type == OrderType.TRAILING_STOP_MARKET and order.is_open:
                 return  # Already accepted: this is an update
+
+            # Handle algo orders that were triggered and placed in matching engine
+            # The ORDER_TRADE_UPDATE arrives with a new venue_order_id (actual order ID)
+            if order.is_open and order.venue_order_id != venue_order_id:
+                exec_client._log.info(
+                    f"Algo order {client_order_id} has new venue_order_id from matching engine: "
+                    f"{order.venue_order_id} -> {venue_order_id}",
+                )
+                exec_client.generate_order_updated(
+                    strategy_id=strategy_id,
+                    instrument_id=instrument_id,
+                    client_order_id=client_order_id,
+                    venue_order_id=venue_order_id,
+                    quantity=order.quantity,
+                    price=order.price if order.has_price else None,
+                    trigger_price=order.trigger_price if order.has_trigger_price else None,
+                    ts_event=ts_event,
+                    venue_order_id_modified=True,
+                )
+                return
 
             exec_client.generate_order_accepted(
                 strategy_id=strategy_id,
@@ -320,7 +451,85 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 venue_order_id=venue_order_id,
                 ts_event=ts_event,
             )
-        elif self.x == BinanceExecutionType.TRADE:
+
+            # Check if price changed (for price_match orders)
+            if order.has_price:
+                binance_price = Price(float(self.p), price_precision)
+                if binance_price != order.price:
+                    # Preserve trigger price for stop orders (priceMatch only affects limit price)
+                    trigger_price = order.trigger_price if order.has_trigger_price else None
+                    exec_client.generate_order_updated(
+                        strategy_id=strategy_id,
+                        instrument_id=instrument_id,
+                        client_order_id=client_order_id,
+                        venue_order_id=venue_order_id,
+                        quantity=order.quantity,
+                        price=binance_price,
+                        trigger_price=trigger_price,
+                        ts_event=ts_event,
+                        venue_order_id_modified=True,  # Setting true to avoid spurious warning log
+                    )
+        elif self.x == BinanceExecutionType.TRADE or self.x == BinanceExecutionType.CALCULATED:
+            if self.x == BinanceExecutionType.CALCULATED:
+                exec_client._log.info(
+                    f"Received CALCULATED (liquidation) execution for order {venue_order_id}, "
+                    f"generating OrderFilled event",
+                )
+
+            if Decimal(self.L) == 0:
+                exec_client._log.warning(
+                    f"Received {self.x.value} execution with L=0 for order {venue_order_id}, "
+                    f"order status={self.X.value}",
+                )
+
+                # Route based on order status to ensure terminal events are generated
+                if self.X == BinanceOrderStatus.EXPIRED:
+                    if order.order_type == OrderType.TRAILING_STOP_MARKET:
+                        exec_client.generate_order_updated(
+                            strategy_id=strategy_id,
+                            instrument_id=instrument_id,
+                            client_order_id=client_order_id,
+                            venue_order_id=venue_order_id,
+                            quantity=Quantity(float(self.q), size_precision),
+                            price=Price(float(self.p), price_precision),
+                            trigger_price=(
+                                Price(float(self.sp), price_precision) if self.sp else None
+                            ),
+                            ts_event=ts_event,
+                        )
+                    else:
+                        exec_client.generate_order_expired(
+                            strategy_id=strategy_id,
+                            instrument_id=instrument_id,
+                            client_order_id=client_order_id,
+                            venue_order_id=venue_order_id,
+                            ts_event=ts_event,
+                        )
+                    return
+                elif self.X == BinanceOrderStatus.CANCELED or (
+                    exec_client.treat_expired_as_canceled and self.x == BinanceExecutionType.EXPIRED
+                ):
+                    # Clean up triggered algo order tracking if applicable
+                    exec_client._triggered_algo_order_ids.discard(client_order_id)
+                    exec_client.generate_order_canceled(
+                        strategy_id=strategy_id,
+                        instrument_id=instrument_id,
+                        client_order_id=client_order_id,
+                        venue_order_id=venue_order_id,
+                        ts_event=ts_event,
+                    )
+                    return
+                elif self.X in (BinanceOrderStatus.FILLED, BinanceOrderStatus.PARTIALLY_FILLED):
+                    # Continue to generate fill with L=0 to close order
+                    # Better to have bad price data than stuck order
+                    exec_client._log.warning(
+                        f"Generating OrderFilled with L=0 for terminal state {self.X.value} "
+                        f"to prevent order from being stuck",
+                    )
+                else:
+                    # Non-terminal status with L=0, skip fill generation
+                    return
+
             # Determine commission
             commission_asset: str | None = self.N
             commission_amount: str | float | None = self.n
@@ -340,6 +549,13 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
             if exec_client.use_position_ids:
                 venue_position_id = PositionId(f"{instrument_id}-{self.ps.value}")
 
+            # Liquidations are always taker, regular trades use the 'm' field
+            liquidity_side = (
+                LiquiditySide.TAKER
+                if self.x == BinanceExecutionType.CALCULATED
+                else (LiquiditySide.MAKER if self.m else LiquiditySide.TAKER)
+            )
+
             exec_client.generate_order_filled(
                 strategy_id=strategy_id,
                 instrument_id=instrument_id,
@@ -353,12 +569,14 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 last_px=last_px,
                 quote_currency=instrument.quote_currency,
                 commission=commission,
-                liquidity_side=LiquiditySide.MAKER if self.m else LiquiditySide.TAKER,
+                liquidity_side=liquidity_side,
                 ts_event=ts_event,
             )
         elif self.x == BinanceExecutionType.CANCELED or (
             exec_client.treat_expired_as_canceled and self.x == BinanceExecutionType.EXPIRED
         ):
+            # Clean up triggered algo order tracking if applicable
+            exec_client._triggered_algo_order_ids.discard(client_order_id)
             exec_client.generate_order_canceled(
                 strategy_id=strategy_id,
                 instrument_id=instrument_id,
@@ -378,13 +596,6 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 ts_event=ts_event,
             )
         elif self.x == BinanceExecutionType.EXPIRED:
-            instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
-            if instrument is None:
-                raise ValueError(f"Cannot handle amendment: instrument {instrument_id} not found")
-
-            price_precision = instrument.price_precision
-            size_precision = instrument.size_precision
-
             if order.order_type == OrderType.TRAILING_STOP_MARKET:
                 exec_client.generate_order_updated(
                     strategy_id=strategy_id,
@@ -404,6 +615,22 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                     venue_order_id=venue_order_id,
                     ts_event=ts_event,
                 )
+        elif self.x == BinanceExecutionType.REJECTED:
+            due_post_only = self.f == BinanceTimeInForce.GTX
+
+            exec_client.generate_order_rejected(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                reason="REJECTED",  # Reason string not provided by futures WS
+                ts_event=ts_event,
+                due_post_only=due_post_only,
+            )
+        elif self.x == BinanceExecutionType.TRADE_PREVENTION:
+            exec_client._log.info(
+                f"Self-trade prevention triggered for order {venue_order_id}, "
+                f"prevented qty={self.l} at price={self.L}",
+            )
         else:
             # Event not handled
             exec_client._log.warning(f"Received unhandled {self}")
@@ -494,3 +721,467 @@ class BinanceFuturesTradeLiteWrapper(msgspec.Struct, frozen=True):
 
     stream: str
     data: BinanceFuturesTradeLiteMsg
+
+
+class BinanceFuturesAlgoOrderData(msgspec.Struct, kw_only=True, frozen=True):
+    """
+    WebSocket message 'inner struct' for Binance Futures Algo Order Update events.
+
+    References
+    ----------
+    https://developers.binance.com/docs/derivatives/usds-margined-futures/user-data-streams/Event-Algo-Order-Update
+
+    """
+
+    caid: str  # Client Algo ID
+    aid: int  # Algo ID
+    at: str  # Algo Type (CONDITIONAL)
+    o: BinanceOrderType  # Order Type
+    s: str  # Symbol
+    S: BinanceOrderSide  # Side
+    ps: BinanceFuturesPositionSide  # Position Side
+    f: BinanceTimeInForce  # Time In Force
+    q: str  # Quantity
+    X: BinanceOrderStatus  # Algo Status (NEW, TRIGGERING, TRIGGERED, FINISHED, etc.)
+    tp: str  # Trigger Price
+    p: str  # Price
+    wt: BinanceFuturesWorkingType  # Working Type
+    pm: str  # Price Match
+    cp: bool  # Close Position
+    pP: bool  # Price Protect
+    R: bool  # Reduce Only
+    tt: int  # Trigger Time
+    gtd: int  # Good Till Date
+    ai: str | None = None  # Order ID in matching engine (populated when triggered)
+    ap: str | None = None  # Average fill price in matching engine
+    aq: str | None = None  # Executed quantity in matching engine
+    act: str | None = None  # Actual order type in matching engine
+    cr: str | None = None  # Callback Rate (for trailing stop)
+    V: str | None = None  # Self-Trade Prevention Mode
+
+    @property
+    def resolved_venue_order_id(self) -> VenueOrderId:
+        """
+        Return matching-engine order ID if available, otherwise algo ID.
+        """
+        return VenueOrderId(self.ai) if self.ai else VenueOrderId(str(self.aid))
+
+    def _resolve_finished_status(self) -> tuple[OrderStatus, Quantity, Decimal | None]:
+        # Returns (order_status, filled_qty, avg_px) based on executed quantity
+        filled_qty = Quantity.from_str(self.aq) if self.aq and self.aq != "0" else Quantity.zero()
+        order_qty = Quantity.from_str(self.q)
+        avg_px = Decimal(self.ap) if self.ap and self.ap != "0" else None
+
+        if filled_qty >= order_qty:
+            return OrderStatus.FILLED, filled_qty, avg_px
+        elif filled_qty > Quantity.zero():
+            return OrderStatus.PARTIALLY_FILLED, filled_qty, avg_px
+        else:
+            return OrderStatus.CANCELED, filled_qty, None
+
+    def handle_algo_update(
+        self,
+        exec_client: BinanceCommonExecutionClient,
+        ts_event: int,
+    ) -> None:
+        """
+        Handle BinanceFuturesAlgoOrderData as payload of ALGO_UPDATE event.
+        """
+        client_order_id = ClientOrderId(self.caid) if self.caid else None
+        venue_order_id = self.resolved_venue_order_id
+        instrument_id = exec_client._get_cached_instrument_id(self.s)
+        strategy_id = (
+            exec_client._cache.strategy_id_for_order(client_order_id) if client_order_id else None
+        )
+
+        if strategy_id is None:
+            exec_client._log.debug(
+                f"Cannot find strategy for algo order {client_order_id!r}, "
+                f"generating OrderStatusReport",
+            )
+            report = self._parse_to_order_status_report(
+                account_id=exec_client.account_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=ts_event,
+                ts_init=exec_client._clock.timestamp_ns(),
+                enum_parser=exec_client._enum_parser,
+            )
+            exec_client._send_order_status_report(report)
+            return
+
+        order = exec_client._cache.order(client_order_id)
+        if not order:
+            exec_client._log.error(f"Cannot find algo order {client_order_id!r}")
+            return
+
+        self._handle_algo_status(
+            exec_client,
+            order,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            ts_event,
+        )
+
+    def _handle_algo_status(
+        self,
+        exec_client: BinanceCommonExecutionClient,
+        order: Order,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        ts_event: int,
+    ) -> None:
+        if self.X == BinanceOrderStatus.NEW:
+            exec_client.generate_order_accepted(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=ts_event,
+            )
+        elif self.X == BinanceOrderStatus.CANCELED:
+            exec_client._triggered_algo_order_ids.discard(client_order_id)
+            exec_client.generate_order_canceled(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=ts_event,
+            )
+        elif self.X == BinanceOrderStatus.EXPIRED:
+            exec_client._triggered_algo_order_ids.discard(client_order_id)
+            self._handle_algo_expired(
+                exec_client,
+                order,
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+                ts_event,
+            )
+        elif self.X == BinanceOrderStatus.REJECTED:
+            exec_client._triggered_algo_order_ids.discard(client_order_id)
+            exec_client.generate_order_rejected(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                reason="REJECTED",
+                ts_event=ts_event,
+            )
+        elif self.X == BinanceOrderStatus.TRIGGERING:
+            exec_client._log.info(
+                f"Algo order {client_order_id} triggering, algo_id={self.aid}, symbol={self.s}",
+            )
+        elif self.X == BinanceOrderStatus.TRIGGERED:
+            self._handle_algo_triggered(
+                exec_client,
+                order,
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+                ts_event,
+            )
+        elif self.X == BinanceOrderStatus.FINISHED:
+            self._handle_algo_finished(
+                exec_client,
+                order,
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+                ts_event,
+            )
+        else:
+            exec_client._log.warning(f"Received unhandled ALGO_UPDATE status: {self.X}")
+
+    def _handle_algo_triggered(
+        self,
+        exec_client: BinanceCommonExecutionClient,
+        order: Order,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        ts_event: int,
+    ) -> None:
+        if not self.ai:
+            exec_client._log.warning(
+                f"Algo order {client_order_id} triggered but no order ID (ai) provided",
+            )
+            return
+
+        new_venue_order_id = VenueOrderId(self.ai)
+        exec_client._log.info(
+            f"Algo order {client_order_id} triggered, algo_id={self.aid} -> order_id={self.ai}",
+        )
+
+        # Track triggered state to use correct cancel endpoint
+        exec_client._triggered_algo_order_ids.add(client_order_id)
+
+        exec_client.generate_order_updated(
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            venue_order_id=new_venue_order_id,
+            quantity=order.quantity,
+            price=order.price if order.has_price else None,
+            trigger_price=order.trigger_price if order.has_trigger_price else None,
+            ts_event=ts_event,
+            venue_order_id_modified=True,
+        )
+
+    def _emit_synthetic_fill(
+        self,
+        exec_client: BinanceCommonExecutionClient,
+        order: Order,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        fill_qty: Quantity,
+        avg_px: Decimal,
+        ts_event: int,
+    ) -> bool:
+        # Returns True if fill was emitted, False otherwise
+        instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
+        if instrument is None:
+            exec_client._log.error(
+                f"Cannot emit synthetic fill: instrument {instrument_id} not found",
+            )
+            return False
+
+        venue_position_id: PositionId | None = None
+        if exec_client.use_position_ids:
+            venue_position_id = PositionId(f"{instrument_id}-{self.ps.value}")
+
+        exec_client.generate_order_filled(
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            venue_position_id=venue_position_id,
+            trade_id=TradeId(f"ALGO-{self.aid}"),
+            order_side=order.side,
+            order_type=order.order_type,
+            last_qty=fill_qty,
+            last_px=Price.from_str(str(avg_px)),
+            quote_currency=instrument.quote_currency,
+            commission=Money(0, instrument.quote_currency),
+            liquidity_side=LiquiditySide.TAKER,
+            ts_event=ts_event,
+        )
+        return True
+
+    def _handle_algo_finished(
+        self,
+        exec_client: BinanceCommonExecutionClient,
+        order: Order,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        ts_event: int,
+    ) -> None:
+        # Clean up triggered tracking set
+        exec_client._triggered_algo_order_ids.discard(client_order_id)
+
+        order_status, filled_qty, avg_px = self._resolve_finished_status()
+
+        exec_client._log.info(
+            f"Algo order {client_order_id} finished, "
+            f"algo_id={self.aid}, order_id={self.ai}, "
+            f"filled_qty={filled_qty}, order_qty={self.q}, avg_price={avg_px}",
+        )
+
+        if order.is_closed:
+            return
+
+        if order_status == OrderStatus.FILLED and order.is_open:
+            # Missed ORDER_TRADE_UPDATE - emit synthetic fill to close order
+            exec_client._log.warning(
+                f"Algo order {client_order_id} FINISHED with full fill "
+                f"but order still open - emitting synthetic fill",
+            )
+            remaining_qty = order.quantity - order.filled_qty
+            if avg_px is not None:
+                self._emit_synthetic_fill(
+                    exec_client,
+                    order,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    venue_order_id,
+                    remaining_qty,
+                    avg_px,
+                    ts_event,
+                )
+            else:
+                # No avg price - emit cancel to close order, manual reconciliation needed
+                exec_client._log.error(
+                    f"Algo order {client_order_id} FINISHED as filled but no avg price - "
+                    f"emitting cancel, manual PnL reconciliation required",
+                )
+                exec_client.generate_order_canceled(
+                    strategy_id=strategy_id,
+                    instrument_id=instrument_id,
+                    client_order_id=client_order_id,
+                    venue_order_id=venue_order_id,
+                    ts_event=ts_event,
+                )
+        elif order_status == OrderStatus.PARTIALLY_FILLED:
+            # Partial fill then canceled - reconcile missing fills if needed
+            if order.is_open and filled_qty > order.filled_qty and avg_px is not None:
+                exec_client._log.warning(
+                    f"Algo order {client_order_id} FINISHED with partial fill "
+                    f"but local filled_qty mismatch - emitting synthetic fill",
+                )
+                missing_qty = filled_qty - order.filled_qty
+                self._emit_synthetic_fill(
+                    exec_client,
+                    order,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    venue_order_id,
+                    missing_qty,
+                    avg_px,
+                    ts_event,
+                )
+
+            exec_client.generate_order_canceled(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=ts_event,
+            )
+        else:
+            # CANCELED with no fills
+            exec_client.generate_order_canceled(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=ts_event,
+            )
+
+    def _handle_algo_expired(
+        self,
+        exec_client: BinanceCommonExecutionClient,
+        order: Order,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        ts_event: int,
+    ) -> None:
+        if order.order_type == OrderType.TRAILING_STOP_MARKET:
+            instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
+            if instrument is None:
+                raise ValueError(
+                    f"Cannot process event for {instrument_id}: instrument not found",
+                )
+            price_precision = instrument.price_precision
+            exec_client.generate_order_updated(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                quantity=Quantity.from_str(self.q),
+                price=Price(float(self.p), price_precision) if self.p else None,
+                trigger_price=(Price(float(self.tp), price_precision) if self.tp else None),
+                ts_event=ts_event,
+            )
+        elif exec_client.treat_expired_as_canceled:
+            exec_client.generate_order_canceled(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=ts_event,
+            )
+        else:
+            exec_client.generate_order_expired(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=ts_event,
+            )
+
+    def _parse_to_order_status_report(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId | None,
+        venue_order_id: VenueOrderId,
+        ts_event: int,
+        ts_init: int,
+        enum_parser: BinanceEnumParser,
+    ) -> OrderStatusReport:
+        price = Price.from_str(self.p) if self.p and self.p != "0" else None
+        trigger_price = Price.from_str(self.tp) if self.tp else None
+        trailing_offset = Decimal(self.cr) * 100 if self.cr else None
+        order_side = OrderSide.BUY if self.S == BinanceOrderSide.BUY else OrderSide.SELL
+        expire_time = unix_nanos_to_dt(millis_to_nanos(self.gtd)) if self.gtd else None
+
+        if self.X == BinanceOrderStatus.FINISHED:
+            order_status, filled_qty, avg_px = self._resolve_finished_status()
+        else:
+            order_status = enum_parser.parse_binance_order_status(self.X)
+            filled_qty = (
+                Quantity.from_str(self.aq) if self.aq and self.aq != "0" else Quantity.zero()
+            )
+            avg_px = Decimal(self.ap) if self.ap and self.ap != "0" else None
+
+        return OrderStatusReport(
+            account_id=account_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            order_side=order_side,
+            order_type=enum_parser.parse_binance_order_type(self.o),
+            time_in_force=enum_parser.parse_binance_time_in_force(self.f),
+            order_status=order_status,
+            expire_time=expire_time,
+            price=price,
+            trigger_price=trigger_price,
+            trigger_type=enum_parser.parse_binance_trigger_type(self.wt.value),
+            trailing_offset=trailing_offset,
+            trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
+            quantity=Quantity.from_str(self.q),
+            filled_qty=filled_qty,
+            avg_px=avg_px,
+            post_only=False,
+            reduce_only=self.R,
+            report_id=UUID4(),
+            ts_accepted=ts_event,
+            ts_last=ts_event,
+            ts_init=ts_init,
+        )
+
+
+class BinanceFuturesAlgoUpdateMsg(msgspec.Struct, frozen=True):
+    """
+    WebSocket message for Binance Futures Algo Order Update events.
+    """
+
+    e: str  # Event Type
+    E: int  # Event Time
+    T: int  # Transaction Time
+    o: BinanceFuturesAlgoOrderData
+
+
+class BinanceFuturesAlgoUpdateWrapper(msgspec.Struct, frozen=True):
+    """
+    WebSocket message wrapper for Binance Futures Algo Order Update events.
+    """
+
+    stream: str
+    data: BinanceFuturesAlgoUpdateMsg

@@ -1,0 +1,20 @@
+{
+  "t": "d",
+  "ts": 1609459200,
+  "tn": 123456789,
+  "eid": "E-01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "o": {
+    "oid": "O-01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    "u": "550e8400-e29b-41d4-a716-446655440000",
+    "s": "BTCUSD-PERP",
+    "p": "50000.00",
+    "q": 100,
+    "xq": 50,
+    "rq": 50,
+    "o": "DONE_FOR_DAY",
+    "d": "B",
+    "tif": "DAY",
+    "ts": 1609459200,
+    "tn": 0
+  }
+}

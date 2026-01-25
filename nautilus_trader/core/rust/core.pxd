@@ -16,8 +16,11 @@ cdef extern from "../includes/core.h":
     # Number of nanoseconds in one microsecond.
     const uint64_t NANOSECONDS_IN_MICROSECOND # = 1000
 
+    # Maximum capacity in characters for a [`StackStr`].
+    const uintptr_t STACKSTR_CAPACITY # = 36
+
     # `CVec` is a C compatible struct that stores an opaque pointer to a block of
-    # memory, it's length and the capacity of the vector it was allocated from.
+    # memory, its length and the capacity of the vector it was allocated from.
     #
     # # Safety
     #
@@ -38,8 +41,31 @@ cdef extern from "../includes/core.h":
         # The UUID v4 value as a fixed-length C string byte array (includes null terminator).
         uint8_t value[37];
 
-    void cvec_drop(CVec cvec);
+    # A stack-allocated ASCII string with a maximum capacity of 36 characters.
+    #
+    # Optimized for short identifier strings with:
+    # - Stack allocation (no heap).
+    # - `Copy` semantics.
+    # - O(1) length access.
+    # - C FFI compatibility (null-terminated).
+    #
+    # ASCII is required to guarantee 1 character == 1 byte, ensuring the buffer
+    # always holds exactly the capacity in characters. This aligns with identifier
+    # conventions which are inherently ASCII.
+    #
+    # # Memory Layout
+    #
+    # The `value` field is placed first so the struct pointer equals the string
+    # pointer, making C FFI more natural: `(char*)&stack_str` works directly.
+    cdef struct StackStr:
+        # ASCII data with null terminator for C FFI.
+        uint8_t value[37];
+        # Length of the string in bytes (0-36).
+        uint8_t len;
+    # Maximum length in characters.
+    const uintptr_t StackStr_MAX_LEN # = STACKSTR_CAPACITY
 
+    # Construct a new *empty* [`CVec`] value for use as initialiser/sentinel in foreign code.
     CVec cvec_new();
 
     # Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format C string pointer.
@@ -103,6 +129,7 @@ cdef extern from "../includes/core.h":
     # Panics if `ptr` is null.
     void cstr_drop(const char *ptr);
 
+    # Generate a new random (version-4) UUID and return it by value.
     UUID4_t uuid4_new();
 
     # Returns a [`UUID4`] from C string pointer.
@@ -116,8 +143,14 @@ cdef extern from "../includes/core.h":
     # Panics if `ptr` cannot be cast to a valid C string.
     UUID4_t uuid4_from_cstr(const char *ptr);
 
+    # Return a borrowed *null-terminated* UTF-8 C string representing `uuid`.
+    #
+    # The pointer remains valid for as long as the input `UUID4` reference lives – callers **must
+    # not** attempt to free it.
     const char *uuid4_to_cstr(const UUID4_t *uuid);
 
+    # Compare two UUID values, returning `1` when they are equal and `0` otherwise.
     uint8_t uuid4_eq(const UUID4_t *lhs, const UUID4_t *rhs);
 
+    # Compute the stable [`u64`] hash of `uuid` using Rust’s default hasher.
     uint64_t uuid4_hash(const UUID4_t *uuid);

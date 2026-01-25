@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -74,14 +74,14 @@ cdef class CryptoOption(Instrument):
         The minimum price increment (tick size).
     size_increment : Quantity
         The minimum size increment.
-    multiplier : Quantity, default 1
-        The contract multiplier.
     ts_event : uint64_t
         UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the data object was initialized.
     multiplier : Quantity, default 1
         The contract multiplier.
+    lot_size : Quantity, default 1
+        The rounded lot unit size (standard/board).
     max_quantity : Quantity, optional
         The maximum allowable order quantity.
     min_quantity : Quantity, optional
@@ -102,6 +102,8 @@ cdef class CryptoOption(Instrument):
         The fee rate for liquidity makers as a percentage of order value.
     taker_fee : Decimal, optional
         The fee rate for liquidity takers as a percentage of order value.
+    tick_scheme_name : str, optional
+        The name of the tick scheme.
     info : dict[str, object], optional
         The additional instrument information.
 
@@ -155,6 +157,7 @@ cdef class CryptoOption(Instrument):
         uint64_t ts_event,
         uint64_t ts_init,
         Quantity multiplier = Quantity.from_int_c(1),
+        Quantity lot_size = Quantity.from_int_c(1),
         Quantity max_quantity: Quantity | None = None,
         Quantity min_quantity: Quantity | None = None,
         Money max_notional: Money | None = None,
@@ -165,6 +168,7 @@ cdef class CryptoOption(Instrument):
         margin_maint: Decimal | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        str tick_scheme_name = None,
         dict info = None,
     ) -> None:
         super().__init__(
@@ -179,7 +183,7 @@ cdef class CryptoOption(Instrument):
             price_increment=price_increment,
             size_increment=size_increment,
             multiplier=multiplier,
-            lot_size=Quantity.from_int_c(1),
+            lot_size=lot_size,
             max_quantity=max_quantity,
             min_quantity=min_quantity,
             max_notional=max_notional,
@@ -192,6 +196,7 @@ cdef class CryptoOption(Instrument):
             taker_fee=taker_fee or Decimal(0),
             ts_event=ts_event,
             ts_init=ts_init,
+            tick_scheme_name=tick_scheme_name,
             info=info,
         )
 
@@ -251,6 +256,76 @@ cdef class CryptoOption(Instrument):
         """
         return self.settlement_currency
 
+    cpdef Currency get_cost_currency(self):
+        """
+        Return the currency used for PnL calculations for the instrument.
+
+        - Standard linear instruments = quote_currency
+        - Inverse instruments = underlying (base currency)
+
+        Returns
+        -------
+        Currency
+
+        """
+        if self.is_inverse:
+            return self.underlying
+        else:
+            return self.quote_currency
+
+    cpdef Money notional_value(
+        self,
+        Quantity quantity,
+        Price price,
+        bint use_quote_for_inverse=False,
+        Currency target_currency=None,
+        Price conversion_price=None,
+    ):
+        """
+        Calculate the notional value.
+
+        Result will be in quote currency for standard instruments, or underlying
+        currency for inverse instruments.
+
+        Parameters
+        ----------
+        quantity : Quantity
+            The total quantity.
+        price : Price
+            The price for the calculation.
+        use_quote_for_inverse : bool
+            For inverse instruments only: if True, treats the quantity as already representing
+            notional value in quote currency and returns it directly without calculation.
+            This is useful when quantity already represents a USD value that doesn't need
+            conversion (e.g., for display purposes). Has no effect on linear instruments.
+        target_currency : Currency, optional
+            The target currency for conversion.
+        conversion_price : Price, optional
+            The conversion price to the target currency.
+
+        Returns
+        -------
+        Money
+
+        """
+        Condition.not_none(quantity, "quantity")
+        Condition.not_none(price, "price")
+
+        cdef Money notional
+        if self.is_inverse:
+            if use_quote_for_inverse:
+                # Quantity is notional in quote currency
+                notional = Money(quantity, self.quote_currency)
+            else:
+                notional = Money(quantity.as_f64_c() * float(self.multiplier) * (1.0 / price.as_f64_c()), self.underlying)
+        else:
+            notional = Money(quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(), self.quote_currency)
+
+        if target_currency is not None and conversion_price is not None:
+            return Money(notional.as_f64_c() * conversion_price.as_f64_c(), target_currency)
+
+        return notional
+
     @property
     def activation_utc(self) -> pd.Timestamp:
         """
@@ -267,7 +342,7 @@ cdef class CryptoOption(Instrument):
     @property
     def expiration_utc(self) -> pd.Timestamp:
         """
-        Return the contract expriation timestamp (UTC).
+        Return the contract expiration timestamp (UTC).
 
         Returns
         -------
@@ -314,6 +389,7 @@ cdef class CryptoOption(Instrument):
             taker_fee=Decimal(values["taker_fee"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            tick_scheme_name=values.get("tick_scheme_name"),
             info=values.get("info"),
         )
 
@@ -350,6 +426,7 @@ cdef class CryptoOption(Instrument):
             "taker_fee": str(obj.taker_fee),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "tick_scheme_name": obj.tick_scheme_name,
             "info": obj.info,
         }
 
@@ -372,6 +449,7 @@ cdef class CryptoOption(Instrument):
             price_increment=Price.from_raw_c(pyo3_instrument.price_increment.raw, pyo3_instrument.price_precision),
             size_increment=Quantity.from_raw_c(pyo3_instrument.size_increment.raw, pyo3_instrument.size_precision),
             multiplier=Quantity.from_raw_c(pyo3_instrument.multiplier.raw, pyo3_instrument.multiplier.precision),
+            lot_size=Quantity.from_raw_c(pyo3_instrument.lot_size.raw, pyo3_instrument.lot_size.precision),
             max_quantity=Quantity.from_raw_c(pyo3_instrument.max_quantity.raw,pyo3_instrument.max_quantity.precision) if pyo3_instrument.max_quantity is not None else None,
             min_quantity=Quantity.from_raw_c(pyo3_instrument.min_quantity.raw, pyo3_instrument.min_quantity.precision) if pyo3_instrument.min_quantity is not None else None,
             max_notional=Money.from_str_c(str(pyo3_instrument.max_notional)) if pyo3_instrument.max_notional is not None else None,

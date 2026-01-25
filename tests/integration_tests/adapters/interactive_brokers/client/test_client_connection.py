@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 import asyncio
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -33,7 +48,7 @@ async def test_connect_cancelled(ib_client):
 
     await ib_client._connect()
 
-    ib_client._disconnect.assert_awaited_once()
+    ib_client._disconnect.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -46,12 +61,14 @@ async def test_connect_fail(ib_client):
 
     await ib_client._connect()
 
-    ib_client._eclient.wrapper.error.assert_called_with(
-        NO_VALID_ID,
-        CONNECT_FAIL.code(),
-        CONNECT_FAIL.msg(),
-    )
-    ib_client._handle_reconnect.assert_awaited_once()
+    # Check that error was called with correct parameters (allowing any timestamp)
+    ib_client._eclient.wrapper.error.assert_called()
+    call_args = ib_client._eclient.wrapper.error.call_args[0]
+    assert call_args[0] == NO_VALID_ID
+    assert isinstance(call_args[1], int)  # errorTime should be an integer timestamp
+    assert call_args[2] == CONNECT_FAIL.code()
+    assert call_args[3] == CONNECT_FAIL.msg()
+    ib_client._handle_reconnect.assert_not_awaited()
 
 
 # Test for successful reconnection
@@ -89,9 +106,10 @@ async def test_reconnect_fail(ib_client):
     # Simulating a failed reconnection by having isConnected return False both times
     ib_client.isConnected = MagicMock(side_effect=[False, False])
 
+    await ib_client.disconnect()
+
     # Attempting to reconnect and expecting an exception due to failed reconnection
     with pytest.raises(Exception, match="Failed to reconnect"):
-        await ib_client.disconnect()
         await ib_client.connect()
 
     # Assertions to ensure disconnect and connect methods were called

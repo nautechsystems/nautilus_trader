@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -141,6 +141,7 @@ def test_json_primitives() -> None:
         "filters": None,
         "filter_callable": None,
         "log_warnings": True,
+        "use_gamma_markets": False,
     }
 
 
@@ -213,8 +214,8 @@ def test_encoding_unsupported_type() -> None:
     with pytest.raises(TypeError) as exinfo:
         msgspec_encoding_hook(unsupported_obj)
 
-        # Verifying the exception message
-        assert str(exinfo) == "Encoding objects of type <class 'list'> is unsupported"
+    # Verifying the exception message
+    assert str(exinfo.value) == "Encoding objects of type <class 'list'> is unsupported"
 
 
 def test_decoding_unsupported_type() -> None:
@@ -226,8 +227,8 @@ def test_decoding_unsupported_type() -> None:
     with pytest.raises(TypeError) as exinfo:
         msgspec_decoding_hook(unsupported_type, unsupported_obj)
 
-        # Verifying the exception message
-        assert str(exinfo) == "Decoding objects of type <class 'list'> is unsupported"
+    # Verifying the exception message
+    assert str(exinfo.value) == "Decoding objects of type <class 'list'> is unsupported"
 
 
 def test_encoding_uuid4() -> None:
@@ -458,3 +459,25 @@ def test_decoding_environment() -> None:
 
     # Assert
     assert result == Environment(obj)
+
+
+def test_encoding_type_with_fully_qualified_name() -> None:
+    # Arrange - DatabaseConfig is a class with fully_qualified_name()
+    obj = DatabaseConfig
+
+    # Act
+    result = msgspec_encoding_hook(obj)
+
+    # Assert
+    assert result == "nautilus_trader.common.config:DatabaseConfig"
+
+
+def test_encoding_type_without_fully_qualified_name() -> None:
+    # Arrange
+    obj = int
+
+    # Act
+    result = msgspec_encoding_hook(obj)
+
+    # Assert
+    assert result == "<class 'int'>"

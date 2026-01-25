@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,25 +23,38 @@ from typing import Any
 
 from ibapi import comm
 from ibapi.client import EClient
-from ibapi.commission_report import CommissionReport
+from ibapi.commission_and_fees_report import CommissionAndFeesReport
+from ibapi.common import PROTOBUF_MSG_ID
 from ibapi.common import BarData
 from ibapi.const import MAX_MSG_LEN
 from ibapi.const import NO_VALID_ID
 from ibapi.errors import BAD_LENGTH
 from ibapi.execution import Execution
+from ibapi.server_versions import MIN_SERVER_VER_PROTOBUF
 from ibapi.utils import current_fn_name
 
-# fmt: off
-from nautilus_trader.adapters.interactive_brokers.client.account import InteractiveBrokersClientAccountMixin
+from nautilus_trader.adapters.interactive_brokers.client.account import (
+    InteractiveBrokersClientAccountMixin,
+)
 from nautilus_trader.adapters.interactive_brokers.client.common import AccountOrderRef
 from nautilus_trader.adapters.interactive_brokers.client.common import Request
 from nautilus_trader.adapters.interactive_brokers.client.common import Requests
 from nautilus_trader.adapters.interactive_brokers.client.common import Subscriptions
-from nautilus_trader.adapters.interactive_brokers.client.connection import InteractiveBrokersClientConnectionMixin
-from nautilus_trader.adapters.interactive_brokers.client.contract import InteractiveBrokersClientContractMixin
-from nautilus_trader.adapters.interactive_brokers.client.error import InteractiveBrokersClientErrorMixin
-from nautilus_trader.adapters.interactive_brokers.client.market_data import InteractiveBrokersClientMarketDataMixin
-from nautilus_trader.adapters.interactive_brokers.client.order import InteractiveBrokersClientOrderMixin
+from nautilus_trader.adapters.interactive_brokers.client.connection import (
+    InteractiveBrokersClientConnectionMixin,
+)
+from nautilus_trader.adapters.interactive_brokers.client.contract import (
+    InteractiveBrokersClientContractMixin,
+)
+from nautilus_trader.adapters.interactive_brokers.client.error import (
+    InteractiveBrokersClientErrorMixin,
+)
+from nautilus_trader.adapters.interactive_brokers.client.market_data import (
+    InteractiveBrokersClientMarketDataMixin,
+)
+from nautilus_trader.adapters.interactive_brokers.client.order import (
+    InteractiveBrokersClientOrderMixin,
+)
 from nautilus_trader.adapters.interactive_brokers.client.wrapper import InteractiveBrokersEWrapper
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.cache.cache import Cache
@@ -50,9 +63,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.model.identifiers import ClientId
-
-
-# fmt: on
+from nautilus_trader.model.identifiers import VenueOrderId
 
 
 class InteractiveBrokersClient(
@@ -83,6 +94,7 @@ class InteractiveBrokersClient(
         host: str = "127.0.0.1",
         port: int = 7497,
         client_id: int = 1,
+        fetch_all_open_orders: bool = False,
     ) -> None:
         super().__init__(
             clock=clock,
@@ -97,6 +109,7 @@ class InteractiveBrokersClient(
         self._host = host
         self._port = port
         self._client_id = client_id
+        self._fetch_all_open_orders = fetch_all_open_orders
 
         # TWS API
         self._eclient: EClient = EClient(
@@ -135,20 +148,30 @@ class InteractiveBrokersClient(
 
         # ConnectionMixin
         self._connection_attempts: int = 0
-        self._max_connection_attempts: int = int(os.getenv("IB_MAX_CONNECTION_ATTEMPTS", 0))
-        self._indefinite_reconnect: bool = False if self._max_connection_attempts else True
+        self._max_connection_attempts: int = int(os.getenv("IB_MAX_CONNECTION_ATTEMPTS", "0"))
+        self._indefinite_reconnect: bool = not self._max_connection_attempts
         self._reconnect_delay: int = 5  # seconds
+        self._last_disconnection_ns: int | None = None
 
         # MarketDataMixin
         self._bar_type_to_last_bar: dict[str, BarData | None] = {}
+        self._bar_timeout_tasks: dict[
+            str,
+            asyncio.Task,
+        ] = {}  # Track timeout tasks for each bar type
+        self._subscription_tick_data: dict[int, dict] = {}  # Store tick data by req_id
+        self._subscription_start_times: dict[int, int] = {}  # Store start_ns for bar filtering
 
         # OrderMixin
         self._exec_id_details: dict[
             str,
-            dict[str, Execution | (CommissionReport | str)],
+            dict[str, Execution | (CommissionAndFeesReport | str)],
         ] = {}
-        self._order_id_to_order_ref: dict[int, AccountOrderRef] = {}
+        self._order_id_to_order_ref: dict[VenueOrderId, AccountOrderRef] = {}
         self._next_valid_order_id: int = -1
+
+        # Instrument provider (set by data/execution clients during connection)
+        self._instrument_provider = None
 
         # Start client
         self._request_id_seq: int = 10000
@@ -196,15 +219,16 @@ class InteractiveBrokersClient(
                 # seconds, so we wait for it here.
                 await asyncio.wait_for(self._is_ib_connected.wait(), 15)
                 self._start_connection_watchdog()
+
+                self._is_client_ready.set()
+                self._log.debug("`_is_client_ready` set by `_start_async`", LogColor.BLUE)
+                self._connection_attempts = 0
+
             except TimeoutError:
-                self._log.error("Client failed to initialize. Connection timeout.")
+                self._log.error("Client failed to initialize; connection timeout")
             except Exception as e:
                 self._log.exception("Unhandled exception in client startup", e)
                 self._stop()
-
-        self._is_client_ready.set()
-        self._log.debug("`_is_client_ready` set by `_start_async`.", LogColor.BLUE)
-        self._connection_attempts = 0
 
     def _start_tws_incoming_msg_reader(self) -> None:
         """
@@ -257,7 +281,7 @@ class InteractiveBrokersClient(
 
         if self._is_client_ready.is_set():
             self._is_client_ready.clear()
-            self._log.debug("`_is_client_ready` unset by `_stop_async`.", LogColor.BLUE)
+            self._log.debug("`_is_client_ready` unset by `_stop_async`", LogColor.BLUE)
 
         # Cancel tasks
         tasks = [
@@ -271,6 +295,7 @@ class InteractiveBrokersClient(
                 task.cancel()
 
         try:
+            tasks = [t for t in tasks if t is not None]
             await asyncio.gather(*tasks, return_exceptions=True)
             self._log.info("All tasks canceled successfully.")
         except Exception as e:
@@ -346,7 +371,7 @@ class InteractiveBrokersClient(
             if not self._is_client_ready.is_set():
                 await asyncio.wait_for(self._is_client_ready.wait(), timeout)
         except TimeoutError as e:
-            self._log.error(f"Client is not ready. {e}")
+            self._log.error(f"Client is not ready: {e}")
 
     async def _run_connection_watchdog(self) -> None:
         """
@@ -362,9 +387,7 @@ class InteractiveBrokersClient(
                 await asyncio.sleep(1)
 
                 if not self._is_ib_connected.is_set() or not self._eclient.isConnected():
-                    self._log.error(
-                        "Connection watchdog detects connection lost.",
-                    )
+                    self._log.error("Connection watchdog detects connection lost")
                     await self._handle_disconnection()
         except asyncio.CancelledError:
             self._log.debug("Client connection watchdog task was canceled.")
@@ -377,9 +400,10 @@ class InteractiveBrokersClient(
             self._degrade()
 
         if self._is_ib_connected.is_set():
-            self._log.debug("`_is_ib_connected` unset by `_handle_disconnection`.", LogColor.BLUE)
+            self._log.debug("`_is_ib_connected` unset by `_handle_disconnection`", LogColor.BLUE)
             self._is_ib_connected.clear()
 
+        self._last_disconnection_ns = self._clock.timestamp_ns()
         await asyncio.sleep(5)
         await self._handle_reconnect()
 
@@ -490,7 +514,7 @@ class InteractiveBrokersClient(
         request: Request,
         timeout: int,
         default_value: Any | None = None,
-        supress_timeout_warning: bool = False,
+        suppress_timeout_warning: bool = False,
     ) -> Any:
         """
         Await the completion of a request within a specified timeout.
@@ -503,7 +527,7 @@ class InteractiveBrokersClient(
             The maximum time to wait for the request to complete, in seconds.
         default_value : Any, optional
             The default value to return if the request times out or fails. Defaults to None.
-        supress_timeout_warning: bool, optional
+        suppress_timeout_warning: bool, optional
             Suppress the timeout warning. Defaults to False.
 
         Returns
@@ -516,12 +540,12 @@ class InteractiveBrokersClient(
             return await asyncio.wait_for(request.future, timeout)
         except TimeoutError as e:
             msg = f"Request timed out for {request}. Ending request."
-            self._log.debug(msg) if supress_timeout_warning else self._log.warning(msg)
+            self._log.debug(msg) if suppress_timeout_warning else self._log.warning(msg)
             self._end_request(request.req_id, success=False, exception=e)
 
             return default_value
         except ConnectionError as e:
-            self._log.error(f"Connection error during {request}. Ending request.")
+            self._log.error(f"Connection error during {request}; ending request")
             self._end_request(request.req_id, success=False, exception=e)
 
             return default_value
@@ -563,7 +587,7 @@ class InteractiveBrokersClient(
         Continuously read messages from TWS/Gateway and then put them in the internal
         message queue for processing.
         """
-        self._log.debug("Client TWS incoming message reader started.")
+        self._log.debug("Client TWS incoming message reader started")
         buf = b""
 
         try:
@@ -579,29 +603,28 @@ class InteractiveBrokersClient(
                         # Place msg in the internal queue for processing
                         self._loop.call_soon_threadsafe(self._internal_msg_queue.put_nowait, msg)
                     else:
-                        self._log.debug("More incoming packets are needed.")
+                        self._log.debug("More incoming packets are needed")
                         break
         except asyncio.CancelledError:
-            self._log.debug("Client TWS incoming message reader was cancelled.")
+            self._log.debug("Client TWS incoming message reader was cancelled")
         except Exception as e:
             self._log.exception("Unhandled exception in Client TWS incoming message reader", e)
         finally:
             if self._is_ib_connected.is_set() and not self.is_disposed:
                 self._log.debug(
-                    "`_is_ib_connected` unset by `_run_tws_incoming_msg_reader`.",
+                    "`_is_ib_connected` unset by `_run_tws_incoming_msg_reader`",
                     LogColor.BLUE,
                 )
                 self._is_ib_connected.clear()
 
-            self._log.debug("Client TWS incoming message reader stopped.")
+            self._log.debug("Client TWS incoming message reader stopped")
 
     async def _run_internal_msg_queue_processor(self) -> None:
         """
         Continuously process messages from the internal incoming message queue.
         """
-        self._log.debug(
-            "Client internal message queue processor started.",
-        )
+        self._log.debug("Client internal message queue processor started")
+
         try:
             while (
                 self._eclient.conn and self._eclient.conn.isConnected()
@@ -622,15 +645,15 @@ class InteractiveBrokersClient(
                 )
             )
         finally:
-            self._log.debug("Internal message queue processor stopped.")
+            self._log.debug("Internal message queue processor stopped")
 
-    async def _process_message(self, msg: str) -> bool:
+    async def _process_message(self, msg: bytes) -> bool:
         """
         Process a single message from TWS/Gateway.
 
         Parameters
         ----------
-        msg : str
+        msg : bytes
             The message to be processed.
 
         Returns
@@ -641,21 +664,37 @@ class InteractiveBrokersClient(
         if len(msg) > MAX_MSG_LEN:
             await self.process_error(
                 req_id=NO_VALID_ID,
+                error_time=0,
                 error_code=BAD_LENGTH.code(),
-                error_string=f"{BAD_LENGTH.msg()}:{len(msg)}:{msg}",
+                error_string=f"{BAD_LENGTH.msg()}:{len(msg)}:{msg!r}",
             )
 
             return False
 
-        fields: tuple[bytes] = comm.read_fields(msg)
-        self._log.debug(f"Msg received: {msg}")
-        self._log.debug(f"Msg received fields: {fields}")
+        if self._eclient.serverVersion() >= MIN_SERVER_VER_PROTOBUF:
+            sMsgId = msg[:4]
+            msgId = int.from_bytes(sMsgId, "big")
+            msg = msg[4:]
+        else:
+            sMsgId = msg[: msg.index(b"\0")]
+            msg = msg[msg.index(b"\0") + len(b"\0") :]
+            msgId = int(sMsgId)
 
-        # The decoder identifies the message type based on its payload (e.g., open
-        # order, process real-time ticks, etc.) and then calls the corresponding
-        # method from the EWrapper. Many of those methods are overridden in the client
-        # manager and handler classes to support custom processing required for Nautilus.
-        await asyncio.to_thread(self._eclient.decoder.interpret, fields)
+        if msgId > PROTOBUF_MSG_ID:
+            msgId -= PROTOBUF_MSG_ID
+            self._log.debug(f"Msg received (Protobuf): msgId={msgId}")
+            # Use the Protobuf decoder to identify the message type and call the
+            # corresponding EWrapper method. Protobuf encoding is used for more
+            # efficient communication in newer TWS API versions.
+            await asyncio.to_thread(self._eclient.decoder.processProtoBuf, msg, msgId)
+        else:
+            fields: tuple[bytes] = comm.read_fields(msg)
+            self._log.debug(f"Msg received: msgId={msgId} fields={fields}")
+            # Use the standard decoder to identify the message type based on the msgId
+            # and then calls the corresponding method from the EWrapper. Many of
+            # those methods are overridden in the client manager and handler classes
+            # to support custom processing required for Nautilus.
+            await asyncio.to_thread(self._eclient.decoder.interpret, fields, msgId)
 
         return True
 
@@ -687,7 +726,7 @@ class InteractiveBrokersClient(
                 )
             )
         finally:
-            self._log.debug("Handler task processor stopped.")
+            self._log.debug("Handler task processor stopped")
 
     def submit_to_msg_handler_queue(self, task: Callable[..., Any]) -> None:
         """
@@ -723,11 +762,12 @@ class InteractiveBrokersClient(
 
     # -- EClient overrides ------------------------------------------------------------------------
 
-    def sendMsg(self, msg):
+    def sendMsg(self, msgId, msg):
         """
         Override the logging for ibapi EClient.sendMsg.
         """
-        full_msg = comm.make_msg(msg)
+        useRawIntMsgId = self._eclient.serverVersion() >= MIN_SERVER_VER_PROTOBUF
+        full_msg = comm.make_msg(msgId, useRawIntMsgId, msg)
         self._log.debug(f"TWS API request sent: function={current_fn_name(1)} msg={full_msg}")
         self._eclient.conn.sendMsg(full_msg)
 

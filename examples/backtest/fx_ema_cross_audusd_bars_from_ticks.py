@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,8 +19,8 @@ from decimal import Decimal
 
 import pandas as pd
 
+from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.examples.strategies.ema_cross import EMACross
@@ -74,7 +74,7 @@ if __name__ == "__main__":
     engine.add_data(ticks)
 
     # Configure your strategy
-    config = EMACrossConfig(
+    strategy_config = EMACrossConfig(
         instrument_id=AUDUSD_SIM.id,
         bar_type=BarType.from_str("AUD/USD.SIM-1-MINUTE-MID-INTERNAL"),
         fast_ema_period=10,
@@ -82,7 +82,7 @@ if __name__ == "__main__":
         trade_size=Decimal(1_000_000),
     )
     # Instantiate and add your strategy
-    strategy = EMACross(config=config)
+    strategy = EMACross(config=strategy_config)
     engine.add_strategy(strategy=strategy)
 
     time.sleep(0.1)

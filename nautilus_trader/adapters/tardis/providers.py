@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,6 +23,7 @@ from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import instruments_from_pyo3
 
@@ -68,33 +69,39 @@ class TardisInstrumentProvider(InstrumentProvider):
         active = filters.get("active")
         start = filters.get("start")
         end = filters.get("end")
-        available_offset = filters.get("available_offset")
         effective = filters.get("effective")
+        available_offset = filters.get("available_offset")
         ts_init = time.time_ns()
+
+        start_ns = maybe_dt_to_unix_nanos(start)
+        end_ns = maybe_dt_to_unix_nanos(end)
+        effective_ns = maybe_dt_to_unix_nanos(effective)
 
         if isinstance(available_offset, pd.Timedelta):
             available_offset_ns = available_offset.value
         else:
             available_offset_ns = available_offset
 
-        if isinstance(effective, pd.Timestamp):
-            effective_ns = effective.value
-        else:
-            effective_ns = effective
+        # Determine if we should skip option exchanges
+        skip_options = instrument_type is None or "option" not in instrument_type
 
         for venue in venues:
             venue = venue.upper().replace("-", "_")
             for exchange in nautilus_pyo3.tardis_exchange_from_venue_str(venue):
+                if skip_options and nautilus_pyo3.tardis_exchange_is_option_exchange(exchange):
+                    continue
+
+                exchange = exchange.lower().replace("_", "-")
                 self._log.info(f"Requesting instruments for {exchange=}")
                 pyo3_instruments = await self._client.instruments(
-                    exchange=exchange.lower(),
+                    exchange=exchange,
                     base_currency=list(base_currency) if base_currency else None,
                     quote_currency=list(quote_currency) if quote_currency else None,
                     instrument_type=list(instrument_type) if instrument_type else None,
                     contract_type=list(contract_type) if contract_type else None,
                     active=active,
-                    start=start,
-                    end=end,
+                    start=start_ns,
+                    end=end_ns,
                     available_offset=available_offset_ns,
                     effective=effective_ns,
                     ts_init=ts_init,
@@ -102,6 +109,7 @@ class TardisInstrumentProvider(InstrumentProvider):
                 instruments = instruments_from_pyo3(pyo3_instruments)
 
                 for instrument in instruments:
+                    instrument.set_tick_scheme(f"FIXED_PRECISION_{instrument.price_precision}")
                     self.add(instrument=instrument)
 
     async def load_ids_async(
@@ -132,31 +140,37 @@ class TardisInstrumentProvider(InstrumentProvider):
         active = filters.get("active")
         start = filters.get("start")
         end = filters.get("end")
-        available_offset = filters.get("available_offset")
         effective = filters.get("effective")
+        available_offset = filters.get("available_offset")
         ts_init = time.time_ns()
+
+        start_ns = maybe_dt_to_unix_nanos(start)
+        end_ns = maybe_dt_to_unix_nanos(end)
+        effective_ns = maybe_dt_to_unix_nanos(effective)
 
         if isinstance(available_offset, pd.Timedelta):
             available_offset_ns = available_offset.value
         else:
             available_offset_ns = available_offset
 
-        if isinstance(effective, pd.Timestamp):
-            effective_ns = effective.value
-        else:
-            effective_ns = effective
+        # Determine if we should skip option exchanges
+        skip_options = instrument_type is None or "option" not in instrument_type
 
         for exchange, symbols in venue_instruments.items():
+            if skip_options and nautilus_pyo3.tardis_exchange_is_option_exchange(exchange):
+                continue
+
+            exchange = exchange.lower().replace("_", "-")
             self._log.info(f"Requesting instruments for {exchange=}")
             pyo3_instruments = await self._client.instruments(
-                exchange=exchange.lower(),
+                exchange=exchange,
                 base_currency=list(base_currency) if base_currency else None,
                 quote_currency=list(quote_currency) if quote_currency else None,
                 instrument_type=list(instrument_type) if instrument_type else None,
                 contract_type=list(contract_type) if contract_type else None,
                 active=active,
-                start=start,
-                end=end,
+                start=start_ns,
+                end=end_ns,
                 available_offset=available_offset_ns,
                 effective=effective_ns,
                 ts_init=ts_init,
@@ -167,6 +181,8 @@ class TardisInstrumentProvider(InstrumentProvider):
                 symbol = instrument.id.symbol.value
                 if symbols and symbol not in symbols:
                     continue  # Filter instrument ID
+
+                instrument.set_tick_scheme(f"FIXED_PRECISION_{instrument.price_precision}")
                 self.add(instrument=instrument)
 
     async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:

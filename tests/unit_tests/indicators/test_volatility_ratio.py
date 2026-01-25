@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,7 +17,7 @@ import sys
 
 import pytest
 
-from nautilus_trader.indicators.volatility_ratio import VolatilityRatio
+from nautilus_trader.indicators import VolatilityRatio
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
@@ -45,7 +45,7 @@ class TestVolatilityCompressionRatio:
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange, Act
-        for _i in range(100):
+        for _ in range(100):
             self.vcr.update_raw(1.00000, 1.00000, 1.00000)
 
         # Assert
@@ -106,7 +106,7 @@ class TestVolatilityCompressionRatio:
         factor = 0
 
         # Act
-        for _i in range(1000):
+        for _ in range(1000):
             high += 0.00010 + factor
             low += 0.00010 + factor
             factor += 0.00001
@@ -123,7 +123,7 @@ class TestVolatilityCompressionRatio:
         factor = 0
 
         # Act
-        for _i in range(1000):
+        for _ in range(1000):
             high -= 0.00010 + factor
             low -= 0.00010 + factor
             factor -= 0.00002
@@ -135,7 +135,7 @@ class TestVolatilityCompressionRatio:
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for _i in range(1000):
+        for _ in range(1000):
             self.vcr.update_raw(1.00010, 1.00000, 1.00005)
 
         # Act

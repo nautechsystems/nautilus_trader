@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::serialization::default_true;
+use nautilus_model::identifiers::ClientId;
 use serde::{Deserialize, Serialize};
 
 /// Configuration for `ExecutionEngine` instances.
@@ -36,13 +38,23 @@ pub struct ExecutionEngineConfig {
     /// If None then no additional snapshots will be taken.
     #[serde(default)]
     pub snapshot_positions_interval_secs: Option<f64>,
+    /// If quote-denominated order quantities should be converted to base units before submission.
+    #[serde(default = "default_true")]
+    pub convert_quote_qty_to_base: bool,
+    /// If order fills exceeding order quantity are allowed (logs warning instead of raising).
+    /// Useful when position reconciliation races with exchange fill events.
+    #[serde(default)]
+    pub allow_overfills: bool,
+    /// The client IDs declared for external stream processing.
+    ///
+    /// The execution engine will not attempt to send trading commands to these
+    /// client IDs, assuming an external process will consume the serialized
+    /// command messages from the bus and handle execution.
+    #[serde(default)]
+    pub external_clients: Option<Vec<ClientId>>,
     /// If debug mode is active (will provide extra debug logging).
     #[serde(default)]
     pub debug: bool,
-}
-
-const fn default_true() -> bool {
-    true
 }
 
 impl Default for ExecutionEngineConfig {
@@ -53,6 +65,9 @@ impl Default for ExecutionEngineConfig {
             snapshot_orders: false,
             snapshot_positions: false,
             snapshot_positions_interval_secs: None,
+            convert_quote_qty_to_base: true,
+            allow_overfills: false,
+            external_clients: None,
             debug: false,
         }
     }

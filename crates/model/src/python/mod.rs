@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,6 +30,9 @@ pub mod orders;
 pub mod position;
 pub mod reports;
 pub mod types;
+
+#[cfg(feature = "defi")]
+pub mod defi;
 
 /// Loaded as `nautilus_pyo3.model`.
 ///
@@ -67,12 +70,12 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::data::delta::OrderBookDelta>()?;
     m.add_class::<crate::data::deltas::OrderBookDeltas>()?;
     m.add_class::<crate::data::depth::OrderBookDepth10>()?;
-    m.add_class::<crate::data::greeks::BlackScholesGreeksResult>()?;
-    m.add_class::<crate::data::greeks::ImplyVolAndGreeksResult>()?;
     m.add_class::<crate::data::quote::QuoteTick>()?;
     m.add_class::<crate::data::status::InstrumentStatus>()?;
     m.add_class::<crate::data::trade::TradeTick>()?;
     m.add_class::<crate::data::close::InstrumentClose>()?;
+    m.add_class::<crate::data::funding::FundingRateUpdate>()?;
+    m.add_class::<crate::data::greeks::BlackScholesGreeksResult>()?;
     m.add_function(wrap_pyfunction!(
         crate::python::data::greeks::py_black_scholes_greeks,
         m
@@ -85,27 +88,33 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         crate::python::data::greeks::py_imply_vol_and_greeks,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::data::greeks::py_refine_vol_and_greeks,
+        m
+    )?)?;
     // Enums
     m.add_class::<crate::enums::AccountType>()?;
     m.add_class::<crate::enums::AggregationSource>()?;
     m.add_class::<crate::enums::AggressorSide>()?;
     m.add_class::<crate::enums::AssetClass>()?;
-    m.add_class::<crate::enums::InstrumentClass>()?;
     m.add_class::<crate::enums::BarAggregation>()?;
     m.add_class::<crate::enums::BetSide>()?;
     m.add_class::<crate::enums::BookAction>()?;
     m.add_class::<crate::enums::BookType>()?;
     m.add_class::<crate::enums::ContingencyType>()?;
     m.add_class::<crate::enums::CurrencyType>()?;
+    m.add_class::<crate::enums::InstrumentClass>()?;
     m.add_class::<crate::enums::InstrumentCloseType>()?;
     m.add_class::<crate::enums::LiquiditySide>()?;
     m.add_class::<crate::enums::MarketStatus>()?;
     m.add_class::<crate::enums::MarketStatusAction>()?;
     m.add_class::<crate::enums::OmsType>()?;
     m.add_class::<crate::enums::OptionKind>()?;
+    m.add_class::<crate::enums::OtoTriggerMode>()?;
     m.add_class::<crate::enums::OrderSide>()?;
     m.add_class::<crate::enums::OrderStatus>()?;
     m.add_class::<crate::enums::OrderType>()?;
+    m.add_class::<crate::enums::PositionAdjustmentType>()?;
     m.add_class::<crate::enums::PositionSide>()?;
     m.add_class::<crate::enums::PriceType>()?;
     m.add_class::<crate::enums::TimeInForce>()?;
@@ -189,6 +198,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::events::OrderCanceled>()?;
     m.add_class::<crate::events::OrderExpired>()?;
     m.add_class::<crate::events::OrderSnapshot>()?;
+    m.add_class::<crate::events::PositionAdjusted>()?;
     m.add_class::<crate::events::PositionSnapshot>()?;
     // Accounts
     m.add_class::<crate::accounts::CashAccount>()?;
@@ -213,5 +223,24 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         crate::python::data::bet::py_inverse_probability_to_bet,
         m
     )?)?;
+    // DeFi
+    #[cfg(feature = "defi")]
+    {
+        m.add_class::<crate::defi::chain::Blockchain>()?;
+        m.add_class::<crate::defi::chain::Chain>()?;
+        m.add_class::<crate::defi::token::Token>()?;
+        m.add_class::<crate::defi::dex::AmmType>()?;
+        m.add_class::<crate::defi::dex::Dex>()?;
+        m.add_class::<crate::defi::amm::Pool>()?;
+        m.add_class::<crate::defi::data::PoolSwap>()?;
+        m.add_class::<crate::defi::data::PoolLiquidityUpdateType>()?;
+        m.add_class::<crate::defi::data::PoolLiquidityUpdate>()?;
+        m.add_class::<crate::defi::data::PoolFeeCollect>()?;
+        m.add_class::<crate::defi::data::PoolFlash>()?;
+        m.add_class::<crate::defi::data::Transaction>()?;
+        m.add_class::<crate::defi::data::Block>()?;
+        m.add_class::<crate::defi::dex::DexType>()?;
+        m.add_class::<crate::defi::pool_analysis::PoolProfiler>()?;
+    }
     Ok(())
 }

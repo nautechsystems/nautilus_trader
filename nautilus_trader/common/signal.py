@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,10 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from contextlib import suppress
+
 import pyarrow as pa
 
 from nautilus_trader.core.data import Data
 from nautilus_trader.serialization.arrow.serializer import register_arrow
+from nautilus_trader.serialization.base import register_serializable_type
 
 
 def generate_signal_class(name: str, value_type: type) -> type:
@@ -72,6 +75,28 @@ def generate_signal_class(name: str, value_type: type) -> type:
 
     SignalData.__name__ = f"Signal{name.title()}"
 
+    # Dictionary serialization for message bus and Redis
+    def to_dict_c(obj: SignalData) -> dict[str, object]:
+        return {
+            "type": type(obj).__name__,
+            "value": obj.value,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
+        }
+
+    def from_dict_c(values: dict[str, object]) -> SignalData:
+        return SignalData(
+            value=values["value"],
+            ts_event=int(values["ts_event"]),  # type: ignore
+            ts_init=int(values["ts_init"]),  # type: ignore
+        )
+
+    # Add serialization methods to the class
+    SignalData.to_dict_c = to_dict_c
+    SignalData.from_dict_c = from_dict_c
+    SignalData.to_dict = lambda obj: SignalData.to_dict_c(obj)
+    SignalData.from_dict = lambda values: SignalData.from_dict_c(values)
+
     # Parquet serialization
     def serialize_signal(data: SignalData) -> pa.RecordBatch:
         return pa.RecordBatch.from_pylist(
@@ -101,11 +126,21 @@ def generate_signal_class(name: str, value_type: type) -> type:
             }[value_type],
         },
     )
-    register_arrow(
-        data_cls=SignalData,
-        encoder=serialize_signal,
-        decoder=deserialize_signal,
-        schema=schema,
-    )
+    # Register for arrow serialization (only if not already registered)
+    with suppress(KeyError, ValueError):
+        register_arrow(
+            data_cls=SignalData,
+            encoder=serialize_signal,
+            decoder=deserialize_signal,
+            schema=schema,
+        )
+
+    # Register for message bus serialization (only if not already registered)
+    with suppress(KeyError):
+        register_serializable_type(
+            cls=SignalData,
+            to_dict=SignalData.to_dict_c,
+            from_dict=SignalData.from_dict_c,
+        )
 
     return SignalData

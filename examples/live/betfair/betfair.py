@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,11 +26,11 @@ from nautilus_trader.adapters.betfair import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair import BetfairLiveExecClientFactory
 from nautilus_trader.adapters.betfair import get_cached_betfair_client
 from nautilus_trader.adapters.betfair import get_cached_betfair_instrument_provider
+from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
-from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.node import TradingNode
 
 
@@ -80,10 +80,12 @@ async def main(
         # ),
         exec_engine=LiveExecEngineConfig(
             reconciliation=True,
-            # snapshot_orders=True,
-            # snapshot_positions=True,
-            # snapshot_positions_interval_secs=5.0,
-            # open_check_interval_secs=5.0,
+            open_check_interval_secs=5.0,
+            open_check_open_only=False,
+            position_check_interval_secs=5.0,
+            snapshot_orders=True,
+            snapshot_positions=True,
+            snapshot_positions_interval_secs=5.0,
         ),
         data_clients={
             BETFAIR: BetfairDataClientConfig(
@@ -137,8 +139,8 @@ async def main(
     except Exception as e:
         print(e)
         print(traceback.format_exc())
-    finally:
-        return node
+
+    return node
 
 
 if __name__ == "__main__":
@@ -147,7 +149,7 @@ if __name__ == "__main__":
     # The market ID will appear in the browser query string.
     config = BetfairInstrumentProviderConfig(
         account_currency="AUD",
-        market_ids=["1.241248955"],
+        market_ids=["1.250955700"],
     )
     node = asyncio.run(main(instrument_config=config, log_level="INFO"))
     node.dispose()

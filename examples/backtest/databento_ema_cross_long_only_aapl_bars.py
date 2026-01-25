@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,8 +21,8 @@ import pandas as pd
 
 from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.adapters.databento import DatabentoDataLoader
+from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.examples.strategies.ema_cross_long_only import EMACrossLongOnly
@@ -78,7 +78,7 @@ if __name__ == "__main__":
         engine.add_data(bars)
 
     # Configure your strategy
-    config = EMACrossLongOnlyConfig(
+    strategy_config = EMACrossLongOnlyConfig(
         instrument_id=AAPL_XNAS.id,
         bar_type=BarType.from_str(f"{AAPL_XNAS.id}-1-MINUTE-LAST-EXTERNAL"),
         trade_size=Decimal(100),
@@ -87,7 +87,7 @@ if __name__ == "__main__":
     )
 
     # Instantiate and add your strategy
-    strategy = EMACrossLongOnly(config=config)
+    strategy = EMACrossLongOnly(config=strategy_config)
     engine.add_strategy(strategy=strategy)
 
     time.sleep(0.1)

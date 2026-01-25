@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,6 +12,29 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+#![allow(clippy::needless_return)]
+
+//! Build script for the `nautilus-core` crate.
+//!
+//! This script is executed by Cargo during compilation and is responsible for the ancillary
+//! tasks that the core library requires in order to compile correctly across the various
+//! combinations of features and target environments supported by NautilusTrader.
+//!
+//! Specifically it performs the following duties:
+//!
+//! 1. Propagates version information from the top-level `pyproject.toml` (when available) so it
+//!    can be embedded in the compiled binary via the `NAUTILUS_VERSION` and
+//!    `NAUTILUS_USER_AGENT` environment variables.
+//! 2. Generates C and Cython headers when the `ffi` feature flag is enabled.  The bindings are
+//!    produced with [`cbindgen`](https://github.com/mozilla/cbindgen) and written into the
+//!    Python package tree so that users building Python wheels do not need to have a Rust
+//!    toolchain installed.
+//! 3. Emits the appropriate `cargo:rerun-if-*` directives so that Cargo reruns this build script
+//!    whenever any of the relevant environment variables or configuration files change.
+//!
+//! The script exits early when it detects the `DOCS_RS` environment variable, as header
+//! generation is unnecessary (and sometimes not permitted) in the docs.rs build sandbox.
 
 use std::{env, path::PathBuf};
 
@@ -26,7 +49,7 @@ fn main() {
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=../Cargo.toml");
 
-    let nautilus_version = "1.219.0"; // Hardcode to avoid including pyproject.toml in package
+    let nautilus_version = "1.223.0"; // Hardcode to avoid including pyproject.toml in package
 
     // Verify the hardcoded version matches the version from the top-level pyproject.toml
     if let Some(pyproject_version) = try_read_pyproject_version() {
@@ -102,18 +125,15 @@ fn try_read_pyproject_version() -> Option<String> {
     let paths_to_check: Vec<PathBuf> = vec![path1].into_iter().chain(path2).collect();
 
     for path in paths_to_check {
-        if path.exists() {
-            if let Ok(contents) = std::fs::read_to_string(&path) {
-                if let Ok(value) = toml::from_str::<toml::Value>(&contents) {
-                    if let Some(version) = value
-                        .get("project")
-                        .and_then(|p| p.get("version"))
-                        .and_then(|v| v.as_str())
-                    {
-                        return Some(version.to_string());
-                    }
-                }
-            }
+        if path.exists()
+            && let Ok(contents) = std::fs::read_to_string(&path)
+            && let Ok(value) = toml::from_str::<toml::Value>(&contents)
+            && let Some(version) = value
+                .get("project")
+                .and_then(|p| p.get("version"))
+                .and_then(|v| v.as_str())
+        {
+            return Some(version.to_string());
         }
     }
 

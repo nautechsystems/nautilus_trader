@@ -1,0 +1,34 @@
+{
+  "id": "test-small-order-id",
+  "topic": "wallet",
+  "creationTime": 1762960669000,
+  "data": [
+    {
+      "accountIMRate": "0",
+      "accountMMRate": "0",
+      "accountLTV": "0",
+      "totalEquity": "51333.82543837",
+      "totalWalletBalance": "51333.82543837",
+      "totalMarginBalance": "51333.82543837",
+      "totalAvailableBalance": "0",
+      "totalPerpUpl": "0",
+      "totalInitialMargin": "50.028",
+      "totalMaintenanceMargin": "5.0028",
+      "coin": [
+        {
+          "coin": "USDT",
+          "equity": "51333.82543837",
+          "walletBalance": "51333.82543837",
+          "availableToWithdraw": "0",
+          "availableToBorrow": "",
+          "borrowAmount": "0",
+          "accruedInterest": "0",
+          "totalOrderIM": "50.028",
+          "totalPositionIM": "0",
+          "totalPositionMM": "0",
+          "spotBorrow": "0"
+        }
+      ]
+    }
+  ]
+}

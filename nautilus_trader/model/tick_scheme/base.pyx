@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,6 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+from libc.math cimport ceil as cceil
+from libc.math cimport floor as cfloor
+from libc.math cimport round as cround
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.objects cimport Price
@@ -54,7 +58,7 @@ cdef class TickScheme:
         """
         Return the price `n` ask ticks away from value.
 
-        If a given price is between two ticks, n=0 will find the nearest ask tick.
+        If a given price is between two ticks, n=0 will find the nearest ask tick (inclusive).
 
         Parameters
         ----------
@@ -74,7 +78,7 @@ cdef class TickScheme:
         """
         Return the price `n` bid ticks away from value.
 
-        If a given price is between two ticks, n=0 will find the nearest bid tick.
+        If a given price is between two ticks, n=0 will find the nearest bid tick (inclusive).
 
         Parameters
         ----------
@@ -91,25 +95,47 @@ cdef class TickScheme:
         raise NotImplementedError()  # pragma: no cover
 
 
-cdef inline double _round_base(double value, double base):
-    return int(value / base) * base
-
-
 cpdef double round_down(double value, double base):
     """
     Returns a value rounded down to a specific number of decimal places.
+
+    If value is already on the boundary, returns the same value (price-inclusive).
     """
-    return _round_base(value=value, base=base)
+    if base <= 0:
+        raise ValueError(f"base must be positive, was {base}")
+
+    cdef double base_multiple = value / base
+    cdef double rounded_multiple = cround(base_multiple)
+
+    # Check if we're already on a tick boundary (within floating point precision)
+    if is_close(base_multiple, rounded_multiple):
+        return value
+    else:
+        # Round down to previous boundary using floor
+        return cfloor(base_multiple) * base
 
 
 cpdef double round_up(double value, double base):
     """
-    Returns a value rounded down to a specific number of decimal places.
+    Returns a value rounded up to a specific number of decimal places.
+
+    If value is already on the boundary, returns the same value (price-inclusive).
     """
-    return _round_base(value=value, base=base) + base
+    if base <= 0:
+        raise ValueError(f"base must be positive, was {base}")
+
+    cdef double base_multiple = value / base
+    cdef double rounded_multiple = cround(base_multiple)
+
+    # Check if we're already on a tick boundary (within floating point precision)
+    if is_close(base_multiple, rounded_multiple):
+        return value
+    else:
+        # Round up to next boundary using ceil
+        return cceil(base_multiple) * base
 
 
-cdef dict TICK_SCHEMES = {}  # type: dict[str, TickScheme]
+cdef dict[str, TickScheme] TICK_SCHEMES = {}
 
 cpdef void register_tick_scheme(TickScheme tick_scheme):
     Condition.not_none(tick_scheme, "tick_scheme")

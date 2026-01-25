@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
 from nautilus_trader.data.messages import RequestInstrument
@@ -23,6 +22,7 @@ from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeData
+from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeIndexPrices
 from nautilus_trader.data.messages import SubscribeInstrument
 from nautilus_trader.data.messages import SubscribeInstrumentClose
@@ -34,6 +34,7 @@ from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
 from nautilus_trader.data.messages import UnsubscribeData
+from nautilus_trader.data.messages import UnsubscribeFundingRates
 from nautilus_trader.data.messages import UnsubscribeIndexPrices
 from nautilus_trader.data.messages import UnsubscribeInstrument
 from nautilus_trader.data.messages import UnsubscribeInstrumentClose
@@ -69,8 +70,6 @@ class TemplateLiveDataClient(LiveDataClient):
     +---------------------------------------+-------------+
     | _connect                              | required    |
     | _disconnect                           | required    |
-    | reset                                 | optional    |
-    | dispose                               | optional    |
     +---------------------------------------+-------------+
     | _subscribe                            | optional    |
     | _unsubscribe                          | optional    |
@@ -88,16 +87,6 @@ class TemplateLiveDataClient(LiveDataClient):
     async def _disconnect(self) -> None:
         raise NotImplementedError(
             "method `_disconnect` must be implemented in the subclass",
-        )  # pragma: no cover
-
-    def reset(self) -> None:
-        raise NotImplementedError(
-            "method `reset` must be implemented in the subclass",
-        )  # pragma: no cover
-
-    def dispose(self) -> None:
-        raise NotImplementedError(
-            "method `dispose` must be implemented in the subclass",
         )  # pragma: no cover
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
@@ -132,18 +121,17 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     +----------------------------------------+-------------+
     | _connect                               | required    |
     | _disconnect                            | required    |
-    | reset                                  | optional    |
-    | dispose                                | optional    |
     +----------------------------------------+-------------+
     | _subscribe (adapter specific types)    | optional    |
     | _subscribe_instruments                 | optional    |
     | _subscribe_instrument                  | optional    |
     | _subscribe_order_book_deltas           | optional    |
-    | _subscribe_order_book_snapshots        | optional    |
+    | _subscribe_order_book_depth            | optional    |
     | _subscribe_quote_ticks                 | optional    |
     | _subscribe_trade_ticks                 | optional    |
     | _subscribe_mark_prices                 | optional    |
     | _subscribe_index_prices                | optional    |
+    | _subscribe_funding_rates               | optional    |
     | _subscribe_bars                        | optional    |
     | _subscribe_instrument_status           | optional    |
     | _subscribe_instrument_close            | optional    |
@@ -151,11 +139,12 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     | _unsubscribe_instruments               | optional    |
     | _unsubscribe_instrument                | optional    |
     | _unsubscribe_order_book_deltas         | optional    |
-    | _unsubscribe_order_book_snapshots      | optional    |
+    | _unsubscribe_order_book_depth          | optional    |
     | _unsubscribe_quote_ticks               | optional    |
     | _unsubscribe_trade_ticks               | optional    |
     | _unsubscribe_mark_prices               | optional    |
     | _unsubscribe_index_prices              | optional    |
+    | _unsubscribe_funding_rates             | optional    |
     | _unsubscribe_bars                      | optional    |
     | _unsubscribe_instrument_status         | optional    |
     | _unsubscribe_instrument_close          | optional    |
@@ -181,16 +170,6 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
             "method `_disconnect` must be implemented in the subclass",
         )  # pragma: no cover
 
-    def reset(self) -> None:
-        raise NotImplementedError(
-            "method `reset` must be implemented in the subclass",
-        )  # pragma: no cover
-
-    def dispose(self) -> None:
-        raise NotImplementedError(
-            "method `dispose` must be implemented in the subclass",
-        )  # pragma: no cover
-
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     async def _subscribe(self, command: SubscribeData) -> None:
@@ -213,9 +192,9 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
             "method `_subscribe_order_book_deltas` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
+    async def _subscribe_order_book_depth(self, command: SubscribeOrderBook) -> None:
         raise NotImplementedError(
-            "method `_subscribe_order_book_snapshots` must be implemented in the subclass",
+            "method `_subscribe_order_book_depth` must be implemented in the subclass",
         )  # pragma: no cover
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
@@ -236,6 +215,11 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     async def _subscribe_index_prices(self, command: SubscribeIndexPrices) -> None:
         raise NotImplementedError(
             "method `_subscribe_index_prices` must be implemented in the subclass",
+        )  # pragma: no cover
+
+    async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
+        raise NotImplementedError(
+            "method `_subscribe_funding_rates` must be implemented in the subclass",
         )  # pragma: no cover
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
@@ -273,9 +257,9 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
             "method `_unsubscribe_order_book_deltas` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
+    async def _unsubscribe_order_book_depth(self, command: UnsubscribeOrderBook) -> None:
         raise NotImplementedError(
-            "method `_unsubscribe_order_book_snapshots` must be implemented in the subclass",
+            "method `_unsubscribe_order_book_depth` must be implemented in the subclass",
         )  # pragma: no cover
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
@@ -296,6 +280,11 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     async def _unsubscribe_index_prices(self, command: UnsubscribeIndexPrices) -> None:
         raise NotImplementedError(
             "method `_unsubscribe_index_prices` must be implemented in the subclass",
+        )  # pragma: no cover
+
+    async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
+        raise NotImplementedError(
+            "method `_unsubscribe_funding_rates` must be implemented in the subclass",
         )  # pragma: no cover
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:

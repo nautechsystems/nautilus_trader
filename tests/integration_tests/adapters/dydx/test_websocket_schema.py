@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -104,7 +104,7 @@ from nautilus_trader.model.objects import Quantity
         "tests/test_data/dydx/websocket/v4_block_height_channel_data.json",
     ],
 )
-def test_general_messsage(file_path: str) -> None:
+def test_general_message(file_path: str) -> None:
     """
     Test the general message parser.
     """
@@ -284,7 +284,7 @@ def test_account_parse_to_account_balances() -> None:
     expected_result = [
         AccountBalance(
             total=Money(Decimal("11.62332500"), Currency.from_str("USDC")),
-            locked=Money(Decimal("0"), Currency.from_str("USDC")),
+            locked=Money(Decimal(0), Currency.from_str("USDC")),
             free=Money(Decimal("11.62332500"), Currency.from_str("USDC")),
         ),
     ]
@@ -307,7 +307,7 @@ def test_account_parse_to_account_balances_order_best_effort_canceled() -> None:
     expected_result = [
         AccountBalance(
             total=Money(Decimal("11.62332500"), Currency.from_str("USDC")),
-            locked=Money(Decimal("0"), Currency.from_str("USDC")),
+            locked=Money(Decimal(0), Currency.from_str("USDC")),
             free=Money(Decimal("11.62332500"), Currency.from_str("USDC")),
         ),
     ]
@@ -1020,8 +1020,8 @@ def test_orderbook(instrument_id: InstrumentId) -> None:
         action=BookAction.DELETE,
         order=BookOrder(
             side=OrderSide.BUY,
-            price=Price(Decimal("65920"), 0),
-            size=Quantity(Decimal("0"), 4),
+            price=Price(Decimal(65920), 0),
+            size=Quantity(Decimal(0), 4),
             order_id=0,
         ),
         flags=RecordFlag.F_LAST,

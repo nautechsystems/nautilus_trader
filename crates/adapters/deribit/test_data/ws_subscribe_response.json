@@ -1,0 +1,9 @@
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": ["trades.BTC-PERPETUAL.100ms", "book.BTC-PERPETUAL.100ms"],
+    "testnet": true,
+    "usIn": 1699999999000000,
+    "usOut": 1699999999001000,
+    "usDiff": 1000
+}

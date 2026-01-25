@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -27,10 +27,21 @@ use ustr::Ustr;
 
 use super::enums::{DatabentoStatisticType, DatabentoStatisticUpdateAction};
 
+/// Subscription acknowledgement event from the Databento gateway.
+#[derive(Debug, Clone)]
+pub struct SubscriptionAckEvent {
+    /// The schema that was acknowledged.
+    pub schema: String,
+    /// The raw message from the gateway.
+    pub message: String,
+    /// Timestamp when the ack was received.
+    pub ts_received: UnixNanos,
+}
+
 /// Represents a Databento publisher ID.
 pub type PublisherId = u16;
 
-/// Represents a Databento dataset code.
+/// Represents a Databento dataset ID.
 pub type Dataset = Ustr;
 
 /// Represents a Databento publisher.
@@ -42,7 +53,7 @@ pub type Dataset = Ustr;
 pub struct DatabentoPublisher {
     /// The publisher ID assigned by Databento, which denotes the dataset and venue.
     pub publisher_id: PublisherId,
-    /// The Databento dataset code for the publisher.
+    /// The Databento dataset ID for the publisher.
     pub dataset: dbn::Dataset,
     /// The venue for the publisher.
     pub venue: dbn::Venue,
@@ -86,11 +97,8 @@ pub struct DatabentoImbalance {
 
 impl DatabentoImbalance {
     /// Creates a new [`DatabentoImbalance`] instance.
-    ///
-    /// # Errors
-    ///
-    /// This function never returns an error (TBD).
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub const fn new(
         instrument_id: InstrumentId,
         ref_price: Price,
@@ -103,8 +111,8 @@ impl DatabentoImbalance {
         ts_event: UnixNanos,
         ts_recv: UnixNanos,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             instrument_id,
             ref_price,
             cont_book_clr_price,
@@ -116,7 +124,7 @@ impl DatabentoImbalance {
             ts_event,
             ts_recv,
             ts_init,
-        })
+        }
     }
 }
 
@@ -160,11 +168,8 @@ pub struct DatabentoStatistics {
 
 impl DatabentoStatistics {
     /// Creates a new [`DatabentoStatistics`] instance.
-    ///
-    /// # Errors
-    ///
-    /// This function never returns an error (TBD).
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub const fn new(
         instrument_id: InstrumentId,
         stat_type: DatabentoStatisticType,
@@ -179,8 +184,8 @@ impl DatabentoStatistics {
         ts_event: UnixNanos,
         ts_recv: UnixNanos,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             instrument_id,
             stat_type,
             update_action,
@@ -194,6 +199,6 @@ impl DatabentoStatistics {
             ts_event,
             ts_recv,
             ts_init,
-        })
+        }
     }
 }

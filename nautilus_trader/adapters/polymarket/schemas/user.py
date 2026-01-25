@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,12 +25,15 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderStatus
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderType
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStatus
+from nautilus_trader.adapters.polymarket.common.parsing import calculate_commission
+from nautilus_trader.adapters.polymarket.common.parsing import determine_order_side
+from nautilus_trader.adapters.polymarket.common.parsing import make_composite_trade_id
 from nautilus_trader.adapters.polymarket.common.parsing import parse_order_side
 from nautilus_trader.adapters.polymarket.common.parsing import parse_order_status
 from nautilus_trader.adapters.polymarket.common.parsing import parse_time_in_force
 from nautilus_trader.adapters.polymarket.schemas.order import PolymarketMakerOrder
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.core.stats import basis_points_as_percentage
+from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -148,7 +151,7 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
     """
 
     asset_id: str  # asset ID (token ID) of taker order (market order)
-    bucket_index: str
+    bucket_index: int
     fee_rate_bps: str
     id: str  # trade ID
     last_update: str  # time of last update to trade
@@ -171,12 +174,30 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
     def to_dict(self) -> dict[str, Any]:
         return msgspec.json.decode(msgspec.json.encode(self))
 
-    def get_maker_order(self, maker_address: str) -> PolymarketMakerOrder:
+    def get_filled_user_order_ids(self, maker_address: str, api_key: str) -> list[str]:
+        if self.trader_side == PolymarketLiquiditySide.TAKER:
+            user_order_ids = [self.taker_order_id]
+        else:
+            user_order_ids = [
+                order.order_id
+                for order in self.maker_orders
+                if order.maker_address == maker_address or order.owner == api_key
+            ]
+        return user_order_ids
+
+    def get_maker_order(self, filled_user_order_id: str) -> PolymarketMakerOrder:
         for order in self.maker_orders:
-            if order.maker_address == maker_address:
+            if order.order_id == filled_user_order_id:
                 return order
 
-        raise ValueError("Invalid trade with no maker order owned my `maker_address`")
+        raise ValueError(f"Invalid maker order ID {filled_user_order_id}")
+
+    def get_asset_id(self, filled_user_order_id: str) -> str:
+        if self.trader_side == PolymarketLiquiditySide.TAKER:
+            return self.asset_id
+        else:
+            order = self.get_maker_order(filled_user_order_id)
+            return order.asset_id
 
     def liquidity_side(self) -> LiquiditySide:
         if self.trader_side == PolymarketLiquiditySide.MAKER:
@@ -184,39 +205,40 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
         else:
             return LiquiditySide.TAKER
 
-    def order_side(self) -> OrderSide:
-        order_side = parse_order_side(self.side)
-        if self.trader_side == PolymarketLiquiditySide.TAKER:
-            return order_side
-        else:
-            return OrderSide.BUY if order_side == OrderSide.SELL else OrderSide.SELL
+    def order_side(self, filled_user_order_id: str) -> OrderSide:
+        return determine_order_side(
+            trader_side=self.trader_side,
+            trade_side=self.side,
+            taker_asset_id=self.asset_id,
+            maker_asset_id=self.get_asset_id(filled_user_order_id),
+        )
 
-    def venue_order_id(self, maker_address: str) -> VenueOrderId:
+    def venue_order_id(self, filled_user_order_id: str) -> VenueOrderId:
         if self.trader_side == PolymarketLiquiditySide.TAKER:
             return VenueOrderId(self.taker_order_id)
         else:
-            order = self.get_maker_order(maker_address)
+            order = self.get_maker_order(filled_user_order_id)
             return VenueOrderId(order.order_id)
 
-    def last_px(self, maker_address: str) -> Decimal:
+    def last_px(self, filled_user_order_id: str) -> Decimal:
         if self.liquidity_side() == LiquiditySide.TAKER:
             return Decimal(self.price)
         else:
-            order = self.get_maker_order(maker_address)
+            order = self.get_maker_order(filled_user_order_id)
             return Decimal(order.price)
 
-    def last_qty(self, maker_address: str) -> Decimal:
+    def last_qty(self, filled_user_order_id: str) -> Decimal:
         if self.liquidity_side() == LiquiditySide.TAKER:
             return Decimal(self.size)
         else:
-            order = self.get_maker_order(maker_address)
+            order = self.get_maker_order(filled_user_order_id)
             return Decimal(order.matched_amount)
 
-    def get_fee_rate_bps(self, maker_address: str) -> Decimal:
+    def get_fee_rate_bps(self, filled_user_order_id: str) -> Decimal:
         if self.liquidity_side() == LiquiditySide.TAKER:
             return Decimal(self.fee_rate_bps)
         else:
-            order = self.get_maker_order(maker_address)
+            order = self.get_maker_order(filled_user_order_id)
             return Decimal(order.fee_rate_bps)
 
     def parse_to_fill_report(
@@ -224,27 +246,29 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
         account_id: AccountId,
         instrument: BinaryOption,
         client_order_id: ClientOrderId | None,
-        maker_address: str,
         ts_init: int,
+        filled_user_order_id: str,
     ) -> FillReport:
-        last_qty = instrument.make_qty(self.last_qty(maker_address))
-        last_px = instrument.make_price(self.last_px(maker_address))
-        fee_rate_bps = self.get_fee_rate_bps(maker_address)
-        commission = float(last_qty * last_px) * basis_points_as_percentage(fee_rate_bps)
+        last_qty = instrument.make_qty(self.last_qty(filled_user_order_id))
+        last_px = instrument.make_price(self.last_px(filled_user_order_id))
+        fee_rate_bps = self.get_fee_rate_bps(filled_user_order_id)
+        commission = calculate_commission(last_qty, last_px, fee_rate_bps)
+        venue_order_id = self.venue_order_id(filled_user_order_id)
+        composite_trade_id = make_composite_trade_id(self.id, venue_order_id)
 
         return FillReport(
             account_id=account_id,
             instrument_id=instrument.id,
             client_order_id=client_order_id,
-            venue_order_id=self.venue_order_id(maker_address),
-            trade_id=TradeId(self.id),
-            order_side=self.order_side(),
+            venue_order_id=venue_order_id,
+            trade_id=composite_trade_id,
+            order_side=self.order_side(filled_user_order_id),
             last_qty=last_qty,
             last_px=last_px,
             commission=Money(commission, USDC_POS),
             liquidity_side=self.liquidity_side(),
             report_id=UUID4(),
-            ts_event=millis_to_nanos(int(self.match_time)),
+            ts_event=secs_to_nanos(int(self.match_time)),
             ts_init=ts_init,
         )
 
@@ -288,7 +312,7 @@ class PolymarketOpenOrder(msgspec.Struct, frozen=True):
         expire_time = (
             pd.Timestamp(int(self.expiration), unit="ms", tz="UTC") if self.expiration else None
         )
-        timestamp_ns = millis_to_nanos(int(self.created_at))
+        timestamp_ns = secs_to_nanos(int(self.created_at))
         return OrderStatusReport(
             account_id=account_id,
             instrument_id=instrument.id,

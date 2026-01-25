@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,16 +18,16 @@
 //! Handles up to 16 decimals of precision.
 
 use std::{
-    fmt::{Debug, Display, Formatter},
+    fmt::{Debug, Display},
     hash::{Hash, Hasher},
     str::FromStr,
 };
 
-use nautilus_core::correctness::{FAILED, check_nonempty_string, check_valid_string};
+use nautilus_core::correctness::{FAILED, check_nonempty_string, check_valid_string_utf8};
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
-#[allow(unused_imports)] // FIXED_PRECISION used in docs
+#[allow(unused_imports)]
 use super::fixed::{FIXED_PRECISION, check_fixed_precision};
 use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 
@@ -38,7 +38,7 @@ use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 #[derive(Clone, Copy, Eq)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", frozen, eq, hash)
 )]
 pub struct Currency {
     /// The currency code as an alpha-3 string (e.g., "USD", "EUR").
@@ -75,7 +75,7 @@ impl Currency {
     ) -> anyhow::Result<Self> {
         let code = code.as_ref();
         let name = name.as_ref();
-        check_valid_string(code, "code")?;
+        check_valid_string_utf8(code, "code")?;
         check_nonempty_string(name, "name")?;
         check_fixed_precision(precision)?;
         Ok(Self {
@@ -167,6 +167,61 @@ impl Currency {
         let currency = Self::from_str(code)?;
         Ok(currency.currency_type == CurrencyType::CommodityBacked)
     }
+
+    /// Returns a currency from the internal map or creates a new crypto currency if not found.
+    ///
+    /// This is a convenience method for adapters that need to handle unknown currencies
+    /// (e.g., newly listed assets on exchanges). If the currency code is not found in the
+    /// internal map, a new cryptocurrency is created with:
+    /// - 8 decimal precision
+    /// - ISO 4217 code of 0
+    /// - CurrencyType::Crypto
+    ///
+    /// The newly created currency is automatically registered in the internal map.
+    #[must_use]
+    pub fn get_or_create_crypto<T: AsRef<str>>(code: T) -> Self {
+        let code_str = code.as_ref();
+        Self::try_from_str(code_str).unwrap_or_else(|| {
+            let currency = Self::new(code_str, 8, 0, code_str, CurrencyType::Crypto);
+
+            if let Err(e) = Self::register(currency, false) {
+                log::error!("Failed to register currency '{code_str}': {e}");
+            }
+
+            currency
+        })
+    }
+
+    /// Gets or creates a cryptocurrency with context logging.
+    ///
+    /// This is a convenience wrapper around [`Currency::get_or_create_crypto`] that:
+    /// - Trims whitespace from the currency code
+    /// - Handles empty strings with a fallback to USDT
+    /// - Provides optional context for logging
+    ///
+    /// Used by exchange adapters for consistent currency handling across parsing operations.
+    ///
+    /// # Arguments
+    ///
+    /// * `code` - The currency code (will be trimmed)
+    /// * `context` - Optional context for logging (e.g., "balance detail", "instrument")
+    #[must_use]
+    pub fn get_or_create_crypto_with_context<T: AsRef<str>>(
+        code: T,
+        context: Option<&str>,
+    ) -> Self {
+        let trimmed = code.as_ref().trim();
+        let ctx = context.unwrap_or("unknown");
+
+        if trimmed.is_empty() {
+            log::warn!(
+                "get_or_create_crypto_with_context called with empty code (context: {ctx}), using USDT as fallback"
+            );
+            return Self::USDT();
+        }
+
+        Self::get_or_create_crypto(trimmed)
+    }
 }
 
 impl PartialEq for Currency {
@@ -182,7 +237,7 @@ impl Hash for Currency {
 }
 
 impl Debug for Currency {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}(code='{}', precision={}, iso4217={}, name='{}', currency_type={})",
@@ -197,7 +252,7 @@ impl Debug for Currency {
 }
 
 impl Display for Currency {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.code)
     }
 }
@@ -241,9 +296,6 @@ impl<'de> Deserialize<'de> for Currency {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -273,11 +325,20 @@ mod tests {
         let _ = Currency::new("", 2, 840, "United States dollar", CurrencyType::Fiat);
     }
 
+    #[cfg(not(feature = "defi"))]
     #[rstest]
     #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision() {
-        // Precision greater than maximum
-        let _ = Currency::new("USD", 17, 840, "United States dollar", CurrencyType::Fiat);
+        // Precision greater than maximum (use 19 which exceeds even defi precision of 18)
+        let _ = Currency::new("USD", 19, 840, "United States dollar", CurrencyType::Fiat);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[should_panic(expected = "Condition failed: `precision` exceeded maximum `WEI_PRECISION`")]
+    fn test_invalid_precision() {
+        // Precision greater than maximum (use 19 which exceeds even defi precision of 18)
+        let _ = Currency::new("ETH", 19, 0, "Ethereum", CurrencyType::Crypto);
     }
 
     #[rstest]
@@ -420,5 +481,77 @@ mod tests {
         let serialized = serde_json::to_string(&currency).unwrap();
         let deserialized: Currency = serde_json::from_str(&serialized).unwrap();
         assert_eq!(currency, deserialized);
+    }
+
+    #[rstest]
+    fn test_get_or_create_crypto_existing() {
+        // Test with an existing currency (BTC is in the default map)
+        let currency = Currency::get_or_create_crypto("BTC");
+        assert_eq!(currency.code.as_str(), "BTC");
+        assert_eq!(currency.currency_type, CurrencyType::Crypto);
+    }
+
+    #[rstest]
+    fn test_get_or_create_crypto_new() {
+        // Test with a non-existent currency code
+        let currency = Currency::get_or_create_crypto("NEWCOIN");
+        assert_eq!(currency.code.as_str(), "NEWCOIN");
+        assert_eq!(currency.precision, 8);
+        assert_eq!(currency.iso4217, 0);
+        assert_eq!(currency.name.as_str(), "NEWCOIN");
+        assert_eq!(currency.currency_type, CurrencyType::Crypto);
+
+        // Verify it was registered and can be retrieved
+        let retrieved = Currency::try_from_str("NEWCOIN");
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap(), currency);
+    }
+
+    #[rstest]
+    fn test_get_or_create_crypto_idempotent() {
+        // First call creates and registers
+        let currency1 = Currency::get_or_create_crypto("TESTCOIN");
+
+        // Second call should retrieve the same currency
+        let currency2 = Currency::get_or_create_crypto("TESTCOIN");
+
+        assert_eq!(currency1, currency2);
+    }
+
+    #[rstest]
+    fn test_get_or_create_crypto_with_ustr() {
+        use ustr::Ustr;
+
+        // Test that it works with Ustr (via AsRef<str>)
+        let code = Ustr::from("USTRCOIN");
+        let currency = Currency::get_or_create_crypto(code);
+        assert_eq!(currency.code.as_str(), "USTRCOIN");
+        assert_eq!(currency.currency_type, CurrencyType::Crypto);
+    }
+
+    #[rstest]
+    fn test_get_or_create_crypto_with_context_valid() {
+        let result = Currency::get_or_create_crypto_with_context("BTC", Some("test context"));
+        assert_eq!(result, Currency::BTC());
+    }
+
+    #[rstest]
+    fn test_get_or_create_crypto_with_context_empty() {
+        let result = Currency::get_or_create_crypto_with_context("", Some("test context"));
+        assert_eq!(result, Currency::USDT());
+    }
+
+    #[rstest]
+    fn test_get_or_create_crypto_with_context_whitespace() {
+        let result = Currency::get_or_create_crypto_with_context("  ", Some("test context"));
+        assert_eq!(result, Currency::USDT());
+    }
+
+    #[rstest]
+    fn test_get_or_create_crypto_with_context_unknown() {
+        // Unknown codes should create a new Currency, preserving newly listed assets
+        let result = Currency::get_or_create_crypto_with_context("NEWCOIN", Some("test context"));
+        assert_eq!(result.code.as_str(), "NEWCOIN");
+        assert_eq!(result.precision, 8);
     }
 }

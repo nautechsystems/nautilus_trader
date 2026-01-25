@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,147 +13,186 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pkgutil
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 import pytest
 
-from nautilus_trader.adapters.bybit.common.enums import BybitProductType
-from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
+from nautilus_trader.adapters.bybit.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
-from nautilus_trader.common.component import LiveClock
-from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.core.nautilus_pyo3 import HttpClient
-from nautilus_trader.core.nautilus_pyo3 import HttpResponse
+from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
-class TestBybitInstrumentProvider:
-    def setup(self) -> None:
-        self.clock = LiveClock()
-        self.http_client: BybitHttpClient = BybitHttpClient(
-            clock=self.clock,
-            api_key="BYBIT_API_KEY",
-            api_secret="BYBIT_API_SECRET",
-            base_url="https://api-testnet.bybit.com",
-        )
-        self.provider = self.get_target_instrument_provider(
-            [
-                BybitProductType.SPOT,
-                BybitProductType.LINEAR,
-                BybitProductType.OPTION,
-            ],
-        )
+@pytest.mark.asyncio
+async def test_load_all_async_populates_provider(monkeypatch, instrument):
+    # Arrange
+    mock_http_client = MagicMock()
+    pyo3_instruments = [MagicMock(name="py_inst")]
+    mock_http_client.request_instruments = AsyncMock(return_value=pyo3_instruments)
 
-    def get_target_instrument_provider(
-        self,
-        product_types: list[BybitProductType],
-    ) -> BybitInstrumentProvider:
-        return BybitInstrumentProvider(
-            client=self.http_client,
-            clock=self.clock,
-            product_types=product_types,
-            config=InstrumentProviderConfig(load_all=True),
-        )
+    provider = BybitInstrumentProvider(
+        client=mock_http_client,
+        product_types=(nautilus_pyo3.BybitProductType.LINEAR,),
+    )
 
-    # @pytest.mark.asyncio
-    # async def test_load_ids_async_incorrect_venue_raise_exception(self):
-    #     provider = self.get_target_instrument_provider([BybitProductType.SPOT])
-    #     binance_instrument_ethusdt = InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE"))
-    #     with pytest.raises(ValueError):
-    #         await provider.load_ids_async(
-    #             instrument_ids=[binance_instrument_ethusdt],
-    #         )
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.bybit.providers.instruments_from_pyo3",
+        lambda _values: [instrument],
+    )
 
-    # @pytest.mark.asyncio
-    # async def test_load_ids(
-    #     self,
-    #     monkeypatch,
-    # ):
-    #     response = pkgutil.get_data(
-    #         "tests.integration_tests.adapters.bybit.resources.http_responses.linear",
-    #         "instrument_btc_usdt.json",
-    #     )
-    #     monkeypatch.setattr(HttpClient, "request", get_mock(response))
-    #     instrument_ids: list[InstrumentId] = [
-    #         InstrumentId.from_str("BTCUSDT-LINEAR.BYBIT"),
-    #     ]
-    #     await self.provider.load_ids_async(instrument_ids)
-    #     instruments = self.provider.get_all()
-    #     instruments_ids = list(instruments.keys())
-    #     assert len(instruments_ids) == 1
-    #     assert str(instruments_ids[0]) == "BTCUSDT-LINEAR.BYBIT"
+    # Act
+    await provider.load_all_async()
 
-    # @pytest.mark.asyncio()
-    # async def test_spot_load_all_async(
-    #     self,
-    #     monkeypatch,
-    # ):
-    #     instrument_provider = self.get_target_instrument_provider([BybitProductType.SPOT] )
-    #     instrument_response = pkgutil.get_data(
-    #         "tests.integration_tests.adapters.bybit.resources.http_responses.spot",
-    #         "instruments.json",
-    #     )
-    #     fee_response = pkgutil.get_data(
-    #         "tests.integration_tests.adapters.bybit.resources.http_responses",
-    #         "fee_rate.json",
-    #     )
-    #     async def mock_requests(*args):
-    #         url = args[2]
-    #         if "fee-rate" in url:
-    #             return HttpResponse(status=200, body=fee_response)
-    #         else:
-    #             return HttpResponse(status=200, body=instrument_response)
-    #     monkeypatch.setattr(HttpClient, "request", mock_requests)
-    #     await instrument_provider.load_all_async()
-    #     instruments = instrument_provider.get_all()
-    #     instruments_ids = list(instruments.keys())
-    #     assert len(instruments_ids) == 2
-    #     assert str(instruments_ids[0]) == "BTCUSDT-SPOT.BYBIT"
-    #     assert str(instruments_ids[1]) == "ETHUSDT-SPOT.BYBIT"
+    # Assert
+    mock_http_client.request_instruments.assert_awaited_once_with(
+        nautilus_pyo3.BybitProductType.LINEAR,
+        None,
+    )
+    assert provider.instruments_pyo3() == pyo3_instruments
+    assert provider.get_all().get(instrument.id) is instrument
 
-    @pytest.mark.asyncio()
-    async def test_linear_load_all_async(self, monkeypatch):
-        instrument_provider = self.get_target_instrument_provider([BybitProductType.LINEAR])
-        instrument_response = pkgutil.get_data(
-            "tests.integration_tests.adapters.bybit.resources.http_responses.linear",
-            "instruments.json",
-        )
-        coin_response = pkgutil.get_data(
-            "tests.integration_tests.adapters.bybit.resources.http_responses",
-            "coin_info.json",
-        )
-        fee_response = pkgutil.get_data(
-            "tests.integration_tests.adapters.bybit.resources.http_responses",
-            "fee_rate.json",
-        )
 
-        async def mock_requests(*args):
-            url = args[2]
-            if "coin/query-info" in url:
-                return HttpResponse(status=200, body=coin_response)
-            elif "fee-rate" in url:
-                return HttpResponse(status=200, body=fee_response)
-            else:
-                return HttpResponse(status=200, body=instrument_response)
+@pytest.mark.asyncio
+async def test_load_ids_async_filters_results(monkeypatch, instrument):
+    # Arrange
+    mock_http_client = MagicMock()
+    pyo3_instruments = [MagicMock(name="py_a"), MagicMock(name="py_b")]
+    mock_http_client.request_instruments = AsyncMock(return_value=pyo3_instruments)
 
-        monkeypatch.setattr(HttpClient, "request", mock_requests)
-        await instrument_provider.load_all_async()
-        instruments = instrument_provider.get_all()
-        instruments_ids = list(instruments.keys())
-        assert len(instruments_ids) == 2
-        assert str(instruments_ids[0]) == "BTCUSDT-LINEAR.BYBIT"
-        assert str(instruments_ids[1]) == "ETHUSDT-LINEAR.BYBIT"
+    provider = BybitInstrumentProvider(
+        client=mock_http_client,
+        product_types=(nautilus_pyo3.BybitProductType.SPOT,),
+    )
 
-    # @pytest.mark.asyncio()
-    # async def test_options_load_all_async(self, monkeypatch):
-    #     instrument_provider = self.get_target_instrument_provider([BybitProductType.OPTION])
-    #     response = pkgutil.get_data(
-    #         "tests.integration_tests.adapters.bybit.resources.http_responses.option",
-    #         "instruments.json",
-    #     )
-    #     monkeypatch.setattr(HttpClient, "request", get_mock(response))
-    #     await instrument_provider.load_all_async()
-    #     instruments = instrument_provider.get_all()
-    #     instruments_ids = list(instruments.keys())
-    #     assert len(instruments_ids) == 2
-    #     assert str(instruments_ids[0]) == "BTCUSDT-OPTION.BYBIT"
-    #     assert str(instruments_ids[1]) == "ETHUSDT-OPTION.BYBIT"
+    btc = instrument.base_currency
+    usd = instrument.quote_currency
+    other_instrument = type(instrument)(
+        instrument_id=InstrumentId(Symbol("ETHUSDT-SPOT"), BYBIT_VENUE),
+        raw_symbol=Symbol("ETHUSDT"),
+        base_currency=btc,
+        quote_currency=usd,
+        price_precision=2,
+        size_precision=4,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_str("0.0001"),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.bybit.providers.instruments_from_pyo3",
+        lambda _values: [instrument, other_instrument],
+    )
+
+    # Act
+    await provider.load_ids_async([instrument.id])
+
+    # Assert
+    mock_http_client.request_instruments.assert_awaited_once_with(
+        nautilus_pyo3.BybitProductType.SPOT,
+        "BTCUSDT",
+    )
+    assert provider.get_all().get(instrument.id) is instrument
+    assert provider.get_all().get(other_instrument.id) is None
+    assert provider.instruments_pyo3() == pyo3_instruments
+
+
+@pytest.mark.asyncio
+async def test_load_ids_async_propagates_exceptions(instrument):
+    # Arrange
+    mock_http_client = MagicMock()
+    mock_http_client.request_instruments = AsyncMock(
+        side_effect=RuntimeError("Network error"),
+    )
+
+    provider = BybitInstrumentProvider(
+        client=mock_http_client,
+        product_types=(nautilus_pyo3.BybitProductType.SPOT,),
+    )
+
+    # Act & Assert
+    with pytest.raises(RuntimeError, match="Network error"):
+        await provider.load_ids_async([instrument.id])
+
+
+@pytest.mark.asyncio
+async def test_load_ids_async_rejects_unconfigured_product_type(instrument):
+    # Arrange
+    mock_http_client = MagicMock()
+    mock_http_client.request_instruments = AsyncMock(return_value=[])
+
+    # Provider configured for LINEAR only
+    provider = BybitInstrumentProvider(
+        client=mock_http_client,
+        product_types=(nautilus_pyo3.BybitProductType.LINEAR,),
+    )
+
+    # Act & Assert - trying to load SPOT instrument should fail
+    with pytest.raises(
+        ValueError,
+        match=r"has product type.*Spot.*which is not in configured product types",
+    ):
+        await provider.load_ids_async([instrument.id])
+
+    # Verify no HTTP request was made
+    mock_http_client.request_instruments.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_load_ids_async_handles_option_without_suffix(monkeypatch):
+    # Arrange
+    mock_http_client = MagicMock()
+    pyo3_instruments = [MagicMock(name="py_option")]
+    mock_http_client.request_instruments = AsyncMock(return_value=pyo3_instruments)
+
+    provider = BybitInstrumentProvider(
+        client=mock_http_client,
+        product_types=(nautilus_pyo3.BybitProductType.OPTION,),
+    )
+
+    # Option instrument without -OPTION suffix (legacy or manually created)
+    option_id = InstrumentId.from_str("BTC-280325-100000-C.BYBIT")
+
+    # Create a mock option instrument that will be returned
+    from nautilus_trader.model.currencies import BTC
+    from nautilus_trader.model.currencies import USDC
+    from nautilus_trader.model.enums import OptionKind
+    from nautilus_trader.model.instruments import CryptoOption
+
+    option_instrument = CryptoOption(
+        instrument_id=option_id,
+        raw_symbol=Symbol("BTC-280325-100000-C"),
+        underlying=BTC,
+        quote_currency=USDC,
+        settlement_currency=USDC,
+        is_inverse=False,
+        activation_ns=0,
+        expiration_ns=0,
+        strike_price=Price.from_str("100000"),
+        option_kind=OptionKind.CALL,
+        price_precision=2,
+        size_precision=3,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_str("0.001"),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.bybit.providers.instruments_from_pyo3",
+        lambda _values: [option_instrument],
+    )
+
+    # Act
+    await provider.load_ids_async([option_id])
+
+    # Assert - should try with OPTION product type
+    mock_http_client.request_instruments.assert_awaited_once_with(
+        nautilus_pyo3.BybitProductType.OPTION,
+        "BTC-280325-100000-C",
+    )
+    assert provider.get_all().get(option_instrument.id) is option_instrument

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -73,20 +73,23 @@ impl PositionIdGenerator {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use nautilus_model::identifiers::{PositionId, StrategyId, TraderId};
+    use nautilus_model::{
+        identifiers::{PositionId, StrategyId, TraderId},
+        stubs::TestDefault,
+    };
     use rstest::rstest;
 
     use crate::{clock::TestClock, generators::position_id::PositionIdGenerator};
 
     fn get_position_id_generator() -> PositionIdGenerator {
-        PositionIdGenerator::new(TraderId::default(), Rc::new(RefCell::new(TestClock::new())))
+        PositionIdGenerator::new(
+            TraderId::test_default(),
+            Rc::new(RefCell::new(TestClock::new())),
+        )
     }
 
     #[rstest]

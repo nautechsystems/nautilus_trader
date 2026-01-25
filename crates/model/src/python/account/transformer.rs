@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use pyo3::{prelude::*, types::PyDict};
 
 use crate::{
@@ -31,9 +31,11 @@ use crate::{
 ///
 /// Panics if event conversion (`py_from_dict`) unwrap fails.
 #[pyfunction]
+#[pyo3(signature = (events, calculate_account_state, allow_borrowing = false))]
 pub fn cash_account_from_account_events(
     events: Vec<Bound<'_, PyDict>>,
     calculate_account_state: bool,
+    allow_borrowing: bool,
 ) -> PyResult<CashAccount> {
     let account_events = events
         .into_iter()
@@ -44,9 +46,11 @@ pub fn cash_account_from_account_events(
         return Err(to_pyvalue_err("No account events"));
     }
     let init_event = account_events[0].clone();
-    let mut cash_account = CashAccount::new(init_event, calculate_account_state);
+    let mut cash_account = CashAccount::new(init_event, calculate_account_state, allow_borrowing);
     for event in account_events.iter().skip(1) {
-        cash_account.apply(event.clone());
+        cash_account
+            .apply(event.clone())
+            .map_err(to_pyruntime_err)?;
     }
     Ok(cash_account)
 }
@@ -76,7 +80,9 @@ pub fn margin_account_from_account_events(
     let init_event = account_events[0].clone();
     let mut margin_account = MarginAccount::new(init_event, calculate_account_state);
     for event in account_events.iter().skip(1) {
-        margin_account.apply(event.clone());
+        margin_account
+            .apply(event.clone())
+            .map_err(to_pyruntime_err)?;
     }
     Ok(margin_account)
 }

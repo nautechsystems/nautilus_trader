@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,11 +24,9 @@ from nautilus_trader.adapters.dydx.common.enums import DYDXEndpointType
 from nautilus_trader.adapters.dydx.common.enums import DYDXPerpetualPositionStatus
 from nautilus_trader.adapters.dydx.endpoints.endpoint import DYDXHttpEndpoint
 from nautilus_trader.adapters.dydx.http.client import DYDXHttpClient
-
-# fmt: off
-from nautilus_trader.adapters.dydx.schemas.account.perpetual_positions import DYDXPerpetualPositionsResponse
-
-# fmt: on
+from nautilus_trader.adapters.dydx.schemas.account.perpetual_positions import (
+    DYDXPerpetualPositionsResponse,
+)
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 

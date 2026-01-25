@@ -1,0 +1,24 @@
+
+# cargo-vet audits file
+
+[[audits.base32]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+version = "0.5.1"
+notes = "Pure base32 encode/decode library. No unsafe code, no_std, no file/network access."
+
+[[audits.capnp]]
+who = "Chris Sellers <chris@cjdsellers.io>"
+criteria = "safe-to-deploy"
+delta = "0.23.2 -> 0.24.1"
+
+[[audits.capnpc]]
+who = "Chris Sellers <chris@cjdsellers.io>"
+criteria = "safe-to-deploy"
+delta = "0.23.3 -> 0.24.1"
+
+[[audits.totp-rs]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+version = "5.7.0"
+notes = "TOTP token generation library using hmac/sha crates. No unsafe code."

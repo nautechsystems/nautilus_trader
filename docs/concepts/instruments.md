@@ -3,20 +3,21 @@
 The `Instrument` base class represents the core specification for any tradable asset/contract. There are
 currently a number of subclasses representing a range of *asset classes* and *instrument classes* which are supported by the platform:
 
-- `Equity` (generic Equity)
-- `FuturesContract` (generic Futures Contract)
-- `FuturesSpread` (generic Futures Spread)
-- `OptionContract` (generic Option Contract)
-- `OptionSpread` (generic Option Spread)
-- `BinaryOption` (generic Binary Option instrument)
-- `Cfd` (Contract for Difference instrument)
-- `Commodity` (commodity instrument in a spot/cash market)
-- `CurrencyPair` (represents a Fiat FX or Cryptocurrency pair in a spot/cash market)
-- `CryptoOption` (Crypto Option instrument)
-- `CryptoPerpetual` (Perpetual Futures Contract a.k.a. Perpetual Swap)
-- `CryptoFuture` (Deliverable Futures Contract with Crypto assets as underlying, and for price quotes and settlement)
-- `IndexInstrument` (generic Index instrument)
-- `BettingInstrument` (Sports, gaming, or other betting)
+- `Equity`: Listed shares or ETFs traded on cash markets.
+- `CurrencyPair`: Spot FX or crypto pair in BASE/QUOTE format traded in cash markets.
+- `Commodity`: Spot commodity instrument (e.g., gold or oil) traded in cash markets.
+- `IndexInstrument`: Spot index calculated from constituents; used as a reference price and not directly tradable.
+- `FuturesContract`: Deliverable futures contract with defined underlying, expiry, and multiplier.
+- `FuturesSpread`: Exchange-defined multi-leg futures strategy (e.g., calendar or inter-commodity) quoted as one instrument.
+- `CryptoFuture`: Dated, deliverable crypto futures contract with fixed expiry, underlying crypto, and settlement currency.
+- `CryptoPerpetual`: Perpetual futures contract (perpetual swap) on crypto with no expiry; can be inverse or quanto-settled.
+- `OptionContract`: Exchange-traded option (put or call) on an underlying with strike and expiry.
+- `OptionSpread`: Exchange-defined multi-leg options strategy (e.g., vertical, calendar, straddle) quoted as one instrument.
+- `CryptoOption`: Option on a crypto underlying with crypto quote/settlement; supports inverse or quanto styles.
+- `BinaryOption`: Fixed-payout option that settles to 0 or 1 based on a binary outcome.
+- `Cfd`: Over-the-counter Contract for Difference that tracks an underlying and is cash-settled.
+- `BettingInstrument`: Sports/gaming market selection (e.g., team or runner) tradable on betting venues.
+- `SyntheticInstrument`: Synthetic instrument with prices derived from component instruments using a formula.
 
 ## Symbology
 
@@ -125,12 +126,12 @@ values for prices and quantities *can* result in the exchange rejecting orders.
 Certain value limits are optional for instruments and can be `None`, these are exchange
 dependent and can include:
 
-- `max_quantity` (maximum quantity for a single order)
-- `min_quantity` (minimum quantity for a single order)
-- `max_notional` (maximum value of a single order)
-- `min_notional` (minimum value of a single order)
-- `max_price` (maximum valid quote or order price)
-- `min_price` (minimum valid quote or order price)
+- `max_quantity` (maximum quantity for a single order).
+- `min_quantity` (minimum quantity for a single order).
+- `max_notional` (maximum value of a single order).
+- `min_notional` (minimum value of a single order).
+- `max_price` (maximum valid quote or order price).
+- `min_price` (minimum valid quote or order price).
 
 :::note
 Most of these limits are checked by the Nautilus `RiskEngine`, otherwise exceeding
@@ -176,7 +177,7 @@ To understand trading on margin, let’s start with some key terms:
 - Each contract represents 125,000 EUR (EUR is base currency, USD is quote currency).
 - If the current market price is 1.1000, the notional value equals 125,000 EUR × 1.1000 (price of EUR/USD) = 137,500 USD.
 
-**Leverage** (`leverage`): The ratio that determines how much market exposure you can control relative to your account deposit. For example, with 10× leverage, you can control 10,000 USD worth of positions with just 1,000 USD in your account.
+**Leverage** (`leverage`): The ratio that determines how much market exposure you can control relative to your account deposit. For example, with 10× leverage, you can control 10,000 USD worth of positions with 1,000 USD in your account.
 
 **Initial Margin** (`margin_init`): The margin rate required to open a position. It represents the minimum amount of funds that must be available in your account to open new positions. This is only a pre-check — no funds are actually locked.
 
@@ -190,6 +191,17 @@ self.portfolio.balances_locked(venue)
 
 - Maker Fee (`maker_fee`): A fee (typically lower) charged when you "make" liquidity by placing an order that remains on the order book. For example, a limit buy order below the current price adds liquidity, and the *maker* fee applies when it fills.
 - Taker Fee (`taker_fee`): A fee (typically higher) charged when you "take" liquidity by placing an order that executes immediately. For instance, a market buy order or a limit buy above the current price removes liquidity, and the *taker* fee applies.
+
+**Fee rate sign convention**: Nautilus uses a consistent sign convention for fee rates across all adapters and the backtesting engine:
+
+- **Positive fee rate** = commission (fee charged, reducing account balance).
+- **Negative fee rate** = rebate (fee earned, increasing account balance).
+
+For example, a maker fee of `-0.00025` means you receive a 0.025% rebate for providing liquidity, while a taker fee of `0.00075` means you pay a 0.075% commission for taking liquidity.
+
+:::note
+Different exchanges use different sign conventions in their APIs. Nautilus adapters normalize these to the convention above. If you're manually specifying fee rates for backtesting, ensure you follow this convention.
+:::
 
 :::tip
 Not all exchanges or instruments implement maker/taker fees. If absent, set both `maker_fee` and `taker_fee` to 0 for the `Instrument` (e.g., `FuturesContract`, `Equity`, `CurrencyPair`, `Commodity`, `Cfd`, `BinaryOption`, `BettingInstrument`).
@@ -228,7 +240,7 @@ While maker/taker fees are common in cryptocurrency markets, traditional exchang
 employ other fee structures, such as per-contract commissions.
 NautilusTrader supports multiple commission models to accommodate diverse fee structures across different markets.
 
-### Built-in Fee Models
+### Built-in fee models
 
 The framework provides two built-in fee model implementations:
 
@@ -236,7 +248,7 @@ The framework provides two built-in fee model implementations:
     calculated as a percentage of the trade value.
 2. `FixedFeeModel`: Applies a fixed commission per trade, regardless of the trade size.
 
-### Creating Custom Fee Models
+### Creating custom fee models
 
 While the built-in fee models cover common scenarios, you might encounter situations requiring specific commission structures.
 NautilusTrader's flexible architecture allows you to implement custom fee models by inheriting from the base `FeeModel` class.
@@ -276,7 +288,7 @@ These parameter names follow NautilusTrader's Cython naming conventions, where t
 While this might seem verbose compared to typical Python naming conventions, it ensures type safety and consistency
 with the framework's Cython codebase.
 
-### Using Fee Models in Practice
+### Using fee models in practice
 
 To use any fee model in your trading system, whether built-in or custom, you specify it when setting up the venue.
 Here's an example using the custom per-contract fee model:
@@ -300,14 +312,14 @@ When implementing custom fee models, ensure they accurately reflect the fee stru
 Even small discrepancies in commission calculations can significantly impact strategy performance metrics during backtesting.
 :::
 
-## Additional info
+### Additional info
 
 The raw instrument definition as provided by the exchange (typically from JSON serialized data) is also
 included as a generic Python dictionary. This is to retain all information
 which is not necessarily part of the unified Nautilus API, and is available to the user
 at runtime by calling the `.info` property.
 
-## Synthetic Instruments
+## Synthetic instruments
 
 The platform supports creating customized synthetic instruments, which can generate synthetic quote
 and trades. These are useful for:
@@ -386,11 +398,11 @@ The `instrument_id` for the synthetic instrument in the above example will be st
 It's also possible to update a synthetic instrument formulas at any time. The following example
 shows how to achieve this with an actor/strategy.
 
-```
+```python
 # Recover the synthetic instrument from the cache (assuming `synthetic_id` was assigned)
 synthetic = self.cache.synthetic(self._synthetic_id)
 
-# Update the formula, here is a simple example of just taking the average
+# Update the formula to take the average
 new_formula = "(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2"
 synthetic.change_formula(new_formula)
 
@@ -425,6 +437,11 @@ synthetic instruments. Despite this, caution is advised as invalid or erroneous 
 undefined behavior.
 
 :::info
-See the `SyntheticInstrument` [API reference](../../api_reference/model/instruments.md#class-syntheticinstrument-1)
+See the `SyntheticInstrument` [API reference](../api_reference/model/instruments.md#class-syntheticinstrument-1)
 for a detailed understanding of input requirements and potential exceptions.
 :::
+
+## Related guides
+
+- [Data](data.md) - Market data types for instruments.
+- [Orders](orders.md) - Orders reference instruments.

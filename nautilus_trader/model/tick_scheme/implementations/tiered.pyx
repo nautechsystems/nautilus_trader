@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -55,11 +55,20 @@ cdef class TieredTickScheme(TickScheme):
 
     @staticmethod
     def _validate_tiers(list tiers):
-        for x in tiers:
-            assert len(x) == 3, "Mappings should be list of tuples like [(start, stop, increment), ...]"
+        for i, x in enumerate(tiers):
+            if len(x) != 3:
+                raise ValueError("Mappings should be list of tuples like [(start, stop, increment), ...]")
             start, stop, incr = x
-            assert start < stop, f"Start should be less than stop (start={start}, stop={stop})"
-            assert incr <= start and incr <= stop, f"Increment should be less than start and stop ({start}, {stop}, {incr})"
+
+            if start >= stop:
+                raise ValueError(f"Tier {i}: Start should be less than stop (start={start}, stop={stop})")
+
+            if incr <= 0:
+                raise ValueError(f"Tier {i}: Increment must be positive (incr={incr})")
+
+            if incr > (stop - start):
+                raise ValueError(f"Tier {i}: Increment should be less than tier range (start={start}, stop={stop}, incr={incr})")
+
         return tiers
 
     cpdef _build_ticks(self):
@@ -68,19 +77,28 @@ cdef class TieredTickScheme(TickScheme):
         for start, stop, step in self.tiers:
             if stop == np.inf:
                 stop = start + ((self.max_ticks_per_tier + 1) * step)
+
             ticks = [Price(x, self.price_precision) for x in np.arange(start, stop, step)]
+
             if len(ticks) > self.max_ticks_per_tier+1:
                 print(f"{self.name}: too many ticks for tier ({start=}, {stop=}, {step=}, trimming to {self.max_ticks_per_tier} (from {len(ticks)})")
                 ticks = ticks[:self.max_ticks_per_tier]
+
             all_ticks.extend(ticks)
+
         return np.asarray(all_ticks)
 
     cpdef int find_tick_index(self, double value):
         cdef int idx = self.ticks.searchsorted(value)
+
+        if idx == 0:
+            return 0
+
         cdef double prev_value = self.ticks[idx - 1].as_double()
-        # print(f"Searching for {value=}, {idx=}, {prev_value=}, exact?={value == prev_value}")
-        if value == prev_value:
+
+        if abs(value - prev_value) < 1e-10:
             return idx - 1
+
         return idx
 
     cpdef Price next_ask_price(self, double value, int n=0):
@@ -101,9 +119,17 @@ cdef class TieredTickScheme(TickScheme):
         Price
 
         """
-        Condition.not_negative(n, "n")
+        if n < 0:
+            raise ValueError(f"n must be >= 0, was {n}")
+
+        if value > self.max_price.as_double():
+            return None
+
         cdef int idx = self.find_tick_index(value)
-        Condition.is_true(idx + n <= self.tick_count, f"n={n} beyond ask tick bound")
+
+        if idx + n >= self.tick_count:
+            return None
+
         return self.ticks[idx + n]
 
     cpdef Price next_bid_price(self, double value, int n=0):
@@ -124,11 +150,25 @@ cdef class TieredTickScheme(TickScheme):
         Price
 
         """
-        Condition.not_negative(n, "n")
+        if n < 0:
+            raise ValueError(f"n must be >= 0, was {n}")
+
+        if value < self.min_price.as_double() or value > self.max_price.as_double():
+            return None
+
         cdef int idx = self.find_tick_index(value)
-        Condition.is_true((idx - n) > 0, f"n={n} beyond bid tick bound")
-        if self.ticks[idx].as_double() == value:
-            return self.ticks[idx - n]
+
+        cdef double tick_value
+        if idx < self.tick_count:
+            tick_value = self.ticks[idx].as_double()
+            if abs(value - tick_value) < 1e-10:
+                if idx - n < 0:
+                    return None
+                return self.ticks[idx - n]
+
+        if idx - 1 - n < 0:
+            return None
+
         return self.ticks[idx - 1 - n]
 
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -143,7 +143,7 @@ async def main():
                 venue=Venue("BINANCE_FUTURES"),
                 api_key=None,  # 'BINANCE_API_KEY' env var
                 api_secret=None,  # 'BINANCE_API_SECRET' env var
-                account_type=BinanceAccountType.USDT_FUTURE,
+                account_type=BinanceAccountType.USDT_FUTURES,
                 base_url_http=None,  # Override with custom endpoint
                 base_url_ws=None,  # Override with custom endpoint
                 us=False,  # If client is for Binance US
@@ -167,7 +167,7 @@ async def main():
                 venue="BINANCE_FUTURES",
                 account_type="MARGIN",
                 starting_balances=["10_000 USDC", "0.005 BTC"],
-                default_leverage=Decimal("5"),
+                default_leverage=Decimal(5),
             ),
             "BINANCE_SPOT": SandboxExecutionClientConfig(
                 venue="BINANCE_SPOT",

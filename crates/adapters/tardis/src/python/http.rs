@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,7 +21,7 @@ use nautilus_model::python::instruments::instrument_any_to_pyobject;
 use pyo3::prelude::*;
 
 use crate::{
-    enums::Exchange,
+    enums::TardisExchange,
     http::{TardisHttpClient, query::InstrumentFilterBuilder},
 };
 
@@ -36,6 +36,18 @@ impl TardisHttpClient {
         normalize_symbols: bool,
     ) -> PyResult<Self> {
         Self::new(api_key, base_url, timeout_secs, normalize_symbols).map_err(to_pyruntime_err)
+    }
+
+    #[getter]
+    #[pyo3(name = "api_key")]
+    fn py_api_key(&self) -> Option<&str> {
+        self.credential().map(|c| c.api_key())
+    }
+
+    #[getter]
+    #[pyo3(name = "api_key_masked")]
+    fn py_api_key_masked(&self) -> Option<String> {
+        self.credential().map(|c| c.api_key_masked())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -57,7 +69,7 @@ impl TardisHttpClient {
         ts_init: Option<u64>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let exchange: Exchange = parse_enum(&exchange, stringify!(exchange))?;
+        let exchange: TardisExchange = parse_enum(&exchange, stringify!(exchange))?;
 
         let filter = InstrumentFilterBuilder::default()
             .base_currency(base_currency)
@@ -89,7 +101,7 @@ impl TardisHttpClient {
                 .await
                 .map_err(to_pyruntime_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let mut py_instruments = Vec::new();
                 for inst in instruments {
                     py_instruments.push(instrument_any_to_pyobject(py, inst)?);

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -199,7 +199,13 @@ cdef class FixedRiskSizer(PositionSizer):
             # Round position size to nearest unit batch size
             position_size_batched = (position_size_batched // unit_batch_size) * unit_batch_size
 
-        # Limit size on max trade size
-        final_size: Decimal = min(position_size_batched, self.instrument.max_quantity)
+        # Limit size on max trade size (if configured)
+        if self.instrument.max_quantity is not None:
+            final_size: Decimal = min(
+                position_size_batched,
+                self.instrument.max_quantity.as_decimal(),
+            )
+        else:
+            final_size: Decimal = position_size_batched
 
-        return Quantity(final_size, precision=self.instrument.size_precision)
+        return self.instrument.make_qty(final_size)

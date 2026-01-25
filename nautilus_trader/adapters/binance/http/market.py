@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -487,14 +487,18 @@ class BinanceTickerPriceHttp(BinanceHttpEndpoint):
     Endpoint of latest price for a symbol or symbols.
 
     `GET /api/v3/ticker/price`
-    `GET /fapi/v1/ticker/price`
+    `GET /fapi/v2/ticker/price`
     `GET /dapi/v1/ticker/price`
 
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#symbol-price-ticker
-    https://binance-docs.github.io/apidocs/futures/en/#symbol-price-ticker
+    https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Symbol-Price-Ticker-v2
     https://binance-docs.github.io/apidocs/delivery/en/#symbol-price-ticker
+
+    Notes
+    -----
+    USDT-margined futures uses v2 (v1 deprecated). Coin-margined remains on v1.
 
     """
 
@@ -506,7 +510,9 @@ class BinanceTickerPriceHttp(BinanceHttpEndpoint):
         methods = {
             HttpMethod.GET: BinanceSecurityType.NONE,
         }
-        url_path = base_endpoint + "ticker/price"
+        # Only USDT-margined futures has v2, coin-margined still uses v1
+        endpoint = base_endpoint.replace("/fapi/v1/", "/fapi/v2/")
+        url_path = endpoint + "ticker/price"
         super().__init__(
             client,
             methods,
@@ -566,7 +572,7 @@ class BinanceTickerBookHttp(BinanceHttpEndpoint):
         methods = {
             HttpMethod.GET: BinanceSecurityType.NONE,
         }
-        url_path = base_endpoint + "ticker/price"
+        url_path = base_endpoint + "ticker/bookTicker"
         super().__init__(
             client,
             methods,
@@ -629,9 +635,9 @@ class BinanceMarketHttpAPI:
 
         if account_type.is_spot_or_margin:
             self.base_endpoint = "/api/v3/"
-        elif account_type == BinanceAccountType.USDT_FUTURE:
+        elif account_type == BinanceAccountType.USDT_FUTURES:
             self.base_endpoint = "/fapi/v1/"
-        elif account_type == BinanceAccountType.COIN_FUTURE:
+        elif account_type == BinanceAccountType.COIN_FUTURES:
             self.base_endpoint = "/dapi/v1/"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
@@ -711,7 +717,6 @@ class BinanceMarketHttpAPI:
     async def request_trade_ticks(
         self,
         instrument_id: InstrumentId,
-        ts_init: int,
         limit: int | None = None,
     ) -> list[TradeTick]:
         """
@@ -721,7 +726,6 @@ class BinanceMarketHttpAPI:
         return [
             trade.parse_to_trade_tick(
                 instrument_id=instrument_id,
-                ts_init=ts_init,
             )
             for trade in trades
         ]
@@ -750,7 +754,6 @@ class BinanceMarketHttpAPI:
     async def request_agg_trade_ticks(
         self,
         instrument_id: InstrumentId,
-        ts_init: int,
         limit: int | None = 1000,
         start_time: int | None = None,
         end_time: int | None = None,
@@ -806,7 +809,6 @@ class BinanceMarketHttpAPI:
                 ticks.append(
                     trade.parse_to_trade_tick(
                         instrument_id=instrument_id,
-                        ts_init=ts_init,
                     ),
                 )
 
@@ -851,7 +853,6 @@ class BinanceMarketHttpAPI:
     async def request_historical_trade_ticks(
         self,
         instrument_id: InstrumentId,
-        ts_init: int,
         limit: int | None = None,
         from_id: int | None = None,
     ) -> list[TradeTick]:
@@ -866,7 +867,6 @@ class BinanceMarketHttpAPI:
         return [
             trade.parse_to_trade_tick(
                 instrument_id=instrument_id,
-                ts_init=ts_init,
             )
             for trade in historical_trades
         ]
@@ -895,7 +895,6 @@ class BinanceMarketHttpAPI:
     async def request_binance_bars(
         self,
         bar_type: BarType,
-        ts_init: int,
         interval: BinanceKlineInterval,
         limit: int | None = None,
         start_time: int | None = None,
@@ -914,9 +913,7 @@ class BinanceMarketHttpAPI:
                 start_time=start_time,
                 end_time=end_time,
             )
-            bars: list[BinanceBar] = [
-                kline.parse_to_binance_bar(bar_type, ts_init) for kline in klines
-            ]
+            bars: list[BinanceBar] = [kline.parse_to_binance_bar(bar_type) for kline in klines]
             all_bars.extend(bars)
 
             # Update the start_time to fetch the next set of bars

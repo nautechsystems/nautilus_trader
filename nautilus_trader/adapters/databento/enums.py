@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,6 +26,10 @@ class DatabentoSchema(Enum):
     MBP_10 = "mbp-10"
     BBO_1S = "bbo-1s"
     BBO_1M = "bbo-1m"
+    CMBP_1 = "cmbp-1"
+    CBBO_1S = "cbbo-1s"
+    CBBO_1M = "cbbo-1m"
+    TCBBO = "tcbbo"
     TBBO = "tbbo"
     TRADES = "trades"
     OHLCV_1S = "ohlcv-1s"

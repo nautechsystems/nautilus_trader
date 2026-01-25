@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -37,7 +37,6 @@ __all__ = [
     "ComponentTrigger",
     "LogColor",
     "LogLevel",
-    "UpdateCatalogMode",
     "component_state_from_str",
     "component_state_to_str",
     "component_trigger_from_str",
@@ -47,17 +46,6 @@ __all__ = [
 ]
 
 # mypy: disable-error-code=no-redef
-
-
-@unique
-class UpdateCatalogMode(Enum):
-    """
-    Represents a catalog update mode.
-    """
-
-    MODIFY = 0
-    NEWFILE = 1
-    OVERWRITE = 2
 
 
 if TYPE_CHECKING:

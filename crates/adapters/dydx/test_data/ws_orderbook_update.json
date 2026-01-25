@@ -1,0 +1,18 @@
+{
+  "type": "channel_data",
+  "connection_id": "conn-abc123-def456-ghi789",
+  "message_id": 2,
+  "id": "BTC-USD",
+  "channel": "v4_orderbook",
+  "version": "1.0.0",
+  "contents": {
+    "bids": [
+      ["43240.0", "2.0"],
+      ["43238.0", "1.5"]
+    ],
+    "asks": [
+      ["43250.0", "0.0"],
+      ["43252.0", "3.0"]
+    ]
+  }
+}

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,11 +17,13 @@ from __future__ import annotations
 
 from nautilus_trader.core.nautilus_pyo3 import DatabentoImbalance
 from nautilus_trader.core.nautilus_pyo3 import DatabentoStatistics
+from nautilus_trader.core.nautilus_pyo3 import DatabentoSubscriptionAck
 
 
 __all__ = [
     "DatabentoImbalance",
     "DatabentoStatistics",
+    "DatabentoSubscriptionAck",
 ]
 
 Dataset = str

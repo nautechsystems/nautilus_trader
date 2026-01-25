@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -44,9 +44,10 @@ BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
 class TestLiveExecutionPerformance:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
+        self.loop = request.getfixturevalue("event_loop")
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
@@ -110,6 +111,8 @@ class TestLiveExecutionPerformance:
             clock=self.clock,
         )
 
+        return
+
     def submit_order(self):
         order = self.strategy.order_factory.market(
             BTCUSDT_BINANCE.id,
@@ -119,7 +122,7 @@ class TestLiveExecutionPerformance:
 
         self.strategy.submit_order(order)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     def test_execute_command(self, benchmark):
         order = self.strategy.order_factory.market(
             BTCUSDT_BINANCE.id,
@@ -141,7 +144,7 @@ class TestLiveExecutionPerformance:
 
         benchmark(execute_command)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_order(self, benchmark):
         self.exec_engine.start()
         await asyncio.sleep(1)
@@ -157,7 +160,7 @@ class TestLiveExecutionPerformance:
 
         benchmark(submit_order)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_order_end_to_end(self, benchmark):
         self.exec_engine.start()
         await asyncio.sleep(1)

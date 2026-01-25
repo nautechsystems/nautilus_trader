@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -190,9 +190,6 @@ impl LinearRegression {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use nautilus_model::data::Bar;
@@ -493,7 +490,7 @@ mod tests {
     #[rstest(
         period, value,
         case(8, 5.0),
-        case(16, -3.1415)
+        case(16, -std::f64::consts::PI)
     )]
     fn constant_non_zero_series(period: usize, value: f64) {
         let mut lr = LinearRegression::new(period);
@@ -505,7 +502,7 @@ mod tests {
         assert!(lr.initialized());
         assert!(lr.slope.abs() < EPS);
         assert!((lr.intercept - value).abs() < EPS);
-        assert_eq!(lr.degree, 0.0);
+        assert!(lr.degree.abs() < EPS);
         assert!(lr.r2.is_nan());
         assert!((lr.cfo).abs() < EPS);
         assert!((lr.value - value).abs() < EPS);
@@ -589,7 +586,7 @@ mod tests {
         const P: usize = 32;
         let mut lr = LinearRegression::new(P);
         for x in 1..=P {
-            let noise = if x % 2 == 0 { 0.5 } else { -0.5 };
+            let noise = if x.is_multiple_of(2) { 0.5 } else { -0.5 };
             lr.update_raw(3.0f64.mul_add(x as f64, noise));
         }
         assert!(lr.r2 > 0.0 && lr.r2 < 1.0);

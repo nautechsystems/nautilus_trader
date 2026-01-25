@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -77,7 +77,9 @@ def serialize(state: AccountState) -> RecordBatch:
                 "margin_initial": margin.initial.as_double(),
                 "margin_maintenance": margin.maintenance.as_double(),
                 "margin_currency": margin.currency.code,
-                "margin_instrument_id": margin.instrument_id.value,
+                "margin_instrument_id": (
+                    margin.instrument_id.value if margin.instrument_id is not None else None
+                ),
             },
         )
 

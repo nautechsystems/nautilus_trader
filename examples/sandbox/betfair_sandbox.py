@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -109,7 +109,8 @@ async def main(instrument_config: BetfairInstrumentProviderConfig) -> TradingNod
     finally:
         await node.stop_async()
         await asyncio.sleep(1)
-        return node
+
+    return node
 
 
 if __name__ == "__main__":

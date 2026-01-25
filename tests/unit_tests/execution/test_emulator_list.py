@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,7 +18,7 @@ from decimal import Decimal
 import pandas as pd
 import pytest
 
-from nautilus_trader.backtest.exchange import SimulatedExchange
+from nautilus_trader.backtest.engine import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import MakerTakerFeeModel
@@ -1425,7 +1425,7 @@ class TestOrderEmulatorWithOrderLists:
         self.exchange.process(0)
 
         # Act
-        new_quantity = Quantity.from_int(5)
+        new_quantity = ETHUSDT_PERP_BINANCE.make_qty(5)
         tp_order = self.cache.order(bracket.orders[2].client_order_id)
         strategy.modify_order(tp_order, new_quantity)
         self.exchange.process(0)
@@ -1504,7 +1504,7 @@ class TestOrderEmulatorWithOrderLists:
         self.exchange.process(0)
 
         # Act
-        new_quantity = Quantity.from_int(5)
+        new_quantity = ETHUSDT_PERP_BINANCE.make_qty(5)
         sl_order = self.cache.order(bracket.orders[1].client_order_id)
         strategy.modify_order(sl_order, new_quantity)
         self.exchange.process(0)

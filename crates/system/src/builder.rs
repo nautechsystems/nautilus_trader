@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,6 +12,8 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+use std::time::Duration;
 
 use nautilus_common::{cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig};
 use nautilus_core::UUID4;
@@ -36,12 +38,12 @@ pub struct NautilusKernelBuilder {
     load_state: bool,
     save_state: bool,
     logging: Option<LoggerConfig>,
-    timeout_connection: u32,
-    timeout_reconciliation: u32,
-    timeout_portfolio: u32,
-    timeout_disconnection: u32,
-    timeout_post_stop: u32,
-    timeout_shutdown: u32,
+    timeout_connection: Duration,
+    timeout_reconciliation: Duration,
+    timeout_portfolio: Duration,
+    timeout_disconnection: Duration,
+    delay_post_stop: Duration,
+    timeout_shutdown: Duration,
     cache: Option<CacheConfig>,
     data_engine: Option<DataEngineConfig>,
     risk_engine: Option<RiskEngineConfig>,
@@ -61,12 +63,12 @@ impl NautilusKernelBuilder {
             load_state: true,
             save_state: true,
             logging: None,
-            timeout_connection: 60,
-            timeout_reconciliation: 30,
-            timeout_portfolio: 10,
-            timeout_disconnection: 10,
-            timeout_post_stop: 10,
-            timeout_shutdown: 5,
+            timeout_connection: Duration::from_secs(60),
+            timeout_reconciliation: Duration::from_secs(30),
+            timeout_portfolio: Duration::from_secs(10),
+            timeout_disconnection: Duration::from_secs(10),
+            delay_post_stop: Duration::from_secs(10),
+            timeout_shutdown: Duration::from_secs(5),
             cache: None,
             data_engine: None,
             risk_engine: None,
@@ -105,43 +107,43 @@ impl NautilusKernelBuilder {
 
     /// Set the connection timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_connection(mut self, timeout: u32) -> Self {
-        self.timeout_connection = timeout;
+    pub const fn with_timeout_connection(mut self, timeout_secs: u64) -> Self {
+        self.timeout_connection = Duration::from_secs(timeout_secs);
         self
     }
 
     /// Set the reconciliation timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_reconciliation(mut self, timeout: u32) -> Self {
-        self.timeout_reconciliation = timeout;
+    pub const fn with_timeout_reconciliation(mut self, timeout_secs: u64) -> Self {
+        self.timeout_reconciliation = Duration::from_secs(timeout_secs);
         self
     }
 
     /// Set the portfolio initialization timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_portfolio(mut self, timeout: u32) -> Self {
-        self.timeout_portfolio = timeout;
+    pub const fn with_timeout_portfolio(mut self, timeout_secs: u64) -> Self {
+        self.timeout_portfolio = Duration::from_secs(timeout_secs);
         self
     }
 
     /// Set the disconnection timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_disconnection(mut self, timeout: u32) -> Self {
-        self.timeout_disconnection = timeout;
+    pub const fn with_timeout_disconnection(mut self, timeout_secs: u64) -> Self {
+        self.timeout_disconnection = Duration::from_secs(timeout_secs);
         self
     }
 
-    /// Set the post-stop timeout in seconds.
+    /// Set the post-stop delay in seconds.
     #[must_use]
-    pub const fn with_timeout_post_stop(mut self, timeout: u32) -> Self {
-        self.timeout_post_stop = timeout;
+    pub const fn with_delay_post_stop(mut self, delay_secs: u64) -> Self {
+        self.delay_post_stop = Duration::from_secs(delay_secs);
         self
     }
 
     /// Set the shutdown timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_shutdown(mut self, timeout: u32) -> Self {
-        self.timeout_shutdown = timeout;
+    pub const fn with_timeout_shutdown(mut self, timeout_secs: u64) -> Self {
+        self.timeout_shutdown = Duration::from_secs(timeout_secs);
         self
     }
 
@@ -168,7 +170,7 @@ impl NautilusKernelBuilder {
 
     /// Set the execution engine configuration.
     #[must_use]
-    pub const fn with_exec_engine_config(mut self, config: ExecutionEngineConfig) -> Self {
+    pub fn with_exec_engine_config(mut self, config: ExecutionEngineConfig) -> Self {
         self.exec_engine = Some(config);
         self
     }
@@ -197,7 +199,7 @@ impl NautilusKernelBuilder {
             timeout_reconciliation: self.timeout_reconciliation,
             timeout_portfolio: self.timeout_portfolio,
             timeout_disconnection: self.timeout_disconnection,
-            timeout_post_stop: self.timeout_post_stop,
+            delay_post_stop: self.delay_post_stop,
             timeout_shutdown: self.timeout_shutdown,
             cache: self.cache,
             msgbus: None, // msgbus config - not exposed in builder yet
@@ -205,7 +207,7 @@ impl NautilusKernelBuilder {
             risk_engine: self.risk_engine,
             exec_engine: self.exec_engine,
             portfolio: self.portfolio,
-            streaming: None, // streaming config - not exposed in builder yet
+            streaming: None,
         };
 
         NautilusKernel::new(self.name, config)
@@ -222,10 +224,6 @@ impl Default for NautilusKernelBuilder {
         )
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
@@ -261,14 +259,12 @@ mod tests {
         assert_eq!(builder.instance_id, Some(instance_id));
         assert!(!builder.load_state);
         assert!(!builder.save_state);
-        assert_eq!(builder.timeout_connection, 30);
+        assert_eq!(builder.timeout_connection, Duration::from_secs(30));
     }
 
+    #[cfg(feature = "python")]
     #[rstest]
     fn test_builder_build() {
-        #[cfg(feature = "python")]
-        pyo3::prepare_freethreaded_python();
-
         let result = NautilusKernelBuilder::default().build();
         assert!(result.is_ok());
 
@@ -288,5 +284,49 @@ mod tests {
 
         assert!(builder.cache.is_some());
         assert!(builder.data_engine.is_some());
+    }
+
+    #[rstest]
+    fn test_builder_with_all_engine_configs() {
+        let builder = NautilusKernelBuilder::default()
+            .with_data_engine_config(DataEngineConfig::default())
+            .with_risk_engine_config(RiskEngineConfig::default())
+            .with_exec_engine_config(ExecutionEngineConfig::default())
+            .with_portfolio_config(PortfolioConfig::default());
+
+        assert!(builder.data_engine.is_some());
+        assert!(builder.risk_engine.is_some());
+        assert!(builder.exec_engine.is_some());
+        assert!(builder.portfolio.is_some());
+    }
+
+    #[rstest]
+    fn test_builder_with_all_timeouts() {
+        let builder = NautilusKernelBuilder::default()
+            .with_timeout_connection(10)
+            .with_timeout_reconciliation(20)
+            .with_timeout_portfolio(30)
+            .with_timeout_disconnection(40)
+            .with_delay_post_stop(50)
+            .with_timeout_shutdown(60);
+
+        assert_eq!(builder.timeout_connection, Duration::from_secs(10));
+        assert_eq!(builder.timeout_reconciliation, Duration::from_secs(20));
+        assert_eq!(builder.timeout_portfolio, Duration::from_secs(30));
+        assert_eq!(builder.timeout_disconnection, Duration::from_secs(40));
+        assert_eq!(builder.delay_post_stop, Duration::from_secs(50));
+        assert_eq!(builder.timeout_shutdown, Duration::from_secs(60));
+    }
+
+    #[rstest]
+    fn test_builder_default_timeouts() {
+        let builder = NautilusKernelBuilder::default();
+
+        assert_eq!(builder.timeout_connection, Duration::from_secs(60));
+        assert_eq!(builder.timeout_reconciliation, Duration::from_secs(30));
+        assert_eq!(builder.timeout_portfolio, Duration::from_secs(10));
+        assert_eq!(builder.timeout_disconnection, Duration::from_secs(10));
+        assert_eq!(builder.delay_post_stop, Duration::from_secs(10));
+        assert_eq!(builder.timeout_shutdown, Duration::from_secs(5));
     }
 }

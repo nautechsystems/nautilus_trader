@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,16 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A high-performance, universal, extensible adapter for ingesting DeFi data from decentralized exchanges (DEXs),
-//! liquidity pools, and on-chain events. It enables you to power analytics pipelines and trading strategies
-//! with real-time and historical on-chain data.
+//! Blockchain data adapter for [NautilusTrader](http://nautilustrader.io).
+//!
+//! The `nautilus-blockchain` crate provides a high-performance, universal, extensible adapter for ingesting
+//! DeFi data from decentralized exchanges (DEXs), liquidity pools, and on-chain events.
+//! It enables you to power analytics pipelines and trading strategies with real-time and historical
+//! on-chain data.
+//!
+//! # Platform
 //!
 //! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.
 //!
-//! # Feature flags
+//! # Feature Flags
 //!
 //! This crate provides feature flags to control source code inclusion during compilation,
 //! depending on the intended use case, i.e. whether to provide Python bindings
@@ -31,6 +36,8 @@
 //!
 //! - `hypersync`: Enables the [HyperSync](https://envio.dev/#hypersync) client integration.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `extension-module`: Builds as a Python extension module (used with `python`).
+//! - `turmoil`: Enables deterministic network simulation testing with [turmoil](https://github.com/tokio-rs/turmoil).
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
@@ -41,12 +48,18 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod config;
+pub mod constants;
 pub mod contracts;
+pub mod decode;
 pub mod events;
+pub mod math;
 pub mod rpc;
 
 #[cfg(feature = "hypersync")]
 pub mod cache;
+
+#[cfg(feature = "hypersync")]
+pub mod execution;
 
 #[cfg(feature = "hypersync")]
 pub mod data;
@@ -59,4 +72,9 @@ pub mod factories;
 
 #[cfg(feature = "hypersync")]
 pub mod hypersync;
-pub mod validation;
+
+#[cfg(feature = "hypersync")]
+pub mod services;
+
+#[cfg(feature = "python")]
+pub mod python;

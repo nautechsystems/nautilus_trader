@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,14 +16,42 @@
 Create fixtures for commonly used objects.
 """
 
+import sys
+
 import pytest
 
-from nautilus_trader.adapters.dydx.common.constants import DYDX_VENUE
-from nautilus_trader.adapters.dydx.common.symbol import DYDXSymbol
-from nautilus_trader.adapters.dydx.http.client import DYDXHttpClient
-from nautilus_trader.common.component import LiveClock
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Venue
+
+def pytest_ignore_collect(collection_path, config):
+    """
+    Prevent collection of test files on Python 3.14.
+    """
+    if sys.version_info >= (3, 14):
+        return True
+    return False
+
+
+# Add pytestmark to skip all dYdX tests on Python 3.14 due to coincurve compatibility
+pytestmark = pytest.mark.skipif(
+    sys.version_info >= (3, 14),
+    reason="dYdX adapter requires Python < 3.14 (coincurve incompatibility)",
+)
+
+# Skip imports if Python 3.14+ to avoid ImportError during collection
+if sys.version_info < (3, 14):
+    from nautilus_trader.adapters.dydx.common.constants import DYDX_VENUE
+    from nautilus_trader.adapters.dydx.common.symbol import DYDXSymbol
+    from nautilus_trader.adapters.dydx.http.client import DYDXHttpClient
+    from nautilus_trader.common.component import LiveClock
+    from nautilus_trader.model.identifiers import InstrumentId
+    from nautilus_trader.model.identifiers import Venue
+else:
+    # Dummy imports for Python 3.14+ to avoid NameError
+    DYDX_VENUE = None
+    DYDXSymbol = None
+    DYDXHttpClient = None
+    LiveClock = None
+    InstrumentId = None
+    Venue = None
 
 
 @pytest.fixture
@@ -61,7 +89,7 @@ def http_client(live_clock: LiveClock) -> DYDXHttpClient:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def venue() -> Venue:
     """
     Create a stub dYdX venue.
@@ -69,21 +97,21 @@ def venue() -> Venue:
     return DYDX_VENUE
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_client():
     pass
 
 
-@pytest.fixture()
+@pytest.fixture
 def exec_client():
     pass
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument():
     pass
 
 
-@pytest.fixture()
+@pytest.fixture
 def account_state():
     pass

@@ -1,0 +1,12 @@
+{
+  "type": "channel_data",
+  "connection_id": "conn-abc123-def456-ghi789",
+  "message_id": 7,
+  "id": "v4_block_height",
+  "channel": "v4_block_height",
+  "version": "1.0.0",
+  "contents": {
+    "blockHeight": "12345679",
+    "time": "2024-01-01T00:00:01.000Z"
+  }
+}

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,9 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
+//! Base traits and common types shared by all account implementations.
+//!
+//! Concrete account types (`CashAccount`, `MarginAccount`, etc.) build on the abstractions defined
+//! in this file.
 
-use nautilus_core::{UnixNanos, datetime::secs_to_nanos};
+use ahash::AHashMap;
+use nautilus_core::{UnixNanos, datetime::secs_to_nanos_unchecked};
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Serialize};
 
@@ -39,16 +43,16 @@ pub struct BaseAccount {
     pub base_currency: Option<Currency>,
     pub calculate_account_state: bool,
     pub events: Vec<AccountState>,
-    pub commissions: HashMap<Currency, f64>,
-    pub balances: HashMap<Currency, AccountBalance>,
-    pub balances_starting: HashMap<Currency, Money>,
+    pub commissions: AHashMap<Currency, f64>,
+    pub balances: AHashMap<Currency, AccountBalance>,
+    pub balances_starting: AHashMap<Currency, Money>,
 }
 
 impl BaseAccount {
     /// Creates a new [`BaseAccount`] instance.
     pub fn new(event: AccountState, calculate_account_state: bool) -> Self {
-        let mut balances_starting: HashMap<Currency, Money> = HashMap::new();
-        let mut balances: HashMap<Currency, AccountBalance> = HashMap::new();
+        let mut balances_starting: AHashMap<Currency, Money> = AHashMap::new();
+        let mut balances: AHashMap<Currency, AccountBalance> = AHashMap::new();
         event.balances.iter().for_each(|balance| {
             balances_starting.insert(balance.currency, balance.total);
             balances.insert(balance.currency, *balance);
@@ -59,7 +63,7 @@ impl BaseAccount {
             base_currency: event.base_currency,
             calculate_account_state,
             events: vec![event],
-            commissions: HashMap::new(),
+            commissions: AHashMap::new(),
             balances,
             balances_starting,
         }
@@ -93,7 +97,7 @@ impl BaseAccount {
     }
 
     #[must_use]
-    pub fn base_balances_total(&self) -> HashMap<Currency, Money> {
+    pub fn base_balances_total(&self) -> AHashMap<Currency, Money> {
         self.balances
             .iter()
             .map(|(currency, balance)| (*currency, balance.total))
@@ -115,7 +119,7 @@ impl BaseAccount {
     }
 
     #[must_use]
-    pub fn base_balances_free(&self) -> HashMap<Currency, Money> {
+    pub fn base_balances_free(&self) -> AHashMap<Currency, Money> {
         self.balances
             .iter()
             .map(|(currency, balance)| (*currency, balance.free))
@@ -137,7 +141,7 @@ impl BaseAccount {
     }
 
     #[must_use]
-    pub fn base_balances_locked(&self) -> HashMap<Currency, Money> {
+    pub fn base_balances_locked(&self) -> AHashMap<Currency, Money> {
         self.balances
             .iter()
             .map(|(currency, balance)| (*currency, balance.locked))
@@ -151,19 +155,13 @@ impl BaseAccount {
 
     /// Updates the account balances with the provided list of `AccountBalance` instances.
     ///
-    /// # Panics
-    ///
-    /// Panics if any updated `AccountBalance` has a total less than zero.
-    pub fn update_balances(&mut self, balances: Vec<AccountBalance>) {
+    /// Note: This method does NOT validate negative balances. Derived account types
+    /// (CashAccount, MarginAccount) should perform their own validation in apply():
+    /// - MarginAccount: allows negative balances (normal for margin trading)
+    /// - CashAccount: rejects negative unless `allow_borrowing` is true
+    pub fn update_balances(&mut self, balances: &[AccountBalance]) {
         for balance in balances {
-            // clone real balance without reference
-            if balance.total.raw < 0 {
-                // TODO raise AccountBalanceNegative event
-                panic!("Cannot update balances with total less than 0.0")
-            } else {
-                // clear asset balance
-                self.balances.insert(balance.currency, balance);
-            }
+            self.balances.insert(balance.currency, *balance);
         }
     }
 
@@ -179,8 +177,25 @@ impl BaseAccount {
             .insert(currency, total_commissions + commission.as_f64());
     }
 
+    /// Returns the total commission for the specified currency.
+    #[must_use]
+    pub fn commission(&self, currency: &Currency) -> Option<Money> {
+        self.commissions
+            .get(currency)
+            .map(|&amount| Money::new(amount, *currency))
+    }
+
+    /// Returns a map of all commissions by currency.
+    #[must_use]
+    pub fn commissions(&self) -> AHashMap<Currency, Money> {
+        self.commissions
+            .iter()
+            .map(|(currency, &amount)| (*currency, Money::new(amount, *currency)))
+            .collect()
+    }
+
     pub fn base_apply(&mut self, event: AccountState) {
-        self.update_balances(event.balances.clone());
+        self.update_balances(&event.balances);
         self.events.push(event);
     }
 
@@ -192,7 +207,7 @@ impl BaseAccount {
     ///
     /// Panics if the purging implementation is changed and all events are purged.
     pub fn base_purge_account_events(&mut self, ts_now: UnixNanos, lookback_secs: u64) {
-        let lookback_ns = UnixNanos::from(secs_to_nanos(lookback_secs as f64));
+        let lookback_ns = UnixNanos::from(secs_to_nanos_unchecked(lookback_secs as f64));
 
         let mut retained_events = Vec::new();
 
@@ -237,7 +252,7 @@ impl BaseAccount {
                 .calculate_notional_value(quantity, price, use_quote_for_inverse)
                 .as_f64(),
             OrderSide::Sell => quantity.as_f64(),
-            _ => panic!("Invalid `OrderSide` in `base_calculate_balance_locked`"),
+            _ => anyhow::bail!("Invalid `OrderSide` in `base_calculate_balance_locked`: {side}"),
         };
 
         // Handle inverse
@@ -248,11 +263,18 @@ impl BaseAccount {
         } else if side == OrderSide::Sell {
             Ok(Money::new(notional, base_currency))
         } else {
-            panic!("Invalid `OrderSide` in `base_calculate_balance_locked`")
+            anyhow::bail!("Invalid `OrderSide` in `base_calculate_balance_locked`: {side}")
         }
     }
 
     /// Calculates profit and loss amounts for a filled order.
+    ///
+    /// For cash accounts, this calculates the balance impact of a fill:
+    /// - BUY: gain base currency quantity, lose quote currency notional.
+    /// - SELL: lose base currency quantity, gain quote currency notional.
+    ///
+    /// Note: Unlike betting accounts, cash accounts do NOT cap to position quantity.
+    /// The full fill quantity is used for PnL calculation.
     ///
     /// # Errors
     ///
@@ -265,53 +287,57 @@ impl BaseAccount {
         &self,
         instrument: InstrumentAny,
         fill: OrderFilled,
-        position: Option<Position>,
+        _position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
-        let mut pnls: HashMap<Currency, Money> = HashMap::new();
-        let quote_currency = instrument.quote_currency();
+        let mut pnls: AHashMap<Currency, Money> = AHashMap::new();
         let base_currency = instrument.base_currency();
 
-        let fill_px = fill.last_px.as_f64();
-        let fill_qty = position.map_or(fill.last_qty.as_f64(), |pos| {
-            pos.quantity.as_f64().min(fill.last_qty.as_f64())
-        });
+        // No quantity capping (betting accounts cap to position qty, cash accounts don't)
+        let fill_qty = fill.last_qty;
+        let fill_qty_value = fill_qty.as_f64();
+
+        let notional = instrument.calculate_notional_value(fill_qty, fill.last_px, None);
+
         if fill.order_side == OrderSide::Buy {
             if let (Some(base_currency_value), None) = (base_currency, self.base_currency) {
                 pnls.insert(
                     base_currency_value,
-                    Money::new(fill_qty, base_currency_value),
+                    Money::new(fill_qty_value, base_currency_value),
                 );
             }
             pnls.insert(
-                quote_currency,
-                Money::new(-(fill_qty * fill_px), quote_currency),
+                notional.currency,
+                Money::new(-notional.as_f64(), notional.currency),
             );
         } else if fill.order_side == OrderSide::Sell {
             if let (Some(base_currency_value), None) = (base_currency, self.base_currency) {
                 pnls.insert(
                     base_currency_value,
-                    Money::new(-fill_qty, base_currency_value),
+                    Money::new(-fill_qty_value, base_currency_value),
                 );
             }
             pnls.insert(
-                quote_currency,
-                Money::new(fill_qty * fill_px, quote_currency),
+                notional.currency,
+                Money::new(notional.as_f64(), notional.currency),
             );
         } else {
-            panic!("Invalid `OrderSide` in base_calculate_pnls")
+            anyhow::bail!(
+                "Invalid `OrderSide` in base_calculate_pnls: {}",
+                fill.order_side
+            );
         }
         Ok(pnls.into_values().collect())
     }
 
     /// Calculates commission fees for a filled order.
     ///
-    /// # Errors
-    ///
-    /// This function never returns an error (TBD).
-    ///
     /// # Panics
     ///
-    /// Panics if `liquidity_side` is `LiquiditySide::NoLiquiditySide` or otherwise invalid.
+    /// Panics if instrument fees cannot be converted to f64, or if base currency is unavailable for inverse instruments.
+    #[allow(
+        clippy::missing_errors_doc,
+        reason = "Error conditions documented inline"
+    )]
     pub fn base_calculate_commission(
         &self,
         instrument: InstrumentAny,
@@ -320,9 +346,9 @@ impl BaseAccount {
         liquidity_side: LiquiditySide,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
-        assert!(
+        anyhow::ensure!(
             liquidity_side != LiquiditySide::NoLiquiditySide,
-            "Invalid `LiquiditySide`"
+            "Invalid `LiquiditySide`: {liquidity_side}"
         );
         let notional = instrument
             .calculate_notional_value(last_qty, last_px, use_quote_for_inverse)
@@ -332,7 +358,7 @@ impl BaseAccount {
         } else if liquidity_side == LiquiditySide::Taker {
             notional * instrument.taker_fee().to_f64().unwrap()
         } else {
-            panic!("Invalid `LiquiditySide` {liquidity_side}")
+            anyhow::bail!("Invalid `LiquiditySide`: {liquidity_side}");
         };
         if instrument.is_inverse() && !use_quote_for_inverse.unwrap_or(false) {
             Ok(Money::new(commission, instrument.base_currency().unwrap()))
@@ -342,12 +368,13 @@ impl BaseAccount {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "stubs"))]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[cfg(feature = "stubs")]
-    #[test]
+    #[rstest]
     fn test_base_purge_account_events_retains_latest_when_all_purged() {
         use crate::{
             enums::AccountType,
@@ -394,7 +421,7 @@ mod tests {
         );
 
         account.base_apply(event1);
-        account.base_apply(event2.clone());
+        account.base_apply(event2);
         account.base_apply(event3.clone());
 
         assert_eq!(account.events.len(), 4);

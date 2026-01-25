@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import time
 from decimal import Decimal
 from typing import Any
 
@@ -25,6 +26,7 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderType
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTickSizeChange
+from nautilus_trader.core.stats import basis_points_as_percentage
 from nautilus_trader.model.currencies import USDC_POS
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import LiquiditySide
@@ -32,9 +34,41 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+
+
+def make_composite_trade_id(trade_id: str, venue_order_id: VenueOrderId) -> TradeId:
+    """
+    Create a composite trade_id to ensure uniqueness across multi-order fills.
+
+    When multiple orders are filled by a single market order, Polymarket sends one
+    TRADE message with a single `id` for all fills. This function creates a unique
+    trade_id for each fill by combining the original trade ID with part of the
+    venue order ID.
+
+    Format: {trade_id[:27]}-{venue_order_id[-8:]} = 36 chars (TradeId max length)
+
+    """
+    return TradeId(f"{trade_id[:27]}-{str(venue_order_id)[-8:]}")
+
+
+def validate_ethereum_address(address: str) -> None:
+    if not address.startswith("0x") or len(address) != 42:
+        raise ValueError(
+            f"Invalid Ethereum address format: {address!r}. "
+            f"Expected 0x prefix with 40 hexadecimal characters",
+        )
+    try:
+        int(address[2:], 16)
+    except ValueError as e:
+        raise ValueError(
+            f"Invalid Ethereum address format: {address!r}. "
+            f"Address contains non-hexadecimal characters",
+        ) from e
 
 
 def parse_order_side(order_side: PolymarketOrderSide) -> OrderSide:
@@ -48,7 +82,36 @@ def parse_order_side(order_side: PolymarketOrderSide) -> OrderSide:
             raise ValueError(f"invalid order side, was {order_side}")
 
 
-def parse_liquidity_side(liquidity_side: PolymarketLiquiditySide) -> OrderSide:
+def determine_order_side(
+    trader_side: PolymarketLiquiditySide,
+    trade_side: PolymarketOrderSide,
+    taker_asset_id: str,
+    maker_asset_id: str,
+) -> OrderSide:
+    """
+    Determine the order side for a fill based on trader role and asset matching.
+
+    Polymarket uses a unified order book where complementary tokens (YES/NO) can match
+    across assets. This means a BUY YES can match with a BUY NO (cross-asset), not just
+    with a SELL YES (same-asset).
+
+    """
+    order_side = parse_order_side(trade_side)
+    if trader_side == PolymarketLiquiditySide.TAKER:
+        return order_side
+
+    # For MAKER: determine side based on whether assets match
+    is_cross_asset = maker_asset_id != taker_asset_id
+
+    if is_cross_asset:
+        # Cross-asset match: both sides are the same
+        return order_side
+    else:
+        # Same-asset match: sides are opposite
+        return OrderSide.BUY if order_side == OrderSide.SELL else OrderSide.SELL
+
+
+def parse_liquidity_side(liquidity_side: PolymarketLiquiditySide) -> LiquiditySide:
     match liquidity_side:
         case PolymarketLiquiditySide.MAKER:
             return LiquiditySide.MAKER
@@ -59,7 +122,7 @@ def parse_liquidity_side(liquidity_side: PolymarketLiquiditySide) -> OrderSide:
             raise ValueError(f"invalid liquidity side, was {liquidity_side}")
 
 
-def parse_time_in_force(order_type: PolymarketOrderType) -> OrderSide:
+def parse_time_in_force(order_type: PolymarketOrderType) -> TimeInForce:
     match order_type:
         case PolymarketOrderType.GTC:
             return TimeInForce.GTC
@@ -67,6 +130,8 @@ def parse_time_in_force(order_type: PolymarketOrderType) -> OrderSide:
             return TimeInForce.GTD
         case PolymarketOrderType.FOK:
             return TimeInForce.FOK
+        case PolymarketOrderType.FAK:
+            return TimeInForce.IOC
         case _:
             # Theoretically unreachable but retained to keep the match exhaustive
             raise ValueError(f"invalid order type, was {order_type}")
@@ -74,21 +139,21 @@ def parse_time_in_force(order_type: PolymarketOrderType) -> OrderSide:
 
 def parse_order_status(order_status: PolymarketOrderStatus) -> OrderStatus:
     match order_status:
-        case PolymarketOrderStatus.UNMATCHED:
+        case PolymarketOrderStatus.INVALID | PolymarketOrderStatus.UNMATCHED:
             return OrderStatus.REJECTED
         case PolymarketOrderStatus.LIVE | PolymarketOrderStatus.DELAYED:
             return OrderStatus.ACCEPTED
-        case PolymarketOrderStatus.CANCELED:
+        case PolymarketOrderStatus.CANCELED | PolymarketOrderStatus.CANCELED_MARKET_RESOLVED:
             return OrderStatus.CANCELED
         case PolymarketOrderStatus.MATCHED:
             return OrderStatus.FILLED
 
 
-def parse_instrument(
+def parse_polymarket_instrument(
     market_info: dict[str, Any],
     token_id: str,
     outcome: str,
-    ts_init: int,
+    ts_init: int | None = None,
 ) -> BinaryOption:
     instrument_id = get_polymarket_instrument_id(str(market_info["condition_id"]), token_id)
     raw_symbol = Symbol(get_polymarket_token_id(instrument_id))
@@ -103,10 +168,13 @@ def parse_instrument(
     if end_date_iso:
         expiration_ns = pd.Timestamp(end_date_iso).value
     else:
-        expiration_ns = 0
+        # end_date_iso can be missing in some conditions that are part of an event that has it
+        expiration_ns = (pd.Timestamp.now(tz="UTC") + pd.DateOffset(years=10)).value
 
     maker_fee = Decimal(str(market_info["maker_base_fee"]))
     taker_fee = Decimal(str(market_info["taker_base_fee"]))
+
+    ts_init = ts_init if ts_init is not None else time.time_ns()
 
     return BinaryOption(
         instrument_id=instrument_id,
@@ -159,3 +227,32 @@ def update_instrument(
         ts_init=ts_init,
         info=instrument.info,
     )
+
+
+def calculate_commission(
+    quantity: Decimal,
+    price: Decimal,
+    fee_rate_bps: Decimal,
+) -> float:
+    """
+    Calculate commission from trade parameters and fee rate.
+
+    Polymarket rounds fees to 4 decimal places (0.0001 USDC minimum).
+
+    Parameters
+    ----------
+    quantity : Decimal
+        The fill quantity.
+    price : Decimal
+        The fill price.
+    fee_rate_bps : Decimal
+        The fee rate in basis points.
+
+    Returns
+    -------
+    float
+        The commission amount rounded to 4 decimal places.
+
+    """
+    commission = float(quantity * price) * basis_points_as_percentage(fee_rate_bps)
+    return round(commission, 4)

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,6 +19,18 @@ use nautilus_infrastructure::sql::pg::{
 
 use crate::opt::{DatabaseCommand, DatabaseOpt};
 
+/// Executes database management commands for PostgreSQL operations.
+///
+/// This function handles database initialization, schema setup, and database
+/// dropping operations based on the provided command options.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Database connection fails
+/// - Schema initialization fails
+/// - Database dropping operation fails
+/// - Any PostgreSQL operation encounters an error
 pub async fn run_database_command(opt: DatabaseOpt) -> anyhow::Result<()> {
     let command = opt.command.clone();
 
@@ -31,11 +43,14 @@ pub async fn run_database_command(opt: DatabaseOpt) -> anyhow::Result<()> {
                 config.password,
                 config.database,
             );
-            let pg = connect_pg(pg_connect_options.clone().into()).await?;
             log::info!(
-                "Connected with Postgres on url: {}",
+                "Connecting to Postgres at {}",
                 pg_connect_options.connection_string()
             );
+
+            let pg = connect_pg(pg_connect_options.clone().into()).await?;
+            log::info!("Connected");
+
             init_postgres(
                 &pg,
                 pg_connect_options.database,
@@ -52,11 +67,14 @@ pub async fn run_database_command(opt: DatabaseOpt) -> anyhow::Result<()> {
                 config.password,
                 config.database,
             );
-            let pg = connect_pg(pg_connect_options.clone().into()).await?;
             log::info!(
-                "Connected with Postgres on url: {}",
+                "Connecting to Postgres at {}",
                 pg_connect_options.connection_string()
             );
+
+            let pg = connect_pg(pg_connect_options.clone().into()).await?;
+            log::info!("Connected");
+
             drop_postgres(&pg, pg_connect_options.database).await?;
         }
     }

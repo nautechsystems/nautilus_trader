@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -401,6 +401,10 @@ impl Order for StopLimitOrder {
         self.leaves_qty
     }
 
+    fn overfill_qty(&self) -> Quantity {
+        self.overfill_qty
+    }
+
     fn avg_px(&self) -> Option<f64> {
         self.avg_px
     }
@@ -453,9 +457,21 @@ impl Order for StopLimitOrder {
         if let OrderEventAny::Updated(ref event) = event {
             self.update(event);
         };
+
         let is_order_filled = matches!(event, OrderEventAny::Filled(_));
+        let is_order_triggered = matches!(event, OrderEventAny::Triggered(_));
+        let ts_event = if is_order_triggered {
+            Some(event.ts_event())
+        } else {
+            None
+        };
 
         self.core.apply(event)?;
+
+        if is_order_triggered {
+            self.is_triggered = true;
+            self.ts_triggered = ts_event;
+        }
 
         if is_order_filled {
             self.core.set_slippage(self.price);
@@ -476,7 +492,7 @@ impl Order for StopLimitOrder {
         }
 
         self.quantity = event.quantity;
-        self.leaves_qty = self.quantity - self.filled_qty;
+        self.leaves_qty = self.quantity.saturating_sub(self.filled_qty);
     }
 
     fn is_triggered(&self) -> Option<bool> {
@@ -504,7 +520,7 @@ impl Order for StopLimitOrder {
     }
 
     fn set_liquidity_side(&mut self, liquidity_side: LiquiditySide) {
-        self.liquidity_side = Some(liquidity_side)
+        self.liquidity_side = Some(liquidity_side);
     }
 
     fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
@@ -680,7 +696,7 @@ mod tests {
             .quantity(Quantity::from(1))
             .build();
     }
-    #[test]
+    #[rstest]
     fn test_stop_limit_order_update() {
         // Create and accept a basic stop limit order
         let order = OrderTestBuilder::new(OrderType::StopLimit)
@@ -714,7 +730,7 @@ mod tests {
         assert_eq!(accepted_order.trigger_price(), Some(updated_trigger_price));
     }
 
-    #[test]
+    #[rstest]
     fn test_stop_limit_order_expire_time() {
         // Create a stop limit order with an expire time
         let expire_time = UnixNanos::from(1234567890);
@@ -730,7 +746,7 @@ mod tests {
         assert_eq!(order.expire_time(), Some(expire_time));
     }
 
-    #[test]
+    #[rstest]
     fn test_stop_limit_order_post_only() {
         // Create a stop limit order with post_only flag set to true
         let order = OrderTestBuilder::new(OrderType::StopLimit)
@@ -745,7 +761,7 @@ mod tests {
         assert!(order.is_post_only());
     }
 
-    #[test]
+    #[rstest]
     fn test_stop_limit_order_reduce_only() {
         // Create a stop limit order with reduce_only flag set to true
         let order = OrderTestBuilder::new(OrderType::StopLimit)
@@ -760,7 +776,7 @@ mod tests {
         assert!(order.is_reduce_only());
     }
 
-    #[test]
+    #[rstest]
     fn test_stop_limit_order_trigger_instrument_id() {
         // Create a stop limit order with a trigger instrument ID
         let trigger_instrument_id = InstrumentId::from("ETH-USDT.BINANCE");
@@ -769,14 +785,14 @@ mod tests {
             .quantity(Quantity::from(10))
             .price(Price::new(100.0, 2))
             .trigger_price(Price::new(95.0, 2))
-            .trigger_instrument_id(trigger_instrument_id.clone())
+            .trigger_instrument_id(trigger_instrument_id)
             .build();
 
         // Assert that the trigger instrument ID is set correctly
         assert_eq!(order.trigger_instrument_id(), Some(trigger_instrument_id));
     }
 
-    #[test]
+    #[rstest]
     fn test_stop_limit_order_would_reduce_only() {
         // Create a stop limit order with a sell side
         let order = OrderTestBuilder::new(OrderType::StopLimit)
@@ -793,7 +809,7 @@ mod tests {
         assert!(!order.would_reduce_only(PositionSide::Long, Quantity::from(5)));
     }
 
-    #[test]
+    #[rstest]
     fn test_stop_limit_order_display_string() {
         // Create a stop limit order
         let order = OrderTestBuilder::new(OrderType::StopLimit)
@@ -813,7 +829,7 @@ mod tests {
         assert_eq!(format!("{order}"), expected);
     }
 
-    #[test]
+    #[rstest]
     fn test_stop_limit_order_from_order_initialized() {
         // Create an OrderInitialized event with all required fields for a StopLimitOrder
         let order_initialized = OrderInitializedBuilder::default()

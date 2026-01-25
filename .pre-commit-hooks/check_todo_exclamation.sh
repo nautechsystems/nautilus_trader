@@ -6,7 +6,7 @@
 # temporary changes that should not be committed to the repository.
 set -e
 
-# Search for TODO! in source files, excluding documentation, virtual envs, and build artifacts
+# Search for TODO! in all files, excluding virtual envs and build artifacts
 matches=$(grep -R --binary-files=without-match -n "TODO!" \
   --exclude-dir=.git \
   --exclude-dir=target \
@@ -16,7 +16,6 @@ matches=$(grep -R --binary-files=without-match -n "TODO!" \
   --exclude-dir=.venv \
   --exclude-dir=venv \
   --exclude-dir=node_modules \
-  --exclude="*.md" \
   --exclude=".pre-commit-config.yaml" \
   --exclude-dir=.pre-commit-hooks \
   . || true)

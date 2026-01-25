@@ -1,0 +1,19 @@
+{
+  "type": "subscribed",
+  "connection_id": "conn-abc123-def456-ghi789",
+  "message_id": 1,
+  "channel": "v4_orderbook",
+  "id": "BTC-USD",
+  "contents": {
+    "bids": [
+      { "price": "43240.0", "size": "1.5" },
+      { "price": "43235.0", "size": "2.3" },
+      { "price": "43230.0", "size": "0.8" }
+    ],
+    "asks": [
+      { "price": "43250.0", "size": "1.2" },
+      { "price": "43255.0", "size": "2.0" },
+      { "price": "43260.0", "size": "0.9" }
+    ]
+  }
+}

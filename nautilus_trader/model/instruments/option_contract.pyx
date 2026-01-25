@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -85,6 +85,8 @@ cdef class OptionContract(Instrument):
         The fee rate for liquidity takers as a percentage of order value.
     exchange : str, optional
         The exchange ISO 10383 Market Identifier Code (MIC) where the instrument trades.
+    tick_scheme_name : str, optional
+        The name of the tick scheme.
     info : dict[str, object], optional
         The additional instrument information.
 
@@ -129,6 +131,7 @@ cdef class OptionContract(Instrument):
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
         str exchange = None,
+        str tick_scheme_name = None,
         dict info = None,
     ) -> None:
         if exchange is not None:
@@ -158,6 +161,7 @@ cdef class OptionContract(Instrument):
             taker_fee=taker_fee or Decimal(0),
             ts_event=ts_event,
             ts_init=ts_init,
+            tick_scheme_name=tick_scheme_name,
             info=info,
         )
 
@@ -209,7 +213,7 @@ cdef class OptionContract(Instrument):
     @property
     def expiration_utc(self) -> pd.Timestamp:
         """
-        Return the contract expriation timestamp (UTC).
+        Return the contract expiration timestamp (UTC).
 
         Returns
         -------
@@ -243,6 +247,7 @@ cdef class OptionContract(Instrument):
             maker_fee=Decimal(values["maker_fee"]),
             taker_fee=Decimal(values["taker_fee"]),
             exchange=values["exchange"],
+            tick_scheme_name=values.get("tick_scheme_name"),
             info=values.get("info"),
         )
 
@@ -277,6 +282,7 @@ cdef class OptionContract(Instrument):
             "exchange": obj.exchange,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "tick_scheme_name": obj.tick_scheme_name,
             "info": obj.info,
         }
 
@@ -294,13 +300,17 @@ cdef class OptionContract(Instrument):
             lot_size=Quantity.from_raw_c(pyo3_instrument.lot_size.raw, pyo3_instrument.lot_size.precision),
             underlying=pyo3_instrument.underlying,
             option_kind=option_kind_from_str(str(pyo3_instrument.option_kind)),
+            strike_price=Price.from_raw_c(pyo3_instrument.strike_price.raw, pyo3_instrument.strike_price.precision),
             activation_ns=pyo3_instrument.activation_ns,
             expiration_ns=pyo3_instrument.expiration_ns,
-            strike_price=Price.from_raw_c(pyo3_instrument.strike_price.raw, pyo3_instrument.strike_price.precision),
-            info=pyo3_instrument.info,
+            margin_init=Decimal(pyo3_instrument.margin_init),
+            margin_maint=Decimal(pyo3_instrument.margin_maint),
+            maker_fee=Decimal(pyo3_instrument.maker_fee),
+            taker_fee=Decimal(pyo3_instrument.taker_fee),
+            exchange=pyo3_instrument.exchange,
             ts_event=pyo3_instrument.ts_event,
             ts_init=pyo3_instrument.ts_init,
-            exchange=pyo3_instrument.exchange,
+            info=pyo3_instrument.info,
         )
 
     @staticmethod

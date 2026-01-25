@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.indicators.obv import OnBalanceVolume
+from nautilus_trader.indicators import OnBalanceVolume
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
@@ -45,7 +45,7 @@ class TestOnBalanceVolume:
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
-        for _i in range(100):
+        for _ in range(100):
             self.obv.update_raw(1.00000, 1.00010, 10000)
 
         # Act, Assert
@@ -105,7 +105,7 @@ class TestOnBalanceVolume:
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for _i in range(100):
+        for _ in range(100):
             self.obv.update_raw(1.00000, 1.00010, 10000)
 
         # Act

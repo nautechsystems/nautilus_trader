@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -56,7 +56,6 @@ if __name__ == "__main__":
         config_path="nautilus_trader.backtest.config:FillModelConfig",
         config={
             "prob_fill_on_limit": 0.95,  # 95% chance of limit orders filling
-            "prob_fill_on_stop": 0.98,  # 98% chance of stop orders filling
             "prob_slippage": 0.05,  # 5% chance of slippage
             "random_seed": 42,  # For reproducibility
         },

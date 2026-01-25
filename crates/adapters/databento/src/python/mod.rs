@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,7 +25,11 @@ pub mod live;
 
 use pyo3::prelude::*;
 
-/// Loaded as `nautilus_pyo3.databento`.
+/// Databento Python module.
+///
+/// The module is exposed under different paths depending on the build configuration:
+/// - With `cython-compat` feature: `nautilus_trader.core.nautilus_pyo3.databento`
+/// - Without `cython-compat`: `nautilus_trader.databento` (via re-export)
 ///
 /// # Errors
 ///
@@ -42,5 +46,7 @@ pub fn databento(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     #[cfg(feature = "live")]
     m.add_class::<live::DatabentoLiveClient>()?;
+    #[cfg(feature = "live")]
+    m.add_class::<types::DatabentoSubscriptionAck>()?;
     Ok(())
 }

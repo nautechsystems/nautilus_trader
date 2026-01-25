@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -41,7 +41,12 @@ use nautilus_model::{
         Data, IndexPriceUpdate, MarkPriceUpdate, bar::Bar, close::InstrumentClose,
         delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick, trade::TradeTick,
     },
-    types::{price::PriceRaw, quantity::QuantityRaw},
+    types::{
+        PRICE_ERROR, PRICE_UNDEF, Price, QUANTITY_UNDEF, Quantity,
+        fixed::{correct_price_raw, correct_quantity_raw},
+        price::PriceRaw,
+        quantity::QuantityRaw,
+    },
 };
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -81,23 +86,140 @@ pub enum EncodingError {
 
 #[inline]
 fn get_raw_price(bytes: &[u8]) -> PriceRaw {
-    PriceRaw::from_le_bytes(bytes.try_into().unwrap())
+    PriceRaw::from_le_bytes(
+        bytes
+            .try_into()
+            .expect("Price raw bytes must be exactly the size of PriceRaw"),
+    )
 }
 
 #[inline]
 fn get_raw_quantity(bytes: &[u8]) -> QuantityRaw {
-    QuantityRaw::from_le_bytes(bytes.try_into().unwrap())
+    QuantityRaw::from_le_bytes(
+        bytes
+            .try_into()
+            .expect("Quantity raw bytes must be exactly the size of QuantityRaw"),
+    )
 }
 
+/// Gets raw price bytes and corrects for floating-point precision errors in stored data.
+///
+/// Data from catalogs may have been created with `int(value * FIXED_SCALAR)` which
+/// introduces floating-point errors. This corrects the raw value to the nearest valid
+/// multiple of the scale factor for the given precision.
+///
+/// Sentinel values (`PRICE_UNDEF`, `PRICE_ERROR`) are preserved unchanged.
+#[inline]
+fn get_corrected_raw_price(bytes: &[u8], precision: u8) -> PriceRaw {
+    let raw = get_raw_price(bytes);
+
+    // Preserve sentinel values unchanged
+    if raw == PRICE_UNDEF || raw == PRICE_ERROR {
+        return raw;
+    }
+
+    correct_price_raw(raw, precision)
+}
+
+/// Gets raw quantity bytes and corrects for floating-point precision errors in stored data.
+///
+/// Data from catalogs may have been created with `int(value * FIXED_SCALAR)` which
+/// introduces floating-point errors. This corrects the raw value to the nearest valid
+/// multiple of the scale factor for the given precision.
+///
+/// Sentinel values (`QUANTITY_UNDEF`) are preserved unchanged.
+#[inline]
+fn get_corrected_raw_quantity(bytes: &[u8], precision: u8) -> QuantityRaw {
+    let raw = get_raw_quantity(bytes);
+
+    // Preserve sentinel values unchanged
+    if raw == QUANTITY_UNDEF {
+        return raw;
+    }
+
+    correct_quantity_raw(raw, precision)
+}
+
+/// Decodes a [`Price`] from raw bytes with bounds validation.
+///
+/// Uses corrected raw values to handle floating-point precision errors in stored data.
+/// Sentinel values (`PRICE_UNDEF`, `PRICE_ERROR`) are preserved unchanged.
+fn decode_price(
+    bytes: &[u8],
+    precision: u8,
+    field: &'static str,
+    row: usize,
+) -> Result<Price, EncodingError> {
+    let raw = get_corrected_raw_price(bytes, precision);
+    Price::from_raw_checked(raw, precision)
+        .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")))
+}
+
+/// Decodes a [`Quantity`] from raw bytes with bounds validation.
+///
+/// Uses corrected raw values to handle floating-point precision errors in stored data.
+/// Sentinel values (`QUANTITY_UNDEF`) are preserved unchanged.
+fn decode_quantity(
+    bytes: &[u8],
+    precision: u8,
+    field: &'static str,
+    row: usize,
+) -> Result<Quantity, EncodingError> {
+    let raw = get_corrected_raw_quantity(bytes, precision);
+    Quantity::from_raw_checked(raw, precision)
+        .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")))
+}
+
+/// Decodes a [`Price`] from raw bytes, using precision 0 for sentinel values.
+///
+/// For order book data where sentinel values indicate empty levels.
+fn decode_price_with_sentinel(
+    bytes: &[u8],
+    precision: u8,
+    field: &'static str,
+    row: usize,
+) -> Result<Price, EncodingError> {
+    let raw = get_raw_price(bytes);
+    let (final_raw, final_precision) = if raw == PRICE_UNDEF {
+        (raw, 0)
+    } else {
+        (get_corrected_raw_price(bytes, precision), precision)
+    };
+    Price::from_raw_checked(final_raw, final_precision)
+        .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")))
+}
+
+/// Decodes a [`Quantity`] from raw bytes, using precision 0 for sentinel values.
+///
+/// For order book data where sentinel values indicate empty levels.
+fn decode_quantity_with_sentinel(
+    bytes: &[u8],
+    precision: u8,
+    field: &'static str,
+    row: usize,
+) -> Result<Quantity, EncodingError> {
+    let raw = get_raw_quantity(bytes);
+    let (final_raw, final_precision) = if raw == QUANTITY_UNDEF {
+        (raw, 0)
+    } else {
+        (get_corrected_raw_quantity(bytes, precision), precision)
+    };
+    Quantity::from_raw_checked(final_raw, final_precision)
+        .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")))
+}
+
+/// Provides Apache Arrow schema definitions for data types.
 pub trait ArrowSchemaProvider {
+    /// Returns the Arrow schema for this type with optional metadata.
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema;
 
+    /// Returns a map of field names to their Arrow data types.
     #[must_use]
     fn get_schema_map() -> HashMap<String, String> {
         let schema = Self::get_schema(None);
         let mut map = HashMap::new();
         for field in schema.fields() {
-            let name = field.name().to_string();
+            let name = field.name().clone();
             let data_type = format!("{:?}", field.data_type());
             map.insert(name, data_type);
         }
@@ -105,6 +227,7 @@ pub trait ArrowSchemaProvider {
     }
 }
 
+/// Encodes data types to Apache Arrow RecordBatch format.
 pub trait EncodeToRecordBatch
 where
     Self: Sized + ArrowSchemaProvider,
@@ -119,6 +242,7 @@ where
         data: &[Self],
     ) -> Result<RecordBatch, ArrowError>;
 
+    /// Returns the metadata for this data element.
     fn metadata(&self) -> HashMap<String, String>;
 
     /// Returns the metadata for the first element in a chunk.
@@ -130,10 +254,11 @@ where
         chunk
             .first()
             .map(|elem| elem.metadata())
-            .expect("Chunk must have atleast one element to encode")
+            .expect("Chunk must have at least one element to encode")
     }
 }
 
+/// Decodes data types from Apache Arrow RecordBatch format.
 pub trait DecodeFromRecordBatch
 where
     Self: Sized + Into<Data> + ArrowSchemaProvider,
@@ -149,6 +274,7 @@ where
     ) -> Result<Vec<Self>, EncodingError>;
 }
 
+/// Decodes raw Data objects from Apache Arrow RecordBatch format.
 pub trait DecodeDataFromRecordBatch
 where
     Self: Sized + Into<Data> + ArrowSchemaProvider,
@@ -164,6 +290,7 @@ where
     ) -> Result<Vec<Data>, EncodingError>;
 }
 
+/// Writes RecordBatch data to output streams.
 pub trait WriteStream {
     /// Writes a `RecordBatch` to the implementing output stream.
     ///
@@ -173,7 +300,7 @@ pub trait WriteStream {
     fn write(&mut self, record_batch: &RecordBatch) -> Result<(), DataStreamingError>;
 }
 
-impl<T: EncodeToRecordBatch + Write> WriteStream for T {
+impl<T: Write> WriteStream for T {
     fn write(&mut self, record_batch: &RecordBatch) -> Result<(), DataStreamingError> {
         let mut writer = StreamWriter::try_new(self, &record_batch.schema())?;
         writer.write(record_batch)?;

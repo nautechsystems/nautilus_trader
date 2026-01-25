@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -66,26 +66,26 @@ async def main(
 
     bars = await client.request_bars(
         bar_specifications=["1-HOUR-LAST", "30-MINUTE-MID"],
-        start_date_time=datetime.datetime(2023, 11, 6, 9, 30),
-        end_date_time=datetime.datetime(2023, 11, 6, 16, 30),
+        start_date_time=datetime.datetime(2025, 11, 6, 9, 30),
+        end_date_time=datetime.datetime(2025, 11, 6, 16, 30),
         tz_name="America/New_York",
         contracts=[contract],
         instrument_ids=[instrument_id],
     )
 
     trade_ticks = await client.request_ticks(
-        "TRADES",
-        start_date_time=datetime.datetime(2023, 11, 6, 10, 0),
-        end_date_time=datetime.datetime(2023, 11, 6, 10, 1),
+        tick_type="TRADES",
+        start_date_time=datetime.datetime(2025, 11, 6, 10, 0),
+        end_date_time=datetime.datetime(2025, 11, 6, 10, 1),
         tz_name="America/New_York",
         contracts=[contract],
         instrument_ids=[instrument_id],
     )
 
     quote_ticks = await client.request_ticks(
-        "BID_ASK",
-        start_date_time=datetime.datetime(2023, 11, 6, 10, 0),
-        end_date_time=datetime.datetime(2023, 11, 6, 10, 1),
+        tick_type="BID_ASK",
+        start_date_time=datetime.datetime(2025, 11, 6, 10, 0),
+        end_date_time=datetime.datetime(2025, 11, 6, 10, 1),
         tz_name="America/New_York",
         contracts=[contract],
         instrument_ids=[instrument_id],

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,14 +15,15 @@
 
 //! Common test related helper functions.
 
+#[cfg(feature = "live")]
+use std::future::Future;
 use std::{
-    future::Future,
     thread,
     time::{Duration, Instant},
 };
 
 use nautilus_core::UUID4;
-use nautilus_model::identifiers::TraderId;
+use nautilus_model::{identifiers::TraderId, stubs::TestDefault};
 
 use crate::logging::{
     init_logging,
@@ -34,10 +35,12 @@ use crate::logging::{
 ///
 /// Returns an error if initializing the logger fails.
 pub fn init_logger_for_testing(stdout_level: Option<log::LevelFilter>) -> anyhow::Result<LogGuard> {
-    let mut config = LoggerConfig::default();
-    config.stdout_level = stdout_level.unwrap_or(log::LevelFilter::Trace);
+    let config = LoggerConfig {
+        stdout_level: stdout_level.unwrap_or(log::LevelFilter::Trace),
+        ..Default::default()
+    };
     init_logging(
-        TraderId::default(),
+        TraderId::test_default(),
         UUID4::new(),
         config,
         FileWriterConfig::default(),
@@ -48,7 +51,7 @@ pub fn init_logger_for_testing(stdout_level: Option<log::LevelFilter>) -> anyhow
 ///
 /// # Panics
 ///
-/// This function will panic if the timeout duration is exceeded without the condition being met.
+/// This function panics if the timeout duration is exceeded without the condition being met.
 ///
 /// # Examples
 ///
@@ -94,6 +97,7 @@ where
 /// # Panics
 ///
 /// Panics if the timeout duration is exceeded without the condition being met.
+#[cfg(feature = "live")]
 pub async fn wait_until_async<F, Fut>(mut condition: F, timeout: Duration)
 where
     F: FnMut() -> Fut,

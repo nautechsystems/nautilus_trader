@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -52,7 +52,7 @@ impl StateSnapshot {
     ///
     /// If this state snapshot is based on a negative rate limiting
     /// outcome, this method returns 0.
-    #[allow(dead_code)] // Under development
+    #[allow(dead_code)]
     pub fn remaining_burst_capacity(&self) -> u32 {
         let t0 = self.time_of_measurement + self.t;
         (cmp::min(

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,6 +30,7 @@ from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.providers import DatabentoInstrumentProvider
 from nautilus_trader.adapters.databento.types import DatabentoImbalance
 from nautilus_trader.adapters.databento.types import DatabentoStatistics
+from nautilus_trader.adapters.databento.types import DatabentoSubscriptionAck
 from nautilus_trader.adapters.databento.types import Dataset
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
@@ -42,6 +43,7 @@ from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookDepth
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
@@ -60,13 +62,17 @@ from nautilus_trader.data.messages import UnsubscribeInstrumentStatus
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
+from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOUT
+from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import InstrumentStatus
+from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
+from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import bar_aggregation_to_str
 from nautilus_trader.model.identifiers import ClientId
@@ -94,7 +100,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         The cache for the client.
     clock : LiveClock
         The clock for the client.
-    instrument_provder : DatabentoInstrumentProvider
+    instrument_provider : DatabentoInstrumentProvider
         The instrument provider for the client.
     loader : DatabentoDataLoader, optional
         The loader for the client.
@@ -119,6 +125,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     ) -> None:
         if config is None:
             config = DatabentoDataClientConfig()
+
         PyCondition.type(config, DatabentoDataClientConfig, "config")
 
         super().__init__(
@@ -139,6 +146,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._timeout_initial_load: float | None = config.timeout_initial_load
         self._mbo_subscriptions_delay: float | None = config.mbo_subscriptions_delay
         self._bars_timestamp_on_close: bool = config.bars_timestamp_on_close
+        self._reconnect_timeout_mins: int | None = config.reconnect_timeout_mins
         self._parent_symbols: dict[Dataset, set[str]] = defaultdict(set)
         self._venue_dataset_map: dict[Venue, Dataset] | None = config.venue_dataset_map
         self._instrument_ids: dict[Dataset, set[InstrumentId]] = defaultdict(set)
@@ -147,6 +155,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._log.info(f"{config.timeout_initial_load=}", LogColor.BLUE)
         self._log.info(f"{config.mbo_subscriptions_delay=}", LogColor.BLUE)
         self._log.info(f"{config.bars_timestamp_on_close=}", LogColor.BLUE)
+        self._log.info(f"{config.reconnect_timeout_mins=}", LogColor.BLUE)
 
         # Clients
         self._http_client = http_client
@@ -174,7 +183,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         # Tasks
         self._live_client_futures: set[asyncio.Future] = set()
-        self._update_dataset_ranges_interval_secs: int = 60 * 60  # Once per hour (hard-coded)
+        self._update_dataset_ranges_interval_secs: int = 60 * 60  # Once per hour (hardcoded)
         self._update_dataset_ranges_task: asyncio.Task | None = None
 
     async def _connect(self) -> None:
@@ -187,6 +196,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._log.info("Initializing instruments...")
 
         coros: list[Coroutine] = []
+
         for dataset, instrument_ids in self._instrument_ids.items():
             loading_ids: list[InstrumentId] = sorted(instrument_ids)
             filters = {
@@ -222,23 +232,31 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._update_dataset_ranges_task.cancel()
             self._update_dataset_ranges_task = None
 
-        # Close all live clients
+        await self._close_live_clients()
+        await self._cancel_pending_futures()
+
+    async def _close_live_clients(self) -> None:
         for dataset, live_client in self._live_clients.items():
             if not live_client.is_running():
                 continue
+
             self._log.info(f"Stopping {dataset} live feed", LogColor.BLUE)
             live_client.close()
 
         for dataset, live_client in self._live_clients_mbo.items():
             if not live_client.is_running():
                 continue
+
             self._log.info(f"Stopping {dataset} MBO/L3 live feed", LogColor.BLUE)
             live_client.close()
 
-        try:
-            await asyncio.gather(*self._live_client_futures)
-        except asyncio.CancelledError:
-            pass  # Expected
+    async def _cancel_pending_futures(self) -> None:
+        await cancel_tasks_with_timeout(
+            self._live_client_futures,
+            self._log,
+            timeout_secs=DEFAULT_FUTURE_CANCELLATION_TIMEOUT,
+        )
+        self._live_client_futures.clear()
 
     async def _update_dataset_ranges(self) -> None:
         while True:
@@ -249,8 +267,8 @@ class DatabentoDataClient(LiveMarketDataClient):
                 )
 
                 await asyncio.sleep(self._update_dataset_ranges_interval_secs)
-
                 tasks = []
+
                 for dataset in self._dataset_ranges:
                     tasks.append(self._get_dataset_range(dataset))
 
@@ -266,8 +284,8 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._log.debug("Buffering MBO subscriptions...", LogColor.MAGENTA)
             await asyncio.sleep(self._mbo_subscriptions_delay or 0.0)
             self._is_buffering_mbo_subscriptions = False
-
             coros: list[Coroutine] = []
+
             for dataset, instrument_ids in self._buffered_mbo_subscriptions.items():
                 self._log.info(f"Starting {dataset} MBO/L3 live feeds")
                 coro = self._subscribe_order_book_deltas_batch(instrument_ids)
@@ -276,6 +294,14 @@ class DatabentoDataClient(LiveMarketDataClient):
             await asyncio.gather(*coros)
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'buffer_mbo_subscriptions'")
+
+    def _log_future_exception_callback(self, future: asyncio.Future) -> None:
+        if future.cancelled():
+            return  # Normal cancellation
+
+        exc = future.exception()
+        if exc:
+            self._log.error(f"Future raised: {exc}")
 
     def _get_live_client(self, dataset: Dataset) -> nautilus_pyo3.DatabentoLiveClient:
         # Retrieve or initialize the 'general' live client for the specified dataset
@@ -288,6 +314,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 publishers_filepath=str(PUBLISHERS_FILEPATH),
                 use_exchange_as_venue=self._use_exchange_as_venue,
                 bars_timestamp_on_close=self._bars_timestamp_on_close,
+                reconnect_timeout_mins=self._reconnect_timeout_mins,
             )
             self._live_clients[dataset] = live_client
 
@@ -304,6 +331,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 publishers_filepath=str(PUBLISHERS_FILEPATH),
                 use_exchange_as_venue=self._use_exchange_as_venue,
                 bars_timestamp_on_close=self._bars_timestamp_on_close,
+                reconnect_timeout_mins=self._reconnect_timeout_mins,
             )
             self._live_clients_mbo[dataset] = live_client
 
@@ -322,6 +350,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                     callback_pyo3=self._handle_msg_pyo3,  # Imbalance and Statistics messages
                 ),
             )
+            future.add_done_callback(self._log_future_exception_callback)
             self._live_client_futures.add(future)
             self._has_subscribed[dataset] = True
             self._log.info(f"Started {dataset} live feed", LogColor.BLUE)
@@ -339,7 +368,6 @@ class DatabentoDataClient(LiveMarketDataClient):
                 return
 
             self._instrument_ids[dataset].add(instrument_id)
-
             subscribe = SubscribeInstrument(
                 instrument_id=instrument_id,
                 client_id=None,
@@ -362,6 +390,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             await asyncio.sleep(0.1)
 
         available_range = self._dataset_ranges.get(dataset)
+
         if available_range:
             return available_range
 
@@ -375,7 +404,6 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             available_start = pd.to_datetime(start_str, utc=True)
             available_end = pd.to_datetime(end_str, utc=True)
-
             self._dataset_ranges[dataset] = (available_start, available_end)
 
             self._log.info(
@@ -386,9 +414,11 @@ class DatabentoDataClient(LiveMarketDataClient):
             return available_start, available_end
         except asyncio.CancelledError:
             self._log.warning("Canceled task 'get_dataset_range'")
+
             return (None, pd.Timestamp.utcnow())
         except Exception as e:  # More specific exception
             self._log.exception("Error requesting dataset range", e)
+
             return (None, pd.Timestamp.utcnow())
         finally:
             self._dataset_ranges_requested.discard(dataset)
@@ -397,7 +427,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     def subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         if command.book_type != BookType.L3_MBO:
-            raise NotImplementedError
+            raise NotImplementedError("Use BookType.L3_MBO for Databento")
 
         self.create_task(
             self._subscribe_order_book_deltas(command),
@@ -452,7 +482,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
         try:
             dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
-            start: int | None = command.params.get("start")
+            start: int | None = command.params.get("start_ns")
 
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
@@ -543,9 +573,6 @@ class DatabentoDataClient(LiveMarketDataClient):
                 )
                 return
 
-            if not instrument_ids:
-                return  # No subscribing instrument IDs were loaded in the cache
-
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_ids[0].venue)
             live_client = self._get_live_client_mbo(dataset)
 
@@ -580,52 +607,32 @@ class DatabentoDataClient(LiveMarketDataClient):
                     callback_pyo3=self._handle_msg_pyo3,  # Imbalance and Statistics messages
                 ),
             )
+            future.add_done_callback(self._log_future_exception_callback)
             self._live_client_futures.add(future)
         except asyncio.CancelledError:
             self._log.warning(
                 "Canceled task 'subscribe_order_book_deltas_batch'",
             )
 
-    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
-        try:
-            await self._ensure_subscribed_for_instrument(command.instrument_id)
-
-            match command.depth:
-                case 1:
-                    schema = DatabentoSchema.MBP_1.value
-                case 10:
-                    schema = DatabentoSchema.MBP_10.value
-                case _:
-                    self._log.error(
-                        f"Cannot subscribe for order book snapshots of depth {command.depth}, use either 1 or 10",
-                    )
-                    return
-
-            dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
-            live_client = self._get_live_client(dataset)
-            live_client.subscribe(
-                schema=schema,
-                instrument_ids=[instrument_id_to_pyo3(command.instrument_id)],
-            )
-            await self._check_live_client_started(dataset, live_client)
-        except asyncio.CancelledError:
-            self._log.warning("Canceled task 'subscribe_order_book_snapshots'")
-
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         try:
             await self._ensure_subscribed_for_instrument(command.instrument_id)
 
-            # allowed schema values: mbp-1, bbo-1s, bbo-1m
+            # allowed schema values: mbp-1, bbo-1s, bbo-1m, cmbp-1, cbbo-1s, cbbo-1m, tbbo, tcbbo
             schema: str | None = command.params.get("schema")
             if schema is None or schema not in [
                 DatabentoSchema.MBP_1.value,
                 DatabentoSchema.BBO_1S.value,
                 DatabentoSchema.BBO_1M.value,
+                DatabentoSchema.CMBP_1.value,
+                DatabentoSchema.CBBO_1S.value,
+                DatabentoSchema.CBBO_1M.value,
+                DatabentoSchema.TBBO.value,
+                DatabentoSchema.TCBBO.value,
             ]:
                 schema = DatabentoSchema.MBP_1.value
 
-            start: int | None = command.params.get("start")
-
+            start: int | None = command.params.get("start_ns")
             dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
@@ -648,12 +655,22 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             await self._ensure_subscribed_for_instrument(command.instrument_id)
 
-            start: int | None = command.params.get("start")
+            # allowed schema values: trades, tbbo, tcbbo, mbp-1, cmbp-1
+            schema: str | None = command.params.get("schema")
+            if schema is None or schema not in [
+                DatabentoSchema.TRADES.value,
+                DatabentoSchema.TBBO.value,
+                DatabentoSchema.TCBBO.value,
+                DatabentoSchema.MBP_1.value,  # MBP-1 can also emit trades
+                DatabentoSchema.CMBP_1.value,  # CMBP-1 can also emit trades
+            ]:
+                schema = DatabentoSchema.TRADES.value
 
+            start: int | None = command.params.get("start_ns")
             dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
-                schema=DatabentoSchema.TRADES.value,
+                schema=schema,
                 instrument_ids=[instrument_id_to_pyo3(command.instrument_id)],
                 start=start,
             )
@@ -673,8 +690,23 @@ class DatabentoDataClient(LiveMarketDataClient):
                 self._log.error(f"Cannot subscribe: {e}")
                 return
 
-            start: int | None = command.params.get("start")
+            # Check for schema override in params
+            schema_override: str | None = command.params.get("schema")
+            if schema_override:
+                if (
+                    command.bar_type.spec.aggregation == BarAggregation.DAY
+                    and schema_override == "ohlcv-eod"
+                ):
+                    # Allow ohlcv-eod override for daily bars
+                    schema = DatabentoSchema.OHLCV_EOD
+                else:
+                    self._log.error(
+                        f"Invalid schema override '{schema_override}' for bar type {command.bar_type}. "
+                        f"Only 'ohlcv-eod' is supported for DAY aggregation bars.",
+                    )
+                    return
 
+            start: int | None = command.params.get("start_ns")
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=schema.value,
@@ -688,7 +720,6 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
         try:
             dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
-
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=DatabentoSchema.STATUS.value,
@@ -717,12 +748,6 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         raise NotImplementedError(
             f"Cannot unsubscribe from {command.instrument_id} order book deltas, "
-            "unsubscribing not supported by Databento.",
-        )
-
-    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
-        raise NotImplementedError(
-            f"Cannot unsubscribe from {command.instrument_id} order book snapshots, "
             "unsubscribing not supported by Databento.",
         )
 
@@ -757,10 +782,60 @@ class DatabentoDataClient(LiveMarketDataClient):
             await self._request_imbalance(request.data_type, request.id)
         elif request.data_type.type == DatabentoStatistics:
             await self._request_statistics(request.data_type, request.id)
+        elif request.data_type.type == OrderBookDepth10:
+            await self._request_order_book_depth(request)
         else:
             raise NotImplementedError(
                 f"Cannot request {request.data_type.type} (not implemented)",
             )
+
+    async def _resolve_time_range_for_request(
+        self,
+        dataset: Dataset,
+        start: pd.Timestamp | None,
+        end: pd.Timestamp | None,
+    ) -> tuple[pd.Timestamp, pd.Timestamp]:
+        _, available_end = await self._get_dataset_range(dataset)
+        original_start, original_end = start, end
+
+        # Default end to dataset end when missing
+        end = end or available_end
+        if original_end is not None and end > available_end:
+            end = available_end
+            self._log.info(
+                f"Clamped end from {original_end} to dataset end {available_end}",
+                LogColor.BLUE,
+            )
+
+        # Default start to day boundary of end
+        start = start or end.floor("D")
+
+        if start > end:
+            prev_start = start
+            start = end
+            self._log.info(
+                f"Clamped start from {prev_start} to end {end} (start > end)",
+                LogColor.BLUE,
+            )
+
+        if start == end and end < available_end:
+            end += pd.Timedelta(1, "ns")
+            self._log.info(
+                "Adjusted end by +1ns to create non-empty interval",
+                LogColor.BLUE,
+            )
+        elif start == end:
+            # At dataset boundary (e.g. available_end=midnight, floor("D") gives start=end)
+            start -= pd.Timedelta(1, "ns")
+            self._log.info("Adjusted start by -1ns to create non-empty interval", LogColor.BLUE)
+
+        if original_start != start or (original_end is not None and original_end != end):
+            self._log.info(
+                f"Resolved time range: {original_start=}, {original_end=} -> {start=}, {end=}",
+                LogColor.BLUE,
+            )
+
+        return start, end
 
     async def _request_instrument_status(
         self,
@@ -772,10 +847,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         end = data_type.metadata.get("end")
 
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
-        _, available_end = await self._get_dataset_range(dataset)
-
-        start = start or available_end - pd.Timedelta(days=2)
-        end = end or available_end
+        start, end = await self._resolve_time_range_for_request(dataset, start, end)
 
         self._log.info(
             f"Requesting {instrument_id} instrument status: "
@@ -789,13 +861,13 @@ class DatabentoDataClient(LiveMarketDataClient):
             start=start.value,
             end=end.value,
         )
-
         status = InstrumentStatus.from_pyo3_list(pyo3_status_list)
-
         self._handle_data_response(
             data_type=data_type,
             data=status,
             correlation_id=correlation_id,
+            start=None,
+            end=None,
             params=None,
         )
 
@@ -805,14 +877,10 @@ class DatabentoDataClient(LiveMarketDataClient):
         end = data_type.metadata.get("end")
 
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
-        _, available_end = await self._get_dataset_range(dataset)
-
-        start = start or available_end - pd.Timedelta(days=2)
-        end = end or available_end
+        start, end = await self._resolve_time_range_for_request(dataset, start, end)
 
         self._log.info(
-            f"Requesting {instrument_id} imbalance: "
-            f"dataset={dataset}, start={start}, end={end}",
+            f"Requesting {instrument_id} imbalance: dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
 
@@ -822,11 +890,12 @@ class DatabentoDataClient(LiveMarketDataClient):
             start=start.value,
             end=end.value,
         )
-
         self._handle_data_response(
             data_type=data_type,
             data=pyo3_imbalances,
             correlation_id=correlation_id,
+            start=None,
+            end=None,
             params=None,
         )
 
@@ -836,14 +905,10 @@ class DatabentoDataClient(LiveMarketDataClient):
         end = data_type.metadata.get("end")
 
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
-        _, available_end = await self._get_dataset_range(dataset)
-
-        start = start or available_end - pd.Timedelta(days=2)
-        end = end or available_end
+        start, end = await self._resolve_time_range_for_request(dataset, start, end)
 
         self._log.info(
-            f"Requesting {instrument_id} statistics: "
-            f"dataset={dataset}, start={start}, end={end}",
+            f"Requesting {instrument_id} statistics: dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
 
@@ -853,20 +918,18 @@ class DatabentoDataClient(LiveMarketDataClient):
             start=start.value,
             end=end.value,
         )
-
         self._handle_data_response(
             data_type=data_type,
             data=pyo3_statistics,
             correlation_id=correlation_id,
+            start=None,
+            end=None,
             params=None,
         )
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
-        _, available_end = await self._get_dataset_range(dataset)
-
-        start = request.start or available_end - pd.Timedelta(days=2)
-        end = request.end or available_end
+        start, end = await self._resolve_time_range_for_request(dataset, request.start, request.end)
 
         self._log.info(
             f"Requesting {request.instrument_id} instrument definition: "
@@ -881,22 +944,25 @@ class DatabentoDataClient(LiveMarketDataClient):
             start=start.value,
             end=end.value,
         )
-
         instruments = instruments_from_pyo3(pyo3_instruments)
+
         if not instruments:
             self._log.warning(
                 f"No instrument found for request: {request.instrument_id=}, {request.id=}",
             )
             return
 
-        self._handle_instrument(instruments[0], request.id, request.params)
+        self._handle_instrument(
+            instruments[0],
+            correlation_id=request.id,
+            start=request.start,
+            end=request.end,
+            params=request.params,
+        )
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(request.venue)
-        _, available_end = await self._get_dataset_range(dataset)
-
-        start = request.start or available_end - pd.Timedelta(days=2)
-        end = request.end or available_end
+        start, end = await self._resolve_time_range_for_request(dataset, request.start, request.end)
 
         self._log.info(
             f"Requesting {request.venue} instrument definitions: "
@@ -910,7 +976,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             instrument_id_to_pyo3(InstrumentId.from_str(f"{symbol}.{request.venue}"))
             for symbol in parent_symbols
         ]
-
         pyo3_instruments = await self._http_client.get_range_instruments(
             dataset=dataset,
             instrument_ids=pyo3_instrument_ids,
@@ -919,18 +984,22 @@ class DatabentoDataClient(LiveMarketDataClient):
         )
         instruments = instruments_from_pyo3(pyo3_instruments)
 
-        self._handle_instruments(instruments, request.venue, request.id, request.params)
+        self._handle_instruments(
+            request.venue,
+            instruments,
+            correlation_id=request.id,
+            start=request.start,
+            end=request.end,
+            params=request.params,
+        )
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
-        _, available_end = await self._get_dataset_range(dataset)
-
-        start = request.start or available_end - pd.Timedelta(days=1)
-        end = request.end or available_end
+        start, end = await self._resolve_time_range_for_request(dataset, request.start, request.end)
 
         if request.limit > 0:
             self._log.warning(
-                f"Ignoring limit {request.limit} because its applied from the start (instead of the end)",
+                f"Ignoring limit {request.limit} because it's applied from the start (instead of the end)",
             )
 
         self._log.info(
@@ -938,12 +1007,18 @@ class DatabentoDataClient(LiveMarketDataClient):
             LogColor.BLUE,
         )
 
-        # allowed schema values: mbp-1, bbo-1s, bbo-1m
+        # allowed schema values: mbp-1, bbo-1s, bbo-1m, cmbp-1, cbbo-1s, cbbo-1m, tbbo, tcbbo
         schema: str | None = request.params.get("schema")
+
         if schema is None or schema not in [
             DatabentoSchema.MBP_1.value,
             DatabentoSchema.BBO_1S.value,
             DatabentoSchema.BBO_1M.value,
+            DatabentoSchema.CMBP_1.value,
+            DatabentoSchema.CBBO_1S.value,
+            DatabentoSchema.CBBO_1M.value,
+            DatabentoSchema.TBBO.value,
+            DatabentoSchema.TCBBO.value,
         ]:
             schema = DatabentoSchema.MBP_1.value
 
@@ -954,21 +1029,24 @@ class DatabentoDataClient(LiveMarketDataClient):
             end=end.value,
             schema=schema,
         )
-
         quotes = QuoteTick.from_pyo3_list(pyo3_quotes)
 
-        self._handle_quote_ticks(request.instrument_id, quotes, request.id, request.params)
+        self._handle_quote_ticks(
+            request.instrument_id,
+            quotes,
+            correlation_id=request.id,
+            start=request.start,
+            end=request.end,
+            params=request.params,
+        )
 
     async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
-        _, available_end = await self._get_dataset_range(dataset)
-
-        start = request.start or available_end - pd.Timedelta(days=1)
-        end = request.end or available_end
+        start, end = await self._resolve_time_range_for_request(dataset, request.start, request.end)
 
         if request.limit > 0:
             self._log.warning(
-                f"Ignoring limit {request.limit} because its applied from the start (instead of the end)",
+                f"Ignoring limit {request.limit} because it's applied from the start (instead of the end)",
             )
 
         self._log.info(
@@ -982,21 +1060,24 @@ class DatabentoDataClient(LiveMarketDataClient):
             start=start.value,
             end=end.value,
         )
-
         trades = TradeTick.from_pyo3_list(pyo3_trades)
 
-        self._handle_trade_ticks(request.instrument_id, trades, request.id, request.params)
+        self._handle_trade_ticks(
+            request.instrument_id,
+            trades,
+            correlation_id=request.id,
+            start=request.start,
+            end=request.end,
+            params=request.params,
+        )
 
     async def _request_bars(self, request: RequestBars) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(request.bar_type.instrument_id.venue)
-        _, available_end = await self._get_dataset_range(dataset)
-
-        start = request.start or available_end - pd.Timedelta(days=1)
-        end = request.end or available_end
+        start, end = await self._resolve_time_range_for_request(dataset, request.start, request.end)
 
         if request.limit > 0:
             self._log.warning(
-                f"Ignoring limit {request.limit} because its applied from the start (instead of the end)",
+                f"Ignoring limit {request.limit} because it's applied from the start (instead of the end)",
             )
 
         self._log.info(
@@ -1015,14 +1096,55 @@ class DatabentoDataClient(LiveMarketDataClient):
             end=end.value,
             timestamp_on_close=self._bars_timestamp_on_close,
         )
-
         bars = Bar.from_pyo3_list(pyo3_bars)
 
         self._handle_bars(
             bar_type=request.bar_type,
             bars=bars,
-            partial=None,  # No partials
             correlation_id=request.id,
+            start=request.start,
+            end=request.end,
+            params=request.params,
+        )
+
+    async def _request_order_book_depth(self, request: RequestOrderBookDepth) -> None:
+        dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
+        self._log.info(
+            f"DEBUG: Dataset for venue {request.instrument_id.venue}: {dataset}",
+            LogColor.CYAN,
+        )
+
+        start, end = await self._resolve_time_range_for_request(dataset, request.start, request.end)
+
+        if request.limit > 0:
+            self._log.warning(
+                f"Databento does not support `limit` parameter for order book depths, "
+                f"ignoring limit={request.limit}",
+            )
+
+        self._log.info(
+            f"Requesting {request.instrument_id} order book depth data: "
+            f"depth={request.depth}, "
+            f"start={start}, "
+            f"end={end}",
+            LogColor.BLUE,
+        )
+
+        pyo3_depths = await self._http_client.get_order_book_depth10(
+            dataset=dataset,
+            instrument_ids=[instrument_id_to_pyo3(request.instrument_id)],
+            start=start.value,
+            end=end.value,
+            depth=request.depth,
+        )
+        depths = OrderBookDepth10.from_pyo3_list(pyo3_depths)
+
+        self._handle_order_book_depths(
+            instrument_id=request.instrument_id,
+            depths=depths,
+            correlation_id=request.id,
+            start=request.start,
+            end=request.end,
             params=request.params,
         )
 
@@ -1030,7 +1152,10 @@ class DatabentoDataClient(LiveMarketDataClient):
         self,
         record: object,
     ) -> None:
-        # TODO: Improve the efficiency of this
+        if isinstance(record, DatabentoSubscriptionAck):
+            self._handle_subscription_ack(record)
+            return
+
         if isinstance(record, nautilus_pyo3.InstrumentStatus):
             data = InstrumentStatus.from_pyo3(record)
         elif isinstance(record, DatabentoImbalance):
@@ -1043,6 +1168,9 @@ class DatabentoDataClient(LiveMarketDataClient):
             raise RuntimeError(f"Cannot handle pyo3 record `{record!r}`")
 
         self._handle_data(data)
+
+    def _handle_subscription_ack(self, ack: DatabentoSubscriptionAck) -> None:
+        self._log.info(f"Subscription acknowledged: {ack.message}", LogColor.BLUE)
 
     def _handle_msg(
         self,

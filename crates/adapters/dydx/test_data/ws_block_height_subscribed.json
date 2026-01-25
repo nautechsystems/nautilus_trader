@@ -1,0 +1,11 @@
+{
+  "type": "subscribed",
+  "connection_id": "conn-abc123-def456-ghi789",
+  "message_id": 1,
+  "channel": "v4_block_height",
+  "id": "v4_block_height",
+  "contents": {
+    "height": "12345678",
+    "time": "2024-01-01T00:00:00.000Z"
+  }
+}

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,7 +25,7 @@ from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketCl
 from nautilus_trader.common.component import LiveClock
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_binance_websocket_client():
     clock = LiveClock()
 
@@ -40,10 +40,12 @@ async def test_binance_websocket_client():
     response = await user.create_listen_key()
     key = response["listenKey"]
 
+    loop = asyncio.get_running_loop()
+
     ws = BinanceWebSocketClient(
         clock=clock,
         handler=print,
-        loop=asyncio.get_event_loop(),
+        loop=loop,
     )
 
     ws.subscribe(key=key)

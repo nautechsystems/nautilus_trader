@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -62,8 +62,10 @@ from v4_proto.dydxprotocol.feetiers import query_pb2 as fee_tier_query
 from v4_proto.dydxprotocol.feetiers import query_pb2_grpc as fee_tier_query_grpc
 from v4_proto.dydxprotocol.subaccounts.subaccount_pb2 import SubaccountId
 
-from nautilus_trader.adapters.dydx.common.constants import ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODE
+from nautilus_trader.adapters.dydx.common.constants import ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODES
+from nautilus_trader.adapters.dydx.common.constants import GOOD_TILL_BLOCK_ERROR_CODE
 from nautilus_trader.adapters.dydx.grpc.errors import DYDXGRPCError
+from nautilus_trader.common.component import Logger
 
 
 DEFAULT_FEE = Fee(
@@ -220,7 +222,12 @@ class DYDXAccountGRPCAPI:
         """
         self._channel_url = channel_url
 
-        grpc_service_config = msgspec.json.encode(
+        # Generate the gRPC service config once and reuse it when a channel is
+        # created. The channel itself is created lazily: this prevents
+        # spawning background gRPC threads during object construction, which in
+        # turn avoids noisy shutdown warnings if a client instance is created
+        # but never used.
+        self._grpc_service_config: str = msgspec.json.encode(
             {
                 "methodConfig": [
                     {
@@ -237,24 +244,42 @@ class DYDXAccountGRPCAPI:
             },
         ).decode()
 
-        self._channel: grpc.aio.Channel = grpc.aio.secure_channel(
-            target=self._channel_url,
-            credentials=grpc.ssl_channel_credentials(),
-            options=[("grpc.service_config", grpc_service_config)],
-        )
+        # The underlying gRPC channel. It is initialised on first use via
+        # _get_channel() so that simply instantiating the client does not open
+        # any network resources.
+        self._channel: grpc.aio.Channel | None = None
+
         self._transaction_builder = transaction_builder
         self._lock = asyncio.Lock()
+
+        self._log: Logger = Logger(type(self).__name__)
+
+    def _get_channel(self) -> grpc.aio.Channel:
+        if self._channel is None:
+            self._channel = grpc.aio.secure_channel(
+                target=self._channel_url,
+                credentials=grpc.ssl_channel_credentials(),
+                options=[("grpc.service_config", self._grpc_service_config)],
+            )
+
+        return self._channel
 
     async def connect(self) -> None:
         """
         Connect to the GRPC server.
         """
+        # Lazily create the channel. Awaiting ``channel_ready`` ensures that a
+        # TCP connection is established before the coroutine returns.
+        channel = self._get_channel()
+        await channel.channel_ready()
 
     async def disconnect(self) -> None:
         """
         Disconnect from the GRPC server.
         """
-        await self._channel.close()
+        if self._channel is not None:
+            await self._channel.close()
+            self._channel = None
 
     async def get_account(self, address: str) -> BaseAccount:
         """
@@ -272,7 +297,8 @@ class DYDXAccountGRPCAPI:
 
         """
         account = BaseAccount()
-        response = await auth.QueryStub(self._channel).Account(QueryAccountRequest(address=address))
+        channel = self._get_channel()
+        response = await auth.QueryStub(channel).Account(QueryAccountRequest(address=address))
 
         if not response.account.Unpack(account):
             message = "Failed to unpack account"
@@ -295,7 +321,7 @@ class DYDXAccountGRPCAPI:
             The response containing all account balances.
 
         """
-        stub = bank_query_grpc.QueryStub(self._channel)
+        stub = bank_query_grpc.QueryStub(self._get_channel())
         return await stub.AllBalances(bank_query.QueryAllBalancesRequest(address=address))
 
     async def latest_block(self) -> tendermint_query.GetLatestBlockResponse:
@@ -308,7 +334,7 @@ class DYDXAccountGRPCAPI:
             The response containing the latest block information.
 
         """
-        return await tendermint_query_grpc.ServiceStub(self._channel).GetLatestBlock(
+        return await tendermint_query_grpc.ServiceStub(self._get_channel()).GetLatestBlock(
             tendermint_query.GetLatestBlockRequest(),
         )
 
@@ -335,7 +361,7 @@ class DYDXAccountGRPCAPI:
             The response containing the perpetual fee parameters.
 
         """
-        stub = fee_tier_query_grpc.QueryStub(self._channel)
+        stub = fee_tier_query_grpc.QueryStub(self._get_channel())
         return await stub.PerpetualFeeParams(fee_tier_query.QueryPerpetualFeeParamsRequest())
 
     async def get_user_fee_tier(self, address: str) -> fee_tier_query.QueryUserFeeTierResponse:
@@ -353,7 +379,7 @@ class DYDXAccountGRPCAPI:
             The response containing the user fee tier.
 
         """
-        stub = fee_tier_query_grpc.QueryStub(self._channel)
+        stub = fee_tier_query_grpc.QueryStub(self._get_channel())
         return await stub.UserFeeTier(fee_tier_query.QueryUserFeeTierRequest(user=address))
 
     async def place_order(self, wallet: Wallet, order: Order) -> BroadcastTxResponse:
@@ -496,15 +522,28 @@ class DYDXAccountGRPCAPI:
         """
         async with self._lock:
             response = await self.broadcast(self._transaction_builder.build(wallet, message), mode)
-
             if response.tx_response.code == 0:
                 wallet.sequence += 1
 
             # The sequence number is not correct. Retrieve it from the gRPC channel.
             # The retry manager can retry the transaction.
-            elif response.tx_response.code == ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODE:
+            elif response.tx_response.code in ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODES:
+                before = wallet.sequence
                 account = await self.get_account(wallet.address)
                 wallet.sequence = account.sequence
+                self._log.info(
+                    f"Account sequence mismatch, refreshing from chain. Current sequence {before}, after {wallet.sequence}",
+                )
+
+            elif response.tx_response.code == GOOD_TILL_BLOCK_ERROR_CODE:
+                self._log.info(
+                    f"Good till block error, likely the good_til_block has passed. Response: {response}",
+                )
+
+            else:
+                self._log.info(
+                    f"Broadcast response: {response}. Code {response.tx_response.code}, message: {response.tx_response.raw_log}",
+                )
 
             return response
 
@@ -531,4 +570,4 @@ class DYDXAccountGRPCAPI:
         """
         request = BroadcastTxRequest(tx_bytes=transaction.SerializeToString(), mode=mode)
 
-        return await service_pb2_grpc.ServiceStub(self._channel).BroadcastTx(request)
+        return await service_pb2_grpc.ServiceStub(self._get_channel()).BroadcastTx(request)

@@ -1,0 +1,51 @@
+{
+  "type": "channel_data",
+  "connection_id": "conn-abc123-def456-ghi789",
+  "message_id": 6,
+  "id": "dydx1abc123def456ghi789jkl012mno345pqr678stu/0",
+  "channel": "v4_subaccounts",
+  "version": "1.0.0",
+  "contents": {
+    "orders": [
+      {
+        "id": "order-001",
+        "subaccountId": "dydx1abc123/0",
+        "clientId": "12345678",
+        "clobPairId": "0",
+        "side": "BUY",
+        "size": "0.5",
+        "price": "43000.0",
+        "status": "FILLED",
+        "type": "LIMIT",
+        "timeInForce": "GTT",
+        "postOnly": false,
+        "reduceOnly": false,
+        "orderFlags": "64",
+        "goodTilBlockTime": "2024-01-02T00:00:00.000Z",
+        "createdAtHeight": "12345678",
+        "clientMetadata": "4",
+        "totalFilled": "0.5",
+        "updatedAt": "2024-01-01T00:00:00.000Z",
+        "updatedAtHeight": "12345678"
+      }
+    ],
+    "fills": [
+      {
+        "id": "fill-001",
+        "subaccountId": "dydx1abc123/0",
+        "side": "BUY",
+        "liquidity": "TAKER",
+        "type": "LIMIT",
+        "market": "BTC-USD",
+        "marketType": "PERPETUAL",
+        "price": "43000.0",
+        "size": "0.5",
+        "fee": "10.75",
+        "createdAt": "2024-01-01T00:00:00.000Z",
+        "createdAtHeight": "12345678",
+        "orderId": "order-001",
+        "clientMetadata": "4"
+      }
+    ]
+  }
+}

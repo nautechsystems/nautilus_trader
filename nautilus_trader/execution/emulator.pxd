@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -68,6 +68,7 @@ cdef class OrderEmulator(Actor):
 
 # -------------------------------------------------------------------------------------------------
 
+    cpdef Price _validate_release(self, Order order, MatchingCore matching_core, InstrumentId trigger_instrument_id)
     cpdef void _trigger_stop_order(self, Order order)
     cpdef void _fill_market_order(self, Order order)
     cpdef void _fill_limit_order(self, Order order)

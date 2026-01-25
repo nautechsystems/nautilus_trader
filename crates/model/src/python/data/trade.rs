@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,7 +26,10 @@ use nautilus_core::{
         serialization::{from_dict_pyo3, to_dict_pyo3},
         to_pyvalue_err,
     },
-    serialization::Serializable,
+    serialization::{
+        Serializable,
+        msgpack::{FromMsgPack, ToMsgPack},
+    },
 };
 use pyo3::{
     IntoPyObjectExt,
@@ -121,31 +124,25 @@ impl TradeTick {
     }
 
     fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
-        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+        let py_tuple: &Bound<'_, PyTuple> = state.cast::<PyTuple>()?;
         let binding = py_tuple.get_item(0)?;
-        let instrument_id_str = binding.downcast::<PyString>()?.extract::<&str>()?;
+        let instrument_id_str = binding.cast::<PyString>()?.extract::<&str>()?;
         let price_raw = py_tuple
             .get_item(1)?
-            .downcast::<PyInt>()?
+            .cast::<PyInt>()?
             .extract::<PriceRaw>()?;
-        let price_prec = py_tuple.get_item(2)?.downcast::<PyInt>()?.extract::<u8>()?;
+        let price_prec = py_tuple.get_item(2)?.cast::<PyInt>()?.extract::<u8>()?;
         let size_raw = py_tuple
             .get_item(3)?
-            .downcast::<PyInt>()?
+            .cast::<PyInt>()?
             .extract::<QuantityRaw>()?;
-        let size_prec = py_tuple.get_item(4)?.downcast::<PyInt>()?.extract::<u8>()?;
+        let size_prec = py_tuple.get_item(4)?.cast::<PyInt>()?.extract::<u8>()?;
 
-        let aggressor_side_u8 = py_tuple.get_item(5)?.downcast::<PyInt>()?.extract::<u8>()?;
+        let aggressor_side_u8 = py_tuple.get_item(5)?.cast::<PyInt>()?.extract::<u8>()?;
         let binding = py_tuple.get_item(6)?;
-        let trade_id_str = binding.downcast::<PyString>()?.extract::<&str>()?;
-        let ts_event = py_tuple
-            .get_item(7)?
-            .downcast::<PyInt>()?
-            .extract::<u64>()?;
-        let ts_init = py_tuple
-            .get_item(8)?
-            .downcast::<PyInt>()?
-            .extract::<u64>()?;
+        let trade_id_str = binding.cast::<PyString>()?.extract::<&str>()?;
+        let ts_event = py_tuple.get_item(7)?.cast::<PyInt>()?.extract::<u64>()?;
+        let ts_init = py_tuple.get_item(8)?.cast::<PyInt>()?.extract::<u64>()?;
 
         self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
         self.price = Price::from_raw(price_raw, price_prec);
@@ -158,7 +155,7 @@ impl TradeTick {
         Ok(())
     }
 
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         (
             self.instrument_id.to_string(),
             self.price.raw,
@@ -173,7 +170,7 @@ impl TradeTick {
             .into_py_any(py)
     }
 
-    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+    fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
         (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
@@ -322,7 +319,7 @@ impl TradeTick {
     /// The function will panic if the `PyCapsule` creation fails, which can occur if the
     /// `Data::Trade` object cannot be converted into a raw pointer.
     #[pyo3(name = "as_pycapsule")]
-    fn py_as_pycapsule(&self, py: Python<'_>) -> PyObject {
+    fn py_as_pycapsule(&self, py: Python<'_>) -> Py<PyAny> {
         data_to_pycapsule(py, Data::Trade(*self))
     }
 
@@ -347,9 +344,6 @@ impl TradeTick {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use nautilus_core::python::IntoPyObjectNautilusExt;
@@ -365,8 +359,6 @@ mod tests {
 
     #[rstest]
     fn test_trade_tick_py_new_with_zero_size() {
-        pyo3::prepare_freethreaded_python();
-
         let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
         let price = Price::from("10000.00");
         let zero_size = Quantity::from(0);
@@ -390,10 +382,10 @@ mod tests {
 
     #[rstest]
     fn test_to_dict(stub_trade_ethusdt_buyer: TradeTick) {
-        pyo3::prepare_freethreaded_python();
         let trade = stub_trade_ethusdt_buyer;
 
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let dict_string = trade.py_to_dict(py).unwrap().to_string();
             let expected_string = r"{'type': 'TradeTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'price': '10000.0000', 'size': '1.00000000', 'aggressor_side': 'BUYER', 'trade_id': '123456789', 'ts_event': 0, 'ts_init': 1}";
             assert_eq!(dict_string, expected_string);
@@ -402,10 +394,10 @@ mod tests {
 
     #[rstest]
     fn test_from_dict(stub_trade_ethusdt_buyer: TradeTick) {
-        pyo3::prepare_freethreaded_python();
         let trade = stub_trade_ethusdt_buyer;
 
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let dict = trade.py_to_dict(py).unwrap();
             let parsed = TradeTick::py_from_dict(py, dict).unwrap();
             assert_eq!(parsed, trade);
@@ -414,10 +406,10 @@ mod tests {
 
     #[rstest]
     fn test_from_pyobject(stub_trade_ethusdt_buyer: TradeTick) {
-        pyo3::prepare_freethreaded_python();
         let trade = stub_trade_ethusdt_buyer;
 
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let tick_pyobject = trade.into_py_any_unwrap(py);
             let parsed_tick = TradeTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_tick, trade);

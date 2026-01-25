@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,32 +13,35 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, rc::Rc};
-
-use nautilus_model::orders::OrderAny;
+use nautilus_core::WeakCell;
+use nautilus_model::identifiers::ClientOrderId;
 
 use crate::{
     matching_engine::engine::OrderMatchingEngine, order_emulator::emulator::OrderEmulator,
 };
 
 pub trait FillMarketOrderHandler {
-    fn fill_market_order(&mut self, order: &OrderAny);
+    fn fill_market_order(&mut self, client_order_id: ClientOrderId);
 }
 
 #[derive(Clone, Debug)]
 pub enum FillMarketOrderHandlerAny {
-    OrderMatchingEngine(Rc<RefCell<OrderMatchingEngine>>),
-    OrderEmulator(Rc<RefCell<OrderEmulator>>),
+    OrderMatchingEngine(WeakCell<OrderMatchingEngine>),
+    OrderEmulator(WeakCell<OrderEmulator>),
 }
 
 impl FillMarketOrderHandler for FillMarketOrderHandlerAny {
-    fn fill_market_order(&mut self, order: &OrderAny) {
+    fn fill_market_order(&mut self, client_order_id: ClientOrderId) {
         match self {
-            Self::OrderMatchingEngine(engine) => {
-                engine.borrow_mut().fill_market_order(&mut order.clone());
+            Self::OrderMatchingEngine(engine_weak) => {
+                if let Some(engine) = engine_weak.upgrade() {
+                    engine.borrow_mut().fill_market_order(client_order_id);
+                }
             }
-            Self::OrderEmulator(emulator) => {
-                emulator.borrow_mut().fill_market_order(&mut order.clone());
+            Self::OrderEmulator(emulator_weak) => {
+                if let Some(emulator) = emulator_weak.upgrade() {
+                    emulator.borrow_mut().fill_market_order(client_order_id);
+                }
             }
         }
     }
@@ -48,23 +51,27 @@ impl FillMarketOrderHandler for FillMarketOrderHandlerAny {
 pub struct ShareableFillMarketOrderHandler(pub FillMarketOrderHandlerAny);
 
 pub trait FillLimitOrderHandler {
-    fn fill_limit_order(&mut self, order: &mut OrderAny);
+    fn fill_limit_order(&mut self, client_order_id: ClientOrderId);
 }
 
 #[derive(Clone, Debug)]
 pub enum FillLimitOrderHandlerAny {
-    OrderMatchingEngine(Rc<RefCell<OrderMatchingEngine>>),
-    OrderEmulator(Rc<RefCell<OrderEmulator>>),
+    OrderMatchingEngine(WeakCell<OrderMatchingEngine>),
+    OrderEmulator(WeakCell<OrderEmulator>),
 }
 
 impl FillLimitOrderHandler for FillLimitOrderHandlerAny {
-    fn fill_limit_order(&mut self, order: &mut OrderAny) {
+    fn fill_limit_order(&mut self, client_order_id: ClientOrderId) {
         match self {
-            Self::OrderMatchingEngine(engine) => {
-                engine.borrow_mut().fill_limit_order(order);
+            Self::OrderMatchingEngine(engine_weak) => {
+                if let Some(engine) = engine_weak.upgrade() {
+                    engine.borrow_mut().fill_limit_order(client_order_id);
+                }
             }
-            Self::OrderEmulator(emulator) => {
-                emulator.borrow_mut().fill_limit_order(order);
+            Self::OrderEmulator(emulator_weak) => {
+                if let Some(emulator) = emulator_weak.upgrade() {
+                    emulator.borrow_mut().fill_limit_order(client_order_id);
+                }
             }
         }
     }
@@ -74,23 +81,27 @@ impl FillLimitOrderHandler for FillLimitOrderHandlerAny {
 pub struct ShareableFillLimitOrderHandler(pub FillLimitOrderHandlerAny);
 
 pub trait TriggerStopOrderHandler {
-    fn trigger_stop_order(&mut self, order: &mut OrderAny);
+    fn trigger_stop_order(&mut self, client_order_id: ClientOrderId);
 }
 
 #[derive(Clone, Debug)]
 pub enum TriggerStopOrderHandlerAny {
-    OrderMatchingEngine(Rc<RefCell<OrderMatchingEngine>>),
-    OrderEmulator(Rc<RefCell<OrderEmulator>>),
+    OrderMatchingEngine(WeakCell<OrderMatchingEngine>),
+    OrderEmulator(WeakCell<OrderEmulator>),
 }
 
 impl TriggerStopOrderHandler for TriggerStopOrderHandlerAny {
-    fn trigger_stop_order(&mut self, order: &mut OrderAny) {
+    fn trigger_stop_order(&mut self, client_order_id: ClientOrderId) {
         match self {
-            Self::OrderMatchingEngine(engine) => {
-                engine.borrow_mut().trigger_stop_order(order);
+            Self::OrderMatchingEngine(engine_weak) => {
+                if let Some(engine) = engine_weak.upgrade() {
+                    engine.borrow_mut().trigger_stop_order(client_order_id);
+                }
             }
-            Self::OrderEmulator(emulator) => {
-                emulator.borrow_mut().trigger_stop_order(order);
+            Self::OrderEmulator(emulator_weak) => {
+                if let Some(emulator) = emulator_weak.upgrade() {
+                    emulator.borrow_mut().trigger_stop_order(client_order_id);
+                }
             }
         }
     }

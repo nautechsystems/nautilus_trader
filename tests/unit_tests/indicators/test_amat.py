@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.indicators.amat import ArcherMovingAveragesTrends
+from nautilus_trader.indicators import ArcherMovingAveragesTrends
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
@@ -42,7 +42,7 @@ class TestArcherMovingAveragesTrends:
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange, Act
-        for _i in range(20):
+        for _ in range(20):
             self.amat.update_raw(109.61)
 
         # Assert
@@ -99,7 +99,7 @@ class TestArcherMovingAveragesTrends:
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for _i in range(1000):
+        for _ in range(1000):
             self.amat.update_raw(109.93)
 
         # Act

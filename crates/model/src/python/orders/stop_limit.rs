@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -130,7 +130,7 @@ impl StopLimitOrder {
     #[staticmethod]
     #[pyo3(name = "create")]
     fn py_create(init: OrderInitialized) -> PyResult<Self> {
-        Ok(StopLimitOrder::from(init))
+        Ok(Self::from(init))
     }
 
     #[staticmethod]
@@ -243,7 +243,7 @@ impl StopLimitOrder {
 
     #[getter]
     #[pyo3(name = "init_event")]
-    fn py_init_event(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_init_event(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         match self.init_event() {
             Some(event) => order_event_to_pyobject(py, event),
             None => Ok(py.None()),
@@ -376,7 +376,7 @@ impl StopLimitOrder {
 
     #[getter]
     #[pyo3(name = "events")]
-    fn py_events(&self, py: Python<'_>) -> PyResult<Vec<PyObject>> {
+    fn py_events(&self, py: Python<'_>) -> PyResult<Vec<Py<PyAny>>> {
         self.events()
             .into_iter()
             .map(|event| order_event_to_pyobject(py, event.clone()))
@@ -394,9 +394,9 @@ impl StopLimitOrder {
     }
 
     #[pyo3(name = "apply")]
-    fn py_apply(&mut self, event: PyObject, py: Python<'_>) -> PyResult<()> {
+    fn py_apply(&mut self, event: Py<PyAny>, py: Python<'_>) -> PyResult<()> {
         let event_any = pyobject_to_order_event(py, event).unwrap();
-        self.apply(event_any).map(|_| ()).map_err(to_pyruntime_err)
+        self.apply(event_any).map_err(to_pyruntime_err)
     }
 
     #[staticmethod]
@@ -404,8 +404,7 @@ impl StopLimitOrder {
     fn py_from_dict(values: &Bound<'_, PyDict>) -> PyResult<Self> {
         let trader_id = TraderId::from(get_required_string(values, "trader_id")?.as_str());
         let strategy_id = StrategyId::from(get_required_string(values, "strategy_id")?.as_str());
-        let instrument_id =
-            InstrumentId::from(get_required_string(values, "instrument_id")?.as_str());
+        let instrument_id = InstrumentId::from(get_required_string(values, "instrument_id")?);
         let client_order_id =
             ClientOrderId::from(get_required_string(values, "client_order_id")?.as_str());
         let order_side = get_required_parsed(values, "side", |s| {
@@ -457,9 +456,7 @@ impl StopLimitOrder {
         })?;
         let tags = get_optional::<Vec<String>>(values, "tags")?
             .map(|vec| vec.iter().map(|s| Ustr::from(s)).collect());
-        let init_id = get_required_parsed(values, "init_id", |s| {
-            s.parse::<UUID4>().map_err(|e| e.to_string())
-        })?;
+        let init_id = get_required_parsed(values, "init_id", |s| s.parse::<UUID4>())?;
         let ts_init = get_required::<u64>(values, "ts_init")?;
         let stop_limit_order = Self::new(
             trader_id,
@@ -494,7 +491,7 @@ impl StopLimitOrder {
     }
 
     #[pyo3(name = "to_dict")]
-    fn to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("trader_id", self.trader_id.to_string())?;
         dict.set_item("strategy_id", self.strategy_id.to_string())?;
@@ -571,11 +568,9 @@ impl StopLimitOrder {
         )?;
         dict.set_item(
             "linked_order_ids",
-            self.linked_order_ids.as_ref().map(|x| {
-                x.iter()
-                    .map(std::string::ToString::to_string)
-                    .collect::<Vec<String>>()
-            }),
+            self.linked_order_ids
+                .as_ref()
+                .map(|x| x.iter().map(ToString::to_string).collect::<Vec<String>>()),
         )?;
         self.parent_order_id.map_or_else(
             || dict.set_item("parent_order_id", py.None()),

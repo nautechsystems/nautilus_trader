@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -28,6 +28,16 @@ use crate::{
     position::Position,
     types::{Money, Price, Quantity},
 };
+
+/// A trait for providing test-only default values.
+///
+/// This trait is intentionally separate from [`Default`] to make it clear
+/// that these default values are only meaningful in testing contexts and should
+/// not be used in production code.
+pub trait TestDefault {
+    /// Creates a new instance with test-appropriate default values.
+    fn test_default() -> Self;
+}
 
 /// Calculate commission for testing.
 ///

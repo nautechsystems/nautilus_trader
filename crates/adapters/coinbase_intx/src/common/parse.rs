@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,7 +17,6 @@ use std::str::FromStr;
 
 use nautilus_core::{datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
 use nautilus_model::{
-    currencies::CURRENCY_MAP,
     data::{
         BarSpecification,
         bar::{
@@ -25,7 +24,7 @@ use nautilus_model::{
             BAR_SPEC_5_MINUTE_LAST, BAR_SPEC_30_MINUTE_LAST,
         },
     },
-    enums::{AggressorSide, CurrencyType, LiquiditySide, OrderSide, PositionSide},
+    enums::{AggressorSide, LiquiditySide, PositionSide},
     identifiers::{InstrumentId, Symbol},
     types::{Currency, Money, Price, Quantity},
 };
@@ -57,19 +56,12 @@ where
     }
 }
 
-/// Returns the currency either from the internal currency map or creates a default crypto.
-/// Returns the currency either from the internal currency map or creates a default crypto.
+/// Returns a currency from the internal map or creates a new crypto currency.
 ///
-/// # Panics
-///
-/// Panics if the internal currency map lock is poisoned.
+/// Uses [`Currency::get_or_create_crypto`] to handle unknown currency codes,
+/// which automatically registers newly listed Coinbase International Exchange assets.
 pub fn get_currency(code: &str) -> Currency {
-    CURRENCY_MAP
-        .lock()
-        .unwrap()
-        .get(code)
-        .copied()
-        .unwrap_or(Currency::new(code, 8, 0, code, CurrencyType::Crypto))
+    Currency::get_or_create_crypto(code)
 }
 
 /// Parses a Nautilus instrument ID from the given Coinbase `symbol` value.
@@ -136,18 +128,18 @@ pub fn parse_notional(value: &str, currency: Currency) -> anyhow::Result<Option<
 #[must_use]
 pub const fn parse_aggressor_side(side: &Option<CoinbaseIntxSide>) -> AggressorSide {
     match side {
-        Some(CoinbaseIntxSide::Buy) => nautilus_model::enums::AggressorSide::Buyer,
-        Some(CoinbaseIntxSide::Sell) => nautilus_model::enums::AggressorSide::Seller,
-        None => nautilus_model::enums::AggressorSide::NoAggressor,
+        Some(CoinbaseIntxSide::Buy) => AggressorSide::Buyer,
+        Some(CoinbaseIntxSide::Sell) => AggressorSide::Seller,
+        None => AggressorSide::NoAggressor,
     }
 }
 
 #[must_use]
 pub const fn parse_execution_type(liquidity: &Option<CoinbaseIntxExecType>) -> LiquiditySide {
     match liquidity {
-        Some(CoinbaseIntxExecType::Maker) => nautilus_model::enums::LiquiditySide::Maker,
-        Some(CoinbaseIntxExecType::Taker) => nautilus_model::enums::LiquiditySide::Taker,
-        _ => nautilus_model::enums::LiquiditySide::NoLiquiditySide,
+        Some(CoinbaseIntxExecType::Maker) => LiquiditySide::Maker,
+        Some(CoinbaseIntxExecType::Taker) => LiquiditySide::Taker,
+        _ => LiquiditySide::NoLiquiditySide,
     }
 }
 
@@ -157,15 +149,6 @@ pub const fn parse_position_side(current_qty: Option<f64>) -> PositionSide {
         Some(qty) if qty.is_sign_positive() => PositionSide::Long,
         Some(qty) if qty.is_sign_negative() => PositionSide::Short,
         _ => PositionSide::Flat,
-    }
-}
-
-#[must_use]
-pub const fn parse_order_side(order_side: &Option<CoinbaseIntxSide>) -> OrderSide {
-    match order_side {
-        Some(CoinbaseIntxSide::Buy) => OrderSide::Buy,
-        Some(CoinbaseIntxSide::Sell) => OrderSide::Sell,
-        None => OrderSide::NoOrderSide,
     }
 }
 

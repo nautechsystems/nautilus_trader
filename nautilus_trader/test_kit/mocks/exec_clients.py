@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,6 +15,7 @@
 
 import inspect
 
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.messages import GenerateFillReports
 from nautilus_trader.execution.messages import GenerateOrderStatusReport
@@ -181,12 +182,13 @@ class MockLiveExecutionClient(LiveExecutionClient):
         msgbus,
         cache,
         clock,
+        oms_type=OmsType.HEDGING,
     ) -> None:
         super().__init__(
             loop=loop,
             client_id=client_id,
             venue=venue,
-            oms_type=OmsType.HEDGING,
+            oms_type=oms_type,
             account_type=account_type,
             base_currency=base_currency,
             instrument_provider=instrument_provider,
@@ -268,6 +270,12 @@ class MockLiveExecutionClient(LiveExecutionClient):
             self.calls.append(current_frame.f_code.co_name)
         self.commands.append(command)
 
+    def query_account(self, command) -> None:
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
+        self.commands.append(command)
+
     def query_order(self, command) -> None:
         current_frame = inspect.currentframe()
         if current_frame:
@@ -294,18 +302,18 @@ class MockLiveExecutionClient(LiveExecutionClient):
         if current_frame:
             self.calls.append(current_frame.f_code.co_name)
 
-        reports = []
-        for _, report in self._order_status_reports.items():
-            reports.append(report)
+        reports = list(self._order_status_reports.values())
 
         if command.instrument_id is not None:
             reports = [r for r in reports if r.instrument_id == command.instrument_id]
 
         if command.start is not None:
-            reports = [r for r in reports if r.ts_accepted >= command.start]
+            start_ns = dt_to_unix_nanos(command.start)
+            reports = [r for r in reports if r.ts_accepted >= start_ns]
 
         if command.end is not None:
-            reports = [r for r in reports if r.ts_accepted <= command.end]
+            end_ns = dt_to_unix_nanos(command.end)
+            reports = [r for r in reports if r.ts_accepted <= end_ns]
 
         return reports
 
@@ -328,10 +336,12 @@ class MockLiveExecutionClient(LiveExecutionClient):
             trades = [t for t in trades if t.instrument_id == command.instrument_id]
 
         if command.start is not None:
-            trades = [t for t in trades if t.ts_event >= command.start]
+            start_ns = dt_to_unix_nanos(command.start)
+            trades = [t for t in trades if t.ts_event >= start_ns]
 
         if command.end is not None:
-            trades = [t for t in trades if t.ts_event <= command.end]
+            end_ns = dt_to_unix_nanos(command.end)
+            trades = [t for t in trades if t.ts_event <= end_ns]
 
         return trades
 
@@ -351,9 +361,11 @@ class MockLiveExecutionClient(LiveExecutionClient):
                 reports = [*reports, *p_list]
 
         if command.start is not None:
-            reports = [r for r in reports if r.ts_event >= command.start]
+            start_ns = dt_to_unix_nanos(command.start)
+            reports = [r for r in reports if r.ts_event >= start_ns]
 
         if command.end is not None:
-            reports = [r for r in reports if r.ts_event <= command.end]
+            end_ns = dt_to_unix_nanos(command.end)
+            reports = [r for r in reports if r.ts_event <= end_ns]
 
         return reports

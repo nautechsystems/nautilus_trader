@@ -1,0 +1,48 @@
+{
+  "result": "success",
+  "serverTime": "2023-04-07T15:20:00.000Z",
+  "openOrders": [
+    {
+      "order_id": "2ce038ae-c144-4de7-a0f1-82f7f4fca864",
+      "symbol": "PI_ETHUSD",
+      "side": "buy",
+      "orderType": "lmt",
+      "limitPrice": 1200.0,
+      "unfilledSize": 100.0,
+      "receivedTime": "2023-04-07T15:18:04.699Z",
+      "status": "untouched",
+      "filledSize": 0.0,
+      "reduceOnly": false,
+      "lastUpdateTime": "2023-04-07T15:18:04.699Z"
+    },
+    {
+      "order_id": "c8135f52-2a86-4e26-b629-43cc37da9dbf",
+      "symbol": "PI_ETHUSD",
+      "side": "buy",
+      "orderType": "take_profit",
+      "limitPrice": 1860.0,
+      "stopPrice": 1880.4,
+      "unfilledSize": 10.0,
+      "receivedTime": "2023-04-07T15:14:25.995Z",
+      "status": "untouched",
+      "filledSize": 0.0,
+      "reduceOnly": false,
+      "triggerSignal": "last",
+      "lastUpdateTime": "2023-04-07T15:14:25.995Z"
+    },
+    {
+      "order_id": "7a9f8b3e-1c2d-4e5f-9a8b-7c6d5e4f3a2b",
+      "symbol": "PI_XBTUSD",
+      "side": "sell",
+      "orderType": "lmt",
+      "limitPrice": 28500.0,
+      "unfilledSize": 5000.0,
+      "receivedTime": "2023-04-07T14:30:15.123Z",
+      "status": "partiallyFilled",
+      "filledSize": 2000.0,
+      "reduceOnly": true,
+      "lastUpdateTime": "2023-04-07T15:00:00.456Z",
+      "cli_ord_id": "my-client-order-123"
+    }
+  ]
+}

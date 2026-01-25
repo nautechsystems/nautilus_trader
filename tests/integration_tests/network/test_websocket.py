@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,12 +32,13 @@ def _server_url(server: TestServer) -> str:
     return f"ws://{server.host}:{server.port}/ws"
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_connect_and_disconnect(websocket_server):
     # Arrange
     store = []
-    config = WebSocketConfig(_server_url(websocket_server), store.append, [])
-    client = await WebSocketClient.connect(config)
+    loop = asyncio.get_running_loop()
+    config = WebSocketConfig(_server_url(websocket_server), [])
+    client = await WebSocketClient.connect(loop, config, store.append)
 
     # Act, Assert
     await eventually(lambda: client.is_active())
@@ -45,12 +46,13 @@ async def test_connect_and_disconnect(websocket_server):
     await eventually(lambda: not client.is_active())
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_client_send_recv(websocket_server):
     # Arrange
     store = []
-    config = WebSocketConfig(_server_url(websocket_server), store.append, [])
-    client = await WebSocketClient.connect(config)
+    loop = asyncio.get_running_loop()
+    config = WebSocketConfig(_server_url(websocket_server), [])
+    client = await WebSocketClient.connect(loop, config, store.append)
     await eventually(lambda: client.is_active())
 
     # Act
@@ -65,12 +67,13 @@ async def test_client_send_recv(websocket_server):
     await eventually(lambda: not client.is_active())
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_client_send_recv_json(websocket_server):
     # Arrange
     store = []
-    config = WebSocketConfig(_server_url(websocket_server), store.append, [])
-    client = await WebSocketClient.connect(config)
+    loop = asyncio.get_running_loop()
+    config = WebSocketConfig(_server_url(websocket_server), [])
+    client = await WebSocketClient.connect(loop, config, store.append)
     await eventually(lambda: client.is_active())
 
     # Act
@@ -86,12 +89,13 @@ async def test_client_send_recv_json(websocket_server):
     await eventually(lambda: not client.is_active())
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_reconnect_after_close(websocket_server):
     # Arrange
     store = []
-    config = WebSocketConfig(_server_url(websocket_server), store.append, [])
-    client = await WebSocketClient.connect(config)
+    loop = asyncio.get_running_loop()
+    config = WebSocketConfig(_server_url(websocket_server), [])
+    client = await WebSocketClient.connect(loop, config, store.append)
     await eventually(lambda: client.is_active())
 
     # Act
@@ -102,12 +106,13 @@ async def test_reconnect_after_close(websocket_server):
     await client.disconnect()
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_exponential_backoff(websocket_server):
     # Arrange
     store = []
-    config = WebSocketConfig(_server_url(websocket_server), store.append, [])
-    client = await WebSocketClient.connect(config)
+    loop = asyncio.get_running_loop()
+    config = WebSocketConfig(_server_url(websocket_server), [])
+    client = await WebSocketClient.connect(loop, config, store.append)
     await eventually(lambda: client.is_active())
 
     # Act
@@ -119,13 +124,14 @@ async def test_exponential_backoff(websocket_server):
     await client.disconnect()
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_websocket_headers(websocket_server):
     # Arrange
     store = []
+    loop = asyncio.get_running_loop()
     headers = [("X-Test-Header", "test-value")]
-    config = WebSocketConfig(_server_url(websocket_server), store.append, headers)
-    client = await WebSocketClient.connect(config)
+    config = WebSocketConfig(_server_url(websocket_server), headers)
+    client = await WebSocketClient.connect(loop, config, store.append)
 
     # Act
     await eventually(lambda: client.is_active())

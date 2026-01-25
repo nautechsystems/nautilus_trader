@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,7 +22,7 @@ import pytest
 import pytz
 
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
-from nautilus_trader.backtest.exchange import SimulatedExchange
+from nautilus_trader.backtest.engine import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import LatencyModel
@@ -36,9 +36,11 @@ from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.indicators import ExponentialMovingAverage
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import OmsType
@@ -191,12 +193,14 @@ class TestStrategy:
             "strategy_id": None,
             "order_id_tag": None,
             "use_uuid_client_order_ids": False,
+            "use_hyphens_in_client_order_ids": True,
             "oms_type": None,
             "external_order_claims": None,
             "manage_contingent_orders": False,
             "manage_gtd_expiry": False,
             "log_events": True,
             "log_commands": True,
+            "log_rejected_due_post_only_as_warning": True,
         }
 
     def test_strategy_to_importable_config(self) -> None:
@@ -223,12 +227,14 @@ class TestStrategy:
             "strategy_id": "ALPHA-01",
             "order_id_tag": "001",
             "use_uuid_client_order_ids": False,
+            "use_hyphens_in_client_order_ids": True,
             "oms_type": None,
             "external_order_claims": ["ETHUSDT-PERP.DYDX"],
             "manage_contingent_orders": True,
             "manage_gtd_expiry": True,
             "log_events": False,
             "log_commands": True,
+            "log_rejected_due_post_only_as_warning": True,
         }
 
     def test_strategy_equality(self) -> None:
@@ -428,6 +434,39 @@ class TestStrategy:
         assert "on_dispose" in strategy.calls
         assert strategy.is_disposed
 
+    def test_dispose_cancels_all_timers(self) -> None:
+        # Arrange
+        bar_type = TestDataStubs.bartype_audusd_1min_bid()
+        strategy = MockStrategy(bar_type)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        start_time = datetime.now(pytz.utc) + timedelta(milliseconds=100)
+        strategy.clock.set_timer(
+            "test_timer1",
+            timedelta(milliseconds=100),
+            start_time,
+            stop_time=None,
+        )
+        strategy.clock.set_timer(
+            "test_timer2",
+            timedelta(milliseconds=200),
+            start_time,
+            stop_time=None,
+        )
+
+        # Act
+        strategy.dispose()
+
+        # Assert
+        assert strategy.clock.timer_count == 0
+        assert strategy.is_disposed
+
     def test_save_load(self) -> None:
         # Arrange
         bar_type = TestDataStubs.bartype_audusd_1min_bid()
@@ -580,7 +619,9 @@ class TestStrategy:
         strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.id, ema)
 
         # Act
-        strategy.handle_quote_ticks([])
+        tick: QuoteTick
+        for tick in []:
+            strategy.handle_quote_tick(tick)
 
         # Assert
         assert ema.count == 0
@@ -602,7 +643,8 @@ class TestStrategy:
         tick = TestDataStubs.quote_tick(AUDUSD_SIM)
 
         # Act
-        strategy.handle_quote_ticks([tick])
+        for t in [tick]:
+            strategy.handle_quote_tick(t)
 
         # Assert
         assert ema.count == 1
@@ -647,7 +689,8 @@ class TestStrategy:
         tick = TestDataStubs.trade_tick(AUDUSD_SIM)
 
         # Act
-        strategy.handle_trade_ticks([tick])
+        for t in [tick]:
+            strategy.handle_trade_tick(t)
 
         # Assert
         assert ema.count == 1
@@ -667,7 +710,9 @@ class TestStrategy:
         strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.id, ema)
 
         # Act
-        strategy.handle_trade_ticks([])
+        tick: TradeTick
+        for tick in []:
+            strategy.handle_trade_tick(tick)
 
         # Assert
         assert ema.count == 0
@@ -712,7 +757,8 @@ class TestStrategy:
         bar = TestDataStubs.bar_5decimal()
 
         # Act
-        strategy.handle_bars([bar])
+        for b in [bar]:
+            strategy.handle_bar(b)
 
         # Assert
         assert ema.count == 1
@@ -733,7 +779,9 @@ class TestStrategy:
         strategy.register_indicator_for_bars(bar_type, ema)
 
         # Act
-        strategy.handle_bars([])
+        bar: Bar
+        for bar in []:
+            strategy.handle_bar(bar)
 
         # Assert
         assert ema.count == 0
@@ -1661,6 +1709,107 @@ class TestStrategy:
         for order in orders:
             if order.side == OrderSide.SELL:
                 assert order.tags == ["EXIT"]
+
+    def test_close_position_with_quote_quantity_true(self) -> None:
+        # Arrange
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.market(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        strategy.submit_order(order)
+        self.exchange.process(0)
+
+        position = self.cache.positions_open()[0]
+
+        # Act
+        strategy.close_position(position, quote_quantity=True)
+
+        # Assert
+        orders = self.cache.orders(instrument_id=_USDJPY_SIM.id)
+        closing_orders = [o for o in orders if o.side == OrderSide.SELL]
+        assert len(closing_orders) == 1
+        assert closing_orders[0].is_quote_quantity
+
+    def test_close_position_with_quote_quantity_false(self) -> None:
+        # Arrange
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.market(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        strategy.submit_order(order)
+        self.exchange.process(0)
+
+        position = self.cache.positions_open()[0]
+
+        # Act
+        strategy.close_position(position, quote_quantity=False)
+
+        # Assert
+        orders = self.cache.orders(instrument_id=_USDJPY_SIM.id)
+        closing_orders = [o for o in orders if o.side == OrderSide.SELL]
+        assert len(closing_orders) == 1
+        assert not closing_orders[0].is_quote_quantity
+
+    def test_close_all_positions_with_quote_quantity_true(self) -> None:
+        # Arrange
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        strategy.start()
+
+        order1 = strategy.order_factory.market(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order2 = strategy.order_factory.market(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        strategy.submit_order(order1)
+        self.exchange.process(0)
+        strategy.submit_order(order2)
+        self.exchange.process(0)
+
+        # Act
+        strategy.close_all_positions(_USDJPY_SIM.id, quote_quantity=True)
+
+        # Assert
+        orders = self.cache.orders(instrument_id=_USDJPY_SIM.id)
+        closing_orders = [o for o in orders if o.side == OrderSide.SELL]
+        assert len(closing_orders) == 2
+        for order in closing_orders:
+            assert order.is_quote_quantity
 
     @pytest.mark.parametrize(
         ("contingency_type"),

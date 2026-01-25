@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -44,7 +44,7 @@ def test_account_identifier() -> None:
     # Assert
     assert account_id1 == account_id1
     assert account_id1 != account_id2
-    assert "SIM-02851908", account_id1.value
+    assert account_id1.value == "SIM-02851908"
     assert account_id1 == AccountId("SIM-02851908")
 
 
@@ -233,6 +233,20 @@ def test_instrument_id_from_str() -> None:
     assert str(result.symbol) == "AUD/USD"
     assert str(result.venue) == "SIM"
     assert result == instrument_id
+
+
+def test_instrument_id_from_str_with_utf8_symbol() -> None:
+    # Arrange
+    non_ascii_symbol = "TËST-PÉRP"
+    non_ascii_instrument = "TËST-PÉRP.BINANCE"
+
+    # Act
+    result = InstrumentId.from_str(non_ascii_instrument)
+
+    # Assert
+    assert str(result.symbol) == non_ascii_symbol
+    assert str(result.venue) == "BINANCE"
+    assert str(result) == non_ascii_instrument
 
 
 @pytest.mark.parametrize(

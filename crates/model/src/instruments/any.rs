@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -57,6 +57,12 @@ impl InstrumentAny {
             Self::OptionContract(inst) => inst.calculate_base_quantity(quantity, last_px),
             Self::OptionSpread(inst) => inst.calculate_base_quantity(quantity, last_px),
         }
+    }
+
+    /// Returns true if the instrument is a spread instrument.
+    #[must_use]
+    pub fn is_spread(&self) -> bool {
+        matches!(self, Self::FuturesSpread(_) | Self::OptionSpread(_))
     }
 }
 

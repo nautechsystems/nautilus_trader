@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,7 +24,10 @@ use nautilus_core::{
         serialization::{from_dict_pyo3, to_dict_pyo3},
         to_pyvalue_err,
     },
-    serialization::Serializable,
+    serialization::{
+        Serializable,
+        msgpack::{FromMsgPack, ToMsgPack},
+    },
 };
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 
@@ -152,9 +155,6 @@ impl BookOrder {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -164,10 +164,10 @@ mod tests {
 
     #[rstest]
     fn test_to_dict(stub_book_order: BookOrder) {
-        pyo3::prepare_freethreaded_python();
         let book_order = stub_book_order;
 
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let dict_string = book_order.py_to_dict(py).unwrap().to_string();
             let expected_string =
                 r"{'side': 'BUY', 'price': '100.00', 'size': '10', 'order_id': 123456}";
@@ -177,10 +177,10 @@ mod tests {
 
     #[rstest]
     fn test_from_dict(stub_book_order: BookOrder) {
-        pyo3::prepare_freethreaded_python();
         let book_order = stub_book_order;
 
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let dict = book_order.py_to_dict(py).unwrap();
             let parsed = BookOrder::py_from_dict(py, dict).unwrap();
             assert_eq!(parsed, book_order);

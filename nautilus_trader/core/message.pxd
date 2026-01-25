@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,6 +23,8 @@ cdef class Command:
     """The command message ID.\n\n:returns: `UUID4`"""
     cdef readonly uint64_t ts_init
     """UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
+    cdef readonly UUID4 correlation_id
+    """The command correlation ID.\n\n:returns: `UUID4` or ``None``"""
 
 
 cdef class Document:
@@ -43,6 +45,8 @@ cdef class Request:
     """UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
     cdef readonly object callback
     """The callback for the response.\n\n:returns: `Callable`"""
+    cdef readonly UUID4 correlation_id
+    """The request correlation ID.\n\n:returns: `UUID4` or ``None``"""
 
 
 cdef class Response:

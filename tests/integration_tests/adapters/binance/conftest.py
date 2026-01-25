@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 
 import pytest
 
@@ -22,11 +21,6 @@ from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.model.identifiers import Venue
-
-
-@pytest.fixture(scope="session")
-def loop():
-    return asyncio.get_event_loop()
 
 
 @pytest.fixture(scope="session")
@@ -40,7 +34,7 @@ def live_logger():
 
 
 @pytest.fixture(scope="session")
-def binance_http_client(loop, live_clock):
+def binance_http_client(session_event_loop, live_clock):
     client = BinanceHttpClient(
         clock=live_clock,
         api_key="SOME_BINANCE_API_KEY",
@@ -50,26 +44,26 @@ def binance_http_client(loop, live_clock):
     return client
 
 
-@pytest.fixture()
+@pytest.fixture
 def venue() -> Venue:
     raise BINANCE_VENUE
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_client():
     pass
 
 
-@pytest.fixture()
+@pytest.fixture
 def exec_client():
     pass
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument():
     pass
 
 
-@pytest.fixture()
+@pytest.fixture
 def account_state():
     pass

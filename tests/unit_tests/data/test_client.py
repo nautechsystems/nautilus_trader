@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,6 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+import pandas as pd
 
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
@@ -84,6 +86,7 @@ class TestDataClient:
         # Act
         self.client.subscribe(
             SubscribeData(
+                instrument_id=None,
                 data_type=data_type,
                 client_id=ClientId("TEST_PROVIDER"),
                 venue=None,
@@ -102,6 +105,7 @@ class TestDataClient:
         # Act
         self.client.unsubscribe(
             UnsubscribeData(
+                instrument_id=None,
                 data_type=data_type,
                 client_id=ClientId("TEST_PROVIDER"),
                 venue=None,
@@ -119,6 +123,7 @@ class TestDataClient:
 
         request = RequestData(
             data_type=data_type,
+            instrument_id=None,
             start=None,
             end=None,
             limit=0,
@@ -157,16 +162,18 @@ class TestDataClient:
     def test_handle_data_response_sends_to_data_engine(self):
         # Arrange
         data_type = DataType(NewsEvent, {"Type": "NEWS_WIRE"})
-        data = NewsEvent(
-            impact=NewsImpact.HIGH,
-            name="Unemployment Rate",
-            currency=USD,
-            ts_event=0,
-            ts_init=0,
-        )
+        data = [
+            NewsEvent(
+                impact=NewsImpact.HIGH,
+                name="Unemployment Rate",
+                currency=USD,
+                ts_event=0,
+                ts_init=0,
+            ),
+        ]
 
         # Act
-        self.client._handle_data_response_py(data_type, data, UUID4(), None)
+        self.client._handle_data_response_py(data_type, data, UUID4(), None, None, None)
 
         # Assert
         assert self.data_engine.response_count == 1
@@ -266,14 +273,28 @@ class TestMarketDataClient:
 
     def test_handle_quote_ticks_sends_to_data_engine(self):
         # Arrange, Act
-        self.client._handle_quote_ticks_py(AUDUSD_SIM.id, [], UUID4(), None)
+        self.client._handle_quote_ticks_py(
+            AUDUSD_SIM.id,
+            [],
+            UUID4(),
+            pd.Timestamp("2023-01-01"),
+            pd.Timestamp("2023-01-02"),
+            None,
+        )
 
         # Assert
         assert self.data_engine.response_count == 1
 
     def test_handle_trade_ticks_sends_to_data_engine(self):
         # Arrange, Act
-        self.client._handle_trade_ticks_py(AUDUSD_SIM.id, [], UUID4(), None)
+        self.client._handle_trade_ticks_py(
+            AUDUSD_SIM.id,
+            [],
+            UUID4(),
+            pd.Timestamp("2023-01-01"),
+            pd.Timestamp("2023-01-02"),
+            None,
+        )
 
         # Assert
         assert self.data_engine.response_count == 1
@@ -283,8 +304,23 @@ class TestMarketDataClient:
         self.client._handle_bars_py(
             TestDataStubs.bartype_gbpusd_1sec_mid(),
             [],
-            None,
             UUID4(),
+            pd.Timestamp("2023-01-01"),
+            pd.Timestamp("2023-01-02"),
+            None,
+        )
+
+        # Assert
+        assert self.data_engine.response_count == 1
+
+    def test_handle_order_book_depths_sends_to_data_engine(self):
+        # Arrange, Act
+        self.client._handle_order_book_depths_py(
+            AUDUSD_SIM.id,
+            [],
+            UUID4(),
+            pd.Timestamp("2023-01-01"),
+            pd.Timestamp("2023-01-02"),
             None,
         )
 

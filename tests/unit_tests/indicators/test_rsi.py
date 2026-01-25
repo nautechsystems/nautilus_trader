@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.indicators.rsi import RelativeStrengthIndex
+from nautilus_trader.indicators import RelativeStrengthIndex
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
@@ -124,6 +124,20 @@ class TestRelativeStrengthIndex:
 
         # Act, Assert
         assert self.rsi.value == 0.7615344667662725
+
+    def test_min_value_as_first(self):
+        # Arrange
+        self.rsi.update_raw(1.00000)
+        self.rsi.update_raw(2.00000)
+        self.rsi.update_raw(3.00000)
+        self.rsi.update_raw(4.00000)
+        self.rsi.update_raw(5.00000)
+        self.rsi.update_raw(6.00000)
+        self.rsi.update_raw(7.00000)
+        self.rsi.update_raw(2.00000)
+
+        # Act, Assert
+        assert self.rsi.value == 0.38650828748031707
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange

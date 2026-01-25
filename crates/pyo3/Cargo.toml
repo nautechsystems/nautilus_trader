@@ -1,41 +1,59 @@
 [package]
 name = "nautilus-pyo3"
 readme = "README.md"
-publish = false  # Do not publish to crates.io
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description.workspace = true
+description = "Python bindings for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+publish = false # Do not publish to crates.io (ever)
+
+[lints]
+workspace = true
 
 [lib]
 name = "nautilus_pyo3"
-crate-type = ["cdylib"]
+crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
+cython-compat = []
+defi = ["dep:nautilus-blockchain", "nautilus-blockchain/python"]
 extension-module = [
-  "pyo3/extension-module",
+  "nautilus-analysis/extension-module",
+  "nautilus-architect-ax/extension-module",
+  "nautilus-binance/extension-module",
+  "nautilus-bitmex/extension-module",
+  "nautilus-blockchain?/extension-module",
+  "nautilus-bybit/extension-module",
+  "nautilus-coinbase-intx/extension-module",
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-cryptography/extension-module",
+  "nautilus-databento/extension-module",
+  "nautilus-deribit/extension-module",
+  "nautilus-dydx/extension-module",
   "nautilus-execution/extension-module",
+  "nautilus-hyperliquid/extension-module",
   "nautilus-indicators/extension-module",
+  "nautilus-kraken/extension-module",
   "nautilus-infrastructure/extension-module",
+  "nautilus-live/extension-module",
   "nautilus-model/extension-module",
+  "nautilus-okx/extension-module",
+  "nautilus-sandbox/extension-module",
   "nautilus-persistence/extension-module",
   "nautilus-serialization/extension-module",
+  "nautilus-tardis/extension-module",
   "nautilus-testkit/extension-module",
   "nautilus-trading/extension-module",
-  "nautilus-coinbase-intx/extension-module",
-  "nautilus-databento/extension-module",
-  "nautilus-tardis/extension-module",
+  "pyo3/extension-module",
 ]
 ffi = [
   "nautilus-common/ffi",
@@ -46,19 +64,37 @@ ffi = [
 high-precision = [
   "nautilus-model/high-precision",
   "nautilus-serialization/high-precision",
+  "nautilus-binance/high-precision",
+  "nautilus-bitmex/high-precision",
+  "nautilus-bybit/high-precision",
+  "nautilus-coinbase-intx/high-precision",
+  "nautilus-databento/high-precision",
+  "nautilus-deribit/high-precision",
+  "nautilus-dydx/high-precision",
+  "nautilus-hyperliquid/high-precision",
+  "nautilus-kraken/high-precision",
+  "nautilus-okx/high-precision",
+  "nautilus-sandbox/high-precision",
+  "nautilus-tardis/high-precision",
 ]
+hypersync = ["nautilus-blockchain/hypersync"]
+postgres = ["nautilus-infrastructure/postgres"]
+redis = ["nautilus-infrastructure/redis"]
+tracing-bridge = ["nautilus-common/tracing-bridge"]
 
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
+nautilus-analysis = { workspace = true, features = ["python"] }
 nautilus-common = { workspace = true, features = ["python"] }
 nautilus-core = { workspace = true, features = ["python"] }
 nautilus-cryptography = { workspace = true, features = ["python"] }
 nautilus-execution = { workspace = true, features = ["python"] }
 nautilus-indicators = { workspace = true, features = ["python"] }
 nautilus-infrastructure = { workspace = true, features = ["python"] }
+nautilus-live = { workspace = true, features = ["python"] }
 nautilus-model = { workspace = true, features = ["python"] }
 nautilus-network = { workspace = true, features = ["python"] }
 nautilus-persistence = { workspace = true, features = ["python"] }
@@ -67,8 +103,28 @@ nautilus-testkit = { workspace = true, features = ["python"] }
 nautilus-trading = { workspace = true, features = ["python"] }
 
 # Adapters
+nautilus-architect-ax = { workspace = true, features = ["python"] }
+nautilus-binance = { workspace = true, features = ["python"] }
+nautilus-bitmex = { workspace = true, features = ["python"] }
+nautilus-blockchain = { workspace = true, features = [
+  "python",
+], optional = true }
+nautilus-bybit = { workspace = true, features = ["python"] }
 nautilus-coinbase-intx = { workspace = true, features = ["python"] }
-nautilus-databento = { workspace = true, features = ["python"] }
-nautilus-tardis = { workspace = true, features = ["python"] }
+nautilus-databento = { workspace = true, features = ["python", "live"] }
+nautilus-deribit = { workspace = true, features = ["python"] }
+nautilus-dydx = { workspace = true, features = ["python"] }
+nautilus-hyperliquid = { workspace = true, features = ["python"] }
+nautilus-kraken = { workspace = true, features = ["python"] }
+nautilus-okx = { workspace = true, features = ["python"] }
+nautilus-sandbox = { workspace = true, features = ["python"] }
+nautilus-tardis = { workspace = true, features = ["python", "replay"] }
 
 pyo3 = { workspace = true }
+pyo3-stub-gen = { workspace = true }
+
+# Run with `cargo run --bin python-stub-gen`
+[[bin]]
+name = "python-stub-gen"
+path = "bin/stub_gen.rs"
+doc = false

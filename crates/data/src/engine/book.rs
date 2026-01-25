@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    any::Any,
     cell::{Ref, RefCell},
     num::NonZeroUsize,
     rc::Rc,
@@ -22,11 +21,11 @@ use std::{
 
 use nautilus_common::{
     cache::Cache,
-    msgbus::{self, MStr, Topic, handler::MessageHandler},
+    msgbus::{self, Handler, MStr, Topic},
     timer::TimeEvent,
 };
 use nautilus_model::{
-    data::Data,
+    data::{OrderBookDeltas, OrderBookDepth10},
     identifiers::{InstrumentId, Venue},
     instruments::Instrument,
 };
@@ -43,6 +42,11 @@ pub struct BookSnapshotInfo {
     pub interval_ms: NonZeroUsize,
 }
 
+/// Handles order book updates and delta processing for a specific instrument.
+///
+/// The `BookUpdater` processes incoming order book deltas and maintains
+/// the current state of an order book. It can handle both incremental
+/// updates and full snapshots for the instrument it's assigned to.
 #[derive(Debug)]
 pub struct BookUpdater {
     pub id: Ustr,
@@ -61,34 +65,42 @@ impl BookUpdater {
     }
 }
 
-impl MessageHandler for BookUpdater {
+impl Handler<OrderBookDeltas> for BookUpdater {
     fn id(&self) -> Ustr {
         self.id
     }
 
-    fn handle(&self, message: &dyn Any) {
-        // TODO: Temporary handler implementation (this will be removed soon)
-        if let Some(data) = message.downcast_ref::<Data>() {
-            if let Some(book) = self
-                .cache
-                .borrow_mut()
-                .order_book_mut(&data.instrument_id())
-            {
-                match data {
-                    Data::Delta(delta) => book.apply_delta(delta),
-                    Data::Deltas(deltas) => book.apply_deltas(deltas),
-                    Data::Depth10(depth) => book.apply_depth(depth),
-                    _ => log::error!("Invalid data type for book update, was {data:?}"),
-                }
-            }
+    fn handle(&self, deltas: &OrderBookDeltas) {
+        if let Some(book) = self
+            .cache
+            .borrow_mut()
+            .order_book_mut(&deltas.instrument_id)
+            && let Err(e) = book.apply_deltas(deltas)
+        {
+            log::error!("Failed to apply deltas: {e}");
         }
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }
 
+impl Handler<OrderBookDepth10> for BookUpdater {
+    fn id(&self) -> Ustr {
+        self.id
+    }
+
+    fn handle(&self, depth: &OrderBookDepth10) {
+        if let Some(book) = self.cache.borrow_mut().order_book_mut(&depth.instrument_id)
+            && let Err(e) = book.apply_depth(depth)
+        {
+            log::error!("Failed to apply depth: {e}");
+        }
+    }
+}
+
+/// Creates periodic snapshots of order books at configured intervals.
+///
+/// The `BookSnapshotter` generates order book snapshots on timer events,
+/// publishing them as market data. This is useful for providing periodic
+/// full order book state updates in addition to incremental delta updates.
 #[derive(Debug)]
 pub struct BookSnapshotter {
     pub id: Ustr,
@@ -119,6 +131,10 @@ impl BookSnapshotter {
     }
 
     pub fn snapshot(&self, _event: TimeEvent) {
+        log::debug!(
+            "BookSnapshotter.snapshot called for {}",
+            self.snap_info.instrument_id
+        );
         let cache = self.cache.borrow();
 
         if self.snap_info.is_composite {
@@ -143,10 +159,14 @@ impl BookSnapshotter {
             .unwrap_or_else(|| panic!("OrderBook for {instrument_id} was not in cache"));
 
         if book.update_count == 0 {
-            log::debug!("OrderBook for {instrument_id} not yet updated for snapshot");
+            log::debug!("OrderBook not yet updated for snapshot: {instrument_id}");
             return;
         }
+        log::debug!(
+            "Publishing OrderBook snapshot for {instrument_id} (update_count={})",
+            book.update_count
+        );
 
-        msgbus::publish(topic, book as &dyn Any);
+        msgbus::publish_book(topic, book);
     }
 }

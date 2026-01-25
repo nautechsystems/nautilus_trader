@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -46,6 +46,8 @@ cdef class UUID4:
         self._mem = uuid4_from_cstr(pystr_to_cstr(state))
 
     def __eq__(self, UUID4 other) -> bool:
+        if other is None:
+            return False
         return uuid4_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:

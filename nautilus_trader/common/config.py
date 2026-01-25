@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,7 +20,8 @@ import importlib
 from collections.abc import Callable
 from decimal import Decimal
 from io import StringIO
-from typing import Annotated, Any
+from typing import Annotated
+from typing import Any
 
 import msgspec
 import pandas as pd
@@ -31,6 +32,11 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OtoTriggerMode
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import Identifier
 from nautilus_trader.model.identifiers import InstrumentId
@@ -100,7 +106,12 @@ def nautilus_schema_hook(type_: type[Any]) -> dict[str, Any]:
     raise TypeError(f"Unsupported type for schema generation: {type_}")
 
 
-def msgspec_encoding_hook(obj: Any) -> Any:
+def msgspec_encoding_hook(obj: Any) -> Any:  # noqa: C901 (too complex)
+    # Check for fully_qualified_name first, before generic type check
+    if isinstance(obj, type) and hasattr(obj, "fully_qualified_name"):
+        return obj.fully_qualified_name()
+    if isinstance(obj, type):
+        return str(obj)
     if isinstance(obj, Decimal):
         return str(obj)
     if isinstance(obj, UUID4):
@@ -111,12 +122,12 @@ def msgspec_encoding_hook(obj: Any) -> Any:
         return str(obj)
     if isinstance(obj, (Price | Quantity | Money | Currency)):
         return str(obj)
+    if isinstance(obj, (OmsType | AccountType | BookType | OtoTriggerMode)):
+        return obj.name
     if isinstance(obj, (pd.Timestamp | pd.Timedelta)):
         return obj.isoformat()
     if isinstance(obj, Environment):
         return obj.value
-    if isinstance(obj, type) and hasattr(obj, "fully_qualified_name"):
-        return obj.fully_qualified_name()
     if type(obj) in CUSTOM_ENCODINGS:
         func = CUSTOM_ENCODINGS[type(obj)]
         return func(obj)
@@ -145,6 +156,16 @@ def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:  # noqa: C901 (too c
         return Money.from_str(obj)
     if obj_type == Currency:
         return Currency.from_str(obj)
+    if obj_type == OmsType:
+        return OmsType[obj]
+    if obj_type == AccountType:
+        return AccountType[obj]
+    if obj_type == BookType:
+        return BookType[obj]
+    if obj_type == OtoTriggerMode:
+        return OtoTriggerMode[obj]
+    if obj_type == TriggerType:
+        return TriggerType[obj]
     if obj_type == Environment:
         return obj_type(obj)
     if obj_type in CUSTOM_DECODINGS:
@@ -345,10 +366,10 @@ class MessageBusConfig(NautilusConfig, frozen=True):
         The encoding for database operations, controls the type of serializer used.
     timestamps_as_iso8601, default False
         If timestamps should be persisted as ISO 8601 strings.
-        If `False` then will persit as UNIX nanoseconds.
+        If `False` then will persist as UNIX nanoseconds.
     buffer_interval_ms : PositiveInt, optional
         The buffer interval (milliseconds) between pipelined/batched transactions.
-        The recommended range if using buffered pipeling is [10, 1000] milliseconds,
+        The recommended range if using buffered pipelining is [10, 1000] milliseconds,
         with a good compromise being 100 milliseconds.
     autotrim_mins : int, optional
         The lookback window in minutes for automatic stream trimming.
@@ -411,10 +432,16 @@ class InstrumentProviderConfig(NautilusConfig, frozen=True):
         whether the instrument should be loaded
     log_warnings : bool, default True
         If parser warnings should be logged.
+    use_gamma_markets : bool, default False
+        Determines which API to use for loading market data:
+        - True: Gamma Markets API (experimental) - faster with server-side filtering, but provides less detailed data
+        - False: CLOB API (stable, default) - complete data, but slower due to sequential fetching
 
     """
 
     def __eq__(self, other):
+        if other is None:
+            return False
         return (
             self.load_all == other.load_all
             and self.load_ids == other.load_ids
@@ -430,6 +457,7 @@ class InstrumentProviderConfig(NautilusConfig, frozen=True):
     filters: dict[str, Any] | None = None
     filter_callable: str | None = None
     log_warnings: bool = True
+    use_gamma_markets: bool = False
 
 
 class OrderEmulatorConfig(NautilusConfig, frozen=True):
@@ -548,15 +576,23 @@ class LoggingConfig(NautilusConfig, frozen=True):
         The maximum number of backup log files to keep when rotating.
     log_colors : bool, default True
         If ANSI codes should be used to produce colored log lines.
-    log_component_levels : dict[str, LogLevel]
+    log_component_levels : dict[str, str]
         The additional per component log level filters, where keys are component
-        IDs (e.g. actor/strategy IDs) and values are log levels.
+        IDs (e.g. actor/strategy IDs) and values are log level strings (case-insensitive).
+    log_components_only : bool, default False
+        If only components with explicit component-level filters should be logged.
+        When enabled, only log messages from components that have been explicitly
+        configured in `log_component_levels` will be output.
     bypass_logging : bool, default False
         If all logging should be bypassed.
     print_config : bool, default False
         If the core logging configuration should be printed to stdout at initialization.
-    use_pyo3: bool, default False
-        If the logging system should be initialized via pyo3,
+    use_tracing : bool, default False
+        If the tracing subscriber should be enabled for capturing logs from external Rust
+        crates that use the `tracing` crate. Use the ``RUST_LOG`` environment variable
+        to control which crates emit tracing events (e.g., ``RUST_LOG=hyper_util=debug``).
+    use_pyo3 : bool, default False
+        If the logging subsystem should be initialized via pyo3,
         this isn't recommended for backtesting as the performance is much lower
         but can be useful for seeing logs originating from Rust.
     clear_log_file : bool, default False
@@ -574,8 +610,10 @@ class LoggingConfig(NautilusConfig, frozen=True):
     log_file_max_backup_count: NonNegativeInt = 5
     log_colors: bool = True
     log_component_levels: dict[str, str] | None = None
+    log_components_only: bool = False
     bypass_logging: bool = False
     print_config: bool = False
+    use_tracing: bool = False
     use_pyo3: bool = False
     clear_log_file: bool = False
 

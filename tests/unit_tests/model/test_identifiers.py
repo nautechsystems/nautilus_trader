@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,12 +18,22 @@ import pickle
 import pytest
 
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import OrderListId
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.identifiers import generic_spread_id_to_list
+from nautilus_trader.model.identifiers import is_generic_spread_id
+from nautilus_trader.model.identifiers import new_generic_spread_id
 
 
 def test_trader_identifier() -> None:
@@ -45,7 +55,7 @@ def test_account_identifier() -> None:
     # Assert
     assert account_id1 == account_id1
     assert account_id1 != account_id2
-    assert "SIM-02851908", account_id1.value
+    assert account_id1.value == "SIM-02851908"
     assert account_id1 == AccountId("SIM-02851908")
 
 
@@ -253,6 +263,20 @@ def test_instrument_id_from_str() -> None:
     assert result == instrument_id
 
 
+def test_instrument_id_from_str_with_utf8_symbol() -> None:
+    # Arrange
+    non_ascii_symbol = "TËST-PÉRP"
+    non_ascii_instrument = "TËST-PÉRP.BINANCE"
+
+    # Act
+    result = InstrumentId.from_str(non_ascii_instrument)
+
+    # Assert
+    assert str(result.symbol) == non_ascii_symbol
+    assert str(result.venue) == "BINANCE"
+    assert str(result) == non_ascii_instrument
+
+
 @pytest.mark.parametrize(
     ("input", "expected_err"),
     [
@@ -295,4 +319,290 @@ def test_exec_algorithm_id() -> None:
 def test_trade_id_maximum_length() -> None:
     # Arrange, Act, Assert
     with pytest.raises(ValueError):
-        TradeId("A" * 37)
+        TradeId("A" * 37)  # Max length is 36 characters
+
+
+def test_instrument_id_new_spread_single_positive_ratio() -> None:
+    # Arrange
+    id1 = InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
+
+    # Act, Assert - single leg spreads should raise an error
+    with pytest.raises(ValueError, match="instrument_ratios list needs to have at least 2 legs"):
+        new_generic_spread_id([(id1, 1)])
+
+
+def test_instrument_id_new_spread_single_negative_ratio() -> None:
+    # Arrange
+    id1 = InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
+
+    # Act, Assert - single leg spreads should raise an error
+    with pytest.raises(ValueError, match="instrument_ratios list needs to have at least 2 legs"):
+        new_generic_spread_id([(id1, -2)])
+
+
+def test_instrument_id_new_spread_multiple_instruments_sorted() -> None:
+    # Arrange - note the order: MSFT, AAPL, GOOGL (not alphabetical)
+    id1 = InstrumentId(Symbol("MSFT"), Venue("NASDAQ"))
+    id2 = InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
+    id3 = InstrumentId(Symbol("GOOGL"), Venue("NASDAQ"))
+
+    # Act
+    result = new_generic_spread_id([(id1, 1), (id2, -2), (id3, 3)])
+
+    # Assert - should be sorted alphabetically: AAPL, GOOGL, MSFT
+    assert result.symbol.value == "((2))AAPL___(3)GOOGL___(1)MSFT"
+    assert result.venue == Venue("NASDAQ")
+
+
+def test_instrument_id_new_spread_empty_list_raises_error() -> None:
+    # Arrange, Act, Assert
+    with pytest.raises(ValueError, match="instrument_ratios list needs to have at least 2 legs"):
+        new_generic_spread_id([])
+
+
+def test_instrument_id_new_spread_zero_ratio_raises_error() -> None:
+    # Arrange
+    id1 = InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
+    id2 = InstrumentId(Symbol("MSFT"), Venue("NASDAQ"))
+
+    # Act, Assert - need at least 2 legs, but one has zero ratio
+    with pytest.raises(ValueError, match="ratio cannot be zero"):
+        new_generic_spread_id([(id1, 1), (id2, 0)])
+
+
+def test_instrument_id_new_spread_mismatched_venues_raises_error() -> None:
+    # Arrange
+    id1 = InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
+    id2 = InstrumentId(Symbol("MSFT"), Venue("NYSE"))
+
+    # Act, Assert
+    with pytest.raises(ValueError, match="All venues must match"):
+        new_generic_spread_id([(id1, 1), (id2, -1)])
+
+
+def test_instrument_id_to_list_single_positive_ratio() -> None:
+    # Arrange
+    combo = InstrumentId(Symbol("(1)AAPL"), Venue("NASDAQ"))
+
+    # Act
+    result = generic_spread_id_to_list(combo)
+
+    # Assert
+    assert len(result) == 1
+    assert result[0][0] == InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
+    assert result[0][1] == 1
+
+
+def test_instrument_id_to_list_single_negative_ratio() -> None:
+    # Arrange
+    combo = InstrumentId(Symbol("((2))AAPL"), Venue("NASDAQ"))
+
+    # Act
+    result = generic_spread_id_to_list(combo)
+
+    # Assert
+    assert len(result) == 1
+    assert result[0][0] == InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
+    assert result[0][1] == -2
+
+
+def test_instrument_id_to_list_multiple_instruments() -> None:
+    # Arrange
+    combo = InstrumentId(Symbol("(1)AAPL___((2))MSFT___(3)GOOGL"), Venue("NASDAQ"))
+
+    # Act
+    result = generic_spread_id_to_list(combo)
+
+    # Assert - should be sorted alphabetically
+    assert len(result) == 3
+    assert result[0] == (InstrumentId(Symbol("AAPL"), Venue("NASDAQ")), 1)
+    assert result[1] == (InstrumentId(Symbol("GOOGL"), Venue("NASDAQ")), 3)
+    assert result[2] == (InstrumentId(Symbol("MSFT"), Venue("NASDAQ")), -2)
+
+
+def test_instrument_id_to_list_invalid_format_raises_error() -> None:
+    # Arrange
+    combo = InstrumentId(Symbol("INVALID_FORMAT"), Venue("NASDAQ"))
+
+    # Act, Assert
+    with pytest.raises(ValueError, match="Invalid symbol format for component"):
+        generic_spread_id_to_list(combo)
+
+
+def test_instrument_id_new_spread_to_list_roundtrip() -> None:
+    # Arrange - provide in alphabetical order since that's how they'll be returned
+    id1 = InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
+    id2 = InstrumentId(Symbol("GOOGL"), Venue("NASDAQ"))
+    id3 = InstrumentId(Symbol("MSFT"), Venue("NASDAQ"))
+    original_list = [(id1, 1), (id2, 3), (id3, -2)]  # Alphabetical order
+
+    # Act
+    spread = new_generic_spread_id(original_list)
+    result_list = generic_spread_id_to_list(spread)
+
+    # Assert
+    assert result_list == original_list
+
+
+@pytest.mark.parametrize(
+    ("legs", "expected_symbol"),
+    [
+        # 2 legs - vertical spread (call spread), sorted alphabetically
+        (
+            [
+                (InstrumentId(Symbol("ESH6 C7000"), Venue("XCME")), 1),
+                (InstrumentId(Symbol("ESH6 C7050"), Venue("XCME")), -1),
+            ],
+            "(1)ESH6 C7000___((1))ESH6 C7050",
+        ),
+        # 2 legs - ratio spread with different ratios (put spread)
+        (
+            [
+                (InstrumentId(Symbol("ESH6 P6950"), Venue("XCME")), 1),
+                (InstrumentId(Symbol("ESH6 P6900"), Venue("XCME")), -2),
+            ],
+            "((2))ESH6 P6900___(1)ESH6 P6950",
+        ),
+        # 3 legs - butterfly spread, sorted alphabetically
+        (
+            [
+                (InstrumentId(Symbol("ESH6 C7000"), Venue("XCME")), 1),
+                (InstrumentId(Symbol("ESH6 C7050"), Venue("XCME")), -2),
+                (InstrumentId(Symbol("ESH6 P6950"), Venue("XCME")), 1),
+            ],
+            "(1)ESH6 C7000___((2))ESH6 C7050___(1)ESH6 P6950",
+        ),
+        # 3 legs - all long legs (unusual but valid)
+        (
+            [
+                (InstrumentId(Symbol("ESH6 C7000"), Venue("XCME")), 1),
+                (InstrumentId(Symbol("ESH6 C7050"), Venue("XCME")), 2),
+                (InstrumentId(Symbol("ESH6 P6900"), Venue("XCME")), 3),
+            ],
+            "(1)ESH6 C7000___(2)ESH6 C7050___(3)ESH6 P6900",
+        ),
+        # 4 legs - iron condor, sorted alphabetically
+        (
+            [
+                (InstrumentId(Symbol("ESH6 C7000"), Venue("XCME")), 1),
+                (InstrumentId(Symbol("ESH6 C7050"), Venue("XCME")), -1),
+                (InstrumentId(Symbol("ESH6 P6950"), Venue("XCME")), 1),
+                (InstrumentId(Symbol("ESH6 P6900"), Venue("XCME")), -1),
+            ],
+            "(1)ESH6 C7000___((1))ESH6 C7050___((1))ESH6 P6900___(1)ESH6 P6950",
+        ),
+        # 4 legs - complex spread with different ratios
+        (
+            [
+                (InstrumentId(Symbol("ESH6 C7000"), Venue("XCME")), 1),
+                (InstrumentId(Symbol("ESH6 C7050"), Venue("XCME")), -2),
+                (InstrumentId(Symbol("ESH6 P6950"), Venue("XCME")), 3),
+                (InstrumentId(Symbol("ESH6 P6900"), Venue("XCME")), -4),
+            ],
+            "(1)ESH6 C7000___((2))ESH6 C7050___((4))ESH6 P6900___(3)ESH6 P6950",
+        ),
+    ],
+)
+def test_instrument_id_new_spread_id_string_format(legs, expected_symbol) -> None:
+    """
+    Test that new_generic_spread_id produces the correct string format for 2, 3, and 4
+    legs.
+
+    Format rules:
+    - Positive ratios: (ratio)symbol
+    - Negative ratios: ((ratio))symbol
+    - Separator: ___ (triple underscore)
+    - Legs sorted alphabetically by symbol
+
+    """
+    # Act
+    spread_id = new_generic_spread_id(legs)
+
+    # Assert - Check the symbol format
+    assert spread_id.symbol.value == expected_symbol
+
+    # Assert - Verify roundtrip (can parse back)
+    parsed_legs = generic_spread_id_to_list(spread_id)
+    # Note: The parsed legs are sorted, so we need to sort our input for comparison
+    sorted_legs = sorted(legs, key=lambda x: x[0].symbol.value)
+    assert parsed_legs == sorted_legs
+
+
+def test_instrument_id_is_spread_false_for_simple_symbol() -> None:
+    # Arrange
+    instrument_id = InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
+
+    # Act, Assert
+    assert not is_generic_spread_id(instrument_id)
+
+
+def test_instrument_id_is_spread_true_for_spread_symbol() -> None:
+    # Arrange
+    instrument_id = InstrumentId(Symbol("(1)AAPL___((2))MSFT"), Venue("NASDAQ"))
+
+    # Act, Assert
+    assert is_generic_spread_id(instrument_id)
+
+
+def test_instrument_id_is_spread_true_for_symbol_with_underscore() -> None:
+    # Arrange
+    instrument_id = InstrumentId(Symbol("SOME___SYMBOL"), Venue("NASDAQ"))
+
+    # Act, Assert
+    assert is_generic_spread_id(instrument_id)
+
+
+@pytest.mark.parametrize(
+    "identifier",
+    [
+        Symbol("AUD/USD"),
+        Venue("BINANCE"),
+        InstrumentId(Symbol("BTC/USD"), Venue("BINANCE")),
+        ComponentId("MyComponent"),
+        ClientId("MyClient"),
+        TraderId("TRADER-001"),
+        StrategyId("Strategy-001"),
+        ExecAlgorithmId("TWAP"),
+        AccountId("SIM-001"),
+        ClientOrderId("O-123456"),
+        VenueOrderId("V-123456"),
+        OrderListId("OL-123456"),
+        PositionId("P-123456"),
+        TradeId("T-123456"),
+    ],
+)
+def test_identifier_equality_with_none_returns_false(identifier) -> None:
+    # Act, Assert
+    assert (identifier == None) is False  # noqa: E711
+    assert (identifier != None) is True  # noqa: E711
+
+
+@pytest.mark.parametrize(
+    "identifier",
+    [
+        Symbol("AUD/USD"),
+        Venue("BINANCE"),
+        InstrumentId(Symbol("BTC/USD"), Venue("BINANCE")),
+        ComponentId("MyComponent"),
+        ClientId("MyClient"),
+        TraderId("TRADER-001"),
+        StrategyId("Strategy-001"),
+        ExecAlgorithmId("TWAP"),
+        AccountId("SIM-001"),
+        ClientOrderId("O-123456"),
+        VenueOrderId("V-123456"),
+        OrderListId("OL-123456"),
+        PositionId("P-123456"),
+        TradeId("T-123456"),
+    ],
+)
+def test_identifier_ordering_comparison_with_none_raises_type_error(identifier) -> None:
+    # Act, Assert
+    with pytest.raises(TypeError):
+        _ = identifier < None
+    with pytest.raises(TypeError):
+        _ = identifier <= None
+    with pytest.raises(TypeError):
+        _ = identifier > None
+    with pytest.raises(TypeError):
+        _ = identifier >= None

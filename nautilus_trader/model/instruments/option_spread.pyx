@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,6 +31,8 @@ from nautilus_trader.model.functions cimport instrument_class_from_str
 from nautilus_trader.model.functions cimport instrument_class_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport generic_spread_id_to_list
+from nautilus_trader.model.identifiers cimport is_generic_spread_id
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.base cimport Price
 from nautilus_trader.model.objects cimport Currency
@@ -81,6 +83,8 @@ cdef class OptionSpread(Instrument):
         The fee rate for liquidity takers as a percentage of order value.
     exchange : str, optional
         The exchange ISO 10383 Market Identifier Code (MIC) where the instrument trades.
+    tick_scheme_name : str, optional
+        The name of the tick scheme.
     info : dict[str, object], optional
         The additional instrument information.
 
@@ -126,11 +130,14 @@ cdef class OptionSpread(Instrument):
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
         str exchange = None,
+        str tick_scheme_name = None,
         dict info = None,
     ) -> None:
         Condition.valid_string(strategy_type, "strategy_type")
+
         if exchange is not None:
             Condition.valid_string(exchange, "exchange")
+
         super().__init__(
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
@@ -156,6 +163,7 @@ cdef class OptionSpread(Instrument):
             taker_fee=taker_fee or Decimal(0),
             ts_event=ts_event,
             ts_init=ts_init,
+            tick_scheme_name=tick_scheme_name,
             info=info,
         )
 
@@ -205,7 +213,7 @@ cdef class OptionSpread(Instrument):
     @property
     def expiration_utc(self) -> pd.Timestamp:
         """
-        Return the contract expriation timestamp (UTC).
+        Return the contract expiration timestamp (UTC).
 
         Returns
         -------
@@ -214,6 +222,24 @@ cdef class OptionSpread(Instrument):
 
         """
         return pd.Timestamp(self.expiration_ns, tz=pytz.utc)
+
+    cpdef list legs(self):
+        """
+        Return the list of leg tuples (instrument_id, ratio) for this spread.
+
+        If the instrument ID corresponds to a generic spread ID, returns the
+        parsed legs using generic_spread_id_to_list. Otherwise returns an empty list.
+
+        Returns
+        -------
+        list[tuple[InstrumentId, int]]
+            List of tuples containing (instrument_id, ratio) for each leg.
+
+        """
+        if is_generic_spread_id(self.id):
+            return generic_spread_id_to_list(self.id)
+
+        return [(self.id, 1)]
 
     @staticmethod
     cdef OptionSpread from_dict_c(dict values):
@@ -238,6 +264,7 @@ cdef class OptionSpread(Instrument):
             maker_fee=Decimal(values["maker_fee"]),
             taker_fee=Decimal(values["taker_fee"]),
             exchange=values["exchange"],
+            tick_scheme_name=values.get("tick_scheme_name"),
             info=values.get("info"),
         )
 
@@ -273,6 +300,7 @@ cdef class OptionSpread(Instrument):
             "maker_fee": str(obj.maker_fee),
             "taker_fee": str(obj.taker_fee),
             "exchange": obj.exchange,
+            "tick_scheme_name": obj.tick_scheme_name,
             "info": obj.info,
         }
 
@@ -292,10 +320,14 @@ cdef class OptionSpread(Instrument):
             strategy_type=pyo3_instrument.strategy_type,
             activation_ns=pyo3_instrument.activation_ns,
             expiration_ns=pyo3_instrument.expiration_ns,
-            info=pyo3_instrument.info,
+            margin_init=Decimal(pyo3_instrument.margin_init),
+            margin_maint=Decimal(pyo3_instrument.margin_maint),
+            maker_fee=Decimal(pyo3_instrument.maker_fee),
+            taker_fee=Decimal(pyo3_instrument.taker_fee),
+            exchange=pyo3_instrument.exchange,
             ts_event=pyo3_instrument.ts_event,
             ts_init=pyo3_instrument.ts_init,
-            exchange=pyo3_instrument.exchange,
+            info=pyo3_instrument.info,
         )
 
     @staticmethod

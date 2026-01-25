@@ -1,0 +1,12 @@
+{
+  "code": "0",
+  "msg": "",
+  "data": [
+    {
+      "instType": "SWAP",
+      "instId": "BTC-USDT-SWAP",
+      "markPx": "84660.1",
+      "ts": "1744590349506"
+    }
+  ]
+}

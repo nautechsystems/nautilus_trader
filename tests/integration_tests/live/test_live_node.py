@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import unittest.mock
 
 import msgspec
 import pytest
@@ -23,7 +22,6 @@ from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
-from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
@@ -91,10 +89,9 @@ class TestTradingNodeConfiguration:
     def teardown(self):
         ensure_all_tasks_completed()
 
-    def test_config_with_in_memory_execution_database(self):
+    def test_config_with_in_memory_execution_database(self, event_loop_for_setup):
         # Arrange
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        loop = event_loop_for_setup
 
         config = TradingNodeConfig(
             logging=LoggingConfig(bypass_logging=True),
@@ -106,10 +103,9 @@ class TestTradingNodeConfiguration:
         # Assert
         assert node is not None
 
-    def test_config_with_redis_execution_database(self):
+    def test_config_with_redis_execution_database(self, event_loop_for_setup):
         # Arrange, Act
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        loop = event_loop_for_setup
 
         config = TradingNodeConfig(
             logging=LoggingConfig(bypass_logging=True),
@@ -119,10 +115,9 @@ class TestTradingNodeConfiguration:
         # Assert
         assert node is not None
 
-    def test_node_config_from_raw(self):
+    def test_node_config_from_raw(self, event_loop_for_setup):
         # Arrange, Act
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        loop = event_loop_for_setup
 
         config = TradingNodeConfig.parse(RAW_CONFIG)
         node = TradingNode(config=config, loop=loop)
@@ -131,72 +126,12 @@ class TestTradingNodeConfiguration:
         assert node.trader.id.value == "Test-111"
         assert node.trader.strategy_ids() == [StrategyId("VolatilityMarketMaker-000")]
 
-    @pytest.mark.skip(reason="client configs need to handle params other than those on base class")
-    def test_node_build_raw(self, monkeypatch):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        monkeypatch.setenv("BINANCE_FUTURES_API_KEY", "SOME_API_KEY")
-        monkeypatch.setenv("BINANCE_FUTURES_API_SECRET", "SOME_API_SECRET")
-
-        config = TradingNodeConfig.parse(RAW_CONFIG)
-        node = TradingNode(config=config, loop=loop)
-        node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
-        node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)
-        node.build()
-
-    @pytest.mark.skip(reason="refactor test to use Binance clients which have no dependencies")
-    def test_node_build_objects(self, monkeypatch):
+    def test_setting_instance_id(self, monkeypatch, event_loop_for_setup):
         # Arrange
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        loop = event_loop_for_setup
 
-        config = TradingNodeConfig(
-            trader_id="TESTER-001",
-            logging=LoggingConfig(bypass_logging=True),
-            data_clients={
-                "BINANCE": BinanceDataClientConfig(),
-            },
-            exec_clients={
-                "BINANCE": BinanceExecClientConfig(),
-            },
-            timeout_connection=90.0,
-            timeout_reconciliation=5.0,
-            timeout_portfolio=5.0,
-            timeout_disconnection=5.0,
-            timeout_post_stop=2.0,
-        )
-        node = TradingNode(config=config, loop=loop)
-        node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
-        node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)
-
-        # Mock factories so nothing actually connects
-        from nautilus_trader.adapters.binance import factories
-
-        mock_data_factory = factories.BinanceLiveDataClientFactory.create = (
-            unittest.mock.MagicMock()
-        )
-        mock_exec_factory = factories.BinanceLiveExecClientFactory.create = (
-            unittest.mock.MagicMock()
-        )
-
-        # Act - lazy way of mocking the whole client
-        with pytest.raises(TypeError):
-            node._builder.build_data_clients(node._config.data_clients)
-        with pytest.raises(TypeError):
-            node._builder.build_exec_clients(node._config.exec_clients)
-
-        # Assert
-        assert mock_data_factory.called
-        assert mock_exec_factory.called
-
-    def test_setting_instance_id(self, monkeypatch):
-        # Arrange
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        monkeypatch.setenv("BINANCE_FUTURES_API_KEY", "SOME_API_KEY")
-        monkeypatch.setenv("BINANCE_FUTURES_API_SECRET", "SOME_API_SECRET")
+        monkeypatch.setenv("BINANCE_API_KEY", "SOME_API_KEY")
+        monkeypatch.setenv("BINANCE_API_SECRET", "SOME_API_SECRET")
 
         config = TradingNodeConfig.parse(RAW_CONFIG)
 
@@ -209,10 +144,9 @@ class TestTradingNodeOperation:
     def teardown(self):
         ensure_all_tasks_completed()
 
-    def test_get_event_loop_returns_a_loop(self):
+    def test_get_event_loop_returns_a_loop(self, event_loop_for_setup):
         # Arrange
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        loop = event_loop_for_setup
 
         config = TradingNodeConfig(logging=LoggingConfig(bypass_logging=True))
         node = TradingNode(config=config, loop=loop)
@@ -225,37 +159,38 @@ class TestTradingNodeOperation:
         assert loop == node.kernel.loop
 
     def test_build_called_twice_raises_runtime_error(self):
-        # Arrange, # Act
+        # Arrange
+        config = TradingNodeConfig(logging=LoggingConfig(bypass_logging=True))
+        node = TradingNode(config=config)
+        node.build()
+
+        # Act
         with pytest.raises(RuntimeError):
-            config = TradingNodeConfig(logging=LoggingConfig(bypass_logging=True))
-            node = TradingNode(config=config)
-            node.build()
             node.build()
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_run_when_not_built_raises_runtime_error(self):
         # Arrange, Act, Assert
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        loop = asyncio.get_running_loop()
+
+        config = TradingNodeConfig(
+            logging=LoggingConfig(bypass_logging=True),
+            data_clients={
+                "BINANCE": BinanceDataClientConfig(),
+            },
+            exec_clients={
+                "BINANCE": BinanceExecClientConfig(),
+            },
+        )
+        node = TradingNode(config=config, loop=loop)
 
         with pytest.raises(RuntimeError):
-            config = TradingNodeConfig(
-                logging=LoggingConfig(bypass_logging=True),
-                data_clients={
-                    "BINANCE": BinanceDataClientConfig(),
-                },
-                exec_clients={
-                    "BINANCE": BinanceExecClientConfig(),
-                },
-            )
-            node = TradingNode(config=config, loop=loop)
             await node.run_async()
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_run_and_stop_with_client_factories(self, monkeypatch):
         # Arrange
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        loop = asyncio.get_running_loop()
         monkeypatch.setenv("BINANCE_API_KEY", "SOME_API_KEY")
         monkeypatch.setenv("BINANCE_API_SECRET", "SOME_API_SECRET")
 
@@ -280,43 +215,3 @@ class TestTradingNodeOperation:
         node.run()
         await asyncio.sleep(2.0)
         await node.stop_async()
-
-    @pytest.mark.skip(reason="WIP: continue adding tests here")
-    @pytest.mark.asyncio()
-    async def test_run_stop_and_dispose(self, monkeypatch):
-        # Arrange
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        monkeypatch.setenv("BINANCE_API_KEY", "SOME_API_KEY")
-        monkeypatch.setenv("BINANCE_API_SECRET", "SOME_API_SECRET")
-
-        config = TradingNodeConfig(
-            logging=LoggingConfig(bypass_logging=True),
-            data_clients={
-                "BINANCE": BinanceDataClientConfig(
-                    instrument_provider=InstrumentProviderConfig(load_all=False),
-                ),
-            },
-            exec_clients={
-                "BINANCE": BinanceExecClientConfig(
-                    instrument_provider=InstrumentProviderConfig(load_all=False),
-                ),
-            },
-            timeout_disconnection=1.0,  # Short timeout for testing
-            timeout_post_stop=1.0,  # Short timeout for testing
-        )
-        node = TradingNode(config=config, loop=loop)
-
-        node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
-        node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)
-        node.build()
-
-        # Act
-        node.run()
-        await asyncio.sleep(2.0)
-        await node.stop_async()
-
-        # await asyncio.sleep(2.0)
-        # node.dispose()
-        # assert node.trader.is_disposed

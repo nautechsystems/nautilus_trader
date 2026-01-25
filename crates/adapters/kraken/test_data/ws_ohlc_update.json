@@ -1,0 +1,18 @@
+{
+  "channel": "ohlc",
+  "type": "update",
+  "data": [
+    {
+      "symbol": "BTC/USD",
+      "interval": 1,
+      "interval_begin": "2023-10-04T16:25:00.000000000Z",
+      "open": 106038.2,
+      "high": 106044.3,
+      "low": 106038.1,
+      "close": 106040.1,
+      "volume": 30927.68066226,
+      "vwap": 106039.6,
+      "trades": 12
+    }
+  ]
+}

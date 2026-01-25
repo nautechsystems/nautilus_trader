@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -77,24 +77,16 @@ class DYDXInstrumentProvider(InstrumentProvider):
         self._log_warnings = config.log_warnings if config else True
 
     async def load_all_async(self, filters: dict[str, Any] | None = None) -> None:
-        """
-        Load all instruments asynchronously, optionally applying filters.
-        """
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
         await self._load_instruments()
-
-        self._log.info(f"Loaded {len(self._instruments)} instruments")
 
     async def load_ids_async(
         self,
         instrument_ids: list[InstrumentId],
         filters: dict | None = None,
     ) -> None:
-        """
-        Load specific instruments by their IDs.
-        """
         if not instrument_ids:
             self._log.info("No instrument IDs given for loading.")
             return
@@ -117,9 +109,6 @@ class DYDXInstrumentProvider(InstrumentProvider):
             )
 
     async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
-        """
-        Load a single instrument by its ID.
-        """
         PyCondition.not_none(instrument_id, "instrument_id")
         PyCondition.equal(instrument_id.venue, self._venue, "instrument_id.venue", "BINANCE")
 
@@ -139,8 +128,8 @@ class DYDXInstrumentProvider(InstrumentProvider):
             self._log.error("Failed to fetch the instruments")
             return
 
-        maker_fee = Decimal("0")
-        taker_fee = Decimal("0")
+        maker_fee = Decimal(0)
+        taker_fee = Decimal(0)
 
         if fee_tier is None:
             try:

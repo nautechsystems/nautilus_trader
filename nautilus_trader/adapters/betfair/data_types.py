@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -83,6 +83,30 @@ class BSPOrderBookDelta(OrderBookDelta):
 
     @staticmethod
     def to_batch(obj: BSPOrderBookDelta) -> pa.RecordBatch:
+        # Handle CLEAR action where order is None
+        if obj.order is None:
+            metadata = {
+                b"instrument_id": obj.instrument_id.value.encode(),
+                b"price_precision": b"0",
+                b"size_precision": b"0",
+            }
+            schema = BSPOrderBookDelta.schema().with_metadata(metadata)
+            return pa.RecordBatch.from_pylist(
+                [
+                    {
+                        "action": obj.action,
+                        "side": 0,  # Default value for CLEAR
+                        "price": 0,
+                        "size": 0,
+                        "order_id": 0,
+                        "flags": obj.flags,
+                        "ts_event": obj.ts_event,
+                        "ts_init": obj.ts_init,
+                    },
+                ],
+                schema=schema,
+            )
+
         metadata = {
             b"instrument_id": obj.instrument_id.value.encode(),
             b"price_precision": str(obj.order.price.precision).encode(),
@@ -146,6 +170,8 @@ class BetfairTicker(Data):
         self._ts_init = ts_init
 
     def __eq__(self, other: object) -> bool:
+        if other is None:
+            return False
         if not isinstance(other, BetfairTicker):
             return False
         return self.instrument_id == other.instrument_id

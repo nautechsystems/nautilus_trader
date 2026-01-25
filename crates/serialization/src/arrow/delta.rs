@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,17 +25,14 @@ use nautilus_model::{
     data::{BookOrder, OrderBookDelta},
     enums::{BookAction, FromU8, OrderSide},
     identifiers::InstrumentId,
-    types::{Price, Quantity, fixed::PRECISION_BYTES},
+    types::fixed::PRECISION_BYTES,
 };
 
 use super::{
     DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
-    KEY_SIZE_PRECISION, extract_column,
+    KEY_SIZE_PRECISION, decode_price_with_sentinel, decode_quantity_with_sentinel, extract_column,
 };
-use crate::arrow::{
-    ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch, get_raw_price,
-    get_raw_quantity,
-};
+use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for OrderBookDelta {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
@@ -140,7 +137,7 @@ impl EncodeToRecordBatch for OrderBookDelta {
     }
 
     fn metadata(&self) -> HashMap<String, String> {
-        OrderBookDelta::get_metadata(
+        Self::get_metadata(
             &self.instrument_id,
             self.order.price.precision,
             self.order.size.precision,
@@ -155,10 +152,11 @@ impl EncodeToRecordBatch for OrderBookDelta {
             .first()
             .expect("Chunk should have at least one element to encode");
 
-        if delta.order.price.precision == 0 && delta.order.size.precision == 0 {
-            if let Some(delta) = chunk.get(1) {
-                return EncodeToRecordBatch::metadata(delta);
-            }
+        if delta.order.price.precision == 0
+            && delta.order.size.precision == 0
+            && let Some(delta) = chunk.get(1)
+        {
+            return EncodeToRecordBatch::metadata(delta);
         }
 
         EncodeToRecordBatch::metadata(delta)
@@ -193,11 +191,15 @@ impl DecodeFromRecordBatch for OrderBookDelta {
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 7, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 8, DataType::UInt64)?;
 
-        assert_eq!(
-            price_values.value_length(),
-            PRECISION_BYTES,
-            "Price precision uses {PRECISION_BYTES} byte value"
-        );
+        if price_values.value_length() != PRECISION_BYTES {
+            return Err(EncodingError::ParseError(
+                "price",
+                format!(
+                    "Invalid value length: expected {PRECISION_BYTES}, found {}",
+                    price_values.value_length()
+                ),
+            ));
+        }
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {
@@ -215,9 +217,10 @@ impl DecodeFromRecordBatch for OrderBookDelta {
                         format!("Invalid enum value, was {side_value}"),
                     )
                 })?;
-                let price = Price::from_raw(get_raw_price(price_values.value(i)), price_precision);
+                let price =
+                    decode_price_with_sentinel(price_values.value(i), price_precision, "price", i)?;
                 let size =
-                    Quantity::from_raw(get_raw_quantity(size_values.value(i)), size_precision);
+                    decode_quantity_with_sentinel(size_values.value(i), size_precision, "size", i)?;
                 let order_id = order_id_values.value(i);
                 let flags = flags_values.value(i);
                 let sequence = sequence_values.value(i);
@@ -255,15 +258,17 @@ impl DecodeDataFromRecordBatch for OrderBookDelta {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
     use arrow::{array::Array, record_batch::RecordBatch};
-    use nautilus_model::types::{fixed::FIXED_SCALAR, price::PriceRaw};
+    use nautilus_model::types::{
+        Price, Quantity,
+        fixed::FIXED_SCALAR,
+        price::{PRICE_UNDEF, PriceRaw},
+        quantity::{QUANTITY_UNDEF, QuantityRaw},
+    };
     use pretty_assertions::assert_eq;
     use rstest::rstest;
 
@@ -299,7 +304,7 @@ mod tests {
 
         assert_eq!(schema_map.get("action").unwrap(), "UInt8");
         assert_eq!(schema_map.get("side").unwrap(), "UInt8");
-        assert_eq!(*schema_map.get("price").unwrap(), fixed_size_binary.clone());
+        assert_eq!(*schema_map.get("price").unwrap(), fixed_size_binary);
         assert_eq!(*schema_map.get("size").unwrap(), fixed_size_binary);
         assert_eq!(schema_map.get("order_id").unwrap(), "UInt64");
         assert_eq!(schema_map.get("flags").unwrap(), "UInt8");
@@ -446,5 +451,238 @@ mod tests {
 
         let decoded_data = OrderBookDelta::decode_batch(&metadata, record_batch).unwrap();
         assert_eq!(decoded_data.len(), 2);
+    }
+
+    #[rstest]
+    fn test_decode_batch_with_undef_values() {
+        let instrument_id = InstrumentId::from("PLTR.XNAS");
+        let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
+
+        // Create test data with 'R' (clear) action which has PRICE_UNDEF and QUANTITY_UNDEF
+        let action = UInt8Array::from(vec![4, 1]); // 4 = Clear, 1 = Add
+        let side = UInt8Array::from(vec![0, 1]); // NoOrderSide for Clear, Buy for Add
+        let price = FixedSizeBinaryArray::from(vec![
+            &PRICE_UNDEF.to_le_bytes(),
+            &((100.50 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
+        ]);
+        let size = FixedSizeBinaryArray::from(vec![
+            &QUANTITY_UNDEF.to_le_bytes(),
+            &((1000.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
+        ]);
+        let order_id = UInt64Array::from(vec![0, 1]);
+        let flags = UInt8Array::from(vec![0, 0]);
+        let sequence = UInt64Array::from(vec![1, 2]);
+        let ts_event = UInt64Array::from(vec![1, 2]);
+        let ts_init = UInt64Array::from(vec![3, 4]);
+
+        let record_batch = RecordBatch::try_new(
+            OrderBookDelta::get_schema(Some(metadata.clone())).into(),
+            vec![
+                Arc::new(action),
+                Arc::new(side),
+                Arc::new(price),
+                Arc::new(size),
+                Arc::new(order_id),
+                Arc::new(flags),
+                Arc::new(sequence),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        let decoded_data = OrderBookDelta::decode_batch(&metadata, record_batch).unwrap();
+        assert_eq!(decoded_data.len(), 2);
+        assert_eq!(decoded_data[0].order.price.raw, PRICE_UNDEF);
+        assert_eq!(decoded_data[0].order.price.precision, 0);
+        assert_eq!(decoded_data[0].order.size.raw, QUANTITY_UNDEF);
+        assert_eq!(decoded_data[0].order.size.precision, 0);
+        assert_eq!(decoded_data[1].order.price.precision, 2);
+        assert_eq!(decoded_data[1].order.size.precision, 0);
+    }
+
+    #[rstest]
+    fn test_decode_batch_invalid_price_returns_error() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
+
+        let action = UInt8Array::from(vec![1]);
+        let side = UInt8Array::from(vec![1]);
+
+        let invalid_price: PriceRaw = PriceRaw::MAX - 1000;
+        let price = FixedSizeBinaryArray::from(vec![&invalid_price.to_le_bytes()]);
+        let size = FixedSizeBinaryArray::from(vec![
+            &((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
+        let order_id = UInt64Array::from(vec![1]);
+        let flags = UInt8Array::from(vec![0]);
+        let sequence = UInt64Array::from(vec![1]);
+        let ts_event = UInt64Array::from(vec![1]);
+        let ts_init = UInt64Array::from(vec![2]);
+
+        let record_batch = RecordBatch::try_new(
+            OrderBookDelta::get_schema(Some(metadata.clone())).into(),
+            vec![
+                Arc::new(action),
+                Arc::new(side),
+                Arc::new(price),
+                Arc::new(size),
+                Arc::new(order_id),
+                Arc::new(flags),
+                Arc::new(sequence),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        let result = OrderBookDelta::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("price") && err.to_string().contains("row 0"),
+            "Expected price error at row 0, was: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_batch_invalid_action_returns_error() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
+
+        let action = UInt8Array::from(vec![99]);
+        let side = UInt8Array::from(vec![1]);
+        let price =
+            FixedSizeBinaryArray::from(vec![&((100.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes()]);
+        let size = FixedSizeBinaryArray::from(vec![
+            &((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
+        let order_id = UInt64Array::from(vec![1]);
+        let flags = UInt8Array::from(vec![0]);
+        let sequence = UInt64Array::from(vec![1]);
+        let ts_event = UInt64Array::from(vec![1]);
+        let ts_init = UInt64Array::from(vec![2]);
+
+        let record_batch = RecordBatch::try_new(
+            OrderBookDelta::get_schema(Some(metadata.clone())).into(),
+            vec![
+                Arc::new(action),
+                Arc::new(side),
+                Arc::new(price),
+                Arc::new(size),
+                Arc::new(order_id),
+                Arc::new(flags),
+                Arc::new(sequence),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        let result = OrderBookDelta::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("BookAction"),
+            "Expected BookAction error, was: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_batch_missing_instrument_id_returns_error() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
+        metadata.remove(KEY_INSTRUMENT_ID);
+
+        let action = UInt8Array::from(vec![1]);
+        let side = UInt8Array::from(vec![1]);
+        let price =
+            FixedSizeBinaryArray::from(vec![&((100.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes()]);
+        let size = FixedSizeBinaryArray::from(vec![
+            &((100.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
+        ]);
+        let order_id = UInt64Array::from(vec![1]);
+        let flags = UInt8Array::from(vec![0]);
+        let sequence = UInt64Array::from(vec![1]);
+        let ts_event = UInt64Array::from(vec![1]);
+        let ts_init = UInt64Array::from(vec![2]);
+
+        let record_batch = RecordBatch::try_new(
+            OrderBookDelta::get_schema(Some(metadata.clone())).into(),
+            vec![
+                Arc::new(action),
+                Arc::new(side),
+                Arc::new(price),
+                Arc::new(size),
+                Arc::new(order_id),
+                Arc::new(flags),
+                Arc::new(sequence),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        let result = OrderBookDelta::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("instrument_id"),
+            "Expected missing instrument_id error, was: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_encode_decode_round_trip() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
+
+        let delta1 = OrderBookDelta {
+            instrument_id,
+            action: BookAction::Add,
+            order: BookOrder {
+                side: OrderSide::Buy,
+                price: Price::from("100.10"),
+                size: Quantity::from(100),
+                order_id: 1,
+            },
+            flags: 0,
+            sequence: 1,
+            ts_event: 1_000_000_000.into(),
+            ts_init: 1_000_000_001.into(),
+        };
+
+        let delta2 = OrderBookDelta {
+            instrument_id,
+            action: BookAction::Update,
+            order: BookOrder {
+                side: OrderSide::Sell,
+                price: Price::from("101.20"),
+                size: Quantity::from(200),
+                order_id: 2,
+            },
+            flags: 1,
+            sequence: 2,
+            ts_event: 2_000_000_000.into(),
+            ts_init: 2_000_000_001.into(),
+        };
+
+        let original = vec![delta1, delta2];
+        let record_batch = OrderBookDelta::encode_batch(&metadata, &original).unwrap();
+        let decoded = OrderBookDelta::decode_batch(&metadata, record_batch).unwrap();
+
+        assert_eq!(decoded.len(), original.len());
+        for (orig, dec) in original.iter().zip(decoded.iter()) {
+            assert_eq!(dec.instrument_id, orig.instrument_id);
+            assert_eq!(dec.action, orig.action);
+            assert_eq!(dec.order.side, orig.order.side);
+            assert_eq!(dec.order.price, orig.order.price);
+            assert_eq!(dec.order.size, orig.order.size);
+            assert_eq!(dec.order.order_id, orig.order.order_id);
+            assert_eq!(dec.flags, orig.flags);
+            assert_eq!(dec.sequence, orig.sequence);
+            assert_eq!(dec.ts_event, orig.ts_event);
+            assert_eq!(dec.ts_init, orig.ts_init);
+        }
     }
 }

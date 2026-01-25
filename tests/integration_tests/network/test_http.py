@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------G
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -44,7 +44,7 @@ async def fixture_test_server(
     return server
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_client_get(test_server: Coroutine) -> None:
     # Arrange
     server: TestServer = await test_server
@@ -59,7 +59,7 @@ async def test_client_get(test_server: Coroutine) -> None:
     assert len(response.body) > 0
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_client_post(test_server: Coroutine) -> None:
     # Arrange
     server: TestServer = await test_server
@@ -74,7 +74,7 @@ async def test_client_post(test_server: Coroutine) -> None:
     assert len(response.body) > 0
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_client_post_with_body(test_server: Coroutine) -> None:
     # Arrange
     server: TestServer = await test_server
@@ -91,7 +91,7 @@ async def test_client_post_with_body(test_server: Coroutine) -> None:
     assert len(response.body) > 0
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_client_patch(test_server: Coroutine) -> None:
     # Arrange
     server: TestServer = await test_server
@@ -106,7 +106,7 @@ async def test_client_patch(test_server: Coroutine) -> None:
     assert len(response.body) > 0
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_client_delete(test_server: Coroutine) -> None:
     # Arrange
     server: TestServer = await test_server
@@ -119,3 +119,8 @@ async def test_client_delete(test_server: Coroutine) -> None:
     # Assert
     assert response.status == 200
     assert len(response.body) > 0
+
+
+# Note: Blocking HTTP functions (http_get, http_post, http_patch, http_delete)
+# are tested in Rust unit tests. They are thin wrappers that spawn threads
+# with isolated runtimes and are intended for simple synchronous scripts.

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,12 +24,12 @@ use std::{
 use nautilus_common::{
     actor::data_actor::{DataActor, DataActorConfig, DataActorCore},
     cache::Cache,
-    clock::LiveClock,
     component::Component,
     greeks::GreeksCalculator,
+    live::clock::LiveClock,
 };
 use nautilus_model::{
-    data::greeks::GreeksData,
+    data::{PortfolioGreeks, greeks::GreeksData},
     enums::PositionSide,
     identifiers::{InstrumentId, TraderId},
 };
@@ -95,13 +95,12 @@ impl GreeksActor {
             Some(percent_greeks),
             index_instrument_id,
             beta_weights,
+            None, // vega_time_weight_base
         )
     }
 
     /// Calculates portfolio greeks.
-    pub fn calculate_portfolio_greeks(
-        &self,
-    ) -> anyhow::Result<nautilus_model::data::greeks::PortfolioGreeks> {
+    pub fn calculate_portfolio_greeks(&self) -> anyhow::Result<PortfolioGreeks> {
         // Example parameters
         let underlyings = None;
         let venue = None;
@@ -119,8 +118,8 @@ impl GreeksActor {
         let percent_greeks = false;
         let index_instrument_id = None;
         let beta_weights = None;
+        let greeks_filter = None;
 
-        // Calculate portfolio greeks
         self.greeks_calculator.portfolio_greeks(
             underlyings,
             venue,
@@ -138,14 +137,15 @@ impl GreeksActor {
             Some(percent_greeks),
             index_instrument_id,
             beta_weights,
+            greeks_filter,
+            None, // vega_time_weight_base
         )
     }
 
     /// Subscribes to greeks data for a specific underlying.
     pub fn subscribe_to_greeks(&self, underlying: &str) {
-        // Subscribe to greeks data
         self.greeks_calculator
-            .subscribe_greeks::<fn(GreeksData)>(underlying, None);
+            .subscribe_greeks::<fn(&GreeksData)>(underlying, None);
     }
 }
 
@@ -165,7 +165,6 @@ impl DerefMut for GreeksActor {
 
 impl DataActor for GreeksActor {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        // Subscribe to greeks data for SPY
         self.subscribe_to_greeks("SPY");
         Ok(())
     }
@@ -175,7 +174,6 @@ impl DataActor for GreeksActor {
     }
 
     fn on_data(&mut self, data: &dyn std::any::Any) -> anyhow::Result<()> {
-        // Handle received data
         if let Some(greeks_data) = data.downcast_ref::<GreeksData>() {
             println!("Received greeks data: {greeks_data:?}");
         }

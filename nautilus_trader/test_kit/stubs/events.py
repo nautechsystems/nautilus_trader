@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -43,6 +43,7 @@ from nautilus_trader.model.events import PositionChanged
 from nautilus_trader.model.events import PositionClosed
 from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -68,7 +69,7 @@ class TestEventStubs:
             component_id=ComponentId("MyActor-001"),
             component_type="MyActor",
             state=ComponentState.RUNNING,
-            config={"do_something": True, "trade_size": Decimal("10")},
+            config={"do_something": True, "trade_size": Decimal(10)},
             event_id=UUID4(),
             ts_event=0,
             ts_init=0,
@@ -311,37 +312,43 @@ class TestEventStubs:
         last_px: Price | None = None,
         side: OrderSide | None = None,  # For linearizing: flip side & use 1/price for prob space
         liquidity_side: LiquiditySide = LiquiditySide.TAKER,
+        commission: Money | None = None,
+        currency: Currency | None = None,
+        client_order_id: ClientOrderId | None = None,
         account: Account | None = None,
         ts_event: int = 0,
     ) -> OrderFilled:
         strategy_id = strategy_id or order.strategy_id
         account_id = account_id or order.account_id or TestIdStubs.account_id()
+        client_order_id = client_order_id or order.client_order_id
         venue_order_id = venue_order_id or order.venue_order_id or VenueOrderId("1")
         trade_id = trade_id or TradeId(order.client_order_id.value.replace("O", "E"))
         position_id = position_id or order.position_id
         last_qty = last_qty or order.quantity
         last_px = last_px or Price.from_str(f"{1:.{instrument.price_precision}f}")
         order_side = side or order.side
+        currency = currency or instrument.quote_currency
 
-        if account is None:
-            # Causes circular import if moved to the top
-            from nautilus_trader.test_kit.stubs.execution import TestExecStubs
+        if commission is None:
+            if account is None:
+                # Causes circular import if moved to the top
+                from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 
-            account = TestExecStubs.cash_account()
-        assert account is not None  # Type checking
+                account = TestExecStubs.cash_account()
+            assert account is not None  # Type checking
 
-        commission = account.calculate_commission(
-            instrument=instrument,
-            last_qty=order.quantity,
-            last_px=last_px,
-            liquidity_side=liquidity_side,
-        )
+            commission = account.calculate_commission(
+                instrument=instrument,
+                last_qty=order.quantity,
+                last_px=last_px,
+                liquidity_side=liquidity_side,
+            )
 
         return OrderFilled(
             trader_id=TestIdStubs.trader_id(),
             strategy_id=strategy_id,
             instrument_id=instrument.id,
-            client_order_id=order.client_order_id,
+            client_order_id=client_order_id,
             venue_order_id=venue_order_id,
             account_id=account_id,
             trade_id=trade_id,
@@ -349,8 +356,8 @@ class TestEventStubs:
             order_side=order_side,
             order_type=order.order_type,
             last_qty=last_qty,
-            last_px=last_px or order.price,
-            currency=instrument.quote_currency,
+            last_px=last_px or (order.price if order.has_price else None),
+            currency=currency,
             commission=commission,
             liquidity_side=liquidity_side,
             ts_event=ts_event,

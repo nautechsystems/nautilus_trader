@@ -1,20 +1,102 @@
-# Rust Style Guide
+# Rust
 
-The [Rust](https://www.rust-lang.org/learn) programming language is an ideal fit for implementing the mission-critical core of the platform and systems. Its strong type system, ownership model, and compile-time checks eliminate memory errors and data races by construction, while zero-cost abstractions and the absence of a garbage collector deliver C-like performance—critical for high-frequency trading workloads.
+The [Rust](https://www.rust-lang.org/learn) programming language is an ideal fit for implementing the mission-critical core of the platform and systems.
+Its strong type system, ownership model, and compile-time checks eliminate memory errors and data races by construction,
+while zero-cost abstractions and the absence of a garbage collector deliver C-like performance—critical for high-frequency trading workloads.
 
-## Python Bindings
+## Cargo manifest conventions
 
-Python bindings are provided via Cython and [PyO3](https://pyo3.rs), allowing users to import NautilusTrader crates directly in Python without a Rust toolchain.
+- In `[dependencies]`, list internal crates (`nautilus-*`) first in alphabetical order, insert a blank line, then external required dependencies alphabetically, followed by another blank line and the optional dependencies (those with `optional = true`) in alphabetical order. Preserve inline comments with their dependency.
+- Add `"python"` to every `extension-module` feature list that builds a Python artefact, keeping it adjacent to `"pyo3/extension-module"` so the full Python stack is obvious.
+- When a manifest groups adapters separately (for example `crates/pyo3`), keep the `# Adapters` block immediately below the internal crate list so downstream consumers can scan adapter coverage quickly.
+- Always include a blank line before `[dev-dependencies]` and `[build-dependencies]` sections.
+- Apply the same layout across related manifests when the feature or dependency sets change to avoid drift between crates.
+- Use snake_case filenames for `bin/` sources (for example `bin/ws_data.rs`) and reflect those paths in each `[[bin]]` section.
+- Keep `[[bin]] name` entries in kebab-case (for example `name = "hyperliquid-ws-data"`) so the compiled binaries retain their intended CLI names.
 
-## Code Style and Conventions
+## Versioning guidance
 
-### File Header Requirements
+- Use workspace inheritance for shared dependencies (for example `serde = { workspace = true }`).
+- Only pin versions directly for crate-specific dependencies that are not part of the workspace.
+- Group workspace-provided dependencies before crate-only dependencies so the inheritance is easy to audit.
+- Keep related dependencies aligned: `capnp`/`capnpc` (exact), `arrow`/`parquet` (major.minor),
+  `datafusion`/`object_store`, and `dydx-proto`/`prost`/`tonic`. Pre-commit enforces this.
+- Adapter-only dependencies belong in the "Adapter dependencies" section of the workspace
+  `Cargo.toml`. Pre-commit prevents core crates from using them.
+
+## Feature flag conventions
+
+- Prefer additive feature flags—enabling a feature must not break existing functionality.
+- Use descriptive flag names that explain what capability is enabled.
+- Document every feature in the crate-level documentation so consumers know what they toggle.
+- Common patterns:
+  - `high-precision`: switches the value-type backing (64-bit or 128-bit integers) to support domains that require extra precision.
+  - `default = []`: keep defaults minimal.
+  - `python`: enables Python bindings.
+  - `extension-module`: builds a Python extension module (always include `python`).
+  - `ffi`: enables C FFI bindings.
+  - `stubs`: exposes testing stubs.
+
+## Build configurations
+
+To avoid unnecessary rebuilds during development, align cargo features, profiles, and flags across different build targets.
+Cargo's build cache is keyed by the exact combination of features, profiles, and flags—any mismatch triggers a full rebuild.
+
+### Aligned targets (testing and linting)
+
+| Target                      | Features                         | Profile   | `--all-targets` | `--no-deps` | Purpose        |
+|-----------------------------|----------------------------------|-----------|-----------------|-------------|----------------|
+| `cargo-test`                | `ffi,python,high-precision,defi` | `nextest` | ✓ (implicit)    | n/a         | Run tests.     |
+| `cargo-clippy` (pre-commit) | `ffi,python,high-precision,defi` | `nextest` | ✓               | n/a         | Lint all code. |
+
+These targets share the same feature set and profile, allowing cargo to reuse compiled artifacts between linting and testing without rebuilds.
+The `nextest` profile is used to align with the workflow of the majority of core maintainers who use cargo-nextest for running tests.
+
+### Documentation builds
+
+Documentation is built separately using `make docs-rust`, which runs:
+
+```bash
+cargo +nightly doc --all-features --no-deps --workspace
+```
+
+This uses the nightly toolchain and `--all-features` rather than the aligned feature set above, so it does not share build artifacts with testing/linting.
+
+### Separate target (Python extension building)
+
+| Target        | Features                             | Profile   | Notes |
+|---------------|--------------------------------------|-----------|-------|
+| `build`       | Includes `extension-module` + subset | `release` | Requires different features for PyO3 extension module. |
+| `build-debug` | Includes `extension-module` + subset | `dev`     | Requires different features for PyO3 extension module. |
+
+Python extension building intentionally uses different features (`extension-module` is required) and will trigger rebuilds. This is expected and unavoidable.
+
+### Rebuild triggers to avoid
+
+Mismatches in any of these cause full rebuilds:
+
+- Different feature combinations (e.g., `--features "a,b"` vs `--features "a,c"`).
+- Different `--no-default-features` usage (enables/disables default features).
+- Different profiles (e.g., `dev` vs `nextest` vs `release`).
+
+When adding new build targets or modifying existing ones, maintain alignment with the testing/linting group to preserve fast incremental builds.
+
+## Module organization
+
+- Keep modules focused on a single responsibility.
+- Use `mod.rs` as the module root when defining submodules.
+- Prefer relatively flat hierarchies over deep nesting to keep paths manageable.
+- Re-export commonly used items from the crate root for convenience.
+
+## Code style and conventions
+
+### File header requirements
 
 All Rust files must include the standardized copyright header:
 
 ```rust
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,12 +111,75 @@ All Rust files must include the standardized copyright header:
 // -------------------------------------------------------------------------------------------------
 ```
 
-### Code Formatting
+:::info Automated enforcement
+The `check_copyright_year.sh` pre-commit hook verifies copyright headers include the current year.
+:::
+
+### Code formatting
 
 Import formatting is automatically handled by rustfmt when running `make format`.
 The tool organizes imports into groups (standard library, external crates, local imports) and sorts them alphabetically within each group.
 
-### Error Handling
+Within this section, follow these spacing rules:
+
+- Leave **one blank line between functions** (including tests) – this improves readability and
+mirrors the default behavior of `rustfmt`.
+- Leave **one blank line above every doc comment** (`///` or `//!`) so that the comment is clearly
+  detached from the previous code block.
+
+#### String formatting
+
+Prefer inline format strings over positional arguments:
+
+```rust
+// Preferred - inline format with variable names
+anyhow::bail!("Failed to subtract {n} months from {datetime}");
+
+// Instead of - positional arguments
+anyhow::bail!("Failed to subtract {} months from {}", n, datetime);
+```
+
+This makes messages more readable and self-documenting, especially when there are multiple variables.
+
+### Type qualification
+
+Follow these conventions for qualifying types in code:
+
+- **anyhow**: Always fully qualify `anyhow` macros (`anyhow::bail!`, `anyhow::anyhow!`) and the Result type (`anyhow::Result<T>`).
+- **Nautilus domain types**: Do not fully qualify Nautilus domain types. Use them directly after importing (e.g., `Symbol`, `InstrumentId`, `Price`).
+- **tokio**: Generally fully qualify `tokio` types as they can have equivalents in std library and other crates (e.g., `tokio::spawn`, `tokio::time::timeout`).
+
+```rust
+use nautilus_model::identifiers::Symbol;
+
+pub fn process_symbol(symbol: Symbol) -> anyhow::Result<()> {
+    if !symbol.is_valid() {
+        anyhow::bail!("Invalid symbol: {symbol}");
+    }
+
+    tokio::spawn(async move {
+        // Process symbol asynchronously
+    });
+
+    Ok(())
+}
+```
+
+:::info Automated enforcement
+The `check_anyhow_usage.sh` pre-commit hook enforces these anyhow conventions automatically.
+:::
+
+### Logging
+
+- Fully qualify logging macros so the backend is explicit:
+  - Use `log::…` (`log::debug!`, `log::info!`, `log::warn!`, etc.) for all Rust components.
+- Start messages with a capitalised word, prefer complete sentences, and omit terminal periods (e.g. `"Processing batch"`, not `"Processing batch."`).
+
+:::info Automated enforcement
+The `check_logging_macro_usage.sh` pre-commit hook enforces fully qualified logging macros.
+:::
+
+### Error handling
 
 Use structured error handling patterns consistently:
 
@@ -79,19 +224,76 @@ Use structured error handling patterns consistently:
 
    **Note**: Use `anyhow::bail!` for early returns, but `anyhow::anyhow!` in closure contexts like `ok_or_else()` where early returns aren't possible.
 
-5. **Error Message Formatting**: Prefer inline format strings over positional arguments:
+5. **Error Context**: Use lowercase for `.context()` messages to support error chaining (except proper nouns/acronyms):
 
    ```rust
-   // Preferred - inline format with variable names
-   anyhow::bail!("Failed to subtract {n} months from {datetime}");
+   // Good - lowercase chains naturally
+   parse_timestamp(value).context("failed to parse timestamp")?;
 
-   // Instead of - positional arguments
-   anyhow::bail!("Failed to subtract {} months from {}", n, datetime);
+   // Exception - proper nouns stay capitalized
+   connect().context("BitMEX websocket did not become active")?;
    ```
 
-   This makes error messages more readable and self-documenting, especially when there are multiple variables.
+:::info Automated enforcement
+The `check_error_conventions.sh` and `check_anyhow_usage.sh` pre-commit hooks enforce these error handling patterns.
+:::
 
-### Attribute Patterns
+### Async patterns
+
+Use consistent async/await patterns:
+
+1. **Async function naming**: No special suffix is required; prefer natural names.
+2. **Tokio usage**: Fully qualify tokio types (e.g., `tokio::time::timeout`). See [Adapter runtime patterns](#adapter-runtime-patterns) for spawn rules.
+3. **Error handling**: Return `anyhow::Result` from async functions to match the synchronous conventions.
+4. **Cancellation safety**: Call out whether the function is cancellation-safe and what invariants still hold when it is cancelled.
+5. **Stream handling**: Use `tokio_stream` (or `futures::Stream`) for async iterators to make back-pressure explicit.
+6. **Timeout patterns**: Wrap network or long-running awaits with timeouts (`tokio::time::timeout`) and propagate or handle the timeout error.
+
+### Adapter runtime patterns
+
+Adapter crates (under `crates/adapters/`) require special handling for spawning async tasks due to Python FFI compatibility:
+
+1. **Use `get_runtime().spawn()` instead of `tokio::spawn()`**: When called from Python threads (which have no Tokio context), `tokio::spawn()` panics because it relies on thread-local storage. The global runtime pattern provides an explicit reference accessible from any thread.
+
+   ```rust
+   use nautilus_common::live::get_runtime;
+
+   // Correct - works from Python threads
+   get_runtime().spawn(async move {
+       // async work
+   });
+
+   // Incorrect - panics from Python threads
+   tokio::spawn(async move {
+       // async work
+   });
+   ```
+
+2. **Use the shorter import path**: Import `get_runtime` from the `live` module re-export, not the full path:
+
+   ```rust
+   // Preferred - shorter path via re-export
+   use nautilus_common::live::get_runtime;
+
+   // Avoid - unnecessarily verbose
+   use nautilus_common::live::runtime::get_runtime;
+   ```
+
+3. **Use `get_runtime().block_on()` for sync-to-async bridges**: When synchronous code needs to call async functions in adapters:
+
+   ```rust
+   fn sync_method(&self) -> anyhow::Result<()> {
+       get_runtime().block_on(self.async_implementation())
+   }
+   ```
+
+4. **Tests are exempt**: Test code using `#[tokio::test]` creates its own runtime context, so `tokio::spawn()` works correctly. The enforcement hook skips test files and test modules.
+
+:::info Automated enforcement
+The `check_tokio_usage.sh` pre-commit hook enforces these adapter runtime patterns automatically.
+:::
+
+### Attribute patterns
 
 Consistent attribute usage and ordering:
 
@@ -100,7 +302,7 @@ Consistent attribute usage and ordering:
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.model")
 )]
 pub struct Symbol(Ustr);
 ```
@@ -128,7 +330,7 @@ For enums with extensive derive attributes:
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.model")
 )]
 pub enum AccountType {
     /// An account with unleveraged cash assets only.
@@ -138,7 +340,7 @@ pub enum AccountType {
 }
 ```
 
-### Constructor Patterns
+### Constructor patterns
 
 Use the `new()` vs `new_checked()` convention consistently:
 
@@ -172,7 +374,35 @@ Always use the `FAILED` constant for `.expect()` messages related to correctness
 use nautilus_core::correctness::FAILED;
 ```
 
-### Constants and Naming Conventions
+### Type conversion patterns
+
+For types that parse from strings, provide both fallible and infallible conversions:
+
+1. **`FromStr`**: Fallible parsing via `.parse()` or `from_str()`. Returns `Result`.
+
+2. **`From<T: AsRef<str>>`**: Ergonomic infallible conversion that accepts `&str`, `String`, `Cow<str>`, etc. directly without requiring `.as_str()`.
+
+```rust
+impl FromStr for Symbol {
+    type Err = SymbolParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // parsing logic
+    }
+}
+
+impl<T: AsRef<str>> From<T> for Symbol {
+    fn from(value: T) -> Self {
+        Self::from_str(value.as_ref()).expect(FAILED)
+    }
+}
+```
+
+**Design note**: The `From` impl may panic on invalid input. This is intentional for API ergonomics—use `FromStr` / `.parse()` when error handling is needed. The `From` impl provides convenience for cases where the input is known to be valid.
+
+**Constraint**: This pattern cannot be used for types that implement `AsRef<str>` themselves (e.g., string wrapper types), as it would conflict with the blanket `impl<T> From<T> for T`. For such types, provide separate `From<&str>` and `From<String>` impls instead.
+
+### Constants and naming conventions
 
 Use SCREAMING_SNAKE_CASE for constants with descriptive names:
 
@@ -188,7 +418,110 @@ pub const BAR_SPEC_1_MINUTE_LAST: BarSpecification = BarSpecification {
 };
 ```
 
-### Re-export Patterns
+### Hash collections
+
+Use `AHashMap` and `AHashSet` from the `ahash` crate for performance-critical hot paths.
+For non-performance-critical code, standard `HashMap`/`HashSet` are preferred for simplicity:
+
+```rust
+// For hot paths - using AHashMap/AHashSet
+use ahash::{AHashMap, AHashSet};
+
+let mut symbols: AHashSet<Symbol> = AHashSet::new();
+let mut prices: AHashMap<InstrumentId, Price> = AHashMap::new();
+
+// For non-hot paths - standard library HashMap/HashSet
+use std::collections::{HashMap, HashSet};
+
+let mut symbols: HashSet<Symbol> = HashSet::new();
+let mut prices: HashMap<InstrumentId, Price> = HashMap::new();
+```
+
+**Why use `ahash`?**
+
+- **Superior performance**: AHash uses AES-NI hardware instructions when available, providing 2-3x faster hashing compared to the default SipHash.
+- **Low collision rates**: Despite being non-cryptographic, AHash provides excellent distribution and low collision rates for typical data.
+- **Drop-in replacement**: Fully compatible API with standard library collections.
+
+**When to use standard `HashMap`/`HashSet`:**
+
+- **Non-performance-critical code**: For simple cases where performance is not critical (e.g., factory registries, configuration maps, test fixtures), standard `HashMap`/`HashSet` are acceptable and even preferred for simplicity.
+- **Cryptographic security required**: Use standard `HashMap` when hash flooding attacks are a concern (e.g., handling untrusted user input in network protocols).
+- **Network clients**: Prefer standard `HashMap` for network-facing components where security considerations outweigh performance benefits.
+- **External library boundaries**: Use standard `HashMap` when interfacing with external libraries that expect it (e.g., Arrow serialization metadata).
+
+### Thread-safe hash map patterns
+
+`AHashMap` is not thread-safe. Wrapping it in `Arc` only enables sharing the pointer across threads but does not coordinate mutation. Use `Arc<AHashMap>` only when the map is immutable after construction, otherwise add proper synchronization.
+
+```rust
+// Avoid: Data races when multiple threads mutate
+let cache = Arc::new(AHashMap::new());
+let cache_clone = Arc::clone(&cache);
+tokio::spawn(async move {
+    cache_clone.insert(key, value);  // Data race
+});
+cache.insert(other_key, other_value);  // Data race
+```
+
+**Patterns:**
+
+1. **Immutable after construction** – Build the map once, then share it read-only:
+
+   ```rust
+   let mut map = AHashMap::new();
+   map.insert(key1, value1);
+   map.insert(key2, value2);
+   let shared_map = Arc::new(map);  // Now immutable
+
+   // Multiple threads can safely read
+   let map_clone = Arc::clone(&shared_map);
+   tokio::spawn(async move {
+       if let Some(value) = map_clone.get(&key1) {
+           // Safe read-only access
+       }
+   });
+   ```
+
+2. **Concurrent reads and writes** – Use `DashMap`:
+
+   ```rust
+   use dashmap::DashMap;
+
+   let cache: Arc<DashMap<K, V>> = Arc::new(DashMap::new());
+
+   // Multiple threads can safely read and write concurrently
+   cache.insert(key, value);
+   if let Some(entry) = cache.get(&key) {
+       // Safe concurrent access
+   }
+   ```
+
+   `DashMap` internally uses sharding and fine-grained locking for efficient concurrent access.
+
+3. **Single-threaded hot paths** – Use plain `AHashMap` in single-threaded contexts:
+
+   ```rust
+   struct Handler {
+       instruments: AHashMap<Ustr, InstrumentAny>,
+   }
+
+   impl Handler {
+       async fn next(&mut self) -> Option<()> {
+           // Handler runs on a single task, no concurrent access
+           self.instruments.insert(key, value);
+           Ok(())
+       }
+   }
+   ```
+
+**Decision tree:**
+
+- Immutable after construction → Use `Arc<AHashMap<K, V>>`
+- Concurrent access needed → Use `Arc<DashMap<K, V>>`
+- Single-threaded access → Use plain `AHashMap<K, V>`
+
+### Re-export patterns
 
 Organize re-exports alphabetically and place at the end of lib.rs files:
 
@@ -208,9 +541,23 @@ pub use crate::identifiers::{
 };
 ```
 
-### Documentation Standards
+### Documentation standards
 
-#### Module-Level Documentation
+Use third-person declarative voice for all doc comments (e.g., "Returns the account ID" not "Return the account ID").
+
+#### Section header casing
+
+Rustdoc section headers use Title Case, matching the Rust standard library convention:
+
+- `# Examples`
+- `# Errors`
+- `# Panics`
+- `# Safety`
+- `# Notes`
+- `# Thread Safety`
+- `# Feature Flags`
+
+#### Module-Level documentation
 
 All modules must have module-level documentation starting with a brief description:
 
@@ -233,10 +580,11 @@ For modules with feature flags, document them clearly:
 //!
 //! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `extension-module`: Builds as a Python extension module (used with `python`).
 //! - `stubs`: Enables type stubs for use in testing scenarios.
 ```
 
-#### Field Documentation
+#### Field documentation
 
 All struct and enum fields must have documentation with terminating periods:
 
@@ -255,7 +603,7 @@ pub struct Currency {
 }
 ```
 
-#### Function Documentation
+#### Function documentation
 
 Document all public functions with:
 
@@ -275,7 +623,7 @@ pub fn base_balance(&self, currency: Option<Currency>) -> Option<&AccountBalance
 }
 ```
 
-#### Errors and Panics Documentation Format
+#### Errors and panics documentation format
 
 For single line errors and panics documentation, use sentence case with the following convention:
 
@@ -301,14 +649,14 @@ For multi-line errors and panics documentation, use sentence case with bullets a
 ///
 /// # Errors
 ///
-/// This function will return an error if:
+/// Returns an error if:
 /// - The market price for the instrument cannot be found.
 /// - The conversion rate calculation fails.
 /// - Invalid position state is encountered.
 ///
 /// # Panics
 ///
-/// This function will panic if:
+/// This function panics if:
 /// - The instrument ID is invalid or uninitialized.
 /// - Required market data is missing from the cache.
 /// - Internal state consistency checks fail.
@@ -317,7 +665,7 @@ pub fn calculate_unrealized_pnl(&self, market_price: Price) -> anyhow::Result<Mo
 }
 ```
 
-#### Safety Documentation Format
+#### Safety documentation format
 
 For Safety documentation, use the `SAFETY:` prefix followed by a short description explaining why the unsafe operation is valid:
 
@@ -348,31 +696,41 @@ impl Send for MessageBus {
 }
 ```
 
-### Testing Conventions
+## Python bindings
 
-#### Test Organization
+Python bindings are provided via [PyO3](https://pyo3.rs), allowing users to import NautilusTrader crates directly in Python without a Rust toolchain.
 
-Use consistent test module structure with section separators:
+### PyO3 naming conventions
+
+When exposing Rust functions to Python **via PyO3**:
+
+1. The Rust symbol **must** be prefixed with `py_*` to make its purpose explicit inside the Rust
+   codebase.
+2. Use the `#[pyo3(name = "…")]` attribute to publish the *Python* name **without** the `py_`
+   prefix so the Python API remains clean.
 
 ```rust
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-mod tests {
-    use rstest::rstest;
-    use super::*;
-    use crate::identifiers::{Symbol, stubs::*};
-
-    #[rstest]
-    fn test_string_reprs(symbol_eth_perp: Symbol) {
-        assert_eq!(symbol_eth_perp.as_str(), "ETH-PERP");
-        assert_eq!(format!("{symbol_eth_perp}"), "ETH-PERP");
-    }
+#[pyo3(name = "do_something")]
+pub fn py_do_something() -> PyResult<()> {
+    // …
 }
 ```
 
-#### Parameterized Testing
+:::info Automated enforcement
+The `check_pyo3_conventions.sh` pre-commit hook enforces the `py_` prefix for PyO3 functions.
+:::
+
+### Testing conventions
+
+- Use `mod tests` as the standard test module name unless you need to specifically compartmentalize.
+- Use `#[rstest]` attributes consistently, this standardization reduces cognitive overhead.
+- Do *not* use Arrange, Act, Assert separator comments in Rust tests.
+
+:::info Automated enforcement
+The `check_testing_conventions.sh` pre-commit hook enforces the use of `#[rstest]` over `#[test]`.
+:::
+
+#### Parameterized testing
 
 Use the `rstest` attribute consistently, and for parameterized tests:
 
@@ -387,7 +745,7 @@ fn test_symbol_is_composite(#[case] input: &str, #[case] expected: bool) {
 }
 ```
 
-#### Test Naming
+#### Test naming
 
 Use descriptive test names that explain the scenario:
 
@@ -397,6 +755,148 @@ fn test_sma_with_single_input()
 fn test_symbol_is_composite()
 ```
 
+### Box-style banner comments
+
+Do not use box-style banner or separator comments. If code requires visual
+separation, consider splitting it into separate modules or files. Instead use:
+
+- Clear function names that convey purpose.
+- Module structure for logical groupings (`mod tests { mod fixtures { } }`).
+- Impl blocks to group related methods.
+- Doc comments (`///`) for semantic documentation.
+- IDE navigation and code folding.
+
+Patterns to avoid:
+
+```rust
+// ============================================================================
+// Some Section
+// ============================================================================
+
+// ========== Test Fixtures ==========
+```
+
+## Rust-Python memory management
+
+When working with PyO3 bindings, it's critical to understand and avoid reference cycles between Rust's `Arc` reference counting and Python's garbage collector.
+This section documents best practices for handling Python objects in Rust callback-holding structures.
+
+### The reference cycle problem
+
+**Problem**: Using `Arc<PyObject>` in callback-holding structs creates circular references:
+
+1. **Rust `Arc` holds Python objects** → increases Python reference count.
+2. **Python objects might reference Rust objects** → creates cycles.
+3. **Neither side can be garbage collected** → memory leak.
+
+**Example of problematic pattern**:
+
+```rust
+// AVOID: This creates reference cycles
+struct CallbackHolder {
+    handler: Option<Arc<PyObject>>,  // ❌ Arc wrapper causes cycles
+}
+```
+
+### The solution: GIL-based cloning
+
+**Solution**: Use plain `PyObject` with proper GIL-based cloning via `clone_py_object()`:
+
+```rust
+use nautilus_core::python::clone_py_object;
+
+// CORRECT: Use plain PyObject without Arc wrapper
+struct CallbackHolder {
+    handler: Option<PyObject>,  // ✅ No Arc wrapper
+}
+
+// Manual Clone implementation using clone_py_object
+impl Clone for CallbackHolder {
+    fn clone(&self) -> Self {
+        Self {
+            handler: self.handler.as_ref().map(clone_py_object),
+        }
+    }
+}
+```
+
+### Best practices
+
+#### 1. Use `clone_py_object()` for Python object cloning
+
+```rust
+// When cloning Python callbacks
+let cloned_callback = clone_py_object(&original_callback);
+
+// In manual Clone implementations
+self.py_handler.as_ref().map(clone_py_object)
+```
+
+#### 2. Remove `#[derive(Clone)]` from callback-holding structs
+
+```rust
+// BEFORE: Automatic derive causes issues with PyObject
+#[derive(Clone)]  // ❌ Remove this
+struct Config {
+    handler: Option<PyObject>,
+}
+
+// AFTER: Manual implementation with proper cloning
+struct Config {
+    handler: Option<PyObject>,
+}
+
+impl Clone for Config {
+    fn clone(&self) -> Self {
+        Self {
+            // Clone regular fields normally
+            url: self.url.clone(),
+            // Use clone_py_object for Python objects
+            handler: self.handler.as_ref().map(clone_py_object),
+        }
+    }
+}
+```
+
+#### 3. Update function signatures to accept `PyObject`
+
+```rust
+// BEFORE: Arc wrapper in function signatures
+fn spawn_task(handler: Arc<PyObject>) { ... }  // ❌
+
+// AFTER: Plain PyObject
+fn spawn_task(handler: PyObject) { ... }  // ✅
+```
+
+#### 4. Avoid `Arc::new()` when creating Python callbacks
+
+```rust
+// BEFORE: Wrapping in Arc
+let callback = Arc::new(py_function);  // ❌
+
+// AFTER: Use directly
+let callback = py_function;  // ✅
+```
+
+### Why this works
+
+The `clone_py_object()` function:
+
+- **Acquires the Python GIL** before performing clone operations.
+- **Uses Python's native reference counting** via `clone_ref()`.
+- **Avoids Rust Arc wrappers** that interfere with Python GC.
+- **Maintains thread safety** through proper GIL management.
+
+This approach allows both Rust and Python garbage collectors to work correctly, eliminating memory leaks from reference cycles.
+
+## Common anti-patterns
+
+1. **Avoid `.clone()` in hot paths** – favour borrowing or shared ownership via `Arc`.
+2. **Avoid `.unwrap()` in production code** – generally propagate errors with `?` or map them into domain errors, but unwrapping lock poisoning is acceptable because it signals a severe program state that should abort fast.
+3. **Avoid `String` when `&str` suffices** – minimise allocations on tight loops.
+4. **Avoid exposing interior mutability** – hide mutexes/`RefCell` behind safe APIs.
+5. **Avoid large structs in `Result<T, E>`** – box large error payloads (`Box<dyn Error + Send + Sync>`).
+
 ## Unsafe Rust
 
 It will be necessary to write `unsafe` Rust code to be able to achieve the value
@@ -404,37 +904,203 @@ of interoperating between Cython and Rust. The ability to step outside the bound
 implement many of the most fundamental features of the Rust language itself, just as C and C++ are used to implement
 their own standard libraries.
 
-Great care will be taken with the use of Rusts `unsafe` facility - which just enables a small set of additional language features, thereby changing
+Great care will be taken with the use of Rusts `unsafe` facility - which enables a small set of additional language features, thereby changing
 the contract between the interface and caller, shifting some responsibility for guaranteeing correctness
 from the Rust compiler, and onto us. The goal is to realize the advantages of the `unsafe` facility, whilst avoiding *any* undefined behavior.
 The definition for what the Rust language designers consider undefined behavior can be found in the [language reference](https://doc.rust-lang.org/stable/reference/behavior-considered-undefined.html).
 
-### Safety Policy
+### Safety policy
 
 To maintain correctness, any use of `unsafe` Rust must follow our policy:
 
-- If a function is `unsafe` to call, there *must* be a `Safety` section in the documentation explaining why the function is `unsafe`
-and covering the invariants which the function expects the callers to uphold, and how to meet their obligations in that contract.
+- If a function is `unsafe` to call, there *must* be a `Safety` section in the documentation explaining why the function is `unsafe`,
+  covering the invariants which the function expects the callers to uphold, and how to meet their obligations in that contract.
 - Document why each function is `unsafe` in its doc comment's Safety section, and cover all `unsafe` blocks with unit tests.
-- Always include a `SAFETY:` comment explaining why the unsafe operation is valid:
+- Always include a `SAFETY:` comment explaining why the unsafe operation is valid.
+- **Crate-level lint** – every crate that exposes FFI symbols enables
+  `#![deny(unsafe_op_in_unsafe_fn)]`. Even inside an `unsafe fn`, each pointer dereference or
+  other dangerous operation must be wrapped in its own `unsafe { … }` block.
+- **CVec contract** – for raw vectors that cross the FFI boundary read the
+  [FFI Memory Contract](ffi.md). Foreign code becomes the owner of the allocation and **must**
+  call the matching `vec_drop_*` function exactly once.
+
+### Categories of unsafe code
+
+The codebase uses unsafe Rust in these categories:
+
+1. **FFI boundaries** – Raw pointer operations for C interop. See [FFI documentation](ffi.md).
+2. **Interior mutability** – `UnsafeCell` for thread-local registries with controlled access patterns.
+3. **Unsafe Send/Sync** – Types that are not inherently thread-safe but satisfy trait bounds
+   through runtime invariants (e.g., single-threaded access guaranteed by architecture).
+
+### Unsafe Send/Sync requirements
+
+When implementing `Send` or `Sync` unsafely:
+
+1. Document exactly which fields violate the trait requirements.
+2. Explain the runtime mechanism that ensures safety (e.g., single-threaded event loop).
+3. Include a `WARNING` stating that violating the invariant is undefined behavior.
+4. Prefer runtime enforcement (assertions, `Result` returns) over documentation-only guarantees.
 
 ```rust
-// SAFETY: Message bus is not meant to be passed between threads
+// SAFETY: Contains Rc<RefCell<...>> which is not thread-safe.
+// Single-threaded access guaranteed by the backtest engine architecture.
+// WARNING: Actually sending across threads is undefined behavior.
 #[allow(unsafe_code)]
-unsafe impl Send for MessageBus {}
+unsafe impl Send for BacktestDataClient {}
 ```
 
-## Tooling Configuration
+### Defense in depth
+
+Where unsafe code relies on invariants, add defense mechanisms:
+
+- **Type verification**: Check types at runtime before casting (e.g., `TypeId` comparison).
+- **Debug assertions**: Catch memory corruption early in debug builds.
+- **RAII guards**: Ensure cleanup on both normal return and panic paths.
+- **Runtime checks**: Fail fast when invariants are violated rather than proceeding unsafely.
+
+## Tooling configuration
 
 The project uses several tools for code quality:
 
-- **rustfmt**: Automatic code formatting (see `rustfmt.toml`)
-- **clippy**: Linting and best practices (see `clippy.toml`)
-- **cbindgen**: C header generation for FFI
+- **rustfmt**: Automatic code formatting (see `rustfmt.toml`).
+- **clippy**: Linting and best practices (see `clippy.toml`).
+- **cbindgen**: C header generation for FFI.
+
+## Rust version management
+
+The project pins to a specific Rust version via `rust-toolchain.toml`.
+
+**Keep your toolchain synchronized with CI:**
+
+```bash
+rustup update       # Update to latest stable Rust
+rustup show         # Verify correct toolchain is active
+```
+
+If pre-commit passes locally but fails in CI, clear the pre-commit cache and re-run:
+
+```bash
+pre-commit clean    # Clear cached environments
+make pre-commit     # Re-run all checks
+```
+
+This ensures you're using the same Rust and clippy versions as CI.
 
 ## Resources
 
-- [The Rustonomicon](https://doc.rust-lang.org/nomicon/) - The Dark Arts of Unsafe Rust
-- [The Rust Reference - Unsafety](https://doc.rust-lang.org/stable/reference/unsafety.html)
-- [Safe Bindings in Rust - Russell Johnston](https://www.abubalay.com/blog/2020/08/22/safe-bindings-in-rust)
-- [Google - Rust and C interoperability](https://www.chromium.org/Home/chromium-security/memory-safety/rust-and-c-interoperability/)
+- [The Rustonomicon](https://doc.rust-lang.org/nomicon/) – The Dark Arts of Unsafe Rust.
+- [The Rust Reference – Unsafety](https://doc.rust-lang.org/stable/reference/unsafety.html).
+- [Safe Bindings in Rust – Russell Johnston](https://www.abubalay.com/blog/2020/08/22/safe-bindings-in-rust).
+- [Google – Rust and C interoperability](https://www.chromium.org/Home/chromium-security/memory-safety/rust-and-c-interoperability/).
+
+## Cap'n Proto serialization
+
+The `nautilus-serialization` crate provides optional Cap'n Proto serialization support for efficient data interchange.
+This feature is opt-in to avoid requiring the Cap'n Proto compiler for standard builds.
+
+### Installing Cap'n Proto
+
+Install the Cap'n Proto compiler before working with schemas. The required version is
+specified in the `capnp-version` file in the repository root.
+
+See the [Environment Setup](environment_setup.md#capn-proto) guide for detailed installation
+instructions for each platform.
+
+:::warning
+Ubuntu's default `capnproto` package is too old. Linux users must install from source.
+:::
+
+Verify installation:
+
+```bash
+capnp --version  # Should match the version in capnp-version
+```
+
+### Schema development workflow
+
+Schema files live in `crates/serialization/schemas/capnp/`:
+
+- `common/` - Base types, identifiers, enums.
+- `commands/` - Trading commands.
+- `events/` - Order and position events.
+- `data/` - Market data types.
+
+When modifying schemas:
+
+1. Edit the `.capnp` schema file in the appropriate subdirectory.
+2. Regenerate Rust bindings:
+
+   ```bash
+   make regen-capnp
+   # or
+   ./scripts/regen_capnp.sh
+   ```
+
+3. Review changes:
+
+   ```bash
+   git diff crates/serialization/generated/capnp
+   ```
+
+4. Update conversions in `crates/serialization/src/capnp/conversions.rs` if needed.
+5. Run tests:
+
+   ```bash
+   make cargo-test EXTRA_FEATURES="capnp"
+   ```
+
+### Generated code
+
+Generated Rust files are checked into `crates/serialization/generated/capnp/` for these reasons:
+
+- **docs.rs compatibility**: The documentation build environment lacks the Cap'n Proto
+  compiler.
+- **Contributor convenience**: Most developers don't need to install capnp for standard
+  development.
+- **Build reproducibility**: Ensures consistent code generation across environments.
+
+The generated files are automatically created during builds via `build.rs` when the `capnp`
+feature is enabled, but we commit them to the repository to support builds without the
+compiler installed.
+
+### Verifying schema consistency
+
+Before committing schema changes, ensure generated files are up-to-date:
+
+```bash
+make check-capnp-schemas
+```
+
+This target:
+
+1. Skips with a warning if `capnp` is not installed (acceptable for local development).
+2. Fails if regeneration errors occur (e.g., version mismatch).
+3. Regenerates schemas and fails if generated files differ from committed versions.
+
+CI runs this check automatically to catch drift (capnp is always installed in CI).
+
+### Testing with capnp feature
+
+```bash
+# Run workspace tests with capnp
+make cargo-test EXTRA_FEATURES="capnp"
+
+# Run specific crate tests with capnp
+make cargo-test-crate-nautilus-serialization FEATURES="capnp"
+
+# Run specific test
+cargo test -p nautilus-serialization --features capnp test_price_roundtrip
+```
+
+### Schema evolution guidelines
+
+When evolving schemas:
+
+- **Additive changes only**: Add new fields at the end.
+- **Never remove fields**: Mark deprecated fields in comments.
+- **Never reuse field numbers**: Even after deprecation.
+- **Test roundtrip compatibility**: Ensure old and new versions interoperate.
+
+Cap'n Proto's evolution rules allow schema changes without breaking binary compatibility, but
+you must follow these constraints to maintain forward/backward compatibility.

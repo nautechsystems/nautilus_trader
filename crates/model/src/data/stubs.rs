@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -50,7 +50,7 @@ impl Default for QuoteTick {
 impl Default for TradeTick {
     /// Creates a new default [`TradeTick`] instance for testing.
     fn default() -> Self {
-        TradeTick {
+        Self {
             instrument_id: InstrumentId::from("AUDUSD.SIM"),
             price: Price::from("1.00000"),
             size: Quantity::from(100_000),

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -144,9 +144,7 @@ impl AccountState {
             balances,
             margins,
             reported,
-            get_required_parsed(values, "event_id", |s| {
-                UUID4::from_str(&s).map_err(|e| e.to_string())
-            })?,
+            get_required_parsed(values, "event_id", |s| UUID4::from_str(&s))?,
             ts_event.into(),
             ts_init.into(),
             Some(get_required_parsed(values, "base_currency", |s| {
@@ -162,7 +160,7 @@ impl AccountState {
     ///
     /// Returns a `PyErr` if serialization into a Python dict fails.
     #[pyo3(name = "to_dict")]
-    pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("type", stringify!(AccountState))?;
         dict.set_item("account_id", self.account_id.to_string())?;

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,7 +17,9 @@ use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     UnixNanos,
-    correctness::{FAILED, check_equal_u8, check_valid_string, check_valid_string_optional},
+    correctness::{
+        FAILED, check_equal_u8, check_valid_string_ascii, check_valid_string_ascii_optional,
+    },
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -130,8 +132,8 @@ impl OptionSpread {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
-        check_valid_string_optional(exchange.map(|u| u.as_str()), stringify!(isin))?;
-        check_valid_string(strategy_type.as_str(), stringify!(strategy_type))?;
+        check_valid_string_ascii_optional(exchange.map(|u| u.as_str()), stringify!(isin))?;
+        check_valid_string_ascii(strategy_type.as_str(), stringify!(strategy_type))?;
         check_equal_u8(
             price_precision,
             price_increment.precision,
@@ -366,9 +368,6 @@ impl Instrument for OptionSpread {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

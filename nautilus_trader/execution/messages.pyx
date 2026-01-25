@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,26 +13,45 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import datetime as py_datetime
+from datetime import timezone
 from typing import Any
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.rust.common cimport LogLevel
+from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.functions cimport order_side_from_str
 from nautilus_trader.model.functions cimport order_side_to_str
+from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.unpacker cimport OrderUnpacker
+
+
+cpdef datetime _ns_to_datetime(object value):
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, (int, float)):
+        return py_datetime.fromtimestamp(value / 1_000_000_000, tz=timezone.utc)
+    return value
 
 
 cdef class ExecutionReportCommand(Command):
@@ -68,8 +87,9 @@ cdef class ExecutionReportCommand(Command):
         UUID4 command_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None = None,
+        UUID4 correlation_id = None,
     ) -> None:
-        super().__init__(command_id, ts_init)
+        super().__init__(command_id, ts_init, correlation_id)
 
         self.instrument_id = instrument_id
         self.start = start
@@ -105,6 +125,7 @@ cdef class GenerateOrderStatusReport(ExecutionReportCommand):
         UUID4 command_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None = None,
+        UUID4 correlation_id = None,
     ) -> None:
         super().__init__(
             instrument_id,
@@ -113,10 +134,82 @@ cdef class GenerateOrderStatusReport(ExecutionReportCommand):
             command_id,
             ts_init,
             params,
+            correlation_id,
         )
 
         self.client_order_id = client_order_id
         self.venue_order_id = venue_order_id
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"command_id={self.id.to_str()}, "
+            f"correlation_id={self.correlation_id.to_str() if self.correlation_id is not None else None}, "
+            f"ts_init={self.ts_init})"
+        )
+
+    @staticmethod
+    cdef GenerateOrderStatusReport from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        cdef str i = values["instrument_id"]
+        cdef str c = values["client_order_id"]
+        cdef str v = values["venue_order_id"]
+        cdef str corr = values.get("correlation_id")
+        return GenerateOrderStatusReport(
+            instrument_id=InstrumentId.from_str_c(i) if i is not None else None,
+            client_order_id=ClientOrderId(c) if c is not None else None,
+            venue_order_id=VenueOrderId(v) if v is not None else None,
+            command_id=UUID4.from_str_c(values["command_id"]),
+            ts_init=values["ts_init"],
+            params=values.get("params"),
+            correlation_id=UUID4.from_str_c(corr) if corr is not None else None,
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(GenerateOrderStatusReport obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "GenerateOrderStatusReport",
+            "instrument_id": obj.instrument_id.to_str() if obj.instrument_id is not None else None,
+            "client_order_id": obj.client_order_id.to_str() if obj.client_order_id is not None else None,
+            "venue_order_id": obj.venue_order_id.to_str() if obj.venue_order_id is not None else None,
+            "command_id": obj.id.to_str(),
+            "ts_init": obj.ts_init,
+            "params": obj.params,
+            "correlation_id": obj.correlation_id.to_str() if obj.correlation_id is not None else None,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> GenerateOrderStatusReport:
+        """
+        Return a generate order status report command from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        GenerateOrderStatusReport
+
+        """
+        return GenerateOrderStatusReport.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(GenerateOrderStatusReport obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return GenerateOrderStatusReport.to_dict_c(obj)
 
 
 cdef class GenerateOrderStatusReports(ExecutionReportCommand):
@@ -154,6 +247,7 @@ cdef class GenerateOrderStatusReports(ExecutionReportCommand):
         uint64_t ts_init,
         dict[str, object] params: dict | None = None,
         LogLevel log_receipt_level = LogLevel.INFO,
+        UUID4 correlation_id = None,
     ) -> None:
         super().__init__(
             instrument_id,
@@ -162,10 +256,83 @@ cdef class GenerateOrderStatusReports(ExecutionReportCommand):
             command_id,
             ts_init,
             params,
+            correlation_id,
         )
 
         self.open_only = open_only
         self.log_receipt_level = log_receipt_level
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"start={self.start}, "
+            f"end={self.end}, "
+            f"open_only={self.open_only}, "
+            f"command_id={self.id.to_str()}, "
+            f"correlation_id={self.correlation_id.to_str() if self.correlation_id is not None else None}, "
+            f"ts_init={self.ts_init})"
+        )
+
+    @staticmethod
+    cdef GenerateOrderStatusReports from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        cdef str i = values["instrument_id"]
+        cdef str corr = values.get("correlation_id")
+        return GenerateOrderStatusReports(
+            instrument_id=InstrumentId.from_str_c(i) if i is not None else None,
+            start=_ns_to_datetime(values["start"]),
+            end=_ns_to_datetime(values["end"]),
+            open_only=values["open_only"],
+            command_id=UUID4.from_str_c(values["command_id"]),
+            ts_init=values["ts_init"],
+            params=values.get("params"),
+            correlation_id=UUID4.from_str_c(corr) if corr is not None else None,
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(GenerateOrderStatusReports obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "GenerateOrderStatusReports",
+            "instrument_id": obj.instrument_id.to_str() if obj.instrument_id is not None else None,
+            "start": obj.start,
+            "end": obj.end,
+            "open_only": obj.open_only,
+            "command_id": obj.id.to_str(),
+            "ts_init": obj.ts_init,
+            "params": obj.params,
+            "correlation_id": obj.correlation_id.to_str() if obj.correlation_id is not None else None,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> GenerateOrderStatusReports:
+        """
+        Return a generate order status reports command from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        GenerateOrderStatusReports
+
+        """
+        return GenerateOrderStatusReports.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(GenerateOrderStatusReports obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return GenerateOrderStatusReports.to_dict_c(obj)
 
 
 cdef class GenerateFillReports(ExecutionReportCommand):
@@ -200,6 +367,7 @@ cdef class GenerateFillReports(ExecutionReportCommand):
         UUID4 command_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None = None,
+        UUID4 correlation_id = None,
     ) -> None:
         super().__init__(
             instrument_id,
@@ -208,9 +376,83 @@ cdef class GenerateFillReports(ExecutionReportCommand):
             command_id,
             ts_init,
             params,
+            correlation_id,
         )
 
         self.venue_order_id = venue_order_id
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"start={self.start}, "
+            f"end={self.end}, "
+            f"command_id={self.id.to_str()}, "
+            f"correlation_id={self.correlation_id.to_str() if self.correlation_id is not None else None}, "
+            f"ts_init={self.ts_init})"
+        )
+
+    @staticmethod
+    cdef GenerateFillReports from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        cdef str i = values["instrument_id"]
+        cdef str v = values["venue_order_id"]
+        cdef str corr = values.get("correlation_id")
+        return GenerateFillReports(
+            instrument_id=InstrumentId.from_str_c(i) if i is not None else None,
+            venue_order_id=VenueOrderId(v) if v is not None else None,
+            start=_ns_to_datetime(values["start"]),
+            end=_ns_to_datetime(values["end"]),
+            command_id=UUID4.from_str_c(values["command_id"]),
+            ts_init=values["ts_init"],
+            params=values.get("params"),
+            correlation_id=UUID4.from_str_c(corr) if corr is not None else None,
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(GenerateFillReports obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "GenerateFillReports",
+            "instrument_id": obj.instrument_id.to_str() if obj.instrument_id is not None else None,
+            "venue_order_id": obj.venue_order_id.to_str() if obj.venue_order_id is not None else None,
+            "start": obj.start,
+            "end": obj.end,
+            "command_id": obj.id.to_str(),
+            "ts_init": obj.ts_init,
+            "params": obj.params,
+            "correlation_id": obj.correlation_id.to_str() if obj.correlation_id is not None else None,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> GenerateFillReports:
+        """
+        Return a generate fill reports command from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        GenerateFillReports
+
+        """
+        return GenerateFillReports.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(GenerateFillReports obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return GenerateFillReports.to_dict_c(obj)
 
 
 cdef class GeneratePositionStatusReports(ExecutionReportCommand):
@@ -232,6 +474,8 @@ cdef class GeneratePositionStatusReports(ExecutionReportCommand):
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
         Additional parameters for the command.
+    log_receipt_level : LogLevel, default 'INFO'
+        The log level for logging received reports. Must be either `LogLevel.DEBUG` or `LogLevel.INFO`.
     """
 
     def __init__(
@@ -242,6 +486,8 @@ cdef class GeneratePositionStatusReports(ExecutionReportCommand):
         UUID4 command_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None = None,
+        LogLevel log_receipt_level = LogLevel.INFO,
+        UUID4 correlation_id = None,
     ) -> None:
         super().__init__(
             instrument_id,
@@ -250,7 +496,193 @@ cdef class GeneratePositionStatusReports(ExecutionReportCommand):
             command_id,
             ts_init,
             params,
+            correlation_id,
         )
+
+        self.log_receipt_level = log_receipt_level
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"start={self.start}, "
+            f"end={self.end}, "
+            f"command_id={self.id.to_str()}, "
+            f"correlation_id={self.correlation_id.to_str() if self.correlation_id is not None else None}, "
+            f"ts_init={self.ts_init})"
+        )
+
+    @staticmethod
+    cdef GeneratePositionStatusReports from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        cdef str i = values["instrument_id"]
+        cdef str corr = values.get("correlation_id")
+        return GeneratePositionStatusReports(
+            instrument_id=InstrumentId.from_str_c(i) if i is not None else None,
+            start=_ns_to_datetime(values["start"]),
+            end=_ns_to_datetime(values["end"]),
+            command_id=UUID4.from_str_c(values["command_id"]),
+            ts_init=values["ts_init"],
+            params=values.get("params"),
+            correlation_id=UUID4.from_str_c(corr) if corr is not None else None,
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(GeneratePositionStatusReports obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "GeneratePositionStatusReports",
+            "instrument_id": obj.instrument_id.to_str() if obj.instrument_id is not None else None,
+            "start": obj.start,
+            "end": obj.end,
+            "command_id": obj.id.to_str(),
+            "ts_init": obj.ts_init,
+            "params": obj.params,
+            "correlation_id": obj.correlation_id.to_str() if obj.correlation_id is not None else None,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> GeneratePositionStatusReports:
+        """
+        Return a generate position status reports command from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        GeneratePositionStatusReports
+
+        """
+        return GeneratePositionStatusReports.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(GeneratePositionStatusReports obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return GeneratePositionStatusReports.to_dict_c(obj)
+
+
+cdef class GenerateExecutionMassStatus(ExecutionReportCommand):
+    """
+    Command to generate an execution mass status report.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID for the command.
+    client_id : ClientId
+        The client ID for the command.
+    command_id : UUID4
+        The command ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    venue : Venue, optional
+        The venue for the command.
+    params : dict[str, object], optional
+        Additional parameters for the command.
+    """
+
+    def __init__(
+        self,
+        TraderId trader_id not None,
+        ClientId client_id not None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
+        Venue venue: Venue | None = None,
+        dict[str, object] params: dict | None = None,
+        UUID4 correlation_id = None,
+    ) -> None:
+        super().__init__(
+            instrument_id=None,
+            start=None,
+            end=None,
+            command_id=command_id,
+            ts_init=ts_init,
+            params=params,
+            correlation_id=correlation_id,
+        )
+
+        self.trader_id = trader_id
+        self.client_id = client_id
+        self.venue = venue
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id}, "
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"command_id={self.id.to_str()}, "
+            f"correlation_id={self.correlation_id.to_str() if self.correlation_id is not None else None}, "
+            f"ts_init={self.ts_init})"
+        )
+
+    @staticmethod
+    cdef GenerateExecutionMassStatus from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        cdef str venue = values["venue"]
+        cdef str corr = values.get("correlation_id")
+        return GenerateExecutionMassStatus(
+            trader_id=TraderId(values["trader_id"]),
+            client_id=ClientId(values["client_id"]),
+            command_id=UUID4.from_str_c(values["command_id"]),
+            ts_init=values["ts_init"],
+            venue=Venue(venue) if venue else None,
+            params=values.get("params"),
+            correlation_id=UUID4.from_str_c(corr) if corr is not None else None,
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(GenerateExecutionMassStatus obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "GenerateExecutionMassStatus",
+            "trader_id": obj.trader_id.to_str(),
+            "client_id": obj.client_id.to_str(),
+            "venue": obj.venue.to_str() if obj.venue is not None else None,
+            "command_id": obj.id.to_str(),
+            "ts_init": obj.ts_init,
+            "params": obj.params,
+            "correlation_id": obj.correlation_id.to_str() if obj.correlation_id is not None else None,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> GenerateExecutionMassStatus:
+        """
+        Return a generate execution mass status command from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        GenerateExecutionMassStatus
+
+        """
+        return GenerateExecutionMassStatus.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(GenerateExecutionMassStatus obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return GenerateExecutionMassStatus.to_dict_c(obj)
 
 
 cdef class TradingCommand(Command):
@@ -288,8 +720,9 @@ cdef class TradingCommand(Command):
         UUID4 command_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None = None,
+        UUID4 correlation_id = None,
     ) -> None:
-        super().__init__(command_id, ts_init)
+        super().__init__(command_id, ts_init, correlation_id)
 
         self.client_id = client_id
         self.trader_id = trader_id
@@ -336,6 +769,7 @@ cdef class SubmitOrder(TradingCommand):
         PositionId position_id: PositionId | None = None,
         ClientId client_id = None,
         dict[str, object] params: dict | None = None,
+        UUID4 correlation_id = None,
     ) -> None:
         super().__init__(
             client_id=client_id,
@@ -345,6 +779,7 @@ cdef class SubmitOrder(TradingCommand):
             command_id=command_id,
             ts_init=ts_init,
             params=params,
+            correlation_id=correlation_id,
         )
 
         self.order = order
@@ -369,6 +804,7 @@ cdef class SubmitOrder(TradingCommand):
             f"order={self.order}, "
             f"position_id={self.position_id}, "  # Can be None
             f"command_id={self.id.to_str()}, "
+            f"correlation_id={self.correlation_id.to_str() if self.correlation_id is not None else None}, "
             f"ts_init={self.ts_init})"
         )
 
@@ -377,6 +813,7 @@ cdef class SubmitOrder(TradingCommand):
         Condition.not_none(values, "values")
         cdef str c = values["client_id"]
         cdef str p = values["position_id"]
+        cdef str corr = values.get("correlation_id")
         cdef Order order = OrderUnpacker.unpack_c(values["order"]),
         return SubmitOrder(
             client_id=ClientId(c) if c is not None else None,
@@ -386,6 +823,7 @@ cdef class SubmitOrder(TradingCommand):
             position_id=PositionId(p) if p is not None else None,
             command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
+            correlation_id=UUID4.from_str_c(corr) if corr is not None else None,
         )
 
     @staticmethod
@@ -400,6 +838,7 @@ cdef class SubmitOrder(TradingCommand):
             "position_id": obj.position_id.to_str() if obj.position_id is not None else None,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
+            "correlation_id": obj.correlation_id.to_str() if obj.correlation_id is not None else None,
         }
 
     @staticmethod
@@ -474,6 +913,7 @@ cdef class SubmitOrderList(TradingCommand):
         PositionId position_id: PositionId | None = None,
         ClientId client_id = None,
         dict[str, object] params: dict | None = None,
+        UUID4 correlation_id = None,
     ) -> None:
         super().__init__(
             client_id=client_id,
@@ -483,6 +923,7 @@ cdef class SubmitOrderList(TradingCommand):
             command_id=command_id,
             ts_init=ts_init,
             params=params,
+            correlation_id=correlation_id,
         )
 
         self.order_list = order_list
@@ -507,6 +948,7 @@ cdef class SubmitOrderList(TradingCommand):
             f"order_list={self.order_list}, "
             f"position_id={self.position_id}, " # Can be None
             f"command_id={self.id.to_str()}, "
+            f"correlation_id={self.correlation_id.to_str() if self.correlation_id is not None else None}, "
             f"ts_init={self.ts_init})"
         )
 
@@ -515,6 +957,7 @@ cdef class SubmitOrderList(TradingCommand):
         Condition.not_none(values, "values")
         cdef str c = values["client_id"]
         cdef str p = values["position_id"]
+        cdef str corr = values.get("correlation_id")
         cdef OrderList order_list = OrderList(
             order_list_id=OrderListId(values["order_list_id"]),
             orders=[OrderUnpacker.unpack_c(o_dict) for o_dict in values["orders"]],
@@ -527,6 +970,7 @@ cdef class SubmitOrderList(TradingCommand):
             position_id=PositionId(p) if p is not None else None,
             command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
+            correlation_id=UUID4.from_str_c(corr) if corr is not None else None,
         )
 
     @staticmethod
@@ -543,6 +987,7 @@ cdef class SubmitOrderList(TradingCommand):
             "position_id": obj.position_id.to_str() if obj.position_id is not None else None,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
+            "correlation_id": obj.correlation_id.to_str() if obj.correlation_id is not None else None,
         }
 
     @staticmethod
@@ -625,6 +1070,7 @@ cdef class ModifyOrder(TradingCommand):
         uint64_t ts_init,
         ClientId client_id = None,
         dict[str, object] params: dict | None = None,
+        UUID4 correlation_id = None,
     ) -> None:
         super().__init__(
             client_id=client_id,
@@ -634,6 +1080,7 @@ cdef class ModifyOrder(TradingCommand):
             command_id=command_id,
             ts_init=ts_init,
             params=params,
+            correlation_id=correlation_id,
         )
 
         self.client_order_id = client_order_id
@@ -666,6 +1113,7 @@ cdef class ModifyOrder(TradingCommand):
             f"price={self.price.to_formatted_str() if self.price is not None else None}, "
             f"trigger_price={self.trigger_price.to_formatted_str() if self.trigger_price is not None else None}, "
             f"command_id={self.id.to_str()}, "
+            f"correlation_id={self.correlation_id.to_str() if self.correlation_id is not None else None}, "
             f"ts_init={self.ts_init})"
         )
 
@@ -677,6 +1125,7 @@ cdef class ModifyOrder(TradingCommand):
         cdef str q = values["quantity"]
         cdef str p = values["price"]
         cdef str t = values["trigger_price"]
+        cdef str corr = values.get("correlation_id")
         return ModifyOrder(
             client_id=ClientId(c) if c is not None else None,
             trader_id=TraderId(values["trader_id"]),
@@ -689,6 +1138,7 @@ cdef class ModifyOrder(TradingCommand):
             trigger_price=Price.from_str_c(t) if t is not None else None,
             command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
+            correlation_id=UUID4.from_str_c(corr) if corr is not None else None,
         )
 
     @staticmethod
@@ -707,6 +1157,7 @@ cdef class ModifyOrder(TradingCommand):
             "trigger_price": str(obj.trigger_price) if obj.trigger_price is not None else None,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
+            "correlation_id": obj.correlation_id.to_str() if obj.correlation_id is not None else None,
         }
 
     @staticmethod
@@ -780,6 +1231,7 @@ cdef class CancelOrder(TradingCommand):
         uint64_t ts_init,
         ClientId client_id = None,
         dict[str, object] params: dict | None = None,
+        UUID4 correlation_id = None,
     ) -> None:
         if client_id is None:
             client_id = ClientId(instrument_id.venue.value)
@@ -791,6 +1243,7 @@ cdef class CancelOrder(TradingCommand):
             command_id=command_id,
             ts_init=ts_init,
             params=params,
+            correlation_id=correlation_id,
         )
 
         self.client_order_id = client_order_id
@@ -814,6 +1267,7 @@ cdef class CancelOrder(TradingCommand):
             f"client_order_id={self.client_order_id.to_str()}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"command_id={self.id.to_str()}, "
+            f"correlation_id={self.correlation_id.to_str() if self.correlation_id is not None else None}, "
             f"ts_init={self.ts_init})"
         )
 
@@ -822,6 +1276,7 @@ cdef class CancelOrder(TradingCommand):
         Condition.not_none(values, "values")
         cdef str c = values["client_id"]
         cdef str v = values["venue_order_id"]
+        cdef str corr = values.get("correlation_id")
         return CancelOrder(
             client_id=ClientId(c) if c is not None else None,
             trader_id=TraderId(values["trader_id"]),
@@ -831,6 +1286,7 @@ cdef class CancelOrder(TradingCommand):
             venue_order_id=VenueOrderId(v) if v is not None else None,
             command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
+            correlation_id=UUID4.from_str_c(corr) if corr is not None else None,
         )
 
     @staticmethod
@@ -846,6 +1302,7 @@ cdef class CancelOrder(TradingCommand):
             "venue_order_id": obj.venue_order_id.to_str() if obj.venue_order_id is not None else None,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
+            "correlation_id": obj.correlation_id.to_str() if obj.correlation_id is not None else None,
         }
 
     @staticmethod
@@ -912,6 +1369,7 @@ cdef class CancelAllOrders(TradingCommand):
         uint64_t ts_init,
         ClientId client_id = None,
         dict[str, object] params: dict | None = None,
+        UUID4 correlation_id = None,
     ) -> None:
         super().__init__(
             client_id=client_id,
@@ -921,6 +1379,7 @@ cdef class CancelAllOrders(TradingCommand):
             command_id=command_id,
             ts_init=ts_init,
             params=params,
+            correlation_id=correlation_id,
         )
 
         self.order_side = order_side
@@ -941,6 +1400,7 @@ cdef class CancelAllOrders(TradingCommand):
             f"instrument_id={self.instrument_id.to_str()}, "
             f"order_side={order_side_to_str(self.order_side)}, "
             f"command_id={self.id.to_str()}, "
+            f"correlation_id={self.correlation_id.to_str() if self.correlation_id is not None else None}, "
             f"ts_init={self.ts_init})"
         )
 
@@ -948,6 +1408,7 @@ cdef class CancelAllOrders(TradingCommand):
     cdef CancelAllOrders from_dict_c(dict values):
         Condition.not_none(values, "values")
         cdef str c = values["client_id"]
+        cdef str corr = values.get("correlation_id")
         return CancelAllOrders(
             client_id=ClientId(c) if c is not None else None,
             trader_id=TraderId(values["trader_id"]),
@@ -956,6 +1417,7 @@ cdef class CancelAllOrders(TradingCommand):
             order_side=order_side_from_str(values["order_side"]),
             command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
+            correlation_id=UUID4.from_str_c(corr) if corr is not None else None,
         )
 
     @staticmethod
@@ -970,6 +1432,7 @@ cdef class CancelAllOrders(TradingCommand):
             "order_side": order_side_to_str(obj.order_side),
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
+            "correlation_id": obj.correlation_id.to_str() if obj.correlation_id is not None else None,
         }
 
     @staticmethod
@@ -1043,6 +1506,7 @@ cdef class BatchCancelOrders(TradingCommand):
         uint64_t ts_init,
         ClientId client_id = None,
         dict[str, object] params: dict | None = None,
+        UUID4 correlation_id = None,
     ) -> None:
         Condition.not_empty(cancels, "cancels")
         Condition.list_type(cancels, CancelOrder, "cancels")
@@ -1054,6 +1518,7 @@ cdef class BatchCancelOrders(TradingCommand):
             command_id=command_id,
             ts_init=ts_init,
             params=params,
+            correlation_id=correlation_id,
         )
 
         self.cancels = cancels
@@ -1074,6 +1539,7 @@ cdef class BatchCancelOrders(TradingCommand):
             f"instrument_id={self.instrument_id.to_str()}, "
             f"cancels={self.cancels}, "
             f"command_id={self.id.to_str()}, "
+            f"correlation_id={self.correlation_id.to_str() if self.correlation_id is not None else None}, "
             f"ts_init={self.ts_init})"
         )
 
@@ -1081,6 +1547,7 @@ cdef class BatchCancelOrders(TradingCommand):
     cdef BatchCancelOrders from_dict_c(dict values):
         Condition.not_none(values, "values")
         cdef str client_id = values["client_id"]
+        cdef str corr = values.get("correlation_id")
         return BatchCancelOrders(
             client_id=ClientId(client_id) if client_id is not None else None,
             trader_id=TraderId(values["trader_id"]),
@@ -1089,6 +1556,7 @@ cdef class BatchCancelOrders(TradingCommand):
             cancels=[CancelOrder.from_dict_c(cancel) for cancel in values["cancels"]],
             command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
+            correlation_id=UUID4.from_str_c(corr) if corr is not None else None,
         )
 
     @staticmethod
@@ -1103,6 +1571,7 @@ cdef class BatchCancelOrders(TradingCommand):
             "cancels": [CancelOrder.to_dict_c(cancel) for cancel in obj.cancels],
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
+            "correlation_id": obj.correlation_id.to_str() if obj.correlation_id is not None else None,
         }
 
     @staticmethod
@@ -1172,6 +1641,7 @@ cdef class QueryOrder(TradingCommand):
         uint64_t ts_init,
         ClientId client_id = None,
         dict[str, object] params: dict | None = None,
+        UUID4 correlation_id = None,
     ) -> None:
         if client_id is None:
             client_id = ClientId(instrument_id.venue.value)
@@ -1183,6 +1653,7 @@ cdef class QueryOrder(TradingCommand):
             command_id=command_id,
             ts_init=ts_init,
             params=params,
+            correlation_id=correlation_id,
         )
 
         self.client_order_id = client_order_id
@@ -1206,6 +1677,7 @@ cdef class QueryOrder(TradingCommand):
             f"client_order_id={self.client_order_id.to_str()}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"command_id={self.id.to_str()}, "
+            f"correlation_id={self.correlation_id.to_str() if self.correlation_id is not None else None}, "
             f"ts_init={self.ts_init})"
         )
 
@@ -1214,6 +1686,7 @@ cdef class QueryOrder(TradingCommand):
         Condition.not_none(values, "values")
         cdef str c = values["client_id"]
         cdef str v = values["venue_order_id"]
+        cdef str corr = values.get("correlation_id")
         return QueryOrder(
             client_id=ClientId(c) if c is not None else None,
             trader_id=TraderId(values["trader_id"]),
@@ -1223,6 +1696,7 @@ cdef class QueryOrder(TradingCommand):
             venue_order_id=VenueOrderId(v) if v is not None else None,
             command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
+            correlation_id=UUID4.from_str_c(corr) if corr is not None else None,
         )
 
     @staticmethod
@@ -1238,6 +1712,7 @@ cdef class QueryOrder(TradingCommand):
             "venue_order_id": obj.venue_order_id.to_str() if obj.venue_order_id is not None else None,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
+            "correlation_id": obj.correlation_id.to_str() if obj.correlation_id is not None else None,
         }
 
     @staticmethod
@@ -1268,3 +1743,110 @@ cdef class QueryOrder(TradingCommand):
 
         """
         return QueryOrder.to_dict_c(obj)
+
+
+cdef class QueryAccount(Command):
+    """
+    Represents a command to query an account.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID for the command.
+    account_id : AccountId
+        The account ID to query.
+    command_id : UUID4
+        The command ID.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    client_id : ClientId, optional
+        The execution client ID for the command.
+    params : dict[str, object], optional
+        Additional parameters for the command.
+    """
+
+    def __init__(
+        self,
+        TraderId trader_id not None,
+        AccountId account_id not None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
+        ClientId client_id = None,
+        dict[str, object] params: dict | None = None,
+        UUID4 correlation_id = None,
+    ) -> None:
+        super().__init__(command_id, ts_init, correlation_id)
+
+        self.client_id = client_id
+        self.trader_id = trader_id
+        self.account_id = account_id
+        self.params = params or {}
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"client_id={self.client_id}, "  # Can be None
+            f"trader_id={self.trader_id.to_str()}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"command_id={self.id.to_str()}, "
+            f"correlation_id={self.correlation_id.to_str() if self.correlation_id is not None else None}, "
+            f"ts_init={self.ts_init})"
+        )
+
+    @staticmethod
+    cdef QueryAccount from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        cdef str c = values["client_id"]
+        cdef str corr = values.get("correlation_id")
+        return QueryAccount(
+            client_id=ClientId(c) if c is not None else None,
+            trader_id=TraderId(values["trader_id"]),
+            account_id=AccountId(values["account_id"]),
+            command_id=UUID4.from_str_c(values["command_id"]),
+            ts_init=values["ts_init"],
+            params=values.get("params"),
+            correlation_id=UUID4.from_str_c(corr) if corr is not None else None,
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(QueryAccount obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "QueryAccount",
+            "client_id": obj.client_id.to_str() if obj.client_id is not None else None,
+            "trader_id": obj.trader_id.to_str(),
+            "account_id": obj.account_id.to_str() if obj.account_id is not None else None,
+            "command_id": obj.id.to_str(),
+            "ts_init": obj.ts_init,
+            "params": obj.params if obj.params else None,
+            "correlation_id": obj.correlation_id.to_str() if obj.correlation_id is not None else None,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> QueryAccount:
+        """
+        Return a query account command from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        QueryAccount
+
+        """
+        return QueryAccount.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(QueryAccount obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return QueryAccount.to_dict_c(obj)

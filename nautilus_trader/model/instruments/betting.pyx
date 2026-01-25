@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -190,6 +190,10 @@ cdef class BettingInstrument(Instrument):
         if taker_fee:
             data["taker_fee"] = Decimal(taker_fee)
 
+        tick_scheme_name = values.get("tick_scheme_name")
+        if tick_scheme_name:
+            data["tick_scheme_name"] = tick_scheme_name
+
         data.pop("raw_symbol", None)
         data.pop("price_increment", None)
         data.pop("size_increment", None)
@@ -236,6 +240,7 @@ cdef class BettingInstrument(Instrument):
             "taker_fee": str(obj.taker_fee),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "tick_scheme_name": obj.tick_scheme_name,
             "info": obj.info,
         }
 
@@ -268,9 +273,21 @@ cdef class BettingInstrument(Instrument):
         """
         return BettingInstrument.to_dict_c(obj)
 
-    cpdef Money notional_value(self, Quantity quantity, Price price, bint use_quote_for_inverse=False):
+    cpdef Money notional_value(
+        self,
+        Quantity quantity,
+        Price price,
+        bint use_quote_for_inverse=False,
+        Currency target_currency=None,
+        Price conversion_price=None,
+    ):
         Condition.not_none(quantity, "quantity")
-        return Money(quantity.as_f64_c() * float(self.multiplier), self.quote_currency)
+        cdef Money notional = Money(quantity.as_f64_c() * float(self.multiplier), self.quote_currency)
+
+        if target_currency is not None and conversion_price is not None:
+            return Money(notional.as_f64_c() * conversion_price.as_f64_c(), target_currency)
+
+        return notional
 
 
 cpdef Symbol make_symbol(

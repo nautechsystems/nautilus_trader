@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -52,6 +52,8 @@ cdef class Account:
         self.update_balances(event.balances)
 
     def __eq__(self, Account other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -385,7 +387,7 @@ cdef class Account:
         self._events.append(event)
         self.update_balances(event.balances)
 
-    cpdef void update_balances(self, list balances, bint allow_zero=True):
+    cpdef void update_balances(self, list balances):
         """
         Update the account balances.
 
@@ -396,27 +398,22 @@ cdef class Account:
         ----------
         balances : list[AccountBalance]
             The balances for the update.
-        allow_zero : bool, default True
-            If zero balances are allowed (will then just clear the assets balance).
 
         Raises
         ------
         ValueError
             If `balances` is empty.
+        AccountBalanceNegative
+            If account type is ``CASH``, and balance is negative.
 
         """
         Condition.not_empty(balances, "balances")
 
         cdef AccountBalance balance
         for balance in balances:
-            if not balance.total._mem.raw > 0:
-                if balance.total._mem.raw < 0:
-                    raise AccountBalanceNegative(balance.total.as_decimal(), balance.currency)
-                if balance.total.is_zero() and not allow_zero:
-                    raise AccountBalanceNegative(balance.total.as_decimal(), balance.currency)
-                else:
-                    # Clear asset balance
-                    self._balances.pop(balance.currency, None)
+            if self.type == AccountType.CASH and balance.total._mem.raw < 0:
+                raise AccountBalanceNegative(balance.total.as_decimal(), balance.currency)
+
             self._balances[balance.currency] = balance
 
     cpdef void update_commissions(self, Money commission):

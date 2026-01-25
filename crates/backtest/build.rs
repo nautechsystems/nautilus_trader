@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,10 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Build script for the `nautilus-backtest` crate.
+//!
+//! This script is responsible for generating the C and Cython bindings that allow the back-testing
+//! engine to be consumed from C/C++ and Python when the `ffi` feature flag is enabled.
+//! It also instructs Cargo when it must be re-run and gracefully exits when executed inside the
+//! docs.rs environment.
+
 #[cfg(feature = "ffi")]
 use std::env;
 
-#[allow(clippy::expect_used)]
+#[allow(
+    clippy::expect_used,
+    reason = "Build script may panic on misconfiguration"
+)]
 fn main() {
     // Skip file generation if we're in the docs.rs environment
     if std::env::var("DOCS_RS").is_ok() {

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -78,8 +78,8 @@ cdef class AccountState(Event):
         self.account_id = account_id
         self.account_type = account_type
         self.base_currency = base_currency
-        self.balances = balances
-        self.margins = margins
+        self.balances = [balance.copy() for balance in balances]
+        self.margins = [margin.copy() for margin in margins]
         self.is_reported = reported
         self.info = info
 
@@ -88,6 +88,8 @@ cdef class AccountState(Event):
         self._ts_init = ts_init
 
     def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
         return self._event_id == other.id
 
     def __hash__(self) -> int:

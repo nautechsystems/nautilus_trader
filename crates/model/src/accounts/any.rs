@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,8 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
+//! Enum wrapper providing a type-erased view over the various concrete [`Account`] implementations.
+//!
+//! The `AccountAny` enum is primarily used when heterogeneous account types need to be stored in a
+//! single collection (e.g. `Vec<AccountAny>`).  Each variant simply embeds one of the concrete
+//! account structs defined in this module.
 
+use ahash::AHashMap;
 use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
 
@@ -39,50 +44,56 @@ impl AccountAny {
     #[must_use]
     pub fn id(&self) -> AccountId {
         match self {
-            AccountAny::Margin(margin) => margin.id,
-            AccountAny::Cash(cash) => cash.id,
+            Self::Margin(margin) => margin.id,
+            Self::Cash(cash) => cash.id,
         }
     }
 
     pub fn last_event(&self) -> Option<AccountState> {
         match self {
-            AccountAny::Margin(margin) => margin.last_event(),
-            AccountAny::Cash(cash) => cash.last_event(),
+            Self::Margin(margin) => margin.last_event(),
+            Self::Cash(cash) => cash.last_event(),
         }
     }
 
     pub fn events(&self) -> Vec<AccountState> {
         match self {
-            AccountAny::Margin(margin) => margin.events(),
-            AccountAny::Cash(cash) => cash.events(),
+            Self::Margin(margin) => margin.events(),
+            Self::Cash(cash) => cash.events(),
         }
     }
 
-    pub fn apply(&mut self, event: AccountState) {
+    /// Applies an account state event to update the account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the account state cannot be applied (e.g., negative balance
+    /// when borrowing is not allowed for a cash account).
+    pub fn apply(&mut self, event: AccountState) -> anyhow::Result<()> {
         match self {
-            AccountAny::Margin(margin) => margin.apply(event),
-            AccountAny::Cash(cash) => cash.apply(event),
+            Self::Margin(margin) => margin.apply(event),
+            Self::Cash(cash) => cash.apply(event),
         }
     }
 
-    pub fn balances(&self) -> HashMap<Currency, AccountBalance> {
+    pub fn balances(&self) -> AHashMap<Currency, AccountBalance> {
         match self {
-            AccountAny::Margin(margin) => margin.balances(),
-            AccountAny::Cash(cash) => cash.balances(),
+            Self::Margin(margin) => margin.balances(),
+            Self::Cash(cash) => cash.balances(),
         }
     }
 
-    pub fn balances_locked(&self) -> HashMap<Currency, Money> {
+    pub fn balances_locked(&self) -> AHashMap<Currency, Money> {
         match self {
-            AccountAny::Margin(margin) => margin.balances_locked(),
-            AccountAny::Cash(cash) => cash.balances_locked(),
+            Self::Margin(margin) => margin.balances_locked(),
+            Self::Cash(cash) => cash.balances_locked(),
         }
     }
 
     pub fn base_currency(&self) -> Option<Currency> {
         match self {
-            AccountAny::Margin(margin) => margin.base_currency(),
-            AccountAny::Cash(cash) => cash.base_currency(),
+            Self::Margin(margin) => margin.base_currency(),
+            Self::Cash(cash) => cash.base_currency(),
         }
     }
 
@@ -101,7 +112,7 @@ impl AccountAny {
         let init_event = events.first().unwrap();
         let mut account = Self::from(init_event.clone());
         for event in events.iter().skip(1) {
-            account.apply(event.clone());
+            account.apply(event.clone())?;
         }
         Ok(account)
     }
@@ -116,8 +127,8 @@ impl AccountAny {
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
         match self {
-            AccountAny::Margin(margin) => margin.calculate_pnls(instrument, fill, position),
-            AccountAny::Cash(cash) => cash.calculate_pnls(instrument, fill, position),
+            Self::Margin(margin) => margin.calculate_pnls(instrument, fill, position),
+            Self::Cash(cash) => cash.calculate_pnls(instrument, fill, position),
         }
     }
 
@@ -133,14 +144,14 @@ impl AccountAny {
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
         match self {
-            AccountAny::Margin(margin) => margin.calculate_commission(
+            Self::Margin(margin) => margin.calculate_commission(
                 instrument,
                 last_qty,
                 last_px,
                 liquidity_side,
                 use_quote_for_inverse,
             ),
-            AccountAny::Cash(cash) => cash.calculate_commission(
+            Self::Cash(cash) => cash.calculate_commission(
                 instrument,
                 last_qty,
                 last_px,
@@ -152,19 +163,38 @@ impl AccountAny {
 
     pub fn balance(&self, currency: Option<Currency>) -> Option<&AccountBalance> {
         match self {
-            AccountAny::Margin(margin) => margin.balance(currency),
-            AccountAny::Cash(cash) => cash.balance(currency),
+            Self::Margin(margin) => margin.balance(currency),
+            Self::Cash(cash) => cash.balance(currency),
+        }
+    }
+}
+
+impl AccountAny {
+    /// Creates an `AccountAny` from an `AccountState`, returning an error for unsupported types.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the account type is `Betting` or `Wallet` (unsupported in Rust).
+    pub fn try_from_state(event: AccountState) -> Result<Self, &'static str> {
+        match event.account_type {
+            AccountType::Margin => Ok(Self::Margin(MarginAccount::new(event, false))),
+            AccountType::Cash => Ok(Self::Cash(CashAccount::new(event, false, false))),
+            AccountType::Betting => Err("Betting accounts are not yet supported in Rust, \
+                use Python for betting workflows"),
+            AccountType::Wallet => Err("Wallet accounts are not yet implemented in Rust"),
         }
     }
 }
 
 impl From<AccountState> for AccountAny {
+    /// Creates an `AccountAny` from an `AccountState`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the account type is `Betting` or `Wallet` (unsupported in Rust).
+    /// Use [`AccountAny::try_from_state`] for fallible conversion.
     fn from(event: AccountState) -> Self {
-        match event.account_type {
-            AccountType::Margin => AccountAny::Margin(MarginAccount::new(event, false)),
-            AccountType::Cash => AccountAny::Cash(CashAccount::new(event, false)),
-            AccountType::Betting => todo!("Betting account not implemented"),
-        }
+        Self::try_from_state(event).expect("Unsupported account type")
     }
 }
 

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,11 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from decimal import Decimal
 from functools import partial
 from typing import TYPE_CHECKING
 
-from ibapi.commission_report import CommissionReport
+from ibapi.commission_and_fees_report import CommissionAndFeesReport
 from ibapi.common import BarData
 from ibapi.common import FaDataType
 from ibapi.common import HistogramData
@@ -59,7 +61,7 @@ class InteractiveBrokersEWrapper(EWrapper):
     def __init__(
         self,
         nautilus_logger: Logger,
-        client: "InteractiveBrokersClient",
+        client: InteractiveBrokersClient,
     ) -> None:
         super().__init__()
         self._log = nautilus_logger
@@ -80,6 +82,7 @@ class InteractiveBrokersEWrapper(EWrapper):
     def error(
         self,
         reqId: TickerId,
+        errorTime: int,
         errorCode: int,
         errorString: str,
         advancedOrderRejectJson="",
@@ -92,6 +95,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         task = partial(
             self._client.process_error,
             req_id=reqId,
+            error_time=errorTime,
             error_code=errorCode,
             error_string=errorString,
             advanced_order_reject_json=advancedOrderRejectJson,
@@ -157,6 +161,14 @@ class InteractiveBrokersEWrapper(EWrapper):
 
         """
         self.logAnswer(current_fn_name(), vars())
+        task = partial(
+            self._client.process_tick_price,
+            req_id=reqId,
+            tick_type=tickType,
+            price=price,
+            attrib=attrib,
+        )
+        self._client.submit_to_msg_handler_queue(task)
 
     def tickSize(self, reqId: TickerId, tickType: TickType, size: Decimal) -> None:
         """
@@ -176,6 +188,13 @@ class InteractiveBrokersEWrapper(EWrapper):
 
         """
         self.logAnswer(current_fn_name(), vars())
+        task = partial(
+            self._client.process_tick_size,
+            req_id=reqId,
+            tick_type=tickType,
+            size=size,
+        )
+        self._client.submit_to_msg_handler_queue(task)
 
     def tickSnapshotEnd(self, reqId: int) -> None:
         """
@@ -450,6 +469,11 @@ class InteractiveBrokersEWrapper(EWrapper):
         reqExecutions().
         """
         self.logAnswer(current_fn_name(), vars())
+        task = partial(
+            self._client.process_exec_details_end,
+            req_id=reqId,
+        )
+        self._client.submit_to_msg_handler_queue(task)
 
     def updateMktDepth(
         self,
@@ -505,12 +529,13 @@ class InteractiveBrokersEWrapper(EWrapper):
         position : int
             The order book's row being updated.
         marketMaker : str
-            The exchange holding the order.
+            The exchange holding the order if isSmartDepth is True,
+            otherwise the MPID of the market maker.
         operation : int
             How to refresh the row:
             - 0: insert (insert this new order into the row identified by 'position')
             - 1: update (update the existing order in the row identified by 'position')
-            - 2: delete (delete the existing order at the row identified by 'position').
+            - 2: delete (delete the existing order at the row identified by 'position')
         side : int
             0 for ask, 1 for bid.
         price : float
@@ -522,6 +547,19 @@ class InteractiveBrokersEWrapper(EWrapper):
 
         """
         self.logAnswer(current_fn_name(), vars())
+
+        task = partial(
+            self._client.process_update_mkt_depth_l2,
+            req_id=reqId,
+            position=position,
+            market_maker=marketMaker,
+            operation=operation,
+            side=side,
+            price=price,
+            size=size,
+            is_smart_depth=isSmartDepth,
+        )
+        self._client.submit_to_msg_handler_queue(task)
 
     def updateNewsBulletin(
         self,
@@ -753,7 +791,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def commissionReport(self, commissionReport: CommissionReport) -> None:
+    def commissionAndFeesReport(self, commissionAndFeesReport: CommissionAndFeesReport) -> None:
         """
         Trigger this callback in the following scenarios:
 
@@ -764,7 +802,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         self.logAnswer(current_fn_name(), vars())
         task = partial(
             self._client.process_commission_report,
-            commission_report=commissionReport,
+            commission_report=commissionAndFeesReport,
         )
         self._client.submit_to_msg_handler_queue(task)
 
@@ -832,7 +870,7 @@ class InteractiveBrokersEWrapper(EWrapper):
     def verifyCompleted(self, isSuccessful: bool, errorText: str) -> None:
         self.logAnswer(current_fn_name(), vars())
 
-    def verifyAndAuthMessageAPI(self, apiData: str, xyzChallange: str) -> None:
+    def verifyAndAuthMessageAPI(self, apiData: str, xyzChallenge: str) -> None:
         self.logAnswer(current_fn_name(), vars())
 
     def verifyAndAuthCompleted(self, isSuccessful: bool, errorText: str) -> None:
@@ -1281,7 +1319,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def orderBound(self, reqId: int, apiClientId: int, apiOrderId: int) -> None:
+    def orderBound(self, permId: int, clientId: int, orderId: int) -> None:
         """
         Return the orderBound notification.
         """

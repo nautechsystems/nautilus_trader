@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,6 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+from libc.stdint cimport int64_t
 
 from nautilus_trader.core.rust.model cimport AccountId_t
 from nautilus_trader.core.rust.model cimport ClientId_t
@@ -30,6 +32,7 @@ from nautilus_trader.core.rust.model cimport VenueOrderId_t
 
 
 cdef class Identifier:
+    cdef int64_t _hash
     cdef str to_str(self)
 
 
@@ -148,3 +151,10 @@ cdef class TradeId(Identifier):
 
     @staticmethod
     cdef TradeId from_mem_c(TradeId_t mem)
+
+
+# Generic spread ID functions
+cpdef InstrumentId new_generic_spread_id(list instrument_ratios)
+cpdef list generic_spread_id_to_list(InstrumentId instrument_id)
+cpdef bint is_generic_spread_id(InstrumentId instrument_id)
+cpdef int generic_spread_id_n_legs(InstrumentId instrument_id)

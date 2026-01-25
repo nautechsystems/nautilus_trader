@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import sys
 
 import msgspec
@@ -38,9 +37,10 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
 class TestBetfairInstrumentProvider:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
+        self.loop = request.getfixturevalue("event_loop")
         self.clock = LiveClock()
         self.client = BetfairTestStubs.betfair_client(loop=self.loop)
         self.provider = BetfairInstrumentProvider(
@@ -49,7 +49,9 @@ class TestBetfairInstrumentProvider:
         )
         self.parser = BetfairParser(currency="GBP")
 
-    @pytest.mark.asyncio()
+        return
+
+    @pytest.mark.asyncio
     async def test_load_markets(self):
         markets = await load_markets(self.client)
         assert len(markets) == 13227
@@ -64,13 +66,13 @@ class TestBetfairInstrumentProvider:
         markets = await load_markets(self.client, market_ids=["1.177125728"])
         assert len(markets) == 1
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_load_markets_metadata(self):
         markets = await load_markets(self.client, event_type_names=["Basketball"])
         market_metadata = await load_markets_metadata(client=self.client, markets=markets)
         assert len(market_metadata) == 169
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_make_instruments(self):
         # Arrange
         list_market_catalogue_data = [
@@ -91,12 +93,12 @@ class TestBetfairInstrumentProvider:
         # Assert
         assert len(instruments) == 30412
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_load_all(self):
         await self.provider.load_all_async({"event_type_names": ["Tennis"]})
         assert len(self.provider.list_all()) == 4711
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_list_all(self):
         await self.provider.load_all_async({"event_type_names": ["Basketball"]})
         instruments = self.provider.list_all()

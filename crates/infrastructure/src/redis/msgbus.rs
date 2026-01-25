@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,19 +20,19 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use bytes::Bytes;
 use futures::stream::Stream;
 use nautilus_common::{
+    live::get_runtime,
     logging::{log_task_error, log_task_started, log_task_stopped},
     msgbus::{
         BusMessage,
         database::{DatabaseConfig, MessageBusConfig, MessageBusDatabaseAdapter},
         switchboard::CLOSE_TOPIC,
     },
-    runtime::get_runtime,
 };
 use nautilus_core::{
     UUID4,
@@ -265,31 +265,69 @@ pub async fn publish_messages(
 
     // Buffering
     let mut buffer: VecDeque<BusMessage> = VecDeque::new();
-    let mut last_drain = Instant::now();
     let buffer_interval = Duration::from_millis(u64::from(config.buffer_interval_ms.unwrap_or(0)));
 
+    // A sleep used to trigger periodic flushing of the buffer.
+    // When `buffer_interval` is zero we skip using the timer and flush immediately
+    // after every message.
+    let flush_timer = tokio::time::sleep(buffer_interval);
+    tokio::pin!(flush_timer);
+
     loop {
-        if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
-            drain_buffer(
-                &mut con,
-                &stream_key,
-                config.stream_per_topic,
-                autotrim_duration,
-                &mut last_trim_index,
-                &mut buffer,
-            )
-            .await?;
-            last_drain = Instant::now();
-        } else if let Some(msg) = rx.recv().await {
-            if msg.topic == CLOSE_TOPIC {
-                tracing::debug!("Received close message");
-                drop(rx);
-                break;
+        tokio::select! {
+            maybe_msg = rx.recv() => {
+                if let Some(msg) = maybe_msg {
+                    if msg.topic == CLOSE_TOPIC {
+                        log::debug!("Received close message");
+                        // Ensure we exit the loop after flushing any remaining messages.
+                        if !buffer.is_empty() {
+                            drain_buffer(
+                                &mut con,
+                                &stream_key,
+                                config.stream_per_topic,
+                                autotrim_duration,
+                                &mut last_trim_index,
+                                &mut buffer,
+                            ).await?;
+                        }
+                        break;
+                    }
+
+                    buffer.push_back(msg);
+
+                    if buffer_interval.is_zero() {
+                        // Immediate flush mode
+                        drain_buffer(
+                            &mut con,
+                            &stream_key,
+                            config.stream_per_topic,
+                            autotrim_duration,
+                            &mut last_trim_index,
+                            &mut buffer,
+                        ).await?;
+                    }
+                } else {
+                    log::debug!("Channel hung up");
+                    break;
+                }
             }
-            buffer.push_back(msg);
-        } else {
-            tracing::debug!("Channel hung up");
-            break;
+            // Only poll the timer when the interval is non-zero. This avoids
+            // unnecessarily waking the task when immediate flushing is enabled.
+            () = &mut flush_timer, if !buffer_interval.is_zero() => {
+                if !buffer.is_empty() {
+                    drain_buffer(
+                        &mut con,
+                        &stream_key,
+                        config.stream_per_topic,
+                        autotrim_duration,
+                        &mut last_trim_index,
+                        &mut buffer,
+                    ).await?;
+                }
+
+                // Schedule the next tick
+                flush_timer.as_mut().reset(tokio::time::Instant::now() + buffer_interval);
+            }
         }
     }
 
@@ -354,12 +392,9 @@ async fn drain_buffer(
                 .await;
 
             if let Err(e) = result {
-                tracing::error!("Error trimming stream '{stream_key}': {e}");
+                log::error!("Error trimming stream '{stream_key}': {e}");
             } else {
-                last_trim_index.insert(
-                    stream_key.to_string(),
-                    unix_duration_now.as_millis() as usize,
-                );
+                last_trim_index.insert(stream_key.clone(), unix_duration_now.as_millis() as usize);
             }
         }
     }
@@ -389,22 +424,34 @@ pub async fn stream_messages(
         .map(String::as_str)
         .collect::<Vec<&str>>();
 
-    tracing::debug!("Listening to streams: [{}]", stream_keys.join(", "));
+    log::debug!("Listening to streams: [{}]", stream_keys.join(", "));
 
     // Start streaming from current timestamp
     let clock = get_atomic_clock_realtime();
     let timestamp_ms = clock.get_time_ms();
-    let mut last_id = timestamp_ms.to_string();
+    let initial_id = timestamp_ms.to_string();
+
+    let mut last_ids: HashMap<String, String> = stream_keys
+        .iter()
+        .map(|&key| (key.to_string(), initial_id.clone()))
+        .collect();
 
     let opts = StreamReadOptions::default().block(100);
 
     'outer: loop {
         if stream_signal.load(Ordering::Relaxed) {
-            tracing::debug!("Received streaming terminate signal");
+            log::debug!("Received streaming terminate signal");
             break;
         }
+
+        let ids: Vec<String> = stream_keys
+            .iter()
+            .map(|&key| last_ids[key].clone())
+            .collect();
+        let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+
         let result: Result<RedisStreamBulk, _> =
-            con.xread_options(&[&stream_keys], &[&last_id], &opts).await;
+            con.xread_options(&[&stream_keys], &[&id_refs], &opts).await;
         match result {
             Ok(stream_bulk) => {
                 if stream_bulk.is_empty() {
@@ -412,20 +459,20 @@ pub async fn stream_messages(
                     continue;
                 }
                 for entry in &stream_bulk {
-                    for stream_msgs in entry.values() {
+                    for (stream_key, stream_msgs) in entry {
                         for stream_msg in stream_msgs {
                             for (id, array) in stream_msg {
-                                last_id.clear();
-                                last_id.push_str(id);
+                                last_ids.insert(stream_key.clone(), id.clone());
+
                                 match decode_bus_message(array) {
                                     Ok(msg) => {
                                         if let Err(e) = tx.send(msg).await {
-                                            tracing::debug!("Channel closed: {e:?}");
+                                            log::debug!("Channel closed: {e:?}");
                                             break 'outer; // End streaming
                                         }
                                     }
                                     Err(e) => {
-                                        tracing::error!("{e:?}");
+                                        log::error!("{e:?}");
                                         continue;
                                     }
                                 }
@@ -487,7 +534,7 @@ async fn run_heartbeat(
     pub_tx: tokio::sync::mpsc::UnboundedSender<BusMessage>,
 ) {
     log_task_started("heartbeat");
-    tracing::debug!("Heartbeat at {heartbeat_interval_secs} second intervals");
+    log::debug!("Heartbeat at {heartbeat_interval_secs} second intervals");
 
     let heartbeat_interval = Duration::from_secs(u64::from(heartbeat_interval_secs));
     let heartbeat_timer = tokio::time::interval(heartbeat_interval);
@@ -500,7 +547,7 @@ async fn run_heartbeat(
 
     loop {
         if signal.load(Ordering::Relaxed) {
-            tracing::debug!("Received heartbeat terminate signal");
+            log::debug!("Received heartbeat terminate signal");
             break;
         }
 
@@ -509,7 +556,7 @@ async fn run_heartbeat(
                 let heartbeat = create_heartbeat_msg();
                 if let Err(e) = pub_tx.send(heartbeat) {
                     // We expect an error if the channel is closed during shutdown
-                    tracing::debug!("Error sending heartbeat: {e}");
+                    log::debug!("Error sending heartbeat: {e}");
                 }
             },
             _ = check_timer.tick() => {}
@@ -524,9 +571,6 @@ fn create_heartbeat_msg() -> BusMessage {
     BusMessage::with_str_topic(HEARTBEAT_TOPIC, payload)
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use redis::Value;
@@ -640,8 +684,10 @@ mod serial_tests {
 
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
-        let mut config = MessageBusConfig::default();
-        config.database = Some(DatabaseConfig::default());
+        let config = MessageBusConfig {
+            database: Some(DatabaseConfig::default()),
+            ..Default::default()
+        };
 
         let stream_key = get_stream_key(trader_id, instance_id, &config);
         let external_streams = vec![stream_key.clone()];
@@ -679,8 +725,10 @@ mod serial_tests {
 
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
-        let mut config = MessageBusConfig::default();
-        config.database = Some(DatabaseConfig::default());
+        let config = MessageBusConfig {
+            database: Some(DatabaseConfig::default()),
+            ..Default::default()
+        };
 
         let stream_key = get_stream_key(trader_id, instance_id, &config);
         let external_streams = vec![stream_key.clone()];
@@ -730,8 +778,10 @@ mod serial_tests {
 
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
-        let mut config = MessageBusConfig::default();
-        config.database = Some(DatabaseConfig::default());
+        let config = MessageBusConfig {
+            database: Some(DatabaseConfig::default()),
+            ..Default::default()
+        };
 
         let stream_key = get_stream_key(trader_id, instance_id, &config);
         let external_streams = vec![stream_key.clone()];
@@ -785,9 +835,11 @@ mod serial_tests {
 
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
-        let mut config = MessageBusConfig::default();
-        config.database = Some(DatabaseConfig::default());
-        config.stream_per_topic = false;
+        let config = MessageBusConfig {
+            database: Some(DatabaseConfig::default()),
+            stream_per_topic: false,
+            ..Default::default()
+        };
         let stream_key = get_stream_key(trader_id, instance_id, &config);
 
         // Start the publish_messages task
@@ -836,11 +888,170 @@ mod serial_tests {
 
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_stream_messages_multiple_streams(#[future] redis_connection: ConnectionManager) {
+        let mut con = redis_connection.await;
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
+
+        // Setup multiple stream keys
+        let stream_key1 = "test:stream:1".to_string();
+        let stream_key2 = "test:stream:2".to_string();
+        let external_streams = vec![stream_key1.clone(), stream_key2.clone()];
+        let stream_signal = Arc::new(AtomicBool::new(false));
+        let stream_signal_clone = stream_signal.clone();
+
+        let clock = get_atomic_clock_realtime();
+        let base_id = clock.get_time_ms() + 1_000_000;
+
+        // Start streaming task
+        let handle = tokio::spawn(async move {
+            stream_messages(
+                tx,
+                DatabaseConfig::default(),
+                external_streams,
+                stream_signal_clone,
+            )
+            .await
+            .unwrap();
+        });
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Publish to stream 1 at higher ID
+        let _: () = con
+            .xadd(
+                &stream_key1,
+                format!("{}", base_id + 100),
+                &[("topic", "stream1-first"), ("payload", "data")],
+            )
+            .await
+            .unwrap();
+
+        let msg = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .expect("Stream 1 message should be received")
+            .unwrap();
+        assert_eq!(msg.topic, "stream1-first");
+
+        // Publish to stream 2 at lower ID (tests independent cursor tracking)
+        let _: () = con
+            .xadd(
+                &stream_key2,
+                format!("{}", base_id + 50),
+                &[("topic", "stream2-second"), ("payload", "data")],
+            )
+            .await
+            .unwrap();
+
+        let msg = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .expect("Stream 2 message should be received")
+            .unwrap();
+        assert_eq!(msg.topic, "stream2-second");
+
+        // Shutdown and cleanup
+        rx.close();
+        stream_signal.store(true, Ordering::Relaxed);
+        handle.await.unwrap();
+        flush_redis(&mut con).await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_stream_messages_interleaved_at_different_rates(
+        #[future] redis_connection: ConnectionManager,
+    ) {
+        let mut con = redis_connection.await;
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
+
+        // Setup multiple stream keys
+        let stream_key1 = "test:stream:interleaved:1".to_string();
+        let stream_key2 = "test:stream:interleaved:2".to_string();
+        let stream_key3 = "test:stream:interleaved:3".to_string();
+        let external_streams = vec![
+            stream_key1.clone(),
+            stream_key2.clone(),
+            stream_key3.clone(),
+        ];
+        let stream_signal = Arc::new(AtomicBool::new(false));
+        let stream_signal_clone = stream_signal.clone();
+
+        let clock = get_atomic_clock_realtime();
+        let base_id = clock.get_time_ms() + 1_000_000;
+
+        let handle = tokio::spawn(async move {
+            stream_messages(
+                tx,
+                DatabaseConfig::default(),
+                external_streams,
+                stream_signal_clone,
+            )
+            .await
+            .unwrap();
+        });
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Stream 1 advances with high ID
+        let _: () = con
+            .xadd(
+                &stream_key1,
+                format!("{}", base_id + 100),
+                &[("topic", "s1m1"), ("payload", "data")],
+            )
+            .await
+            .unwrap();
+        let msg = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .expect("Stream 1 message should be received")
+            .unwrap();
+        assert_eq!(msg.topic, "s1m1");
+
+        // Stream 2 gets message at lower ID - would be skipped with global cursor
+        let _: () = con
+            .xadd(
+                &stream_key2,
+                format!("{}", base_id + 50),
+                &[("topic", "s2m1"), ("payload", "data")],
+            )
+            .await
+            .unwrap();
+        let msg = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .expect("Stream 2 message should be received")
+            .unwrap();
+        assert_eq!(msg.topic, "s2m1");
+
+        // Stream 3 gets message at even lower ID
+        let _: () = con
+            .xadd(
+                &stream_key3,
+                format!("{}", base_id + 25),
+                &[("topic", "s3m1"), ("payload", "data")],
+            )
+            .await
+            .unwrap();
+        let msg = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .expect("Stream 3 message should be received")
+            .unwrap();
+        assert_eq!(msg.topic, "s3m1");
+
+        // Shutdown and cleanup
+        rx.close();
+        stream_signal.store(true, Ordering::Relaxed);
+        handle.await.unwrap();
+        flush_redis(&mut con).await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_close() {
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
-        let mut config = MessageBusConfig::default();
-        config.database = Some(DatabaseConfig::default());
+        let config = MessageBusConfig {
+            database: Some(DatabaseConfig::default()),
+            ..Default::default()
+        };
 
         let mut db = RedisMessageBusDatabase::new(trader_id, instance_id, config).unwrap();
 

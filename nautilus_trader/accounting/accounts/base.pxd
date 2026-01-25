@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -72,7 +72,7 @@ cdef class Account:
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void apply(self, AccountState event)
-    cpdef void update_balances(self, list balances, bint allow_zero=*)
+    cpdef void update_balances(self, list balances)
     cpdef void update_commissions(self, Money commission)
     cpdef void purge_account_events(self, uint64_t ts_now, uint64_t lookback_secs=*)
 

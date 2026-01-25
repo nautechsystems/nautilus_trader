@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -37,29 +37,29 @@ impl InstrumentId {
     }
 
     fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
-        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+        let py_tuple: &Bound<'_, PyTuple> = state.cast::<PyTuple>()?;
         self.symbol = Symbol::new_checked(
             py_tuple
                 .get_item(0)?
-                .downcast::<PyString>()?
+                .cast::<PyString>()?
                 .extract::<&str>()?,
         )
         .map_err(to_pyvalue_err)?;
         self.venue = Venue::new_checked(
             py_tuple
                 .get_item(1)?
-                .downcast::<PyString>()?
+                .cast::<PyString>()?
                 .extract::<&str>()?,
         )
         .map_err(to_pyvalue_err)?;
         Ok(())
     }
 
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         (self.symbol.to_string(), self.venue.to_string()).into_py_any(py)
     }
 
-    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+    fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
         (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
@@ -70,7 +70,7 @@ impl InstrumentId {
         Ok(Self::from_str("NULL.NULL").unwrap()) // Safe default
     }
 
-    fn __richcmp__(&self, other: PyObject, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
+    fn __richcmp__(&self, other: Py<PyAny>, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         if let Ok(other) = other.extract::<Self>(py) {
             match op {
                 CompareOp::Eq => self.eq(&other).into_py_any_unwrap(py),

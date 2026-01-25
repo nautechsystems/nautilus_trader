@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,11 +15,13 @@
 
 import enum
 from collections.abc import Generator
-from typing import Any, NamedTuple
+from typing import Any
+from typing import NamedTuple
 
-import requests
 from lxml.etree import _Element
 from lxml.html import fromstring
+
+from nautilus_trader.core.nautilus_pyo3.network import http_get
 
 
 class ProductClass(enum.Enum):
@@ -31,7 +33,7 @@ class ProductClass(enum.Enum):
     INDICES = "IND"
     STOCKS = "STK"
     OPTIONS = "OPTGRP"
-    WARRANTS = "WNT"
+    WARRANTS = "WANT"
 
 
 class Exchange(enum.Enum):
@@ -176,8 +178,8 @@ def load_product_list(
         if debug:
             print(f"Requesting instruments using {params=}")
 
-        response = requests.get(url, params=params, timeout=30)
-        tree = fromstring(response.content)
+        response = http_get(url, params=params, timeout_secs=30)
+        tree = fromstring(response.body)
         tables = tree.xpath('//table[@class="table table-striped table-bordered"]')
 
         if not tables:

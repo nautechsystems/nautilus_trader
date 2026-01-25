@@ -1,0 +1,30 @@
+{
+  "type": "channel_data",
+  "connection_id": "conn-abc123-def456-ghi789",
+  "message_id": 3,
+  "id": "BTC-USD",
+  "channel": "v4_trades",
+  "version": "1.0.0",
+  "contents": {
+    "trades": [
+      {
+        "id": "trade-002",
+        "side": "SELL",
+        "size": "1.2",
+        "price": "43248.0",
+        "type": "LIMIT",
+        "createdAt": "2024-01-01T00:00:01.000Z",
+        "createdAtHeight": "12345678"
+      },
+      {
+        "id": "trade-003",
+        "side": "BUY",
+        "size": "0.3",
+        "price": "43252.0",
+        "type": "MARKET",
+        "createdAt": "2024-01-01T00:00:02.000Z",
+        "createdAtHeight": "12345679"
+      }
+    ]
+  }
+}

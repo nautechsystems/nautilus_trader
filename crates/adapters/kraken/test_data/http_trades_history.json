@@ -1,0 +1,42 @@
+{
+  "error": [],
+  "result": {
+    "trades": {
+      "TCCCTY-WJ6EO-4FP4VZ": {
+        "ordertxid": "O26VBY-ISGAE-JP5TLU",
+        "postxid": "TKH2SE-M7IF5-CFI7LT",
+        "pair": "XBTUSDT",
+        "time": 1688585840.8921,
+        "type": "buy",
+        "ordertype": "limit",
+        "price": "29500.50",
+        "cost": "14750.25",
+        "fee": "23.60",
+        "vol": "0.50000000",
+        "margin": "0.00000",
+        "misc": "",
+        "trade_id": 1001,
+        "maker": true,
+        "ledgers": ["L4UESK-KG3EQ-BJM7HJ"]
+      },
+      "TDCVFQ-TPEG4-6X7LSZ": {
+        "ordertxid": "OYEQF4-FDE4C-NMUYUI",
+        "postxid": "TKH2SE-ZK9U2-LPO4DS",
+        "pair": "ETHUSDT",
+        "time": 1688586440.3456,
+        "type": "sell",
+        "ordertype": "market",
+        "price": "1799.75",
+        "cost": "1799.75",
+        "fee": "3.60",
+        "vol": "1.00000000",
+        "margin": "0.00000",
+        "misc": "",
+        "trade_id": 1002,
+        "maker": false,
+        "ledgers": ["L5JFAD-LC4FR-CKN8IK"]
+      }
+    },
+    "count": 2
+  }
+}

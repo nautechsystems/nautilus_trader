@@ -14,7 +14,7 @@ All order types are derived from two fundamentals: *Market* and *Limit* orders. 
 *Market* orders consume liquidity by executing immediately at the best available price, whereas *Limit*
 orders provide liquidity by resting in the order book at a specified price until matched.
 
-The order types available for the platform are (using the enum values):
+The order types available for the platform are (using the `OrderType` enum values):
 
 - `MARKET`
 - `LIMIT`
@@ -28,8 +28,8 @@ The order types available for the platform are (using the enum values):
 
 :::info
 NautilusTrader provides a unified API for many order types and execution instructions, but not all venues support every option.
-If an order contains an instruction or option that the target venue does not support, the system **should not** submit the order;
-instead, it logs an error with a clear explanatory message.
+If an order includes an instruction or option the target venue does not support, the system does not submit it.
+Instead, it logs a clear, explanatory error.
 :::
 
 ### Terminology
@@ -56,6 +56,85 @@ instead, it logs an error with a clear explanatory message.
   - `CANCELED`
   - `EXPIRED`
   - `FILLED`
+
+### Order state flow
+
+The following diagram illustrates the order lifecycle and primary state transitions:
+
+```mermaid
+flowchart TB
+    subgraph local ["Active Local"]
+        Initialized
+        Emulated
+        Released
+    end
+
+    subgraph flight ["In-Flight"]
+        Submitted
+        PendingUpdate
+        PendingCancel
+    end
+
+    subgraph open ["Open (on venue)"]
+        Accepted
+        Triggered
+        PartiallyFilled
+    end
+
+    subgraph closed ["Closed (terminal)"]
+        Denied
+        Rejected
+        Canceled
+        Expired
+        Filled
+    end
+
+    Initialized -->|"Emulation trigger"| Emulated
+    Initialized -->|"Submit"| Submitted
+    Initialized -->|"System denied"| Denied
+    Emulated -->|"Triggered locally"| Released
+    Released --> Submitted
+
+    Submitted -->|"Venue ACK"| Accepted
+    Submitted --> Rejected
+
+    Accepted -->|"Stop hit"| Triggered
+    Accepted --> PartiallyFilled
+    Triggered --> PartiallyFilled
+    PartiallyFilled -->|"More fills"| PartiallyFilled
+
+    Accepted --> PendingUpdate
+    Accepted --> PendingCancel
+    PartiallyFilled --> PendingUpdate
+    PartiallyFilled --> PendingCancel
+    PendingUpdate --> Accepted
+    PendingCancel --> Canceled
+
+    Accepted --> Filled
+    Triggered --> Filled
+    PartiallyFilled --> Filled
+    PartiallyFilled --> Canceled
+    Accepted --> Expired
+```
+
+### Order status definitions
+
+| Status             | Description                                                                               |
+|--------------------|-------------------------------------------------------------------------------------------|
+| `INITIALIZED`      | Order is instantiated within the Nautilus system.                                         |
+| `DENIED`           | Order was denied by Nautilus for being invalid, unprocessable, or exceeding a risk limit. |
+| `EMULATED`         | Order is being emulated by the `OrderEmulator` component.                                 |
+| `RELEASED`         | Order was released from the `OrderEmulator` component.                                    |
+| `SUBMITTED`        | Order was submitted to the venue (awaiting acknowledgement).                              |
+| `ACCEPTED`         | Order was acknowledged by the venue as received and valid (may now be working).           |
+| `REJECTED`         | Order was rejected by the trading venue.                                                  |
+| `CANCELED`         | Order was canceled (terminal).                                                            |
+| `EXPIRED`          | Order reached its GTD expiration (terminal).                                              |
+| `TRIGGERED`        | Order's STOP price was triggered on the venue.                                            |
+| `PENDING_UPDATE`   | Order is pending a modification request on the venue.                                     |
+| `PENDING_CANCEL`   | Order is pending a cancellation request on the venue.                                     |
+| `PARTIALLY_FILLED` | Order has been partially filled on the venue.                                             |
+| `FILLED`           | Order has been completely filled (terminal).                                              |
 
 ## Execution instructions
 
@@ -105,18 +184,18 @@ Specifying a display quantity of zero is also equivalent to setting an order as 
 
 ### Trigger type
 
-Also known as [trigger method](https://guides.interactivebrokers.com/tws/usersguidebook/configuretws/modify_the_stop_trigger_method.htm)
+Also known as [trigger method](https://www.interactivebrokers.com/en/software/tws/usersguidebook/configuretws/Modify%20the%20Stop%20Trigger%20Method.htm)
 which is applicable to conditional trigger orders, specifying the method of triggering the stop price.
 
-- `DEFAULT`: The default trigger type for the venue (typically `LAST` or `BID_ASK`).
-- `LAST`: The trigger price will be based on the last traded price.
-- `BID_ASK`: The trigger price will be based on the `BID` for buy orders and `ASK` for sell orders.
-- `DOUBLE_LAST`: The trigger price will be based on the last two consecutive `LAST` prices.
-- `DOUBLE_BID_ASK`: The trigger price will be based on the last two consecutive `BID` or `ASK` prices as applicable.
-- `LAST_OR_BID_ASK`: The trigger price will be based on the `LAST` or `BID`/`ASK`.
-- `MID_POINT`: The trigger price will be based on the mid-point between the `BID` and `ASK`.
-- `MARK`: The trigger price will be based on the venue's mark price for the instrument.
-- `INDEX`: The trigger price will be based on the venue's index price for the instrument.
+- `DEFAULT`: The default trigger type for the venue (typically `LAST_PRICE` or `BID_ASK`).
+- `LAST_PRICE`: The trigger price will be based on the last traded price.
+- `BID_ASK`: The trigger price will be based on the bid for buy orders and ask for sell orders.
+- `DOUBLE_LAST`: The trigger price will be based on the last two consecutive last prices.
+- `DOUBLE_BID_ASK`: The trigger price will be based on the last two consecutive bid or ask prices as applicable.
+- `LAST_OR_BID_ASK`: The trigger price will be based on either the last price or bid/ask.
+- `MID_POINT`: The trigger price will be based on the mid-point between the bid and ask.
+- `MARK_PRICE`: The trigger price will be based on the venue's mark price for the instrument.
+- `INDEX_PRICE`: The trigger price will be based on the venue's index price for the instrument.
 
 ### Trigger offset type
 
@@ -150,7 +229,7 @@ examples will leverage an `OrderFactory` from within a `Strategy` context.
 See the `OrderFactory` [API Reference](../api_reference/common.md#class-orderfactory) for further details.
 :::
 
-## Order Types
+## Order types
 
 The following describes the order types which are available for the platform with a code example.
 Any optional parameters will be clearly marked with a comment which includes the default value.
@@ -294,9 +373,8 @@ See the `StopLimitOrder` [API Reference](../api_reference/model/orders.md#class-
 
 ### Market-To-Limit
 
-A *Market-To-Limit* order is submitted as a market order to execute at the current best market price.
-If the order is only partially filled, the remainder of the order is canceled and re-submitted as a *Limit* order with
-the limit price equal to the price at which the filled portion of the order executed.
+A *Market-To-Limit* order submits as a market order at the current best price.
+If the order partially fills, the system cancels the remainder and resubmits it as a *Limit* order at the executed price.
 
 In the following example we create a *Market-To-Limit* order on the Interactive Brokers [IdealPro](https://ibkr.info/node/1708) Forex ECN
 to BUY 200,000 USD using JPY:
@@ -480,19 +558,19 @@ order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
 See the `TrailingStopLimitOrder` [API Reference](../api_reference/model/orders.md#class-trailingstoplimitorder-1) for further details.
 :::
 
-## Advanced Orders
+## Advanced orders
 
 The following guide should be read in conjunction with the specific documentation from the broker or venue
 involving these order types, lists/groups and execution instructions (such as for Interactive Brokers).
 
-### Order Lists
+### Order lists
 
 Combinations of contingent orders, or larger order bulks can be grouped together into a list with a common
 `order_list_id`. The orders contained in this list may or may not have a contingent relationship with
 each other, as this is specific to how the orders themselves are constructed, and the
 specific venue they are being routed to.
 
-### Contingency Types
+### Contingency types
 
 - **OTO (One-Triggers-Other)** – a parent order that, once executed, automatically places one or more child orders.
   - *Full-trigger model*: child order(s) are released **only after the parent is completely filled**. Common at most retail equity/option brokers (e.g. Schwab, Fidelity, TD Ameritrade) and many spot-crypto venues (Binance, Coinbase).
@@ -522,8 +600,17 @@ An OTO order involves two parts:
 
 :::info
 The default backtest venue for NautilusTrader uses a *partial-trigger model* for OTO orders.
-A future update will add configuration to opt-in to a *full-trigger model*.
+To opt-in to a *full-trigger mode*, set `oto_trigger_mode="FULL"` for the venue (e.g. via `BacktestVenueConfig`).
 :::
+
+**Working with partial-trigger in production:**
+
+If your strategy requires full-trigger semantics but the venue or backtest engine uses partial-trigger:
+
+1. Submit the parent order without contingent children.
+2. Subscribe to `OrderFilled` events for the parent order.
+3. Only submit child orders (stop-loss, take-profit) after confirming the parent is fully filled.
+4. Use `order.is_closed` and `order.filled_qty == order.quantity` to verify complete fill.
 
 > **Why the distinction matters**
 > *Full trigger* leaves a risk window: any partially filled position is live without its protective exit until the remaining quantity fills.
@@ -554,13 +641,42 @@ Both orders are live simultaneously; once one starts filling, the venue attempts
 An OUO order is a set of linked orders where execution of one order causes an immediate *reduction* of open quantity in the other order(s).
 Both orders are live concurrently, and each partial execution proportionally updates the remaining quantity of its peer order on a best-effort basis.
 
-### Bracket Orders
+### Contingent order validation
+
+When working with contingent orders (OTO, OCO, OUO), be aware of the following validation rules and error scenarios:
+
+**Order list requirements:**
+
+- All orders in a contingent group must share the same `order_list_id`.
+- Parent orders must be submitted before or simultaneously with their children.
+- Child orders reference their parent via `parent_order_id`.
+
+**Modification rules:**
+
+- Parent orders can typically be modified while pending, but modifications may cascade to children.
+- Child orders can be modified independently on most venues, but check venue-specific behavior.
+- Canceling a parent order will cancel all associated child orders.
+
+**Common error scenarios:**
+
+| Scenario | System behavior |
+|----------|-----------------|
+| Child references non-existent parent | Order denied with `INVALID_ORDER` error |
+| Parent canceled before children trigger | Children automatically canceled |
+| OCO sibling filled before cancel propagates | Partial fill honored, remaining quantity canceled |
+| Insufficient margin for bracket | Entry may execute, children rejected separately |
+
+:::warning
+Always handle `OrderDenied` and `OrderRejected` events in your strategy, especially for contingent orders where
+partial failures can leave positions unprotected.
+:::
+
+### Bracket orders
 
 Bracket orders are an advanced order type that allows traders to set both take-profit and stop-loss
 levels for a position simultaneously. This involves placing a parent order (entry order) and two child
-orders: a take-profit `LIMIT` order and a stop-loss `STOP_MARKET` order. When the parent order is executed,
-the child orders are placed in the market. The take-profit order closes the position with profits if
-the market moves favorably, while the stop-loss order limits losses if the market moves unfavorably.
+orders: a take-profit `LIMIT` order and a stop-loss `STOP_MARKET` order. When the parent order executes,
+the system places the child orders. The take-profit closes the position if the market moves favorably, and the stop-loss limits losses if it moves unfavorably.
 
 Bracket orders can be easily created using the [OrderFactory](../api_reference/common.md#class-orderfactory),
 which supports various order types, parameters, and instructions.
@@ -570,12 +686,12 @@ You should be aware of the margin requirements of positions, as bracketing a pos
 more order margin.
 :::
 
-## Emulated Orders
+## Emulated orders
 
 ### Introduction
 
 Before diving into the technical details, it's important to understand the fundamental purpose of emulated orders
-in Nautilus Trader. At its core, emulation allows you to use certain order types even when your trading venue
+in NautilusTrader. At its core, emulation allows you to use certain order types even when your trading venue
 doesn't natively support them.
 
 This works by having Nautilus locally mimic the behavior of these order types (such as `STOP_LIMIT` or `TRAILING_STOP` orders)
@@ -602,13 +718,13 @@ emulation trigger types are currently supported:
 - `NO_TRIGGER`: disables local emulation completely and order is fully submitted to the venue.
 - `DEFAULT`: which is the same as `BID_ASK`.
 - `BID_ASK`: emulated using quotes to trigger.
-- `LAST`: emulated using trades to trigger.
+- `LAST_PRICE`: emulated using trades to trigger.
 
 The choice of trigger type determines how the order emulation will behave:
 
-- For `STOP` orders, the trigger price of order will be compared against the specified trigger type.
+- For `STOP` orders, the trigger price will be compared against the specified trigger type.
 - For `TRAILING_STOP` orders, the trailing offset will be updated based on the specified trigger type.
-- For `LIMIT` orders, the limit price of order will be compared against the specified trigger type.
+- For `LIMIT` orders being emulated, the limit price will be compared against the specified trigger type to determine when to release the order as a `MARKET` order.
 
 Here are all the available values you can set into `emulation_trigger` parameter and their purposes:
 
@@ -629,7 +745,7 @@ Here are all the available values you can set into `emulation_trigger` parameter
 
 The platform makes it possible to emulate most order types locally, regardless
 of whether the type is supported on a trading venue. The logic and code paths for
-order emulation are exactly the same for all [environment contexts](/concepts/architecture.md#environment-contexts)
+order emulation are exactly the same for all [environment contexts](architecture.md#environment-contexts)
 and utilize a common `OrderEmulator` component.
 
 :::note
@@ -668,7 +784,7 @@ The following will occur for an emulated order now *held* by the `OrderEmulator`
 
 #### Released emulated orders
 
-Once an emulated order is triggered / matched locally based on the arrival of data, the following
+Once data arrival triggers / matches an emulated order locally, the following
 *release* actions will occur:
 
 - The order will be transformed to either a `MARKET` or `LIMIT` order (see below table) through an additional `OrderInitialized` event.
@@ -676,11 +792,7 @@ Once an emulated order is triggered / matched locally based on the arrival of da
 - The order attached to the original `SubmitOrder` command will be sent back to the `RiskEngine` for additional checks since any modification/updates.
 - If not denied, then the command will continue to the `ExecutionEngine` and on to the trading venue via an `ExecutionClient` as normal.
 
-The following table lists which order types are possible to emulate, and
-which order type they transform to when being released for submission to the
-trading venue.
-
-### Order types, which can be emulated
+### Order types which can be emulated
 
 The following table lists which order types are possible to emulate, and
 which order type they transform to when being released for submission to the
@@ -711,7 +823,7 @@ The following `Cache` methods are available:
 - `self.cache.is_order_emulated(...)`: Checks if a specific order is emulated.
 - `self.cache.orders_emulated_count(...)`: Returns the count of emulated orders.
 
-See the full [API reference](../../api_reference/cache) for additional details.
+See the full [API reference](../api_reference/cache.md) for additional details.
 
 #### Direct order queries
 
@@ -746,3 +858,9 @@ When working with emulated orders, consider the following best practices:
 Order emulation allows you to use advanced order types even on venues that don't natively support them,
 making your trading strategies more portable across different venues.
 :::
+
+## Related guides
+
+- [Execution](execution.md) - Order execution and fill handling.
+- [Positions](positions.md) - Positions created from order fills.
+- [Strategies](strategies.md) - Order management from strategies.

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,17 +30,14 @@ use nautilus_model::{
     },
     enums::OrderSide,
     identifiers::InstrumentId,
-    types::{Price, Quantity, fixed::PRECISION_BYTES},
+    types::fixed::PRECISION_BYTES,
 };
 
 use super::{
     DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
-    KEY_SIZE_PRECISION, extract_column,
+    KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column,
 };
-use crate::arrow::{
-    ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch, get_raw_price,
-    get_raw_quantity,
-};
+use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 fn get_field_data() -> Vec<(&'static str, DataType)> {
     vec![
@@ -62,11 +59,7 @@ impl ArrowSchemaProvider for OrderBookDepth10 {
         // bid_price_0, bid_price_1, ..., bid_price_9, ask_price_0, ask_price_1
         for (name, data_type) in field_data {
             for i in 0..DEPTH10_LEN {
-                fields.push(Field::new(
-                    format!("{}_{i}", name),
-                    data_type.clone(),
-                    false,
-                ));
+                fields.push(Field::new(format!("{name}_{i}"), data_type.clone(), false));
             }
         }
 
@@ -214,7 +207,7 @@ impl EncodeToRecordBatch for OrderBookDepth10 {
     }
 
     fn metadata(&self) -> HashMap<String, String> {
-        OrderBookDepth10::get_metadata(
+        Self::get_metadata(
             &self.instrument_id,
             self.bids[0].price.precision,
             self.bids[0].size.precision,
@@ -289,26 +282,42 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
         }
 
         for i in 0..DEPTH10_LEN {
-            assert_eq!(
-                bid_prices[i].value_length(),
-                PRECISION_BYTES,
-                "Price precision uses {PRECISION_BYTES} byte value"
-            );
-            assert_eq!(
-                ask_prices[i].value_length(),
-                PRECISION_BYTES,
-                "Price precision uses {PRECISION_BYTES} byte value"
-            );
-            assert_eq!(
-                bid_sizes[i].value_length(),
-                PRECISION_BYTES,
-                "Size precision uses {PRECISION_BYTES} byte value"
-            );
-            assert_eq!(
-                ask_sizes[i].value_length(),
-                PRECISION_BYTES,
-                "Size precision uses {PRECISION_BYTES} byte value"
-            );
+            if bid_prices[i].value_length() != PRECISION_BYTES {
+                return Err(EncodingError::ParseError(
+                    "bid_price",
+                    format!(
+                        "Invalid value length at index {i}: expected {PRECISION_BYTES}, found {}",
+                        bid_prices[i].value_length()
+                    ),
+                ));
+            }
+            if ask_prices[i].value_length() != PRECISION_BYTES {
+                return Err(EncodingError::ParseError(
+                    "ask_price",
+                    format!(
+                        "Invalid value length at index {i}: expected {PRECISION_BYTES}, found {}",
+                        ask_prices[i].value_length()
+                    ),
+                ));
+            }
+            if bid_sizes[i].value_length() != PRECISION_BYTES {
+                return Err(EncodingError::ParseError(
+                    "bid_size",
+                    format!(
+                        "Invalid value length at index {i}: expected {PRECISION_BYTES}, found {}",
+                        bid_sizes[i].value_length()
+                    ),
+                ));
+            }
+            if ask_sizes[i].value_length() != PRECISION_BYTES {
+                return Err(EncodingError::ParseError(
+                    "ask_size",
+                    format!(
+                        "Invalid value length at index {i}: expected {PRECISION_BYTES}, found {}",
+                        ask_sizes[i].value_length()
+                    ),
+                ));
+            }
         }
 
         let flags = extract_column::<UInt8Array>(cols, "flags", 6 * DEPTH10_LEN, DataType::UInt8)?;
@@ -328,24 +337,18 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
                 let mut ask_count_arr = [0u32; DEPTH10_LEN];
 
                 for i in 0..DEPTH10_LEN {
-                    bids[i] = BookOrder::new(
-                        OrderSide::Buy,
-                        Price::from_raw(get_raw_price(bid_prices[i].value(row)), price_precision),
-                        Quantity::from_raw(
-                            get_raw_quantity(bid_sizes[i].value(row)),
-                            size_precision,
-                        ),
-                        0, // Order id always zero
-                    );
-                    asks[i] = BookOrder::new(
-                        OrderSide::Sell,
-                        Price::from_raw(get_raw_price(ask_prices[i].value(row)), price_precision),
-                        Quantity::from_raw(
-                            get_raw_quantity(ask_sizes[i].value(row)),
-                            size_precision,
-                        ),
-                        0, // Order id always zero
-                    );
+                    let bid_price =
+                        decode_price(bid_prices[i].value(row), price_precision, "bid_price", row)?;
+                    let bid_size =
+                        decode_quantity(bid_sizes[i].value(row), size_precision, "bid_size", row)?;
+                    bids[i] = BookOrder::new(OrderSide::Buy, bid_price, bid_size, 0);
+
+                    let ask_price =
+                        decode_price(ask_prices[i].value(row), price_precision, "ask_price", row)?;
+                    let ask_size =
+                        decode_quantity(ask_sizes[i].value(row), size_precision, "ask_size", row)?;
+                    asks[i] = BookOrder::new(OrderSide::Sell, ask_price, ask_size, 0);
+
                     bid_count_arr[i] = bid_counts[i].value(row);
                     ask_count_arr[i] = ask_counts[i].value(row);
                 }
@@ -378,26 +381,24 @@ impl DecodeDataFromRecordBatch for OrderBookDepth10 {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use arrow::datatypes::{DataType, Field};
     use nautilus_model::{
         data::stubs::stub_depth10,
-        types::{fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw},
+        types::{Price, fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw},
     };
     use pretty_assertions::assert_eq;
     use rstest::rstest;
 
     use super::*;
+    use crate::arrow::{get_raw_price, get_raw_quantity};
 
     #[rstest]
     fn test_get_schema() {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = OrderBookDepth10::get_metadata(&instrument_id, 2, 0);
-        let schema = OrderBookDepth10::get_schema(Some(metadata.clone()));
+        let schema = OrderBookDepth10::get_schema(Some(metadata));
 
         let mut group_count = 0;
         let field_data = get_field_data();
@@ -406,7 +407,7 @@ mod tests {
                 let field = schema.field(i + group_count * DEPTH10_LEN).clone();
                 assert_eq!(
                     field,
-                    Field::new(format!("{}_{i}", name), data_type.clone(), false)
+                    Field::new(format!("{name}_{i}"), data_type.clone(), false)
                 );
             }
 
@@ -443,7 +444,7 @@ mod tests {
         let field_data = get_field_data();
         for (name, data_type) in field_data {
             for i in 0..DEPTH10_LEN {
-                let field = schema_map.get(&format!("{}_{i}", name)).map(String::as_str);
+                let field = schema_map.get(&format!("{name}_{i}")).map(String::as_str);
                 assert_eq!(field, Some(format!("{data_type:?}").as_str()));
             }
         }
@@ -630,5 +631,78 @@ mod tests {
         let decoded_data = OrderBookDepth10::decode_batch(&metadata, record_batch).unwrap();
 
         assert_eq!(decoded_data.len(), 1);
+    }
+
+    #[rstest]
+    fn test_decode_batch_missing_instrument_id_returns_error(stub_depth10: OrderBookDepth10) {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut metadata = OrderBookDepth10::get_metadata(&instrument_id, 2, 0);
+        let record_batch = OrderBookDepth10::encode_batch(&metadata, &[stub_depth10]).unwrap();
+
+        metadata.remove(KEY_INSTRUMENT_ID);
+
+        let result = OrderBookDepth10::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("instrument_id"),
+            "Expected missing instrument_id error, was: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_batch_missing_price_precision_returns_error(stub_depth10: OrderBookDepth10) {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut metadata = OrderBookDepth10::get_metadata(&instrument_id, 2, 0);
+        let record_batch = OrderBookDepth10::encode_batch(&metadata, &[stub_depth10]).unwrap();
+
+        metadata.remove(KEY_PRICE_PRECISION);
+
+        let result = OrderBookDepth10::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("price_precision"),
+            "Expected missing price_precision error, was: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_encode_decode_round_trip(stub_depth10: OrderBookDepth10) {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let metadata = OrderBookDepth10::get_metadata(&instrument_id, 2, 0);
+
+        let original = vec![stub_depth10];
+        let record_batch = OrderBookDepth10::encode_batch(&metadata, &original).unwrap();
+        let decoded = OrderBookDepth10::decode_batch(&metadata, record_batch).unwrap();
+
+        assert_eq!(decoded.len(), original.len());
+        let orig = &original[0];
+        let dec = &decoded[0];
+
+        assert_eq!(dec.instrument_id, orig.instrument_id);
+        assert_eq!(dec.flags, orig.flags);
+        assert_eq!(dec.sequence, orig.sequence);
+        assert_eq!(dec.ts_event, orig.ts_event);
+        assert_eq!(dec.ts_init, orig.ts_init);
+
+        for i in 0..DEPTH10_LEN {
+            assert_eq!(
+                dec.bids[i].price, orig.bids[i].price,
+                "bid price mismatch at level {i}"
+            );
+            assert_eq!(
+                dec.bids[i].size, orig.bids[i].size,
+                "bid size mismatch at level {i}"
+            );
+            assert_eq!(
+                dec.asks[i].price, orig.asks[i].price,
+                "ask price mismatch at level {i}"
+            );
+            assert_eq!(
+                dec.asks[i].size, orig.asks[i].size,
+                "ask size mismatch at level {i}"
+            );
+        }
     }
 }

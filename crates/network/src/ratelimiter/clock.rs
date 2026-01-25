@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -48,6 +48,7 @@ pub trait Reference:
     /// Returns a reference point that lies at most `duration` in the
     /// past from the current reference. If an underflow should occur,
     /// returns the current reference.
+    #[must_use]
     fn saturating_sub(&self, duration: Nanos) -> Self;
 }
 
@@ -87,7 +88,8 @@ impl Add<Nanos> for Duration {
 /// what "now" is (relative to some point meaningful to the program),
 /// and returns that.
 ///
-/// # Thread safety
+/// # Thread Safety
+///
 /// The mock time is represented as an atomic u64 count of nanoseconds, behind an [`Arc`].
 /// Clones of this clock will all show the same time, even if the original advances.
 #[derive(Debug, Clone, Default)]
@@ -109,11 +111,11 @@ impl FakeRelativeClock {
 
         let mut prev = self.now.load(Ordering::Acquire);
         let mut next = prev + by;
-        while let Err(next_prev) =
+        while let Err(e) =
             self.now
                 .compare_exchange_weak(prev, next, Ordering::Release, Ordering::Relaxed)
         {
-            prev = next_prev;
+            prev = e;
             next = prev + by;
         }
     }
@@ -168,9 +170,6 @@ impl Clock for MonotonicClock {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod test {
     use std::{sync::Arc, thread, time::Duration};

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,6 +19,8 @@ from nautilus_trader.core import nautilus_pyo3
 
 # This needs to be a Python import so it can used in the FSM
 from nautilus_trader.model.enums import order_status_to_str
+
+from libc.stdint cimport uint8_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport FIXED_SCALAR
@@ -76,7 +78,14 @@ LIMIT_ORDER_TYPES = {
     OrderType.MARKET_TO_LIMIT,
 }
 
-LOCAL_ACTIVE_ORDER_STATUS =  {
+CANCELLABLE_ORDER_STATUSES = {
+    OrderStatus.ACCEPTED,
+    OrderStatus.TRIGGERED,
+    OrderStatus.PENDING_UPDATE,
+    OrderStatus.PARTIALLY_FILLED,
+}
+
+LOCAL_ACTIVE_ORDER_STATUSES =  {
     OrderStatus.INITIALIZED,
     OrderStatus.EMULATED,
     OrderStatus.RELEASED,
@@ -212,6 +221,7 @@ cdef class Order:
         # Execution
         self.filled_qty = Quantity.zero_c(self.quantity._mem.precision)
         self.leaves_qty = init.quantity
+        self.overfill_qty = Quantity.zero_c(self.quantity._mem.precision)
         self.avg_px = 0.0  # No fills yet
         self.slippage = 0.0
 
@@ -224,6 +234,8 @@ cdef class Order:
         self.ts_last = init.ts_init
 
     def __eq__(self, Order other) -> bool:
+        if other is None:
+            return False
         return self.client_order_id == other.client_order_id
 
     def __hash__(self) -> int:
@@ -319,6 +331,9 @@ cdef class Order:
         """
         raise NotImplementedError("method `to_dict` must be implemented in the subclass")  # pragma: no cover
 
+    cpdef void set_quote_quantity(self, bint value):
+        self.is_quote_quantity = value
+
     cdef void set_activated_c(self, Price activation_price):
         raise NotImplementedError("method `set_activated` must be implemented in the subclass")  # pragma: no cover
 
@@ -387,7 +402,7 @@ cdef class Order:
         return self._fsm.state == OrderStatus.EMULATED
 
     cdef bint is_active_local_c(self):
-        return self._fsm.state in LOCAL_ACTIVE_ORDER_STATUS
+        return self._fsm.state in LOCAL_ACTIVE_ORDER_STATUSES
 
     cdef bint is_primary_c(self):
         return self.exec_algorithm_id is not None and self.exec_spawn_id == self.client_order_id
@@ -1085,6 +1100,48 @@ cdef class Order:
         self._events.append(event)
         self.ts_last = event.ts_event
 
+    cdef Quantity calculate_overfill_c(self, Quantity fill_qty):
+        cdef QuantityRaw potential_filled_raw = self.filled_qty._mem.raw + fill_qty._mem.raw
+
+        if potential_filled_raw > self.quantity._mem.raw:
+            return Quantity.from_raw_c(
+                potential_filled_raw - self.quantity._mem.raw,
+                fill_qty._mem.precision,
+            )
+        return Quantity.zero_c(fill_qty._mem.precision)
+
+    cdef bint is_duplicate_fill_c(self, OrderFilled fill):
+        cdef OrderEvent event
+        for event in self._events:
+            if not isinstance(event, OrderFilled):
+                continue
+
+            if (
+                event.trade_id == fill.trade_id
+                and event.order_side == fill.order_side
+                and event.last_px == fill.last_px
+                and event.last_qty == fill.last_qty
+            ):
+                return True
+
+        return False
+
+    def is_duplicate_fill(self, OrderFilled fill) -> bool:
+        """
+        Return whether a fill with matching trade_id, side, qty, and price already exists.
+
+        Parameters
+        ----------
+        fill : OrderFilled
+            The fill event to check.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_duplicate_fill_c(fill)
+
     cdef void _denied(self, OrderDenied event):
         self.ts_closed = event.ts_event
 
@@ -1130,19 +1187,19 @@ cdef class Order:
             self.ts_accepted = fill.ts_event
 
         cdef QuantityRaw raw_filled_qty = self.filled_qty._mem.raw + fill.last_qty._mem.raw
+        cdef uint8_t fill_precision = max(self.filled_qty._mem.precision, fill.last_qty._mem.precision)
 
         # Using `PriceRaw` as temporary hack to access int128_t so that negative values can be represented
         cdef PriceRaw raw_leaves_qty = self.quantity._mem.raw - raw_filled_qty
+
         if raw_leaves_qty < 0:
-            raise ValueError(
-                f"invalid order.leaves_qty: was {raw_leaves_qty / FIXED_SCALAR}, "
-                f"order.quantity={self.quantity}, "
-                f"order.filled_qty={self.filled_qty}, "
-                f"fill.last_qty={fill.last_qty}, "
-                f"fill={fill}",
+            self.overfill_qty = self.overfill_qty.add(
+                Quantity.from_raw_c(-raw_leaves_qty, fill_precision)
             )
-        self.filled_qty.add_assign(fill.last_qty)
-        self.leaves_qty = Quantity.from_raw_c(<QuantityRaw>raw_leaves_qty, fill.last_qty._mem.precision)
+            raw_leaves_qty = 0  # Clamp to zero
+
+        self.filled_qty = Quantity.from_raw_c(raw_filled_qty, fill_precision)
+        self.leaves_qty = Quantity.from_raw_c(<QuantityRaw>raw_leaves_qty, fill_precision)
         self.avg_px = self._calculate_avg_px(fill.last_qty.as_f64_c(), fill.last_px.as_f64_c())
         self.liquidity_side = fill.liquidity_side
         self._set_slippage()
@@ -1153,14 +1210,25 @@ cdef class Order:
         cdef double total_commissions = commissions.as_f64_c() if commissions is not None else 0.0
         self._commissions[currency] = Money(total_commissions + fill.commission.as_f64_c(), currency)
 
+    cdef void _update_quantity(self, Quantity quantity):
+        self.quantity = quantity
+
+        # Saturating subtraction to prevent underflow (clamps to zero)
+        self.leaves_qty = Quantity.from_raw_c(
+            self.quantity._mem.raw - min(self.quantity._mem.raw, self.filled_qty._mem.raw),
+            self.quantity._mem.precision,
+        )
+
     cdef double _calculate_avg_px(self, double last_qty, double last_px):
         if self.avg_px == 0.0:
             return last_px
 
+        # Use previous filled quantity (before current fill) to avoid double-counting
+        # self.filled_qty already includes last_qty at this point
         cdef double filled_qty_f64 = self.filled_qty.as_f64_c()
-        cdef double total_qty = filled_qty_f64 + last_qty
-        if total_qty > 0:  # Protect divide by zero
-            return ((self.avg_px * filled_qty_f64) + (last_px * last_qty)) / total_qty
+        cdef double prev_filled_qty = filled_qty_f64 - last_qty
+        if filled_qty_f64 > 0:  # Protect divide by zero
+            return ((self.avg_px * prev_filled_qty) + (last_px * last_qty)) / filled_qty_f64
 
     cdef void _set_slippage(self):
         pass  # Optionally implement

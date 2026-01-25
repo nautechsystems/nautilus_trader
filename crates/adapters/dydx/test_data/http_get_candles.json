@@ -1,0 +1,54 @@
+{
+  "requestId": "http_get_candles-req",
+  "status": "success",
+  "isoTimestamp": "2025-12-08T16:12:00.000Z",
+  "result": {
+    "candles": [
+      {
+        "startedAt": "2025-12-08T16:11:00.000Z",
+        "ticker": "BTC-USD",
+        "resolution": "1MIN",
+        "low": "89911",
+        "high": "89970",
+        "open": "89934",
+        "close": "89941",
+        "baseTokenVolume": "3.2767",
+        "usdVolume": "294697.4391",
+        "trades": 49,
+        "startingOpenInterest": "381.7348",
+        "orderbookMidPriceOpen": "89969.75",
+        "orderbookMidPriceClose": "89969.75"
+      },
+      {
+        "startedAt": "2025-12-08T16:10:00.000Z",
+        "ticker": "BTC-USD",
+        "resolution": "1MIN",
+        "low": "89900",
+        "high": "90043",
+        "open": "90043",
+        "close": "89931",
+        "baseTokenVolume": "3.9023",
+        "usdVolume": "351009.0795",
+        "trades": 72,
+        "startingOpenInterest": "382.3498",
+        "orderbookMidPriceOpen": "89958.25",
+        "orderbookMidPriceClose": "89969.75"
+      },
+      {
+        "startedAt": "2025-12-08T16:09:00.000Z",
+        "ticker": "BTC-USD",
+        "resolution": "1MIN",
+        "low": "89922",
+        "high": "90035",
+        "open": "90002",
+        "close": "90035",
+        "baseTokenVolume": "1.2221",
+        "usdVolume": "109940.752",
+        "trades": 41,
+        "startingOpenInterest": "381.8328",
+        "orderbookMidPriceOpen": "90015",
+        "orderbookMidPriceClose": "89958.25"
+      }
+    ]
+  }
+}

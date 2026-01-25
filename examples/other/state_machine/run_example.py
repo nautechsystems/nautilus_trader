@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,14 +21,12 @@ from nautilus_trader.core.fsm import InvalidStateTrigger
 
 
 if __name__ == "__main__":
-
     # Step 1: Define all possible states of our application.
     # Each state represents a distinct condition the application can be in.
     # We use IntEnum to ensure each state has an integer value, which is required by Nautilus FSM
     # (i.e. similar StrEnum is not supported by FSM now)
 
     class AppState(IntEnum):
-
         INITIALIZED = 0  # Initial setup complete
         READY = 1  # Ready to start operations
         ACTIVE = 2  # Currently running/operating
@@ -52,7 +50,6 @@ if __name__ == "__main__":
     # between application's states. Only IntEnum is supported (not StrEnum).
 
     class AppTrigger(IntEnum):
-
         START = 0  # Begin operations
         PAUSE = 1  # Temporarily suspend operations
         RESUME = 2  # Continue operations after being paused

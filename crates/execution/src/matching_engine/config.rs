@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,35 +17,57 @@
 #[derive(Debug, Clone)]
 pub struct OrderMatchingEngineConfig {
     pub bar_execution: bool,
+    pub trade_execution: bool,
+    pub liquidity_consumption: bool,
     pub reject_stop_orders: bool,
     pub support_gtd_orders: bool,
     pub support_contingent_orders: bool,
     pub use_position_ids: bool,
     pub use_random_ids: bool,
     pub use_reduce_only: bool,
+    pub use_market_order_acks: bool,
+    pub price_protection_points: Option<u32>,
 }
 
 impl OrderMatchingEngineConfig {
     /// Creates a new default [`OrderMatchingEngineConfig`] instance.
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         bar_execution: bool,
+        trade_execution: bool,
+        liquidity_consumption: bool,
         reject_stop_orders: bool,
         support_gtd_orders: bool,
         support_contingent_orders: bool,
         use_position_ids: bool,
         use_random_ids: bool,
         use_reduce_only: bool,
+        use_market_order_acks: bool,
     ) -> Self {
         Self {
             bar_execution,
+            trade_execution,
+            liquidity_consumption,
             reject_stop_orders,
             support_gtd_orders,
             support_contingent_orders,
             use_position_ids,
             use_random_ids,
             use_reduce_only,
+            use_market_order_acks,
+            price_protection_points: None,
         }
+    }
+
+    /// Sets the price protection points for the matching engine.
+    #[must_use]
+    pub const fn with_price_protection_points(
+        mut self,
+        price_protection_points: Option<u32>,
+    ) -> Self {
+        self.price_protection_points = price_protection_points;
+        self
     }
 }
 
@@ -55,12 +77,16 @@ impl Default for OrderMatchingEngineConfig {
     fn default() -> Self {
         Self {
             bar_execution: false,
+            trade_execution: false,
+            liquidity_consumption: false,
             reject_stop_orders: false,
             support_gtd_orders: false,
             support_contingent_orders: false,
             use_position_ids: false,
             use_random_ids: false,
             use_reduce_only: false,
+            use_market_order_acks: false,
+            price_protection_points: None,
         }
     }
 }

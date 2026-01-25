@@ -12,7 +12,7 @@ tab_width = 4
 #
 # default: []
 # Explicit export declaration needed. CVec is not returned from a function in this module.
-include = ["CVec"]
+include = ["CVec", "StackStr"]
 
 [enum]
 rename_variants = "ScreamingSnakeCase"

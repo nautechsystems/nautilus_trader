@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -95,6 +95,6 @@ def test_betfair_backtest():
     account = engine.trader.generate_account_report(BETFAIR_VENUE)
     fills = engine.trader.generate_order_fills_report()
     positions = engine.trader.generate_positions_report()
-    assert account.iloc[-1]["total"] == "80962.97"
-    assert len(fills) == 981
-    assert len(positions) == 2
+    assert account.iloc[-1]["total"] == "98257.24"
+    assert len(fills) == 1049
+    assert len(positions) == 8  # 2 final positions + 6 snapshots from position flips

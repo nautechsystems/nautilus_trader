@@ -1,0 +1,6 @@
+{
+  "feed": "open_orders",
+  "order_id": "660c6b23-8007-48c1-a7c9-4893f4572e8c",
+  "is_cancel": true,
+  "reason": "cancelled_by_user"
+}

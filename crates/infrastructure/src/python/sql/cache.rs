@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,11 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
 use bytes::Bytes;
 use nautilus_common::{
-    cache::database::CacheDatabaseAdapter, custom::CustomData, runtime::get_runtime, signal::Signal,
+    cache::database::CacheDatabaseAdapter, custom::CustomData, live::get_runtime, signal::Signal,
 };
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
@@ -64,9 +62,10 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "load")]
-    fn py_load(&self) -> PyResult<HashMap<String, Vec<u8>>> {
+    fn py_load(&self) -> PyResult<std::collections::HashMap<String, Vec<u8>>> {
         get_runtime()
             .block_on(async { DatabaseQueries::load(&self.pool).await })
+            .map(|m| m.into_iter().collect())
             .map_err(to_pyruntime_err)
     }
 
@@ -89,7 +88,7 @@ impl PostgresCacheDatabase {
         &self,
         py: Python,
         instrument_id: InstrumentId,
-    ) -> PyResult<Option<PyObject>> {
+    ) -> PyResult<Option<Py<PyAny>>> {
         get_runtime().block_on(async {
             let result = DatabaseQueries::load_instrument(&self.pool, &instrument_id)
                 .await
@@ -105,7 +104,7 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "load_instruments")]
-    fn py_load_instruments(&self, py: Python) -> PyResult<Vec<PyObject>> {
+    fn py_load_instruments(&self, py: Python) -> PyResult<Vec<Py<PyAny>>> {
         get_runtime().block_on(async {
             let result = DatabaseQueries::load_instruments(&self.pool).await.unwrap();
             let mut instruments = Vec::new();
@@ -122,7 +121,7 @@ impl PostgresCacheDatabase {
         &self,
         py: Python,
         client_order_id: ClientOrderId,
-    ) -> PyResult<Option<PyObject>> {
+    ) -> PyResult<Option<Py<PyAny>>> {
         get_runtime().block_on(async {
             let result = DatabaseQueries::load_order(&self.pool, &client_order_id)
                 .await
@@ -138,7 +137,7 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "load_account")]
-    fn py_load_account(&self, py: Python, account_id: AccountId) -> PyResult<Option<PyObject>> {
+    fn py_load_account(&self, py: Python, account_id: AccountId) -> PyResult<Option<Py<PyAny>>> {
         get_runtime().block_on(async {
             let result = DatabaseQueries::load_account(&self.pool, &account_id)
                 .await
@@ -154,7 +153,7 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "load_quotes")]
-    fn py_load_quotes(&self, py: Python, instrument_id: InstrumentId) -> PyResult<Vec<PyObject>> {
+    fn py_load_quotes(&self, py: Python, instrument_id: InstrumentId) -> PyResult<Vec<Py<PyAny>>> {
         get_runtime().block_on(async {
             let result = DatabaseQueries::load_quotes(&self.pool, &instrument_id)
                 .await
@@ -169,7 +168,7 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "load_trades")]
-    fn py_load_trades(&self, py: Python, instrument_id: InstrumentId) -> PyResult<Vec<PyObject>> {
+    fn py_load_trades(&self, py: Python, instrument_id: InstrumentId) -> PyResult<Vec<Py<PyAny>>> {
         get_runtime().block_on(async {
             let result = DatabaseQueries::load_trades(&self.pool, &instrument_id)
                 .await
@@ -184,7 +183,7 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "load_bars")]
-    fn py_load_bars(&self, py: Python, instrument_id: InstrumentId) -> PyResult<Vec<PyObject>> {
+    fn py_load_bars(&self, py: Python, instrument_id: InstrumentId) -> PyResult<Vec<Py<PyAny>>> {
         get_runtime().block_on(async {
             let result = DatabaseQueries::load_bars(&self.pool, &instrument_id)
                 .await
@@ -251,7 +250,7 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "add_instrument")]
-    fn py_add_instrument(&self, py: Python, instrument: PyObject) -> PyResult<()> {
+    fn py_add_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let instrument_any = pyobject_to_instrument_any(py, instrument)?;
         self.add_instrument(&instrument_any)
             .map_err(to_pyruntime_err)
@@ -262,7 +261,7 @@ impl PostgresCacheDatabase {
     fn py_add_order(
         &self,
         py: Python,
-        order: PyObject,
+        order: Py<PyAny>,
         client_id: Option<ClientId>,
     ) -> PyResult<()> {
         let order_any = pyobject_to_order_any(py, order)?;
@@ -282,7 +281,7 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "add_account")]
-    fn py_add_account(&self, py: Python, account: PyObject) -> PyResult<()> {
+    fn py_add_account(&self, py: Python, account: Py<PyAny>) -> PyResult<()> {
         let account_any = pyobject_to_account_any(py, account)?;
         self.add_account(&account_any).map_err(to_pyruntime_err)
     }
@@ -313,13 +312,13 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "update_order")]
-    fn py_update_order(&self, py: Python, order_event: PyObject) -> PyResult<()> {
+    fn py_update_order(&self, py: Python, order_event: Py<PyAny>) -> PyResult<()> {
         let event = pyobject_to_order_event(py, order_event)?;
         self.update_order(&event).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "update_account")]
-    fn py_update_account(&self, py: Python, order: PyObject) -> PyResult<()> {
+    fn py_update_account(&self, py: Python, order: Py<PyAny>) -> PyResult<()> {
         let order_any = pyobject_to_account_any(py, order)?;
         self.update_account(&order_any).map_err(to_pyruntime_err)
     }

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,8 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.accounting.accounts.base cimport Account
+from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 
@@ -30,23 +32,23 @@ cdef class PortfolioFacade:
     cdef readonly analyzer
     """The portfolios analyzer.\n\n:returns: `PortfolioAnalyzer`"""
 
-    cpdef Account account(self, Venue venue)
+    cpdef Account account(self, Venue venue=*, AccountId account_id=*)
 
-    cpdef dict balances_locked(self, Venue venue)
-    cpdef dict margins_init(self, Venue venue)
-    cpdef dict margins_maint(self, Venue venue)
-    cpdef dict realized_pnls(self, Venue venue)
-    cpdef dict unrealized_pnls(self, Venue venue)
-    cpdef dict total_pnls(self, Venue venue)
-    cpdef dict net_exposures(self, Venue venue)
+    cpdef dict balances_locked(self, Venue venue=*, AccountId account_id=*)
+    cpdef dict margins_init(self, Venue venue=*, AccountId account_id=*)
+    cpdef dict margins_maint(self, Venue venue=*, AccountId account_id=*)
+    cpdef dict realized_pnls(self, Venue venue=*, AccountId account_id=*, Currency target_currency=*)
+    cpdef dict unrealized_pnls(self, Venue venue=*, AccountId account_id=*, Currency target_currency=*)
+    cpdef dict total_pnls(self, Venue venue=*, AccountId account_id=*, Currency target_currency=*)
+    cpdef dict net_exposures(self, Venue venue=*, AccountId account_id=*, Currency target_currency=*)
 
-    cpdef Money realized_pnl(self, InstrumentId instrument_id)
-    cpdef Money unrealized_pnl(self, InstrumentId instrument_id, Price price=*)
-    cpdef Money total_pnl(self, InstrumentId instrument_id, Price price=*)
-    cpdef Money net_exposure(self, InstrumentId instrument_id, Price price=*)
-    cpdef object net_position(self, InstrumentId instrument_id)
+    cpdef Money realized_pnl(self, InstrumentId instrument_id, AccountId account_id=*, Currency target_currency=*)
+    cpdef Money unrealized_pnl(self, InstrumentId instrument_id, Price price=*, AccountId account_id=*, Currency target_currency=*)
+    cpdef Money total_pnl(self, InstrumentId instrument_id, Price price=*, AccountId account_id=*, Currency target_currency=*)
+    cpdef Money net_exposure(self, InstrumentId instrument_id, Price price=*, AccountId account_id=*, Currency target_currency=*)
+    cpdef object net_position(self, InstrumentId instrument_id, AccountId account_id=*)
 
-    cpdef bint is_net_long(self, InstrumentId instrument_id)
-    cpdef bint is_net_short(self, InstrumentId instrument_id)
-    cpdef bint is_flat(self, InstrumentId instrument_id)
-    cpdef bint is_completely_flat(self)
+    cpdef bint is_net_long(self, InstrumentId instrument_id, AccountId account_id=*)
+    cpdef bint is_net_short(self, InstrumentId instrument_id, AccountId account_id=*)
+    cpdef bint is_flat(self, InstrumentId instrument_id, AccountId account_id=*)
+    cpdef bint is_completely_flat(self, AccountId account_id=*)

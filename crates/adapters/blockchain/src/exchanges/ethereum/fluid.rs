@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,7 +17,7 @@ use std::sync::LazyLock;
 
 use nautilus_model::defi::{
     chain::chains,
-    dex::{AmmType, Dex},
+    dex::{AmmType, Dex, DexType},
 };
 
 use crate::exchanges::extended::DexExtended;
@@ -26,9 +26,13 @@ use crate::exchanges::extended::DexExtended;
 pub static FLUID_DEX: LazyLock<DexExtended> = LazyLock::new(|| {
     let dex = Dex::new(
         chains::ETHEREUM.clone(),
-        "Fluid DEX",
+        DexType::FluidDEX,
         "0x91716C4EDA1Fb55e84Bf8b4c7085f84285c19085",
+        21015648,
         AmmType::CLAMM,
+        "",
+        "",
+        "",
         "",
         "",
     );

@@ -1,18 +1,20 @@
 [package]
 name = "nautilus-blockchain"
 readme = "README.md"
-publish = false  # Do not publish to crates.io for now
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description.workspace = true
+description = "Blockchain and DeFi integration adapter for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+
+[lints]
+workspace = true
 
 [lib]
 name = "nautilus_blockchain"
@@ -20,23 +22,40 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
+extension-module = [
+  "nautilus-common/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-model/extension-module",
+  "nautilus-network/extension-module",
+  "python",
+  "pyo3/extension-module",
+]
 hypersync = ["hypersync-client", "hypersync-schema"]
-python = ["pyo3", "nautilus-network/python"]
+python = [
+  "nautilus-infrastructure/python",
+  "nautilus-live/streaming",
+  "nautilus-network/python",
+  "nautilus-system/python",
+  "pyo3",
+  "pyo3-stub-gen",
+]
+turmoil = ["dep:turmoil", "nautilus-network/turmoil"]
 
 [package.metadata.docs.rs]
-features = ["defi", "python"]
+features = ["python"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-common = { workspace = true }
+nautilus-common = { workspace = true, features = ["defi", "live"] }
 nautilus-core = { workspace = true }
-nautilus-data = { workspace = true }
 nautilus-infrastructure = { workspace = true, features = ["postgres"] }
-nautilus-live = { workspace = true }
-nautilus-model = { workspace = true, features = ["defi", "high-precision"] }
+nautilus-live = { workspace = true, features = ["defi"] }
+nautilus-model = { workspace = true, features = ["defi"] }
 nautilus-network = { workspace = true }
 nautilus-system = { workspace = true }
 
+ahash = { workspace = true }
+alloy = { workspace = true }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
@@ -46,8 +65,7 @@ enum_dispatch = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-reqwest = { workspace = true }
+rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
@@ -55,36 +73,27 @@ strum = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
-tracing = { workspace = true }
+tokio-util = { workspace = true }
 ustr = { workspace = true }
-alloy = "1.0.9"
-hypersync-client = { version = "0.18.2", optional = true }
-hypersync-schema = { version = "0.3.0", optional = true }
+
+hypersync-client = { workspace = true, optional = true }
+hypersync-schema = { workspace = true, optional = true }
+pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
+turmoil = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
+turmoil = { workspace = true }
 
 [[bin]]
-name = "live_blocks_rpc"
-path = "bin/watch_rpc_live_blocks.rs"
-required-features = ["hypersync", "python"]  # TODO: Requires python for now
+name = "node_wallet"
+path = "bin/node_wallet.rs"
+required-features = ["hypersync"]
+doc = false
 
-[[bin]]
-name = "live_blocks_hypersync"
-path = "bin/watch_hypersync_live_blocks.rs"
-required-features = ["hypersync", "python"]  # TODO: Requires python for now
-
-[[bin]]
-name = "sync_tokens_pools"
-path = "bin/sync_tokens_pools.rs"
-required-features = ["hypersync", "python"]  # TODO: Requires python for now
-
-[[bin]]
-name = "sync_pool_events"
-path = "bin/sync_pool_events.rs"
-required-features = ["hypersync", "python"]  # TODO: Requires python for now
-
-[[bin]]
-name = "node_test"
-path = "bin/node_test.rs"
-required-features = ["hypersync", "python"]  # TODO: Requires python for now
+[[example]]
+name = "blockchain-data-tester"
+path = "examples/node_data_tester.rs"
+required-features = ["hypersync"]
+doc = false

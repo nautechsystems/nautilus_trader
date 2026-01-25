@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,9 +15,10 @@
 
 use std::{collections::HashMap, str::FromStr};
 
+use ahash::AHashMap;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use futures::{StreamExt, future::join_all};
+use futures::future::join_all;
 use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
 use nautilus_model::{
     accounts::AccountAny,
@@ -30,8 +31,9 @@ use nautilus_model::{
 use redis::{AsyncCommands, aio::ConnectionManager};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
-use tokio::try_join;
 use ustr::Ustr;
+
+use super::get_index_key;
 
 // Collection keys
 const INDEX: &str = "index";
@@ -113,11 +115,59 @@ impl DatabaseQueries {
         con: &mut ConnectionManager,
         pattern: String,
     ) -> anyhow::Result<Vec<String>> {
-        Ok(con
-            .scan_match::<String, String>(pattern)
-            .await?
-            .collect()
-            .await)
+        let mut result = Vec::new();
+        let mut cursor = 0u64;
+
+        loop {
+            let scan_result: (u64, Vec<String>) = redis::cmd("SCAN")
+                .arg(cursor)
+                .arg("MATCH")
+                .arg(&pattern)
+                .arg("COUNT")
+                .arg(5000)
+                .query_async(con)
+                .await?;
+
+            let (new_cursor, keys) = scan_result;
+            result.extend(keys);
+
+            // If cursor is 0, we've completed the full scan
+            if new_cursor == 0 {
+                break;
+            }
+
+            cursor = new_cursor;
+        }
+
+        Ok(result)
+    }
+
+    /// Bulk reads multiple keys from Redis using MGET for efficiency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying Redis MGET operation fails.
+    pub async fn read_bulk(
+        con: &ConnectionManager,
+        keys: &[String],
+    ) -> anyhow::Result<Vec<Option<Bytes>>> {
+        if keys.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let mut con = con.clone();
+
+        // Use MGET to fetch all keys in a single network operation
+        let results: Vec<Option<Vec<u8>>> =
+            redis::cmd("MGET").arg(keys).query_async(&mut con).await?;
+
+        // Convert Vec<u8> to Bytes
+        let bytes_results: Vec<Option<Bytes>> = results
+            .into_iter()
+            .map(|opt| opt.map(Bytes::from))
+            .collect();
+
+        Ok(bytes_results)
     }
 
     /// Reads raw byte payloads for `key` under `trader_key` from Redis.
@@ -131,20 +181,21 @@ impl DatabaseQueries {
         key: &str,
     ) -> anyhow::Result<Vec<Bytes>> {
         let collection = Self::get_collection_key(key)?;
-        let key = format!("{trader_key}{REDIS_DELIMITER}{key}");
+        let full_key = format!("{trader_key}{REDIS_DELIMITER}{key}");
+
         let mut con = con.clone();
 
         match collection {
-            INDEX => Self::read_index(&mut con, &key).await,
-            GENERAL => Self::read_string(&mut con, &key).await,
-            CURRENCIES => Self::read_string(&mut con, &key).await,
-            INSTRUMENTS => Self::read_string(&mut con, &key).await,
-            SYNTHETICS => Self::read_string(&mut con, &key).await,
-            ACCOUNTS => Self::read_list(&mut con, &key).await,
-            ORDERS => Self::read_list(&mut con, &key).await,
-            POSITIONS => Self::read_list(&mut con, &key).await,
-            ACTORS => Self::read_string(&mut con, &key).await,
-            STRATEGIES => Self::read_string(&mut con, &key).await,
+            INDEX => Self::read_index(&mut con, &full_key).await,
+            GENERAL => Self::read_string(&mut con, &full_key).await,
+            CURRENCIES => Self::read_string(&mut con, &full_key).await,
+            INSTRUMENTS => Self::read_string(&mut con, &full_key).await,
+            SYNTHETICS => Self::read_string(&mut con, &full_key).await,
+            ACCOUNTS => Self::read_list(&mut con, &full_key).await,
+            ORDERS => Self::read_list(&mut con, &full_key).await,
+            POSITIONS => Self::read_list(&mut con, &full_key).await,
+            ACTORS => Self::read_string(&mut con, &full_key).await,
+            STRATEGIES => Self::read_string(&mut con, &full_key).await,
             _ => anyhow::bail!("Unsupported operation: `read` for collection '{collection}'"),
         }
     }
@@ -159,7 +210,7 @@ impl DatabaseQueries {
         encoding: SerializationEncoding,
         trader_key: &str,
     ) -> anyhow::Result<CacheMap> {
-        let (currencies, instruments, synthetics, accounts, orders, positions) = try_join!(
+        let (currencies, instruments, synthetics, accounts, orders, positions) = tokio::try_join!(
             Self::load_currencies(con, trader_key, encoding),
             Self::load_instruments(con, trader_key, encoding),
             Self::load_synthetics(con, trader_key, encoding),
@@ -171,8 +222,8 @@ impl DatabaseQueries {
 
         // For now, we don't load greeks and yield curves from the database
         // This will be implemented in the future
-        let greeks = HashMap::new();
-        let yield_curves = HashMap::new();
+        let greeks = AHashMap::new();
+        let yield_curves = AHashMap::new();
 
         Ok(CacheMap {
             currencies,
@@ -195,44 +246,45 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<Ustr, Currency>> {
-        let mut currencies = HashMap::new();
+    ) -> anyhow::Result<AHashMap<Ustr, Currency>> {
+        let mut currencies = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{CURRENCIES}*");
-        tracing::debug!("Loading {pattern}");
+        log::debug!("Loading {pattern}");
 
         let mut con = con.clone();
         let keys = Self::scan_keys(&mut con, pattern).await?;
 
-        let futures: Vec<_> = keys
-            .iter()
-            .map(|key| {
-                let con = con.clone();
-                async move {
-                    let currency_code = if let Some(code) = key.as_str().rsplit(':').next() {
-                        Ustr::from(code)
-                    } else {
-                        log::error!("Invalid key format: {key}");
-                        return None;
-                    };
+        if keys.is_empty() {
+            return Ok(currencies);
+        }
 
-                    match Self::load_currency(&con, trader_key, &currency_code, encoding).await {
-                        Ok(Some(currency)) => Some((currency_code, currency)),
-                        Ok(None) => {
-                            log::error!("Currency not found: {currency_code}");
-                            None
-                        }
-                        Err(e) => {
-                            log::error!("Failed to load currency {currency_code}: {e}");
-                            None
-                        }
+        // Use bulk loading with MGET for efficiency
+        let bulk_values = Self::read_bulk(&con, &keys).await?;
+
+        // Process the bulk results
+        for (key, value_opt) in keys.iter().zip(bulk_values.iter()) {
+            let currency_code = if let Some(code) = key.as_str().rsplit(':').next() {
+                Ustr::from(code)
+            } else {
+                log::error!("Invalid key format: {key}");
+                continue;
+            };
+
+            if let Some(value_bytes) = value_opt {
+                match Self::deserialize_payload(encoding, value_bytes) {
+                    Ok(currency) => {
+                        currencies.insert(currency_code, currency);
+                    }
+                    Err(e) => {
+                        log::error!("Failed to deserialize currency {currency_code}: {e}");
                     }
                 }
-            })
-            .collect();
+            } else {
+                log::error!("Currency not found in Redis: {currency_code}");
+            }
+        }
 
-        // Insert all Currency_code (key) and Currency (value) into the HashMap, filtering out None values.
-        currencies.extend(join_all(futures).await.into_iter().flatten());
-        tracing::debug!("Loaded {} currencies(s)", currencies.len());
+        log::debug!("Loaded {} currencies(s)", currencies.len());
 
         Ok(currencies)
     }
@@ -251,10 +303,10 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
-        let mut instruments = HashMap::new();
+    ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
+        let mut instruments = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{INSTRUMENTS}*");
-        tracing::debug!("Loading {pattern}");
+        log::debug!("Loading {pattern}");
 
         let mut con = con.clone();
         let keys = Self::scan_keys(&mut con, pattern).await?;
@@ -301,7 +353,7 @@ impl DatabaseQueries {
 
         // Insert all Instrument_id (key) and Instrument (value) into the HashMap, filtering out None values.
         instruments.extend(join_all(futures).await.into_iter().flatten());
-        tracing::debug!("Loaded {} instruments(s)", instruments.len());
+        log::debug!("Loaded {} instruments(s)", instruments.len());
 
         Ok(instruments)
     }
@@ -320,10 +372,10 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
-        let mut synthetics = HashMap::new();
+    ) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>> {
+        let mut synthetics = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{SYNTHETICS}*");
-        tracing::debug!("Loading {pattern}");
+        log::debug!("Loading {pattern}");
 
         let mut con = con.clone();
         let keys = Self::scan_keys(&mut con, pattern).await?;
@@ -370,7 +422,7 @@ impl DatabaseQueries {
 
         // Insert all Instrument_id (key) and Synthetic (value) into the HashMap, filtering out None values.
         synthetics.extend(join_all(futures).await.into_iter().flatten());
-        tracing::debug!("Loaded {} synthetics(s)", synthetics.len());
+        log::debug!("Loaded {} synthetics(s)", synthetics.len());
 
         Ok(synthetics)
     }
@@ -389,10 +441,10 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<AccountId, AccountAny>> {
-        let mut accounts = HashMap::new();
+    ) -> anyhow::Result<AHashMap<AccountId, AccountAny>> {
+        let mut accounts = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{ACCOUNTS}*");
-        tracing::debug!("Loading {pattern}");
+        log::debug!("Loading {pattern}");
 
         let mut con = con.clone();
         let keys = Self::scan_keys(&mut con, pattern).await?;
@@ -426,7 +478,7 @@ impl DatabaseQueries {
 
         // Insert all Account_id (key) and Account (value) into the HashMap, filtering out None values.
         accounts.extend(join_all(futures).await.into_iter().flatten());
-        tracing::debug!("Loaded {} accounts(s)", accounts.len());
+        log::debug!("Loaded {} accounts(s)", accounts.len());
 
         Ok(accounts)
     }
@@ -445,10 +497,10 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
-        let mut orders = HashMap::new();
+    ) -> anyhow::Result<AHashMap<ClientOrderId, OrderAny>> {
+        let mut orders = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{ORDERS}*");
-        tracing::debug!("Loading {pattern}");
+        log::debug!("Loading {pattern}");
 
         let mut con = con.clone();
         let keys = Self::scan_keys(&mut con, pattern).await?;
@@ -482,7 +534,7 @@ impl DatabaseQueries {
 
         // Insert all Client-Order-Id (key) and Order (value) into the HashMap, filtering out None values.
         orders.extend(join_all(futures).await.into_iter().flatten());
-        tracing::debug!("Loaded {} order(s)", orders.len());
+        log::debug!("Loaded {} order(s)", orders.len());
 
         Ok(orders)
     }
@@ -501,10 +553,10 @@ impl DatabaseQueries {
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<PositionId, Position>> {
-        let mut positions = HashMap::new();
+    ) -> anyhow::Result<AHashMap<PositionId, Position>> {
+        let mut positions = AHashMap::new();
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{POSITIONS}*");
-        tracing::debug!("Loading {pattern}");
+        log::debug!("Loading {pattern}");
 
         let mut con = con.clone();
         let keys = Self::scan_keys(&mut con, pattern).await?;
@@ -538,7 +590,7 @@ impl DatabaseQueries {
 
         // Insert all Position_id (key) and Position (value) into the HashMap, filtering out None values.
         positions.extend(join_all(futures).await.into_iter().flatten());
-        tracing::debug!("Loaded {} position(s)", positions.len());
+        log::debug!("Loaded {} position(s)", positions.len());
 
         Ok(positions)
     }
@@ -679,7 +731,7 @@ impl DatabaseQueries {
     }
 
     async fn read_index(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
-        let index_key = Self::get_index_key(key)?;
+        let index_key = get_index_key(key)?;
         match index_key {
             INDEX_ORDER_IDS => Self::read_set(conn, key).await,
             INDEX_ORDER_POSITION => Self::read_hset(conn, key).await,
@@ -721,14 +773,6 @@ impl DatabaseQueries {
         let result: Vec<Bytes> = conn.lrange(key, 0, -1).await?;
         Ok(result)
     }
-
-    fn get_index_key(key: &str) -> anyhow::Result<&str> {
-        key.split_once(REDIS_DELIMITER)
-            .map(|(_, index_key)| index_key)
-            .ok_or_else(|| {
-                anyhow::anyhow!("Invalid `key`, missing a '{REDIS_DELIMITER}' delimiter, was {key}")
-            })
-    }
 }
 
 fn is_timestamp_field(key: &str) -> bool {
@@ -741,15 +785,12 @@ fn convert_timestamps(value: &mut Value) {
     match value {
         Value::Object(map) => {
             for (key, v) in map {
-                if is_timestamp_field(key) {
-                    if let Value::Number(n) = v {
-                        if let Some(n) = n.as_u64() {
-                            let dt = DateTime::<Utc>::from_timestamp_nanos(n as i64);
-                            *v = Value::String(
-                                dt.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true),
-                            );
-                        }
-                    }
+                if is_timestamp_field(key)
+                    && let Value::Number(n) = v
+                    && let Some(n) = n.as_u64()
+                {
+                    let dt = DateTime::<Utc>::from_timestamp_nanos(n as i64);
+                    *v = Value::String(dt.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true));
                 }
                 convert_timestamps(v);
             }
@@ -767,18 +808,16 @@ fn convert_timestamp_strings(value: &mut Value) {
     match value {
         Value::Object(map) => {
             for (key, v) in map {
-                if is_timestamp_field(key) {
-                    if let Value::String(s) = v {
-                        if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
-                            *v = Value::Number(
-                                (dt.with_timezone(&Utc)
-                                    .timestamp_nanos_opt()
-                                    .expect("Invalid DateTime")
-                                    as u64)
-                                    .into(),
-                            );
-                        }
-                    }
+                if is_timestamp_field(key)
+                    && let Value::String(s) = v
+                    && let Ok(dt) = DateTime::parse_from_rfc3339(s)
+                {
+                    *v = Value::Number(
+                        (dt.with_timezone(&Utc)
+                            .timestamp_nanos_opt()
+                            .expect("Invalid DateTime") as u64)
+                            .into(),
+                    );
                 }
                 convert_timestamp_strings(v);
             }

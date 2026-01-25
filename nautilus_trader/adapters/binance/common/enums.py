@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -133,6 +133,8 @@ class BinanceSymbolFilterType(Enum):
     MAX_NUM_ORDERS = "MAX_NUM_ORDERS"
     MAX_NUM_ALGO_ORDERS = "MAX_NUM_ALGO_ORDERS"
     MAX_NUM_ICEBERG_ORDERS = "MAX_NUM_ICEBERG_ORDERS"
+    MAX_NUM_ORDER_LISTS = "MAX_NUM_ORDER_LISTS"
+    MAX_NUM_ORDER_AMENDS = "MAX_NUM_ORDER_AMENDS"
     MAX_POSITION = "MAX_POSITION"
     TRAILING_DELTA = "TRAILING_DELTA"
     POSITION_RISK_CONTROL = "POSITION_RISK_CONTROL"
@@ -147,8 +149,8 @@ class BinanceAccountType(Enum):
     SPOT = "SPOT"
     MARGIN = "MARGIN"
     ISOLATED_MARGIN = "ISOLATED_MARGIN"
-    USDT_FUTURE = "USDT_FUTURE"
-    COIN_FUTURE = "COIN_FUTURE"
+    USDT_FUTURES = "USDT_FUTURES"
+    COIN_FUTURES = "COIN_FUTURES"
 
     @property
     def is_spot(self):
@@ -172,8 +174,8 @@ class BinanceAccountType(Enum):
     @property
     def is_futures(self) -> bool:
         return self in (
-            BinanceAccountType.USDT_FUTURE,
-            BinanceAccountType.COIN_FUTURE,
+            BinanceAccountType.USDT_FUTURES,
+            BinanceAccountType.COIN_FUTURES,
         )
 
 
@@ -219,6 +221,9 @@ class BinanceOrderStatus(Enum):
     EXPIRED_IN_MATCH = "EXPIRED_IN_MATCH"
     NEW_INSURANCE = "NEW_INSURANCE"  # Liquidation with Insurance Fund
     NEW_ADL = "NEW_ADL"  # Counterparty Liquidation
+    TRIGGERING = "TRIGGERING"  # Algo order forwarded to matching engine
+    TRIGGERED = "TRIGGERED"  # Algo order successfully placed in matching engine
+    FINISHED = "FINISHED"  # Algo order triggered order filled or canceled
 
 
 @unique
@@ -252,6 +257,8 @@ class BinanceOrderType(Enum):
     STOP_MARKET = "STOP_MARKET"  # FUTURES only
     TAKE_PROFIT_MARKET = "TAKE_PROFIT_MARKET"  # FUTURES only
     TRAILING_STOP_MARKET = "TRAILING_STOP_MARKET"  # FUTURES only
+    LIQUIDATION = "LIQUIDATION"  # FUTURES only
+    ADL = "ADL"  # FUTURES only
     INSURANCE_FUND = "INSURANCE_FUND"
 
 
@@ -332,6 +339,8 @@ class BinanceErrorCode(Enum):
     ASSET_NOT_SUPPORTED = -1126
     MORE_THAN_XX_HOURS = -1127
     OPTIONAL_PARAMS_BAD_COMBO = -1128
+    ORDER_AMEND_KEEP_PRIORITY_FAILED = -2038
+    ORDER_QUERY_DUAL_ID_NOT_FOUND = -2039
     INVALID_PARAMETER = -1130
     INVALID_NEW_ORDER_RESP_TYPE = -1136
 
@@ -372,7 +381,7 @@ class BinanceErrorCode(Enum):
     PRICE_LESS_THAN_MIN_PRICE = -4013
     PRICE_NOT_INCREASED_BY_TICK_SIZE = -4014
     INVALID_CL_ORD_ID_LEN = -4015
-    PRICE_HIGHTER_THAN_MULTIPLIER_UP = -4016
+    PRICE_HIGHTER_THAN_MULTIPLIER_UP = -4016  # Binance's official typo (should be HIGHER)
     MULTIPLIER_UP_LESS_THAN_ZERO = -4017
     MULTIPLIER_DOWN_LESS_THAN_ZERO = -4018
     COMPOSITE_SCALE_OVERFLOW = -4019
@@ -473,6 +482,9 @@ class BinanceErrorCode(Enum):
     COMPLIANCE_BLACK_SYMBOL_RESTRICTION = -4402
     ADJUST_LEVERAGE_COMPLIANCE_FAILED = -4403
 
+    INVALID_PEG_OFFSET_TYPE = 1211
+    STOP_ORDER_SWITCH_ALGO = -4120
+
     FOK_ORDER_REJECT = -5021
     GTX_ORDER_REJECT = -5022
     MOVE_ORDER_NOT_ALLOWED_SYMBOL_REASON = -5024
@@ -498,12 +510,17 @@ class BinanceEnumParser:
         self.ext_to_int_status = {
             BinanceOrderStatus.NEW: OrderStatus.ACCEPTED,
             BinanceOrderStatus.CANCELED: OrderStatus.CANCELED,
+            BinanceOrderStatus.PENDING_CANCEL: OrderStatus.PENDING_CANCEL,
+            BinanceOrderStatus.REJECTED: OrderStatus.REJECTED,
             BinanceOrderStatus.PARTIALLY_FILLED: OrderStatus.PARTIALLY_FILLED,
             BinanceOrderStatus.FILLED: OrderStatus.FILLED,
             BinanceOrderStatus.NEW_ADL: OrderStatus.FILLED,
             BinanceOrderStatus.NEW_INSURANCE: OrderStatus.FILLED,
             BinanceOrderStatus.EXPIRED: OrderStatus.EXPIRED,
             BinanceOrderStatus.EXPIRED_IN_MATCH: OrderStatus.CANCELED,  # Canceled due self-trade prevention (STP)
+            BinanceOrderStatus.TRIGGERING: OrderStatus.ACCEPTED,  # Algo order forwarding to matching engine
+            BinanceOrderStatus.TRIGGERED: OrderStatus.ACCEPTED,  # Algo order placed in matching engine
+            # FINISHED intentionally omitted - requires aq field to determine filled vs canceled
         }
 
         self.ext_to_int_order_side = {

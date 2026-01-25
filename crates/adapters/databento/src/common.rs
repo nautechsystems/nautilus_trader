@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,12 +15,62 @@
 
 //! Common functions to support Databento adapter operations.
 
+use std::fmt::Debug;
+
 use databento::historical::DateTimeRange;
 use nautilus_core::UnixNanos;
 use time::OffsetDateTime;
+use zeroize::ZeroizeOnDrop;
 
 pub const DATABENTO: &str = "DATABENTO";
 pub const ALL_SYMBOLS: &str = "ALL_SYMBOLS";
+
+/// API credentials required for Databento API requests.
+#[derive(Clone, ZeroizeOnDrop)]
+pub struct Credential {
+    api_key: Box<[u8]>,
+}
+
+impl Debug for Credential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(Credential))
+            .field("api_key", &"<redacted>")
+            .finish()
+    }
+}
+
+impl Credential {
+    /// Creates a new [`Credential`] instance from the API key.
+    #[must_use]
+    pub fn new(api_key: impl Into<String>) -> Self {
+        let api_key_bytes = api_key.into().into_bytes();
+
+        Self {
+            api_key: api_key_bytes.into_boxed_slice(),
+        }
+    }
+
+    /// Returns the API key associated with this credential.
+    ///
+    /// # Panics
+    ///
+    /// This method should never panic as the API key is always valid UTF-8,
+    /// having been created from a String.
+    #[must_use]
+    pub fn api_key(&self) -> &str {
+        // SAFETY: The API key is always valid UTF-8 since it was created from a String
+        std::str::from_utf8(&self.api_key).unwrap()
+    }
+
+    /// Returns a masked version of the API key for logging purposes.
+    ///
+    /// Shows first 4 and last 4 characters with ellipsis in between.
+    /// For keys shorter than 8 characters, shows asterisks only.
+    #[must_use]
+    pub fn api_key_masked(&self) -> String {
+        nautilus_core::string::mask_api_key(self.api_key())
+    }
+}
 
 /// # Errors
 ///
@@ -32,9 +82,6 @@ pub fn get_date_time_range(start: UnixNanos, end: UnixNanos) -> anyhow::Result<D
     )))
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::*;
@@ -55,5 +102,25 @@ mod tests {
     ) {
         let range = get_date_time_range(start, end).unwrap();
         assert_eq!(format!("{range:?}"), range_str);
+    }
+
+    #[rstest]
+    fn test_credential_api_key_masked_short() {
+        let credential = Credential::new("short");
+        assert_eq!(credential.api_key_masked(), "*****");
+    }
+
+    #[rstest]
+    fn test_credential_api_key_masked_long() {
+        let credential = Credential::new("abcdefghijklmnop");
+        assert_eq!(credential.api_key_masked(), "abcd...mnop");
+    }
+
+    #[rstest]
+    fn test_credential_debug_redaction() {
+        let credential = Credential::new("test_api_key");
+        let debug_str = format!("{credential:?}");
+        assert!(debug_str.contains("<redacted>"));
+        assert!(!debug_str.contains("test_api_key"));
     }
 }

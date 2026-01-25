@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -37,7 +37,7 @@ class PolymarketOrder(msgspec.Struct, frozen=True):
     makerAmount: str  # maximum amount maker is willing to spend
     takerAmount: str  # maximum amount taker is willing to spend
     expiration: str  # UNIX expiration timestamp (seconds?)  # TBD
-    nonce: str  # makers Exchange nonce the ordr is associated with
+    nonce: str  # makers Exchange nonce the order is associated with
     feeRateBps: str  # fee rate in basis points as required by the operator
     side: PolymarketOrderSide
     signatureType: PolymarketSignatureType  # signature

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,11 +19,12 @@
 
 use std::{
     cmp::Ordering,
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::BTreeMap,
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
 };
 
+use ahash::{AHashMap, AHashSet};
 use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, time::nanos_since_unix_epoch};
 use rust_decimal::Decimal;
@@ -282,11 +283,16 @@ impl OwnOrderBook {
     ///
     /// Returns an error if the order is not found.
     pub fn update(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
-        self.increment(&order);
-        match order.side {
+        let result = match order.side {
             OrderSideSpecified::Buy => self.bids.update(order),
             OrderSideSpecified::Sell => self.asks.update(order),
+        };
+
+        if result.is_ok() {
+            self.increment(&order);
         }
+
+        result
     }
 
     /// Deletes an own order from the book.
@@ -295,11 +301,16 @@ impl OwnOrderBook {
     ///
     /// Returns an error if the order is not found.
     pub fn delete(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
-        self.increment(&order);
-        match order.side {
+        let result = match order.side {
             OrderSideSpecified::Buy => self.bids.delete(order),
             OrderSideSpecified::Sell => self.asks.delete(order),
+        };
+
+        if result.is_ok() {
+            self.increment(&order);
         }
+
+        result
     }
 
     /// Clears all orders from both sides of the book.
@@ -320,12 +331,12 @@ impl OwnOrderBook {
 
     /// Returns the client order IDs currently on the bid side.
     pub fn bid_client_order_ids(&self) -> Vec<ClientOrderId> {
-        self.bids.cache.keys().cloned().collect()
+        self.bids.cache.keys().copied().collect()
     }
 
     /// Returns the client order IDs currently on the ask side.
     pub fn ask_client_order_ids(&self) -> Vec<ClientOrderId> {
-        self.asks.cache.keys().cloned().collect()
+        self.asks.cache.keys().copied().collect()
     }
 
     /// Return whether the given client order ID is in the own book.
@@ -340,7 +351,7 @@ impl OwnOrderBook {
     /// at least that many nanoseconds before `ts_now` (defaults to now).
     pub fn bids_as_map(
         &self,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
@@ -353,7 +364,7 @@ impl OwnOrderBook {
     /// at least that many nanoseconds before `ts_now` (defaults to now).
     pub fn asks_as_map(
         &self,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
@@ -364,78 +375,74 @@ impl OwnOrderBook {
     ///
     /// Filters by `status` if provided, including only matching orders. With `accepted_buffer_ns`,
     /// only includes orders accepted at least that many nanoseconds before `ts_now` (defaults to now).
+    ///
+    /// If `group_size` is provided, groups quantities into price buckets.
+    /// If `depth` is provided, limits the number of price levels returned.
     pub fn bid_quantity(
         &self,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<AHashSet<OrderStatus>>,
+        depth: Option<usize>,
+        group_size: Option<Decimal>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
-        self.bids_as_map(status, accepted_buffer_ns, ts_now)
+        let quantities = self
+            .bids_as_map(status, accepted_buffer_ns, ts_now)
             .into_iter()
             .map(|(price, orders)| (price, sum_order_sizes(orders.iter())))
             .filter(|(_, quantity)| *quantity > Decimal::ZERO)
-            .collect()
+            .collect::<IndexMap<Decimal, Decimal>>();
+
+        if let Some(group_size) = group_size {
+            group_quantities(quantities, group_size, depth, true)
+        } else if let Some(depth) = depth {
+            quantities.into_iter().take(depth).collect()
+        } else {
+            quantities
+        }
     }
 
     /// Aggregates own ask quantities per price level, omitting zero-quantity levels.
     ///
     /// Filters by `status` if provided, including only matching orders. With `accepted_buffer_ns`,
     /// only includes orders accepted at least that many nanoseconds before `ts_now` (defaults to now).
+    ///
+    /// If `group_size` is provided, groups quantities into price buckets.
+    /// If `depth` is provided, limits the number of price levels returned.
     pub fn ask_quantity(
         &self,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<AHashSet<OrderStatus>>,
+        depth: Option<usize>,
+        group_size: Option<Decimal>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
-        self.asks_as_map(status, accepted_buffer_ns, ts_now)
+        let quantities = self
+            .asks_as_map(status, accepted_buffer_ns, ts_now)
             .into_iter()
             .map(|(price, orders)| {
                 let quantity = sum_order_sizes(orders.iter());
                 (price, quantity)
             })
             .filter(|(_, quantity)| *quantity > Decimal::ZERO)
-            .collect()
-    }
+            .collect::<IndexMap<Decimal, Decimal>>();
 
-    /// Groups own bid quantities by price into buckets, truncating to a maximum depth.
-    ///
-    /// Filters by `status` if provided. With `accepted_buffer_ns`, only includes orders accepted
-    /// at least that many nanoseconds before `ts_now` (defaults to now).
-    pub fn group_bids(
-        &self,
-        group_size: Decimal,
-        depth: Option<usize>,
-        status: Option<HashSet<OrderStatus>>,
-        accepted_buffer_ns: Option<u64>,
-        ts_now: Option<u64>,
-    ) -> IndexMap<Decimal, Decimal> {
-        let quantities = self.bid_quantity(status, accepted_buffer_ns, ts_now);
-        group_quantities(quantities, group_size, depth, true)
-    }
-
-    /// Groups own ask quantities by price into buckets, truncating to a maximum depth.
-    ///
-    /// Filters by `status` if provided. With `accepted_buffer_ns`, only includes orders accepted
-    /// at least that many nanoseconds before `ts_now` (defaults to now).
-    pub fn group_asks(
-        &self,
-        group_size: Decimal,
-        depth: Option<usize>,
-        status: Option<HashSet<OrderStatus>>,
-        accepted_buffer_ns: Option<u64>,
-        ts_now: Option<u64>,
-    ) -> IndexMap<Decimal, Decimal> {
-        let quantities = self.ask_quantity(status, accepted_buffer_ns, ts_now);
-        group_quantities(quantities, group_size, depth, false)
+        if let Some(group_size) = group_size {
+            group_quantities(quantities, group_size, depth, false)
+        } else if let Some(depth) = depth {
+            quantities.into_iter().take(depth).collect()
+        } else {
+            quantities
+        }
     }
 
     /// Return a formatted string representation of the order book.
     #[must_use]
-    pub fn pprint(&self, num_levels: usize) -> String {
-        pprint_own_book(&self.bids, &self.asks, num_levels)
+    pub fn pprint(&self, num_levels: usize, group_size: Option<Decimal>) -> String {
+        pprint_own_book(self, num_levels, group_size)
     }
 
-    pub fn audit_open_orders(&mut self, open_order_ids: &HashSet<ClientOrderId>) {
+    pub fn audit_open_orders(&mut self, open_order_ids: &AHashSet<ClientOrderId>) {
         log::debug!("Auditing {self}");
 
         // Audit bids
@@ -444,7 +451,7 @@ impl OwnOrderBook {
             .cache
             .keys()
             .filter(|&key| !open_order_ids.contains(key))
-            .cloned()
+            .copied()
             .collect();
 
         // Audit asks
@@ -453,7 +460,7 @@ impl OwnOrderBook {
             .cache
             .keys()
             .filter(|&key| !open_order_ids.contains(key))
-            .cloned()
+            .copied()
             .collect();
 
         for client_order_id in bids_to_remove {
@@ -474,14 +481,21 @@ impl OwnOrderBook {
 
 fn log_audit_error(client_order_id: &ClientOrderId) {
     log::error!(
-        "Audit error - {} cached order already closed, deleting from own book",
-        client_order_id
+        "Audit error - {client_order_id} cached order already closed, deleting from own book"
     );
 }
 
+/// Filters orders by status and accepted timestamp.
+///
+/// `accepted_buffer_ns` acts as a grace period after `ts_accepted`. Orders whose
+/// `ts_accepted` is still zero (e.g. SUBMITTED/PENDING state before an ACCEPTED
+/// event) will pass the buffer check once `ts_now` exceeds the buffer, even though
+/// they have not been venue-acknowledged yet. Callers that want to hide inflight
+/// orders must additionally filter by `OrderStatus` (for example, include only
+/// `ACCEPTED` / `PARTIALLY_FILLED`).
 fn filter_orders<'a>(
     levels: impl Iterator<Item = &'a OwnBookLevel>,
-    status: Option<&HashSet<OrderStatus>>,
+    status: Option<&AHashSet<OrderStatus>>,
     accepted_buffer_ns: Option<u64>,
     ts_now: Option<u64>,
 ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
@@ -494,7 +508,7 @@ fn filter_orders<'a>(
                 .values()
                 .filter(|order| status.is_none_or(|f| f.contains(&order.status)))
                 .filter(|order| order.ts_accepted + accepted_buffer_ns <= ts_now)
-                .cloned()
+                .copied()
                 .collect::<Vec<OwnBookOrder>>();
 
             (level.price.value.as_decimal(), orders)
@@ -509,6 +523,11 @@ fn group_quantities(
     depth: Option<usize>,
     is_bid: bool,
 ) -> IndexMap<Decimal, Decimal> {
+    if group_size <= Decimal::ZERO {
+        log::error!("Invalid group_size: {group_size}, must be positive; returning empty map");
+        return IndexMap::new();
+    }
+
     let mut grouped = IndexMap::new();
     let depth = depth.unwrap_or(usize::MAX);
 
@@ -557,7 +576,7 @@ where
 pub(crate) struct OwnBookLadder {
     pub side: OrderSideSpecified,
     pub levels: BTreeMap<BookPrice, OwnBookLevel>,
-    pub cache: HashMap<ClientOrderId, BookPrice>,
+    pub cache: AHashMap<ClientOrderId, BookPrice>,
 }
 
 impl OwnBookLadder {
@@ -567,20 +586,20 @@ impl OwnBookLadder {
         Self {
             side,
             levels: BTreeMap::new(),
-            cache: HashMap::new(),
+            cache: AHashMap::new(),
         }
     }
 
     /// Returns the number of price levels in the ladder.
     #[must_use]
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.levels.len()
     }
 
     /// Returns true if the ladder has no price levels.
     #[must_use]
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.levels.is_empty()
     }
@@ -613,22 +632,38 @@ impl OwnBookLadder {
     ///
     /// Returns an error if the order is not found.
     pub fn update(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
-        let price = self.cache.get(&order.client_order_id).copied();
-        if let Some(price) = price {
-            if let Some(level) = self.levels.get_mut(&price) {
-                if order.price == level.price.value {
-                    // Update at current price level
-                    level.update(order);
-                    return Ok(());
-                }
+        let Some(price) = self.cache.get(&order.client_order_id).copied() else {
+            log::error!(
+                "Own book update failed - order {client_order_id} not in cache",
+                client_order_id = order.client_order_id
+            );
+            anyhow::bail!(
+                "Order {} not found in own book (cache)",
+                order.client_order_id
+            );
+        };
 
-                // Price update: delete and insert at new level
-                self.cache.remove(&order.client_order_id);
-                level.delete(&order.client_order_id)?;
-                if level.is_empty() {
-                    self.levels.remove(&price);
-                }
-            }
+        let Some(level) = self.levels.get_mut(&price) else {
+            log::error!(
+                "Own book update failed - order {client_order_id} cached level {price:?} missing",
+                client_order_id = order.client_order_id
+            );
+            anyhow::bail!(
+                "Order {} not found in own book (level)",
+                order.client_order_id
+            );
+        };
+
+        if order.price == level.price.value {
+            level.update(order);
+            return Ok(());
+        }
+
+        level.delete(&order.client_order_id)?;
+        self.cache.remove(&order.client_order_id);
+
+        if level.is_empty() {
+            self.levels.remove(&price);
         }
 
         self.add(order);
@@ -650,35 +685,45 @@ impl OwnBookLadder {
     ///
     /// Returns an error if the order is not found.
     pub fn remove(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<()> {
-        if let Some(price) = self.cache.remove(client_order_id) {
-            if let Some(level) = self.levels.get_mut(&price) {
-                level.delete(client_order_id)?;
-                if level.is_empty() {
-                    self.levels.remove(&price);
-                }
-            }
+        let Some(price) = self.cache.get(client_order_id).copied() else {
+            log::error!("Own book remove failed - order {client_order_id} not in cache");
+            anyhow::bail!("Order {client_order_id} not found in own book (cache)");
+        };
+
+        let Some(level) = self.levels.get_mut(&price) else {
+            log::error!(
+                "Own book remove failed - order {client_order_id} cached level {price:?} missing"
+            );
+            anyhow::bail!("Order {client_order_id} not found in own book (level)");
+        };
+
+        level.delete(client_order_id)?;
+
+        if level.is_empty() {
+            self.levels.remove(&price);
         }
+        self.cache.remove(client_order_id);
 
         Ok(())
     }
 
     /// Returns the total size of all orders in the ladder.
     #[must_use]
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code)]
     pub fn sizes(&self) -> f64 {
         self.levels.values().map(OwnBookLevel::size).sum()
     }
 
     /// Returns the total value exposure (price * size) of all orders in the ladder.
     #[must_use]
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code)]
     pub fn exposures(&self) -> f64 {
         self.levels.values().map(OwnBookLevel::exposure).sum()
     }
 
     /// Returns the best price level in the ladder.
     #[must_use]
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code)]
     pub fn top(&self) -> Option<&OwnBookLevel> {
         match self.levels.iter().next() {
             Some((_, l)) => Option::Some(l),
@@ -784,9 +829,9 @@ impl OwnBookLevel {
     }
 
     /// Adds multiple orders to this price level in FIFO order. Orders must match the level's price.
-    pub fn add_bulk(&mut self, orders: Vec<OwnBookOrder>) {
+    pub fn add_bulk(&mut self, orders: &[OwnBookOrder]) {
         for order in orders {
-            self.add(order);
+            self.add(*order);
         }
     }
 

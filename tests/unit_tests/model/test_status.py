@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -43,7 +43,7 @@ class TestVenue:
         assert InstrumentStatus.from_dict(InstrumentStatus.to_dict(status)) == status
         assert (
             repr(status)
-            == "InstrumentStatus(instrument_id=MSFT.XNAS, action=TRADING, reason=None, trading_event=None, is_trading=True, is_quoting=True, is_short_sell_restricted=False, ts_event=0)"  # noqa: E501
+            == "InstrumentStatus(instrument_id=MSFT.XNAS, action=TRADING, reason=None, trading_event=None, is_trading=True, is_quoting=True, is_short_sell_restricted=False, ts_event=0)"
         )
 
     def test_instrument_status_to_pyo3(self):
@@ -115,6 +115,6 @@ class TestVenue:
         # Act, Assert
         assert InstrumentClose.from_dict(InstrumentClose.to_dict(update)) == update
         assert (
-            "InstrumentClose(instrument_id=BTCUSDT.BINANCE, close_price=100, close_type=CONTRACT_EXPIRED)"
-            == repr(update)
+            repr(update)
+            == "InstrumentClose(instrument_id=BTCUSDT.BINANCE, close_price=100, close_type=CONTRACT_EXPIRED)"
         )

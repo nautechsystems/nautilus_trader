@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,7 +15,10 @@
 
 use std::{ffi::c_char, str::FromStr};
 
-use nautilus_core::ffi::string::{cstr_as_str, str_to_cstr};
+use nautilus_core::{
+    MUTEX_POISONED,
+    ffi::string::{cstr_as_str, str_to_cstr},
+};
 
 use crate::{currencies::CURRENCY_MAP, enums::CurrencyType, types::Currency};
 
@@ -88,7 +91,12 @@ pub extern "C" fn currency_register(currency: Currency) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn currency_exists(code_ptr: *const c_char) -> u8 {
     let code = unsafe { cstr_as_str(code_ptr) };
-    u8::from(CURRENCY_MAP.lock().unwrap().contains_key(code))
+    u8::from(
+        CURRENCY_MAP
+            .lock()
+            .expect(MUTEX_POISONED)
+            .contains_key(code),
+    )
 }
 
 /// Converts a C string pointer to a `Currency` for FFI.
@@ -106,9 +114,6 @@ pub unsafe extern "C" fn currency_from_cstr(code_ptr: *const c_char) -> Currency
     Currency::from_str(code).unwrap()
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::ffi::{CStr, CString};

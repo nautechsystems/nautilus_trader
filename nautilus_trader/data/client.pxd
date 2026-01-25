@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,6 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
@@ -26,6 +28,7 @@ from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
 from nautilus_trader.data.messages cimport SubscribeBars
 from nautilus_trader.data.messages cimport SubscribeData
+from nautilus_trader.data.messages cimport SubscribeFundingRates
 from nautilus_trader.data.messages cimport SubscribeIndexPrices
 from nautilus_trader.data.messages cimport SubscribeInstrument
 from nautilus_trader.data.messages cimport SubscribeInstrumentClose
@@ -37,6 +40,7 @@ from nautilus_trader.data.messages cimport SubscribeQuoteTicks
 from nautilus_trader.data.messages cimport SubscribeTradeTicks
 from nautilus_trader.data.messages cimport UnsubscribeBars
 from nautilus_trader.data.messages cimport UnsubscribeData
+from nautilus_trader.data.messages cimport UnsubscribeFundingRates
 from nautilus_trader.data.messages cimport UnsubscribeIndexPrices
 from nautilus_trader.data.messages cimport UnsubscribeInstrument
 from nautilus_trader.data.messages cimport UnsubscribeInstrumentClose
@@ -82,20 +86,21 @@ cdef class DataClient(Component):
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
     cpdef void _handle_data(self, Data data)
-    cpdef void _handle_data_response(self, DataType data_type, data, UUID4 correlation_id, dict params)
+    cpdef void _handle_data_response(self, DataType data_type, data, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)
 
 
 cdef class MarketDataClient(DataClient):
-    cdef set _subscriptions_order_book_delta
-    cdef set _subscriptions_order_book_snapshot
-    cdef set _subscriptions_quote_tick
-    cdef set _subscriptions_trade_tick
-    cdef set _subscriptions_mark_price
-    cdef set _subscriptions_index_price
-    cdef set _subscriptions_bar
-    cdef set _subscriptions_instrument_status
-    cdef set _subscriptions_instrument_close
-    cdef set _subscriptions_instrument
+    cdef set[InstrumentId] _subscriptions_order_book_delta
+    cdef set[InstrumentId] _subscriptions_order_book_depth
+    cdef set[InstrumentId] _subscriptions_quote_tick
+    cdef set[InstrumentId] _subscriptions_trade_tick
+    cdef set[InstrumentId] _subscriptions_mark_price
+    cdef set[InstrumentId] _subscriptions_index_price
+    cdef set[InstrumentId] _subscriptions_funding_rate
+    cdef set[InstrumentId] _subscriptions_instrument_status
+    cdef set[InstrumentId] _subscriptions_instrument_close
+    cdef set[InstrumentId] _subscriptions_instrument
+    cdef set[BarType] _subscriptions_bar
 
     cdef object _update_instruments_task
 
@@ -103,11 +108,12 @@ cdef class MarketDataClient(DataClient):
 
     cpdef list subscribed_instruments(self)
     cpdef list subscribed_order_book_deltas(self)
-    cpdef list subscribed_order_book_snapshots(self)
+    cpdef list subscribed_order_book_depth(self)
     cpdef list subscribed_quote_ticks(self)
     cpdef list subscribed_trade_ticks(self)
     cpdef list subscribed_mark_prices(self)
     cpdef list subscribed_index_prices(self)
+    cpdef list subscribed_funding_rates(self)
     cpdef list subscribed_bars(self)
     cpdef list subscribed_instrument_status(self)
     cpdef list subscribed_instrument_close(self)
@@ -115,43 +121,47 @@ cdef class MarketDataClient(DataClient):
     cpdef void subscribe_instruments(self, SubscribeInstruments command)
     cpdef void subscribe_instrument(self, SubscribeInstrument command)
     cpdef void subscribe_order_book_deltas(self, SubscribeOrderBook command)
-    cpdef void subscribe_order_book_snapshots(self, SubscribeOrderBook command)
+    cpdef void subscribe_order_book_depth(self, SubscribeOrderBook command)
     cpdef void subscribe_quote_ticks(self, SubscribeQuoteTicks command)
     cpdef void subscribe_trade_ticks(self, SubscribeTradeTicks command)
     cpdef void subscribe_mark_prices(self, SubscribeMarkPrices command)
     cpdef void subscribe_index_prices(self, SubscribeIndexPrices command)
+    cpdef void subscribe_funding_rates(self, SubscribeFundingRates command)
     cpdef void subscribe_bars(self, SubscribeBars command)
     cpdef void subscribe_instrument_status(self, SubscribeInstrumentStatus command)
     cpdef void subscribe_instrument_close(self, SubscribeInstrumentClose command)
     cpdef void unsubscribe_instruments(self, UnsubscribeInstruments command)
     cpdef void unsubscribe_instrument(self, UnsubscribeInstrument command)
     cpdef void unsubscribe_order_book_deltas(self, UnsubscribeOrderBook command)
-    cpdef void unsubscribe_order_book_snapshots(self, UnsubscribeOrderBook command)
+    cpdef void unsubscribe_order_book_depth(self, UnsubscribeOrderBook command)
     cpdef void unsubscribe_quote_ticks(self, UnsubscribeQuoteTicks command)
     cpdef void unsubscribe_trade_ticks(self, UnsubscribeTradeTicks command)
     cpdef void unsubscribe_mark_prices(self, UnsubscribeMarkPrices command)
     cpdef void unsubscribe_index_prices(self, UnsubscribeIndexPrices command)
+    cpdef void unsubscribe_funding_rates(self, UnsubscribeFundingRates command)
     cpdef void unsubscribe_bars(self, UnsubscribeBars command)
     cpdef void unsubscribe_instrument_status(self, UnsubscribeInstrumentStatus command)
     cpdef void unsubscribe_instrument_close(self, UnsubscribeInstrumentClose command)
 
     cpdef void _add_subscription_instrument(self, InstrumentId instrument_id)
     cpdef void _add_subscription_order_book_deltas(self, InstrumentId instrument_id)
-    cpdef void _add_subscription_order_book_snapshots(self, InstrumentId instrument_id)
+    cpdef void _add_subscription_order_book_depth(self, InstrumentId instrument_id)
     cpdef void _add_subscription_quote_ticks(self, InstrumentId instrument_id)
     cpdef void _add_subscription_trade_ticks(self, InstrumentId instrument_id)
     cpdef void _add_subscription_mark_prices(self, InstrumentId instrument_id)
     cpdef void _add_subscription_index_prices(self, InstrumentId instrument_id)
+    cpdef void _add_subscription_funding_rates(self, InstrumentId instrument_id)
     cpdef void _add_subscription_bars(self, BarType bar_type)
     cpdef void _add_subscription_instrument_status(self, InstrumentId instrument_id)
     cpdef void _add_subscription_instrument_close(self, InstrumentId instrument_id)
     cpdef void _remove_subscription_instrument(self, InstrumentId instrument_id)
     cpdef void _remove_subscription_order_book_deltas(self, InstrumentId instrument_id)
-    cpdef void _remove_subscription_order_book_snapshots(self, InstrumentId instrument_id)
+    cpdef void _remove_subscription_order_book_depth(self, InstrumentId instrument_id)
     cpdef void _remove_subscription_quote_ticks(self, InstrumentId instrument_id)
     cpdef void _remove_subscription_trade_ticks(self, InstrumentId instrument_id)
     cpdef void _remove_subscription_mark_prices(self, InstrumentId instrument_id)
     cpdef void _remove_subscription_index_prices(self, InstrumentId instrument_id)
+    cpdef void _remove_subscription_funding_rates(self, InstrumentId instrument_id)
     cpdef void _remove_subscription_bars(self, BarType bar_type)
     cpdef void _remove_subscription_instrument_status(self, InstrumentId instrument_id)
     cpdef void _remove_subscription_instrument_close(self, InstrumentId instrument_id)
@@ -167,8 +177,9 @@ cdef class MarketDataClient(DataClient):
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
-    cpdef void _handle_instrument(self, Instrument instrument, UUID4 correlation_id, dict[str, object] params)
-    cpdef void _handle_instruments(self, Venue venue, list instruments, UUID4 correlation_id, dict[str, object] params)
-    cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, dict[str, object] params)
-    cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, dict[str, object] params)
-    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id, dict[str, object] params)
+    cpdef void _handle_instrument(self, Instrument instrument, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)
+    cpdef void _handle_instruments(self, Venue venue, list instruments, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)
+    cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)
+    cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)
+    cpdef void _handle_bars(self, BarType bar_type, list bars, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)
+    cpdef void _handle_order_book_depths(self, InstrumentId instrument_id, list depths, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params)

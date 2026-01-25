@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import pytest
 
 from nautilus_trader.accounting.accounts.cash import CashAccount
@@ -172,6 +173,7 @@ def test_calculate_pnls_for_single_currency_cash_account():
 def test_calculate_commission_when_given_liquidity_side_none_raises_value_error():
     account = TestAccountingProviderPyo3.cash_account_million_usd()
     instrument = TestInstrumentProviderPyo3.xbtusd_bitmex()
+
     with pytest.raises(ValueError):
         account.calculate_commission(
             instrument=instrument,
@@ -253,5 +255,6 @@ def test_pyo3_cython_conversion():
     account_pyo3_back = cash_account_from_account_events(
         events=account_cython_dict["events"],
         calculate_account_state=account_cython_dict["calculate_account_state"],
+        allow_borrowing=account_cython_dict.get("allow_borrowing", False),
     )
     assert account_pyo3 == account_pyo3_back

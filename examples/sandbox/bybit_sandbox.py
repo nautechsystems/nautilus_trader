@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -71,7 +71,7 @@ async def main():
                 api_key=None,  # 'BYBIT_API_KEY' env var
                 api_secret=None,  # 'BYBIT_API_SECRET' env var
                 instrument_provider=instrument_provider_config,
-                product_types=[BybitProductType.LINEAR],
+                product_types=(BybitProductType.LINEAR,),
                 testnet=False,  # If client uses the testnet
             ),
         },

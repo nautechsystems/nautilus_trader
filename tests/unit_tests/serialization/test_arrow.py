@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -87,20 +87,10 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 CATALOG_PATH = TESTS_PACKAGE_ROOT / "unit_tests" / "persistence" / "catalog"
 
 
-def _reset(catalog: ParquetDataCatalog) -> None:
-    """
-    Cleanup resources before each test run.
-    """
-    assert catalog.path.endswith("tests/unit_tests/persistence/catalog")
-    if catalog.fs.exists(catalog.path):
-        catalog.fs.rm(catalog.path, recursive=True)
-    catalog.fs.mkdir(catalog.path)
-    assert catalog.fs.exists(catalog.path)
-
-
 @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
 class TestArrowSerializer:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup_method(self, tmp_path):
         # Fixture Setup
         self.trader_id = TestIdStubs.trader_id()
         self.strategy_id = TestIdStubs.strategy_id()
@@ -109,8 +99,7 @@ class TestArrowSerializer:
 
         self.serializer = ArrowSerializer
 
-        self.catalog = ParquetDataCatalog(path=str(CATALOG_PATH), fs_protocol="file")
-        _reset(self.catalog)
+        self.catalog = ParquetDataCatalog(path=str(tmp_path / "catalog"), fs_protocol="file")
         self.order_factory = OrderFactory(
             trader_id=TraderId("T-001"),
             strategy_id=StrategyId("S-001"),
@@ -518,6 +507,40 @@ class TestArrowSerializer:
                 ),
             ],
             margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=1_000_000_000,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(AccountState, serialized)
+
+        # Assert
+        assert deserialized == [event]
+
+    def test_serialize_and_deserialize_account_state_with_margin_none_instrument_id(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("BINANCE-001"),
+            account_type=AccountType.MARGIN,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(10000, USDT),
+                    Money(100, USDT),
+                    Money(9900, USDT),
+                ),
+            ],
+            margins=[
+                MarginBalance(
+                    Money(500, USDT),
+                    Money(250, USDT),
+                    instrument_id=None,
+                ),
+            ],
             info={},
             event_id=UUID4(),
             ts_event=0,
@@ -1101,6 +1124,11 @@ class TestArrowSerializer:
             TestInstrumentProvider.aapl_option(),
             TestInstrumentProvider.betting_instrument(),
             TestInstrumentProvider.binary_option(),
+            TestInstrumentProvider.crypto_option(),
+            TestInstrumentProvider.futures_spread(),
+            TestInstrumentProvider.option_spread(),
+            TestInstrumentProvider.commodity(),
+            TestInstrumentProvider.index_instrument(),
         ],
     )
     def test_serialize_and_deserialize_instruments(self, instrument):

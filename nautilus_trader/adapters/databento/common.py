@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -79,5 +79,5 @@ def databento_schema_from_nautilus_bar_type(bar_type: BarType) -> DatabentoSchem
         case _:
             raise ValueError(
                 f"Invalid bar type '{bar_type}'. "
-                "Use any of ['SECOND', 'MINTUE', 'HOUR', 'DAY'] time aggregations.",
+                "Use any of ['SECOND', 'MINUTE', 'HOUR', 'DAY'] time aggregations.",
             )

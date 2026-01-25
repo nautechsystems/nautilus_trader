@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -36,6 +36,7 @@ from nautilus_trader.adapters.dydx.common.credentials import get_wallet_address
 from nautilus_trader.adapters.dydx.common.enums import DYDXEnumParser
 from nautilus_trader.adapters.dydx.common.enums import DYDXOrderStatus
 from nautilus_trader.adapters.dydx.common.enums import DYDXPerpetualPositionStatus
+from nautilus_trader.adapters.dydx.common.errors import DYDXOrderBroadcastError
 from nautilus_trader.adapters.dydx.common.symbol import DYDXSymbol
 from nautilus_trader.adapters.dydx.config import DYDXExecClientConfig
 from nautilus_trader.adapters.dydx.grpc.account import DYDXAccountGRPCAPI
@@ -70,6 +71,7 @@ from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
+from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
@@ -92,6 +94,7 @@ from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -236,6 +239,8 @@ class DYDXExecutionClient(LiveExecutionClient):
             is_testnet=config.is_testnet,
         )
         self._subaccount = config.subaccount
+        self._track_cancel_timeout_secs = config.track_cancel_timeout_secs
+        self._track_cancel_interval_secs = config.track_cancel_interval_secs
 
         self._enum_parser = DYDXEnumParser()
         self._client_order_id_generator = ClientOrderIdHelper(cache=cache)
@@ -431,9 +436,6 @@ class DYDXExecutionClient(LiveExecutionClient):
         self,
         command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
-        """
-        Create an order status report for a specific order.
-        """
         self._log.debug("Requesting OrderStatusReport...")
 
         client_order_id = command.client_order_id
@@ -520,9 +522,6 @@ class DYDXExecutionClient(LiveExecutionClient):
         self,
         command: GenerateOrderStatusReports,
     ) -> list[OrderStatusReport]:
-        """
-        Create an order status report.
-        """
         self._log.debug("Requesting OrderStatusReports...")
         reports: list[OrderStatusReport] = []
 
@@ -587,14 +586,11 @@ class DYDXExecutionClient(LiveExecutionClient):
         else:
             self._log.error("Failed to generate OrderStatusReports")
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        receipt_log = f"Received {len(reports)} OrderStatusReport{plural}"
-
-        if command.log_receipt_level == LogLevel.INFO:
-            self._log.info(receipt_log)
-        else:
-            self._log.debug(receipt_log)
+        self._log_report_receipt(
+            len(reports),
+            "OrderStatusReport",
+            command.log_receipt_level,
+        )
 
         return reports
 
@@ -602,9 +598,6 @@ class DYDXExecutionClient(LiveExecutionClient):
         self,
         command: GenerateFillReports,
     ) -> list[FillReport]:
-        """
-        Create an order fill report.
-        """
         self._log.debug("Requesting FillReports...")
         reports: list[FillReport] = []
 
@@ -662,18 +655,13 @@ class DYDXExecutionClient(LiveExecutionClient):
         else:
             self._log.error("Failed to generate FillReports")
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} FillReport{plural}")
+        self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
         return reports
 
     async def generate_position_status_reports(
         self,
         command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
-        """
-        Generate position status reports.
-        """
         self._log.debug("Requesting PositionStatusReports...")
         reports: list[PositionStatusReport] = []
 
@@ -741,9 +729,12 @@ class DYDXExecutionClient(LiveExecutionClient):
         else:
             self._log.error("Failed to generate PositionStatusReports")
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} PositionStatusReport{plural}")
+        self._log_report_receipt(
+            len(reports),
+            "PositionStatusReport",
+            command.log_receipt_level,
+        )
+
         return reports
 
     def _handle_ws_message(self, raw: bytes) -> None:  # noqa: C901
@@ -865,12 +856,12 @@ class DYDXExecutionClient(LiveExecutionClient):
                     oracle_price=self._oracle_prices.get(instrument.id),
                 )
 
-                initial_margins[
-                    margin_balance.initial.currency
-                ] += margin_balance.initial.as_decimal()
-                maintenance_margins[
-                    margin_balance.maintenance.currency
-                ] += margin_balance.maintenance.as_decimal()
+                initial_margins[margin_balance.initial.currency] += (
+                    margin_balance.initial.as_decimal()
+                )
+                maintenance_margins[margin_balance.maintenance.currency] += (
+                    margin_balance.maintenance.as_decimal()
+                )
 
             margins = []
 
@@ -899,13 +890,13 @@ class DYDXExecutionClient(LiveExecutionClient):
         try:
             msg: DYDXWsSubaccountsChannelData = self._decoder_ws_msg_subaccounts_channel.decode(raw)
 
-            if msg.contents.fills is not None:
-                for fill_msg in msg.contents.fills:
-                    self._handle_fill_message(fill_msg=fill_msg)
-
             if msg.contents.orders is not None:
                 for order_msg in msg.contents.orders:
                     self._handle_order_message(order_msg=order_msg)
+
+            if msg.contents.fills is not None:
+                for fill_msg in msg.contents.fills:
+                    self._handle_fill_message(fill_msg=fill_msg)
 
         except Exception as e:
             self._log.exception(
@@ -913,7 +904,48 @@ class DYDXExecutionClient(LiveExecutionClient):
                 e,
             )
 
-    def _handle_order_message(
+    async def _track_order_cancel(
+        self,
+        client_order_id: ClientOrderId,
+        good_til_block: int,
+    ):
+        self._log.info(
+            f"Tracking order cancellation for {client_order_id} until block {good_til_block}...",
+        )
+
+        start = self._clock.timestamp_ns()
+
+        while self._clock.timestamp_ns() - start < secs_to_nanos(self._track_cancel_timeout_secs):
+            order = self._cache.order(client_order_id)
+
+            if order is None:
+                self._log.error(f"Cannot track order cancel: order {client_order_id} not found")
+                break
+
+            if order.status != OrderStatus.ACCEPTED:
+                self._log.info(
+                    f"Order {client_order_id} status changed to {order.status}. Stopping tracking.",
+                )
+                break
+
+            if self._block_height >= int(good_til_block):
+                self._log.info(
+                    f"Order {client_order_id} reached good til block {good_til_block} at block height {self._block_height}. Sending cancel event...",
+                )
+
+                self.generate_order_canceled(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    ts_event=order.ts_last,
+                )
+
+                break
+
+            await asyncio.sleep(self._track_cancel_interval_secs)
+
+    def _handle_order_message(  # noqa: C901
         self,
         order_msg: DYDXWsOrderSubaccountMessageContents,
     ) -> None:
@@ -969,6 +1001,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                 venue_order_id=report.venue_order_id,
                 ts_event=report.ts_last,
             )
+
         elif order_msg.status == DYDXOrderStatus.CANCELED:
             self.generate_order_canceled(
                 strategy_id=strategy_id,
@@ -977,11 +1010,33 @@ class DYDXExecutionClient(LiveExecutionClient):
                 venue_order_id=report.venue_order_id,
                 ts_event=report.ts_last,
             )
-        elif order_msg.status in (DYDXOrderStatus.FILLED, DYDXOrderStatus.BEST_EFFORT_CANCELED):
-            # Skip order filled message and best effort canceled message. The _handle_fill_message generates
-            # a fill report.
-            # Best effort canceled is not a terminal state. Hence, we keep the state at accepted.
-            self._log.info(f"Skip order message: {order_msg}")
+
+        elif order_msg.status == DYDXOrderStatus.BEST_EFFORT_CANCELED:
+            good_til_block = int(order_msg.goodTilBlock) if order_msg.goodTilBlock else 0
+            self._loop.create_task(self._track_order_cancel(report.client_order_id, good_til_block))
+
+        elif order_msg.status in (DYDXOrderStatus.FILLED,):
+            if order.status == OrderStatus.SUBMITTED:
+                self._log.warning(
+                    f"Received a fill message for a submitted order {order.client_order_id}. Generating an inferred OrderAccepted.",
+                )
+                self.generate_order_accepted(
+                    strategy_id=strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    ts_event=report.ts_last,
+                )
+
+                self._cache.add_venue_order_id(client_order_id, report.venue_order_id)
+
+            else:
+                # Skip order filled message and best effort canceled message. The _handle_fill_message generates
+                # a fill report.
+                # Best effort canceled is not a terminal state. Hence, we keep the state at accepted.
+                self._log.info(
+                    f"Skip order message: {order_msg}, for order with status {order.status}",
+                )
         else:
             message = f"Unknown order status `{order_msg.status}`"
             self._log.error(message)
@@ -1022,6 +1077,8 @@ class DYDXExecutionClient(LiveExecutionClient):
             else Money(Decimal(0), instrument.quote_currency)
         )
 
+        trade_id = TradeId(fill_msg.id)
+
         if order.status != OrderStatus.FILLED:
             self.generate_order_filled(
                 strategy_id=order.strategy_id,
@@ -1029,7 +1086,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                 client_order_id=client_order_id,
                 venue_order_id=venue_order_id,
                 venue_position_id=None,
-                trade_id=TradeId(fill_msg.id),
+                trade_id=trade_id,
                 order_side=self._enum_parser.parse_dydx_order_side(fill_msg.side),
                 order_type=order.order_type,
                 last_qty=Quantity(Decimal(fill_msg.size), instrument.size_precision),
@@ -1088,12 +1145,26 @@ class DYDXExecutionClient(LiveExecutionClient):
         for order in command.order_list.orders:
             await self._submit_order_single(order=order)
 
-    async def _submit_order_single(self, order: Order) -> None:  # noqa: C901
+    async def _submit_order_single(self, order: Order) -> None:
         """
         Submit a single order.
         """
         if order.is_closed:
             self._log.warning(f"Order {order} is already closed")
+            return
+
+        if order.is_quote_quantity:
+            reason = "UNSUPPORTED_QUOTE_QUANTITY"
+            self._log.error(
+                f"Cannot submit order {order.client_order_id}: {reason}",
+            )
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=reason,
+                ts_event=self._clock.timestamp_ns(),
+            )
             return
 
         instrument = self._cache.instrument(order.instrument_id)
@@ -1119,6 +1190,31 @@ class DYDXExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
+        await self._broadcast_order(order=order, instrument=instrument)
+
+    async def _broadcast_order(self, order: Order, instrument: Instrument) -> None:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
+            await retry_manager.run(
+                name="attempt_order_broadcast",
+                details=[order.client_order_id],
+                func=self._attempt_order_broadcast,
+                order=order,
+                instrument=instrument,
+            )
+
+            if not retry_manager.result:
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=retry_manager.message,
+                    ts_event=self._clock.timestamp_ns(),
+                )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
+
+    async def _attempt_order_broadcast(self, order: Order, instrument: Instrument) -> None:  # noqa: C901
         order_builder = self._get_order_builder(instrument)
 
         client_order_id_int = self._client_order_id_generator.generate_client_order_id_int(
@@ -1131,16 +1227,12 @@ class DYDXExecutionClient(LiveExecutionClient):
         good_til_block: int | None = None
         execution = OrderExecution.DEFAULT
 
+        # NOTE. Ensure that the block height is refreshed before placing an order.
+        self._block_height = await self._grpc_account.latest_block_height()
+
         if dydx_order_tags.is_short_term_order is False and order.order_type == OrderType.MARKET:
             rejection_reason = "Cannot submit order: long term market order not supported by dYdX"
-            self.generate_order_rejected(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                reason=rejection_reason,
-                ts_event=self._clock.timestamp_ns(),
-            )
-            return
+            raise DYDXOrderBroadcastError(rejection_reason)
 
         if dydx_order_tags.is_short_term_order:
             order_flags = OrderFlags.SHORT_TERM
@@ -1219,14 +1311,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             rejection_reason = (
                 f"Cannot submit order: order type `{order.order_type}` not (yet) supported"
             )
-            self.generate_order_rejected(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                reason=rejection_reason,
-                ts_event=self._clock.timestamp_ns(),
-            )
-            return
+            raise DYDXOrderBroadcastError(rejection_reason)
 
         order_msg = order_builder.create_order(
             order_id=order_id,
@@ -1248,36 +1333,12 @@ class DYDXExecutionClient(LiveExecutionClient):
     async def _place_order(self, order_msg: DYDXOrder, order: Order) -> None:
         if self._wallet is None:
             rejection_reason = "Cannot submit order: no wallet available"
-            self._log.error(rejection_reason)
+            raise DYDXOrderBroadcastError(rejection_reason)
 
-            self.generate_order_rejected(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                reason=rejection_reason,
-                ts_event=self._clock.timestamp_ns(),
-            )
-            return
-
-        retry_manager = await self._retry_manager_pool.acquire()
-        try:
-            await retry_manager.run(
-                name="place_order",
-                details=[order.client_order_id],
-                func=self._grpc_account.place_order,
-                wallet=self._wallet,
-                order=order_msg,
-            )
-            if not retry_manager.result:
-                self.generate_order_rejected(
-                    strategy_id=order.strategy_id,
-                    instrument_id=order.instrument_id,
-                    client_order_id=order.client_order_id,
-                    reason=retry_manager.message,
-                    ts_event=self._clock.timestamp_ns(),
-                )
-        finally:
-            await self._retry_manager_pool.release(retry_manager)
+        await self._grpc_account.place_order(
+            wallet=self._wallet,
+            order=order_msg,
+        )
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         await self._submit_order_single(order=command.order)
@@ -1328,6 +1389,12 @@ class DYDXExecutionClient(LiveExecutionClient):
             )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        if command.order_side != OrderSide.NO_ORDER_SIDE:
+            self._log.warning(
+                f"dYdX does not support order_side filtering for cancel all orders; "
+                f"ignoring order_side={order_side_to_str(command.order_side)} and canceling all orders",
+            )
+
         open_orders_strategy: list[Order] = self._cache.orders_open(
             instrument_id=command.instrument_id,
             strategy_id=command.strategy_id,

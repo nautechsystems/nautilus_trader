@@ -1,0 +1,23 @@
+# Taplo TOML formatter configuration
+
+[formatting]
+# Align entries (=) vertically
+align_entries = false
+
+# Align single comments after entries
+align_comments = false
+
+# Maximum column width before arrays are expanded
+column_width = 80
+
+# Array formatting
+array_auto_expand = true # Auto expand arrays when needed
+array_auto_collapse = true # Collapse short arrays to single line
+array_trailing_comma = true # Add trailing commas to multiline arrays
+
+# Compact arrays - prevents expanding short arrays
+compact_arrays = true
+
+# Indentation
+indent_tables = false
+indent_entries = false

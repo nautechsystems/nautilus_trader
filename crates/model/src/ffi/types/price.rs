@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,8 +12,6 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
-use std::ops::{AddAssign, SubAssign};
 
 use crate::types::price::{Price, PriceRaw};
 
@@ -34,16 +32,4 @@ pub extern "C" fn price_from_raw(raw: PriceRaw, precision: u8) -> Price {
 #[unsafe(no_mangle)]
 pub extern "C" fn price_as_f64(price: &Price) -> f64 {
     price.as_f64()
-}
-
-#[unsafe(no_mangle)]
-#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn price_add_assign(mut a: Price, b: Price) {
-    a.add_assign(b);
-}
-
-#[unsafe(no_mangle)]
-#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn price_sub_assign(mut a: Price, b: Price) {
-    a.sub_assign(b);
 }

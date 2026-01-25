@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -90,7 +90,7 @@ def test_actor_creation():
     """
     actor = DataActor()
     assert actor is not None
-    assert str(type(actor)) == "<class 'nautilus_trader.core.nautilus_pyo3.common.DataActor'>"
+    assert str(type(actor)) == "<class 'nautilus_trader.common.DataActor'>"
 
 
 def test_actor_inheritance():
@@ -169,7 +169,7 @@ def test_efficient_rust_implementation():
     actor = DataActor()
 
     # Should be a PyO3 class that wraps Rust implementation
-    assert str(type(actor)) == "<class 'nautilus_trader.core.nautilus_pyo3.common.DataActor'>"
+    assert str(type(actor)) == "<class 'nautilus_trader.common.DataActor'>"
 
     # Should not have Python-based message bus or inefficient implementations
     assert not hasattr(actor, "_msgbus")  # Should not have Python message bus
@@ -275,6 +275,7 @@ def test_specialized_subscription_methods_exist(instrument_id, client_id):
     assert hasattr(actor, "subscribe_index_prices")
     assert hasattr(actor, "subscribe_instrument_status")
     assert hasattr(actor, "subscribe_instrument_close")
+    assert hasattr(actor, "subscribe_order_fills")
 
 
 def test_request_methods_exist(instrument_id, client_id, data_type):
@@ -313,6 +314,7 @@ def test_unsubscribe_methods_exist(client_id, data_type):
         "unsubscribe_instrument_status",
         "unsubscribe_instrument_close",
         "unsubscribe_book_at_interval",
+        "unsubscribe_order_fills",
     ]
 
     for method_name in unsubscribe_methods:
@@ -395,6 +397,7 @@ def test_all_subscription_methods_match_legacy_api():
         "subscribe_index_prices",
         "subscribe_instrument_status",
         "subscribe_instrument_close",
+        "subscribe_order_fills",
     ]
 
     for method_name in expected_subscription_methods:

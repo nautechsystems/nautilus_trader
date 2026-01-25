@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,7 +25,6 @@ pub mod actor_id;
 pub mod client_id;
 pub mod client_order_id;
 pub mod component_id;
-pub mod default;
 pub mod exec_algorithm_id;
 pub mod instrument_id;
 pub mod order_list_id;
@@ -37,7 +36,7 @@ pub mod trader_id;
 pub mod venue;
 pub mod venue_order_id;
 
-#[cfg(feature = "stubs")]
+#[cfg(any(test, feature = "stubs"))]
 pub mod stubs;
 
 // Re-exports
@@ -93,8 +92,8 @@ impl_as_ref_for_identifier!(venue_order_id::VenueOrderId);
 
 /// Print interned string cache statistics for debugging purposes.
 pub fn interned_string_stats() {
-    dbg!(ustr::total_allocated());
-    dbg!(ustr::total_capacity());
+    ustr::total_allocated();
+    ustr::total_capacity();
 
     ustr::string_cache_iter().for_each(|s| println!("{s}"));
 }

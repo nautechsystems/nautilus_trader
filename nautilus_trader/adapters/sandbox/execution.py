@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,7 @@
 import asyncio
 
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
-from nautilus_trader.backtest.exchange import SimulatedExchange
+from nautilus_trader.backtest.engine import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import LatencyModel
@@ -36,6 +36,8 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import InstrumentClose
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
@@ -46,6 +48,7 @@ from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.enums import oms_type_from_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.portfolio.base import PortfolioFacade
@@ -187,6 +190,9 @@ class SandboxExecutionClient(LiveExecutionClient):
     def submit_order(self, command):
         return self._client.submit_order(command)
 
+    def submit_order_list(self, command):
+        return self._client.submit_order_list(command)
+
     def modify_order(self, command):
         return self._client.modify_order(command)
 
@@ -198,7 +204,13 @@ class SandboxExecutionClient(LiveExecutionClient):
 
     def on_data(self, data: Data) -> None:
         # Taken from main backtest loop of BacktestEngine
-        if isinstance(data, OrderBookDelta):
+        if isinstance(data, Instrument):
+            self.exchange.update_instrument(data)
+        elif isinstance(data, InstrumentStatus):
+            self.exchange.process_instrument_status(data)
+        elif isinstance(data, InstrumentClose):
+            self.exchange.process_instrument_close(data)
+        elif isinstance(data, OrderBookDelta):
             self.exchange.process_order_book_delta(data)
         elif isinstance(data, OrderBookDeltas):
             self.exchange.process_order_book_deltas(data)

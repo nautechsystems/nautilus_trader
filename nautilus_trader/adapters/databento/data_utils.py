@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,13 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
+from pathlib import Path
+from typing import Any
 
 from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
-from nautilus_trader.persistence.catalog.types import CatalogWriteMode
 
 
 # Note: when using the functions below, change the variable below to a folder path
@@ -29,59 +31,40 @@ DATA_PATH = PACKAGE_ROOT / "tests" / "test_data" / "databento"
 client = None
 
 
-# if DATABENTO_API_KEY is None, an environment variable with the same name can be used
-def init_databento_client(DATABENTO_API_KEY=None):
+def init_databento_client(databento_api_key: str | None = None) -> None:
+    """
+    Initialize the global Databento historical client.
+
+    If `databento_api_key` is None, an environment variable with the same name
+    will be used.
+
+    Parameters
+    ----------
+    databento_api_key : str, optional
+        The Databento API key. If None, will use the databento_api_key environment variable.
+
+    """
     import databento as db
 
     global client
-    client = db.Historical(key=DATABENTO_API_KEY)
+    client = db.Historical(key=databento_api_key)
 
 
-def data_path(*folders, base_path=None):
-    """
-    Get the path to a data folder, creating it if it doesn't exist.
-
-    Args:
-        *folders (str): The folders to include in the path.
-        base_path (pathlib.Path, optional): The base path to use, defaults to `DATA_PATH`.
-
-    Returns:
-        pathlib.Path: The full path to the data folder.
-
-    """
-    used_base_path = base_path if base_path is not None else DATA_PATH
-    result = used_base_path
-
-    for folder in folders:
-        result /= folder
-
-    return result
-
-
-def create_data_folder(*folders, base_path=None):
-    used_path = data_path(*folders, base_path=base_path)
-
-    if not used_path.exists():
-        used_path.mkdir(parents=True, exist_ok=True)
-
-    return used_path
-
-
-def databento_definition_dates(start_time):
-    definition_date = start_time.split("T")[0]
-    used_end_date = next_day(definition_date)
-
-    return definition_date, used_end_date
-
-
-def databento_cost(symbols, start_time, end_time, schema, dataset="GLBX.MDP3", **kwargs) -> float:
+def databento_cost(
+    symbols: list[str],
+    start_time: str,
+    end_time: str,
+    schema: str,
+    dataset: str = "GLBX.MDP3",
+    **kwargs: Any,
+) -> float:
     """
     Calculate the cost of retrieving data from the Databento API for the given
     parameters.
 
     Parameters
     ----------
-    symbols : list of str
+    symbols : list[str]
         The symbols to retrieve data for.
     start_time : str
         The start time of the data in ISO 8601 format.
@@ -91,7 +74,7 @@ def databento_cost(symbols, start_time, end_time, schema, dataset="GLBX.MDP3", *
         The data schema to retrieve.
     dataset : str, optional
         The Databento dataset to use, defaults to "GLBX.MDP3".
-    **kwargs
+    **kwargs : Any
         Additional keyword arguments to pass to the Databento API.
 
     Returns
@@ -100,7 +83,7 @@ def databento_cost(symbols, start_time, end_time, schema, dataset="GLBX.MDP3", *
         The estimated cost of retrieving the data.
 
     """
-    definition_start_date, definition_end_date = databento_definition_dates(start_time)
+    definition_start_date, definition_end_date = databento_definition_dates(start_time, end_time)
 
     return client.metadata.get_cost(  # type: ignore[union-attr]
         dataset=dataset,
@@ -113,27 +96,27 @@ def databento_cost(symbols, start_time, end_time, schema, dataset="GLBX.MDP3", *
 
 
 def databento_data(
-    symbols,
-    start_time,
-    end_time,
-    schema,
-    file_prefix,
-    *folders,
-    dataset="GLBX.MDP3",
-    to_catalog=True,
-    base_path=None,
-    write_data_mode: CatalogWriteMode = CatalogWriteMode.OVERWRITE,
-    use_exchange_as_venue=False,
-    load_databento_files_if_exist=False,
-    **kwargs,
-):
+    symbols: list[str],
+    start_time: str,
+    end_time: str,
+    schema: str,
+    file_prefix: str,
+    *folders: str,
+    dataset: str = "GLBX.MDP3",
+    to_catalog: bool = True,
+    base_path: Path | None = None,
+    use_exchange_as_venue: bool = True,
+    load_databento_files_if_exist: bool = False,
+    as_legacy_cython: bool = False,
+    **kwargs: Any,
+) -> dict[str, Any]:
     """
     Download and save Databento data and definition files, and optionally save the data
     to a catalog.
 
     Parameters
     ----------
-    symbols : list of str
+    symbols : list[str]
         The symbols to retrieve data for.
     start_time : str
         The start time of the data in ISO 8601 format.
@@ -149,21 +132,33 @@ def databento_data(
         The Databento dataset to use, defaults to "GLBX.MDP3".
     to_catalog : bool, optional
         Whether to save the data to a catalog, defaults to True.
-    base_path : str, optional
+    base_path : Path, optional
         The base path to use for the data folder, defaults to None.
-    write_data_mode : enum, optional
-        How to add or overwrite data to an existing catalog, defaults to CatalogWriteMode.OVERWRITE.
     use_exchange_as_venue : bool, optional
-        Whether to use actual exchanges for instrument ids or GLBX, defaults to False.
+        Whether to use actual exchanges for instrument ids or GLBX, defaults to True.
     load_databento_files_if_exist : bool, optional
         Whether to load Databento files if they already exist, defaults to False.
-    **kwargs
+    as_legacy_cython : bool, optional
+        Whether to use legacy Cython format, defaults to False.
+    **kwargs : Any
         Additional keyword arguments to pass to the Databento API.
 
     Returns
     -------
-    dict
-        A dictionary containing the downloaded data and metadata.
+    dict[str, Any]
+        A dictionary containing the downloaded data and metadata with keys:
+        - symbols: The list of symbols
+        - dataset: The dataset name
+        - schema: The schema name
+        - start: The start time
+        - end: The end time
+        - databento_definition_file: Path to definition file
+        - databento_data_file: Path to data file (if schema != "definition")
+        - databento_definition: Definition data object
+        - databento_data: Data object (if schema != "definition")
+        - catalog: Catalog object (if to_catalog=True)
+        - nautilus_definition: Processed definition data (if to_catalog=True)
+        - nautilus_data: Processed market data (if to_catalog=True)
 
     Notes
     -----
@@ -171,14 +166,16 @@ def databento_data(
 
     """
     used_path = create_data_folder(*folders, "databento", base_path=base_path)
-
-    # downloading and saving definition
-    definition_start_date, definition_end_date = databento_definition_dates(start_time)
+    definition_start_date, definition_end_date = databento_definition_dates(start_time, end_time)
     definition_file_name = f"{file_prefix}_definition.dbn.zst"
     definition_file = used_path / definition_file_name
-
     if not definition_file.exists():
-        definition = client.timeseries.get_range(  # type: ignore[union-attr]
+        if client is None:
+            raise ValueError(
+                "Databento client not initialized. Call init_databento_client() first.",
+            )
+
+        definition = client.timeseries.get_range(
             schema="definition",
             dataset=dataset,
             symbols=symbols,
@@ -190,13 +187,20 @@ def databento_data(
     else:
         definition = load_databento_data(definition_file) if load_databento_files_if_exist else None
 
-    # downloading and saving data
-    data_file_name = f"{file_prefix}_{schema}_{start_time}_{end_time}.dbn.zst".replace(":", "h")
+    data = None
+    used_start_time = start_time.replace(":", "-").replace(".", "-")
+    used_end_time = end_time.replace(":", "-").replace(".", "-")
+    data_file_name = f"{file_prefix}_{schema}_{used_start_time}_{used_end_time}.dbn.zst"
     data_file = used_path / data_file_name
 
     if schema != "definition":
         if not data_file.exists():
-            data = client.timeseries.get_range(  # type: ignore[union-attr]
+            if client is None:
+                raise ValueError(
+                    "Databento client not initialized. Call init_databento_client() first.",
+                )
+
+            data = client.timeseries.get_range(
                 schema=schema,
                 dataset=dataset,
                 symbols=symbols,
@@ -207,8 +211,6 @@ def databento_data(
             )
         else:
             data = load_databento_data(data_file) if load_databento_files_if_exist else None
-    else:
-        data = None
 
     result = {
         "symbols": symbols,
@@ -217,7 +219,7 @@ def databento_data(
         "start": start_time,
         "end": end_time,
         "databento_definition_file": definition_file,
-        "databento_data_file": data_file,
+        "databento_data_file": data_file if schema != "definition" else None,
         "databento_definition": definition,
         "databento_data": data,
     }
@@ -226,28 +228,86 @@ def databento_data(
         del result["databento_data_file"]
         del result["databento_data"]
 
-    if to_catalog and schema != "definition":
+    if to_catalog:
         catalog_data = save_data_to_catalog(
             *folders,
             definition_file=definition_file,
             data_file=data_file,
             base_path=base_path,
-            write_data_mode=write_data_mode,
             use_exchange_as_venue=use_exchange_as_venue,
+            as_legacy_cython=as_legacy_cython,
         )
         result.update(catalog_data)
 
     return result
 
 
+def databento_definition_dates(start_time: str, end_time: str | None = None) -> tuple[str, str]:
+    """
+    Calculate definition start and end dates from time strings.
+
+    Extracts the date portions from ISO 8601 datetime strings. If end_time is provided,
+    uses it for the end date; otherwise falls back to start_time + 1 day for backwards
+    compatibility with single-day requests.
+
+    Parameters
+    ----------
+    start_time : str
+        The start time in ISO 8601 format (e.g., "2024-01-01T00:00:00Z").
+    end_time : str, optional
+        The end time in ISO 8601 format. If provided, definitions will be fetched
+        for the full date range to ensure all contracts active during that period
+        have their metadata included.
+
+    Returns
+    -------
+    tuple[str, str]
+        A tuple containing (start_date, end_date) in "YYYY-MM-DD" format.
+
+    """
+    definition_start_date = start_time.split("T")[0]
+
+    if end_time is not None:
+        # Use the provided end_time to get definitions for the full range
+        # Apply next_day() since Databento uses half-open intervals (end exclusive)
+        definition_end_date = next_day(end_time.split("T")[0])
+    else:
+        # Backwards compatibility: single day
+        definition_end_date = next_day(definition_start_date)
+
+    return definition_start_date, definition_end_date
+
+
+def next_day(date_str: str) -> str:
+    """
+    Calculate the next day from a date string.
+
+    Parameters
+    ----------
+    date_str : str
+        The date string in "YYYY-MM-DD" format.
+
+    Returns
+    -------
+    str
+        The next day in "YYYY-MM-DD" format.
+
+    """
+    date_format = "%Y-%m-%d"
+    date = datetime.strptime(date_str, date_format).replace(tzinfo=UTC)
+    result = date + timedelta(days=1)
+
+    return result.strftime(date_format)
+
+
 def save_data_to_catalog(
-    *folders,
-    definition_file=None,
-    data_file=None,
-    base_path=None,
-    write_data_mode=CatalogWriteMode.OVERWRITE,
-    use_exchange_as_venue=False,
-):
+    *folders: str,
+    definition_file: Path | str | None = None,
+    data_file: Path | str | None = None,
+    base_path: Path | None = None,
+    use_exchange_as_venue: bool = True,
+    as_legacy_cython: bool = False,
+) -> dict[str, Any]:
     """
     Save Databento data to a catalog.
 
@@ -258,24 +318,24 @@ def save_data_to_catalog(
     ----------
     *folders : str
         The variable length argument list of folder names to be used in the catalog path.
-    definition_file : str or Path, optional
+    definition_file : Path | str, optional
         The path to the Databento definition file.
-    data_file : str or Path, optional
+    data_file : Path | str, optional
         The path to the Databento data file.
-    base_path : str or Path, optional
+    base_path : Path, optional
         The base path for the catalog.
-    write_data_mode : CatalogWriteMode, default 'OVERWRITE'
-        The mode for writing data to the catalog.
-    use_exchange_as_venue : bool, default False
-        Whether to use actual exchanges for instrument IDs or GLBX.
+    use_exchange_as_venue : bool, optional
+        Whether to use actual exchanges for instrument IDs or GLBX, defaults to True.
+    as_legacy_cython : bool, optional
+        Whether to use legacy Cython format, defaults to False.
 
     Returns
     -------
-    dict
+    dict[str, Any]
         A dictionary containing:
         - 'catalog': The loaded catalog object.
-        - 'nautilus_definition': Processed Databento definition data.
-        - 'nautilus_data': Processed Databento market data.
+        - 'nautilus_definition': Processed Databento definition data (or None if definition_file not provided).
+        - 'nautilus_data': Processed Databento market data (or None if data_file not provided).
 
     Notes
     -----
@@ -299,8 +359,11 @@ def save_data_to_catalog(
         nautilus_definition = None
 
     if data_file is not None:
-        nautilus_data = loader.from_dbn_file(data_file, as_legacy_cython=False)
-        catalog.write_data(nautilus_data, mode=write_data_mode)
+        nautilus_data = loader.from_dbn_file(
+            data_file,
+            as_legacy_cython=as_legacy_cython,
+        )
+        catalog.write_data(nautilus_data)
     else:
         nautilus_data = None
 
@@ -311,16 +374,21 @@ def save_data_to_catalog(
     }
 
 
-def load_catalog(*folders, base_path=None):
+def load_catalog(*folders: str, base_path: Path | None = None) -> ParquetDataCatalog:
     """
     Load a ParquetDataCatalog from the specified folders and base path.
 
-    Args:
-        *folders (str): The folders to create the data path from.
-        base_path (str, optional): The base path to use for the data folder, defaults to None.
+    Parameters
+    ----------
+    *folders : str
+        The folders to create the data path from.
+    base_path : Path, optional
+        The base path to use for the data folder, defaults to None.
 
-    Returns:
-        ParquetDataCatalog: The loaded ParquetDataCatalog.
+    Returns
+    -------
+    ParquetDataCatalog
+        The loaded ParquetDataCatalog.
 
     """
     catalog_path = create_data_folder(*folders, base_path=base_path)
@@ -328,7 +396,86 @@ def load_catalog(*folders, base_path=None):
     return ParquetDataCatalog(catalog_path)
 
 
-def query_catalog(catalog, data_type="bars", **kwargs):
+def create_data_folder(*folders: str, base_path: Path | None = None) -> Path:
+    """
+    Create a data folder at the specified path.
+
+    Creates the directory structure if it doesn't exist.
+
+    Parameters
+    ----------
+    *folders : str
+        The folders to include in the path.
+    base_path : Path, optional
+        The base path to use, defaults to `DATA_PATH`.
+
+    Returns
+    -------
+    Path
+        The path to the created data folder.
+
+    """
+    used_path = data_path(*folders, base_path=base_path)
+
+    if not used_path.exists():
+        used_path.mkdir(parents=True, exist_ok=True)
+
+    return used_path
+
+
+def data_path(*folders: str, base_path: Path | None = None) -> Path:
+    """
+    Get the path to a data folder.
+
+    Parameters
+    ----------
+    *folders : str
+        The folders to include in the path.
+    base_path : Path, optional
+        The base path to use, defaults to `DATA_PATH`.
+
+    Returns
+    -------
+    Path
+        The full path to the data folder.
+
+    """
+    used_base_path = base_path if base_path is not None else DATA_PATH
+    result = used_base_path
+
+    for folder in folders:
+        result /= folder
+
+    return result
+
+
+def query_catalog(
+    catalog: ParquetDataCatalog,
+    data_type: str = "bars",
+    **kwargs: Any,
+) -> Any:
+    """
+    Query a catalog for different types of data.
+
+    Parameters
+    ----------
+    catalog : ParquetDataCatalog
+        The catalog to query.
+    data_type : str, optional
+        The type of data to query. Valid values are "bars", "ticks", "instruments", or "custom", defaults to "bars".
+    **kwargs : Any
+        Additional keyword arguments to pass to the catalog query method.
+
+    Returns
+    -------
+    Any
+        The query results, type depends on data_type:
+        - "bars": Returns bar data
+        - "ticks": Returns quote tick data
+        - "instruments": Returns instrument data
+        - "custom": Returns custom data
+
+    """
     if data_type == "bars":
         return catalog.bars(**kwargs)
     elif data_type == "ticks":
@@ -337,21 +484,47 @@ def query_catalog(catalog, data_type="bars", **kwargs):
         return catalog.instruments(**kwargs)
     elif data_type == "custom":
         return catalog.custom_data(**kwargs)
+    else:
+        raise ValueError(
+            f"Invalid data_type: {data_type}. Must be one of 'bars', 'ticks', 'instruments', 'custom'",
+        )
 
 
-def load_databento_data(file):
+def load_databento_data(file: Path | str) -> Any:
+    """
+    Load Databento data from a DBN file.
+
+    Parameters
+    ----------
+    file : Path | str
+        The path to the DBN file to load.
+
+    Returns
+    -------
+    Any
+        A DBNStore object containing the loaded data.
+
+    """
     import databento as db
 
     return db.DBNStore.from_file(file)
 
 
-def save_databento_data(data, file):
+def save_databento_data(data: Any, file: Path | str) -> Any:
+    """
+    Save Databento data to a file.
+
+    Parameters
+    ----------
+    data : Any
+        The Databento data object to save (typically a DBNStore).
+    file : Path | str
+        The path to save the data file to.
+
+    Returns
+    -------
+    Any
+        The result of the save operation (typically the file path).
+
+    """
     return data.to_file(file)
-
-
-def next_day(date_str):
-    date_format = "%Y-%m-%d"
-    date = datetime.strptime(date_str, date_format)
-    result = date + timedelta(days=1)
-
-    return result.strftime(date_format)

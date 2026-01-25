@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,17 +26,17 @@ from nautilus_trader.adapters.dydx.common.constants import DYDX_VENUE
 from nautilus_trader.adapters.dydx.common.enums import DYDXEnumParser
 from nautilus_trader.adapters.dydx.common.enums import DYDXPerpetualPositionStatus
 from nautilus_trader.adapters.dydx.common.symbol import DYDXSymbol
-
-# fmt: off
-from nautilus_trader.adapters.dydx.endpoints.market.instruments_info import DYDXListPerpetualMarketsResponse
+from nautilus_trader.adapters.dydx.endpoints.market.instruments_info import (
+    DYDXListPerpetualMarketsResponse,
+)
 from nautilus_trader.adapters.dydx.schemas.account.address import DYDXAddressResponse
 from nautilus_trader.adapters.dydx.schemas.account.address import DYDXSubaccountResponse
 from nautilus_trader.adapters.dydx.schemas.account.asset_positions import DYDXAssetPositionsResponse
 from nautilus_trader.adapters.dydx.schemas.account.fills import DYDXFillsResponse
 from nautilus_trader.adapters.dydx.schemas.account.orders import DYDXOrderResponse
-from nautilus_trader.adapters.dydx.schemas.account.perpetual_positions import DYDXPerpetualPositionsResponse
-
-# fmt: on
+from nautilus_trader.adapters.dydx.schemas.account.perpetual_positions import (
+    DYDXPerpetualPositionsResponse,
+)
 from nautilus_trader.core.nautilus_pyo3 import PositionSide
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import FillReport
@@ -225,8 +225,8 @@ def test_closed_perpetual_positions_into_margin_balance(
     """
     perpetual_positions_response.positions[0].status = DYDXPerpetualPositionStatus.CLOSED
     expected_result = MarginBalance(
-        initial=Money(Decimal("0"), Currency.from_str("USDC")),
-        maintenance=Money(Decimal("0"), Currency.from_str("USDC")),
+        initial=Money(Decimal(0), Currency.from_str("USDC")),
+        maintenance=Money(Decimal(0), Currency.from_str("USDC")),
     )
 
     # Act
@@ -654,7 +654,7 @@ def test_parse_to_instrument(
         is_inverse=False,
         price_precision=0,
         size_precision=4,
-        price_increment=Price(Decimal("1"), 0),
+        price_increment=Price(Decimal(1), 0),
         size_increment=Quantity(Decimal("0.0001"), 4),
         max_quantity=None,
         min_quantity=None,

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -40,7 +40,6 @@ def test_customdata_decorator_dict() -> None:
 
     # Act
     data_dict = data.to_dict()
-    data_dict_to_arrow = data.to_dict(to_arrow=True)
 
     # Assert
     assert data_dict == {
@@ -49,14 +48,6 @@ def test_customdata_decorator_dict() -> None:
         "type": "GreeksTestData",
         "ts_event": 1,
         "ts_init": 2,
-    }
-    assert data_dict_to_arrow == {
-        "instrument_id": "ES.GLBX",
-        "delta": 0.0,
-        "type": "GreeksTestData",
-        "ts_event": 1,
-        "ts_init": 2,
-        "date": 19700101,
     }
 
 
@@ -70,7 +61,7 @@ def test_customdata_repr() -> None:
     # Assert
     assert (
         repr
-        == "GreeksTestData(instrument_id=InstrumentId('ES.GLBX'), delta=0.0, ts_event=2024-05-09T10:00:00.000000000Z, ts_init=2024-05-09T10:01:00.000000000Z)"  # noqa
+        == "GreeksTestData(instrument_id=InstrumentId('ES.GLBX'), delta=0.0, ts_event=2024-05-09T10:00:00.000000000Z, ts_init=2024-05-09T10:01:00.000000000Z)"
     )
 
 

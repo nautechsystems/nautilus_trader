@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,51 +15,58 @@
 
 import asyncio
 
-import pandas as pd
-
 from nautilus_trader.adapters.tardis.factories import get_tardis_http_client
 from nautilus_trader.adapters.tardis.factories import get_tardis_instrument_provider
 from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.identifiers import Venue
 
 
 _VENUES = [
-    Venue("ASCENDEX"),
+    # Venue("ASCENDEX"),
     Venue("BINANCE"),
-    Venue("BITFINEX"),
-    Venue("BITFLYER"),
-    Venue("BITGET"),
-    Venue("BITMEX"),
-    Venue("BITNOMIAL"),
-    Venue("BITSTAMP"),
-    Venue("BLOCKCHAIN_COM"),
-    Venue("BYBIT"),
-    Venue("COINBASE"),
-    Venue("CRYPTO_COM"),
-    Venue("CRYPTOFACILITIES"),
-    Venue("DERIBIT"),
-    Venue("DYDX"),
-    Venue("FTX"),
-    Venue("GATE_IO"),
-    Venue("GEMINI"),
-    Venue("HUOBI"),
-    Venue("HUOBI_DELIVERY"),
-    Venue("KRAKEN"),
-    Venue("KUCOIN"),
-    Venue("OKCOIN"),
-    Venue("OKEX"),
-    Venue("PHEMEX"),
-    Venue("POLONIEX"),
-    Venue("UPBIT"),
-    Venue("WOO_X"),
+    # Venue("BINANCE_DELIVERY"),
+    # Venue("BINANCE_US"),
+    # Venue("BITFINEX"),
+    # Venue("BITFLYER"),
+    # Venue("BITGET"),
+    # Venue("BITMEX"),
+    # Venue("BITNOMIAL"),
+    # Venue("BITSTAMP"),
+    # Venue("BLOCKCHAIN_COM"),
+    # Venue("BYBIT"),
+    # Venue("COINBASE"),
+    # Venue("COINBASE_INTX"),
+    # Venue("COINFLEX"),
+    # Venue("CRYPTO_COM"),
+    # Venue("CRYPTOFACILITIES"),
+    # Venue("DELTA"),
+    # Venue("DERIBIT"),
+    # Venue("DYDX"),
+    # Venue("DYDX_V4"),
+    # Venue("FTX"),
+    # Venue("GATE_IO"),
+    # Venue("GEMINI"),
+    # Venue("HITBTC"),
+    # Venue("HUOBI"),
+    # Venue("HUOBI_DELIVERY"),
+    # Venue("HYPERLIQUID"),
+    # Venue("KRAKEN"),
+    # Venue("KUCOIN"),
+    # Venue("MANGO"),
+    # Venue("OKCOIN"),
+    # Venue("OKEX"),
+    # Venue("PHEMEX"),
+    # Venue("POLONIEX"),
+    # Venue("SERUM"),
+    # Venue("STAR_ATLAS"),  # Cannot parse due missing `quoteCurrency` field
+    # Venue("UPBIT"),
+    # Venue("WOO_X"),
 ]
 
 
 async def run():
-    nautilus_pyo3.init_tracing()
     _guard = init_logging(level_stdout=LogLevel.TRACE)
 
     http_client = get_tardis_http_client()
@@ -71,14 +78,12 @@ async def run():
         exchanges = [str(exchange)]
         filters = {
             "venues": frozenset(exchanges),
-            # "quote_currency": frozenset(["BTC"]),
-            # "base_currency": frozenset(["USDC"]),
+            # "base_currency": frozenset(["BTC"]),
+            # "quote_currency": frozenset(["USDC"]),
             # "instrument_type": frozenset(["perpetual"]),
-            # "start": pd.Timestamp("2021-01-01").value,
-            # "end": pd.Timestamp("2023-01-01").value,
-            "effective": pd.Timestamp("2022-01-01").value,
+            # "start": pd.Timestamp("2021-01-01"),
+            # "end": pd.Timestamp("2023-01-01"),
             # "effective": pd.Timestamp("2023-01-01"),
-            # "available_offset": pd.Timedelta(days=30).value,
             # "available_offset": pd.Timedelta(days=30),
         }
 

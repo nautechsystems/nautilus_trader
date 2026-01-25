@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,6 +19,7 @@ use std::{
 };
 
 use nautilus_common::{cache::Cache, clock::Clock};
+use nautilus_core::WeakCell;
 use nautilus_model::{
     enums::{AccountType, BookType, OmsType},
     instruments::InstrumentAny,
@@ -75,41 +76,41 @@ impl OrderEngineAdapter {
 
     fn initialize_fill_order_handler(engine: Rc<RefCell<OrderMatchingEngine>>) {
         let handler = ShareableFillLimitOrderHandler(
-            FillLimitOrderHandlerAny::OrderMatchingEngine(engine.clone()),
+            FillLimitOrderHandlerAny::OrderMatchingEngine(WeakCell::from(Rc::downgrade(&engine))),
         );
         engine
             .borrow_mut()
-            .core
+            .get_core_mut()
             .set_fill_limit_order_handler(handler);
     }
 
     fn initialize_fill_market_order_handler(engine: Rc<RefCell<OrderMatchingEngine>>) {
         let handler = ShareableFillMarketOrderHandler(
-            FillMarketOrderHandlerAny::OrderMatchingEngine(engine.clone()),
+            FillMarketOrderHandlerAny::OrderMatchingEngine(WeakCell::from(Rc::downgrade(&engine))),
         );
         engine
             .borrow_mut()
-            .core
+            .get_core_mut()
             .set_fill_market_order_handler(handler);
     }
 
     fn initialize_trigger_stop_order_handler(engine: Rc<RefCell<OrderMatchingEngine>>) {
         let handler = ShareableTriggerStopOrderHandler(
-            TriggerStopOrderHandlerAny::OrderMatchingEngine(engine.clone()),
+            TriggerStopOrderHandlerAny::OrderMatchingEngine(WeakCell::from(Rc::downgrade(&engine))),
         );
         engine
             .borrow_mut()
-            .core
+            .get_core_mut()
             .set_trigger_stop_order_handler(handler);
     }
 
     #[must_use]
-    pub fn get_engine(&self) -> Ref<OrderMatchingEngine> {
+    pub fn get_engine(&self) -> Ref<'_, OrderMatchingEngine> {
         self.engine.borrow()
     }
 
     #[must_use]
-    pub fn get_engine_mut(&self) -> RefMut<OrderMatchingEngine> {
+    pub fn get_engine_mut(&self) -> RefMut<'_, OrderMatchingEngine> {
         self.engine.borrow_mut()
     }
 }

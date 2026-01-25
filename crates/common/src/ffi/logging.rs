@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,6 +18,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use ahash::AHashMap;
 use nautilus_core::{
     UUID4,
     ffi::{
@@ -30,8 +31,9 @@ use nautilus_model::identifiers::TraderId;
 use crate::{
     enums::{LogColor, LogLevel},
     logging::{
-        headers,
+        headers, init_logging,
         logger::{self, LogGuard, LoggerConfig},
+        map_log_level_to_filter, parse_component_levels,
         writer::FileWriterConfig,
     },
 };
@@ -45,8 +47,8 @@ use crate::{
 /// dereferenced to `LogGuard`, providing access to `LogGuard`'s methods without
 /// having to manually access the underlying `LogGuard` instance.
 #[repr(C)]
-#[allow(non_camel_case_types)]
 #[derive(Debug)]
+#[allow(non_camel_case_types)]
 pub struct LogGuard_API(Box<LogGuard>);
 
 impl Deref for LogGuard_API {
@@ -97,21 +99,26 @@ pub unsafe extern "C" fn logging_init(
     is_colored: u8,
     is_bypassed: u8,
     print_config: u8,
+    log_components_only: u8,
     max_file_size: u64,
     max_backup_count: u32,
 ) -> LogGuard_API {
-    let level_stdout = crate::logging::map_log_level_to_filter(level_stdout);
-    let level_file = crate::logging::map_log_level_to_filter(level_file);
+    let level_stdout = map_log_level_to_filter(level_stdout);
+    let level_file = map_log_level_to_filter(level_file);
 
     let component_levels_json = unsafe { optional_bytes_to_json(component_levels_ptr) };
-    let component_levels = crate::logging::parse_component_levels(component_levels_json);
+    let component_levels = parse_component_levels(component_levels_json)
+        .expect("Failed to parse component log levels");
 
     let config = LoggerConfig::new(
         level_stdout,
         level_file,
         component_levels,
+        AHashMap::new(), // module_level - not exposed to FFI
+        u8_as_bool(log_components_only),
         u8_as_bool(is_colored),
         u8_as_bool(print_config),
+        false, // use_tracing - not exposed to FFI
     );
 
     // Configure file rotation if max_file_size > 0
@@ -121,21 +128,19 @@ pub unsafe extern "C" fn logging_init(
         None
     };
 
-    let directory =
-        unsafe { optional_cstr_to_str(directory_ptr).map(std::string::ToString::to_string) };
-    let file_name =
-        unsafe { optional_cstr_to_str(file_name_ptr).map(std::string::ToString::to_string) };
-    let file_format =
-        unsafe { optional_cstr_to_str(file_format_ptr).map(std::string::ToString::to_string) };
+    let directory = unsafe { optional_cstr_to_str(directory_ptr).map(ToString::to_string) };
+    let file_name = unsafe { optional_cstr_to_str(file_name_ptr).map(ToString::to_string) };
+    let file_format = unsafe { optional_cstr_to_str(file_format_ptr).map(ToString::to_string) };
 
     let file_config = FileWriterConfig::new(directory, file_name, file_format, file_rotate);
 
     if u8_as_bool(is_bypassed) {
-        crate::logging::logging_set_bypass();
+        logging_set_bypass();
     }
 
     LogGuard_API(Box::new(
-        crate::logging::init_logging(trader_id, instance_id, config, file_config).unwrap(),
+        init_logging(trader_id, instance_id, config, file_config)
+            .expect("Failed to initialize logging"),
     ))
 }
 
@@ -200,7 +205,6 @@ pub extern "C" fn logger_flush() {
 pub extern "C" fn logger_drop(log_guard: LogGuard_API) {
     drop(log_guard);
 }
-// FFI wrappers for logger control
 
 #[unsafe(no_mangle)]
 pub extern "C" fn logging_is_initialized() -> u8 {
