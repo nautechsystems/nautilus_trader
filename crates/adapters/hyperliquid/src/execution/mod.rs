@@ -32,7 +32,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{MUTEX_POISONED, UnixNanos, time::get_atomic_clock_realtime};
-use nautilus_live::ExecutionClientCore;
+use nautilus_live::{ExecutionClientCore, OrderEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{OmsType, OrderType},
@@ -62,6 +62,7 @@ use crate::{
 #[derive(Debug)]
 pub struct HyperliquidExecutionClient {
     core: ExecutionClientCore,
+    event_emitter: OrderEventEmitter,
     config: HyperliquidExecClientConfig,
     http_client: HyperliquidHttpClient,
     ws_client: HyperliquidWebSocketClient,
@@ -183,8 +184,11 @@ impl HyperliquidExecutionClient {
             Some(core.account_id),
         );
 
+        let event_emitter = OrderEventEmitter::new(core.trader_id, core.account_id);
+
         Ok(Self {
             core,
+            event_emitter,
             config,
             http_client,
             ws_client,
@@ -263,17 +267,11 @@ impl HyperliquidExecutionClient {
                 crate::common::parse::parse_account_balances_and_margins(cross_margin_summary)
                     .context("failed to parse account balances and margins")?;
 
-            let ts_event = if let Some(time_ms) = state.time {
-                nautilus_core::UnixNanos::from(time_ms * 1_000_000)
-            } else {
-                nautilus_core::time::get_atomic_clock_realtime().get_time_ns()
-            };
-
             // Generate account state event
-            self.core.generate_account_state(
+            let account_state = self.core.generate_account_state(
                 balances, margins, true, // reported
-                ts_event,
-            )?;
+            );
+            self.event_emitter.emit_account_state_event(account_state);
 
             log::info!("Account state updated successfully");
         } else {
@@ -352,16 +350,22 @@ impl ExecutionClient for HyperliquidExecutionClient {
         balances: Vec<AccountBalance>,
         margins: Vec<MarginBalance>,
         reported: bool,
-        ts_event: UnixNanos,
+        _ts_event: UnixNanos,
     ) -> anyhow::Result<()> {
-        self.core
-            .generate_account_state(balances, margins, reported, ts_event)
+        let account_state = self
+            .core
+            .generate_account_state(balances, margins, reported);
+        self.event_emitter.emit_account_state_event(account_state);
+        Ok(())
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
         if self.started {
             return Ok(());
         }
+
+        let sender = get_exec_event_sender();
+        self.event_emitter.set_sender(sender);
 
         log::info!(
             "Starting Hyperliquid execution client: client_id={}, account_id={}, is_testnet={}, vault_address={:?}, http_proxy_url={:?}, ws_proxy_url={:?}",
@@ -433,23 +437,15 @@ impl ExecutionClient for HyperliquidExecutionClient {
         }
 
         if let Err(e) = self.validate_order_submission(&order) {
-            self.core.generate_order_rejected(
-                order.strategy_id(),
-                order.instrument_id(),
-                order.client_order_id(),
-                &format!("validation-error: {e}"),
-                command.ts_init,
-                false,
-            );
+            let event =
+                self.core
+                    .generate_order_rejected(&order, &format!("validation-error: {e}"), false);
+            self.event_emitter.emit_execution_order_event(event);
             return Err(e);
         }
 
-        self.core.generate_order_submitted(
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            command.ts_init,
-        );
+        let event = self.core.generate_order_submitted(&order);
+        self.event_emitter.emit_execution_order_event(event);
 
         let http_client = self.http_client.clone();
 
@@ -500,12 +496,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
         // Generate submitted events for all orders
         for order in &orders {
-            self.core.generate_order_submitted(
-                order.strategy_id(),
-                order.instrument_id(),
-                order.client_order_id(),
-                command.ts_init,
-            );
+            let event = self.core.generate_order_submitted(order);
+            self.event_emitter.emit_execution_order_event(event);
         }
 
         self.spawn_task("submit_order_list", async move {

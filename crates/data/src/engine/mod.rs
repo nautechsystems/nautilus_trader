@@ -870,7 +870,7 @@ impl DataEngine {
     // -- DATA HANDLERS ---------------------------------------------------------------------------
 
     fn handle_instrument(&mut self, instrument: InstrumentAny) {
-        log::info!("Handling instrument: {}", instrument.id());
+        log::debug!("Handling instrument: {}", instrument.id());
 
         if let Err(e) = self
             .cache

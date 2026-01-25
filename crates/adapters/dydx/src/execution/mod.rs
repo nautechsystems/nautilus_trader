@@ -48,26 +48,22 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use nautilus_common::{
     clients::ExecutionClient,
-    live::{runner::get_exec_event_sender, runtime::get_runtime},
-    messages::{
-        ExecutionEvent, ExecutionReport as NautilusExecutionReport,
-        execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-            GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
-        },
+    live::{get_runtime, runner::get_exec_event_sender},
+    messages::execution::{
+        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+        GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
+        ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, UUID4, UnixNanos,
+    MUTEX_POISONED, UnixNanos,
     env::get_or_env_var_opt,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::ExecutionClientCore;
+use nautilus_live::{ExecutionClientCore, OrderEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{OmsType, OrderSide, OrderType, TimeInForce},
-    events::{AccountState, OrderCancelRejected, OrderEventAny, OrderRejected, OrderSubmitted},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::Order,
@@ -99,15 +95,6 @@ pub mod submitter;
 /// limit, this constant should be updated and enforced in `generate_client_order_id_int`.
 pub const MAX_CLIENT_ID: u32 = u32::MAX;
 
-/// Execution report types dispatched from WebSocket message handler.
-///
-/// This enum groups order and fill reports for unified dispatch handling,
-/// following the pattern used by reference adapters (Hyperliquid, OKX).
-enum ExecutionReport {
-    Order(Box<OrderStatusReport>),
-    Fill(Box<FillReport>),
-}
-
 /// Live execution client for the dYdX v4 exchange adapter.
 ///
 /// Supports Market, Limit, Stop Market, Stop Limit, Take Profit Market (MarketIfTouched),
@@ -126,11 +113,11 @@ enum ExecutionReport {
 pub struct DydxExecutionClient {
     clock: &'static AtomicTime,
     core: ExecutionClientCore,
+    event_emitter: OrderEventEmitter,
     config: DydxAdapterConfig,
     http_client: DydxHttpClient,
     ws_client: DydxWebSocketClient,
     grpc_client: Arc<tokio::sync::RwLock<Option<DydxGrpcClient>>>,
-    exec_sender: tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
     wallet: Arc<tokio::sync::RwLock<Option<Wallet>>>,
     instruments: DashMap<InstrumentId, InstrumentAny>,
     market_to_instrument: DashMap<String, InstrumentId>,
@@ -161,6 +148,10 @@ impl DydxExecutionClient {
         wallet_address: String,
         subaccount_number: u32,
     ) -> anyhow::Result<Self> {
+        let trader_id = core.trader_id;
+        let account_id = core.account_id;
+        let event_emitter = OrderEventEmitter::new(trader_id, account_id);
+
         let retry_config = RetryConfig {
             max_retries: config.max_retries,
             initial_delay_ms: config.retry_delay_initial_ms,
@@ -185,7 +176,7 @@ impl DydxExecutionClient {
             DydxWebSocketClient::new_private(
                 config.ws_url.clone(),
                 credential,
-                core.account_id,
+                account_id,
                 Some(20),
             )
         } else {
@@ -193,16 +184,15 @@ impl DydxExecutionClient {
         };
 
         let grpc_client = Arc::new(tokio::sync::RwLock::new(None));
-        let exec_sender = get_exec_event_sender();
 
         Ok(Self {
             clock: get_atomic_clock_realtime(),
             core,
+            event_emitter,
             config,
             http_client,
             ws_client,
             grpc_client,
-            exec_sender,
             wallet: Arc::new(tokio::sync::RwLock::new(None)),
             instruments: DashMap::new(),
             market_to_instrument: DashMap::new(),
@@ -389,26 +379,14 @@ impl DydxExecutionClient {
         reason: &str,
         ts_init: UnixNanos,
     ) {
-        let ts_now = self.clock.get_time_ns();
-        let event = OrderRejected::new(
-            self.core.trader_id,
+        self.event_emitter.clone().emit_order_rejected_event(
             strategy_id,
             instrument_id,
             client_order_id,
-            self.core.account_id,
-            reason.into(),
-            UUID4::new(),
+            reason,
             ts_init,
-            ts_now,
-            false,
             false,
         );
-        if let Err(e) = self
-            .exec_sender
-            .send(ExecutionEvent::Order(OrderEventAny::Rejected(event)))
-        {
-            log::warn!("Failed to send OrderRejected event: {e}");
-        }
     }
 
     fn spawn_task<F>(&self, label: &'static str, fut: F)
@@ -440,36 +418,22 @@ impl DydxExecutionClient {
     ) where
         F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        // Capture necessary data for rejection event
-        let trader_id = self.core.trader_id;
-        let account_id = self.core.account_id;
-        let sender = get_exec_event_sender();
+        let emitter = self.event_emitter.clone();
 
         let handle = get_runtime().spawn(async move {
             if let Err(e) = fut.await {
                 let error_msg = format!("{label} failed: {e:?}");
                 log::error!("{error_msg}");
 
-                let ts_now = UnixNanos::default(); // Use current time
-                let event = OrderRejected::new(
-                    trader_id,
+                let ts_now = UnixNanos::default();
+                emitter.emit_order_rejected_event(
                     strategy_id,
                     instrument_id,
                     client_order_id,
-                    account_id,
-                    error_msg.into(),
-                    UUID4::new(),
+                    &error_msg,
                     ts_now,
-                    ts_now,
-                    false,
                     false,
                 );
-
-                if let Err(send_err) =
-                    sender.send(ExecutionEvent::Order(OrderEventAny::Rejected(event)))
-                {
-                    log::error!("Failed to send OrderRejected event: {send_err}");
-                }
             }
         });
 
@@ -518,10 +482,13 @@ impl ExecutionClient for DydxExecutionClient {
         balances: Vec<AccountBalance>,
         margins: Vec<MarginBalance>,
         reported: bool,
-        ts_event: UnixNanos,
+        _ts_event: UnixNanos,
     ) -> anyhow::Result<()> {
-        self.core
-            .generate_account_state(balances, margins, reported, ts_event)
+        let state = self
+            .core
+            .generate_account_state(balances, margins, reported);
+        self.event_emitter.emit_account_state_event(state);
+        Ok(())
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
@@ -530,6 +497,8 @@ impl ExecutionClient for DydxExecutionClient {
             return Ok(());
         }
 
+        let sender = get_exec_event_sender();
+        self.event_emitter.set_sender(sender);
         log::info!("Starting dYdX execution client");
         self.started = true;
         Ok(())
@@ -663,23 +632,10 @@ impl ExecutionClient for DydxExecutionClient {
             }
         }
 
-        let event = OrderSubmitted::new(
-            self.core.trader_id,
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            self.core.account_id,
-            UUID4::new(),
-            cmd.ts_init,
-            self.clock.get_time_ns(),
-        );
         log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
-        if let Err(e) = self
-            .exec_sender
-            .send(ExecutionEvent::Order(OrderEventAny::Submitted(event)))
-        {
-            log::warn!("Failed to send OrderSubmitted event: {e}");
-        }
+        self.event_emitter
+            .clone()
+            .emit_order_submitted_event(&order, cmd.ts_init);
 
         let grpc_client = self.grpc_client.clone();
         let wallet = self.wallet.clone();
@@ -941,7 +897,6 @@ impl ExecutionClient for DydxExecutionClient {
         let block_height = self.block_height.load(std::sync::atomic::Ordering::Relaxed) as u32;
         let chain_id = self.get_chain_id();
         let authenticator_ids = self.config.authenticator_ids.clone();
-        let trader_id = cmd.trader_id;
         let strategy_id = cmd.strategy_id;
         let venue_order_id = cmd.venue_order_id;
 
@@ -954,8 +909,7 @@ impl ExecutionClient for DydxExecutionClient {
             }
         };
 
-        // Clone sender before spawning for use in async block
-        let exec_sender = self.exec_sender.clone();
+        let emitter = self.event_emitter.clone();
 
         self.spawn_task("cancel_order", async move {
             let wallet_guard = wallet.read().await;
@@ -988,24 +942,14 @@ impl ExecutionClient for DydxExecutionClient {
                     log::error!("Failed to cancel order {client_order_id}: {e:?}");
 
                     let ts_now = UnixNanos::default();
-                    let event = OrderCancelRejected::new(
-                        trader_id,
+                    emitter.emit_order_cancel_rejected_event(
                         strategy_id,
                         instrument_id,
                         client_order_id,
-                        format!("Cancel order failed: {e:?}").into(),
-                        UUID4::new(),
-                        ts_now,
-                        ts_now,
-                        false,
                         venue_order_id,
-                        None, // account_id not available in async context
+                        &format!("Cancel order failed: {e:?}"),
+                        ts_now,
                     );
-                    if let Err(send_err) = exec_sender
-                        .send(ExecutionEvent::Order(OrderEventAny::CancelRejected(event)))
-                    {
-                        log::warn!("Failed to send OrderCancelRejected event: {send_err}");
-                    }
                 }
             }
 
@@ -1329,12 +1273,12 @@ impl ExecutionClient for DydxExecutionClient {
                 account_state.margins.len()
             );
 
-            self.core.generate_account_state(
+            let state = self.core.generate_account_state(
                 account_state.balances,
                 account_state.margins,
                 account_state.is_reported,
-                ts_init,
-            )?;
+            );
+            self.event_emitter.emit_account_state_event(state);
 
             // Spawn WebSocket message processing task following standard adapter pattern
             // Per docs/developer_guide/adapters.md: Parse -> Dispatch -> Engine handles events
@@ -1348,7 +1292,7 @@ impl ExecutionClient for DydxExecutionClient {
                 let clob_pair_id_to_instrument = self.clob_pair_id_to_instrument.clone();
                 let int_to_client_order_id = self.int_to_client_order_id.clone();
                 let block_height = self.block_height.clone();
-                let exec_sender = self.exec_sender.clone();
+                let emitter = self.event_emitter.clone();
                 let clock = self.clock;
 
                 let handle = get_runtime().spawn(async move {
@@ -1372,24 +1316,19 @@ impl ExecutionClient for DydxExecutionClient {
                         match msg {
                             NautilusWsMessage::Order(report) => {
                                 log::debug!("Received order update: {:?}", report.order_status);
-                                dispatch_execution_report(ExecutionReport::Order(report), &exec_sender);
+                                emitter.emit_order_status_report(*report);
                             }
                             NautilusWsMessage::Fill(report) => {
                                 log::debug!("Received fill update");
-                                dispatch_execution_report(ExecutionReport::Fill(report), &exec_sender);
+                                emitter.emit_fill_report(*report);
                             }
                             NautilusWsMessage::Position(report) => {
                                 log::debug!("Received position update");
-                                // Dispatch position status reports via execution event system
-                                let exec_report =
-                                    NautilusExecutionReport::Position(Box::new(*report));
-                                if let Err(e) = exec_sender.send(ExecutionEvent::Report(exec_report)) {
-                                    log::warn!("Failed to send position status report: {e}");
-                                }
+                                emitter.emit_position_report(*report);
                             }
                             NautilusWsMessage::AccountState(state) => {
                                 log::debug!("Received account state update");
-                                dispatch_account_state(*state, &exec_sender);
+                                emitter.emit_account_state_event(*state);
                             }
                             NautilusWsMessage::SubaccountSubscribed(msg) => {
                                 log::debug!(
@@ -1425,7 +1364,7 @@ impl ExecutionClient for DydxExecutionClient {
                                             account_state.balances.len(),
                                             account_state.margins.len()
                                         );
-                                        dispatch_account_state(account_state, &exec_sender);
+                                        emitter.emit_account_state_event(account_state);
                                     }
                                     Err(e) => {
                                         log::error!("Failed to parse account state: {e}");
@@ -1456,16 +1395,7 @@ impl ExecutionClient for DydxExecutionClient {
                                                     report.quantity,
                                                     market
                                                 );
-                                                let exec_report = NautilusExecutionReport::Position(
-                                                    Box::new(report),
-                                                );
-                                                if let Err(e) =
-                                                    exec_sender.send(ExecutionEvent::Report(exec_report))
-                                                {
-                                                    log::warn!(
-                                                        "Failed to send position status report: {e}"
-                                                    );
-                                                }
+                                                emitter.emit_position_report(report);
                                             }
                                             Err(e) => {
                                                 log::error!(
@@ -1509,17 +1439,7 @@ impl ExecutionClient for DydxExecutionClient {
                                                     report.quantity,
                                                     report.client_order_id
                                                 );
-                                                let exec_report =
-                                                    NautilusExecutionReport::Order(Box::new(
-                                                        report,
-                                                    ));
-                                                if let Err(e) =
-                                                    exec_sender.send(ExecutionEvent::Report(exec_report))
-                                                {
-                                                    log::warn!(
-                                                        "Failed to send order status report: {e}"
-                                                    );
-                                                }
+                                                emitter.emit_order_status_report(report);
                                             }
                                             Err(e) => {
                                                 log::error!(
@@ -1547,15 +1467,7 @@ impl ExecutionClient for DydxExecutionClient {
                                                     report.last_qty,
                                                     report.last_px
                                                 );
-                                                let exec_report =
-                                                    NautilusExecutionReport::Fill(Box::new(report));
-                                                if let Err(e) =
-                                                    exec_sender.send(ExecutionEvent::Report(exec_report))
-                                                {
-                                                    log::warn!(
-                                                        "Failed to send fill report: {e}"
-                                                    );
-                                                }
+                                                emitter.emit_fill_report(report);
                                             }
                                             Err(e) => {
                                                 log::error!(
@@ -2058,63 +1970,5 @@ impl ExecutionClient for DydxExecutionClient {
         mass_status.add_fill_reports(fill_reports);
 
         Ok(Some(mass_status))
-    }
-}
-
-/// Dispatches account state events to the portfolio.
-///
-/// AccountState events are routed to the Portfolio (not ExecEngine) via msgbus.
-/// This follows the pattern used by BitMEX, OKX, and other reference adapters.
-fn dispatch_account_state(
-    state: AccountState,
-    sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
-) {
-    if let Err(e) = sender.send(ExecutionEvent::Account(state)) {
-        log::warn!("Failed to send account state: {e}");
-    }
-}
-
-/// Dispatches execution reports to the execution engine.
-///
-/// This follows the standard adapter pattern where WebSocket handlers parse messages
-/// into reports, and a dispatch function sends them via the execution event system.
-/// The execution engine then handles cache lookups and event generation.
-///
-/// # Architecture
-///
-/// Per `docs/developer_guide/adapters.md`, adapters should:
-/// 1. Parse WebSocket messages into ExecutionReports in the handler.
-/// 2. Dispatch reports via the execution event sender.
-/// 3. Let the execution engine handle event generation (has cache access).
-///
-/// This pattern is used by Hyperliquid, OKX, BitMEX, and other reference adapters.
-fn dispatch_execution_report(
-    report: ExecutionReport,
-    sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
-) {
-    match report {
-        ExecutionReport::Order(order_report) => {
-            log::debug!(
-                "Dispatching order report: status={:?}, venue_order_id={:?}, client_order_id={:?}",
-                order_report.order_status,
-                order_report.venue_order_id,
-                order_report.client_order_id
-            );
-            let exec_report = NautilusExecutionReport::Order(order_report);
-            if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
-                log::warn!("Failed to send order status report: {e}");
-            }
-        }
-        ExecutionReport::Fill(fill_report) => {
-            log::debug!(
-                "Dispatching fill report: venue_order_id={}, trade_id={}",
-                fill_report.venue_order_id,
-                fill_report.trade_id
-            );
-            let exec_report = NautilusExecutionReport::Fill(fill_report);
-            if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
-                log::warn!("Failed to send fill report: {e}");
-            }
-        }
     }
 }

@@ -30,27 +30,21 @@ use chrono::{DateTime, Utc};
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::ExecutionClient,
-    live::{runner::get_exec_event_sender, runtime::get_runtime},
-    messages::{
-        ExecutionEvent, ExecutionReport as NautilusExecutionReport,
-        execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-            GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
-            GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
-            GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder,
-            SubmitOrder, SubmitOrderList,
-        },
+    live::{get_runtime, runner::get_exec_event_sender},
+    messages::execution::{
+        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+        GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
+        GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
+        GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
+        SubmitOrderList,
     },
 };
-use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos, time::get_atomic_clock_realtime};
-use nautilus_live::ExecutionClientCore;
+use nautilus_core::{MUTEX_POISONED, UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_live::{ExecutionClientCore, OrderEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderType},
-    events::{
-        AccountState, OrderCancelRejected, OrderEventAny, OrderModifyRejected, OrderRejected,
-        OrderSubmitted,
-    },
+    events::OrderEventAny,
     identifiers::{AccountId, ClientId, InstrumentId, Venue},
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -74,12 +68,12 @@ use crate::{
 #[derive(Debug)]
 pub struct OKXExecutionClient {
     core: ExecutionClientCore,
+    event_emitter: OrderEventEmitter,
     config: OKXExecClientConfig,
     http_client: OKXHttpClient,
     ws_private: OKXWebSocketClient,
     ws_business: OKXWebSocketClient,
     trade_mode: OKXTradeMode,
-    exec_event_sender: Option<tokio::sync::mpsc::UnboundedSender<ExecutionEvent>>,
     started: bool,
     connected: AtomicBool,
     instruments_initialized: AtomicBool,
@@ -109,7 +103,10 @@ impl OKXExecutionClient {
             config.http_proxy_url.clone(),
         )?;
 
+        let trader_id = core.trader_id;
         let account_id = core.account_id;
+        let event_emitter = OrderEventEmitter::new(trader_id, account_id);
+
         let ws_private = OKXWebSocketClient::with_credentials(
             Some(config.ws_private_url()),
             config.api_key.clone(),
@@ -134,12 +131,12 @@ impl OKXExecutionClient {
 
         Ok(Self {
             core,
+            event_emitter,
             config,
             http_client,
             ws_private,
             ws_business,
             trade_mode,
-            exec_event_sender: None,
             started: false,
             connected: AtomicBool::new(false),
             instruments_initialized: AtomicBool::new(false),
@@ -185,12 +182,8 @@ impl OKXExecutionClient {
             .await
             .context("failed to request OKX account state")?;
 
-        self.core.generate_account_state(
-            account_state.balances.clone(),
-            account_state.margins.clone(),
-            account_state.is_reported,
-            account_state.ts_event,
-        )
+        self.event_emitter.emit_account_state_event(account_state);
+        Ok(())
     }
 
     fn update_account_state(&self) -> anyhow::Result<()> {
@@ -207,9 +200,8 @@ impl OKXExecutionClient {
         let ws_private = self.ws_private.clone();
         let trade_mode = self.trade_mode;
 
-        let exec_event_sender = self.exec_event_sender.clone();
+        let emitter = self.event_emitter.clone();
         let trader_id = self.core.trader_id;
-        let account_id = self.core.account_id;
         let ts_init = cmd.ts_init;
         let client_order_id = order.client_order_id();
         let strategy_id = order.strategy_id();
@@ -247,30 +239,14 @@ impl OKXExecutionClient {
                 .map_err(|e| anyhow::anyhow!("Submit order failed: {e}"));
 
             if let Err(e) = result {
-                let rejected_event = OrderRejected::new(
-                    trader_id,
+                emitter.emit_order_rejected_event(
                     strategy_id,
                     instrument_id,
                     client_order_id,
-                    account_id,
-                    format!("submit-order-error: {e}").into(),
-                    UUID4::new(),
+                    &format!("submit-order-error: {e}"),
                     ts_init,
-                    get_atomic_clock_realtime().get_time_ns(),
-                    false,
                     false,
                 );
-
-                if let Some(sender) = &exec_event_sender {
-                    if let Err(send_err) = sender.send(ExecutionEvent::Order(
-                        OrderEventAny::Rejected(rejected_event),
-                    )) {
-                        log::warn!("Failed to send OrderRejected event: {send_err}");
-                    }
-                } else {
-                    log::warn!("Cannot send OrderRejected: exec_event_sender not initialized");
-                }
-
                 return Err(e);
             }
 
@@ -288,9 +264,7 @@ impl OKXExecutionClient {
         let http_client = self.http_client.clone();
         let trade_mode = self.trade_mode;
 
-        let exec_event_sender = self.exec_event_sender.clone();
-        let trader_id = self.core.trader_id;
-        let account_id = self.core.account_id;
+        let emitter = self.event_emitter.clone();
         let ts_init = cmd.ts_init;
         let client_order_id = order.client_order_id();
         let strategy_id = order.strategy_id();
@@ -320,30 +294,14 @@ impl OKXExecutionClient {
                 .map_err(|e| anyhow::anyhow!("Submit algo order failed: {e}"));
 
             if let Err(e) = result {
-                let rejected_event = OrderRejected::new(
-                    trader_id,
+                emitter.emit_order_rejected_event(
                     strategy_id,
                     instrument_id,
                     client_order_id,
-                    account_id,
-                    format!("submit-order-error: {e}").into(),
-                    UUID4::new(),
+                    &format!("submit-order-error: {e}"),
                     ts_init,
-                    get_atomic_clock_realtime().get_time_ns(),
-                    false,
                     false,
                 );
-
-                if let Some(sender) = &exec_event_sender {
-                    if let Err(send_err) = sender.send(ExecutionEvent::Order(
-                        OrderEventAny::Rejected(rejected_event),
-                    )) {
-                        log::warn!("Failed to send OrderRejected event: {send_err}");
-                    }
-                } else {
-                    log::warn!("Cannot send OrderRejected: exec_event_sender not initialized");
-                }
-
                 return Err(e);
             }
 
@@ -357,9 +315,7 @@ impl OKXExecutionClient {
         let ws_private = self.ws_private.clone();
         let command = cmd.clone();
 
-        let exec_event_sender = self.exec_event_sender.clone();
-        let trader_id = self.core.trader_id;
-        let account_id = self.core.account_id;
+        let emitter = self.event_emitter.clone();
         let ts_init = cmd.ts_init;
 
         self.spawn_task("cancel_order", async move {
@@ -375,32 +331,14 @@ impl OKXExecutionClient {
                 .map_err(|e| anyhow::anyhow!("Cancel order failed: {e}"));
 
             if let Err(e) = result {
-                let rejected_event = OrderCancelRejected::new(
-                    trader_id,
+                emitter.emit_order_cancel_rejected_event(
                     command.strategy_id,
                     command.instrument_id,
                     command.client_order_id,
-                    format!("cancel-order-error: {e}").into(),
-                    UUID4::new(),
-                    get_atomic_clock_realtime().get_time_ns(),
-                    ts_init,
-                    false,
                     command.venue_order_id,
-                    Some(account_id),
+                    &format!("cancel-order-error: {e}"),
+                    ts_init,
                 );
-
-                if let Some(sender) = &exec_event_sender {
-                    if let Err(send_err) = sender.send(ExecutionEvent::Order(
-                        OrderEventAny::CancelRejected(rejected_event),
-                    )) {
-                        log::warn!("Failed to send OrderCancelRejected event: {send_err}");
-                    }
-                } else {
-                    log::warn!(
-                        "Cannot send OrderCancelRejected: exec_event_sender not initialized"
-                    );
-                }
-
                 return Err(e);
             }
 
@@ -503,11 +441,6 @@ impl ExecutionClient for OKXExecutionClient {
             return Ok(());
         }
 
-        // Initialize exec event sender (must be done in async context after runner is set up)
-        if self.exec_event_sender.is_none() {
-            self.exec_event_sender = Some(get_exec_event_sender());
-        }
-
         let instrument_types = self.instrument_types();
 
         if !self.instruments_initialized.load(Ordering::Acquire) {
@@ -551,22 +484,17 @@ impl ExecutionClient for OKXExecutionClient {
             self.instruments_initialized.store(true, Ordering::Release);
         }
 
-        let Some(sender) = self.exec_event_sender.as_ref() else {
-            log::error!("Execution event sender not initialized");
-            anyhow::bail!("Execution event sender not initialized");
-        };
-
         self.ws_private.connect().await?;
         self.ws_private.wait_until_active(10.0).await?;
         log::info!("Connected to private WebSocket");
 
         if self.ws_stream_handle.is_none() {
             let stream = self.ws_private.stream();
-            let sender = sender.clone();
+            let emitter = self.event_emitter.clone();
             let handle = get_runtime().spawn(async move {
                 pin_mut!(stream);
                 while let Some(message) = stream.next().await {
-                    dispatch_ws_message(message, &sender);
+                    dispatch_ws_message(message, &emitter);
                 }
             });
             self.ws_stream_handle = Some(handle);
@@ -578,11 +506,11 @@ impl ExecutionClient for OKXExecutionClient {
 
         if self.ws_business_stream_handle.is_none() {
             let stream = self.ws_business.stream();
-            let sender = sender.clone();
+            let emitter = self.event_emitter.clone();
             let handle = get_runtime().spawn(async move {
                 pin_mut!(stream);
                 while let Some(message) = stream.next().await {
-                    dispatch_ws_message(message, &sender);
+                    dispatch_ws_message(message, &emitter);
                 }
             });
             self.ws_business_stream_handle = Some(handle);
@@ -621,7 +549,7 @@ impl ExecutionClient for OKXExecutionClient {
                 account_state.balances.len()
             );
         }
-        dispatch_account_state(account_state, sender);
+        self.event_emitter.emit_account_state_event(account_state);
 
         // Wait for account to be registered in cache before completing connect
         self.await_account_registered(30.0).await?;
@@ -677,10 +605,13 @@ impl ExecutionClient for OKXExecutionClient {
         balances: Vec<AccountBalance>,
         margins: Vec<MarginBalance>,
         reported: bool,
-        ts_event: UnixNanos,
+        _ts_event: UnixNanos,
     ) -> anyhow::Result<()> {
-        self.core
-            .generate_account_state(balances, margins, reported, ts_event)
+        let account_state = self
+            .core
+            .generate_account_state(balances, margins, reported);
+        self.event_emitter.emit_account_state_event(account_state);
+        Ok(())
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
@@ -688,6 +619,8 @@ impl ExecutionClient for OKXExecutionClient {
             return Ok(());
         }
 
+        let sender = get_exec_event_sender();
+        self.event_emitter.set_sender(sender);
         self.started = true;
 
         // Spawn instrument bootstrap task
@@ -762,24 +695,9 @@ impl ExecutionClient for OKXExecutionClient {
             return Ok(());
         }
 
-        let event = OrderSubmitted::new(
-            self.core.trader_id,
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            self.core.account_id,
-            UUID4::new(),
-            cmd.ts_init,
-            get_atomic_clock_realtime().get_time_ns(),
-        );
-        if let Some(sender) = &self.exec_event_sender {
-            log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
-            if let Err(e) = sender.send(ExecutionEvent::Order(OrderEventAny::Submitted(event))) {
-                log::warn!("Failed to send OrderSubmitted event: {e}");
-            }
-        } else {
-            log::warn!("Cannot send OrderSubmitted: exec_event_sender not initialized");
-        }
+        log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
+        let event = self.core.generate_order_submitted(&order);
+        self.event_emitter.emit_execution_order_event(event);
 
         if self.is_conditional_order(order.order_type()) {
             self.submit_conditional_order(cmd)
@@ -800,10 +718,7 @@ impl ExecutionClient for OKXExecutionClient {
         let ws_private = self.ws_private.clone();
         let command = cmd.clone();
 
-        // Capture for error handling
-        let exec_event_sender = self.exec_event_sender.clone();
-        let trader_id = self.core.trader_id;
-        let account_id = self.core.account_id;
+        let emitter = self.event_emitter.clone();
         let ts_init = cmd.ts_init;
 
         self.spawn_task("modify_order", async move {
@@ -821,32 +736,14 @@ impl ExecutionClient for OKXExecutionClient {
                 .map_err(|e| anyhow::anyhow!("Modify order failed: {e}"));
 
             if let Err(e) = result {
-                let rejected_event = OrderModifyRejected::new(
-                    trader_id,
+                emitter.emit_order_modify_rejected_event(
                     command.strategy_id,
                     command.instrument_id,
                     command.client_order_id,
-                    format!("modify-order-error: {e}").into(),
-                    UUID4::new(),
-                    get_atomic_clock_realtime().get_time_ns(),
-                    ts_init,
-                    false,
                     command.venue_order_id,
-                    Some(account_id),
+                    &format!("modify-order-error: {e}"),
+                    ts_init,
                 );
-
-                if let Some(sender) = &exec_event_sender {
-                    if let Err(send_err) = sender.send(ExecutionEvent::Order(
-                        OrderEventAny::ModifyRejected(rejected_event),
-                    )) {
-                        log::warn!("Failed to send OrderModifyRejected event: {send_err}");
-                    }
-                } else {
-                    log::warn!(
-                        "Cannot send OrderModifyRejected: exec_event_sender not initialized"
-                    );
-                }
-
                 return Err(e);
             }
 
@@ -1157,44 +1054,51 @@ impl ExecutionClient for OKXExecutionClient {
     }
 }
 
-fn dispatch_ws_message(
-    message: NautilusWsMessage,
-    sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
-) {
+/// Dispatches a WebSocket message using the event emitter.
+fn dispatch_ws_message(message: NautilusWsMessage, emitter: &OrderEventEmitter) {
     match message {
-        NautilusWsMessage::AccountUpdate(state) => dispatch_account_state(state, sender),
+        NautilusWsMessage::AccountUpdate(state) => {
+            emitter.emit_account_state_event(state);
+        }
         NautilusWsMessage::PositionUpdate(report) => {
-            dispatch_position_status_report(report, sender);
+            emitter.emit_position_report(report);
         }
         NautilusWsMessage::ExecutionReports(reports) => {
             log::debug!("Processing {} execution report(s)", reports.len());
             for report in reports {
-                dispatch_execution_report(report, sender);
+                match report {
+                    ExecutionReport::Order(order_report) => {
+                        emitter.emit_order_status_report(order_report);
+                    }
+                    ExecutionReport::Fill(fill_report) => {
+                        emitter.emit_fill_report(fill_report);
+                    }
+                }
             }
         }
         NautilusWsMessage::OrderAccepted(event) => {
-            dispatch_order_event(OrderEventAny::Accepted(event), sender);
+            emitter.emit_execution_order_event(OrderEventAny::Accepted(event));
         }
         NautilusWsMessage::OrderCanceled(event) => {
-            dispatch_order_event(OrderEventAny::Canceled(event), sender);
+            emitter.emit_execution_order_event(OrderEventAny::Canceled(event));
         }
         NautilusWsMessage::OrderExpired(event) => {
-            dispatch_order_event(OrderEventAny::Expired(event), sender);
+            emitter.emit_execution_order_event(OrderEventAny::Expired(event));
         }
         NautilusWsMessage::OrderRejected(event) => {
-            dispatch_order_event(OrderEventAny::Rejected(event), sender);
+            emitter.emit_execution_order_event(OrderEventAny::Rejected(event));
         }
         NautilusWsMessage::OrderCancelRejected(event) => {
-            dispatch_order_event(OrderEventAny::CancelRejected(event), sender);
+            emitter.emit_execution_order_event(OrderEventAny::CancelRejected(event));
         }
         NautilusWsMessage::OrderModifyRejected(event) => {
-            dispatch_order_event(OrderEventAny::ModifyRejected(event), sender);
+            emitter.emit_execution_order_event(OrderEventAny::ModifyRejected(event));
         }
         NautilusWsMessage::OrderTriggered(event) => {
-            dispatch_order_event(OrderEventAny::Triggered(event), sender);
+            emitter.emit_execution_order_event(OrderEventAny::Triggered(event));
         }
         NautilusWsMessage::OrderUpdated(event) => {
-            dispatch_order_event(OrderEventAny::Updated(event), sender);
+            emitter.emit_execution_order_event(OrderEventAny::Updated(event));
         }
         NautilusWsMessage::Error(e) => {
             log::warn!(
@@ -1217,54 +1121,6 @@ fn dispatch_ws_message(
         | NautilusWsMessage::Instrument(_) => {
             log::debug!("Ignoring websocket data message");
         }
-    }
-}
-
-fn dispatch_account_state(
-    state: AccountState,
-    sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
-) {
-    if let Err(e) = sender.send(ExecutionEvent::Account(state)) {
-        log::warn!("Failed to send account state: {e}");
-    }
-}
-
-fn dispatch_position_status_report(
-    report: PositionStatusReport,
-    sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
-) {
-    let exec_report = NautilusExecutionReport::Position(Box::new(report));
-    if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
-        log::warn!("Failed to send position status report: {e}");
-    }
-}
-
-fn dispatch_execution_report(
-    report: ExecutionReport,
-    sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
-) {
-    match report {
-        ExecutionReport::Order(order_report) => {
-            let exec_report = NautilusExecutionReport::Order(Box::new(order_report));
-            if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
-                log::warn!("Failed to send order status report: {e}");
-            }
-        }
-        ExecutionReport::Fill(fill_report) => {
-            let exec_report = NautilusExecutionReport::Fill(Box::new(fill_report));
-            if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
-                log::warn!("Failed to send fill report: {e}");
-            }
-        }
-    }
-}
-
-fn dispatch_order_event(
-    event: OrderEventAny,
-    sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
-) {
-    if let Err(e) = sender.send(ExecutionEvent::Order(event)) {
-        log::warn!("Failed to send order event: {e}");
     }
 }
 

@@ -25,24 +25,19 @@ use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::ExecutionClient,
-    live::{runner::get_exec_event_sender, runtime::get_runtime},
-    messages::{
-        ExecutionEvent, ExecutionReport,
-        execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-            GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
-        },
+    live::{get_runtime, runner::get_exec_event_sender},
+    messages::execution::{
+        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+        GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
+        ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
-    msgbus,
-    msgbus::MessagingSwitchboard,
 };
-use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
-use nautilus_live::ExecutionClientCore;
+use nautilus_core::UnixNanos;
+use nautilus_live::{ExecutionClientCore, OrderEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
     enums::OmsType,
-    events::{AccountState, OrderEventAny, OrderRejected},
+    events::OrderEventAny,
     identifiers::{AccountId, ClientId, Venue, VenueOrderId},
     instruments::Instrument,
     orders::Order,
@@ -64,6 +59,7 @@ use crate::{
 #[derive(Debug)]
 pub struct BitmexExecutionClient {
     core: ExecutionClientCore,
+    event_emitter: OrderEventEmitter,
     config: BitmexExecClientConfig,
     http_client: BitmexHttpClient,
     ws_client: BitmexWebSocketClient,
@@ -87,6 +83,9 @@ impl BitmexExecutionClient {
             anyhow::bail!("BitMEX execution client requires API key and secret");
         }
 
+        let trader_id = core.trader_id;
+        let account_id = config.account_id.unwrap_or(core.account_id);
+        let event_emitter = OrderEventEmitter::new(trader_id, account_id);
         let http_client = BitmexHttpClient::new(
             Some(config.http_base_url()),
             config.api_key.clone(),
@@ -102,8 +101,6 @@ impl BitmexExecutionClient {
             config.http_proxy_url.clone(),
         )
         .context("failed to construct BitMEX HTTP client")?;
-
-        let account_id = config.account_id.unwrap_or(core.account_id);
         let ws_client = BitmexWebSocketClient::new(
             Some(config.ws_url()),
             config.api_key.clone(),
@@ -167,6 +164,7 @@ impl BitmexExecutionClient {
 
         Ok(Self {
             core,
+            event_emitter,
             config,
             http_client,
             ws_client,
@@ -247,7 +245,7 @@ impl BitmexExecutionClient {
             .await
             .context("failed to request BitMEX account state")?;
 
-        dispatch_account_state(account_state);
+        self.event_emitter.emit_account_state_event(account_state);
         Ok(())
     }
 
@@ -262,11 +260,12 @@ impl BitmexExecutionClient {
         }
 
         let stream = self.ws_client.stream();
+        let emitter = self.event_emitter.clone();
 
         let handle = get_runtime().spawn(async move {
             pin_mut!(stream);
             while let Some(message) = stream.next().await {
-                dispatch_ws_message(message);
+                dispatch_ws_message(message, &emitter);
             }
         });
 
@@ -306,10 +305,13 @@ impl ExecutionClient for BitmexExecutionClient {
         balances: Vec<AccountBalance>,
         margins: Vec<MarginBalance>,
         reported: bool,
-        ts_event: UnixNanos,
+        _ts_event: UnixNanos,
     ) -> anyhow::Result<()> {
-        self.core
-            .generate_account_state(balances, margins, reported, ts_event)
+        let account_state = self
+            .core
+            .generate_account_state(balances, margins, reported);
+        self.event_emitter.emit_account_state_event(account_state);
+        Ok(())
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
@@ -317,6 +319,7 @@ impl ExecutionClient for BitmexExecutionClient {
             return Ok(());
         }
 
+        self.event_emitter.set_sender(get_exec_event_sender());
         self.ensure_instruments_initialized()?;
         self.started = true;
         log::info!(
@@ -484,13 +487,14 @@ impl ExecutionClient for BitmexExecutionClient {
         let instrument_id = cmd.instrument_id;
         let client_order_id = Some(cmd.client_order_id);
         let venue_order_id = cmd.venue_order_id;
+        let emitter = self.event_emitter.clone();
 
         self.spawn_task("query_order", async move {
             match http_client
                 .request_order_status_report(instrument_id, client_order_id, venue_order_id)
                 .await
             {
-                Ok(report) => dispatch_order_status_report(report),
+                Ok(report) => emitter.emit_order_status_report(report),
                 Err(e) => log::error!("BitMEX query order failed: {e:?}"),
             }
             Ok(())
@@ -507,12 +511,8 @@ impl ExecutionClient for BitmexExecutionClient {
             return Ok(());
         }
 
-        self.core.generate_order_submitted(
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            cmd.ts_init,
-        );
+        let event = self.core.generate_order_submitted(&order);
+        self.event_emitter.emit_execution_order_event(event);
 
         let submit_tries = cmd
             .params
@@ -525,10 +525,9 @@ impl ExecutionClient for BitmexExecutionClient {
 
         let http_client = self.http_client.clone();
         let submitter = self._submitter.clone_for_async();
-        let trader_id = self.core.trader_id;
+        let emitter = self.event_emitter.clone();
         let strategy_id = order.strategy_id();
         let instrument_id = order.instrument_id();
-        let account_id = self.core.account_id;
         let client_order_id = order.client_order_id();
         let order_side = order.order_side();
         let order_type = order.order_type();
@@ -587,22 +586,16 @@ impl ExecutionClient for BitmexExecutionClient {
             };
 
             match result {
-                Ok(report) => dispatch_order_status_report(report),
+                Ok(report) => emitter.emit_order_status_report(report),
                 Err(e) => {
-                    let event = OrderRejected::new(
-                        trader_id,
+                    emitter.emit_order_rejected_event(
                         strategy_id,
                         instrument_id,
                         client_order_id,
-                        account_id,
-                        format!("submit-order-error: {e}").into(),
-                        UUID4::new(),
+                        &format!("submit-order-error: {e}"),
                         ts_event,
-                        get_atomic_clock_realtime().get_time_ns(),
-                        false,
                         post_only,
                     );
-                    dispatch_order_event(OrderEventAny::Rejected(event));
                 }
             }
             Ok(())
@@ -621,6 +614,7 @@ impl ExecutionClient for BitmexExecutionClient {
 
     fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
+        let emitter = self.event_emitter.clone();
         let instrument_id = cmd.instrument_id;
         let client_order_id = Some(cmd.client_order_id);
         let venue_order_id = cmd.venue_order_id;
@@ -640,7 +634,7 @@ impl ExecutionClient for BitmexExecutionClient {
                 )
                 .await
             {
-                Ok(report) => dispatch_order_status_report(report),
+                Ok(report) => emitter.emit_order_status_report(report),
                 Err(e) => log::error!("BitMEX modify order failed: {e:?}"),
             }
             Ok(())
@@ -651,6 +645,7 @@ impl ExecutionClient for BitmexExecutionClient {
 
     fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
         let canceller = self._canceller.clone_for_async();
+        let emitter = self.event_emitter.clone();
         let instrument_id = cmd.instrument_id;
         let client_order_id = Some(cmd.client_order_id);
         let venue_order_id = cmd.venue_order_id;
@@ -660,7 +655,7 @@ impl ExecutionClient for BitmexExecutionClient {
                 .broadcast_cancel(instrument_id, client_order_id, venue_order_id)
                 .await
             {
-                Ok(Some(report)) => dispatch_order_status_report(report),
+                Ok(Some(report)) => emitter.emit_order_status_report(report),
                 Ok(None) => {
                     // Idempotent success - order already cancelled
                     log::debug!("Order already cancelled: {client_order_id:?}");
@@ -675,6 +670,7 @@ impl ExecutionClient for BitmexExecutionClient {
 
     fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
         let canceller = self._canceller.clone_for_async();
+        let emitter = self.event_emitter.clone();
         let instrument_id = cmd.instrument_id;
         let order_side = Some(cmd.order_side);
 
@@ -685,7 +681,7 @@ impl ExecutionClient for BitmexExecutionClient {
             {
                 Ok(reports) => {
                     for report in reports {
-                        dispatch_order_status_report(report);
+                        emitter.emit_order_status_report(report);
                     }
                 }
                 Err(e) => log::error!("BitMEX cancel all failed: {e:?}"),
@@ -698,6 +694,7 @@ impl ExecutionClient for BitmexExecutionClient {
 
     fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
         let canceller = self._canceller.clone_for_async();
+        let emitter = self.event_emitter.clone();
         let instrument_id = cmd.instrument_id;
         let venue_ids: Vec<VenueOrderId> = cmd
             .cancels
@@ -712,7 +709,7 @@ impl ExecutionClient for BitmexExecutionClient {
             {
                 Ok(reports) => {
                     for report in reports {
-                        dispatch_order_status_report(report);
+                        emitter.emit_order_status_report(report);
                     }
                 }
                 Err(e) => log::error!("BitMEX batch cancel failed: {e:?}"),
@@ -724,24 +721,27 @@ impl ExecutionClient for BitmexExecutionClient {
     }
 }
 
-fn dispatch_ws_message(message: NautilusWsMessage) {
+/// Dispatches a WebSocket message using the event emitter.
+fn dispatch_ws_message(message: NautilusWsMessage, emitter: &OrderEventEmitter) {
     match message {
         NautilusWsMessage::OrderStatusReports(reports) => {
             for report in reports {
-                dispatch_order_status_report(report);
+                emitter.emit_order_status_report(report);
             }
         }
         NautilusWsMessage::FillReports(reports) => {
             for report in reports {
-                dispatch_fill_report(report);
+                emitter.emit_fill_report(report);
             }
         }
         NautilusWsMessage::PositionStatusReport(report) => {
-            dispatch_position_status_report(report);
+            emitter.emit_position_report(report);
         }
-        NautilusWsMessage::AccountState(state) => dispatch_account_state(state),
+        NautilusWsMessage::AccountState(state) => {
+            emitter.emit_account_state_event(state);
+        }
         NautilusWsMessage::OrderUpdated(event) => {
-            dispatch_order_event(OrderEventAny::Updated(event));
+            emitter.emit_execution_order_event(OrderEventAny::Updated(event));
         }
         NautilusWsMessage::Data(_)
         | NautilusWsMessage::Instruments(_)
@@ -754,41 +754,5 @@ fn dispatch_ws_message(message: NautilusWsMessage) {
         NautilusWsMessage::Authenticated => {
             log::debug!("BitMEX execution websocket authenticated");
         }
-    }
-}
-
-fn dispatch_account_state(state: AccountState) {
-    let endpoint = MessagingSwitchboard::portfolio_update_account();
-    msgbus::send_account_state(endpoint, &state);
-}
-
-fn dispatch_order_status_report(report: OrderStatusReport) {
-    let sender = get_exec_event_sender();
-    let exec_report = ExecutionReport::Order(Box::new(report));
-    if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
-        log::warn!("Failed to send order status report: {e}");
-    }
-}
-
-fn dispatch_fill_report(report: FillReport) {
-    let sender = get_exec_event_sender();
-    let exec_report = ExecutionReport::Fill(Box::new(report));
-    if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
-        log::warn!("Failed to send fill report: {e}");
-    }
-}
-
-fn dispatch_position_status_report(report: PositionStatusReport) {
-    let sender = get_exec_event_sender();
-    let exec_report = ExecutionReport::Position(Box::new(report));
-    if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
-        log::warn!("Failed to send position status report: {e}");
-    }
-}
-
-fn dispatch_order_event(event: OrderEventAny) {
-    let sender = get_exec_event_sender();
-    if let Err(e) = sender.send(ExecutionEvent::Order(event)) {
-        log::warn!("Failed to send order event: {e}");
     }
 }

@@ -37,7 +37,6 @@ use nautilus_model::{
     accounts::AccountAny,
     enums::OmsType,
     identifiers::{AccountId, ClientId, TraderId, Venue},
-    orders::Order,
     types::{AccountBalance, MarginBalance},
 };
 
@@ -141,10 +140,14 @@ impl ExecutionClient for BacktestExecutionClient {
         balances: Vec<AccountBalance>,
         margins: Vec<MarginBalance>,
         reported: bool,
-        ts_event: UnixNanos,
+        _ts_event: UnixNanos,
     ) -> anyhow::Result<()> {
-        self.core
-            .generate_account_state(balances, margins, reported, ts_event)
+        // Backtest uses msgbus for event dispatch (via core.send_* methods)
+        let state = self
+            .core
+            .generate_account_state(balances, margins, reported);
+        self.core.send_account_state(&state);
+        Ok(())
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
@@ -160,12 +163,9 @@ impl ExecutionClient for BacktestExecutionClient {
     }
 
     fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
-        self.core.generate_order_submitted(
-            cmd.strategy_id,
-            cmd.instrument_id,
-            cmd.client_order_id,
-            self.clock.borrow().timestamp_ns(),
-        );
+        let order = self.core.get_order(&cmd.client_order_id)?;
+        let event = self.core.generate_order_submitted(&order);
+        self.core.send_order_event(event);
 
         if let Some(exchange) = self.exchange.upgrade() {
             exchange
@@ -179,12 +179,8 @@ impl ExecutionClient for BacktestExecutionClient {
 
     fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
         for order in &cmd.order_list.orders {
-            self.core.generate_order_submitted(
-                cmd.strategy_id,
-                order.instrument_id(),
-                order.client_order_id(),
-                self.clock.borrow().timestamp_ns(),
-            );
+            let event = self.core.generate_order_submitted(order);
+            self.core.send_order_event(event);
         }
 
         if let Some(exchange) = self.exchange.upgrade() {

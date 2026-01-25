@@ -662,6 +662,7 @@ async fn test_submit_order_generates_submitted_and_accepted_events() {
     let (mut client, mut rx, cache) = create_test_execution_client(base_url);
     add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
 
+    client.start().unwrap();
     client.connect().await.unwrap();
 
     let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
@@ -744,6 +745,7 @@ async fn test_cancel_all_orders_generates_canceled_events() {
     let (mut client, mut rx, cache) = create_test_execution_client(base_url);
     add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
 
+    client.start().unwrap();
     client.connect().await.unwrap();
 
     let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
@@ -791,6 +793,7 @@ async fn test_query_account_generates_account_state_event() {
     let (mut client, mut rx, cache) = create_test_execution_client(base_url);
     add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
 
+    client.start().unwrap();
     client.connect().await.unwrap();
 
     let query_cmd = QueryAccount::new(

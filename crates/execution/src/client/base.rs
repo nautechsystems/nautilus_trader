@@ -24,20 +24,19 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc};
 use nautilus_common::{
     cache::Cache, clock::Clock, messages::ExecutionReport, msgbus, msgbus::MessagingSwitchboard,
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::UUID4;
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},
+    enums::{AccountType, LiquiditySide, OmsType},
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
         OrderEventAny, OrderExpired, OrderFilled, OrderModifyRejected, OrderRejected,
         OrderSubmitted, OrderTriggered, OrderUpdated,
     },
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
-        TraderId, Venue, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, PositionId, TradeId, TraderId, Venue, VenueOrderId,
     },
-    orders::OrderAny,
+    orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
@@ -73,7 +72,7 @@ impl Debug for ExecutionClientCore {
 impl ExecutionClientCore {
     /// Creates a new [`ExecutionClientCore`] instance.
     #[allow(clippy::too_many_arguments)]
-    pub const fn new(
+    pub fn new(
         trader_id: TraderId,
         client_id: ClientId,
         venue: Venue,
@@ -139,190 +138,177 @@ impl ExecutionClientCore {
             .ok_or_else(|| anyhow::anyhow!("Order not found in cache for {client_order_id}"))
     }
 
-    /// Generates and publishes the account state event.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if constructing or sending the account state fails.
+    /// Generates an account state event.
+    #[must_use]
     pub fn generate_account_state(
         &self,
         balances: Vec<AccountBalance>,
         margins: Vec<MarginBalance>,
         reported: bool,
-        ts_event: UnixNanos,
         // info:  TODO: Need to double check the use case here
-    ) -> anyhow::Result<()> {
-        let account_state = AccountState::new(
+    ) -> AccountState {
+        let ts = self.clock.borrow().timestamp_ns();
+        AccountState::new(
             self.account_id,
             self.account_type,
             balances,
             margins,
             reported,
             UUID4::new(),
-            ts_event,
-            self.clock.borrow().timestamp_ns(),
+            ts,
+            ts,
             self.base_currency,
-        );
-        self.send_account_state(account_state);
-        Ok(())
+        )
     }
 
-    pub fn generate_order_denied(
-        &self,
-        strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        reason: &str,
-        ts_event: UnixNanos,
-    ) {
+    /// Generates an order denied event.
+    #[must_use]
+    pub fn generate_order_denied(&self, order: &dyn Order, reason: &str) -> OrderEventAny {
+        let ts = self.clock.borrow().timestamp_ns();
         let event = OrderDenied::new(
             self.trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
             reason.into(),
             UUID4::new(),
-            ts_event,
-            self.clock.borrow().timestamp_ns(),
+            ts,
+            ts,
         );
-        self.send_order_event(OrderEventAny::Denied(event));
+        OrderEventAny::Denied(event)
     }
 
-    pub fn generate_order_submitted(
-        &self,
-        strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        ts_event: UnixNanos,
-    ) {
+    /// Generates an order submitted event.
+    #[must_use]
+    pub fn generate_order_submitted(&self, order: &dyn Order) -> OrderEventAny {
+        let ts = self.clock.borrow().timestamp_ns();
         let event = OrderSubmitted::new(
             self.trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
             self.account_id,
             UUID4::new(),
-            ts_event,
-            self.clock.borrow().timestamp_ns(),
+            ts,
+            ts,
         );
-        self.send_order_event(OrderEventAny::Submitted(event));
+        OrderEventAny::Submitted(event)
     }
 
+    /// Generates an order rejected event.
+    #[must_use]
     pub fn generate_order_rejected(
         &self,
-        strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
+        order: &dyn Order,
         reason: &str,
-        ts_event: UnixNanos,
         due_post_only: bool,
-    ) {
+    ) -> OrderEventAny {
+        let ts = self.clock.borrow().timestamp_ns();
         let event = OrderRejected::new(
             self.trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
             self.account_id,
             reason.into(),
             UUID4::new(),
-            ts_event,
-            self.clock.borrow().timestamp_ns(),
+            ts,
+            ts,
             false,
             due_post_only,
         );
-        self.send_order_event(OrderEventAny::Rejected(event));
+        OrderEventAny::Rejected(event)
     }
 
+    /// Generates an order accepted event.
+    #[must_use]
     pub fn generate_order_accepted(
         &self,
-        strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
+        order: &dyn Order,
         venue_order_id: VenueOrderId,
-        ts_event: UnixNanos,
-    ) {
+    ) -> OrderEventAny {
+        let ts = self.clock.borrow().timestamp_ns();
         let event = OrderAccepted::new(
             self.trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
             venue_order_id,
             self.account_id,
             UUID4::new(),
-            ts_event,
-            self.clock.borrow().timestamp_ns(),
+            ts,
+            ts,
             false,
         );
-        self.send_order_event(OrderEventAny::Accepted(event));
+        OrderEventAny::Accepted(event)
     }
 
+    /// Generates an order modify rejected event.
+    #[must_use]
     pub fn generate_order_modify_rejected(
         &self,
-        strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        venue_order_id: VenueOrderId,
+        order: &dyn Order,
+        venue_order_id: Option<VenueOrderId>,
         reason: &str,
-        ts_event: UnixNanos,
-    ) {
+    ) -> OrderEventAny {
+        let ts = self.clock.borrow().timestamp_ns();
         let event = OrderModifyRejected::new(
             self.trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
             reason.into(),
             UUID4::new(),
-            ts_event,
-            self.clock.borrow().timestamp_ns(),
+            ts,
+            ts,
             false,
-            Some(venue_order_id),
+            venue_order_id,
             Some(self.account_id),
         );
-        self.send_order_event(OrderEventAny::ModifyRejected(event));
+        OrderEventAny::ModifyRejected(event)
     }
 
+    /// Generates an order cancel rejected event.
+    #[must_use]
     pub fn generate_order_cancel_rejected(
         &self,
-        strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        venue_order_id: VenueOrderId,
+        order: &dyn Order,
+        venue_order_id: Option<VenueOrderId>,
         reason: &str,
-        ts_event: UnixNanos,
-    ) {
+    ) -> OrderEventAny {
+        let ts = self.clock.borrow().timestamp_ns();
         let event = OrderCancelRejected::new(
             self.trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
             reason.into(),
             UUID4::new(),
-            ts_event,
-            self.clock.borrow().timestamp_ns(),
+            ts,
+            ts,
             false,
-            Some(venue_order_id),
+            venue_order_id,
             Some(self.account_id),
         );
-        self.send_order_event(OrderEventAny::CancelRejected(event));
+        OrderEventAny::CancelRejected(event)
     }
 
+    /// Generates an order updated event.
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn generate_order_updated(
         &self,
-        strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
+        order: &dyn Order,
         venue_order_id: VenueOrderId,
         quantity: Quantity,
-        price: Price,
+        price: Option<Price>,
         trigger_price: Option<Price>,
         protection_price: Option<Price>,
-        ts_event: UnixNanos,
         venue_order_id_modified: bool,
-    ) {
+    ) -> OrderEventAny {
         if !venue_order_id_modified {
             let cache = self.cache.as_ref().borrow();
-            let existing_order_result = cache.venue_order_id(&client_order_id);
+            let existing_order_result = cache.venue_order_id(&order.client_order_id());
             if let Some(existing_order) = existing_order_result
                 && *existing_order != venue_order_id
             {
@@ -332,147 +318,148 @@ impl ExecutionClientCore {
             }
         }
 
+        let ts = self.clock.borrow().timestamp_ns();
         let event = OrderUpdated::new(
             self.trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
             quantity,
             UUID4::new(),
-            ts_event,
-            self.clock.borrow().timestamp_ns(),
+            ts,
+            ts,
             false,
             Some(venue_order_id),
             Some(self.account_id),
-            Some(price),
+            price,
             trigger_price,
             protection_price,
         );
 
-        self.send_order_event(OrderEventAny::Updated(event));
+        OrderEventAny::Updated(event)
     }
 
+    /// Generates an order canceled event.
+    #[must_use]
     pub fn generate_order_canceled(
         &self,
-        strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        venue_order_id: VenueOrderId,
-        ts_event: UnixNanos,
-    ) {
+        order: &dyn Order,
+        venue_order_id: Option<VenueOrderId>,
+    ) -> OrderEventAny {
+        let ts = self.clock.borrow().timestamp_ns();
         let event = OrderCanceled::new(
             self.trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
             UUID4::new(),
-            ts_event,
-            self.clock.borrow().timestamp_ns(),
+            ts,
+            ts,
             false,
-            Some(venue_order_id),
+            venue_order_id,
             Some(self.account_id),
         );
 
-        self.send_order_event(OrderEventAny::Canceled(event));
+        OrderEventAny::Canceled(event)
     }
 
+    /// Generates an order triggered event.
+    #[must_use]
     pub fn generate_order_triggered(
         &self,
-        strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        venue_order_id: VenueOrderId,
-        ts_event: UnixNanos,
-    ) {
+        order: &dyn Order,
+        venue_order_id: Option<VenueOrderId>,
+    ) -> OrderEventAny {
+        let ts = self.clock.borrow().timestamp_ns();
         let event = OrderTriggered::new(
             self.trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
             UUID4::new(),
-            ts_event,
-            self.clock.borrow().timestamp_ns(),
+            ts,
+            ts,
             false,
-            Some(venue_order_id),
+            venue_order_id,
             Some(self.account_id),
         );
 
-        self.send_order_event(OrderEventAny::Triggered(event));
+        OrderEventAny::Triggered(event)
     }
 
+    /// Generates an order expired event.
+    #[must_use]
     pub fn generate_order_expired(
         &self,
-        strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        venue_order_id: VenueOrderId,
-        ts_event: UnixNanos,
-    ) {
+        order: &dyn Order,
+        venue_order_id: Option<VenueOrderId>,
+    ) -> OrderEventAny {
+        let ts = self.clock.borrow().timestamp_ns();
         let event = OrderExpired::new(
             self.trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
             UUID4::new(),
-            ts_event,
-            self.clock.borrow().timestamp_ns(),
+            ts,
+            ts,
             false,
-            Some(venue_order_id),
+            venue_order_id,
             Some(self.account_id),
         );
 
-        self.send_order_event(OrderEventAny::Expired(event));
+        OrderEventAny::Expired(event)
     }
 
+    /// Generates an order filled event.
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn generate_order_filled(
         &self,
-        strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
+        order: &dyn Order,
         venue_order_id: VenueOrderId,
-        venue_position_id: PositionId,
+        venue_position_id: Option<PositionId>,
         trade_id: TradeId,
-        order_side: OrderSide,
-        order_type: OrderType,
         last_qty: Quantity,
         last_px: Price,
         quote_currency: Currency,
-        commission: Money,
+        commission: Option<Money>,
         liquidity_side: LiquiditySide,
-        ts_event: UnixNanos,
-    ) {
+    ) -> OrderEventAny {
+        let ts = self.clock.borrow().timestamp_ns();
         let event = OrderFilled::new(
             self.trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
             venue_order_id,
             self.account_id,
             trade_id,
-            order_side,
-            order_type,
+            order.order_side(),
+            order.order_type(),
             last_qty,
             last_px,
             quote_currency,
             liquidity_side,
             UUID4::new(),
-            ts_event,
-            self.clock.borrow().timestamp_ns(),
+            ts,
+            ts,
             false,
-            Some(venue_position_id),
-            Some(commission),
+            venue_position_id,
+            commission,
         );
 
-        self.send_order_event(OrderEventAny::Filled(event));
+        OrderEventAny::Filled(event)
     }
 
-    fn send_account_state(&self, account_state: AccountState) {
+    /// Sends an account state event via msgbus.
+    pub fn send_account_state(&self, account_state: &AccountState) {
         let endpoint = MessagingSwitchboard::portfolio_update_account();
-        msgbus::send_account_state(endpoint, &account_state);
+        msgbus::send_account_state(endpoint, account_state);
     }
 
-    fn send_order_event(&self, event: OrderEventAny) {
+    /// Sends an order event via msgbus.
+    pub fn send_order_event(&self, event: OrderEventAny) {
         let endpoint = MessagingSwitchboard::exec_engine_process();
         msgbus::send_order_event(endpoint, event);
     }

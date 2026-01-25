@@ -59,10 +59,12 @@ pub mod builder;
 pub mod config;
 pub mod manager;
 pub mod node;
+pub mod order_event_emitter;
 pub mod runner;
 
 // Re-exports for adapters
 pub use nautilus_execution::client::base::ExecutionClientCore;
+pub use order_event_emitter::OrderEventEmitter;
 
 #[cfg(feature = "python")]
 pub mod python;

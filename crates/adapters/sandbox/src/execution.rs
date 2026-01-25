@@ -503,11 +503,12 @@ impl ExecutionClient for SandboxExecutionClient {
         balances: Vec<AccountBalance>,
         margins: Vec<MarginBalance>,
         reported: bool,
-        ts_event: UnixNanos,
+        _ts_event: UnixNanos,
     ) -> anyhow::Result<()> {
-        self.core
-            .borrow()
-            .generate_account_state(balances, margins, reported, ts_event)
+        let core = self.core.borrow();
+        let state = core.generate_account_state(balances, margins, reported);
+        core.send_account_state(&state);
+        Ok(())
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
@@ -588,12 +589,8 @@ impl ExecutionClient for SandboxExecutionClient {
             return Ok(());
         }
 
-        core.generate_order_submitted(
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            cmd.ts_init,
-        );
+        let event = core.generate_order_submitted(&order);
+        core.send_order_event(event);
 
         let instrument_id = order.instrument_id();
         let instrument = self
@@ -641,12 +638,8 @@ impl ExecutionClient for SandboxExecutionClient {
                 continue;
             }
 
-            core.generate_order_submitted(
-                order.strategy_id(),
-                order.instrument_id(),
-                order.client_order_id(),
-                cmd.ts_init,
-            );
+            let event = core.generate_order_submitted(order);
+            core.send_order_event(event);
         }
 
         drop(core); // Release borrow before mutable operations
