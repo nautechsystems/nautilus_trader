@@ -2227,13 +2227,7 @@ cdef class DataEngine(Component):
                     return
 
                 # Preserve behavior: external revisions are cached only when sequence validation is enabled.
-                if (
-                    bar.is_revision
-                    and not self._validate_data_sequence
-                    and not bar_type.is_internally_aggregated()
-                ):
-                    pass
-                else:
+                if not bar.is_revision or self._validate_data_sequence or bar_type.is_internally_aggregated():
                     # Replace `last_bar`, previously cached bar will fall out of scope
                     self._cache._bars.get(bar_type)[0] = bar  # noqa
             elif bar.is_revision:
