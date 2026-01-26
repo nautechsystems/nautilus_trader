@@ -1730,6 +1730,9 @@ cdef class Cache(CacheFacade):
             self._bars[bar.bar_type] = bars
 
         bars.appendleft(bar)
+        self._update_latest_bid_ask_bar(bar)
+
+    cdef void _update_latest_bid_ask_bar(self, Bar bar):
         cdef PriceType price_type = bar.bar_type.spec.price_type
         if price_type == PriceType.BID:
             self._bars_bid[bar.bar_type.instrument_id] = bar
@@ -1760,11 +1763,7 @@ cdef class Cache(CacheFacade):
             return
 
         bars[0] = bar
-        cdef PriceType price_type = bar.bar_type.spec.price_type
-        if price_type == PriceType.BID:
-            self._bars_bid[bar.bar_type.instrument_id] = bar
-        elif price_type == PriceType.ASK:
-            self._bars_ask[bar.bar_type.instrument_id] = bar
+        self._update_latest_bid_ask_bar(bar)
 
     cpdef void add_quote_ticks(self, list ticks):
         """
