@@ -394,3 +394,118 @@ def test_parse_price_history_uses_instrument_precision(
     first_trade = trades[0]
     assert first_trade.price.precision == loader.instrument.price_precision
     assert first_trade.size.precision == loader.instrument.size_precision
+
+
+# ============================================================================
+# Event-level API tests
+# ============================================================================
+
+
+@pytest.fixture
+def event_data():
+    data = pkgutil.get_data(
+        "tests.integration_tests.adapters.polymarket.resources.http_responses",
+        "event.json",
+    )
+    assert data
+    return msgspec.json.decode(data)
+
+
+@pytest.fixture
+def events_list_data():
+    data = pkgutil.get_data(
+        "tests.integration_tests.adapters.polymarket.resources.http_responses",
+        "events_list.json",
+    )
+    assert data
+    return msgspec.json.decode(data)
+
+
+@pytest.mark.asyncio
+async def test_fetch_event_by_slug(event_data):
+    # Arrange
+    mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
+    mock_response = Mock()
+    mock_response.status = 200
+    mock_response.body = msgspec.json.encode([event_data])  # API returns array
+    mock_http_client.get = AsyncMock(return_value=mock_response)
+
+    # Act
+    event = await PolymarketDataLoader.fetch_event_by_slug(
+        "highest-temperature-in-nyc-on-january-26",
+        http_client=mock_http_client,
+    )
+
+    # Assert
+    mock_http_client.get.assert_called_once_with(
+        url="https://gamma-api.polymarket.com/events",
+        params={"slug": "highest-temperature-in-nyc-on-january-26"},
+    )
+    assert event["slug"] == "highest-temperature-in-nyc-on-january-26"
+    assert event["title"] == "Highest temperature in NYC on January 26?"
+    assert len(event["markets"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_fetch_event_by_slug_not_found():
+    # Arrange
+    mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
+    mock_response = Mock()
+    mock_response.status = 200
+    mock_response.body = msgspec.json.encode([])  # Empty array
+    mock_http_client.get = AsyncMock(return_value=mock_response)
+
+    # Act & Assert
+    with pytest.raises(ValueError, match="Event with slug 'nonexistent-event' not found"):
+        await PolymarketDataLoader.fetch_event_by_slug(
+            "nonexistent-event",
+            http_client=mock_http_client,
+        )
+
+
+@pytest.mark.asyncio
+async def test_fetch_events(events_list_data):
+    # Arrange
+    mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
+    mock_response = Mock()
+    mock_response.status = 200
+    mock_response.body = msgspec.json.encode(events_list_data)
+    mock_http_client.get = AsyncMock(return_value=mock_response)
+
+    # Act
+    events = await PolymarketDataLoader.fetch_events(
+        active=True,
+        closed=False,
+        limit=10,
+        http_client=mock_http_client,
+    )
+
+    # Assert
+    mock_http_client.get.assert_called_once()
+    assert len(events) == 3
+    assert events[0]["slug"] == "nba-mavericks-vs-grizzlies"
+    assert events[1]["slug"] == "nfl-falcons-vs-panthers"
+
+
+@pytest.mark.asyncio
+async def test_get_event_markets(event_data):
+    # Arrange
+    mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
+    mock_response = Mock()
+    mock_response.status = 200
+    mock_response.body = msgspec.json.encode([event_data])
+    mock_http_client.get = AsyncMock(return_value=mock_response)
+
+    # Act
+    markets = await PolymarketDataLoader.get_event_markets(
+        "highest-temperature-in-nyc-on-january-26",
+        http_client=mock_http_client,
+    )
+
+    # Assert
+    assert len(markets) == 3
+    assert (
+        markets[0]["conditionId"]
+        == "0xed7d522e06d2f1f9015a468884cfdb2be7e737a33f130c1237a40f18bc739267"
+    )
+    assert "25F or below" in markets[0]["question"]
