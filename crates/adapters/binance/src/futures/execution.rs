@@ -165,6 +165,7 @@ impl BinanceFuturesExecutionClient {
 
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
+            clock,
             core.trader_id,
             core.account_id,
             core.account_type,
@@ -291,7 +292,6 @@ impl BinanceFuturesExecutionClient {
             account_state.margins.clone(),
             account_state.is_reported,
             ts_now,
-            ts_now,
         );
         Ok(())
     }
@@ -388,7 +388,7 @@ impl BinanceFuturesExecutionClient {
         let emitter = self.emitter.clone();
         let trader_id = self.core.trader_id;
         let account_id = self.core.account_id;
-        let ts_init = cmd.ts_init;
+        let clock = self.clock;
         let client_order_id = order.client_order_id();
         let strategy_id = order.strategy_id();
         let instrument_id = order.instrument_id();
@@ -400,7 +400,6 @@ impl BinanceFuturesExecutionClient {
         let trigger_price = order.trigger_price();
         let reduce_only = order.is_reduce_only();
         let position_side = self.determine_position_side(order_side, reduce_only);
-        let clock = self.clock;
 
         // HTTP only generates OrderRejected on failure.
         // OrderAccepted comes from WebSocket user data stream ORDER_TRADE_UPDATE.
@@ -433,6 +432,7 @@ impl BinanceFuturesExecutionClient {
                     // Keep order registered - if HTTP failed due to timeout but order
                     // reached Binance, WebSocket updates will still arrive. The order
                     // will be cleaned up via WebSocket rejection or reconciliation.
+                    let ts_now = clock.get_time_ns();
                     let rejected_event = OrderRejected::new(
                         trader_id,
                         strategy_id,
@@ -441,8 +441,8 @@ impl BinanceFuturesExecutionClient {
                         account_id,
                         format!("submit-order-error: {e}").into(),
                         UUID4::new(),
-                        ts_init,
-                        clock.get_time_ns(),
+                        ts_now,
+                        ts_now,
                         false,
                         false,
                     );
@@ -475,11 +475,10 @@ impl BinanceFuturesExecutionClient {
         let emitter = self.emitter.clone();
         let trader_id = self.core.trader_id;
         let account_id = self.core.account_id;
-        let ts_init = cmd.ts_init;
+        let clock = self.clock;
         let instrument_id = command.instrument_id;
         let venue_order_id = command.venue_order_id;
         let client_order_id = Some(command.client_order_id);
-        let clock = self.clock;
 
         // HTTP only generates OrderCancelRejected on failure.
         // OrderCanceled comes from WebSocket user data stream ORDER_TRADE_UPDATE.
@@ -497,6 +496,7 @@ impl BinanceFuturesExecutionClient {
                     );
                 }
                 Err(e) => {
+                    let ts_now = clock.get_time_ns();
                     let rejected_event = OrderCancelRejected::new(
                         trader_id,
                         command.strategy_id,
@@ -504,8 +504,8 @@ impl BinanceFuturesExecutionClient {
                         command.client_order_id,
                         format!("cancel-order-error: {e}").into(),
                         UUID4::new(),
-                        clock.get_time_ns(),
-                        ts_init,
+                        ts_now,
+                        ts_now,
                         false,
                         command.venue_order_id,
                         Some(account_id),
@@ -957,9 +957,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         reported: bool,
         ts_event: UnixNanos,
     ) -> anyhow::Result<()> {
-        let ts_init = self.clock.get_time_ns();
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_event, ts_init);
+            .emit_account_state(balances, margins, reported, ts_event);
         Ok(())
     }
 
@@ -1025,8 +1024,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         }
 
         log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
-        let ts_init = self.clock.get_time_ns();
-        self.emitter.emit_order_submitted(&order, ts_init);
+        self.emitter.emit_order_submitted(&order);
 
         self.submit_order_internal(cmd)
     }
@@ -1050,6 +1048,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 "Cannot modify order {}: not found in cache",
                 cmd.client_order_id
             );
+            let ts_init = self.clock.get_time_ns();
             let rejected_event = OrderModifyRejected::new(
                 self.core.trader_id,
                 cmd.strategy_id,
@@ -1057,8 +1056,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 cmd.client_order_id,
                 "Order not found in cache for modify".into(),
                 UUID4::new(),
-                self.clock.get_time_ns(),
-                cmd.ts_init,
+                ts_init, // TODO: Use proper event timestamp
+                ts_init,
                 false,
                 cmd.venue_order_id,
                 Some(self.core.account_id),
@@ -1074,7 +1073,6 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let emitter = self.emitter.clone();
         let trader_id = self.core.trader_id;
         let account_id = self.core.account_id;
-        let ts_init = cmd.ts_init;
         let instrument_id = command.instrument_id;
         let venue_order_id = command.venue_order_id;
         let client_order_id = Some(command.client_order_id);
@@ -1087,6 +1085,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 "Cannot modify order {}: price required",
                 cmd.client_order_id
             );
+            let ts_init = self.clock.get_time_ns();
             let rejected_event = OrderModifyRejected::new(
                 self.core.trader_id,
                 cmd.strategy_id,
@@ -1094,8 +1093,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 cmd.client_order_id,
                 "Price required for order modification".into(),
                 UUID4::new(),
-                self.clock.get_time_ns(),
-                cmd.ts_init,
+                ts_init, // TODO: Use proper event timestamp
+                ts_init,
                 false,
                 cmd.venue_order_id,
                 Some(self.core.account_id),
@@ -1122,6 +1121,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
             match result {
                 Ok(report) => {
+                    let ts_now = clock.get_time_ns();
                     let updated_event = OrderUpdated::new(
                         trader_id,
                         command.strategy_id,
@@ -1129,8 +1129,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                         command.client_order_id,
                         quantity,
                         UUID4::new(),
-                        ts_init,
-                        clock.get_time_ns(),
+                        ts_now,
+                        ts_now,
                         false,
                         Some(report.venue_order_id),
                         Some(account_id),
@@ -1142,6 +1142,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     emitter.send_order_event(OrderEventAny::Updated(updated_event));
                 }
                 Err(e) => {
+                    let ts_now = clock.get_time_ns();
                     let rejected_event = OrderModifyRejected::new(
                         trader_id,
                         command.strategy_id,
@@ -1149,8 +1150,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                         command.client_order_id,
                         format!("modify-order-failed: {e}").into(),
                         UUID4::new(),
-                        clock.get_time_ns(),
-                        ts_init,
+                        ts_now,
+                        ts_now,
                         false,
                         command.venue_order_id,
                         Some(account_id),

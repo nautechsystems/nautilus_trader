@@ -244,12 +244,6 @@ class BybitDataClient(LiveMarketDataClient):
 
         return ws_client
 
-    def _bar_spec_to_bybit_interval(self, bar_spec) -> str:
-        return nautilus_pyo3.bybit_bar_spec_to_interval(
-            bar_spec.aggregation,
-            bar_spec.step,
-        )
-
     async def _update_instruments(self, interval_mins: int) -> None:
         while True:
             try:
@@ -340,12 +334,12 @@ class BybitDataClient(LiveMarketDataClient):
         await ws_client.subscribe_trades(pyo3_instrument_id)
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
             command.bar_type.instrument_id.value,
         )
-        interval = self._bar_spec_to_bybit_interval(command.bar_type.spec)
         ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.subscribe_klines(pyo3_instrument_id, interval)
+        await ws_client.subscribe_bars(pyo3_bar_type)
 
     async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
         # Bybit doesn't have a separate funding rate subscription
@@ -406,12 +400,12 @@ class BybitDataClient(LiveMarketDataClient):
         await ws_client.unsubscribe_trades(pyo3_instrument_id)
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
             command.bar_type.instrument_id.value,
         )
-        interval = self._bar_spec_to_bybit_interval(command.bar_type.spec)
         ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.unsubscribe_klines(pyo3_instrument_id, interval)
+        await ws_client.unsubscribe_bars(pyo3_bar_type)
 
     async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
         # Bybit doesn't have a separate funding rate subscription

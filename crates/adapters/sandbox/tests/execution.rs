@@ -24,7 +24,7 @@ use nautilus_common::{
     msgbus::{self, MessagingSwitchboard, stubs::get_typed_into_message_saving_handler},
 };
 use nautilus_core::UnixNanos;
-use nautilus_execution::client::base::ExecutionClientCore;
+use nautilus_execution::client::core::ExecutionClientCore;
 use nautilus_model::{
     data::QuoteTick,
     enums::{AccountType, BookType, OmsType},

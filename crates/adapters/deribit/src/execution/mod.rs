@@ -123,12 +123,18 @@ impl DeribitExecutionClient {
         // Set account ID for order/fill reports
         ws_client.set_account_id(core.account_id);
 
-        let emitter =
-            ExecutionEventEmitter::new(core.trader_id, core.account_id, AccountType::Margin, None);
+        let clock = get_atomic_clock_realtime();
+        let emitter = ExecutionEventEmitter::new(
+            clock,
+            core.trader_id,
+            core.account_id,
+            AccountType::Margin,
+            None,
+        );
 
         Ok(Self {
             core,
-            clock: get_atomic_clock_realtime(),
+            clock,
             config,
             emitter,
             http_client,
@@ -262,7 +268,7 @@ impl DeribitExecutionClient {
         // Validate instrument belongs to Deribit venue
         // TODO: We can do this in a cenrtalized place (execution client adapter?) upstream
         if order.instrument_id().venue != *DERIBIT_VENUE {
-            let ts_init = self.clock.get_time_ns();
+            let ts_event = self.clock.get_time_ns();
             self.emitter.emit_order_rejected_event(
                 order.strategy_id(),
                 order.instrument_id(),
@@ -272,8 +278,7 @@ impl DeribitExecutionClient {
                     order.instrument_id(),
                     order.instrument_id().venue
                 ),
-                ts_init,
-                ts_init,
+                ts_event,
                 false,
             );
 
@@ -292,11 +297,11 @@ impl DeribitExecutionClient {
         let order_side = order.order_side();
 
         log::debug!("OrderSubmitted client_order_id={client_order_id}");
-        let ts_init = self.clock.get_time_ns();
-        self.emitter.emit_order_submitted(order, ts_init);
+        self.emitter.emit_order_submitted(order);
 
         let ws_client = self.ws_client.clone();
         let emitter = self.emitter.clone();
+        let clock = self.clock;
 
         self.spawn_task(task_name, async move {
             let result = ws_client
@@ -311,13 +316,13 @@ impl DeribitExecutionClient {
                 .await;
 
             if let Err(e) = result {
+                let ts_event = clock.get_time_ns();
                 emitter.emit_order_rejected_event(
                     strategy_id,
                     instrument_id,
                     client_order_id,
                     &format!("{task_name}-error: {e}"),
-                    ts_init,
-                    ts_init,
+                    ts_event,
                     false,
                 );
                 return Err(e.into());
@@ -385,9 +390,8 @@ impl ExecutionClient for DeribitExecutionClient {
         reported: bool,
         ts_event: UnixNanos,
     ) -> anyhow::Result<()> {
-        let ts_init = self.clock.get_time_ns();
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_event, ts_init);
+            .emit_account_state(balances, margins, reported, ts_event);
         Ok(())
     }
 
@@ -803,8 +807,8 @@ impl ExecutionClient for DeribitExecutionClient {
         let strategy_id = cmd.strategy_id;
         let instrument_id = cmd.instrument_id;
         let venue_order_id = cmd.venue_order_id;
-        let ts_init = cmd.ts_init;
         let emitter = self.emitter.clone();
+        let clock = self.clock;
 
         log::info!(
             "Modifying order: order_id={order_id}, quantity={quantity}, price={price}, client_order_id={client_order_id}"
@@ -828,14 +832,14 @@ impl ExecutionClient for DeribitExecutionClient {
                     "Modify order failed: order_id={order_id}, client_order_id={client_order_id}, error={e}"
                 );
 
+                let ts_event = clock.get_time_ns();
                 emitter.emit_order_modify_rejected_event(
                     strategy_id,
                     instrument_id,
                     client_order_id,
                     venue_order_id,
                     &format!("modify-order-error: {e}"),
-                    ts_init,
-                    ts_init,
+                    ts_event,
                 );
 
                 anyhow::bail!("Modify order failed: {e}");
@@ -861,8 +865,8 @@ impl ExecutionClient for DeribitExecutionClient {
         let strategy_id = cmd.strategy_id;
         let instrument_id = cmd.instrument_id;
         let venue_order_id = cmd.venue_order_id;
-        let ts_init = cmd.ts_init;
         let emitter = self.emitter.clone();
+        let clock = self.clock;
 
         log::info!("Canceling order: order_id={order_id}, client_order_id={client_order_id}");
 
@@ -882,14 +886,14 @@ impl ExecutionClient for DeribitExecutionClient {
                     "Cancel order failed: order_id={order_id}, client_order_id={client_order_id}, error={e}"
                 );
 
+                let ts_event = clock.get_time_ns();
                 emitter.emit_order_cancel_rejected_event(
                     strategy_id,
                     instrument_id,
                     client_order_id,
                     venue_order_id,
                     &format!("cancel-order-error: {e}"),
-                    ts_init,
-                    ts_init,
+                    ts_event,
                 );
 
                 anyhow::bail!("Cancel order failed: {e}");
@@ -964,8 +968,6 @@ impl ExecutionClient for DeribitExecutionClient {
             instrument_id
         );
 
-        let ts_init = cmd.ts_init;
-
         // Cancel each matching order individually
         for (venue_order_id_str, client_order_id, order_instrument_id, venue_order_id) in
             orders_to_cancel
@@ -974,6 +976,7 @@ impl ExecutionClient for DeribitExecutionClient {
             let trader_id = cmd.trader_id;
             let strategy_id = cmd.strategy_id;
             let emitter = self.emitter.clone();
+            let clock = self.clock;
 
             self.spawn_task("cancel_order_by_side", async move {
                 if let Err(e) = ws_client
@@ -990,14 +993,14 @@ impl ExecutionClient for DeribitExecutionClient {
                         "Cancel order failed: order_id={venue_order_id_str}, client_order_id={client_order_id}, error={e}"
                     );
 
+                    let ts_event = clock.get_time_ns();
                     emitter.emit_order_cancel_rejected_event(
                         strategy_id,
                         order_instrument_id,
                         client_order_id,
                         venue_order_id,
                         &format!("cancel-order-error: {e}"),
-                        ts_init,
-                        ts_init,
+                        ts_event,
                     );
                 }
                 Ok(())
@@ -1031,14 +1034,14 @@ impl ExecutionClient for DeribitExecutionClient {
                     );
 
                     // Emit OrderCancelRejected event for missing venue_order_id
+                    let ts_event = self.clock.get_time_ns();
                     self.emitter.emit_order_cancel_rejected_event(
                         cancel.strategy_id,
                         cancel.instrument_id,
                         cancel.client_order_id,
                         None,
                         "venue_order_id required for cancel",
-                        cancel.ts_init,
-                        cancel.ts_init,
+                        ts_event,
                     );
                     continue;
                 }
@@ -1046,11 +1049,11 @@ impl ExecutionClient for DeribitExecutionClient {
 
             let ws_client = self.ws_client.clone();
             let emitter = self.emitter.clone();
+            let clock = self.clock;
             let client_order_id = cancel.client_order_id;
             let trader_id = cancel.trader_id;
             let strategy_id = cancel.strategy_id;
             let instrument_id = cancel.instrument_id;
-            let ts_init = cancel.ts_init;
 
             self.spawn_task("batch_cancel_order", async move {
                 if let Err(e) = ws_client
@@ -1067,14 +1070,14 @@ impl ExecutionClient for DeribitExecutionClient {
                         "Batch cancel order failed: order_id={order_id}, client_order_id={client_order_id}, error={e}"
                     );
 
+                    let ts_event = clock.get_time_ns();
                     emitter.emit_order_cancel_rejected_event(
                         strategy_id,
                         instrument_id,
                         client_order_id,
                         None,
                         &format!("batch-cancel-error: {e}"),
-                        ts_init,
-                        ts_init,
+                        ts_event,
                     );
 
                     anyhow::bail!("Batch cancel order failed: {e}");

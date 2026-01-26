@@ -97,9 +97,11 @@ impl AxExecutionClient {
             config.http_proxy_url.clone(),
         )?;
 
-        let account_id = core.account_id;
+        let clock = get_atomic_clock_realtime();
         let trader_id = core.trader_id;
-        let emitter = ExecutionEventEmitter::new(trader_id, account_id, AccountType::Margin, None);
+        let account_id = core.account_id;
+        let emitter =
+            ExecutionEventEmitter::new(clock, trader_id, account_id, AccountType::Margin, None);
         let ws_orders = AxOrdersWebSocketClient::new(
             config.ws_private_url(),
             account_id,
@@ -109,7 +111,7 @@ impl AxExecutionClient {
 
         Ok(Self {
             core,
-            clock: get_atomic_clock_realtime(),
+            clock,
             config,
             emitter,
             http_client,
@@ -183,13 +185,12 @@ impl AxExecutionClient {
             .await
             .context("failed to request AX account state")?;
 
-        let ts_init = self.clock.get_time_ns();
+        let ts_event = self.clock.get_time_ns();
         self.emitter.emit_account_state(
             account_state.balances.clone(),
             account_state.margins.clone(),
             account_state.is_reported,
-            ts_init,
-            ts_init,
+            ts_event,
         );
         Ok(())
     }
@@ -283,6 +284,7 @@ impl AxExecutionClient {
 
         let ws_orders = self.ws_orders.clone();
         let emitter = self.emitter.clone();
+        let clock = self.clock;
         let trader_id = self.core.trader_id;
         let ts_init = self.clock.get_time_ns();
 
@@ -306,13 +308,13 @@ impl AxExecutionClient {
                 .map_err(|e| anyhow::anyhow!("Submit order failed: {e}"));
 
             if let Err(e) = &result {
+                let ts_event = clock.get_time_ns();
                 emitter.emit_order_rejected_event(
                     strategy_id,
                     instrument_id,
                     client_order_id,
                     &format!("submit-order-error: {e}"),
-                    ts_init, // TODO: Use proper event timestamp
-                    ts_init,
+                    ts_event,
                     false,
                 );
                 anyhow::bail!("{e}");
@@ -328,11 +330,11 @@ impl AxExecutionClient {
         let ws_orders = self.ws_orders.clone();
 
         let emitter = self.emitter.clone();
+        let clock = self.clock;
         let instrument_id = cmd.instrument_id;
         let client_order_id = cmd.client_order_id;
         let venue_order_id = cmd.venue_order_id;
         let strategy_id = cmd.strategy_id;
-        let ts_init = self.clock.get_time_ns();
 
         self.spawn_task("cancel_order", async move {
             let result = ws_orders
@@ -341,14 +343,14 @@ impl AxExecutionClient {
                 .map_err(|e| anyhow::anyhow!("Cancel order failed: {e}"));
 
             if let Err(e) = &result {
+                let ts_event = clock.get_time_ns();
                 emitter.emit_order_cancel_rejected_event(
                     strategy_id,
                     instrument_id,
                     client_order_id,
                     venue_order_id,
                     &format!("cancel-order-error: {e}"),
-                    ts_init, // TODO: Use proper event timestamp
-                    ts_init,
+                    ts_event,
                 );
                 anyhow::bail!("{e}");
             }
@@ -539,9 +541,8 @@ impl ExecutionClient for AxExecutionClient {
         reported: bool,
         ts_event: UnixNanos,
     ) -> anyhow::Result<()> {
-        let ts_init = self.clock.get_time_ns();
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_event, ts_init);
+            .emit_account_state(balances, margins, reported, ts_event);
         Ok(())
     }
 
@@ -599,10 +600,8 @@ impl ExecutionClient for AxExecutionClient {
                 }
             }
 
-            let ts_init = self.clock.get_time_ns();
-
             log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
-            self.emitter.emit_order_submitted(order, ts_init);
+            self.emitter.emit_order_submitted(order);
         }
 
         self.submit_order_impl(cmd)
@@ -643,6 +642,8 @@ impl ExecutionClient for AxExecutionClient {
             cmd.instrument_id
         );
 
+        let ts_init = self.clock.get_time_ns();
+
         for order in open_orders {
             let cancel_cmd = CancelOrder {
                 trader_id: cmd.trader_id,
@@ -652,7 +653,7 @@ impl ExecutionClient for AxExecutionClient {
                 client_order_id: order.client_order_id(),
                 venue_order_id: order.venue_order_id(),
                 command_id: UUID4::new(),
-                ts_init: cmd.ts_init,
+                ts_init,
                 params: None,
             };
             self.cancel_order_impl(&cancel_cmd)?;

@@ -34,7 +34,7 @@ use nautilus_common::{
     msgbus::{self, MessagingSwitchboard},
 };
 use nautilus_core::{SharedCell, UnixNanos, WeakCell};
-use nautilus_execution::client::base::ExecutionClientCore;
+use nautilus_execution::client::core::ExecutionClientCore;
 use nautilus_model::{
     accounts::AccountAny,
     enums::OmsType,

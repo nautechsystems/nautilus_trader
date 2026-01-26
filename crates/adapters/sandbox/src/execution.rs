@@ -33,7 +33,7 @@ use nautilus_common::{
 };
 use nautilus_core::{UnixNanos, WeakCell};
 use nautilus_execution::{
-    client::base::ExecutionClientCore,
+    client::core::ExecutionClientCore,
     matching_engine::adapter::OrderEngineAdapter,
     models::{
         fee::{FeeModelAny, MakerTakerFeeModel},

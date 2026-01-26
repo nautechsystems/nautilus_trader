@@ -33,7 +33,7 @@ use nautilus_common::{
     factories::OrderEventFactory,
     messages::{ExecutionEvent, ExecutionReport},
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, time::AtomicTime};
 use nautilus_model::{
     enums::{AccountType, LiquiditySide},
     events::{
@@ -57,6 +57,7 @@ use nautilus_model::{
 /// The sender is set during the adapter's `start()` phase via [`set_sender`](Self::set_sender).
 #[derive(Debug, Clone)]
 pub struct ExecutionEventEmitter {
+    clock: &'static AtomicTime,
     factory: OrderEventFactory,
     sender: Option<tokio::sync::mpsc::UnboundedSender<ExecutionEvent>>,
 }
@@ -67,15 +68,21 @@ impl ExecutionEventEmitter {
     /// Call [`set_sender`](Self::set_sender) in the adapter's `start()` method.
     #[must_use]
     pub fn new(
+        clock: &'static AtomicTime,
         trader_id: TraderId,
         account_id: AccountId,
         account_type: AccountType,
         base_currency: Option<Currency>,
     ) -> Self {
         Self {
+            clock,
             factory: OrderEventFactory::new(trader_id, account_id, account_type, base_currency),
             sender: None,
         }
+    }
+
+    fn ts_init(&self) -> UnixNanos {
+        self.clock.get_time_ns()
     }
 
     /// Sets the sender. Call in adapter's `start()`.
@@ -108,23 +115,28 @@ impl ExecutionEventEmitter {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
-        ts_init: UnixNanos,
     ) {
-        let state = self
-            .factory
-            .generate_account_state(balances, margins, reported, ts_event, ts_init);
+        let state = self.factory.generate_account_state(
+            balances,
+            margins,
+            reported,
+            ts_event,
+            self.ts_init(),
+        );
         self.send_account_state(state);
     }
 
     /// Generates and emits an order denied event.
-    pub fn emit_order_denied(&self, order: &OrderAny, reason: &str, ts_init: UnixNanos) {
-        let event = self.factory.generate_order_denied(order, reason, ts_init);
+    pub fn emit_order_denied(&self, order: &OrderAny, reason: &str) {
+        let event = self
+            .factory
+            .generate_order_denied(order, reason, self.ts_init());
         self.send_order_event(event);
     }
 
     /// Generates and emits an order submitted event.
-    pub fn emit_order_submitted(&self, order: &OrderAny, ts_init: UnixNanos) {
-        let event = self.factory.generate_order_submitted(order, ts_init);
+    pub fn emit_order_submitted(&self, order: &OrderAny) {
+        let event = self.factory.generate_order_submitted(order, self.ts_init());
         self.send_order_event(event);
     }
 
@@ -134,12 +146,15 @@ impl ExecutionEventEmitter {
         order: &OrderAny,
         reason: &str,
         ts_event: UnixNanos,
-        ts_init: UnixNanos,
         due_post_only: bool,
     ) {
-        let event =
-            self.factory
-                .generate_order_rejected(order, reason, ts_event, ts_init, due_post_only);
+        let event = self.factory.generate_order_rejected(
+            order,
+            reason,
+            ts_event,
+            self.ts_init(),
+            due_post_only,
+        );
         self.send_order_event(event);
     }
 
@@ -149,11 +164,10 @@ impl ExecutionEventEmitter {
         order: &OrderAny,
         venue_order_id: VenueOrderId,
         ts_event: UnixNanos,
-        ts_init: UnixNanos,
     ) {
-        let event = self
-            .factory
-            .generate_order_accepted(order, venue_order_id, ts_event, ts_init);
+        let event =
+            self.factory
+                .generate_order_accepted(order, venue_order_id, ts_event, self.ts_init());
         self.send_order_event(event);
     }
 
@@ -164,14 +178,13 @@ impl ExecutionEventEmitter {
         venue_order_id: Option<VenueOrderId>,
         reason: &str,
         ts_event: UnixNanos,
-        ts_init: UnixNanos,
     ) {
         let event = self.factory.generate_order_modify_rejected(
             order,
             venue_order_id,
             reason,
             ts_event,
-            ts_init,
+            self.ts_init(),
         );
         self.send_order_event(event);
     }
@@ -183,14 +196,13 @@ impl ExecutionEventEmitter {
         venue_order_id: Option<VenueOrderId>,
         reason: &str,
         ts_event: UnixNanos,
-        ts_init: UnixNanos,
     ) {
         let event = self.factory.generate_order_cancel_rejected(
             order,
             venue_order_id,
             reason,
             ts_event,
-            ts_init,
+            self.ts_init(),
         );
         self.send_order_event(event);
     }
@@ -206,7 +218,6 @@ impl ExecutionEventEmitter {
         trigger_price: Option<Price>,
         protection_price: Option<Price>,
         ts_event: UnixNanos,
-        ts_init: UnixNanos,
     ) {
         let event = self.factory.generate_order_updated(
             order,
@@ -216,7 +227,7 @@ impl ExecutionEventEmitter {
             trigger_price,
             protection_price,
             ts_event,
-            ts_init,
+            self.ts_init(),
         );
         self.send_order_event(event);
     }
@@ -227,11 +238,10 @@ impl ExecutionEventEmitter {
         order: &OrderAny,
         venue_order_id: Option<VenueOrderId>,
         ts_event: UnixNanos,
-        ts_init: UnixNanos,
     ) {
-        let event = self
-            .factory
-            .generate_order_canceled(order, venue_order_id, ts_event, ts_init);
+        let event =
+            self.factory
+                .generate_order_canceled(order, venue_order_id, ts_event, self.ts_init());
         self.send_order_event(event);
     }
 
@@ -241,11 +251,10 @@ impl ExecutionEventEmitter {
         order: &OrderAny,
         venue_order_id: Option<VenueOrderId>,
         ts_event: UnixNanos,
-        ts_init: UnixNanos,
     ) {
-        let event = self
-            .factory
-            .generate_order_triggered(order, venue_order_id, ts_event, ts_init);
+        let event =
+            self.factory
+                .generate_order_triggered(order, venue_order_id, ts_event, self.ts_init());
         self.send_order_event(event);
     }
 
@@ -255,11 +264,10 @@ impl ExecutionEventEmitter {
         order: &OrderAny,
         venue_order_id: Option<VenueOrderId>,
         ts_event: UnixNanos,
-        ts_init: UnixNanos,
     ) {
-        let event = self
-            .factory
-            .generate_order_expired(order, venue_order_id, ts_event, ts_init);
+        let event =
+            self.factory
+                .generate_order_expired(order, venue_order_id, ts_event, self.ts_init());
         self.send_order_event(event);
     }
 
@@ -277,7 +285,6 @@ impl ExecutionEventEmitter {
         commission: Option<Money>,
         liquidity_side: LiquiditySide,
         ts_event: UnixNanos,
-        ts_init: UnixNanos,
     ) {
         let event = self.factory.generate_order_filled(
             order,
@@ -290,7 +297,7 @@ impl ExecutionEventEmitter {
             commission,
             liquidity_side,
             ts_event,
-            ts_init,
+            self.ts_init(),
         );
         self.send_order_event(event);
     }
@@ -304,7 +311,6 @@ impl ExecutionEventEmitter {
         client_order_id: ClientOrderId,
         reason: &str,
         ts_event: UnixNanos,
-        ts_init: UnixNanos,
         due_post_only: bool,
     ) {
         let event = OrderRejected::new(
@@ -316,7 +322,7 @@ impl ExecutionEventEmitter {
             reason.into(),
             UUID4::new(),
             ts_event,
-            ts_init,
+            self.ts_init(),
             false,
             due_post_only,
         );
@@ -333,7 +339,6 @@ impl ExecutionEventEmitter {
         venue_order_id: Option<VenueOrderId>,
         reason: &str,
         ts_event: UnixNanos,
-        ts_init: UnixNanos,
     ) {
         let event = OrderModifyRejected::new(
             self.factory.trader_id(),
@@ -343,7 +348,7 @@ impl ExecutionEventEmitter {
             reason.into(),
             UUID4::new(),
             ts_event,
-            ts_init,
+            self.ts_init(),
             false,
             venue_order_id,
             Some(self.factory.account_id()),
@@ -361,7 +366,6 @@ impl ExecutionEventEmitter {
         venue_order_id: Option<VenueOrderId>,
         reason: &str,
         ts_event: UnixNanos,
-        ts_init: UnixNanos,
     ) {
         let event = OrderCancelRejected::new(
             self.factory.trader_id(),
@@ -371,7 +375,7 @@ impl ExecutionEventEmitter {
             reason.into(),
             UUID4::new(),
             ts_event,
-            ts_init,
+            self.ts_init(),
             false,
             venue_order_id,
             Some(self.factory.account_id()),

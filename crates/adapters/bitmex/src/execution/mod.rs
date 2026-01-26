@@ -89,7 +89,9 @@ impl BitmexExecutionClient {
 
         let trader_id = core.trader_id;
         let account_id = config.account_id.unwrap_or(core.account_id);
-        let emitter = ExecutionEventEmitter::new(trader_id, account_id, AccountType::Margin, None);
+        let clock = get_atomic_clock_realtime();
+        let emitter =
+            ExecutionEventEmitter::new(clock, trader_id, account_id, AccountType::Margin, None);
         let http_client = BitmexHttpClient::new(
             Some(config.http_base_url()),
             config.api_key.clone(),
@@ -168,7 +170,7 @@ impl BitmexExecutionClient {
 
         Ok(Self {
             core,
-            clock: get_atomic_clock_realtime(),
+            clock,
             config,
             emitter,
             http_client,
@@ -312,9 +314,8 @@ impl ExecutionClient for BitmexExecutionClient {
         reported: bool,
         ts_event: UnixNanos,
     ) -> anyhow::Result<()> {
-        let ts_init = self.clock.get_time_ns();
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_event, ts_init);
+            .emit_account_state(balances, margins, reported, ts_event);
         Ok(())
     }
 
@@ -522,8 +523,7 @@ impl ExecutionClient for BitmexExecutionClient {
             return Ok(());
         }
 
-        let ts_init = self.clock.get_time_ns();
-        self.emitter.emit_order_submitted(&order, ts_init);
+        self.emitter.emit_order_submitted(&order);
 
         let submit_tries = cmd
             .params
@@ -537,6 +537,7 @@ impl ExecutionClient for BitmexExecutionClient {
         let http_client = self.http_client.clone();
         let submitter = self._submitter.clone_for_async();
         let emitter = self.emitter.clone();
+        let clock = self.clock;
         let strategy_id = order.strategy_id();
         let instrument_id = order.instrument_id();
         let client_order_id = order.client_order_id();
@@ -552,7 +553,6 @@ impl ExecutionClient for BitmexExecutionClient {
         let reduce_only = order.is_reduce_only();
         let order_list_id = order.order_list_id();
         let contingency_type = order.contingency_type();
-        let ts_event = cmd.ts_init;
 
         self.spawn_task("submit_order", async move {
             let result = if use_broadcaster {
@@ -599,12 +599,12 @@ impl ExecutionClient for BitmexExecutionClient {
             match result {
                 Ok(report) => emitter.send_order_status_report(report),
                 Err(e) => {
+                    let ts_event = clock.get_time_ns();
                     emitter.emit_order_rejected_event(
                         strategy_id,
                         instrument_id,
                         client_order_id,
                         &format!("submit-order-error: {e}"),
-                        ts_event,
                         ts_event,
                         post_only,
                     );

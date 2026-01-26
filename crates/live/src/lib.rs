@@ -65,7 +65,7 @@ pub mod runner;
 // Re-exports for adapters
 pub use emitter::ExecutionEventEmitter;
 pub use nautilus_common::factories::OrderEventFactory;
-pub use nautilus_execution::client::base::ExecutionClientCore;
+pub use nautilus_execution::client::core::ExecutionClientCore;
 
 #[cfg(feature = "python")]
 pub mod python;

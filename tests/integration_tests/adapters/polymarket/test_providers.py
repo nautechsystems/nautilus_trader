@@ -419,3 +419,84 @@ async def test_gamma_markets_deduplicates_condition_ids(mock_clob_client, live_c
         assert "condition_ids" in filters
         # Verify we deduplicated: 120 instruments -> 60 unique condition_ids
         assert len(filters["condition_ids"]) == 60
+
+
+@pytest.mark.asyncio
+async def test_load_all_async_uses_gamma_api_when_configured(mock_clob_client, live_clock):
+    """
+    Test that load_all_async uses Gamma API when use_gamma_markets=True.
+
+    This ensures time-based filters like end_date_min/end_date_max are passed to the
+    Gamma API for server-side filtering.
+
+    """
+    config = InstrumentProviderConfig(use_gamma_markets=True)
+    provider = PolymarketInstrumentProvider(
+        client=mock_clob_client,
+        clock=live_clock,
+        config=config,
+    )
+
+    gamma_market = {
+        "conditionId": ACTIVE_OPEN_MARKET["condition_id"],
+        "clobTokenIds": f'["{ACTIVE_OPEN_MARKET["tokens"][0]["token_id"]}", "{ACTIVE_OPEN_MARKET["tokens"][1]["token_id"]}"]',
+        "outcomes": '["Yes", "No"]',
+        "outcomePrices": '["0.5", "0.5"]',
+        "question": ACTIVE_OPEN_MARKET["question"],
+        "endDateIso": "2025-12-31",
+        "orderPriceMinTickSize": 0.001,
+        "orderMinSize": 5,
+        "active": True,
+        "closed": False,
+        "enableOrderBook": True,
+    }
+
+    with patch("nautilus_trader.adapters.polymarket.providers.list_markets") as mock_list_markets:
+
+        async def mock_async_list_markets(*args, **kwargs):
+            return [gamma_market]
+
+        mock_list_markets.side_effect = mock_async_list_markets
+
+        filters = {
+            "is_active": True,
+            "end_date_min": "2025-01-24T18:00:00+00:00",
+            "end_date_max": "2025-01-24T20:00:00+00:00",
+        }
+
+        # Act
+        await provider.load_all_async(filters=filters)
+
+        # Assert: Gamma API was called with filters
+        mock_list_markets.assert_called_once()
+        call_kwargs = mock_list_markets.call_args[1]
+        assert call_kwargs["filters"]["is_active"] is True
+        assert call_kwargs["filters"]["end_date_min"] == "2025-01-24T18:00:00+00:00"
+        assert call_kwargs["filters"]["end_date_max"] == "2025-01-24T20:00:00+00:00"
+
+        # Assert: Instruments were loaded
+        instruments = provider.list_all()
+        assert len(instruments) == 2
+
+
+@pytest.mark.asyncio
+async def test_load_all_async_uses_clob_api_when_gamma_not_configured(
+    instrument_provider,
+    mock_clob_client,
+):
+    """
+    Test that load_all_async uses CLOB API when use_gamma_markets=False (default).
+    """
+    mock_clob_client.get_markets.return_value = {
+        "data": [ACTIVE_OPEN_MARKET],
+        "next_cursor": "LTE=",
+    }
+
+    # Act
+    await instrument_provider.load_all_async(filters={"is_active": True})
+
+    # Assert: CLOB API was called
+    mock_clob_client.get_markets.assert_called()
+
+    instruments = instrument_provider.list_all()
+    assert len(instruments) == 2

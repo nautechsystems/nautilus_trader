@@ -20,7 +20,7 @@ use std::{any::Any, cell::RefCell, rc::Rc};
 use nautilus_common::{
     cache::Cache, clients::ExecutionClient, clock::Clock, live::clock::LiveClock,
 };
-use nautilus_execution::client::base::ExecutionClientCore;
+use nautilus_execution::client::core::ExecutionClientCore;
 use nautilus_model::identifiers::ClientId;
 use nautilus_system::factories::{ClientConfig, ExecutionClientFactory};
 

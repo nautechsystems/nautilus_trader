@@ -150,7 +150,9 @@ impl DydxExecutionClient {
     ) -> anyhow::Result<Self> {
         let trader_id = core.trader_id;
         let account_id = core.account_id;
-        let emitter = ExecutionEventEmitter::new(trader_id, account_id, AccountType::Margin, None);
+        let clock = get_atomic_clock_realtime();
+        let emitter =
+            ExecutionEventEmitter::new(clock, trader_id, account_id, AccountType::Margin, None);
 
         let retry_config = RetryConfig {
             max_retries: config.max_retries,
@@ -187,7 +189,7 @@ impl DydxExecutionClient {
 
         Ok(Self {
             core,
-            clock: get_atomic_clock_realtime(),
+            clock,
             config,
             emitter,
             http_client,
@@ -377,15 +379,14 @@ impl DydxExecutionClient {
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
         reason: &str,
-        ts_init: UnixNanos,
     ) {
+        let ts_event = self.clock.get_time_ns();
         self.emitter.clone().emit_order_rejected_event(
             strategy_id,
             instrument_id,
             client_order_id,
             reason,
-            ts_init,
-            ts_init,
+            ts_event,
             false,
         );
     }
@@ -420,20 +421,20 @@ impl DydxExecutionClient {
         F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
     {
         let emitter = self.emitter.clone();
+        let clock = self.clock;
 
         let handle = get_runtime().spawn(async move {
             if let Err(e) = fut.await {
                 let error_msg = format!("{label} failed: {e:?}");
                 log::error!("{error_msg}");
 
-                let ts_now = UnixNanos::default();
+                let ts_event = clock.get_time_ns();
                 emitter.emit_order_rejected_event(
                     strategy_id,
                     instrument_id,
                     client_order_id,
                     &error_msg,
-                    ts_now,
-                    ts_now,
+                    ts_event,
                     false,
                 );
             }
@@ -486,9 +487,8 @@ impl ExecutionClient for DydxExecutionClient {
         reported: bool,
         ts_event: UnixNanos,
     ) -> anyhow::Result<()> {
-        let ts_init = self.clock.get_time_ns();
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_event, ts_init);
+            .emit_account_state(balances, margins, reported, ts_event);
         Ok(())
     }
 
@@ -563,7 +563,6 @@ impl ExecutionClient for DydxExecutionClient {
                 order.instrument_id(),
                 order.client_order_id(),
                 reason,
-                cmd.ts_init,
             );
             return Ok(());
         }
@@ -620,7 +619,6 @@ impl ExecutionClient for DydxExecutionClient {
                     order.instrument_id(),
                     order.client_order_id(),
                     reason,
-                    cmd.ts_init,
                 );
                 return Ok(());
             }
@@ -632,14 +630,12 @@ impl ExecutionClient for DydxExecutionClient {
                     order.instrument_id(),
                     order.client_order_id(),
                     &reason,
-                    cmd.ts_init,
                 );
                 return Ok(());
             }
         }
 
-        let ts_init = self.clock.get_time_ns();
-        self.emitter.emit_order_submitted(order, ts_init);
+        self.emitter.emit_order_submitted(order);
 
         let grpc_client = self.grpc_client.clone();
         let wallet = self.wallet.clone();
@@ -944,15 +940,14 @@ impl ExecutionClient for DydxExecutionClient {
                 Err(e) => {
                     log::error!("Failed to cancel order {client_order_id}: {e:?}");
 
-                    let ts_now = clock.get_time_ns();
+                    let ts_event = clock.get_time_ns();
                     emitter.emit_order_cancel_rejected_event(
                         strategy_id,
                         instrument_id,
                         client_order_id,
                         venue_order_id,
                         &format!("Cancel order failed: {e:?}"),
-                        ts_now,
-                        ts_now,
+                        ts_event,
                     );
                 }
             }
@@ -1277,13 +1272,12 @@ impl ExecutionClient for DydxExecutionClient {
                 account_state.margins.len()
             );
 
-            let ts_init = self.clock.get_time_ns();
+            let ts_event = self.clock.get_time_ns();
             self.emitter.emit_account_state(
                 account_state.balances,
                 account_state.margins,
                 account_state.is_reported,
-                ts_init,
-                ts_init,
+                ts_event,
             );
 
             // Spawn WebSocket message processing task following standard adapter pattern

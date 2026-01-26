@@ -113,6 +113,7 @@ impl BinanceSpotExecutionClient {
 
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
+            clock,
             core.trader_id,
             core.account_id,
             core.account_type,
@@ -148,7 +149,6 @@ impl BinanceSpotExecutionClient {
             account_state.margins.clone(),
             account_state.is_reported,
             ts_now,
-            ts_now,
         );
 
         Ok(())
@@ -166,7 +166,6 @@ impl BinanceSpotExecutionClient {
         let event_emitter = self.emitter.clone();
         let trader_id = self.core.trader_id;
         let account_id = self.core.account_id;
-        let ts_init = cmd.ts_init;
         let client_order_id = order.client_order_id();
         let strategy_id = order.strategy_id();
         let instrument_id = order.instrument_id();
@@ -178,6 +177,7 @@ impl BinanceSpotExecutionClient {
         let trigger_price = order.trigger_price();
         let is_post_only = order.is_post_only();
         let clock = self.clock;
+        let ts_init = self.clock.get_time_ns();
 
         self.spawn_task("submit_order", async move {
             let result = http_client
@@ -206,8 +206,8 @@ impl BinanceSpotExecutionClient {
                         report.venue_order_id,
                         account_id,
                         UUID4::new(),
+                        ts_init, // TODO: Use proper event timestamp
                         ts_init,
-                        clock.get_time_ns(),
                         false,
                     );
 
@@ -247,7 +247,6 @@ impl BinanceSpotExecutionClient {
         let event_emitter = self.emitter.clone();
         let trader_id = self.core.trader_id;
         let account_id = self.core.account_id;
-        let ts_init = cmd.ts_init;
         let clock = self.clock;
 
         self.spawn_task("cancel_order", async move {
@@ -263,14 +262,15 @@ impl BinanceSpotExecutionClient {
             match result {
                 Ok(venue_order_id) => {
                     // Order canceled - dispatch OrderCanceled event
+                    let ts_now = clock.get_time_ns();
                     let canceled_event = OrderCanceled::new(
                         trader_id,
                         command.strategy_id,
                         command.instrument_id,
                         command.client_order_id,
                         UUID4::new(),
-                        ts_init,
-                        clock.get_time_ns(),
+                        ts_now,
+                        ts_now,
                         false,
                         Some(venue_order_id),
                         Some(account_id),
@@ -279,6 +279,7 @@ impl BinanceSpotExecutionClient {
                     event_emitter.send_order_event(OrderEventAny::Canceled(canceled_event));
                 }
                 Err(e) => {
+                    let ts_now = clock.get_time_ns();
                     let rejected_event = OrderCancelRejected::new(
                         trader_id,
                         command.strategy_id,
@@ -286,8 +287,8 @@ impl BinanceSpotExecutionClient {
                         command.client_order_id,
                         format!("cancel-order-error: {e}").into(),
                         UUID4::new(),
-                        clock.get_time_ns(),
-                        ts_init,
+                        ts_now,
+                        ts_now,
                         false,
                         command.venue_order_id,
                         Some(account_id),
@@ -484,9 +485,8 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         reported: bool,
         ts_event: UnixNanos,
     ) -> anyhow::Result<()> {
-        let ts_init = self.clock.get_time_ns();
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_event, ts_init);
+            .emit_account_state(balances, margins, reported, ts_event);
         Ok(())
     }
 
@@ -555,8 +555,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         }
 
         log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
-        let ts_init = self.clock.get_time_ns();
-        self.emitter.emit_order_submitted(&order, ts_init);
+        self.emitter.emit_order_submitted(&order);
 
         self.submit_order_internal(cmd)
     }
@@ -580,6 +579,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                 "Cannot modify order {}: not found in cache",
                 cmd.client_order_id
             );
+            let ts_init = self.clock.get_time_ns();
             let rejected_event = OrderModifyRejected::new(
                 self.core.trader_id,
                 cmd.strategy_id,
@@ -587,8 +587,8 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                 cmd.client_order_id,
                 "Order not found in cache for modify".into(),
                 UUID4::new(),
-                self.clock.get_time_ns(),
-                cmd.ts_init,
+                ts_init, // TODO: Use proper event timestamp
+                ts_init,
                 false,
                 cmd.venue_order_id,
                 Some(self.core.account_id),
@@ -605,14 +605,13 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         let event_emitter = self.emitter.clone();
         let trader_id = self.core.trader_id;
         let account_id = self.core.account_id;
-        let ts_init = cmd.ts_init;
+        let clock = self.clock;
 
         // Get order properties from cached order
         let order_side = order.order_side();
         let order_type = order.order_type();
         let time_in_force = order.time_in_force();
         let quantity = cmd.quantity.unwrap_or_else(|| order.quantity());
-        let clock = self.clock;
 
         self.spawn_task("modify_order", async move {
             // Binance uses cancel-replace for order modification
@@ -636,6 +635,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             match result {
                 Ok(report) => {
                     // Order modified - dispatch OrderUpdated event
+                    let ts_now = clock.get_time_ns();
                     let updated_event = OrderUpdated::new(
                         trader_id,
                         command.strategy_id,
@@ -643,8 +643,8 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                         command.client_order_id,
                         report.quantity,
                         UUID4::new(),
-                        ts_init,
-                        clock.get_time_ns(),
+                        ts_now,
+                        ts_now,
                         false,
                         Some(report.venue_order_id),
                         Some(account_id),
@@ -656,6 +656,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                     event_emitter.send_order_event(OrderEventAny::Updated(updated_event));
                 }
                 Err(e) => {
+                    let ts_now = clock.get_time_ns();
                     let rejected_event = OrderModifyRejected::new(
                         trader_id,
                         command.strategy_id,
@@ -663,8 +664,8 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                         command.client_order_id,
                         format!("modify-order-error: {e}").into(),
                         UUID4::new(),
-                        clock.get_time_ns(),
-                        ts_init,
+                        ts_now,
+                        ts_now,
                         false,
                         command.venue_order_id,
                         Some(account_id),

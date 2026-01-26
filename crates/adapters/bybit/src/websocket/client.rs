@@ -32,7 +32,8 @@ use dashmap::DashMap;
 use nautilus_common::live::get_runtime;
 use nautilus_core::{UUID4, consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt};
 use nautilus_model::{
-    enums::{OrderSide, OrderType, TimeInForce},
+    data::BarType,
+    enums::{AggregationSource, BarAggregation, OrderSide, OrderType, PriceType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
@@ -59,7 +60,7 @@ use crate::{
             BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType, BybitTimeInForce,
             BybitTriggerDirection, BybitTriggerType, BybitWsOrderRequestOp,
         },
-        parse::{extract_raw_symbol, make_bybit_symbol},
+        parse::{bar_spec_to_bybit_interval, extract_raw_symbol, make_bybit_symbol},
         symbol::BybitSymbol,
         urls::{bybit_ws_private_url, bybit_ws_public_url, bybit_ws_trade_url},
     },
@@ -130,6 +131,7 @@ pub struct BybitWebSocketClient {
     mm_level: Arc<AtomicU8>,
     bars_timestamp_on_close: bool,
     instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    bar_types_cache: Arc<DashMap<String, BarType>>,
     funding_cache: FundingCache,
     cancellation_token: CancellationToken,
 }
@@ -168,6 +170,7 @@ impl Clone for BybitWebSocketClient {
             mm_level: Arc::clone(&self.mm_level),
             bars_timestamp_on_close: self.bars_timestamp_on_close,
             instruments_cache: Arc::clone(&self.instruments_cache),
+            bar_types_cache: Arc::clone(&self.bar_types_cache),
             funding_cache: Arc::clone(&self.funding_cache),
             cancellation_token: self.cancellation_token.clone(),
         }
@@ -218,6 +221,7 @@ impl BybitWebSocketClient {
             subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
             is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
+            bar_types_cache: Arc::new(DashMap::new()),
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
             bars_timestamp_on_close: true,
@@ -267,6 +271,7 @@ impl BybitWebSocketClient {
             subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
             is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
+            bar_types_cache: Arc::new(DashMap::new()),
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
             bars_timestamp_on_close: true,
@@ -316,6 +321,7 @@ impl BybitWebSocketClient {
             subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
             is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
+            bar_types_cache: Arc::new(DashMap::new()),
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
             bars_timestamp_on_close: true,
@@ -465,6 +471,7 @@ impl BybitWebSocketClient {
         let credential = self.credential.clone();
         let requires_auth = self.requires_auth;
         let funding_cache = Arc::clone(&self.funding_cache);
+        let bar_types_cache = Arc::clone(&self.bar_types_cache);
         let account_id = self.account_id;
         let product_type = self.product_type;
         let bars_timestamp_on_close = self.bars_timestamp_on_close;
@@ -486,6 +493,7 @@ impl BybitWebSocketClient {
                 auth_tracker,
                 subscriptions.clone(),
                 funding_cache.clone(),
+                bar_types_cache.clone(),
             );
 
             // Helper closure to resubscribe all tracked subscriptions after reconnection
@@ -1032,32 +1040,70 @@ impl BybitWebSocketClient {
     /// # References
     ///
     /// <https://bybit-exchange.github.io/docs/v5/websocket/public/kline>
-    pub async fn subscribe_klines(
-        &self,
-        instrument_id: InstrumentId,
-        interval: impl Into<String>,
-    ) -> BybitWsResult<()> {
+    pub async fn subscribe_bars(&self, bar_type: BarType) -> BybitWsResult<()> {
+        let spec = bar_type.spec();
+
+        // Bybit klines are always last-trade OHLC from the exchange
+        if spec.price_type != PriceType::Last {
+            return Err(BybitWsError::ClientError(format!(
+                "Bybit bars only support LAST price type, received {}",
+                spec.price_type
+            )));
+        }
+        if bar_type.aggregation_source() != AggregationSource::External {
+            return Err(BybitWsError::ClientError(format!(
+                "Bybit bars only support EXTERNAL aggregation source, received {}",
+                bar_type.aggregation_source()
+            )));
+        }
+
+        // Reject MINUTE with step >= 60, require HOUR aggregation instead
+        let step = spec.step.get();
+        if spec.aggregation == BarAggregation::Minute && step >= 60 {
+            let hours = step / 60;
+            return Err(BybitWsError::ClientError(format!(
+                "Invalid bar type: {step}-MINUTE not supported, use {hours}-HOUR instead"
+            )));
+        }
+
+        let interval = bar_spec_to_bybit_interval(spec.aggregation, spec.step.get() as u64)
+            .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
+
+        let instrument_id = bar_type.instrument_id();
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
         let topic = format!(
             "{}.{}.{raw_symbol}",
             BybitWsPublicChannel::Kline.as_ref(),
-            interval.into()
+            interval
         );
+
+        // Coordinate with reference counting to avoid duplicate cache entries
+        if self.subscriptions.get_reference_count(&topic) == 0 {
+            self.bar_types_cache.insert(topic.clone(), bar_type);
+        }
+
         self.subscribe(vec![topic]).await
     }
 
     /// Unsubscribes from kline/candlestick updates for a specific instrument.
-    pub async fn unsubscribe_klines(
-        &self,
-        instrument_id: InstrumentId,
-        interval: impl Into<String>,
-    ) -> BybitWsResult<()> {
+    pub async fn unsubscribe_bars(&self, bar_type: BarType) -> BybitWsResult<()> {
+        let spec = bar_type.spec();
+        let interval = bar_spec_to_bybit_interval(spec.aggregation, spec.step.get() as u64)
+            .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
+
+        let instrument_id = bar_type.instrument_id();
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
         let topic = format!(
             "{}.{}.{raw_symbol}",
             BybitWsPublicChannel::Kline.as_ref(),
-            interval.into()
+            interval
         );
+
+        // Coordinate with reference counting to preserve cache for other subscribers
+        if self.subscriptions.get_reference_count(&topic) == 1 {
+            self.bar_types_cache.remove(&topic);
+        }
+
         self.unsubscribe(vec![topic]).await
     }
 

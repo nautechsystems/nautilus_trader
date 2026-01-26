@@ -130,12 +130,18 @@ impl OKXExecutionClient {
         .context("failed to construct OKX business websocket client")?;
 
         let trade_mode = Self::derive_trade_mode(core.account_type, &config);
-        let emitter =
-            ExecutionEventEmitter::new(core.trader_id, core.account_id, core.account_type, None);
+        let clock = get_atomic_clock_realtime();
+        let emitter = ExecutionEventEmitter::new(
+            clock,
+            core.trader_id,
+            core.account_id,
+            core.account_type,
+            None,
+        );
 
         Ok(Self {
             core,
-            clock: get_atomic_clock_realtime(),
+            clock,
             config,
             emitter,
             http_client,
@@ -212,8 +218,8 @@ impl OKXExecutionClient {
         let trade_mode = self.trade_mode;
 
         let emitter = self.emitter.clone();
+        let clock = self.clock;
         let trader_id = self.core.trader_id;
-        let ts_init = cmd.ts_init;
         let client_order_id = order.client_order_id();
         let strategy_id = order.strategy_id();
         let instrument_id = order.instrument_id();
@@ -250,13 +256,13 @@ impl OKXExecutionClient {
                 .map_err(|e| anyhow::anyhow!("Submit order failed: {e}"));
 
             if let Err(e) = result {
+                let ts_event = clock.get_time_ns();
                 emitter.emit_order_rejected_event(
                     strategy_id,
                     instrument_id,
                     client_order_id,
                     &format!("submit-order-error: {e}"),
-                    ts_init,
-                    ts_init,
+                    ts_event,
                     false,
                 );
                 return Err(e);
@@ -283,7 +289,7 @@ impl OKXExecutionClient {
         let trade_mode = self.trade_mode;
 
         let emitter = self.emitter.clone();
-        let ts_init = cmd.ts_init;
+        let clock = self.clock;
         let client_order_id = order.client_order_id();
         let strategy_id = order.strategy_id();
         let instrument_id = order.instrument_id();
@@ -312,13 +318,13 @@ impl OKXExecutionClient {
                 .map_err(|e| anyhow::anyhow!("Submit algo order failed: {e}"));
 
             if let Err(e) = result {
+                let ts_event = clock.get_time_ns();
                 emitter.emit_order_rejected_event(
                     strategy_id,
                     instrument_id,
                     client_order_id,
                     &format!("submit-order-error: {e}"),
-                    ts_init,
-                    ts_init,
+                    ts_event,
                     false,
                 );
                 return Err(e);
@@ -335,7 +341,7 @@ impl OKXExecutionClient {
         let command = cmd.clone();
 
         let emitter = self.emitter.clone();
-        let ts_init = cmd.ts_init;
+        let clock = self.clock;
 
         self.spawn_task("cancel_order", async move {
             let result = ws_private
@@ -350,14 +356,14 @@ impl OKXExecutionClient {
                 .map_err(|e| anyhow::anyhow!("Cancel order failed: {e}"));
 
             if let Err(e) = result {
+                let ts_event = clock.get_time_ns();
                 emitter.emit_order_cancel_rejected_event(
                     command.strategy_id,
                     command.instrument_id,
                     command.client_order_id,
                     command.venue_order_id,
                     &format!("cancel-order-error: {e}"),
-                    ts_init,
-                    ts_init,
+                    ts_event,
                 );
                 return Err(e);
             }
@@ -617,9 +623,8 @@ impl ExecutionClient for OKXExecutionClient {
         reported: bool,
         ts_event: UnixNanos,
     ) -> anyhow::Result<()> {
-        let ts_init = self.clock.get_time_ns();
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_event, ts_init);
+            .emit_account_state(balances, margins, reported, ts_event);
         Ok(())
     }
 
@@ -708,8 +713,7 @@ impl ExecutionClient for OKXExecutionClient {
             }
 
             log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
-            let ts_init = self.clock.get_time_ns();
-            self.emitter.emit_order_submitted(order, ts_init);
+            self.emitter.emit_order_submitted(order);
 
             order.order_type()
         };
@@ -734,7 +738,7 @@ impl ExecutionClient for OKXExecutionClient {
         let command = cmd.clone();
 
         let emitter = self.emitter.clone();
-        let ts_init = cmd.ts_init;
+        let clock = self.clock;
 
         self.spawn_task("modify_order", async move {
             let result = ws_private
@@ -751,14 +755,14 @@ impl ExecutionClient for OKXExecutionClient {
                 .map_err(|e| anyhow::anyhow!("Modify order failed: {e}"));
 
             if let Err(e) = result {
+                let ts_event = clock.get_time_ns();
                 emitter.emit_order_modify_rejected_event(
                     command.strategy_id,
                     command.instrument_id,
                     command.client_order_id,
                     command.venue_order_id,
                     &format!("modify-order-error: {e}"),
-                    ts_init,
-                    ts_init,
+                    ts_event,
                 );
                 return Err(e);
             }

@@ -188,12 +188,18 @@ impl HyperliquidExecutionClient {
             Some(core.account_id),
         );
 
-        let emitter =
-            ExecutionEventEmitter::new(core.trader_id, core.account_id, AccountType::Margin, None);
+        let clock = get_atomic_clock_realtime();
+        let emitter = ExecutionEventEmitter::new(
+            clock,
+            core.trader_id,
+            core.account_id,
+            AccountType::Margin,
+            None,
+        );
 
         Ok(Self {
             core,
-            clock: get_atomic_clock_realtime(),
+            clock,
             config,
             emitter,
             http_client,
@@ -274,9 +280,9 @@ impl HyperliquidExecutionClient {
                     .context("failed to parse account balances and margins")?;
 
             // Generate account state event
-            let ts_init = self.clock.get_time_ns();
+            let ts_event = self.clock.get_time_ns();
             self.emitter
-                .emit_account_state(balances, margins, true, ts_init, ts_init);
+                .emit_account_state(balances, margins, true, ts_event);
 
             log::info!("Account state updated successfully");
         } else {
@@ -355,11 +361,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
         balances: Vec<AccountBalance>,
         margins: Vec<MarginBalance>,
         reported: bool,
-        _ts_event: UnixNanos,
+        ts_event: UnixNanos,
     ) -> anyhow::Result<()> {
-        let ts_init = self.clock.get_time_ns();
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_init, ts_init);
+            .emit_account_state(balances, margins, reported, ts_event);
         Ok(())
     }
 
@@ -448,19 +453,17 @@ impl ExecutionClient for HyperliquidExecutionClient {
         }
 
         if let Err(e) = self.validate_order_submission(&order) {
-            let ts_init = self.clock.get_time_ns();
+            let ts_event = self.clock.get_time_ns();
             self.emitter.emit_order_rejected(
                 &order,
                 &format!("validation-error: {e}"),
-                ts_init, // TODO: Use proper event timestamp
-                ts_init,
+                ts_event,
                 false,
             );
             return Err(e);
         }
 
-        let ts_init = self.clock.get_time_ns();
-        self.emitter.emit_order_submitted(&order, ts_init);
+        self.emitter.emit_order_submitted(&order);
 
         let http_client = self.http_client.clone();
 
@@ -510,9 +513,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let orders: Vec<OrderAny> = command.order_list.orders.clone();
 
         // Generate submitted events for all orders
-        let ts_init = self.clock.get_time_ns();
         for order in &orders {
-            self.emitter.emit_order_submitted(order, ts_init);
+            self.emitter.emit_order_submitted(order);
         }
 
         self.spawn_task("submit_order_list", async move {
