@@ -256,6 +256,216 @@ class PolymarketDataLoader:
 
         return self.parse_price_history(history)
 
+    # ========================================================================
+    # Event-level API methods
+    # ========================================================================
+
+    @staticmethod
+    async def fetch_event_by_slug(
+        slug: str,
+        http_client: nautilus_pyo3.HttpClient | None = None,
+    ) -> dict[str, Any]:
+        """
+        Fetch an event by slug from the Polymarket Gamma API.
+
+        Events contain multiple markets (e.g., temperature bucket markets
+        are grouped under a single event like "highest-temperature-in-nyc-on-january-26").
+
+        Parameters
+        ----------
+        slug : str
+            The event slug to fetch.
+        http_client : nautilus_pyo3.HttpClient, optional
+            The HTTP client to use for requests. If not provided, a new client will be created.
+
+        Returns
+        -------
+        dict[str, Any]
+            Event data dictionary containing 'markets' array and event metadata.
+
+        Raises
+        ------
+        ValueError
+            If event with the given slug is not found.
+        RuntimeError
+            If HTTP requests fail.
+
+        """
+        client = http_client or nautilus_pyo3.HttpClient()
+        response = await client.get(
+            url="https://gamma-api.polymarket.com/events",
+            params={"slug": slug},
+        )
+
+        if response.status == 404:
+            raise ValueError(f"Event with slug '{slug}' not found")
+
+        if response.status != 200:
+            raise RuntimeError(
+                f"HTTP request failed with status {response.status}: {response.body.decode('utf-8')}",
+            )
+
+        events = msgspec.json.decode(response.body)
+
+        if not events:
+            raise ValueError(f"Event with slug '{slug}' not found")
+
+        return events[0]
+
+    @staticmethod
+    async def fetch_events(
+        active: bool = True,
+        closed: bool = False,
+        archived: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+        http_client: nautilus_pyo3.HttpClient | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Fetch events from Polymarket Gamma API.
+
+        Parameters
+        ----------
+        active : bool, default True
+            Filter for active events.
+        closed : bool, default False
+            Include closed events.
+        archived : bool, default False
+            Include archived events.
+        limit : int, default 100
+            Maximum number of events to return.
+        offset : int, default 0
+            Offset for pagination.
+        http_client : nautilus_pyo3.HttpClient, optional
+            The HTTP client to use for requests. If not provided, a new client will be created.
+
+        Returns
+        -------
+        list[dict[str, Any]]
+            List of event data dictionaries.
+
+        """
+        client = http_client or nautilus_pyo3.HttpClient()
+        params = {
+            "active": str(active).lower(),
+            "closed": str(closed).lower(),
+            "archived": str(archived).lower(),
+            "limit": str(limit),
+            "offset": str(offset),
+        }
+        response = await client.get(
+            url="https://gamma-api.polymarket.com/events",
+            params=params,
+        )
+
+        if response.status != 200:
+            raise RuntimeError(
+                f"HTTP request failed with status {response.status}: {response.body.decode('utf-8')}",
+            )
+
+        return msgspec.json.decode(response.body)
+
+    @staticmethod
+    async def get_event_markets(
+        slug: str,
+        http_client: nautilus_pyo3.HttpClient | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Get all markets within an event by slug.
+
+        This is a convenience method that fetches an event and extracts its markets.
+
+        Parameters
+        ----------
+        slug : str
+            The event slug to fetch markets from.
+        http_client : nautilus_pyo3.HttpClient, optional
+            The HTTP client to use for requests. If not provided, a new client will be created.
+
+        Returns
+        -------
+        list[dict[str, Any]]
+            List of market dictionaries within the event.
+
+        Raises
+        ------
+        ValueError
+            If event with the given slug is not found.
+
+        """
+        event = await PolymarketDataLoader.fetch_event_by_slug(slug, http_client)
+        return event.get("markets", [])
+
+    @classmethod
+    async def from_event_slug(
+        cls,
+        slug: str,
+        http_client: nautilus_pyo3.HttpClient | None = None,
+    ) -> list[PolymarketDataLoader]:
+        """
+        Create loaders for all markets in an event.
+
+        This is useful for events that contain multiple related markets,
+        such as temperature bucket markets where each bucket is a separate market.
+
+        Parameters
+        ----------
+        slug : str
+            The event slug to fetch.
+        http_client : nautilus_pyo3.HttpClient, optional
+            The HTTP client to use for requests. If not provided, a new client will be created.
+
+        Returns
+        -------
+        list[PolymarketDataLoader]
+            List of loaders, one for each market in the event.
+
+        Raises
+        ------
+        ValueError
+            If event with slug is not found or has no markets.
+
+        """
+        event = await cls.fetch_event_by_slug(slug, http_client)
+        markets = event.get("markets", [])
+
+        if not markets:
+            raise ValueError(f"No markets found in event '{slug}'")
+
+        loaders: list[PolymarketDataLoader] = []
+
+        for market in markets:
+            condition_id = market.get("conditionId")
+            if not condition_id:
+                continue
+
+            # Fetch detailed market info from CLOB API
+            market_details = await cls.fetch_market_details(condition_id, http_client)
+
+            tokens = market_details.get("tokens", [])
+            if not tokens:
+                continue
+
+            # Create loader for first token (YES outcome by default)
+            token = tokens[0]
+            token_id = token["token_id"]
+            outcome = token["outcome"]
+
+            instrument = parse_polymarket_instrument(
+                market_info=market_details,
+                token_id=token_id,
+                outcome=outcome,
+            )
+
+            loader = cls(instrument, token_id=token_id, http_client=http_client)
+            loaders.append(loader)
+
+        return loaders
+
+    # ========================================================================
+    # Market-level API methods
+    # ========================================================================
+
     @staticmethod
     async def fetch_markets(
         active: bool = True,
