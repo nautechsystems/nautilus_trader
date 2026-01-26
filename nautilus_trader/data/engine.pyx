@@ -2224,17 +2224,17 @@ cdef class DataEngine(Component):
                     bar.is_revision
                     and not last_bar.is_revision
                     and bar_type.is_internally_aggregated()
-                    and bar_type.spec.is_time_aggregated()
                 )
                 if is_stale_internal_revision:
                     return
 
                 # Preserve behavior: external revisions are cached only when sequence validation is enabled.
-                should_replace = (
-                    not bar.is_revision
-                    or self._validate_data_sequence
-                    or bar_type.is_internally_aggregated()
-                )
+                # A non-revision always replaces. For revisions, we replace if it's from an internal
+                # aggregator, or if it's an external revision and sequence validation is enabled.
+                if not bar.is_revision:
+                    should_replace = True
+                else:
+                    should_replace = bar_type.is_internally_aggregated() or self._validate_data_sequence
                 if should_replace:
                     # Replace `last_bar`, previously cached bar will fall out of scope
                     self._cache.replace_last_bar(bar)
