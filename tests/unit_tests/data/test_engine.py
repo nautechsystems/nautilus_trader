@@ -4570,37 +4570,30 @@ class TestDataEngine:
         *,
         validate_data_sequence: bool,
     ):
-        if validate_data_sequence:
-            clock = self.clock
-            msgbus = self.msgbus
-            cache = self.cache
-            data_engine = self.data_engine
-            binance_client = self.binance_client
-        else:
-            clock = TestClock()
-            msgbus = MessageBus(
-                trader_id=TestIdStubs.trader_id(),
-                clock=clock,
-            )
-            cache = TestComponentStubs.cache()
-            config = DataEngineConfig(
-                validate_data_sequence=False,
-                emit_quotes_from_book_depths=True,
-                debug=True,
-            )
-            data_engine = DataEngine(
-                msgbus=msgbus,
-                cache=cache,
-                clock=clock,
-                config=config,
-            )
-            data_engine.process(ETHUSDT_BINANCE)
-            binance_client = BacktestMarketDataClient(
-                client_id=ClientId(BINANCE.value),
-                msgbus=msgbus,
-                cache=cache,
-                clock=clock,
-            )
+        clock = TestClock()
+        msgbus = MessageBus(
+            trader_id=TestIdStubs.trader_id(),
+            clock=clock,
+        )
+        cache = TestComponentStubs.cache()
+        config = DataEngineConfig(
+            validate_data_sequence=validate_data_sequence,
+            emit_quotes_from_book_depths=True,
+            debug=True,
+        )
+        data_engine = DataEngine(
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+            config=config,
+        )
+        data_engine.process(ETHUSDT_BINANCE)
+        binance_client = BacktestMarketDataClient(
+            client_id=ClientId(BINANCE.value),
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+        )
 
         # Use a non-zero timestamp so the TimeBarAggregator timer start time is not `0ns`
         # (the TestClock treats `start_time_ns=0` as "start now").

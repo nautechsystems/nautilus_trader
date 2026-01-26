@@ -194,6 +194,18 @@ cdef class BarBuilder:
         self.volume = Quantity.zero_c(precision=self.size_precision)
         self.count = 0
 
+    cpdef Price open(self):
+        return self._open
+
+    cpdef Price high(self):
+        return self._high
+
+    cpdef Price low(self):
+        return self._low
+
+    cpdef Price close(self):
+        return self._close
+
     cpdef Bar build_now(self):
         """
         Return the aggregated bar and reset.
@@ -1618,10 +1630,10 @@ cdef class TimeBarAggregator(BarAggregator):
 
         cdef Bar revision = Bar(
             bar_type=self.bar_type,
-            open=self._builder._open,
-            high=self._builder._high,
-            low=self._builder._low,
-            close=self._builder._close,
+            open=self._builder.open(),
+            high=self._builder.high(),
+            low=self._builder.low(),
+            close=self._builder.close(),
             volume=Quantity.from_raw_c(self._builder.volume._mem.raw, self._builder.size_precision),
             ts_event=ts_event,
             ts_init=ts_init,

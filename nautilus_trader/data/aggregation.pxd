@@ -58,6 +58,11 @@ cdef class BarBuilder:
     cdef Price _close
     cdef Quantity volume
 
+    cpdef Price open(self)
+    cpdef Price high(self)
+    cpdef Price low(self)
+    cpdef Price close(self)
+
     cpdef void update(self, Price price, Quantity size, uint64_t ts_init)
     cpdef void update_bar(self, Bar bar, Quantity volume, uint64_t ts_init)
     cpdef void reset(self)

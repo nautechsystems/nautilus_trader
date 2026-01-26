@@ -2237,7 +2237,7 @@ cdef class DataEngine(Component):
                 )
                 if should_replace:
                     # Replace `last_bar`, previously cached bar will fall out of scope
-                    self._cache._bars.get(bar_type)[0] = bar  # noqa
+                    self._cache.replace_last_bar(bar)
             else:
                 # Cache revisions only if they are for a newer interval, otherwise treat as stale.
                 should_add = not bar.is_revision or last_bar is None or bar.ts_event > last_bar.ts_event

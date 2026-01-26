@@ -1736,6 +1736,36 @@ cdef class Cache(CacheFacade):
         elif price_type == PriceType.ASK:
             self._bars_ask[bar.bar_type.instrument_id] = bar
 
+    cpdef void replace_last_bar(self, Bar bar):
+        """
+        Replace the last cached bar for the bars type.
+
+        Parameters
+        ----------
+        bar : Bar
+            The bar to cache as the last bar.
+
+        Notes
+        -----
+        This assumes the bar type is already present in the cache. If it is not,
+        then this method falls back to `add_bar`.
+
+        """
+        Condition.not_none(bar, "bar")
+
+        bars = self._bars.get(bar.bar_type)
+
+        if not bars:
+            self.add_bar(bar)
+            return
+
+        bars[0] = bar
+        cdef PriceType price_type = bar.bar_type.spec.price_type
+        if price_type == PriceType.BID:
+            self._bars_bid[bar.bar_type.instrument_id] = bar
+        elif price_type == PriceType.ASK:
+            self._bars_ask[bar.bar_type.instrument_id] = bar
+
     cpdef void add_quote_ticks(self, list ticks):
         """
         Add the given quotes to the cache.

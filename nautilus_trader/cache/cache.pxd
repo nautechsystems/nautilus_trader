@@ -181,6 +181,7 @@ cdef class Cache(CacheFacade):
     cpdef void add_index_price(self, IndexPriceUpdate index_price)
     cpdef void add_funding_rate(self, FundingRateUpdate funding_rate)
     cpdef void add_bar(self, Bar bar)
+    cpdef void replace_last_bar(self, Bar bar)
     cpdef void add_quote_ticks(self, list ticks)
     cpdef void add_trade_ticks(self, list ticks)
     cpdef void add_bars(self, list bars)
