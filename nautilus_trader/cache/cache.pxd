@@ -214,6 +214,7 @@ cdef class Cache(CacheFacade):
     cpdef void audit_own_order_books(self)
 
     cdef timedelta _get_timedelta(self, BarType bar_type)
+    cdef void _update_latest_bid_ask_bar(self, Bar bar)
 
     cpdef list bar_types(
         self,
