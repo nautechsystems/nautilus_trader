@@ -31,6 +31,7 @@
 //! - Order cancellation
 //! - Cancel-replace operations
 
+pub mod error;
 pub mod streams;
 pub mod trading;
 

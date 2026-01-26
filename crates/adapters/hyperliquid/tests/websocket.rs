@@ -1155,7 +1155,7 @@ async fn test_subscribe_after_next_event_call() {
     // Try to get an event
     tokio::select! {
         _ = client.next_event() => {},
-        _ = tokio::time::sleep(Duration::from_millis(200)) => {}
+        () = tokio::time::sleep(Duration::from_millis(200)) => {}
     }
 
     // Subscribe should still work after next_event

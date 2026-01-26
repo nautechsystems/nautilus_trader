@@ -646,7 +646,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("instrument_id"),
-            "Expected missing instrument_id error, got: {err}"
+            "Expected missing instrument_id error, was: {err}"
         );
     }
 
@@ -663,7 +663,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("price_precision"),
-            "Expected missing price_precision error, got: {err}"
+            "Expected missing price_precision error, was: {err}"
         );
     }
 

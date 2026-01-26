@@ -37,6 +37,9 @@ pub mod logger;
 pub mod macros;
 pub mod writer;
 
+#[cfg(feature = "tracing-bridge")]
+pub mod bridge;
+
 use std::{
     collections::HashMap,
     env,

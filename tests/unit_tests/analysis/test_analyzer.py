@@ -198,3 +198,31 @@ class TestPortfolioAnalyzer:
         assert len(result) == 2
         assert result["P-1"] == 6.0
         assert result["P-2"] == 16.0
+
+    def test_add_positions_skips_empty_shell_positions_with_zero_ts_closed(self):
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+
+        # Purge the fill to create an empty shell with ts_closed = 0
+        position.purge_events_for_order(order1.client_order_id)
+
+        # Act
+        self.analyzer.add_positions([position])
+        returns = self.analyzer.returns()
+
+        # Assert: no returns should be added for empty shell position
+        assert len(returns) == 0

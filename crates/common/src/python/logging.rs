@@ -108,6 +108,7 @@ pub fn py_init_logging(
         log_components_only.unwrap_or(false),
         is_colored.unwrap_or(true),
         print_config.unwrap_or(false),
+        false, // use_tracing - Python handles this separately in kernel
     );
 
     let file_config = FileWriterConfig::new(directory, file_name, file_format, file_rotate);
@@ -179,6 +180,35 @@ pub fn py_logging_clock_set_realtime_mode() {
 #[pyo3(name = "logging_clock_set_static_time")]
 pub fn py_logging_clock_set_static_time(time_ns: u64) {
     logging_clock_set_static_time(time_ns);
+}
+
+/// Returns whether the tracing subscriber has been initialized.
+#[cfg(feature = "tracing-bridge")]
+#[pyfunction]
+#[pyo3(name = "tracing_is_initialized")]
+#[must_use]
+pub fn py_tracing_is_initialized() -> bool {
+    crate::logging::bridge::tracing_is_initialized()
+}
+
+/// Initialize a tracing subscriber for external Rust crate logging.
+///
+/// This sets up a tracing subscriber that outputs directly to stdout, allowing
+/// external Rust libraries that use the `tracing` crate to display their logs.
+/// Output is separate from Nautilus logging and uses real-time timestamps.
+///
+/// The `RUST_LOG` environment variable controls filtering:
+/// - Example: `RUST_LOG=hyper_util=debug,tokio=warn`.
+/// - Default: `warn` (if not set).
+///
+/// # Errors
+///
+/// Returns a Python exception if initialization fails or if already initialized.
+#[cfg(feature = "tracing-bridge")]
+#[pyfunction]
+#[pyo3(name = "init_tracing")]
+pub fn py_init_tracing() -> PyResult<()> {
+    crate::logging::bridge::init_tracing().map_err(to_pyvalue_err)
 }
 
 /// A thin wrapper around the global Rust logger which exposes ergonomic

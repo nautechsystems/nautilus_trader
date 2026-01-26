@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::{
@@ -144,8 +144,8 @@ impl CashAccount {
     }
 
     #[pyo3(name = "apply")]
-    fn py_apply(&mut self, event: AccountState) {
-        self.apply(event);
+    fn py_apply(&mut self, event: AccountState) -> PyResult<()> {
+        self.apply(event).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "calculate_balance_locked")]

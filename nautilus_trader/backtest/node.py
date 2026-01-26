@@ -58,9 +58,11 @@ from nautilus_trader.model.data import capsule_to_list
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OtoTriggerMode
 from nautilus_trader.model.enums import account_type_from_str
 from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.enums import oms_type_from_str
+from nautilus_trader.model.enums import oto_trigger_mode_from_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
@@ -398,9 +400,11 @@ class BacktestNode:
                 reject_stop_orders=venue_config.reject_stop_orders,
                 support_gtd_orders=venue_config.support_gtd_orders,
                 support_contingent_orders=venue_config.support_contingent_orders,
+                oto_trigger_mode=get_oto_trigger_mode(venue_config),
                 use_position_ids=venue_config.use_position_ids,
                 use_random_ids=venue_config.use_random_ids,
                 use_reduce_only=venue_config.use_reduce_only,
+                use_market_order_acks=venue_config.use_market_order_acks,
                 bar_execution=venue_config.bar_execution,
                 bar_adaptive_high_low_ordering=venue_config.bar_adaptive_high_low_ordering,
                 trade_execution=venue_config.trade_execution,
@@ -777,6 +781,16 @@ def get_book_type(config: BacktestVenueConfig) -> BookType | None:
     book_type = config.book_type
 
     return book_type_from_str(book_type) if type(book_type) is str else book_type
+
+
+def get_oto_trigger_mode(config: BacktestVenueConfig) -> OtoTriggerMode:
+    oto_trigger_mode = config.oto_trigger_mode
+
+    return (
+        oto_trigger_mode_from_str(oto_trigger_mode)
+        if type(oto_trigger_mode) is str
+        else oto_trigger_mode
+    )
 
 
 def get_starting_balances(config: BacktestVenueConfig) -> list[Money]:

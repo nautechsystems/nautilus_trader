@@ -42,59 +42,57 @@ use crate::defi::pool_analysis::snapshot::PoolSnapshot;
 ///
 /// Returns `true` if all compared values match, `false` if any mismatches are detected.
 pub fn compare_pool_profiler(profiler: &PoolProfiler, snapshot: &PoolSnapshot) -> bool {
-    if !profiler.is_initialized {
-        panic!("Profiler is not initialized");
-    }
+    assert!(profiler.is_initialized, "Profiler is not initialized");
 
     let mut all_match = true;
     let total_ticks = snapshot.ticks.len();
     let total_positions = snapshot.positions.len();
 
-    if snapshot.state.current_tick != profiler.state.current_tick {
+    if snapshot.state.current_tick == profiler.state.current_tick {
+        log::info!("✓ current_tick matches: {}", snapshot.state.current_tick);
+    } else {
         log::error!(
             "Tick mismatch: profiler={}, compared={}",
             profiler.state.current_tick,
             snapshot.state.current_tick
         );
         all_match = false;
-    } else {
-        log::info!("✓ current_tick matches: {}", snapshot.state.current_tick);
     }
 
-    if snapshot.state.price_sqrt_ratio_x96 != profiler.state.price_sqrt_ratio_x96 {
+    if snapshot.state.price_sqrt_ratio_x96 == profiler.state.price_sqrt_ratio_x96 {
+        log::info!(
+            "✓ sqrt_price_x96 matches: {}",
+            profiler.state.price_sqrt_ratio_x96,
+        );
+    } else {
         log::error!(
             "Sqrt ratio mismatch: profiler={}, compared={}",
             profiler.state.price_sqrt_ratio_x96,
             snapshot.state.price_sqrt_ratio_x96
         );
         all_match = false;
-    } else {
-        log::info!(
-            "✓ sqrt_price_x96 matches: {}",
-            profiler.state.price_sqrt_ratio_x96,
-        );
     }
 
-    if snapshot.state.fee_protocol != profiler.state.fee_protocol {
+    if snapshot.state.fee_protocol == profiler.state.fee_protocol {
+        log::info!("✓ fee_protocol matches: {}", snapshot.state.fee_protocol);
+    } else {
         log::error!(
             "Fee protocol mismatch: profiler={}, compared={}",
             profiler.state.fee_protocol,
             snapshot.state.fee_protocol
         );
         all_match = false;
-    } else {
-        log::info!("✓ fee_protocol matches: {}", snapshot.state.fee_protocol);
     }
 
-    if snapshot.state.liquidity != profiler.tick_map.liquidity {
+    if snapshot.state.liquidity == profiler.tick_map.liquidity {
+        log::info!("✓ liquidity matches: {}", snapshot.state.liquidity);
+    } else {
         log::error!(
             "Liquidity mismatch: profiler={}, compared={}",
             profiler.tick_map.liquidity,
             snapshot.state.liquidity
         );
         all_match = false;
-    } else {
-        log::info!("✓ liquidity matches: {}", snapshot.state.liquidity);
     }
 
     // TODO add growth fee checking

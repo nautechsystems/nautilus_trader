@@ -387,6 +387,8 @@ pub fn decode_optional_timestamp(value: u64) -> Option<UnixNanos> {
 ///
 /// Returns an error if value is negative (invalid multiplier).
 pub fn decode_multiplier(value: i64) -> anyhow::Result<Quantity> {
+    const SCALE: u128 = 1_000_000_000;
+
     match value {
         0 | i64::MAX => Ok(Quantity::from(1)),
         v if v < 0 => anyhow::bail!("Invalid negative multiplier: {v}"),
@@ -394,8 +396,6 @@ pub fn decode_multiplier(value: i64) -> anyhow::Result<Quantity> {
             // Work in integers: v is fixed-point with 9 fractional digits.
             // Build a canonical decimal string without floating-point.
             let abs = v as u128;
-
-            const SCALE: u128 = 1_000_000_000;
             let int_part = abs / SCALE;
             let frac_part = abs % SCALE;
 

@@ -22,6 +22,7 @@ pub mod fixed;
 pub mod models;
 pub mod parse;
 pub mod sbe;
+pub mod symbol;
 pub mod urls;
 
 #[cfg(test)]

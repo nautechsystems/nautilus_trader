@@ -51,10 +51,11 @@ use super::{
     error::AxHttpError,
     models::{
         AuthenticateApiKeyRequest, AxAuthenticateResponse, AxBalancesResponse,
-        AxCancelOrderResponse, AxCandle, AxCandleResponse, AxCandlesResponse, AxFillsResponse,
-        AxFundingRatesResponse, AxInstrument, AxInstrumentsResponse, AxOpenOrdersResponse,
-        AxPlaceOrderResponse, AxPositionsResponse, AxRiskSnapshotResponse, AxTicker,
-        AxTickersResponse, AxTransactionsResponse, AxWhoAmI, CancelOrderRequest, PlaceOrderRequest,
+        AxBatchCancelOrdersResponse, AxCancelAllOrdersResponse, AxCancelOrderResponse, AxCandle,
+        AxCandleResponse, AxCandlesResponse, AxFillsResponse, AxFundingRatesResponse, AxInstrument,
+        AxInstrumentsResponse, AxOpenOrdersResponse, AxPlaceOrderResponse, AxPositionsResponse,
+        AxRiskSnapshotResponse, AxTicker, AxTickersResponse, AxTransactionsResponse, AxWhoAmI,
+        BatchCancelOrdersRequest, CancelAllOrdersRequest, CancelOrderRequest, PlaceOrderRequest,
     },
     parse::{
         parse_account_state, parse_bar, parse_fill_report, parse_order_status_report,
@@ -376,11 +377,9 @@ impl AxRawHttpClient {
             }
         };
 
-        let should_retry = |_error: &AxHttpError| -> bool {
-            // For now, don't retry any errors
-            // TODO: Implement proper retry logic based on error type
-            false
-        };
+        // Only retry idempotent methods to avoid duplicate orders/cancels
+        let is_idempotent = matches!(method, Method::GET | Method::HEAD | Method::OPTIONS);
+        let should_retry = |error: &AxHttpError| -> bool { is_idempotent && error.is_retryable() };
 
         let create_error = |msg: String| -> AxHttpError {
             if msg == "canceled" {
@@ -601,6 +600,56 @@ impl AxRawHttpClient {
         .await
     }
 
+    /// Cancels all open orders, optionally filtered by symbol or venue.
+    ///
+    /// # Endpoint
+    /// `POST /cancel_all_orders` (orders base URL)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn cancel_all_orders(
+        &self,
+        request: &CancelAllOrdersRequest,
+    ) -> Result<AxCancelAllOrdersResponse, AxHttpError> {
+        let body = serde_json::to_vec(request)
+            .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
+        self.send_request_to_url::<AxCancelAllOrdersResponse, ()>(
+            &self.orders_base_url,
+            Method::POST,
+            "/cancel_all_orders",
+            None,
+            Some(body),
+            true,
+        )
+        .await
+    }
+
+    /// Cancels multiple orders by their IDs in a single batch request.
+    ///
+    /// # Endpoint
+    /// `POST /batch_cancel_orders` (orders base URL)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn batch_cancel_orders(
+        &self,
+        request: &BatchCancelOrdersRequest,
+    ) -> Result<AxBatchCancelOrdersResponse, AxHttpError> {
+        let body = serde_json::to_vec(request)
+            .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
+        self.send_request_to_url::<AxBatchCancelOrdersResponse, ()>(
+            &self.orders_base_url,
+            Method::POST,
+            "/batch_cancel_orders",
+            None,
+            Some(body),
+            true,
+        )
+        .await
+    }
+
     /// Fetches all open orders.
     ///
     /// # Endpoint
@@ -780,8 +829,6 @@ impl AxRawHttpClient {
         .await
     }
 }
-
-// ------------------------------------------------------------------------------------------------
 
 /// High-level HTTP client for the Ax REST API.
 ///
@@ -1024,6 +1071,12 @@ impl AxHttpClient {
                 continue;
             }
 
+            // Skip test instruments (not real tradable products)
+            if inst.symbol.as_str().starts_with("TEST") {
+                log::debug!("Skipping test instrument: {}", inst.symbol);
+                continue;
+            }
+
             match parse_perp_instrument(inst, maker_fee, taker_fee, ts_init, ts_init) {
                 Ok(instrument) => instruments.push(instrument),
                 Err(e) => {
@@ -1151,16 +1204,16 @@ impl AxHttpClient {
         &self,
         account_id: AccountId,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        let orders = self
+        let response = self
             .inner
             .get_open_orders()
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
         let ts_init = self.generate_ts_init();
-        let mut reports = Vec::with_capacity(orders.len());
+        let mut reports = Vec::with_capacity(response.orders.len());
 
-        for order in &orders {
+        for order in &response.orders {
             let instrument = self
                 .get_instrument(&order.s)
                 .ok_or_else(|| anyhow::anyhow!("Instrument {} not found in cache", order.s))?;
@@ -1207,7 +1260,7 @@ impl AxHttpClient {
             match parse_fill_report(fill, account_id, &instrument, ts_init) {
                 Ok(report) => reports.push(report),
                 Err(e) => {
-                    log::warn!("Failed to parse fill {}: {e}", fill.execution_id);
+                    log::warn!("Failed to parse fill {}: {e}", fill.trade_id);
                 }
             }
         }

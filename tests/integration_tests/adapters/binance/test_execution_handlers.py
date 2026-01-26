@@ -888,10 +888,8 @@ class TestBinanceFuturesAlgoOrderHandlers:
         mock_order = mocker.MagicMock()
         mock_order.is_open = True
         mock_order.is_closed = False
-        mock_order.quantity._mem.raw = 38_000_000_000
-        mock_order.quantity._mem.precision = 9
-        mock_order.filled_qty._mem.raw = 0
-        mock_order.filled_qty._mem.precision = 9
+        mock_order.quantity = Quantity.from_str("38.0")
+        mock_order.filled_qty = Quantity.from_str("0.0")
         exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
         exec_client._cache.order.return_value = mock_order
         exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id

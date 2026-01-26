@@ -141,7 +141,7 @@ impl MarginBalance {
         let account_balance = Self::new(
             Money::new(initial, currency),
             Money::new(maintenance, currency),
-            InstrumentId::from(instrument_id_str.as_str()),
+            InstrumentId::from(instrument_id_str),
         );
         Ok(account_balance)
     }

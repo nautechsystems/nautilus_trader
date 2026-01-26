@@ -541,7 +541,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("price") && err.to_string().contains("row 0"),
-            "Expected price error at row 0, got: {err}"
+            "Expected price error at row 0, was: {err}"
         );
     }
 
@@ -584,7 +584,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("BookAction"),
-            "Expected BookAction error, got: {err}"
+            "Expected BookAction error, was: {err}"
         );
     }
 
@@ -628,7 +628,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("instrument_id"),
-            "Expected missing instrument_id error, got: {err}"
+            "Expected missing instrument_id error, was: {err}"
         );
     }
 

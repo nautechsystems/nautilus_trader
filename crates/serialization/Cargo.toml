@@ -61,14 +61,14 @@ uuid = { workspace = true }
 capnp = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 
-[build-dependencies]
-capnpc = { workspace = true }
-walkdir = { workspace = true }
-
 [dev-dependencies]
 criterion = { workspace = true }
 pretty_assertions = { workspace = true }
 rstest = { workspace = true }
+
+[build-dependencies]
+capnpc = { workspace = true }
+walkdir = { workspace = true }
 
 [[bench]]
 name = "capnp_serialization"

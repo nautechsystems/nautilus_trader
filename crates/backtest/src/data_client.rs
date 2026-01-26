@@ -23,6 +23,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use nautilus_common::{
     cache::Cache,
+    clients::DataClient,
     messages::data::{
         RequestBars, RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
         RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
@@ -34,7 +35,6 @@ use nautilus_common::{
         UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
     },
 };
-use nautilus_data::client::DataClient;
 use nautilus_model::identifiers::{ClientId, Venue};
 
 #[derive(Debug)]
@@ -206,31 +206,31 @@ impl DataClient for BacktestDataClient {
 
     // -- DATA REQUEST HANDLERS ---------------------------------------------------------------------------
 
-    fn request_data(&self, request: &RequestCustomData) -> anyhow::Result<()> {
+    fn request_data(&self, _request: RequestCustomData) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_instruments(&self, request: &RequestInstruments) -> anyhow::Result<()> {
+    fn request_instruments(&self, _request: RequestInstruments) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_instrument(&self, request: &RequestInstrument) -> anyhow::Result<()> {
+    fn request_instrument(&self, _request: RequestInstrument) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_book_snapshot(&self, request: &RequestBookSnapshot) -> anyhow::Result<()> {
+    fn request_book_snapshot(&self, _request: RequestBookSnapshot) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_quotes(&self, request: &RequestQuotes) -> anyhow::Result<()> {
+    fn request_quotes(&self, _request: RequestQuotes) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_trades(&self, request: &RequestTrades) -> anyhow::Result<()> {
+    fn request_trades(&self, _request: RequestTrades) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_bars(&self, request: &RequestBars) -> anyhow::Result<()> {
+    fn request_bars(&self, _request: RequestBars) -> anyhow::Result<()> {
         todo!()
     }
 }

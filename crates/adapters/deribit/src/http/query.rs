@@ -189,3 +189,260 @@ impl GetOrderBookParams {
         }
     }
 }
+
+/// Query parameters for `/private/get_order_state` endpoint.
+/// Retrieves a single order by its ID.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct GetOrderStateParams {
+    /// The order ID to look up.
+    pub order_id: String,
+}
+
+impl GetOrderStateParams {
+    /// Creates parameters for a specific order ID.
+    #[must_use]
+    pub fn new(order_id: impl Into<String>) -> Self {
+        Self {
+            order_id: order_id.into(),
+        }
+    }
+}
+
+/// Query parameters for `/private/get_open_orders` endpoint.
+/// Retrieves all open orders across all currencies and instruments.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct GetOpenOrdersParams {}
+
+impl GetOpenOrdersParams {
+    /// Creates parameters to get all open orders.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+/// Query parameters for `/private/get_open_orders_by_instrument` endpoint.
+/// Retrieves open orders for a specific instrument.
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[builder(setter(into, strip_option))]
+pub struct GetOpenOrdersByInstrumentParams {
+    /// Instrument name (e.g., "BTC-PERPETUAL")
+    pub instrument_name: String,
+    /// Order type filter: "all", "limit", "stop_all", "stop_limit", "stop_market",
+    /// "take_all", "take_limit", "take_market", "trailing_all", "trailing_stop"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub r#type: Option<String>,
+}
+
+impl GetOpenOrdersByInstrumentParams {
+    /// Creates parameters for a specific instrument.
+    #[must_use]
+    pub fn new(instrument_name: impl Into<String>) -> Self {
+        Self {
+            instrument_name: instrument_name.into(),
+            r#type: None,
+        }
+    }
+}
+
+/// Query parameters for `/private/get_order_history_by_instrument` endpoint.
+/// Retrieves historical orders for a specific instrument.
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[builder(setter(into, strip_option))]
+pub struct GetOrderHistoryByInstrumentParams {
+    /// Instrument name (e.g., "BTC-PERPETUAL")
+    pub instrument_name: String,
+    /// Number of requested items, default - 20
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub count: Option<u32>,
+    /// Offset for pagination
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub offset: Option<u32>,
+    /// Include orders older than 3 days
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub include_old: Option<bool>,
+    /// Include unfilled orders
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub include_unfilled: Option<bool>,
+}
+
+impl GetOrderHistoryByInstrumentParams {
+    /// Creates parameters for a specific instrument.
+    #[must_use]
+    pub fn new(instrument_name: impl Into<String>) -> Self {
+        Self {
+            instrument_name: instrument_name.into(),
+            count: None,
+            offset: None,
+            include_old: None,
+            include_unfilled: None,
+        }
+    }
+
+    /// Creates a new builder for [`GetOrderHistoryByInstrumentParams`].
+    #[must_use]
+    pub fn builder() -> GetOrderHistoryByInstrumentParamsBuilder {
+        GetOrderHistoryByInstrumentParamsBuilder::default()
+    }
+}
+
+/// Query parameters for `/private/get_order_history_by_currency` endpoint.
+/// Retrieves historical orders for a specific currency.
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[builder(setter(into, strip_option))]
+pub struct GetOrderHistoryByCurrencyParams {
+    /// Currency filter
+    pub currency: DeribitCurrency,
+    /// Optional instrument kind filter
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub kind: Option<DeribitInstrumentKind>,
+    /// Number of requested items, default - 20, maximum - 10000
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub count: Option<u32>,
+    /// Include unfilled orders
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub include_unfilled: Option<bool>,
+}
+
+impl GetOrderHistoryByCurrencyParams {
+    /// Creates parameters for a specific currency.
+    #[must_use]
+    pub fn new(currency: DeribitCurrency) -> Self {
+        Self {
+            currency,
+            kind: None,
+            count: None,
+            include_unfilled: None,
+        }
+    }
+
+    /// Creates a new builder for [`GetOrderHistoryByCurrencyParams`].
+    #[must_use]
+    pub fn builder() -> GetOrderHistoryByCurrencyParamsBuilder {
+        GetOrderHistoryByCurrencyParamsBuilder::default()
+    }
+}
+
+/// Query parameters for `/private/get_user_trades_by_instrument_and_time` endpoint.
+/// Retrieves user trades for a specific instrument within a time range.
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[builder(setter(into, strip_option))]
+pub struct GetUserTradesByInstrumentAndTimeParams {
+    /// Instrument name (e.g., "BTC-PERPETUAL")
+    pub instrument_name: String,
+    /// Start timestamp in milliseconds since UNIX epoch
+    pub start_timestamp: i64,
+    /// End timestamp in milliseconds since UNIX epoch
+    pub end_timestamp: i64,
+    /// Number of requested items, default - 10, maximum - 1000
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub count: Option<u32>,
+    /// Direction of results sorting: "asc", "desc", or "default"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub sorting: Option<String>,
+}
+
+impl GetUserTradesByInstrumentAndTimeParams {
+    /// Creates parameters with required fields.
+    #[must_use]
+    pub fn new(
+        instrument_name: impl Into<String>,
+        start_timestamp: i64,
+        end_timestamp: i64,
+    ) -> Self {
+        Self {
+            instrument_name: instrument_name.into(),
+            start_timestamp,
+            end_timestamp,
+            count: None,
+            sorting: None,
+        }
+    }
+
+    /// Creates a new builder for [`GetUserTradesByInstrumentAndTimeParams`].
+    #[must_use]
+    pub fn builder() -> GetUserTradesByInstrumentAndTimeParamsBuilder {
+        GetUserTradesByInstrumentAndTimeParamsBuilder::default()
+    }
+}
+
+/// Query parameters for `/private/get_user_trades_by_currency_and_time` endpoint.
+/// Retrieves user trades for a specific currency within a time range.
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[builder(setter(into, strip_option))]
+pub struct GetUserTradesByCurrencyAndTimeParams {
+    /// Currency filter
+    pub currency: DeribitCurrency,
+    /// Start timestamp in milliseconds since UNIX epoch
+    pub start_timestamp: i64,
+    /// End timestamp in milliseconds since UNIX epoch
+    pub end_timestamp: i64,
+    /// Optional instrument kind filter
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub kind: Option<DeribitInstrumentKind>,
+    /// Number of requested items, default - 10, maximum - 1000
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub count: Option<u32>,
+}
+
+impl GetUserTradesByCurrencyAndTimeParams {
+    /// Creates parameters with required fields.
+    #[must_use]
+    pub fn new(currency: DeribitCurrency, start_timestamp: i64, end_timestamp: i64) -> Self {
+        Self {
+            currency,
+            start_timestamp,
+            end_timestamp,
+            kind: None,
+            count: None,
+        }
+    }
+
+    /// Creates a new builder for [`GetUserTradesByCurrencyAndTimeParams`].
+    #[must_use]
+    pub fn builder() -> GetUserTradesByCurrencyAndTimeParamsBuilder {
+        GetUserTradesByCurrencyAndTimeParamsBuilder::default()
+    }
+}
+
+/// Query parameters for `/private/get_positions` endpoint.
+/// Retrieves positions for a specific currency.
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[builder(setter(into, strip_option))]
+pub struct GetPositionsParams {
+    /// Currency filter
+    pub currency: DeribitCurrency,
+    /// Optional instrument kind filter
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub kind: Option<DeribitInstrumentKind>,
+}
+
+impl GetPositionsParams {
+    /// Creates parameters for a specific currency.
+    #[must_use]
+    pub fn new(currency: DeribitCurrency) -> Self {
+        Self {
+            currency,
+            kind: None,
+        }
+    }
+
+    /// Creates a new builder for [`GetPositionsParams`].
+    #[must_use]
+    pub fn builder() -> GetPositionsParamsBuilder {
+        GetPositionsParamsBuilder::default()
+    }
+}

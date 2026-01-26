@@ -17,6 +17,7 @@
 
 pub mod bar;
 pub mod bet;
+pub mod black_scholes;
 pub mod close;
 pub mod delta;
 pub mod deltas;
@@ -46,6 +47,7 @@ use serde_json::to_string;
 // Re-exports
 #[rustfmt::skip]  // Keep these grouped
 pub use bar::{Bar, BarSpecification, BarType};
+pub use black_scholes::Greeks;
 pub use close::InstrumentClose;
 pub use delta::OrderBookDelta;
 pub use deltas::{OrderBookDeltas, OrderBookDeltas_API};
@@ -53,7 +55,7 @@ pub use depth::{DEPTH10_LEN, OrderBookDepth10};
 pub use funding::FundingRateUpdate;
 pub use greeks::{
     BlackScholesGreeksResult, GreeksData, PortfolioGreeks, YieldCurveData, black_scholes_greeks,
-    imply_vol_and_greeks,
+    imply_vol_and_greeks, refine_vol_and_greeks,
 };
 pub use order::{BookOrder, NULL_ORDER};
 pub use prices::{IndexPriceUpdate, MarkPriceUpdate};

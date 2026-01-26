@@ -108,8 +108,6 @@ impl DeribitDataClientConfig {
     }
 }
 
-// ------------------------------------------------------------------------------------------------
-
 /// Configuration for the Deribit execution client.
 #[derive(Clone, Debug)]
 pub struct DeribitExecClientConfig {

@@ -19,7 +19,7 @@
 //! orchestrator and the network layer. It exclusively owns the `WebSocketClient` and
 //! processes commands from the client via an unbounded channel.
 //!
-//! ## Key Responsibilities
+//! ## Responsibilities
 //!
 //! - Command processing: Receives `HandlerCommand` from client, serializes to JSON requests.
 //! - Response decoding: Parses SBE binary responses using schema 3 decoders.
@@ -318,11 +318,12 @@ impl BinanceSpotWsApiHandler {
         );
 
         // Apply rate limiting for order operations
-        let rate_limit_keys = Some(vec![BINANCE_WS_RATE_LIMIT_KEY_ORDER.to_string()]);
-
-        client.send_text(json, rate_limit_keys).await.map_err(|e| {
-            BinanceWsApiError::ConnectionError(format!("Failed to send request: {e}"))
-        })?;
+        client
+            .send_text(json, Some(BINANCE_WS_RATE_LIMIT_KEY_ORDER.as_slice()))
+            .await
+            .map_err(|e| {
+                BinanceWsApiError::ConnectionError(format!("Failed to send request: {e}"))
+            })?;
 
         Ok(())
     }

@@ -53,20 +53,19 @@ pub fn bybit_ws_public_url(
 }
 
 /// Returns the private WebSocket endpoint for the given environment.
-///
-/// # Notes
-///
-/// Bybit only exposes dedicated demo endpoints for public market data streams.
-/// Private and trade channels share the main/testnet hosts.
 #[must_use]
 pub const fn bybit_ws_private_url(environment: BybitEnvironment) -> &'static str {
     match environment {
         BybitEnvironment::Testnet => "wss://stream-testnet.bybit.com/v5/private",
-        BybitEnvironment::Mainnet | BybitEnvironment::Demo => "wss://stream.bybit.com/v5/private",
+        BybitEnvironment::Demo => "wss://stream-demo.bybit.com/v5/private",
+        BybitEnvironment::Mainnet => "wss://stream.bybit.com/v5/private",
     }
 }
 
 /// Returns the trade WebSocket endpoint for order operations.
+///
+/// Note: Bybit demo environment does not support the WebSocket Trade API.
+/// Demo trading must use HTTP REST API for order operations.
 #[must_use]
 pub const fn bybit_ws_trade_url(environment: BybitEnvironment) -> &'static str {
     match environment {
@@ -105,7 +104,7 @@ mod tests {
         );
         assert_eq!(
             bybit_ws_private_url(BybitEnvironment::Demo),
-            "wss://stream.bybit.com/v5/private"
+            "wss://stream-demo.bybit.com/v5/private"
         );
         assert_eq!(
             bybit_ws_private_url(BybitEnvironment::Testnet),

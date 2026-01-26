@@ -1678,18 +1678,23 @@ class TestBacktestNodeWithBacktestDataIterator:
         engine, node = run_backtest(with_data=True)
 
         # Act
-        from nautilus_trader.analysis.config import TearsheetConfig
+        from nautilus_trader.analysis import TearsheetBarsWithFillsChart
+        from nautilus_trader.analysis import TearsheetConfig
+        from nautilus_trader.analysis import TearsheetEquityChart
+        from nautilus_trader.analysis import TearsheetStatsTableChart
         from nautilus_trader.analysis.tearsheet import create_tearsheet
 
         output_path = tmp_path / "tearsheet_with_bars_fills.html"
 
         tearsheet_config = TearsheetConfig(
-            charts=["stats_table", "equity", "bars_with_fills"],
-            chart_args={
-                "bars_with_fills": {
-                    "bar_type": "ESM4.XCME-1-MINUTE-LAST-EXTERNAL",
-                },
-            },
+            charts=[
+                TearsheetStatsTableChart(),
+                TearsheetEquityChart(),
+                TearsheetBarsWithFillsChart(
+                    bar_type="ESM4.XCME-1-MINUTE-LAST-EXTERNAL",
+                    title="Fills",
+                ),
+            ],
         )
 
         create_tearsheet(

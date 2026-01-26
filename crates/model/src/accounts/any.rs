@@ -63,7 +63,13 @@ impl AccountAny {
         }
     }
 
-    pub fn apply(&mut self, event: AccountState) {
+    /// Applies an account state event to update the account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the account state cannot be applied (e.g., negative balance
+    /// when borrowing is not allowed for a cash account).
+    pub fn apply(&mut self, event: AccountState) -> anyhow::Result<()> {
         match self {
             Self::Margin(margin) => margin.apply(event),
             Self::Cash(cash) => cash.apply(event),
@@ -106,7 +112,7 @@ impl AccountAny {
         let init_event = events.first().unwrap();
         let mut account = Self::from(init_event.clone());
         for event in events.iter().skip(1) {
-            account.apply(event.clone());
+            account.apply(event.clone())?;
         }
         Ok(account)
     }
@@ -163,14 +169,32 @@ impl AccountAny {
     }
 }
 
-impl From<AccountState> for AccountAny {
-    fn from(event: AccountState) -> Self {
+impl AccountAny {
+    /// Creates an `AccountAny` from an `AccountState`, returning an error for unsupported types.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the account type is `Betting` or `Wallet` (unsupported in Rust).
+    pub fn try_from_state(event: AccountState) -> Result<Self, &'static str> {
         match event.account_type {
-            AccountType::Margin => Self::Margin(MarginAccount::new(event, false)),
-            AccountType::Cash => Self::Cash(CashAccount::new(event, false, false)),
-            AccountType::Betting => panic!("Betting account not implemented"),
-            AccountType::Wallet => panic!("Wallet account not implemented"),
+            AccountType::Margin => Ok(Self::Margin(MarginAccount::new(event, false))),
+            AccountType::Cash => Ok(Self::Cash(CashAccount::new(event, false, false))),
+            AccountType::Betting => Err("Betting accounts are not yet supported in Rust, \
+                use Python for betting workflows"),
+            AccountType::Wallet => Err("Wallet accounts are not yet implemented in Rust"),
         }
+    }
+}
+
+impl From<AccountState> for AccountAny {
+    /// Creates an `AccountAny` from an `AccountState`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the account type is `Betting` or `Wallet` (unsupported in Rust).
+    /// Use [`AccountAny::try_from_state`] for fallible conversion.
+    fn from(event: AccountState) -> Self {
+        Self::try_from_state(event).expect("Unsupported account type")
     }
 }
 

@@ -17,7 +17,7 @@ plus order management capabilities.
 We recommend reviewing the [Actors](actors.md) guide before diving into strategy development.
 :::
 
-Strategies can be added to Nautilus systems in any [environment contexts](/concepts/architecture.md#environment-contexts) and will start sending commands and receiving
+Strategies can be added to Nautilus systems in any [environment contexts](architecture.md#environment-contexts) and will start sending commands and receiving
 events based on their logic as soon as the system starts.
 
 Using the basic building blocks of data ingest, event handling, and order management (which we will discuss
@@ -657,3 +657,9 @@ example the above config would result in a strategy ID of `MyStrategy-001`.
 :::note
 See the `StrategyId` [API Reference](../api_reference/model/identifiers.md) for further details.
 :::
+
+## Related guides
+
+- [Actors](actors.md) - Base class that strategies extend.
+- [Orders](orders.md) - Order types and management from strategies.
+- [Backtesting](backtesting.md) - Test strategies with historical data.

@@ -15,7 +15,9 @@
 
 //! Enumerations that model Ax string enums across HTTP and WebSocket payloads.
 
-use nautilus_model::enums::{AggressorSide, OrderSide, OrderStatus, PositionSide, TimeInForce};
+use nautilus_model::enums::{
+    AggressorSide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
@@ -40,6 +42,8 @@ use super::consts::{
     Serialize,
     Deserialize,
 )]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.architect")
@@ -187,6 +191,18 @@ impl From<AxOrderSide> for PositionSide {
     }
 }
 
+impl TryFrom<OrderSide> for AxOrderSide {
+    type Error = &'static str;
+
+    fn try_from(side: OrderSide) -> Result<Self, Self::Error> {
+        match side {
+            OrderSide::Buy => Ok(Self::Buy),
+            OrderSide::Sell => Ok(Self::Sell),
+            _ => Err("Invalid order side for AX"),
+        }
+    }
+}
+
 /// Order status as returned by the AX Exchange API.
 ///
 /// # References
@@ -214,12 +230,14 @@ impl From<AxOrderSide> for PositionSide {
 pub enum AxOrderStatus {
     /// Order is pending submission.
     Pending,
-    /// Order has been accepted by the exchange.
+    /// Order has been accepted by the exchange (OPEN state).
     Accepted,
     /// Order has been partially filled.
     PartiallyFilled,
     /// Order has been completely filled.
     Filled,
+    /// Order cancellation is in progress.
+    Canceling,
     /// Order has been canceled.
     Canceled,
     /// Order has been rejected.
@@ -230,6 +248,12 @@ pub enum AxOrderStatus {
     Replaced,
     /// Order is done for the day.
     DoneForDay,
+    /// Order is no longer on the orderbook (terminal state).
+    Out,
+    /// Order was reconciled out asynchronously.
+    ReconciledOut,
+    /// Order is in a stale state (expected transitions not occurring).
+    Stale,
     /// Order status is unknown.
     Unknown,
 }
@@ -241,11 +265,15 @@ impl From<AxOrderStatus> for OrderStatus {
             AxOrderStatus::Accepted => Self::Accepted,
             AxOrderStatus::PartiallyFilled => Self::PartiallyFilled,
             AxOrderStatus::Filled => Self::Filled,
+            AxOrderStatus::Canceling => Self::PendingCancel,
             AxOrderStatus::Canceled => Self::Canceled,
             AxOrderStatus::Rejected => Self::Rejected,
             AxOrderStatus::Expired => Self::Expired,
             AxOrderStatus::Replaced => Self::Accepted,
             AxOrderStatus::DoneForDay => Self::Canceled,
+            AxOrderStatus::Out => Self::Canceled,
+            AxOrderStatus::ReconciledOut => Self::Canceled,
+            AxOrderStatus::Stale => Self::Accepted,
             AxOrderStatus::Unknown => Self::Initialized,
         }
     }
@@ -278,18 +306,98 @@ impl From<AxOrderStatus> for OrderStatus {
 pub enum AxTimeInForce {
     /// Good-Till-Canceled: order remains active until filled or canceled.
     Gtc,
-    /// Immediate-Or-Cancel: fill immediately or cancel unfilled portion.
-    Ioc,
+    /// Good-Till-Date: order remains active until specified datetime.
+    Gtd,
     /// Day order: valid until end of trading day.
     Day,
+    /// Immediate-Or-Cancel: fill immediately or cancel unfilled portion.
+    Ioc,
+    /// Fill-Or-Kill: execute entire order immediately or cancel.
+    Fok,
 }
 
 impl From<AxTimeInForce> for TimeInForce {
     fn from(tif: AxTimeInForce) -> Self {
         match tif {
             AxTimeInForce::Gtc => Self::Gtc,
-            AxTimeInForce::Ioc => Self::Ioc,
+            AxTimeInForce::Gtd => Self::Gtd,
             AxTimeInForce::Day => Self::Day,
+            AxTimeInForce::Ioc => Self::Ioc,
+            AxTimeInForce::Fok => Self::Fok,
+        }
+    }
+}
+
+impl TryFrom<TimeInForce> for AxTimeInForce {
+    type Error = &'static str;
+
+    fn try_from(tif: TimeInForce) -> Result<Self, Self::Error> {
+        match tif {
+            TimeInForce::Gtc => Ok(Self::Gtc),
+            TimeInForce::Gtd => Ok(Self::Gtd),
+            TimeInForce::Day => Ok(Self::Day),
+            TimeInForce::Ioc => Ok(Self::Ioc),
+            TimeInForce::Fok => Ok(Self::Fok),
+            _ => Err("Unsupported time-in-force for AX"),
+        }
+    }
+}
+
+/// Order type as defined by the AX Exchange API.
+///
+/// # References
+/// - <https://docs.architect.co/sdk-reference/order-entry>
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    Display,
+    Eq,
+    PartialEq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.architect")
+)]
+pub enum AxOrderType {
+    /// Limit order; execute no worse than the limit price specified.
+    #[default]
+    Limit,
+    /// Stop-limit order; if the trigger price is breached, place a limit order.
+    StopLossLimit,
+    /// Take-profit order; if the trigger price is breached, place a limit order.
+    /// Note: Not currently implemented by Architect.
+    TakeProfitLimit,
+}
+
+impl From<AxOrderType> for OrderType {
+    fn from(order_type: AxOrderType) -> Self {
+        match order_type {
+            AxOrderType::Limit => Self::Limit,
+            AxOrderType::StopLossLimit => Self::StopLimit,
+            AxOrderType::TakeProfitLimit => Self::LimitIfTouched,
+        }
+    }
+}
+
+impl TryFrom<OrderType> for AxOrderType {
+    type Error = &'static str;
+
+    fn try_from(order_type: OrderType) -> Result<Self, Self::Error> {
+        match order_type {
+            OrderType::Limit => Ok(Self::Limit),
+            OrderType::StopLimit => Ok(Self::StopLossLimit),
+            OrderType::LimitIfTouched => Ok(Self::TakeProfitLimit),
+            _ => Err("Unsupported order type for AX"),
         }
     }
 }
@@ -312,6 +420,7 @@ impl From<AxTimeInForce> for TimeInForce {
     Serialize,
     Deserialize,
 )]
+#[strum(ascii_case_insensitive)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.architect")
@@ -598,7 +707,11 @@ mod tests {
     #[case(AxOrderStatus::Accepted, "\"ACCEPTED\"")]
     #[case(AxOrderStatus::PartiallyFilled, "\"PARTIALLY_FILLED\"")]
     #[case(AxOrderStatus::Filled, "\"FILLED\"")]
+    #[case(AxOrderStatus::Canceling, "\"CANCELING\"")]
     #[case(AxOrderStatus::Canceled, "\"CANCELED\"")]
+    #[case(AxOrderStatus::Out, "\"OUT\"")]
+    #[case(AxOrderStatus::ReconciledOut, "\"RECONCILED_OUT\"")]
+    #[case(AxOrderStatus::Stale, "\"STALE\"")]
     fn test_order_status_serialization(#[case] status: AxOrderStatus, #[case] expected: &str) {
         let json = serde_json::to_string(&status).unwrap();
         assert_eq!(json, expected);
@@ -611,12 +724,26 @@ mod tests {
     #[case(AxTimeInForce::Gtc, "\"GTC\"")]
     #[case(AxTimeInForce::Ioc, "\"IOC\"")]
     #[case(AxTimeInForce::Day, "\"DAY\"")]
+    #[case(AxTimeInForce::Gtd, "\"GTD\"")]
+    #[case(AxTimeInForce::Fok, "\"FOK\"")]
     fn test_time_in_force_serialization(#[case] tif: AxTimeInForce, #[case] expected: &str) {
         let json = serde_json::to_string(&tif).unwrap();
         assert_eq!(json, expected);
 
         let parsed: AxTimeInForce = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, tif);
+    }
+
+    #[rstest]
+    #[case(AxOrderType::Limit, "\"LIMIT\"")]
+    #[case(AxOrderType::StopLossLimit, "\"STOP_LOSS_LIMIT\"")]
+    #[case(AxOrderType::TakeProfitLimit, "\"TAKE_PROFIT_LIMIT\"")]
+    fn test_order_type_serialization(#[case] order_type: AxOrderType, #[case] expected: &str) {
+        let json = serde_json::to_string(&order_type).unwrap();
+        assert_eq!(json, expected);
+
+        let parsed: AxOrderType = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, order_type);
     }
 
     #[rstest]

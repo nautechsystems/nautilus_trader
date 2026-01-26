@@ -15,7 +15,7 @@
 
 //! Configuration structures for the AX Exchange adapter.
 
-use nautilus_model::identifiers::AccountId;
+use nautilus_model::identifiers::{AccountId, TraderId};
 
 /// Configuration for the AX Exchange live data client.
 #[derive(Clone, Debug)]
@@ -84,7 +84,9 @@ impl AxDataClientConfig {
     /// Returns `true` if both API key and secret are available.
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
-        self.api_key.is_some() && self.api_secret.is_some()
+        let has_key = self.api_key.is_some() || std::env::var("AX_API_KEY").is_ok();
+        let has_secret = self.api_secret.is_some() || std::env::var("AX_API_SECRET").is_ok();
+        has_key && has_secret
     }
 
     /// Returns the REST base URL, considering overrides and environment.
@@ -104,9 +106,9 @@ impl AxDataClientConfig {
     pub fn ws_public_url(&self) -> String {
         self.base_url_ws_public.clone().unwrap_or_else(|| {
             if self.is_sandbox {
-                "wss://gateway.sandbox.architect.exchange/ws/public".to_string()
+                "wss://gateway.sandbox.architect.exchange/md/ws".to_string()
             } else {
-                "wss://gateway.architect.exchange/ws/public".to_string()
+                "wss://gateway.architect.exchange/md/ws".to_string()
             }
         })
     }
@@ -116,31 +118,33 @@ impl AxDataClientConfig {
     pub fn ws_private_url(&self) -> String {
         self.base_url_ws_private.clone().unwrap_or_else(|| {
             if self.is_sandbox {
-                "wss://gateway.sandbox.architect.exchange/ws/private".to_string()
+                "wss://gateway.sandbox.architect.exchange/orders/ws".to_string()
             } else {
-                "wss://gateway.architect.exchange/ws/private".to_string()
+                "wss://gateway.architect.exchange/orders/ws".to_string()
             }
         })
-    }
-
-    /// Returns `true` when private WebSocket connection is required.
-    #[must_use]
-    pub fn requires_private_ws(&self) -> bool {
-        self.has_api_credentials()
     }
 }
 
 /// Configuration for the AX Exchange live execution client.
 #[derive(Clone, Debug)]
 pub struct AxExecClientConfig {
+    /// The trader ID for the client.
+    pub trader_id: TraderId,
+    /// The account ID for the client.
+    pub account_id: AccountId,
     /// API key for authenticated requests.
     pub api_key: Option<String>,
     /// API secret for authenticated requests.
     pub api_secret: Option<String>,
-    /// Use sandbox environment (default: false).
+    /// TOTP secret for 2FA authentication.
+    pub totp_secret: Option<String>,
+    /// Use sandbox environment (default: true).
     pub is_sandbox: bool,
     /// Optional override for the REST base URL.
     pub base_url_http: Option<String>,
+    /// Optional override for the orders REST base URL.
+    pub base_url_orders: Option<String>,
     /// Optional override for the private WebSocket URL.
     pub base_url_ws_private: Option<String>,
     /// Optional HTTP proxy URL.
@@ -159,17 +163,19 @@ pub struct AxExecClientConfig {
     pub heartbeat_interval_secs: Option<u64>,
     /// Optional receive window in milliseconds for signed requests.
     pub recv_window_ms: Option<u64>,
-    /// Optional account identifier to associate with the execution client.
-    pub account_id: Option<AccountId>,
 }
 
 impl Default for AxExecClientConfig {
     fn default() -> Self {
         Self {
+            trader_id: TraderId::from("TRADER-001"),
+            account_id: AccountId::from("AX-001"),
             api_key: None,
             api_secret: None,
-            is_sandbox: false,
+            totp_secret: None,
+            is_sandbox: true,
             base_url_http: None,
+            base_url_orders: None,
             base_url_ws_private: None,
             http_proxy_url: None,
             ws_proxy_url: None,
@@ -177,9 +183,8 @@ impl Default for AxExecClientConfig {
             max_retries: Some(3),
             retry_delay_initial_ms: Some(1_000),
             retry_delay_max_ms: Some(10_000),
-            heartbeat_interval_secs: Some(5),
+            heartbeat_interval_secs: Some(30),
             recv_window_ms: Some(5_000),
-            account_id: None,
         }
     }
 }
@@ -194,7 +199,9 @@ impl AxExecClientConfig {
     /// Returns `true` if both API key and secret are available.
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
-        self.api_key.is_some() && self.api_secret.is_some()
+        let has_key = self.api_key.is_some() || std::env::var("AX_API_KEY").is_ok();
+        let has_secret = self.api_secret.is_some() || std::env::var("AX_API_SECRET").is_ok();
+        has_key && has_secret
     }
 
     /// Returns the REST base URL, considering overrides and environment.
@@ -209,14 +216,26 @@ impl AxExecClientConfig {
         })
     }
 
+    /// Returns the orders REST base URL, considering overrides and environment.
+    #[must_use]
+    pub fn orders_base_url(&self) -> String {
+        self.base_url_orders.clone().unwrap_or_else(|| {
+            if self.is_sandbox {
+                "https://gateway.sandbox.architect.exchange/orders".to_string()
+            } else {
+                "https://gateway.architect.exchange/orders".to_string()
+            }
+        })
+    }
+
     /// Returns the private WebSocket URL, considering overrides and environment.
     #[must_use]
     pub fn ws_private_url(&self) -> String {
         self.base_url_ws_private.clone().unwrap_or_else(|| {
             if self.is_sandbox {
-                "wss://gateway.sandbox.architect.exchange/ws/private".to_string()
+                "wss://gateway.sandbox.architect.exchange/orders/ws".to_string()
             } else {
-                "wss://gateway.architect.exchange/ws/private".to_string()
+                "wss://gateway.architect.exchange/orders/ws".to_string()
             }
         })
     }

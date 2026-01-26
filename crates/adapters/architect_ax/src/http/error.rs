@@ -110,6 +110,25 @@ impl From<AxErrorResponse> for AxHttpError {
     }
 }
 
+impl AxHttpError {
+    /// Returns `true` if the error is transient and the request should be retried.
+    ///
+    /// Retries on network errors, rate limiting (429), and server errors (5xx).
+    #[must_use]
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::NetworkError(_) => true,
+            Self::UnexpectedStatus { status, .. } => *status == 429 || *status >= 500,
+            Self::MissingCredentials
+            | Self::ApiError { .. }
+            | Self::JsonError(_)
+            | Self::ValidationError(_)
+            | Self::BuildError(_)
+            | Self::Canceled(_) => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

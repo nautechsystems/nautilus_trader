@@ -27,10 +27,29 @@ use nautilus_common::{
     actor::{DataActorConfig, DataActorCore},
     cache::Cache,
     clock::Clock,
+    msgbus::TypedHandler,
 };
-use nautilus_model::identifiers::{ActorId, ClientOrderId, ExecAlgorithmId, StrategyId, TraderId};
+use nautilus_model::{
+    events::{OrderEventAny, PositionEvent},
+    identifiers::{ActorId, ClientOrderId, ExecAlgorithmId, StrategyId, TraderId},
+    orders::OrderAny,
+    types::Quantity,
+};
 
 use super::config::ExecutionAlgorithmConfig;
+
+/// Holds event handlers for strategy event subscriptions.
+#[derive(Clone, Debug)]
+pub struct StrategyEventHandlers {
+    /// The topic string for order events.
+    pub order_topic: String,
+    /// The handler for order events.
+    pub order_handler: TypedHandler<OrderEventAny>,
+    /// The topic string for position events.
+    pub position_topic: String,
+    /// The handler for position events.
+    pub position_handler: TypedHandler<PositionEvent>,
+}
 
 /// The core component of an [`ExecutionAlgorithm`](super::ExecutionAlgorithm).
 ///
@@ -51,6 +70,10 @@ pub struct ExecutionAlgorithmCore {
     exec_spawn_ids: AHashMap<ClientOrderId, u32>,
     /// Tracks strategies that have been subscribed to for events.
     subscribed_strategies: AHashSet<StrategyId>,
+    /// Tracks pending spawn reductions for quantity restoration on denial/rejection.
+    pending_spawn_reductions: AHashMap<ClientOrderId, Quantity>,
+    /// Maps strategies to their event handlers for cleanup on reset.
+    strategy_event_handlers: AHashMap<StrategyId, StrategyEventHandlers>,
 }
 
 impl Debug for ExecutionAlgorithmCore {
@@ -61,6 +84,14 @@ impl Debug for ExecutionAlgorithmCore {
             .field("exec_algorithm_id", &self.exec_algorithm_id)
             .field("exec_spawn_ids", &self.exec_spawn_ids.len())
             .field("subscribed_strategies", &self.subscribed_strategies.len())
+            .field(
+                "pending_spawn_reductions",
+                &self.pending_spawn_reductions.len(),
+            )
+            .field(
+                "strategy_event_handlers",
+                &self.strategy_event_handlers.len(),
+            )
             .finish()
     }
 }
@@ -89,6 +120,8 @@ impl ExecutionAlgorithmCore {
             exec_algorithm_id,
             exec_spawn_ids: AHashMap::new(),
             subscribed_strategies: AHashSet::new(),
+            pending_spawn_reductions: AHashMap::new(),
+            strategy_event_handlers: AHashMap::new(),
         }
     }
 
@@ -143,6 +176,20 @@ impl ExecutionAlgorithmCore {
         self.subscribed_strategies.insert(strategy_id);
     }
 
+    /// Stores the event handlers for a strategy subscription.
+    pub fn store_strategy_event_handlers(
+        &mut self,
+        strategy_id: StrategyId,
+        handlers: StrategyEventHandlers,
+    ) {
+        self.strategy_event_handlers.insert(strategy_id, handlers);
+    }
+
+    /// Takes and returns all stored strategy event handlers, clearing the internal map.
+    pub fn take_strategy_event_handlers(&mut self) -> AHashMap<StrategyId, StrategyEventHandlers> {
+        std::mem::take(&mut self.strategy_event_handlers)
+    }
+
     /// Clears all spawn tracking state.
     pub fn clear_spawn_ids(&mut self) {
         self.exec_spawn_ids.clear();
@@ -153,10 +200,42 @@ impl ExecutionAlgorithmCore {
         self.subscribed_strategies.clear();
     }
 
+    /// Tracks a pending spawn reduction for potential restoration.
+    pub fn track_pending_spawn_reduction(&mut self, spawn_id: ClientOrderId, quantity: Quantity) {
+        self.pending_spawn_reductions.insert(spawn_id, quantity);
+    }
+
+    /// Removes and returns the pending spawn reduction for an order, if any.
+    pub fn take_pending_spawn_reduction(&mut self, spawn_id: &ClientOrderId) -> Option<Quantity> {
+        self.pending_spawn_reductions.remove(spawn_id)
+    }
+
+    /// Clears all pending spawn reductions.
+    pub fn clear_pending_spawn_reductions(&mut self) {
+        self.pending_spawn_reductions.clear();
+    }
+
     /// Resets the core to its initial state.
+    ///
+    /// Note: This clears handler storage but does NOT unsubscribe from msgbus.
+    /// Call `unsubscribe_all_strategy_events` first to properly unsubscribe.
     pub fn reset(&mut self) {
         self.exec_spawn_ids.clear();
         self.subscribed_strategies.clear();
+        self.pending_spawn_reductions.clear();
+        self.strategy_event_handlers.clear();
+    }
+
+    /// Returns the order for the given client order ID from the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the order is not found in the cache.
+    pub fn get_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<OrderAny> {
+        self.cache()
+            .order(client_order_id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("Order not found in cache for {client_order_id}"))
     }
 }
 

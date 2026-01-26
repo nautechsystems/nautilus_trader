@@ -30,6 +30,7 @@ extension-module = [
 ]
 live = ["nautilus-live", "nautilus-system", "dotenvy"]
 python = [
+  "live",
   "nautilus-core/ffi", # Temporary as python currently relies on the ffi CVec
   "nautilus-core/python",
   "nautilus-model/python",
@@ -45,7 +46,6 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
-nautilus-data = { workspace = true }
 nautilus-live = { workspace = true, optional = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }

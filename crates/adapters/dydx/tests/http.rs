@@ -1416,7 +1416,7 @@ async fn test_concurrent_requests() {
 
     assert!(
         success_count >= 3,
-        "At least 3 concurrent requests should succeed, got {success_count} successes and {error_count} errors"
+        "At least 3 concurrent requests should succeed, was {success_count} successes and {error_count} errors"
     );
 }
 

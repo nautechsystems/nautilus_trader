@@ -321,7 +321,7 @@ class TestDeribitDataClient:
 
             # Assert - Should receive exactly ONE instrument (not 2!)
             assert len(received_instruments) == 1, (
-                f"Expected 1 instrument publication, got {len(received_instruments)}. "
+                f"Expected 1 instrument publication, was {len(received_instruments)}. "
                 f"This indicates duplicate publication bug! "
                 f"Received: {received_instruments}"
             )

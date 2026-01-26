@@ -51,11 +51,7 @@ impl KrakenFuturesWebSocketClient {
         });
         let credential = KrakenCredential::resolve_futures(api_key, api_secret, demo);
 
-        Ok(KrakenFuturesWebSocketClient::with_credentials(
-            url,
-            heartbeat_secs,
-            credential,
-        ))
+        Ok(Self::with_credentials(url, heartbeat_secs, credential))
     }
 
     #[getter]

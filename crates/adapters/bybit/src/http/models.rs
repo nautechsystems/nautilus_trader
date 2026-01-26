@@ -519,6 +519,33 @@ pub struct BybitTradeResult {
 /// - <https://bybit-exchange.github.io/docs/v5/market/recent-trade>
 pub type BybitTradesResponse = BybitResponse<BybitTradeResult>;
 
+/// Orderbook result returned by Bybit.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/market/orderbook>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitOrderbookResult {
+    /// Symbol.
+    pub s: Ustr,
+    /// Bid levels represented as `[price, size]` string pairs.
+    pub b: Vec<[String; 2]>,
+    /// Ask levels represented as `[price, size]` string pairs.
+    pub a: Vec<[String; 2]>,
+    pub ts: i64,
+    /// Update identifier.
+    pub u: i64,
+    /// Cross sequence number.
+    pub seq: i64,
+    pub cts: i64,
+}
+
+/// Response alias for orderbook requests.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/market/orderbook>
+pub type BybitOrderbookResponse = BybitResponse<BybitOrderbookResult>;
+
 /// Instrument definition for spot symbols.
 ///
 /// # References

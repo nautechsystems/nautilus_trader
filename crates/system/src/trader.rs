@@ -32,7 +32,7 @@ use nautilus_common::{
     enums::{ComponentState, ComponentTrigger, Environment},
     msgbus,
     msgbus::{
-        handler::{ShareableMessageHandler, TypedMessageHandler},
+        TypedHandler,
         switchboard::{get_event_orders_topic, get_event_positions_topic},
     },
     timer::{TimeEvent, TimeEventCallback},
@@ -236,7 +236,7 @@ impl Trader {
 
         // Check for duplicate registration
         if self.actor_ids.contains(&actor_id) {
-            anyhow::bail!("Actor '{actor_id}' is already registered");
+            anyhow::bail!("Actor {actor_id} is already registered");
         }
 
         let clock = self.create_component_clock();
@@ -287,10 +287,7 @@ impl Trader {
         // Store actor ID for lifecycle management
         self.actor_ids.push(actor_id);
 
-        log::info!(
-            "Registered actor '{actor_id}' with trader {}",
-            self.trader_id
-        );
+        log::info!("Registered actor {actor_id} with trader {}", self.trader_id);
 
         Ok(())
     }
@@ -342,7 +339,7 @@ impl Trader {
 
         // Check for duplicate registration
         if self.strategy_ids.contains(&strategy_id) {
-            anyhow::bail!("Strategy '{strategy_id}' is already registered");
+            anyhow::bail!("Strategy {strategy_id} is already registered");
         }
 
         let clock = self.create_component_clock();
@@ -376,28 +373,24 @@ impl Trader {
 
         let order_topic = get_event_orders_topic(strategy_id);
         let order_actor_id = actor_id;
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |event: &OrderEventAny| {
-                if let Some(mut strategy) = try_get_actor_unchecked::<T>(&order_actor_id) {
-                    strategy.handle_order_event(event.clone());
-                } else {
-                    log::error!("Strategy {order_actor_id} not found for order event handling");
-                }
-            },
-        )));
-        msgbus::subscribe_topic(order_topic, handler, None);
+        let handler = TypedHandler::from(move |event: &OrderEventAny| {
+            if let Some(mut strategy) = try_get_actor_unchecked::<T>(&order_actor_id) {
+                strategy.handle_order_event(event.clone());
+            } else {
+                log::error!("Strategy {order_actor_id} not found for order event handling");
+            }
+        });
+        msgbus::subscribe_order_events(order_topic.into(), handler, None);
 
         let position_topic = get_event_positions_topic(strategy_id);
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |event: &PositionEvent| {
-                if let Some(mut strategy) = try_get_actor_unchecked::<T>(&actor_id) {
-                    strategy.handle_position_event(event.clone());
-                } else {
-                    log::error!("Strategy {actor_id} not found for position event handling");
-                }
-            },
-        )));
-        msgbus::subscribe_topic(position_topic, handler, None);
+        let handler = TypedHandler::from(move |event: &PositionEvent| {
+            if let Some(mut strategy) = try_get_actor_unchecked::<T>(&actor_id) {
+                strategy.handle_position_event(event.clone());
+            } else {
+                log::error!("Strategy {actor_id} not found for position event handling");
+            }
+        });
+        msgbus::subscribe_position_events(position_topic.into(), handler, None);
 
         self.strategy_ids.push(strategy_id);
 
@@ -445,7 +438,7 @@ impl Trader {
         self.exec_algorithm_ids.push(exec_algorithm_id);
 
         log::info!(
-            "Registered execution algorithm '{exec_algorithm_id}' with trader {}",
+            "Registered execution algorithm {exec_algorithm_id} with trader {}",
             self.trader_id
         );
 

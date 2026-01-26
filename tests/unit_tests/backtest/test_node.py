@@ -467,7 +467,7 @@ class TestBacktestNodeStreaming:
             node.run()
 
         # Assert - with 10K ticks and 1K chunk size, should have multiple chunks
-        assert chunk_count > 1, f"Expected multiple chunks, got {chunk_count}"
+        assert chunk_count > 1, f"Expected multiple chunks, was {chunk_count}"
 
     def test_streaming_clears_data_between_chunks(self):
         """

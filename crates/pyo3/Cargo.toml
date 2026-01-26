@@ -19,7 +19,7 @@ workspace = true
 
 [lib]
 name = "nautilus_pyo3"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
@@ -47,6 +47,7 @@ extension-module = [
   "nautilus-live/extension-module",
   "nautilus-model/extension-module",
   "nautilus-okx/extension-module",
+  "nautilus-sandbox/extension-module",
   "nautilus-persistence/extension-module",
   "nautilus-serialization/extension-module",
   "nautilus-tardis/extension-module",
@@ -73,11 +74,13 @@ high-precision = [
   "nautilus-hyperliquid/high-precision",
   "nautilus-kraken/high-precision",
   "nautilus-okx/high-precision",
+  "nautilus-sandbox/high-precision",
   "nautilus-tardis/high-precision",
 ]
 hypersync = ["nautilus-blockchain/hypersync"]
 postgres = ["nautilus-infrastructure/postgres"]
 redis = ["nautilus-infrastructure/redis"]
+tracing-bridge = ["nautilus-common/tracing-bridge"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -114,6 +117,7 @@ nautilus-dydx = { workspace = true, features = ["python"] }
 nautilus-hyperliquid = { workspace = true, features = ["python"] }
 nautilus-kraken = { workspace = true, features = ["python"] }
 nautilus-okx = { workspace = true, features = ["python"] }
+nautilus-sandbox = { workspace = true, features = ["python"] }
 nautilus-tardis = { workspace = true, features = ["python", "replay"] }
 
 pyo3 = { workspace = true }

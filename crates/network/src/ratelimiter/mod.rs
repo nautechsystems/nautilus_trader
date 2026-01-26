@@ -241,8 +241,11 @@ where
     /// Waits until all specified keys are ready (not rate-limited).
     ///
     /// If no keys are provided, this function returns immediately.
-    pub async fn await_keys_ready(&self, keys: Option<Vec<K>>) {
-        let keys = keys.unwrap_or_default();
+    pub async fn await_keys_ready(&self, keys: Option<&[K]>) {
+        let Some(keys) = keys else {
+            return;
+        };
+
         let tasks = keys.iter().map(|key| self.until_key_ready(key));
 
         futures::stream::iter(tasks)
@@ -402,9 +405,8 @@ mod tests {
 
         // Wait keys to be ready and check base quota is reset
         mock_limiter.advance_clock(Duration::from_secs(1));
-        mock_limiter
-            .await_keys_ready(Some(vec!["default".to_string()]))
-            .await;
+        let keys = ["default".to_string()];
+        mock_limiter.await_keys_ready(Some(keys.as_slice())).await;
         assert!(mock_limiter.check_key(&"default".to_string()).is_ok());
     }
 

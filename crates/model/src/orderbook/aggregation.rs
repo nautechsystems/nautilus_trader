@@ -342,10 +342,11 @@ mod tests {
 
     #[rstest]
     fn test_price_to_order_id_comprehensive_collision_check() {
+        const TOTAL_TESTS: usize = 500_000;
+
         // Comprehensive test combining all edge cases
         let mut seen = AHashSet::new();
         let mut collision_count = 0;
-        const TOTAL_TESTS: usize = 500_000;
 
         // Test 1: Dense range around zero
         for i in -100_000..100_000 {

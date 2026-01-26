@@ -22,6 +22,7 @@ use ahash::AHashMap;
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use nautilus_common::{
+    clients::DataClient,
     live::{runner::get_data_event_sender, runtime::get_runtime},
     messages::{
         DataEvent,
@@ -38,7 +39,6 @@ use nautilus_core::{
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_data::client::DataClient;
 use nautilus_model::{
     data::{Bar, BarType, Data, OrderBookDeltas_API},
     enums::{BarAggregation, BookType},
@@ -202,7 +202,7 @@ impl HyperliquidDataClient {
 
             loop {
                 tokio::select! {
-                    _ = cancellation_token.cancelled() => {
+                    () = cancellation_token.cancelled() => {
                         log::info!("WebSocket consumption loop cancelled");
                         break;
                     }
@@ -520,7 +520,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn request_instruments(&self, request: &RequestInstruments) -> anyhow::Result<()> {
+    fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
         log::debug!("Requesting all instruments");
 
         let instruments = {
@@ -536,7 +536,7 @@ impl DataClient for HyperliquidDataClient {
             datetime_to_unix_nanos(request.start),
             datetime_to_unix_nanos(request.end),
             self.clock.get_time_ns(),
-            request.params.clone(),
+            request.params,
         ));
 
         if let Err(e) = self.data_sender.send(DataEvent::Response(response)) {
@@ -546,7 +546,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn request_instrument(&self, request: &RequestInstrument) -> anyhow::Result<()> {
+    fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
         log::debug!("Requesting instrument: {}", request.instrument_id);
 
         let instrument = self.get_instrument(&request.instrument_id)?;
@@ -559,7 +559,7 @@ impl DataClient for HyperliquidDataClient {
             datetime_to_unix_nanos(request.start),
             datetime_to_unix_nanos(request.end),
             self.clock.get_time_ns(),
-            request.params.clone(),
+            request.params,
         )));
 
         if let Err(e) = self.data_sender.send(DataEvent::Response(response)) {
@@ -569,7 +569,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn request_bars(&self, request: &RequestBars) -> anyhow::Result<()> {
+    fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
         log::debug!("Requesting bars for {}", request.bar_type);
 
         let http = self.http_client.clone();
@@ -580,7 +580,7 @@ impl DataClient for HyperliquidDataClient {
         let limit = request.limit.map(|n| n.get() as u32);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
-        let params = request.params.clone();
+        let params = request.params;
         let clock = self.clock;
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
@@ -610,7 +610,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn request_trades(&self, request: &RequestTrades) -> anyhow::Result<()> {
+    fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
         log::debug!("Requesting trades for {}", request.instrument_id);
 
         // NOTE: Hyperliquid does not provide public historical trade data via REST API
@@ -632,7 +632,7 @@ impl DataClient for HyperliquidDataClient {
             datetime_to_unix_nanos(request.start),
             datetime_to_unix_nanos(request.end),
             self.clock.get_time_ns(),
-            request.params.clone(),
+            request.params,
         ));
 
         if let Err(e) = self.data_sender.send(DataEvent::Response(response)) {

@@ -216,9 +216,10 @@ pub fn get_actor_unchecked<T: Actor>(id: &Ustr) -> ActorRef<T> {
     let actual_type = actor_ref.as_any().type_id();
     let expected_type = TypeId::of::<T>();
 
-    if actual_type != expected_type {
-        panic!("Actor type mismatch for '{id}': expected {expected_type:?}, found {actual_type:?}");
-    }
+    assert!(
+        actual_type == expected_type,
+        "Actor type mismatch for '{id}': expected {expected_type:?}, found {actual_type:?}"
+    );
 
     ActorRef {
         actor_rc,
@@ -333,8 +334,6 @@ mod tests {
 
     #[rstest]
     fn test_try_get_returns_none_for_wrong_type() {
-        clear_actor_registry();
-
         #[derive(Debug)]
         struct OtherActor {
             id: Ustr,
@@ -349,6 +348,8 @@ mod tests {
                 self
             }
         }
+
+        clear_actor_registry();
 
         let id = Ustr::from("other-actor");
         let actor = OtherActor { id };

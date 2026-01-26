@@ -486,7 +486,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("bid_price") && err.to_string().contains("row 0"),
-            "Expected bid_price error at row 0, got: {err}"
+            "Expected bid_price error at row 0, was: {err}"
         );
     }
 
@@ -527,7 +527,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("ask_size") && err.to_string().contains("row 0"),
-            "Expected ask_size error at row 0, got: {err}"
+            "Expected ask_size error at row 0, was: {err}"
         );
     }
 
@@ -567,7 +567,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("instrument_id"),
-            "Expected missing instrument_id error, got: {err}"
+            "Expected missing instrument_id error, was: {err}"
         );
     }
 
@@ -607,7 +607,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("price_precision"),
-            "Expected missing price_precision error, got: {err}"
+            "Expected missing price_precision error, was: {err}"
         );
     }
 

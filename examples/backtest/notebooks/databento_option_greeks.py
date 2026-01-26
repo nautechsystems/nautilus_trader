@@ -25,7 +25,10 @@ import numpy as np
 from nautilus_trader.adapters.databento.data_utils import data_path
 from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
-from nautilus_trader.analysis.config import TearsheetConfig
+from nautilus_trader.analysis import TearsheetBarsWithFillsChart
+from nautilus_trader.analysis import TearsheetConfig
+from nautilus_trader.analysis import TearsheetEquityChart
+from nautilus_trader.analysis import TearsheetStatsTableChart
 from nautilus_trader.analysis.tearsheet import create_bars_with_fills
 from nautilus_trader.analysis.tearsheet import create_tearsheet
 from nautilus_trader.backtest.config import MarginModelConfig
@@ -592,12 +595,14 @@ fig
 # %%
 # Test tearsheet integration with bars_with_fills chart using node and instance_id
 tearsheet_config = TearsheetConfig(
-    charts=["stats_table", "equity", "bars_with_fills"],
-    chart_args={
-        "bars_with_fills": {
-            "bar_type": f"{future_symbols[0]}.XCME-1-MINUTE-LAST-EXTERNAL",
-        },
-    },
+    charts=[
+        TearsheetStatsTableChart(),
+        TearsheetEquityChart(),
+        TearsheetBarsWithFillsChart(
+            bar_type=f"{future_symbols[0]}.XCME-1-MINUTE-LAST-EXTERNAL",
+            title="Bars with Order Fills",
+        ),
+    ],
     theme="nautilus_dark",
 )
 

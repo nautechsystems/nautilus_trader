@@ -188,7 +188,7 @@ impl DatabentoFeedHandler {
 
                     if let Some(timeout_mins) = self.reconnect_timeout_mins {
                         let elapsed = cycle_start.elapsed();
-                        let timeout = Duration::from_secs(timeout_mins * 60);
+                        let timeout = Duration::from_mins(timeout_mins);
 
                         if elapsed >= timeout {
                             log::error!("Giving up reconnection after {timeout_mins} minutes");
@@ -210,7 +210,7 @@ impl DatabentoFeedHandler {
                     );
 
                     tokio::select! {
-                        _ = tokio::time::sleep(delay) => {}
+                        () = tokio::time::sleep(delay) => {}
                         cmd = self.cmd_rx.recv() => {
                             match cmd {
                                 Some(LiveCommand::Close) => {

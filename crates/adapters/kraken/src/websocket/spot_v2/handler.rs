@@ -99,8 +99,8 @@ pub(super) struct SpotFeedHandler {
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
     subscriptions: SubscriptionState,
     instruments_cache: AHashMap<Ustr, InstrumentAny>,
-    client_order_cache: AHashMap<String, CachedOrderInfo>,
-    order_qty_cache: AHashMap<String, f64>,
+    client_order_cache: AHashMap<ClientOrderId, CachedOrderInfo>,
+    order_qty_cache: AHashMap<VenueOrderId, f64>,
     quote_cache: QuoteCache,
     book_sequence: u64,
     pending_quotes: Vec<QuoteTick>,
@@ -228,7 +228,7 @@ impl SpotFeedHandler {
                                 client_order_id={client_order_id}, instrument_id={instrument_id}"
                             );
                             self.client_order_cache.insert(
-                                client_order_id.to_string(),
+                                client_order_id,
                                 CachedOrderInfo {
                                     instrument_id,
                                     trader_id,
@@ -636,7 +636,8 @@ impl SpotFeedHandler {
 
                     // Cache order_qty for subsequent messages that may not include it
                     if let Some(qty) = exec_data.order_qty {
-                        self.order_qty_cache.insert(exec_data.order_id.clone(), qty);
+                        self.order_qty_cache
+                            .insert(VenueOrderId::new(&exec_data.order_id), qty);
                     }
 
                     // Resolve instrument and cached order info
@@ -652,10 +653,20 @@ impl SpotFeedHandler {
                         let cached = exec_data
                             .cl_ord_id
                             .as_ref()
-                            .and_then(|id| self.client_order_cache.get(id).cloned());
+                            .filter(|id| !id.is_empty())
+                            .and_then(|id| {
+                                self.client_order_cache
+                                    .get(&ClientOrderId::new(id))
+                                    .cloned()
+                            });
                         (inst, cached)
-                    } else if let Some(ref cl_ord_id) = exec_data.cl_ord_id {
-                        let cached = self.client_order_cache.get(cl_ord_id).cloned();
+                    } else if let Some(ref cl_ord_id) =
+                        exec_data.cl_ord_id.as_ref().filter(|id| !id.is_empty())
+                    {
+                        let cached = self
+                            .client_order_cache
+                            .get(&ClientOrderId::new(cl_ord_id))
+                            .cloned();
                         let inst = cached.as_ref().and_then(|info| {
                             self.instruments_cache
                                 .iter()
@@ -678,7 +689,10 @@ impl SpotFeedHandler {
                         continue;
                     };
 
-                    let cached_order_qty = self.order_qty_cache.get(&exec_data.order_id).copied();
+                    let cached_order_qty = self
+                        .order_qty_cache
+                        .get(&VenueOrderId::new(&exec_data.order_id))
+                        .copied();
                     let ts_event = chrono::DateTime::parse_from_rfc3339(&exec_data.timestamp)
                         .map(|t| UnixNanos::from(t.timestamp_nanos_opt().unwrap_or(0) as u64))
                         .unwrap_or(ts_init);

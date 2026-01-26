@@ -19,6 +19,10 @@ while zero-cost abstractions and the absence of a garbage collector deliver C-li
 - Use workspace inheritance for shared dependencies (for example `serde = { workspace = true }`).
 - Only pin versions directly for crate-specific dependencies that are not part of the workspace.
 - Group workspace-provided dependencies before crate-only dependencies so the inheritance is easy to audit.
+- Keep related dependencies aligned: `capnp`/`capnpc` (exact), `arrow`/`parquet` (major.minor),
+  `datafusion`/`object_store`, and `dydx-proto`/`prost`/`tonic`. Pre-commit enforces this.
+- Adapter-only dependencies belong in the "Adapter dependencies" section of the workspace
+  `Cargo.toml`. Pre-commit prevents core crates from using them.
 
 ## Feature flag conventions
 
@@ -369,6 +373,34 @@ Always use the `FAILED` constant for `.expect()` messages related to correctness
 ```rust
 use nautilus_core::correctness::FAILED;
 ```
+
+### Type conversion patterns
+
+For types that parse from strings, provide both fallible and infallible conversions:
+
+1. **`FromStr`**: Fallible parsing via `.parse()` or `from_str()`. Returns `Result`.
+
+2. **`From<T: AsRef<str>>`**: Ergonomic infallible conversion that accepts `&str`, `String`, `Cow<str>`, etc. directly without requiring `.as_str()`.
+
+```rust
+impl FromStr for Symbol {
+    type Err = SymbolParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // parsing logic
+    }
+}
+
+impl<T: AsRef<str>> From<T> for Symbol {
+    fn from(value: T) -> Self {
+        Self::from_str(value.as_ref()).expect(FAILED)
+    }
+}
+```
+
+**Design note**: The `From` impl may panic on invalid input. This is intentional for API ergonomics—use `FromStr` / `.parse()` when error handling is needed. The `From` impl provides convenience for cases where the input is known to be valid.
+
+**Constraint**: This pattern cannot be used for types that implement `AsRef<str>` themselves (e.g., string wrapper types), as it would conflict with the blanket `impl<T> From<T> for T`. For such types, provide separate `From<&str>` and `From<String>` impls instead.
 
 ### Constants and naming conventions
 
@@ -1042,11 +1074,11 @@ make check-capnp-schemas
 
 This target:
 
-1. Regenerates all schema files.
-2. Verifies no uncommitted changes exist.
-3. Fails if schemas are out of sync.
+1. Skips with a warning if `capnp` is not installed (acceptable for local development).
+2. Fails if regeneration errors occur (e.g., version mismatch).
+3. Regenerates schemas and fails if generated files differ from committed versions.
 
-CI runs this check automatically to catch drift.
+CI runs this check automatically to catch drift (capnp is always installed in CI).
 
 ### Testing with capnp feature
 

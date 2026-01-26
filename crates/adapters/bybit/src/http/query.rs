@@ -135,6 +135,29 @@ impl Default for BybitTradesParams {
     }
 }
 
+/// Query parameters for `GET /v5/market/orderbook`.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/market/orderbook>
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[builder(setter(into, strip_option), default)]
+pub struct BybitOrderbookParams {
+    pub category: BybitProductType,
+    pub symbol: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+impl Default for BybitOrderbookParams {
+    fn default() -> Self {
+        Self {
+            category: BybitProductType::Linear,
+            symbol: String::new(),
+            limit: None,
+        }
+    }
+}
+
 /// Query parameters for `GET /v5/asset/coin/query-info`.
 ///
 /// # References

@@ -252,10 +252,12 @@ class TestSimulatedExchangeGlbx:
         self.exchange.process(one_nano_past_activation)
 
         # Act
-        self.exchange.get_matching_engine(_ESH4_GLBX.id).iterate(_ESH4_GLBX.expiration_ns)
+        self.exchange.get_matching_engine(_ESH4_GLBX.id).iterate(_ESH4_GLBX.expiration_ns + 1)
 
         # Assert
-        assert self.clock.timestamp_ns() == _ESH4_GLBX.expiration_ns == 1_710_513_000_000_000_000
+        assert (
+            self.clock.timestamp_ns() == _ESH4_GLBX.expiration_ns + 1 == 1_710_513_000_000_000_001
+        )
         assert order.status == OrderStatus.CANCELED
 
     def test_process_exchange_past_instrument_expiration_closed_open_position(self) -> None:
@@ -280,10 +282,12 @@ class TestSimulatedExchangeGlbx:
         self.exchange.process(one_nano_past_activation)
 
         # Act
-        self.exchange.get_matching_engine(_ESH4_GLBX.id).iterate(_ESH4_GLBX.expiration_ns)
+        self.exchange.get_matching_engine(_ESH4_GLBX.id).iterate(_ESH4_GLBX.expiration_ns + 1)
 
         # Assert
-        assert self.clock.timestamp_ns() == _ESH4_GLBX.expiration_ns == 1_710_513_000_000_000_000
+        assert (
+            self.clock.timestamp_ns() == _ESH4_GLBX.expiration_ns + 1 == 1_710_513_000_000_000_001
+        )
         assert order.status == OrderStatus.FILLED
         position = self.cache.positions()[0]
         assert position.is_closed

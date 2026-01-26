@@ -427,10 +427,10 @@ impl FeedHandler {
             }
         }
 
-        if !exec_reports.is_empty() {
-            Some(NautilusWsMessage::ExecutionReports(exec_reports))
-        } else {
+        if exec_reports.is_empty() {
             None
+        } else {
+            Some(NautilusWsMessage::ExecutionReports(exec_reports))
         }
     }
 
@@ -457,10 +457,10 @@ impl FeedHandler {
             }
         }
 
-        if !exec_reports.is_empty() {
-            Some(NautilusWsMessage::ExecutionReports(exec_reports))
-        } else {
+        if exec_reports.is_empty() {
             None
+        } else {
+            Some(NautilusWsMessage::ExecutionReports(exec_reports))
         }
     }
 
@@ -484,10 +484,10 @@ impl FeedHandler {
             }
         }
 
-        if !trade_ticks.is_empty() {
-            Some(NautilusWsMessage::Trades(trade_ticks))
-        } else {
+        if trade_ticks.is_empty() {
             None
+        } else {
+            Some(NautilusWsMessage::Trades(trade_ticks))
         }
     }
 

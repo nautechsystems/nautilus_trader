@@ -750,7 +750,7 @@ async fn test_ping_pong() {
     let pong_count = state.pong_count.load(Ordering::Relaxed);
     assert!(
         pong_count >= 1,
-        "Expected at least 1 completed ping/pong cycle within 3s, got {pong_count}"
+        "Expected at least 1 completed ping/pong cycle within 3s, was {pong_count}"
     );
 
     client.disconnect().await.unwrap();
@@ -951,7 +951,7 @@ async fn test_multiple_subscription_failures() {
     let failures: Vec<_> = events.iter().filter(|(_, success)| !*success).collect();
     assert!(
         failures.len() >= 2,
-        "Should have at least 2 failed subscriptions, got {}",
+        "Should have at least 2 failed subscriptions, was {}",
         failures.len()
     );
 
@@ -1115,7 +1115,7 @@ async fn test_sends_pong_for_control_ping() {
     let pong_count = state.pong_count.load(Ordering::Relaxed);
     assert!(
         pong_count >= 1,
-        "Expected at least 1 completed ping/pong cycle within 3s, got {pong_count}"
+        "Expected at least 1 completed ping/pong cycle within 3s, was {pong_count}"
     );
 
     client.disconnect().await.unwrap();
@@ -1997,7 +1997,7 @@ async fn test_heartbeat_keeps_connection_alive() {
     let pong_count = state.pong_count.load(Ordering::Relaxed);
     assert!(
         pong_count >= 1,
-        "Expected at least 1 completed heartbeat cycle within 5s (heartbeat_interval=1s), got {pong_count}"
+        "Expected at least 1 completed heartbeat cycle within 5s (heartbeat_interval=1s), was {pong_count}"
     );
     assert!(
         client.is_connected(),
@@ -2660,7 +2660,8 @@ async fn test_markets_subscription_failure() {
     client.disconnect().await.unwrap();
 }
 
-const TEST_MNEMONIC: &str = "mirror actor skill push coach wait confirm orchard lunch mobile athlete gossip awake miracle matter bus reopen team ladder lazy list timber render wait";
+// Valid test private key (32 bytes, value 1 - simplest valid secp256k1 key)
+const TEST_PRIVATE_KEY: &str = "0000000000000000000000000000000000000000000000000000000000000001";
 
 #[rstest]
 #[tokio::test]
@@ -2692,8 +2693,8 @@ async fn test_subscribe_subaccount_with_private_client() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    // Create a credential from test mnemonic
-    let credential = DydxCredential::from_mnemonic(TEST_MNEMONIC, 0, vec![]).unwrap();
+    // Create a credential from test private key
+    let credential = DydxCredential::from_private_key(TEST_PRIVATE_KEY, vec![]).unwrap();
     let account_id = AccountId::new("DYDX-001");
 
     let mut client = DydxWebSocketClient::new_private(ws_url, credential, account_id, Some(30));
@@ -2738,7 +2739,7 @@ async fn test_unsubscribe_subaccount() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let credential = DydxCredential::from_mnemonic(TEST_MNEMONIC, 0, vec![]).unwrap();
+    let credential = DydxCredential::from_private_key(TEST_PRIVATE_KEY, vec![]).unwrap();
     let account_id = AccountId::new("DYDX-001");
 
     let mut client = DydxWebSocketClient::new_private(ws_url, credential, account_id, Some(30));
@@ -2801,7 +2802,7 @@ async fn test_subaccount_subscription_failure() {
         .set_subscription_failures(vec!["v4_subaccounts".to_string()])
         .await;
 
-    let credential = DydxCredential::from_mnemonic(TEST_MNEMONIC, 0, vec![]).unwrap();
+    let credential = DydxCredential::from_private_key(TEST_PRIVATE_KEY, vec![]).unwrap();
     let account_id = AccountId::new("DYDX-001");
 
     let mut client = DydxWebSocketClient::new_private(ws_url, credential, account_id, Some(30));

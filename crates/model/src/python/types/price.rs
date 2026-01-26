@@ -85,7 +85,7 @@ impl Price {
             let other_float: f64 = other.extract()?;
             (self.as_f64() + other_float).into_py_any(py)
         } else if let Ok(other_price) = other.extract::<Self>() {
-            (self.as_decimal() + other_price.as_decimal()).into_py_any(py)
+            (*self + other_price).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             (self.as_decimal() + other_dec).into_py_any(py)
         } else {
@@ -101,7 +101,7 @@ impl Price {
             let other_float: f64 = other.extract()?;
             (other_float + self.as_f64()).into_py_any(py)
         } else if let Ok(other_price) = other.extract::<Self>() {
-            (other_price.as_decimal() + self.as_decimal()).into_py_any(py)
+            (other_price + *self).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             (other_dec + self.as_decimal()).into_py_any(py)
         } else {
@@ -117,7 +117,7 @@ impl Price {
             let other_float: f64 = other.extract()?;
             (self.as_f64() - other_float).into_py_any(py)
         } else if let Ok(other_price) = other.extract::<Self>() {
-            (self.as_decimal() - other_price.as_decimal()).into_py_any(py)
+            (*self - other_price).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             (self.as_decimal() - other_dec).into_py_any(py)
         } else {
@@ -133,7 +133,7 @@ impl Price {
             let other_float: f64 = other.extract()?;
             (other_float - self.as_f64()).into_py_any(py)
         } else if let Ok(other_price) = other.extract::<Self>() {
-            (other_price.as_decimal() - self.as_decimal()).into_py_any(py)
+            (other_price - *self).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             (other_dec - self.as_decimal()).into_py_any(py)
         } else {

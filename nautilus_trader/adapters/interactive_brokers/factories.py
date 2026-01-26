@@ -114,7 +114,7 @@ def get_cached_ib_client(
         )
         PyCondition.not_none(port, "Please provide the `port` for the IB TWS or Gateway.")
 
-    client_key: tuple = (host, port, client_id, fetch_all_open_orders)
+    client_key: tuple = (host, port, client_id)
 
     if client_key not in IB_CLIENTS:
         client = InteractiveBrokersClient(
@@ -129,6 +129,11 @@ def get_cached_ib_client(
         )
         client.start()
         IB_CLIENTS[client_key] = client
+    elif fetch_all_open_orders:
+        # Upgrade existing client to fetch all open orders if requested
+        # This handles the case where data client is created first (without the flag)
+        # and exec client is created later (with the flag)
+        IB_CLIENTS[client_key]._fetch_all_open_orders = True
 
     return IB_CLIENTS[client_key]
 
@@ -308,7 +313,11 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             f"Must pass `{config.__class__.__name__}.account_id` or set `TWS_ACCOUNT` env var."
         )
 
-        account_id = AccountId(f"{name or IB_VENUE.value}-{ib_account}")
+        # Use name if provided, otherwise use account_id issuer from the account string
+        # This allows multiple IB execution clients with different names/accounts
+        # The account_issuer will be used as the client_id and allows routing by account_id
+        account_issuer = name or IB_VENUE.value
+        account_id = AccountId(f"{account_issuer}-{ib_account}")
 
         # Create client
         exec_client = InteractiveBrokersExecutionClient(

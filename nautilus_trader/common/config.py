@@ -35,6 +35,7 @@ from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OtoTriggerMode
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import Identifier
@@ -121,7 +122,7 @@ def msgspec_encoding_hook(obj: Any) -> Any:  # noqa: C901 (too complex)
         return str(obj)
     if isinstance(obj, (Price | Quantity | Money | Currency)):
         return str(obj)
-    if isinstance(obj, (OmsType | AccountType | BookType)):
+    if isinstance(obj, (OmsType | AccountType | BookType | OtoTriggerMode)):
         return obj.name
     if isinstance(obj, (pd.Timestamp | pd.Timedelta)):
         return obj.isoformat()
@@ -161,6 +162,8 @@ def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:  # noqa: C901 (too c
         return AccountType[obj]
     if obj_type == BookType:
         return BookType[obj]
+    if obj_type == OtoTriggerMode:
+        return OtoTriggerMode[obj]
     if obj_type == TriggerType:
         return TriggerType[obj]
     if obj_type == Environment:
@@ -584,7 +587,11 @@ class LoggingConfig(NautilusConfig, frozen=True):
         If all logging should be bypassed.
     print_config : bool, default False
         If the core logging configuration should be printed to stdout at initialization.
-    use_pyo3: bool, default False
+    use_tracing : bool, default False
+        If the tracing subscriber should be enabled for capturing logs from external Rust
+        crates that use the `tracing` crate. Use the ``RUST_LOG`` environment variable
+        to control which crates emit tracing events (e.g., ``RUST_LOG=hyper_util=debug``).
+    use_pyo3 : bool, default False
         If the logging subsystem should be initialized via pyo3,
         this isn't recommended for backtesting as the performance is much lower
         but can be useful for seeing logs originating from Rust.
@@ -606,6 +613,7 @@ class LoggingConfig(NautilusConfig, frozen=True):
     log_components_only: bool = False
     bypass_logging: bool = False
     print_config: bool = False
+    use_tracing: bool = False
     use_pyo3: bool = False
     clear_log_file: bool = False
 

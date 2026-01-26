@@ -40,7 +40,7 @@ def run_command(cmd, cwd=None, check=True):
     if cwd:
         print(f"  in: {cwd}")
 
-    result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False)
 
     if check and result.returncode != 0:
         print(f"Error: {result.stderr}")

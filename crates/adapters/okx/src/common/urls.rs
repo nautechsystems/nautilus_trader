@@ -15,7 +15,13 @@
 
 //! URL helpers and endpoint metadata for OKX services.
 
-use nautilus_core::env::get_env_var;
+const OKX_HTTP_URL: &str = "https://www.okx.com";
+const OKX_WS_PUBLIC_URL: &str = "wss://ws.okx.com:8443/ws/v5/public";
+const OKX_WS_PRIVATE_URL: &str = "wss://ws.okx.com:8443/ws/v5/private";
+const OKX_WS_BUSINESS_URL: &str = "wss://ws.okx.com:8443/ws/v5/business";
+const OKX_DEMO_WS_PUBLIC_URL: &str = "wss://wspap.okx.com:8443/ws/v5/public";
+const OKX_DEMO_WS_PRIVATE_URL: &str = "wss://wspap.okx.com:8443/ws/v5/private";
+const OKX_DEMO_WS_BUSINESS_URL: &str = "wss://wspap.okx.com:8443/ws/v5/business";
 
 /// OKX endpoint types for determining URL and authentication requirements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,59 +40,50 @@ pub fn requires_authentication(endpoint_type: OKXEndpointType) -> bool {
     )
 }
 
-/// Gets the HTTP base URL.
-pub fn get_http_base_url() -> String {
-    get_env_var("OKX_BASE_URL_HTTP").unwrap_or_else(|_| "https://www.okx.com".to_string())
+/// Returns the HTTP base URL.
+#[must_use]
+pub const fn get_http_base_url() -> &'static str {
+    OKX_HTTP_URL
 }
 
-/// Gets the WebSocket base URL for public data (market data).
-pub fn get_ws_base_url_public(is_demo: bool) -> String {
+/// Returns the WebSocket base URL for public data (market data).
+#[must_use]
+pub const fn get_ws_base_url_public(is_demo: bool) -> &'static str {
     if is_demo {
-        get_env_var("OKX_DEMO_BASE_URL_WS_PUBLIC")
-            .unwrap_or_else(|_| "wss://wspap.okx.com:8443/ws/v5/public".to_string())
+        OKX_DEMO_WS_PUBLIC_URL
     } else {
-        get_env_var("OKX_BASE_URL_WS_PUBLIC")
-            .unwrap_or_else(|_| "wss://ws.okx.com:8443/ws/v5/public".to_string())
+        OKX_WS_PUBLIC_URL
     }
 }
 
-/// Gets the WebSocket base URL for private data (account/order management).
-pub fn get_ws_base_url_private(is_demo: bool) -> String {
+/// Returns the WebSocket base URL for private data (account/order management).
+#[must_use]
+pub const fn get_ws_base_url_private(is_demo: bool) -> &'static str {
     if is_demo {
-        get_env_var("OKX_DEMO_BASE_URL_WS_PRIVATE")
-            .unwrap_or_else(|_| "wss://wspap.okx.com:8443/ws/v5/private".to_string())
+        OKX_DEMO_WS_PRIVATE_URL
     } else {
-        get_env_var("OKX_BASE_URL_WS_PRIVATE")
-            .unwrap_or_else(|_| "wss://ws.okx.com:8443/ws/v5/private".to_string())
+        OKX_WS_PRIVATE_URL
     }
 }
 
-/// Gets the WebSocket base URL for business data (bars/candlesticks).
-pub fn get_ws_base_url_business(is_demo: bool) -> String {
+/// Returns the WebSocket base URL for business data (bars/candlesticks).
+#[must_use]
+pub const fn get_ws_base_url_business(is_demo: bool) -> &'static str {
     if is_demo {
-        get_env_var("OKX_DEMO_BASE_URL_WS_BUSINESS")
-            .unwrap_or_else(|_| "wss://wspap.okx.com:8443/ws/v5/business".to_string())
+        OKX_DEMO_WS_BUSINESS_URL
     } else {
-        get_env_var("OKX_BASE_URL_WS_BUSINESS")
-            .unwrap_or_else(|_| "wss://ws.okx.com:8443/ws/v5/business".to_string())
+        OKX_WS_BUSINESS_URL
     }
 }
 
-/// Gets WebSocket URL by endpoint type.
-pub fn get_ws_url(endpoint_type: OKXEndpointType, is_demo: bool) -> String {
+/// Returns WebSocket URL by endpoint type.
+#[must_use]
+pub const fn get_ws_url(endpoint_type: OKXEndpointType, is_demo: bool) -> &'static str {
     match endpoint_type {
         OKXEndpointType::Public => get_ws_base_url_public(is_demo),
         OKXEndpointType::Private => get_ws_base_url_private(is_demo),
         OKXEndpointType::Business => get_ws_base_url_business(is_demo),
     }
-}
-
-/// Gets the WebSocket base URL (backward compatibility - defaults to private).
-///
-/// .. deprecated::
-///     Use get_ws_base_url_public() or get_ws_base_url_private() instead.
-pub fn get_ws_base_url(is_demo: bool) -> String {
-    get_ws_base_url_private(is_demo)
 }
 
 #[cfg(test)]
@@ -104,39 +101,21 @@ mod tests {
 
     #[rstest]
     fn test_http_base_url() {
-        assert_eq!(get_http_base_url(), "https://www.okx.com");
+        assert_eq!(get_http_base_url(), OKX_HTTP_URL);
     }
 
     #[rstest]
     fn test_ws_urls_production() {
-        assert_eq!(
-            get_ws_base_url_public(false),
-            "wss://ws.okx.com:8443/ws/v5/public"
-        );
-        assert_eq!(
-            get_ws_base_url_private(false),
-            "wss://ws.okx.com:8443/ws/v5/private"
-        );
-        assert_eq!(
-            get_ws_base_url_business(false),
-            "wss://ws.okx.com:8443/ws/v5/business"
-        );
+        assert_eq!(get_ws_base_url_public(false), OKX_WS_PUBLIC_URL);
+        assert_eq!(get_ws_base_url_private(false), OKX_WS_PRIVATE_URL);
+        assert_eq!(get_ws_base_url_business(false), OKX_WS_BUSINESS_URL);
     }
 
     #[rstest]
     fn test_ws_urls_demo() {
-        assert_eq!(
-            get_ws_base_url_public(true),
-            "wss://wspap.okx.com:8443/ws/v5/public"
-        );
-        assert_eq!(
-            get_ws_base_url_private(true),
-            "wss://wspap.okx.com:8443/ws/v5/private"
-        );
-        assert_eq!(
-            get_ws_base_url_business(true),
-            "wss://wspap.okx.com:8443/ws/v5/business"
-        );
+        assert_eq!(get_ws_base_url_public(true), OKX_DEMO_WS_PUBLIC_URL);
+        assert_eq!(get_ws_base_url_private(true), OKX_DEMO_WS_PRIVATE_URL);
+        assert_eq!(get_ws_base_url_business(true), OKX_DEMO_WS_BUSINESS_URL);
     }
 
     #[rstest]

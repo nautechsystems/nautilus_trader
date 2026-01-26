@@ -22,7 +22,6 @@ use crate::common::consts::{
     DYDX_TESTNET_HTTP_URL, DYDX_TESTNET_WS_URL, DYDX_WS_URL,
 };
 
-/// Get the gRPC URLs for dYdX based on network.
 #[pyfunction]
 #[pyo3(name = "get_dydx_grpc_urls")]
 #[must_use]
@@ -37,7 +36,6 @@ pub fn py_get_dydx_grpc_urls(is_testnet: bool) -> Vec<String> {
     }
 }
 
-/// Get the primary gRPC URL for dYdX based on network.
 #[pyfunction]
 #[pyo3(name = "get_dydx_grpc_url")]
 #[must_use]
@@ -49,7 +47,6 @@ pub fn py_get_dydx_grpc_url(is_testnet: bool) -> String {
     }
 }
 
-/// Get the HTTP base URL for dYdX based on network.
 #[pyfunction]
 #[pyo3(name = "get_dydx_http_url")]
 #[must_use]
@@ -61,7 +58,6 @@ pub fn py_get_dydx_http_url(is_testnet: bool) -> String {
     }
 }
 
-/// Get the WebSocket URL for dYdX based on network.
 #[pyfunction]
 #[pyo3(name = "get_dydx_ws_url")]
 #[must_use]

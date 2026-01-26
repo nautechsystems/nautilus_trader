@@ -17,9 +17,8 @@
 
 use std::{any::Any, cell::RefCell, fmt::Debug, path::PathBuf, rc::Rc};
 
-use nautilus_common::{cache::Cache, clock::Clock};
+use nautilus_common::{cache::Cache, clients::DataClient, clock::Clock};
 use nautilus_core::time::{AtomicTime, get_atomic_clock_realtime};
-use nautilus_data::client::DataClient;
 use nautilus_model::identifiers::ClientId;
 use nautilus_system::factories::{ClientConfig, DataClientFactory};
 

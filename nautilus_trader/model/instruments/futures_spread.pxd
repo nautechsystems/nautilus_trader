@@ -30,9 +30,6 @@ cdef class FuturesSpread(Instrument):
     cdef readonly uint64_t expiration_ns
     """UNIX timestamp (nanoseconds) for contract expiration.\n\n:returns: `unit64_t`"""
 
-    cpdef bint is_spread(self)
-    cpdef list legs(self)
-
     @staticmethod
     cdef FuturesSpread from_dict_c(dict values)
 

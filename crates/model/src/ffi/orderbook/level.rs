@@ -78,7 +78,7 @@ pub extern "C" fn level_new(order_side: OrderSide, price: Price, orders: CVec) -
         side: order_side.as_specified(),
     };
     let mut level = BookLevel::new(price);
-    level.add_bulk(orders);
+    level.add_bulk(&orders);
     BookLevel_API::new(level)
 }
 

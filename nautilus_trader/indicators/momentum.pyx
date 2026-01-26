@@ -386,7 +386,7 @@ cdef class Stochastics(Indicator):
         if d_method not in (StochasticsDMethod.RATIO, StochasticsDMethod.MOVING_AVERAGE):
             raise ValueError(
                 f"d_method must be '{StochasticsDMethod.RATIO}' or "
-                f"'{StochasticsDMethod.MOVING_AVERAGE}', got '{d_method}'"
+                f"'{StochasticsDMethod.MOVING_AVERAGE}', was '{d_method}'"
             )
 
         params = [period_k, period_d, slowing, get_ma_type_name(ma_type), d_method]

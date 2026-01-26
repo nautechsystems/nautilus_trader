@@ -614,7 +614,7 @@ pub fn option_spread() -> OptionSpread {
 #[fixture]
 pub fn betting() -> BettingInstrument {
     let raw_symbol = Symbol::new("1-123456789");
-    let id = InstrumentId::from(format!("{raw_symbol}.BETFAIR").as_str());
+    let id = InstrumentId::from(format!("{raw_symbol}.BETFAIR"));
     let event_type_id = 6423;
     let event_type_name = Ustr::from("American Football");
     let competition_id = 12282733;

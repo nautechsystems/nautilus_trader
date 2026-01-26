@@ -689,6 +689,8 @@ handles the required BitMEX wiring automatically.
 - **Funding rates**: Apply to perpetual contracts every 8 hours.
 - **Prediction market fees**: Maker 0.00%, Taker 0.25% (no leverage allowed).
 
+## Contributing
+
 :::info
 For additional features or to contribute to the BitMEX adapter, please see our
 [contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).

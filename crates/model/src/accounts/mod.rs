@@ -61,7 +61,13 @@ pub trait Account: 'static + Send {
     fn currencies(&self) -> Vec<Currency>;
     fn starting_balances(&self) -> AHashMap<Currency, Money>;
     fn balances(&self) -> AHashMap<Currency, AccountBalance>;
-    fn apply(&mut self, event: AccountState);
+    /// Applies an account state event to update the account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the account state cannot be applied (e.g., negative balance
+    /// when borrowing is not allowed for a cash account).
+    fn apply(&mut self, event: AccountState) -> anyhow::Result<()>;
     fn purge_account_events(&mut self, ts_now: UnixNanos, lookback_secs: u64);
 
     /// Calculates locked balance for the order parameters.

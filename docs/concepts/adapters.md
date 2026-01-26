@@ -185,3 +185,9 @@ on order management from a strategy perspective.
 :::tip
 For implementing a custom adapter, see the [Adapter Developer Guide](../developer_guide/adapters.md).
 :::
+
+## Related guides
+
+- [Live Trading](live.md) - Configure and run live trading with adapters.
+- [Execution](execution.md) - Order execution through adapters.
+- [Data](data.md) - Market data provided by adapters.

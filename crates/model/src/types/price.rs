@@ -14,12 +14,31 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Represents a price in a market with a specified precision.
+//!
+//! [`Price`] is an immutable value type for representing market prices, bid/ask quotes,
+//! and price levels. Unlike [`Quantity`](super::Quantity), prices can be negative (useful for spreads,
+//! basis trades, or certain derivative instruments).
+//!
+//! # Arithmetic behavior
+//!
+//! `Price` implements `Add` and `Sub` for same-type operations:
+//!
+//! | Operation       | Result  | Notes                              |
+//! |-----------------|---------|-------------------------------------|
+//! | `Price + Price` | `Price` | Precision is max of both operands. |
+//! | `Price - Price` | `Price` | Precision is max of both operands. |
+//!
+//! For Python bindings with mixed-type operations, see the Python API documentation.
+//!
+//! # Immutability
+//!
+//! `Price` is immutable. All arithmetic operations return new instances.
 
 use std::{
     cmp::Ordering,
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
-    ops::{Add, AddAssign, Deref, Mul, Neg, Sub, SubAssign},
+    ops::{Add, Deref, Mul, Neg, Sub},
     str::FromStr,
 };
 
@@ -293,9 +312,10 @@ impl Price {
     #[must_use]
     pub fn as_f64(&self) -> f64 {
         #[cfg(feature = "defi")]
-        if self.precision > MAX_FLOAT_PRECISION {
-            panic!("Invalid f64 conversion beyond `MAX_FLOAT_PRECISION` (16)");
-        }
+        assert!(
+            self.precision <= MAX_FLOAT_PRECISION,
+            "Invalid f64 conversion beyond `MAX_FLOAT_PRECISION` (16)"
+        );
 
         fixed_i128_to_f64(self.raw)
     }
@@ -507,23 +527,12 @@ impl Neg for Price {
 impl Add for Price {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
-        // SAFETY: Current precision logic ensures only equal or higher precision operations
-        // are allowed to prevent silent precision loss. When self.precision >= rhs.precision,
-        // the rhs value is effectively scaled up internally by the fixed-point representation,
-        // so no actual precision is lost in the addition. However, the result is limited
-        // to self.precision decimal places.
-        assert!(
-            self.precision >= rhs.precision,
-            "Precision mismatch: cannot add precision {} to precision {} (precision loss)",
-            rhs.precision,
-            self.precision,
-        );
         Self {
             raw: self
                 .raw
                 .checked_add(rhs.raw)
                 .expect("Overflow occurred when adding `Price`"),
-            precision: self.precision,
+            precision: self.precision.max(rhs.precision),
         }
     }
 }
@@ -531,54 +540,13 @@ impl Add for Price {
 impl Sub for Price {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
-        // SAFETY: Current precision logic ensures only equal or higher precision operations
-        // are allowed to prevent silent precision loss. When self.precision >= rhs.precision,
-        // the rhs value is effectively scaled up internally by the fixed-point representation,
-        // so no actual precision is lost in the subtraction. However, the result is limited
-        // to self.precision decimal places.
-        assert!(
-            self.precision >= rhs.precision,
-            "Precision mismatch: cannot subtract precision {} from precision {} (precision loss)",
-            rhs.precision,
-            self.precision,
-        );
         Self {
             raw: self
                 .raw
                 .checked_sub(rhs.raw)
                 .expect("Underflow occurred when subtracting `Price`"),
-            precision: self.precision,
+            precision: self.precision.max(rhs.precision),
         }
-    }
-}
-
-impl AddAssign for Price {
-    fn add_assign(&mut self, other: Self) {
-        assert!(
-            self.precision >= other.precision,
-            "Precision mismatch: cannot add precision {} to precision {} (precision loss)",
-            other.precision,
-            self.precision,
-        );
-        self.raw = self
-            .raw
-            .checked_add(other.raw)
-            .expect("Overflow occurred when adding `Price`");
-    }
-}
-
-impl SubAssign for Price {
-    fn sub_assign(&mut self, other: Self) {
-        assert!(
-            self.precision >= other.precision,
-            "Precision mismatch: cannot subtract precision {} from precision {} (precision loss)",
-            other.precision,
-            self.precision,
-        );
-        self.raw = self
-            .raw
-            .checked_sub(other.raw)
-            .expect("Underflow occurred when subtracting `Price`");
     }
 }
 
@@ -1058,19 +1026,21 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "Precision mismatch: cannot add precision 2 to precision 1")]
-    fn test_precision_mismatch_add() {
+    fn test_mixed_precision_add() {
         let p1 = Price::new(10.5, 1);
         let p2 = Price::new(5.25, 2);
-        let _ = p1 + p2;
+        let result = p1 + p2;
+        assert_eq!(result.precision, 2);
+        assert_eq!(result.as_f64(), 15.75);
     }
 
     #[rstest]
-    #[should_panic(expected = "Precision mismatch: cannot subtract precision 2 from precision 1")]
-    fn test_precision_mismatch_sub() {
+    fn test_mixed_precision_sub() {
         let p1 = Price::new(10.5, 1);
         let p2 = Price::new(5.25, 2);
-        let _ = p1 - p2;
+        let result = p1 - p2;
+        assert_eq!(result.precision, 2);
+        assert_eq!(result.as_f64(), 5.25);
     }
 
     #[rstest]
@@ -1079,15 +1049,6 @@ mod tests {
         assert_eq!(p + 1.0, 11.5);
         assert_eq!(p - 1.0, 9.5);
         assert_eq!(p * 2.0, 21.0);
-    }
-
-    #[rstest]
-    fn test_assignment_operators() {
-        let mut p = Price::new(10.5, 2);
-        p += Price::new(5.25, 2);
-        assert_eq!(p, Price::from("15.75"));
-        p -= Price::new(5.25, 2);
-        assert_eq!(p, Price::from("10.5"));
     }
 
     #[rstest]

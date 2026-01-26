@@ -31,7 +31,7 @@ use futures_util::StreamExt;
 use nautilus_architect_ax::{
     common::enums::{AxEnvironment, AxMarketDataLevel},
     http::{client::AxRawHttpClient, error::AxHttpError},
-    websocket::{NautilusWsMessage, data::AxMdWebSocketClient},
+    websocket::{NautilusDataWsMessage, data::AxMdWebSocketClient},
 };
 use totp_rs::{Algorithm, Secret, TOTP};
 
@@ -170,10 +170,12 @@ async fn capture_level(
 
         while let Some(msg) = stream.next().await {
             let (msg_type, json) = match &msg {
-                NautilusWsMessage::Heartbeat => ("h".to_string(), "{}".to_string()),
-                NautilusWsMessage::Data(data) => ("data".to_string(), format!("{data:?}")),
-                NautilusWsMessage::Deltas(deltas) => ("deltas".to_string(), format!("{deltas:?}")),
-                NautilusWsMessage::Bar(bar) => ("bar".to_string(), format!("{bar:?}")),
+                NautilusDataWsMessage::Heartbeat => ("h".to_string(), "{}".to_string()),
+                NautilusDataWsMessage::Data(data) => ("data".to_string(), format!("{data:?}")),
+                NautilusDataWsMessage::Deltas(deltas) => {
+                    ("deltas".to_string(), format!("{deltas:?}"))
+                }
+                NautilusDataWsMessage::Bar(bar) => ("bar".to_string(), format!("{bar:?}")),
                 _ => continue,
             };
 

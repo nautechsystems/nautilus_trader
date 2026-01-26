@@ -57,7 +57,7 @@ simplified_symbology_params = [
     (IBContract(secType="CASH", exchange="IDEALPRO", localSymbol="EUR.USD"), "EUR/USD.IDEALPRO"),
     (
         IBContract(secType="OPT", exchange="SMART", localSymbol="AAPL  230217P00155000"),
-        "AAPL230217P00155000.SMART",
+        "AAPL  230217P00155000.SMART",
     ),
     (IBContract(secType="CONTFUT", exchange="CME", symbol="ES"), "ES.CME"),
     (IBContract(secType="CONTFUT", exchange="CME", symbol="M6E"), "M6E.CME"),
@@ -315,6 +315,16 @@ def test_regular_expression_crypto():
                 "right": "P",
                 "strike": "00039",
                 "decimal": "500",
+            },
+        ),
+        (
+            "SPXW  260120P06835000",  # OCC compliant with space padding
+            {
+                "symbol": "SPXW",
+                "expiry": "260120",
+                "right": "P",
+                "strike": "06835",
+                "decimal": "000",
             },
         ),
     ],

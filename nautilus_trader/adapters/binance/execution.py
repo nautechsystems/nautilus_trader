@@ -50,6 +50,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.common.secure import mask_api_key
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import nanos_to_millis
 from nautilus_trader.core.datetime import secs_to_millis
@@ -315,7 +316,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         # Set up WebSocket listen key
         self._listen_key = response.listenKey
         self._last_successful_ping_ns = self._clock.timestamp_ns()  # Initialize on connection
-        self._log.info(f"Listen key {self._listen_key}")
+        self._log.info(f"Listen key {mask_api_key(self._listen_key)}")
         self._ping_listen_keys_task = self.create_task(self._ping_listen_keys())
 
         await self._ws_client.subscribe_listen_key(self._listen_key)
@@ -341,7 +342,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     self._log.warning("No listen key available for ping")
                     continue
 
-                self._log.debug(f"Pinging WebSocket listen key {self._listen_key}")
+                self._log.debug(f"Pinging WebSocket listen key {mask_api_key(self._listen_key)}")
 
                 try:
                     await self._http_user.keepalive_listen_key(listen_key=self._listen_key)
@@ -349,7 +350,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     # Reset failure tracking on success
                     self._ping_consecutive_failures = 0
                     self._last_successful_ping_ns = self._clock.timestamp_ns()
-                    self._log.debug(f"Listen key ping successful: {self._listen_key}")
+                    self._log.debug(f"Listen key ping successful: {mask_api_key(self._listen_key)}")
 
                 except (BinanceClientError, BinanceError) as e:
                     self._ping_consecutive_failures += 1
@@ -394,7 +395,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             response: BinanceListenKey = await self._http_user.create_listen_key()
             self._listen_key = response.listenKey
             self._last_successful_ping_ns = self._clock.timestamp_ns()
-            self._log.info(f"Created new listen key for recovery: {self._listen_key}")
+            self._log.info(f"Created new listen key for recovery: {mask_api_key(self._listen_key)}")
 
             # Reconnect WebSocket with new key
             await self._ws_client.subscribe_listen_key(self._listen_key)

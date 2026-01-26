@@ -106,7 +106,7 @@ pub fn parse_pool_created_event_rpc(log: &RpcLog) -> anyhow::Result<PoolCreatedE
 
     anyhow::ensure!(
         data_bytes.len() >= 64,
-        "Pool created event data too short: expected at least 64 bytes, got {}",
+        "Pool created event data too short: expected at least 64 bytes, was {}",
         data_bytes.len()
     );
 

@@ -18,11 +18,11 @@ use std::fmt::Display;
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
+    events::OrderInitialized,
     identifiers::{
         ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, TraderId,
-        VenueOrderId,
     },
-    orders::{Order, OrderAny, OrderList},
+    orders::OrderList,
 };
 use serde::{Deserialize, Serialize};
 
@@ -33,7 +33,8 @@ pub struct SubmitOrder {
     pub client_id: Option<ClientId>,
     pub strategy_id: StrategyId,
     pub instrument_id: InstrumentId,
-    pub order: OrderAny,
+    pub client_order_id: ClientOrderId,
+    pub order_init: OrderInitialized,
     pub exec_algorithm_id: Option<ExecAlgorithmId>,
     pub position_id: Option<PositionId>,
     pub params: Option<IndexMap<String, String>>,
@@ -45,12 +46,13 @@ impl SubmitOrder {
     /// Creates a new [`SubmitOrder`] instance.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
-    pub fn new(
+    pub const fn new(
         trader_id: TraderId,
         client_id: Option<ClientId>,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
-        order: OrderAny,
+        client_order_id: ClientOrderId,
+        order_init: OrderInitialized,
         exec_algorithm_id: Option<ExecAlgorithmId>,
         position_id: Option<PositionId>,
         params: Option<IndexMap<String, String>>,
@@ -62,7 +64,8 @@ impl SubmitOrder {
             client_id,
             strategy_id,
             instrument_id,
-            order,
+            client_order_id,
+            order_init,
             exec_algorithm_id,
             position_id,
             params,
@@ -70,26 +73,15 @@ impl SubmitOrder {
             ts_init,
         }
     }
-
-    /// Returns the client order ID from the contained order.
-    #[must_use]
-    pub fn client_order_id(&self) -> ClientOrderId {
-        self.order.client_order_id()
-    }
-
-    /// Returns the venue order ID from the contained order, if set.
-    #[must_use]
-    pub fn venue_order_id(&self) -> Option<VenueOrderId> {
-        self.order.venue_order_id()
-    }
 }
 
 impl Display for SubmitOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "SubmitOrder(instrument_id={}, order=TBD, position_id={})",
+            "SubmitOrder(instrument_id={}, client_order_id={}, position_id={})",
             self.instrument_id,
+            self.client_order_id,
             self.position_id
                 .map_or("None".to_string(), |position_id| format!("{position_id}")),
         )

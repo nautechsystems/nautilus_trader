@@ -84,7 +84,7 @@ pub unsafe extern "C" fn synthetic_instrument_new(
     // TODO: There is absolutely no error handling here yet
     let components = unsafe { bytes_to_string_vec(components_ptr) }
         .into_iter()
-        .map(|s| InstrumentId::from(s.as_str()))
+        .map(InstrumentId::from)
         .collect::<Vec<InstrumentId>>();
     let formula = unsafe { cstr_as_str(formula_ptr).to_string() };
     let synth = SyntheticInstrument::new(
@@ -169,7 +169,7 @@ pub unsafe extern "C" fn synthetic_instrument_is_valid_formula(
 
     let components = unsafe { bytes_to_string_vec(components_ptr) }
         .into_iter()
-        .map(|s| InstrumentId::from(s.as_str()))
+        .map(InstrumentId::from)
         .collect::<Vec<InstrumentId>>();
 
     let formula = unsafe { cstr_as_str(formula_ptr) };

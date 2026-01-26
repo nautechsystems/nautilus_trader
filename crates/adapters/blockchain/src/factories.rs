@@ -17,9 +17,12 @@
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
-use nautilus_common::{cache::Cache, clock::Clock};
-use nautilus_data::client::DataClient;
-use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
+use nautilus_common::{
+    cache::Cache,
+    clients::{DataClient, ExecutionClient},
+    clock::Clock,
+};
+use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
     identifiers::ClientId,
@@ -134,7 +137,6 @@ impl ExecutionClientFactory for BlockchainExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: Rc<RefCell<Cache>>,
-        clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let blockchain_execution_config = config
             .as_any()
@@ -153,7 +155,6 @@ impl ExecutionClientFactory for BlockchainExecutionClientFactory {
             blockchain_execution_config.client_id,
             AccountType::Wallet,
             None,
-            clock,
             cache,
         );
 

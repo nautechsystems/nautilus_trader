@@ -698,9 +698,9 @@ impl FromStr for BarType {
     }
 }
 
-impl From<&str> for BarType {
-    fn from(value: &str) -> Self {
-        Self::from_str(value).expect(FAILED)
+impl<T: AsRef<str>> From<T> for BarType {
+    fn from(value: T) -> Self {
+        Self::from_str(value.as_ref()).expect(FAILED)
     }
 }
 

@@ -262,7 +262,7 @@ WebSocket stream update rates differ between Spot and Futures exchanges, with Na
 highest available streaming rate:
 
 - **Spot**: 100ms
-- **Futures**: 0ms (*unthrottled*)
+- **Futures**: 0ms (unthrottled)
 
 There is a limitation of one order book per instrument per trader instance.
 As stream subscriptions may vary, the latest order book data (deltas or snapshots)
@@ -728,6 +728,8 @@ To use Binance Future Hedge mode, you need to follow the three items below:
             position_id = PositionId(f"{self.instrument_id}-SHORT")
             self.submit_order(order, position_id)
     ```
+
+## Contributing
 
 :::info
 For additional features or to contribute to the Binance adapter, please see our

@@ -85,6 +85,7 @@ from nautilus_trader.model.events.position cimport PositionClosed
 from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.events.position cimport PositionOpened
 from nautilus_trader.model.functions cimport oms_type_to_str
+from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ComponentId
@@ -1016,28 +1017,15 @@ cdef class ExecutionEngine(Component):
                 )
             return
 
-        cdef ExecutionClient client = self._clients.get(command.client_id)
-        cdef Venue venue
-
+        cdef ExecutionClient client = self._find_client_for_command(command)
         if client is None:
-            if isinstance(command, QueryAccount):
-                venue = Venue(command.account_id.get_issuer())
-            elif isinstance(command, TradingCommand):
-                venue = command.instrument_id.venue
-            else:
-                self._log.error(  # pragma: no cover (design-time error)
-                    f"Cannot handle command: unrecognized {command}",  # pragma: no cover (design-time error)
-                )
-                return
-
-            client = self._routing_map.get(venue, self._default_client)
-            if client is None:
-                self._log.error(
-                    f"Cannot execute command: "
-                    f"no execution client configured for {venue} or `client_id` {command.client_id}, "
-                    f"{command}"
-                )
-                return  # No client to handle command
+            self._log.error(
+                f"Cannot execute command: "
+                f"no execution client found for client_id={command.client_id}, "
+                f"venue={command.instrument_id.venue if isinstance(command, TradingCommand) else 'N/A'}, "
+                f"{command}"
+            )
+            return
 
         if isinstance(command, SubmitOrder):
             self._handle_submit_order(client, command)
@@ -1059,6 +1047,62 @@ cdef class ExecutionEngine(Component):
             self._log.error(  # pragma: no cover (design-time error)
                 f"Cannot handle command: unrecognized {command}",  # pragma: no cover (design-time error)
             )
+
+    cpdef ExecutionClient _find_client_for_command(self, Command command):
+        # Routing priority:
+        # 1. Explicit client_id in command
+        # 2. Account_id issuer (for QueryAccount or orders with account_id set)
+        # 3. Venue-based routing (for single-venue brokers)
+        # 4. Default client (fallback)
+
+        cdef ExecutionClient client = None
+        cdef AccountId account_id = None
+        cdef Order order
+
+        # 1. Try to get client by explicit client_id
+        if command.client_id is not None:
+            client = self._clients.get(command.client_id)
+            if client is not None:
+                self._log.debug(f"Routed by explicit client_id: {command.client_id}")
+                return client
+
+        # 2. Try routing by account_id issuer
+        if isinstance(command, QueryAccount):
+            account_id = command.account_id
+        elif isinstance(command, SubmitOrder):
+            account_id = command.order.account_id
+        elif isinstance(command, (ModifyOrder, CancelOrder)):
+            # ModifyOrder/CancelOrder doesn't have order directly, need to get from cache
+            order = self._cache.order(command.client_order_id)
+            if order is not None:
+                account_id = order.account_id
+
+        if account_id is not None:
+            # Try to find client by account_id issuer (as ClientId)
+            client = self._clients.get(ClientId(account_id.get_issuer()))
+            if client is not None:
+                self._log.debug(f"Routed by account_id issuer: {account_id.get_issuer()}")
+                return client
+
+            # Also try venue routing by account_id issuer (for IB clients registered this way)
+            client = self._routing_map.get(Venue(account_id.get_issuer()))
+            if client is not None:
+                self._log.debug(f"Routed by venue (account issuer): {account_id.get_issuer()}")
+                return client
+
+        # 3. Fall back to venue-based routing (for single-venue brokers)
+        if isinstance(command, TradingCommand):
+            client = self._routing_map.get(command.instrument_id.venue)
+            if client is not None:
+                self._log.debug(f"Routed by instrument venue: {command.instrument_id.venue}")
+                return client
+
+        # 4. Final fallback to default client
+        client = self._default_client
+        if client is not None:
+            self._log.debug(f"Routed by default client: {client.id}")
+
+        return client
 
     cpdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command):
         cdef Order order = command.order
@@ -1173,11 +1217,11 @@ cdef class ExecutionEngine(Component):
         cdef ClientOrderId client_order_id = event.client_order_id
         cdef Order order = self._cache.order(event.client_order_id)
         if order is None:
-            self._log.warning(
-                f"Order with {event.client_order_id!r} "
-                f"not found in the cache to apply {event}"
-            )
-
+            if not (isinstance(event, OrderFilled) and self._is_leg_fill(event)):
+                self._log.warning(
+                    f"Order with {event.client_order_id!r} "
+                    f"not found in the cache to apply {event}"
+                )
             if event.venue_order_id is None:
                 self._log.error(
                     f"Cannot apply event to any order: "
@@ -1332,9 +1376,19 @@ cdef class ExecutionEngine(Component):
 
         fill.position_id = position_id
 
+        # Also send to portfolio endpoint for leg fills (which don't have orders in cache)
+        # Regular fills go through topic subscription below, so we only send directly for leg fills
+        # We do this BEFORE position update so portfolio can see the open quantity for PnL calcs
+        if self._is_leg_fill(fill):
+            self._msgbus.send(
+                endpoint="Portfolio.update_order",
+                msg=fill,
+            )
+
         # Handle position update
         self._handle_position_update(instrument, fill, oms_type)
 
+        # Publish to message bus topic
         self._msgbus.publish_c(
             topic=self._get_order_events_topic(fill.strategy_id),
             msg=fill,
@@ -1670,17 +1724,16 @@ cdef class ExecutionEngine(Component):
 
     cpdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
         cdef Quantity difference = None
-        if position.side == PositionSide.LONG:
-            difference = Quantity(fill.last_qty - position.quantity, position.size_precision)
-        elif position.side == PositionSide.SHORT:
-            difference = Quantity(abs(position.quantity - fill.last_qty), position.size_precision)
+        if position.side == PositionSide.LONG or position.side == PositionSide.SHORT:
+            # fill.last_qty is always larger than position.quantity when flipping
+            difference = fill.last_qty - position.quantity
         else:
             difference = fill.last_qty
 
         # Split commission between two positions
         fill_percent: Decimal = position.quantity / fill.last_qty
         cdef Money commission1 = Money(fill.commission * fill_percent, fill.commission.currency)
-        cdef Money commission2 = Money(fill.commission - commission1, fill.commission.currency)
+        cdef Money commission2 = fill.commission - commission1
 
         cdef OrderFilled fill_split1 = None
         if position.is_open_c():

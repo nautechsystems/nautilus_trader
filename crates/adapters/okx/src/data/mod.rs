@@ -24,6 +24,7 @@ use ahash::AHashMap;
 use anyhow::Context;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
+    clients::DataClient,
     live::{runner::get_data_event_sender, runtime::get_runtime},
     messages::{
         DataEvent,
@@ -42,7 +43,6 @@ use nautilus_core::{
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_data::client::DataClient;
 use nautilus_model::{
     data::{Data, FundingRateUpdate, OrderBookDeltas_API},
     enums::BookType,
@@ -402,7 +402,7 @@ impl DataClient for OKXDataClient {
                         Some(message) = stream.next() => {
                             Self::handle_ws_message(message, &sender, &insts);
                         }
-                        _ = cancel.cancelled() => {
+                        () = cancel.cancelled() => {
                             log::debug!("Public websocket stream task cancelled");
                             break;
                         }
@@ -449,7 +449,7 @@ impl DataClient for OKXDataClient {
                         Some(message) = stream.next() => {
                             Self::handle_ws_message(message, &sender, &insts);
                         }
-                        _ = cancel.cancelled() => {
+                        () = cancel.cancelled() => {
                             log::debug!("Business websocket stream task cancelled");
                             break;
                         }
@@ -831,7 +831,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn request_instruments(&self, request: &RequestInstruments) -> anyhow::Result<()> {
+    fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let instruments_cache = self.instruments.clone();
@@ -840,7 +840,7 @@ impl DataClient for OKXDataClient {
         let venue = self.venue();
         let start = request.start;
         let end = request.end;
-        let params = request.params.clone();
+        let params = request.params;
         let clock = self.clock;
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
@@ -942,7 +942,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn request_instrument(&self, request: &RequestInstrument) -> anyhow::Result<()> {
+    fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let instruments = self.instruments.clone();
@@ -951,7 +951,7 @@ impl DataClient for OKXDataClient {
         let client_id = request.client_id.unwrap_or(self.client_id);
         let start = request.start;
         let end = request.end;
-        let params = request.params.clone();
+        let params = request.params;
         let clock = self.clock;
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
@@ -1010,7 +1010,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn request_trades(&self, request: &RequestTrades) -> anyhow::Result<()> {
+    fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let instrument_id = request.instrument_id;
@@ -1019,7 +1019,7 @@ impl DataClient for OKXDataClient {
         let limit = request.limit.map(|n| n.get() as u32);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
-        let params = request.params.clone();
+        let params = request.params;
         let clock = self.clock;
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
@@ -1052,7 +1052,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn request_bars(&self, request: &RequestBars) -> anyhow::Result<()> {
+    fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let bar_type = request.bar_type;
@@ -1061,7 +1061,7 @@ impl DataClient for OKXDataClient {
         let limit = request.limit.map(|n| n.get() as u32);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
-        let params = request.params.clone();
+        let params = request.params;
         let clock = self.clock;
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);

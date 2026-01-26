@@ -3,14 +3,18 @@ name = "nautilus-kraken"
 readme = "README.md"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
-documentation.workspace = true
-homepage.workspace = true
-repository.workspace = true
 license.workspace = true
 description = "Kraken Pro exchange integration adapter for the Nautilus trading engine"
-keywords.workspace = true
 categories.workspace = true
+keywords.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
 
 [lib]
 name = "nautilus_kraken"
@@ -21,21 +25,17 @@ default = ["high-precision"]
 python = [
   "nautilus-common/python",
   "nautilus-core/python",
-  "nautilus-data/python",
-  "nautilus-execution/python",
   "nautilus-model/python",
   "nautilus-network/python",
   "pyo3",
   "pyo3-async-runtimes",
 ]
 extension-module = [
-  "python",
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
-  "nautilus-data/extension-module",
-  "nautilus-execution/extension-module",
   "nautilus-model/extension-module",
   "nautilus-network/extension-module",
+  "python",
   "pyo3/extension-module",
 ]
 high-precision = ["nautilus-model/high-precision"]
@@ -43,18 +43,14 @@ high-precision = ["nautilus-model/high-precision"]
 [dependencies]
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
-nautilus-data = { workspace = true }
-nautilus-execution = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
-log = { workspace = true }
 arc-swap = { workspace = true }
 async-stream = { workspace = true }
-async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
@@ -62,6 +58,7 @@ dashmap = { workspace = true }
 derive_builder = { workspace = true }
 futures-util = { workspace = true }
 indexmap = { workspace = true }
+log = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
@@ -80,10 +77,16 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+
 axum = { workspace = true }
 criterion = { workspace = true }
 rstest = { workspace = true }
 url = { workspace = true }
+
+# Run with `cargo bench -p nautilus-kraken --bench websocket`
+[[bench]]
+name = "websocket"
+harness = false
 
 [[bin]]
 name = "kraken-http-spot-raw"
@@ -99,8 +102,3 @@ doc = false
 name = "kraken-ws-spot-data"
 path = "bin/ws_spot_data.rs"
 doc = false
-
-# Run with `cargo bench -p nautilus-kraken --bench websocket`
-[[bench]]
-name = "websocket"
-harness = false

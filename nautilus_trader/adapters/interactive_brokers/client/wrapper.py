@@ -19,7 +19,7 @@ from decimal import Decimal
 from functools import partial
 from typing import TYPE_CHECKING
 
-from ibapi.commission_report import CommissionReport
+from ibapi.commission_and_fees_report import CommissionAndFeesReport
 from ibapi.common import BarData
 from ibapi.common import FaDataType
 from ibapi.common import HistogramData
@@ -82,6 +82,7 @@ class InteractiveBrokersEWrapper(EWrapper):
     def error(
         self,
         reqId: TickerId,
+        errorTime: int,
         errorCode: int,
         errorString: str,
         advancedOrderRejectJson="",
@@ -94,6 +95,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         task = partial(
             self._client.process_error,
             req_id=reqId,
+            error_time=errorTime,
             error_code=errorCode,
             error_string=errorString,
             advanced_order_reject_json=advancedOrderRejectJson,
@@ -789,7 +791,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def commissionReport(self, commissionReport: CommissionReport) -> None:
+    def commissionAndFeesReport(self, commissionAndFeesReport: CommissionAndFeesReport) -> None:
         """
         Trigger this callback in the following scenarios:
 
@@ -800,7 +802,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         self.logAnswer(current_fn_name(), vars())
         task = partial(
             self._client.process_commission_report,
-            commission_report=commissionReport,
+            commission_report=commissionAndFeesReport,
         )
         self._client.submit_to_msg_handler_queue(task)
 
@@ -1317,7 +1319,7 @@ class InteractiveBrokersEWrapper(EWrapper):
         """
         self.logAnswer(current_fn_name(), vars())
 
-    def orderBound(self, reqId: int, apiClientId: int, apiOrderId: int) -> None:
+    def orderBound(self, permId: int, clientId: int, orderId: int) -> None:
         """
         Return the orderBound notification.
         """

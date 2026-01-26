@@ -175,8 +175,8 @@ pub struct FuturesFeedHandler {
     api_key: Option<String>,
     original_challenge: Option<String>,
     signed_challenge: Option<String>,
-    client_order_cache: AHashMap<String, CachedOrderInfo>,
-    venue_order_cache: AHashMap<String, String>,
+    client_order_cache: AHashMap<ClientOrderId, CachedOrderInfo>,
+    venue_order_cache: AHashMap<VenueOrderId, ClientOrderId>,
     pending_challenge_tx: Option<tokio::sync::oneshot::Sender<String>>,
 }
 
@@ -299,9 +299,8 @@ impl FuturesFeedHandler {
                             trader_id,
                             strategy_id,
                         } => {
-                            let client_order_id_str = client_order_id.to_string();
                             self.client_order_cache.insert(
-                                client_order_id_str.clone(),
+                                client_order_id,
                                 CachedOrderInfo {
                                     instrument_id,
                                     trader_id,
@@ -309,8 +308,7 @@ impl FuturesFeedHandler {
                                 },
                             );
                             if let Some(venue_id) = venue_order_id {
-                                self.venue_order_cache
-                                    .insert(venue_id.to_string(), client_order_id_str);
+                                self.venue_order_cache.insert(venue_id, client_order_id);
                             }
                         }
                     }
@@ -623,8 +621,7 @@ impl FuturesFeedHandler {
 
         let ts_event = ticker
             .time
-            .map(|t| UnixNanos::from((t as u64) * 1_000_000))
-            .unwrap_or(ts_init);
+            .map_or(ts_init, |t| UnixNanos::from((t as u64) * 1_000_000));
 
         let has_mark = self.is_subscribed(KrakenFuturesChannel::Mark, &ticker.product_id);
         let has_index = self.is_subscribed(KrakenFuturesChannel::Index, &ticker.product_id);
@@ -1026,12 +1023,18 @@ impl FuturesFeedHandler {
             return;
         };
 
-        let (client_order_id, info) = if let Some(cli_ord_id) = cancel.cli_ord_id.as_ref() {
-            if let Some(info) = self.client_order_cache.get(cli_ord_id) {
-                (ClientOrderId::new(cli_ord_id), info.clone())
-            } else if let Some(mapped_cli_ord_id) = self.venue_order_cache.get(&cancel.order_id) {
+        let venue_order_id_key = VenueOrderId::new(&cancel.order_id);
+
+        let (client_order_id, info) = if let Some(cli_ord_id) =
+            cancel.cli_ord_id.as_ref().filter(|id| !id.is_empty())
+        {
+            let client_order_id_key = ClientOrderId::new(cli_ord_id);
+            if let Some(info) = self.client_order_cache.get(&client_order_id_key) {
+                (client_order_id_key, info.clone())
+            } else if let Some(mapped_cli_ord_id) = self.venue_order_cache.get(&venue_order_id_key)
+            {
                 if let Some(info) = self.client_order_cache.get(mapped_cli_ord_id) {
-                    (ClientOrderId::new(mapped_cli_ord_id), info.clone())
+                    (*mapped_cli_ord_id, info.clone())
                 } else {
                     log::debug!(
                         "Cancel received for unknown order (not in cache): \
@@ -1048,9 +1051,9 @@ impl FuturesFeedHandler {
                 );
                 return;
             }
-        } else if let Some(mapped_cli_ord_id) = self.venue_order_cache.get(&cancel.order_id) {
+        } else if let Some(mapped_cli_ord_id) = self.venue_order_cache.get(&venue_order_id_key) {
             if let Some(info) = self.client_order_cache.get(mapped_cli_ord_id) {
-                (ClientOrderId::new(mapped_cli_ord_id), info.clone())
+                (*mapped_cli_ord_id, info.clone())
             } else {
                 log::debug!(
                     "Cancel received but mapped order not in cache: order_id={}",
@@ -1150,12 +1153,14 @@ impl FuturesFeedHandler {
         let client_order_id = order
             .cli_ord_id
             .as_ref()
+            .filter(|s| !s.is_empty())
             .map(|s| ClientOrderId::new(s.as_str()));
 
         let cached_info = order
             .cli_ord_id
             .as_ref()
-            .and_then(|id| self.client_order_cache.get(id));
+            .filter(|id| !id.is_empty())
+            .and_then(|id| self.client_order_cache.get(&ClientOrderId::new(id)));
 
         // External orders or snapshots fall back to OrderStatusReport for reconciliation
         let Some(info) = cached_info else {
@@ -1191,14 +1196,12 @@ impl FuturesFeedHandler {
             ))),
             OrderStatus::Canceled => {
                 // Detect expiry by cancel reason keywords
-                let is_expired = cancel_reason
-                    .map(|r| {
-                        let r_lower = r.to_lowercase();
-                        r_lower.contains("expir")
-                            || r_lower.contains("gtd")
-                            || r_lower.contains("timeout")
-                    })
-                    .unwrap_or(false);
+                let is_expired = cancel_reason.is_some_and(|r| {
+                    let r_lower = r.to_lowercase();
+                    r_lower.contains("expir")
+                        || r_lower.contains("gtd")
+                        || r_lower.contains("timeout")
+                });
 
                 if is_expired {
                     Some(ParsedOrderEvent::Expired(OrderExpired::new(
@@ -1298,6 +1301,7 @@ impl FuturesFeedHandler {
         let client_order_id = order
             .cli_ord_id
             .as_ref()
+            .filter(|s| !s.is_empty())
             .map(|s| ClientOrderId::new(s.as_str()));
 
         let filled_qty = if order.filled <= 0.0 {
@@ -1337,14 +1341,16 @@ impl FuturesFeedHandler {
         // Resolve instrument: try message field first, then fall back to cache
         let instrument = if let Some(ref symbol) = fill.instrument {
             self.instruments_cache.get(symbol).cloned()
-        } else if let Some(ref cli_ord_id) = fill.cli_ord_id {
+        } else if let Some(ref cli_ord_id) = fill.cli_ord_id.as_ref().filter(|id| !id.is_empty()) {
             // Fall back to client order cache
-            self.client_order_cache.get(cli_ord_id).and_then(|info| {
-                self.instruments_cache
-                    .iter()
-                    .find(|(_, inst)| inst.id() == info.instrument_id)
-                    .map(|(_, inst)| inst.clone())
-            })
+            self.client_order_cache
+                .get(&ClientOrderId::new(cli_ord_id))
+                .and_then(|info| {
+                    self.instruments_cache
+                        .iter()
+                        .find(|(_, inst)| inst.id() == info.instrument_id)
+                        .map(|(_, inst)| inst.clone())
+                })
         } else {
             None
         };
@@ -1383,6 +1389,7 @@ impl FuturesFeedHandler {
         let client_order_id = fill
             .cli_ord_id
             .as_ref()
+            .filter(|s| !s.is_empty())
             .map(|s| ClientOrderId::new(s.as_str()));
 
         let commission = Money::new(fill.fee_paid.unwrap_or(0.0), instrument.quote_currency());
@@ -1486,8 +1493,7 @@ mod tests {
         for delta in &deltas.deltas[1..] {
             assert!(
                 !delta.order.size.is_zero(),
-                "Found zero-quantity delta that should have been filtered: {:?}",
-                delta
+                "Found zero-quantity delta that should have been filtered: {delta:?}"
             );
         }
     }

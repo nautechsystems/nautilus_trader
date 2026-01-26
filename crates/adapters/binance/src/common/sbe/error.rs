@@ -70,16 +70,16 @@ impl Display for SbeDecodeError {
             Self::BufferTooShort { expected, actual } => {
                 write!(
                     f,
-                    "Buffer too short: expected {expected} bytes, got {actual}"
+                    "Buffer too short: expected {expected} bytes, was {actual}"
                 )
             }
             Self::SchemaMismatch { expected, actual } => {
-                write!(f, "Schema ID mismatch: expected {expected}, got {actual}")
+                write!(f, "Schema ID mismatch: expected {expected}, was {actual}")
             }
             Self::VersionMismatch { expected, actual } => {
                 write!(
                     f,
-                    "Schema version mismatch: expected {expected}, got {actual}"
+                    "Schema version mismatch: expected {expected}, was {actual}"
                 )
             }
             Self::UnknownTemplateId(id) => write!(f, "Unknown template ID: {id}"),
@@ -87,7 +87,7 @@ impl Display for SbeDecodeError {
                 write!(f, "Group size {count} exceeds maximum {max}")
             }
             Self::InvalidBlockLength { expected, actual } => {
-                write!(f, "Invalid block length: expected {expected}, got {actual}")
+                write!(f, "Invalid block length: expected {expected}, was {actual}")
             }
             Self::InvalidUtf8 => write!(f, "Invalid UTF-8 in string field"),
         }
@@ -110,7 +110,7 @@ mod tests {
         };
         assert_eq!(
             err.to_string(),
-            "Buffer too short: expected 100 bytes, got 50"
+            "Buffer too short: expected 100 bytes, was 50"
         );
     }
 
@@ -120,7 +120,7 @@ mod tests {
             expected: 3,
             actual: 1,
         };
-        assert_eq!(err.to_string(), "Schema ID mismatch: expected 3, got 1");
+        assert_eq!(err.to_string(), "Schema ID mismatch: expected 3, was 1");
     }
 
     #[rstest]

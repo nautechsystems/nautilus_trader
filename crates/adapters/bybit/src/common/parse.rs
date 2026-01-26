@@ -24,10 +24,11 @@ pub use nautilus_core::serialization::{
 };
 use nautilus_core::{UUID4, datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
 use nautilus_model::{
-    data::{Bar, BarType, TradeTick},
+    data::{Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, TradeTick},
     enums::{
-        AccountType, AggressorSide, AssetClass, BarAggregation, LiquiditySide, OptionKind,
-        OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce, TriggerType,
+        AccountType, AggressorSide, AssetClass, BarAggregation, BookAction, LiquiditySide,
+        OptionKind, OrderSide, OrderStatus, OrderType, PositionSideSpecified, RecordFlag,
+        TimeInForce, TriggerType,
     },
     events::account::state::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, Venue, VenueOrderId},
@@ -53,12 +54,12 @@ use crate::{
     },
     http::models::{
         BybitExecution, BybitFeeRate, BybitInstrumentInverse, BybitInstrumentLinear,
-        BybitInstrumentOption, BybitInstrumentSpot, BybitKline, BybitPosition, BybitTrade,
-        BybitWalletBalance,
+        BybitInstrumentOption, BybitInstrumentSpot, BybitKline, BybitOrderbookResult,
+        BybitPosition, BybitTrade, BybitWalletBalance,
     },
+    websocket::parse::parse_millis_i64,
 };
 
-const BYBIT_MINUTE_INTERVALS: &[u64] = &[1, 3, 5, 15, 30, 60, 120, 240, 360, 720];
 const BYBIT_HOUR_INTERVALS: &[u64] = &[1, 2, 4, 6, 12];
 
 /// Extracts the raw symbol from a Bybit symbol by removing the product type suffix.
@@ -82,6 +83,29 @@ pub fn make_bybit_symbol<S: AsRef<str>>(raw_symbol: S, product_type: BybitProduc
     Ustr::from(&format!("{raw}{suffix}"))
 }
 
+/// Converts a Bybit kline interval string to a Nautilus bar aggregation and step.
+///
+/// Bybit interval strings: 1, 3, 5, 15, 30, 60, 120, 240, 360, 720 (minutes/hours), D, W, M
+#[must_use]
+pub fn bybit_interval_to_bar_spec(interval: &str) -> Option<(usize, BarAggregation)> {
+    match interval {
+        "1" => Some((1, BarAggregation::Minute)),
+        "3" => Some((3, BarAggregation::Minute)),
+        "5" => Some((5, BarAggregation::Minute)),
+        "15" => Some((15, BarAggregation::Minute)),
+        "30" => Some((30, BarAggregation::Minute)),
+        "60" => Some((1, BarAggregation::Hour)),
+        "120" => Some((2, BarAggregation::Hour)),
+        "240" => Some((4, BarAggregation::Hour)),
+        "360" => Some((6, BarAggregation::Hour)),
+        "720" => Some((12, BarAggregation::Hour)),
+        "D" => Some((1, BarAggregation::Day)),
+        "W" => Some((1, BarAggregation::Week)),
+        "M" => Some((1, BarAggregation::Month)),
+        _ => None,
+    }
+}
+
 /// Converts a Nautilus bar aggregation and step to a Bybit kline interval.
 ///
 /// Bybit supported intervals: 1, 3, 5, 15, 30, 60, 120, 240, 360, 720 (minutes), D, W, M
@@ -100,14 +124,8 @@ pub fn bar_spec_to_bybit_interval(
             5 => Ok(BybitKlineInterval::Minute5),
             15 => Ok(BybitKlineInterval::Minute15),
             30 => Ok(BybitKlineInterval::Minute30),
-            // Bybit normalizes minute intervals ≥60 to hour intervals
-            60 => Ok(BybitKlineInterval::Hour1),
-            120 => Ok(BybitKlineInterval::Hour2),
-            240 => Ok(BybitKlineInterval::Hour4),
-            360 => Ok(BybitKlineInterval::Hour6),
-            720 => Ok(BybitKlineInterval::Hour12),
             _ => anyhow::bail!(
-                "Bybit only supports the following minute intervals: {BYBIT_MINUTE_INTERVALS:?}"
+                "Bybit only supports minute intervals 1, 3, 5, 15, 30 (use HOUR for >= 60)"
             ),
         },
         BarAggregation::Hour => match step {
@@ -560,6 +578,85 @@ pub fn parse_trade_tick(
     .context("failed to construct TradeTick from Bybit trade payload")
 }
 
+/// Parses an order book response into [`OrderBookDeltas`].
+pub fn parse_orderbook(
+    result: &BybitOrderbookResult,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderBookDeltas> {
+    let ts_event = parse_millis_i64(result.ts, "orderbook.timestamp")?;
+
+    let instrument_id = instrument.id();
+    let price_precision = instrument.price_precision();
+    let size_precision = instrument.size_precision();
+    let update_id = u64::try_from(result.u)
+        .context("received negative update id in Bybit order book message")?;
+    let sequence = u64::try_from(result.seq)
+        .context("received negative sequence in Bybit order book message")?;
+
+    let total_levels = result.b.len() + result.a.len();
+    let mut deltas = Vec::with_capacity(total_levels + 1);
+
+    let mut clear = OrderBookDelta::clear(instrument_id, sequence, ts_event, ts_init);
+    if total_levels == 0 {
+        clear.flags |= RecordFlag::F_LAST as u8;
+    }
+    deltas.push(clear);
+
+    let mut processed = 0_usize;
+
+    let mut push_level = |values: &[String], side: OrderSide| -> anyhow::Result<()> {
+        let (price, size) = parse_book_level(values, price_precision, size_precision, "orderbook")?;
+
+        processed += 1;
+        let mut flags = RecordFlag::F_MBP as u8;
+        if processed == total_levels {
+            flags |= RecordFlag::F_LAST as u8;
+        }
+
+        let order = BookOrder::new(side, price, size, update_id);
+        let delta = OrderBookDelta::new_checked(
+            instrument_id,
+            BookAction::Add,
+            order,
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        )
+        .context("failed to construct OrderBookDelta from Bybit book level")?;
+        deltas.push(delta);
+        Ok(())
+    };
+
+    for level in &result.b {
+        push_level(level, OrderSide::Buy)?;
+    }
+    for level in &result.a {
+        push_level(level, OrderSide::Sell)?;
+    }
+
+    OrderBookDeltas::new_checked(instrument_id, deltas)
+        .context("failed to assemble OrderBookDeltas from Bybit message")
+}
+
+pub fn parse_book_level(
+    level: &[String],
+    price_precision: u8,
+    size_precision: u8,
+    label: &str,
+) -> anyhow::Result<(Price, Quantity)> {
+    let price_str = level
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("missing price component in {label} level"))?;
+    let size_str = level
+        .get(1)
+        .ok_or_else(|| anyhow::anyhow!("missing size component in {label} level"))?;
+    let price = parse_price_with_precision(price_str, price_precision, label)?;
+    let size = parse_quantity_with_precision(size_str, size_precision, label)?;
+    Ok((price, size))
+}
+
 /// Parses a kline entry into a [`Bar`].
 pub fn parse_kline_bar(
     kline: &BybitKline,
@@ -845,18 +942,16 @@ pub(crate) fn parse_quantity_with_precision(
 }
 
 pub(crate) fn parse_price(value: &str, field: &str) -> anyhow::Result<Price> {
-    Price::from_str(value)
-        .map_err(|err| anyhow::anyhow!("Failed to parse {field}='{value}': {err}"))
+    Price::from_str(value).map_err(|e| anyhow::anyhow!("Failed to parse {field}='{value}': {e}"))
 }
 
 pub(crate) fn parse_quantity(value: &str, field: &str) -> anyhow::Result<Quantity> {
-    Quantity::from_str(value)
-        .map_err(|err| anyhow::anyhow!("Failed to parse {field}='{value}': {err}"))
+    Quantity::from_str(value).map_err(|e| anyhow::anyhow!("Failed to parse {field}='{value}': {e}"))
 }
 
 pub(crate) fn parse_decimal(value: &str, field: &str) -> anyhow::Result<Decimal> {
     Decimal::from_str(value)
-        .map_err(|err| anyhow::anyhow!("Failed to parse {field}='{value}' as Decimal: {err}"))
+        .map_err(|e| anyhow::anyhow!("Failed to parse {field}='{value}' as Decimal: {e}"))
 }
 
 pub(crate) fn parse_millis_timestamp(value: &str, field: &str) -> anyhow::Result<UnixNanos> {
@@ -1315,11 +1410,6 @@ mod tests {
     #[case(BarAggregation::Minute, 5, BybitKlineInterval::Minute5)]
     #[case(BarAggregation::Minute, 15, BybitKlineInterval::Minute15)]
     #[case(BarAggregation::Minute, 30, BybitKlineInterval::Minute30)]
-    #[case(BarAggregation::Minute, 60, BybitKlineInterval::Hour1)]
-    #[case(BarAggregation::Minute, 120, BybitKlineInterval::Hour2)]
-    #[case(BarAggregation::Minute, 240, BybitKlineInterval::Hour4)]
-    #[case(BarAggregation::Minute, 360, BybitKlineInterval::Hour6)]
-    #[case(BarAggregation::Minute, 720, BybitKlineInterval::Hour12)]
     fn test_bar_spec_to_bybit_interval_minutes(
         #[case] aggregation: BarAggregation,
         #[case] step: u64,
@@ -1377,5 +1467,59 @@ mod tests {
     fn test_bar_spec_to_bybit_interval_unsupported_aggregation() {
         let result = bar_spec_to_bybit_interval(BarAggregation::Second, 1);
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case("1", 1, BarAggregation::Minute)]
+    #[case("3", 3, BarAggregation::Minute)]
+    #[case("5", 5, BarAggregation::Minute)]
+    #[case("15", 15, BarAggregation::Minute)]
+    #[case("30", 30, BarAggregation::Minute)]
+    fn test_bybit_interval_to_bar_spec_minutes(
+        #[case] interval: &str,
+        #[case] expected_step: usize,
+        #[case] expected_aggregation: BarAggregation,
+    ) {
+        let result = bybit_interval_to_bar_spec(interval).unwrap();
+        assert_eq!(result, (expected_step, expected_aggregation));
+    }
+
+    #[rstest]
+    #[case("60", 1, BarAggregation::Hour)]
+    #[case("120", 2, BarAggregation::Hour)]
+    #[case("240", 4, BarAggregation::Hour)]
+    #[case("360", 6, BarAggregation::Hour)]
+    #[case("720", 12, BarAggregation::Hour)]
+    fn test_bybit_interval_to_bar_spec_hours(
+        #[case] interval: &str,
+        #[case] expected_step: usize,
+        #[case] expected_aggregation: BarAggregation,
+    ) {
+        let result = bybit_interval_to_bar_spec(interval).unwrap();
+        assert_eq!(result, (expected_step, expected_aggregation));
+    }
+
+    #[rstest]
+    #[case("D", 1, BarAggregation::Day)]
+    #[case("W", 1, BarAggregation::Week)]
+    #[case("M", 1, BarAggregation::Month)]
+    fn test_bybit_interval_to_bar_spec_day_week_month(
+        #[case] interval: &str,
+        #[case] expected_step: usize,
+        #[case] expected_aggregation: BarAggregation,
+    ) {
+        let result = bybit_interval_to_bar_spec(interval).unwrap();
+        assert_eq!(result, (expected_step, expected_aggregation));
+    }
+
+    #[rstest]
+    #[case("2")]
+    #[case("10")]
+    #[case("100")]
+    #[case("invalid")]
+    #[case("")]
+    fn test_bybit_interval_to_bar_spec_unsupported(#[case] interval: &str) {
+        let result = bybit_interval_to_bar_spec(interval);
+        assert!(result.is_none());
     }
 }

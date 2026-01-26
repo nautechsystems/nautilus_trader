@@ -83,7 +83,7 @@ def databento_cost(
         The estimated cost of retrieving the data.
 
     """
-    definition_start_date, definition_end_date = databento_definition_dates(start_time)
+    definition_start_date, definition_end_date = databento_definition_dates(start_time, end_time)
 
     return client.metadata.get_cost(  # type: ignore[union-attr]
         dataset=dataset,
@@ -166,7 +166,7 @@ def databento_data(
 
     """
     used_path = create_data_folder(*folders, "databento", base_path=base_path)
-    definition_start_date, definition_end_date = databento_definition_dates(start_time)
+    definition_start_date, definition_end_date = databento_definition_dates(start_time, end_time)
     definition_file_name = f"{file_prefix}_definition.dbn.zst"
     definition_file = used_path / definition_file_name
     if not definition_file.exists():
@@ -242,28 +242,40 @@ def databento_data(
     return result
 
 
-def databento_definition_dates(start_time: str) -> tuple[str, str]:
+def databento_definition_dates(start_time: str, end_time: str | None = None) -> tuple[str, str]:
     """
-    Calculate definition date and end date from a start time string.
+    Calculate definition start and end dates from time strings.
 
-    Extracts the date portion from an ISO 8601 datetime string and calculates
-    the next day as the end date.
+    Extracts the date portions from ISO 8601 datetime strings. If end_time is provided,
+    uses it for the end date; otherwise falls back to start_time + 1 day for backwards
+    compatibility with single-day requests.
 
     Parameters
     ----------
     start_time : str
         The start time in ISO 8601 format (e.g., "2024-01-01T00:00:00Z").
+    end_time : str, optional
+        The end time in ISO 8601 format. If provided, definitions will be fetched
+        for the full date range to ensure all contracts active during that period
+        have their metadata included.
 
     Returns
     -------
     tuple[str, str]
-        A tuple containing (definition_date, end_date) in "YYYY-MM-DD" format.
+        A tuple containing (start_date, end_date) in "YYYY-MM-DD" format.
 
     """
-    definition_date = start_time.split("T")[0]
-    used_end_date = next_day(definition_date)
+    definition_start_date = start_time.split("T")[0]
 
-    return definition_date, used_end_date
+    if end_time is not None:
+        # Use the provided end_time to get definitions for the full range
+        # Apply next_day() since Databento uses half-open intervals (end exclusive)
+        definition_end_date = next_day(end_time.split("T")[0])
+    else:
+        # Backwards compatibility: single day
+        definition_end_date = next_day(definition_start_date)
+
+    return definition_start_date, definition_end_date
 
 
 def next_day(date_str: str) -> str:

@@ -17,9 +17,12 @@
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
-use nautilus_common::{cache::Cache, clock::Clock};
-use nautilus_data::client::DataClient;
-use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
+use nautilus_common::{
+    cache::Cache,
+    clients::{DataClient, ExecutionClient},
+    clock::Clock,
+};
+use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
     identifiers::ClientId,
@@ -89,8 +92,6 @@ impl DataClientFactory for DeribitDataClientFactory {
     }
 }
 
-// ------------------------------------------------------------------------------------------------
-
 impl ClientConfig for DeribitExecClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
@@ -121,7 +122,6 @@ impl ExecutionClientFactory for DeribitExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: Rc<RefCell<Cache>>,
-        clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let deribit_config = config
             .as_any()
@@ -146,7 +146,6 @@ impl ExecutionClientFactory for DeribitExecutionClientFactory {
             deribit_config.account_id,
             account_type,
             None, // base_currency
-            clock,
             cache,
         );
 

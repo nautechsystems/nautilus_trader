@@ -358,14 +358,8 @@ mod tests {
             None,
         );
 
-        assert_eq!(
-            long_100.signed_decimal_qty,
-            Decimal::from_f64_retain(100.5).unwrap()
-        );
-        assert_eq!(
-            short_200.signed_decimal_qty,
-            Decimal::from_f64_retain(-200.75).unwrap()
-        );
+        assert_eq!(long_100.signed_decimal_qty, dec!(100.5));
+        assert_eq!(short_200.signed_decimal_qty, dec!(-200.75));
     }
 
     #[rstest]

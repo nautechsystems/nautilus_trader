@@ -3167,6 +3167,11 @@ cdef class Actor(Component):
         self._requests[used_request_id] = request
         self._pending_requests[used_request_id] = callback
 
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_deltas_topic(instrument_id, historical=True),
+            handler=self.handle_historical_data,
+        )
+
         self._send_data_req(request)
 
         return used_request_id

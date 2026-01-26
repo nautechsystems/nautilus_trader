@@ -89,6 +89,18 @@ def make_customer_order_ref(client_order_id: ClientOrderId) -> CustomerOrderRef:
     An optional reference customers can set to identify instructions. No validation will be done on uniqueness and the
     string is limited to 32 characters. If an empty string is provided it will be treated as null.
 
+    Uses the last 32 characters since UUIDs have more entropy at the end.
+
+    """
+    return client_order_id.value[-32:]
+
+
+def make_customer_order_ref_legacy(client_order_id: ClientOrderId) -> CustomerOrderRef:
+    """
+    Legacy truncation for backwards compatibility with pre-existing orders.
+
+    Orders placed before the truncation change used the first 32 characters.
+
     """
     return client_order_id.value[:32]
 
@@ -564,7 +576,7 @@ def hashed_trade_id(
             size_matched,
         ),
     )
-    return TradeId(hashlib.shake_256(msgspec.json.encode(data)).hexdigest(18))
+    return TradeId(hashlib.shake_256(data).hexdigest(18))
 
 
 def order_to_trade_id(uo: BetfairOrder) -> TradeId:

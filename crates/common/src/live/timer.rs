@@ -230,6 +230,12 @@ impl LiveTimer {
                         let sender = sender
                             .as_ref()
                             .expect("timer event sender was unset for Rust callback system");
+
+                        // TODO: This clone happens on a Tokio worker thread. For `RustLocal`
+                        // callbacks containing `Rc`, this violates thread safety (Rc::clone
+                        // is not thread-safe). The callback should be stored separately and
+                        // looked up by timer name on the receiving thread, rather than being
+                        // cloned here. This affects any code using RustLocal with LiveTimer.
                         let handler = TimeEventHandler::new(event, callback.clone());
                         sender.send(handler);
                     }

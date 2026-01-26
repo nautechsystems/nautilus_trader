@@ -479,9 +479,10 @@ fn batch_and_write_bars(bars: Vec<Bar>, bar_type: &BarType, date: NaiveDate, pat
 /// reliably represented as UnixNanos without overflow issues.
 fn assert_post_epoch(date: NaiveDate) {
     let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).expect("UNIX epoch must exist");
-    if date < epoch {
-        panic!("Tardis replay filenames require dates on or after 1970-01-01; received {date}");
-    }
+    assert!(
+        date >= epoch,
+        "Tardis replay filenames require dates on or after 1970-01-01; received {date}"
+    );
 }
 
 /// Converts an ISO 8601 timestamp to a filesystem-safe format.

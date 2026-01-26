@@ -35,8 +35,10 @@ pub use self::{
     modify::ModifyOrder,
     query::{QueryAccount, QueryOrder},
     report::{
-        GenerateExecutionMassStatus, GenerateFillReports, GenerateOrderStatusReport,
-        GenerateOrderStatusReports, GeneratePositionStatusReports,
+        GenerateExecutionMassStatus, GenerateExecutionMassStatusBuilder, GenerateFillReports,
+        GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReportBuilder,
+        GenerateOrderStatusReports, GenerateOrderStatusReportsBuilder,
+        GeneratePositionStatusReports, GeneratePositionStatusReportsBuilder,
     },
     submit::{SubmitOrder, SubmitOrderList},
 };
@@ -44,10 +46,10 @@ pub use self::{
 /// Execution report variants for reconciliation.
 #[derive(Clone, Debug, Display)]
 pub enum ExecutionReport {
-    OrderStatus(Box<OrderStatusReport>),
+    Order(Box<OrderStatusReport>),
     Fill(Box<FillReport>),
     Position(Box<PositionStatusReport>),
-    Mass(Box<ExecutionMassStatus>),
+    MassStatus(Box<ExecutionMassStatus>),
 }
 
 // TODO

@@ -36,6 +36,8 @@ pub enum BinanceSpotHttpError {
     },
     /// SBE decode error.
     SbeDecodeError(SbeDecodeError),
+    /// JSON decode error.
+    JsonError(String),
     /// Request validation error.
     ValidationError(String),
     /// Network or connection error.
@@ -61,6 +63,7 @@ impl Display for BinanceSpotHttpError {
                 write!(f, "Binance error {code}: {message}")
             }
             Self::SbeDecodeError(err) => write!(f, "SBE decode error: {err}"),
+            Self::JsonError(msg) => write!(f, "JSON decode error: {msg}"),
             Self::ValidationError(msg) => write!(f, "Validation error: {msg}"),
             Self::NetworkError(msg) => write!(f, "Network error: {msg}"),
             Self::Timeout(msg) => write!(f, "Timeout: {msg}"),

@@ -25,6 +25,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use nautilus_common::{
+    clients::DataClient,
     live::{runner::get_data_event_sender, runtime::get_runtime},
     log_info,
     messages::{
@@ -45,9 +46,9 @@ use nautilus_core::{
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_data::client::DataClient;
 use nautilus_model::{
     data::{Data, OrderBookDeltas_API},
+    enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
@@ -56,7 +57,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     common::{
-        consts::DERIBIT_VENUE,
+        consts::{
+            DERIBIT_BOOK_DEFAULT_DEPTH, DERIBIT_BOOK_DEFAULT_GROUP, DERIBIT_BOOK_VALID_DEPTHS,
+            DERIBIT_VENUE,
+        },
         parse::{bar_spec_to_resolution, parse_instrument_kind_currency},
     },
     config::DeribitDataClientConfig,
@@ -65,7 +69,8 @@ use crate::{
         models::{DeribitCurrency, DeribitInstrumentKind},
     },
     websocket::{
-        client::DeribitWebSocketClient, enums::DeribitUpdateInterval, messages::NautilusWsMessage,
+        auth::DERIBIT_DATA_SESSION_NAME, client::DeribitWebSocketClient,
+        enums::DeribitUpdateInterval, messages::NautilusWsMessage,
     },
 };
 
@@ -164,13 +169,13 @@ impl DeribitDataClient {
                         match maybe_msg {
                             Some(msg) => Self::handle_ws_message(msg, &data_sender, &instruments),
                             None => {
-                                log::debug!("Deribit websocket stream ended");
+                                log::debug!("WebSocket stream ended");
                                 break;
                             }
                         }
                     }
-                    _ = cancellation.cancelled() => {
-                        log::debug!("Deribit websocket stream task cancelled");
+                    () = cancellation.cancelled() => {
+                        log::debug!("WebSocket stream task cancelled");
                         break;
                     }
                 }
@@ -211,19 +216,16 @@ impl DeribitDataClient {
                 }
             }
             NautilusWsMessage::Error(e) => {
-                log::error!("Deribit WebSocket error: {e:?}");
+                log::error!("WebSocket error: {e:?}");
             }
             NautilusWsMessage::Raw(value) => {
                 log::debug!("Unhandled raw message: {value}");
             }
             NautilusWsMessage::Reconnected => {
-                log::info!("Deribit websocket reconnected");
+                log::info!("WebSocket reconnected");
             }
             NautilusWsMessage::Authenticated(auth) => {
-                log::debug!(
-                    "Deribit websocket authenticated: expires_in={}s",
-                    auth.expires_in
-                );
+                log::debug!("WebSocket authenticated: expires_in={}s", auth.expires_in);
             }
             NautilusWsMessage::FundingRates(funding_rates) => {
                 log::info!(
@@ -236,6 +238,58 @@ impl DeribitDataClient {
                         log::error!("Failed to send funding rate: {e}");
                     }
                 }
+            }
+            NautilusWsMessage::OrderStatusReports(reports) => {
+                log::warn!(
+                    "Data client received OrderStatusReports message (should be handled by execution client): {} reports",
+                    reports.len()
+                );
+            }
+            NautilusWsMessage::FillReports(reports) => {
+                log::warn!(
+                    "Data client received FillReports message (should be handled by execution client): {} reports",
+                    reports.len()
+                );
+            }
+            NautilusWsMessage::OrderRejected(order) => {
+                log::warn!(
+                    "Data client received OrderRejected message (should be handled by execution client): {order:?}"
+                );
+            }
+            NautilusWsMessage::OrderAccepted(order) => {
+                log::warn!(
+                    "Data client received OrderAccepted message (should be handled by execution client): {order:?}"
+                );
+            }
+            NautilusWsMessage::OrderCanceled(order) => {
+                log::warn!(
+                    "Data client received OrderCanceled message (should be handled by execution client): {order:?}"
+                );
+            }
+            NautilusWsMessage::OrderExpired(order) => {
+                log::warn!(
+                    "Data client received OrderExpired message (should be handled by execution client): {order:?}"
+                );
+            }
+            NautilusWsMessage::OrderUpdated(order) => {
+                log::warn!(
+                    "Data client received OrderUpdated message (should be handled by execution client): {order:?}"
+                );
+            }
+            NautilusWsMessage::OrderCancelRejected(order) => {
+                log::warn!(
+                    "Data client received OrderCancelRejected message (should be handled by execution client): {order:?}"
+                );
+            }
+            NautilusWsMessage::OrderModifyRejected(order) => {
+                log::warn!(
+                    "Data client received OrderModifyRejected message (should be handled by execution client): {order:?}"
+                );
+            }
+            NautilusWsMessage::AccountState(state) => {
+                log::warn!(
+                    "Data client received AccountState message (should be handled by execution client): {state:?}"
+                );
             }
         }
     }
@@ -260,7 +314,7 @@ impl DataClient for DeribitDataClient {
 
     fn start(&mut self) -> anyhow::Result<()> {
         log::info!(
-            "Starting Deribit data client: client_id={}, use_testnet={}",
+            "Starting data client: client_id={}, use_testnet={}",
             self.client_id,
             self.config.use_testnet
         );
@@ -268,14 +322,14 @@ impl DataClient for DeribitDataClient {
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
-        log::info!("Stopping Deribit data client: {}", self.client_id);
+        log::info!("Stopping data client: {}", self.client_id);
         self.cancellation_token.cancel();
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
-        log::info!("Resetting Deribit data client: {}", self.client_id);
+        log::info!("Resetting data client: {}", self.client_id);
         self.is_connected.store(false, Ordering::Relaxed);
         self.cancellation_token = CancellationToken::new();
         self.tasks.clear();
@@ -286,7 +340,7 @@ impl DataClient for DeribitDataClient {
     }
 
     fn dispose(&mut self) -> anyhow::Result<()> {
-        log::info!("Disposing Deribit data client: {}", self.client_id);
+        log::info!("Disposing data client: {}", self.client_id);
         self.stop()
     }
 
@@ -316,7 +370,7 @@ impl DataClient for DeribitDataClient {
                 .http_client
                 .request_instruments(DeribitCurrency::ANY, Some(*kind))
                 .await
-                .with_context(|| format!("failed to request Deribit instruments for {kind:?}"))?;
+                .with_context(|| format!("failed to request instruments for {kind:?}"))?;
 
             // Cache in http client
             self.http_client.cache_instruments(fetched.clone());
@@ -354,19 +408,17 @@ impl DataClient for DeribitDataClient {
         ws.cache_instruments(all_instruments);
 
         // Connect WebSocket and wait until active
-        ws.connect()
-            .await
-            .context("failed to connect Deribit websocket")?;
+        ws.connect().await.context("failed to connect WebSocket")?;
         ws.wait_until_active(10.0)
             .await
-            .context("websocket failed to become active")?;
+            .context("WebSocket failed to become active")?;
 
         // Authenticate if credentials are configured (required for raw streams)
         if ws.has_credentials() {
-            ws.authenticate_session()
+            ws.authenticate_session(DERIBIT_DATA_SESSION_NAME)
                 .await
-                .context("failed to authenticate Deribit websocket")?;
-            log_info!("Deribit WebSocket authenticated");
+                .context("failed to authenticate WebSocket")?;
+            log_info!("WebSocket authenticated");
         }
 
         // Get the stream and spawn processing task
@@ -379,7 +431,7 @@ impl DataClient for DeribitDataClient {
         } else {
             "mainnet"
         };
-        log_info!("Deribit data client connected ({})", network);
+        log_info!("Connected ({})", network);
         Ok(())
     }
 
@@ -395,13 +447,13 @@ impl DataClient for DeribitDataClient {
         if let Some(ws) = self.ws_client.as_ref()
             && let Err(e) = ws.close().await
         {
-            log::warn!("Error while closing Deribit websocket: {e:?}");
+            log::warn!("Error while closing WebSocket: {e:?}");
         }
 
         // Wait for all tasks to complete
         for handle in self.tasks.drain(..) {
             if let Err(e) = handle.await {
-                log::error!("Error joining websocket task: {e:?}");
+                log::error!("Error joining WebSocket task: {e:?}");
             }
         }
 
@@ -409,7 +461,7 @@ impl DataClient for DeribitDataClient {
         self.cancellation_token = CancellationToken::new();
         self.is_connected.store(false, Ordering::Relaxed);
 
-        log_info!("Deribit data client disconnected");
+        log_info!("Disconnected");
         Ok(())
     }
 
@@ -484,6 +536,10 @@ impl DataClient for DeribitDataClient {
     }
 
     fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
+        if cmd.book_type != BookType::L2_MBP {
+            anyhow::bail!("Deribit only supports L2_MBP order book deltas");
+        }
+
         let ws = self
             .ws_client
             .as_ref()
@@ -498,15 +554,42 @@ impl DataClient for DeribitDataClient {
             .and_then(|p| p.get("interval"))
             .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
 
+        let depth = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("depth"))
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(DERIBIT_BOOK_DEFAULT_DEPTH);
+
+        if !DERIBIT_BOOK_VALID_DEPTHS.contains(&depth) {
+            anyhow::bail!("invalid depth {depth}; supported depths: {DERIBIT_BOOK_VALID_DEPTHS:?}");
+        }
+
+        let group = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("group"))
+            .map_or(DERIBIT_BOOK_DEFAULT_GROUP, String::as_str)
+            .to_string();
+
         log::info!(
-            "Subscribing to book deltas for {} (interval: {}, book_type: {:?})",
+            "Subscribing to book deltas for {} (group: {}, depth: {}, interval: {}, book_type: {:?})",
             instrument_id,
+            group,
+            depth,
             interval.map_or("100ms (default)".to_string(), |i| i.to_string()),
             cmd.book_type
         );
 
         get_runtime().spawn(async move {
-            if let Err(e) = ws.subscribe_book(instrument_id, interval).await {
+            let result = if interval == Some(DeribitUpdateInterval::Raw) {
+                ws.subscribe_book(instrument_id, interval).await
+            } else {
+                ws.subscribe_book_grouped(instrument_id, &group, depth, interval)
+                    .await
+            };
+
+            if let Err(e) = result {
                 log::error!("Failed to subscribe to book deltas for {instrument_id}: {e}");
             }
         });
@@ -515,6 +598,10 @@ impl DataClient for DeribitDataClient {
     }
 
     fn subscribe_book_depth10(&mut self, cmd: &SubscribeBookDepth10) -> anyhow::Result<()> {
+        if cmd.book_type != BookType::L2_MBP {
+            anyhow::bail!("Deribit only supports L2_MBP order book depth");
+        }
+
         let ws = self
             .ws_client
             .as_ref()
@@ -534,7 +621,7 @@ impl DataClient for DeribitDataClient {
             .params
             .as_ref()
             .and_then(|p| p.get("group"))
-            .map_or("none", String::as_str)
+            .map_or(DERIBIT_BOOK_DEFAULT_GROUP, String::as_str)
             .to_string();
 
         log::info!(
@@ -804,14 +891,41 @@ impl DataClient for DeribitDataClient {
             .and_then(|p| p.get("interval"))
             .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
 
+        let depth = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("depth"))
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(DERIBIT_BOOK_DEFAULT_DEPTH);
+
+        if !DERIBIT_BOOK_VALID_DEPTHS.contains(&depth) {
+            anyhow::bail!("invalid depth {depth}; supported depths: {DERIBIT_BOOK_VALID_DEPTHS:?}");
+        }
+
+        let group = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("group"))
+            .map_or(DERIBIT_BOOK_DEFAULT_GROUP, String::as_str)
+            .to_string();
+
         log::info!(
-            "Unsubscribing from book deltas for {} (interval: {})",
+            "Unsubscribing from book deltas for {} (group: {}, depth: {}, interval: {})",
             instrument_id,
+            group,
+            depth,
             interval.map_or("100ms (default)".to_string(), |i| i.to_string())
         );
 
         get_runtime().spawn(async move {
-            if let Err(e) = ws.unsubscribe_book(instrument_id, interval).await {
+            let result = if interval == Some(DeribitUpdateInterval::Raw) {
+                ws.unsubscribe_book(instrument_id, interval).await
+            } else {
+                ws.unsubscribe_book_grouped(instrument_id, &group, depth, interval)
+                    .await
+            };
+
+            if let Err(e) = result {
                 log::error!("Failed to unsubscribe from book deltas for {instrument_id}: {e}");
             }
         });
@@ -839,7 +953,7 @@ impl DataClient for DeribitDataClient {
             .params
             .as_ref()
             .and_then(|p| p.get("group"))
-            .map_or("none", String::as_str)
+            .map_or(DERIBIT_BOOK_DEFAULT_GROUP, String::as_str)
             .to_string();
 
         log::info!(
@@ -1033,7 +1147,7 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn request_instruments(&self, request: &RequestInstruments) -> anyhow::Result<()> {
+    fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
         if request.start.is_some() {
             log::warn!(
                 "Requesting instruments for {:?} with specified `start` which has no effect",
@@ -1054,7 +1168,7 @@ impl DataClient for DeribitDataClient {
         let client_id = request.client_id.unwrap_or(self.client_id);
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
-        let params = request.params.clone();
+        let params = request.params;
         let clock = self.clock;
         let venue = *DERIBIT_VENUE;
 
@@ -1125,7 +1239,7 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn request_instrument(&self, request: &RequestInstrument) -> anyhow::Result<()> {
+    fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
         if request.start.is_some() {
             log::warn!(
                 "Requesting instrument {} with specified `start` which has no effect",
@@ -1155,7 +1269,7 @@ impl DataClient for DeribitDataClient {
                 datetime_to_unix_nanos(request.start),
                 datetime_to_unix_nanos(request.end),
                 self.clock.get_time_ns(),
-                request.params.clone(),
+                request.params,
             )));
 
             if let Err(e) = self.data_sender.send(DataEvent::Response(response)) {
@@ -1177,7 +1291,7 @@ impl DataClient for DeribitDataClient {
         let client_id = request.client_id.unwrap_or(self.client_id);
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
-        let params = request.params.clone();
+        let params = request.params;
         let clock = self.clock;
 
         get_runtime().spawn(async move {
@@ -1222,7 +1336,7 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn request_trades(&self, request: &RequestTrades) -> anyhow::Result<()> {
+    fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
         let sender = self.data_sender.clone();
         let instrument_id = request.instrument_id;
@@ -1231,7 +1345,7 @@ impl DataClient for DeribitDataClient {
         let limit = request.limit.map(|n| n.get() as u32);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
-        let params = request.params.clone();
+        let params = request.params;
         let clock = self.clock;
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
@@ -1264,7 +1378,7 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn request_bars(&self, request: &RequestBars) -> anyhow::Result<()> {
+    fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
         let sender = self.data_sender.clone();
         let bar_type = request.bar_type;
@@ -1273,7 +1387,7 @@ impl DataClient for DeribitDataClient {
         let limit = request.limit.map(|n| n.get() as u32);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
-        let params = request.params.clone();
+        let params = request.params;
         let clock = self.clock;
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
@@ -1306,14 +1420,14 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn request_book_snapshot(&self, request: &RequestBookSnapshot) -> anyhow::Result<()> {
+    fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
         let sender = self.data_sender.clone();
         let instrument_id = request.instrument_id;
         let depth = request.depth.map(|n| n.get() as u32);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
-        let params = request.params.clone();
+        let params = request.params;
         let clock = self.clock;
 
         get_runtime().spawn(async move {

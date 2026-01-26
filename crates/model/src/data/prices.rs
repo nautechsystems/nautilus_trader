@@ -242,6 +242,11 @@ mod tests {
 
     #[rstest]
     fn test_mark_price_update_eq_hash(instrument_id: InstrumentId, price: Price) {
+        use std::{
+            collections::hash_map::DefaultHasher,
+            hash::{Hash, Hasher},
+        };
+
         let ts_event = UnixNanos::from(1);
         let ts_init = UnixNanos::from(2);
 
@@ -254,11 +259,6 @@ mod tests {
         assert_ne!(mark_price1, mark_price3);
 
         // Test Hash implementation
-        use std::{
-            collections::hash_map::DefaultHasher,
-            hash::{Hash, Hasher},
-        };
-
         let mut hasher1 = DefaultHasher::new();
         let mut hasher2 = DefaultHasher::new();
         mark_price1.hash(&mut hasher1);

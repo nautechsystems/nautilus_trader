@@ -23,7 +23,7 @@ use std::{cell::OnceCell, fmt::Debug, sync::Arc};
 
 use crate::{
     messages::{data::DataCommand, execution::TradingCommand},
-    msgbus::{self, switchboard::MessagingSwitchboard},
+    msgbus::{self, MessagingSwitchboard},
     timer::TimeEventHandler,
 };
 
@@ -44,7 +44,7 @@ impl DataCommandSender for SyncDataCommandSender {
     fn execute(&self, command: DataCommand) {
         // TODO: Placeholder, we still need to queue and drain even for sync
         let endpoint = MessagingSwitchboard::data_engine_execute();
-        msgbus::send_any(endpoint, &command);
+        msgbus::send_data_command(endpoint, command);
     }
 }
 
@@ -73,9 +73,10 @@ pub fn get_data_cmd_sender() -> Arc<dyn DataCommandSender> {
 /// Panics if a sender has already been set.
 pub fn set_data_cmd_sender(sender: Arc<dyn DataCommandSender>) {
     DATA_CMD_SENDER.with(|s| {
-        if s.set(sender).is_err() {
-            panic!("Data command sender can only be set once");
-        }
+        assert!(
+            s.set(sender).is_ok(),
+            "Data command sender can only be set once"
+        );
     });
 }
 
@@ -117,9 +118,10 @@ pub fn try_get_time_event_sender() -> Option<Arc<dyn TimeEventSender>> {
 /// Panics if a sender has already been set.
 pub fn set_time_event_sender(sender: Arc<dyn TimeEventSender>) {
     TIME_EVENT_SENDER.with(|s| {
-        if s.set(sender).is_err() {
-            panic!("Time event sender can only be set once");
-        }
+        assert!(
+            s.set(sender).is_ok(),
+            "Time event sender can only be set once"
+        );
     });
 }
 
@@ -157,9 +159,10 @@ pub fn get_trading_cmd_sender() -> Arc<dyn TradingCommandSender> {
 /// Panics if a sender has already been set.
 pub fn set_exec_cmd_sender(sender: Arc<dyn TradingCommandSender>) {
     EXEC_CMD_SENDER.with(|s| {
-        if s.set(sender).is_err() {
-            panic!("Trading command sender can only be set once");
-        }
+        assert!(
+            s.set(sender).is_ok(),
+            "Trading command sender can only be set once"
+        );
     });
 }
 

@@ -31,18 +31,19 @@ use ahash::AHashMap;
 use databento::live::Subscription;
 use indexmap::IndexMap;
 use nautilus_common::{
+    clients::DataClient,
     live::{runner::get_data_event_sender, runtime::get_runtime},
     messages::{
         DataEvent,
         data::{
             RequestBars, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBookDeltas,
-            SubscribeInstrumentStatus, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
-            UnsubscribeInstrumentStatus, UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeInstrument, SubscribeInstrumentStatus, SubscribeQuotes, SubscribeTrades,
+            UnsubscribeBookDeltas, UnsubscribeInstrumentStatus, UnsubscribeQuotes,
+            UnsubscribeTrades,
         },
     },
 };
 use nautilus_core::{MUTEX_POISONED, time::AtomicTime};
-use nautilus_data::client::DataClient;
 use nautilus_model::{
     enums::BarAggregation,
     identifiers::{ClientId, Symbol, Venue},
@@ -310,8 +311,10 @@ impl DatabentoDataClient {
                                 }
                             }
                             Some(LiveMessage::Instrument(instrument)) => {
-                                log::debug!("Received instrument: {}", instrument.id());
-                                // TODO: Forward to cache or instrument manager
+                                log::info!("Received instrument definition: {}", instrument.id());
+                                if let Err(e) = data_sender.send(DataEvent::Instrument(instrument)) {
+                                    log::error!("Failed to send instrument event: {e}");
+                                }
                             }
                             Some(LiveMessage::Status(status)) => {
                                 log::debug!("Received status: {status:?}");
@@ -475,6 +478,42 @@ impl DataClient for DatabentoDataClient {
 
     fn is_disconnected(&self) -> bool {
         !self.is_connected()
+    }
+
+    /// Subscribes to instrument definition data for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    fn subscribe_instrument(&mut self, cmd: &SubscribeInstrument) -> anyhow::Result<()> {
+        log::debug!("Subscribe instrument: {cmd:?}");
+
+        let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
+        let was_new_handler = {
+            let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
+            !channels.contains_key(&dataset)
+        };
+
+        self.get_or_create_feed_handler(&dataset)?;
+
+        // Start the feed handler if it was newly created
+        if was_new_handler {
+            self.send_command_to_dataset(&dataset, LiveCommand::Start)?;
+        }
+
+        let symbol = instrument_id_to_symbol_string(
+            cmd.instrument_id,
+            &mut self.symbol_venue_map.write().unwrap(),
+        );
+
+        let subscription = Subscription::builder()
+            .schema(databento::dbn::Schema::Definition)
+            .symbols(symbol)
+            .build();
+
+        self.send_command_to_dataset(&dataset, LiveCommand::Subscribe(subscription))?;
+
+        Ok(())
     }
 
     /// Subscribes to quote tick data for the specified instruments.
@@ -684,16 +723,13 @@ impl DataClient for DatabentoDataClient {
         Ok(())
     }
 
-    // Historical data request methods using the historical client
-    fn request_instruments(&self, request: &RequestInstruments) -> anyhow::Result<()> {
+    fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
         log::debug!("Request instruments: {request:?}");
 
         let historical_client = self.historical.clone();
-        let request = request.clone();
+        let data_sender = self.data_sender.clone();
 
         get_runtime().spawn(async move {
-            // Convert request to historical query parameters
-            // For now, use a default symbol set or derive from venue
             let symbols = vec!["ALL_SYMBOLS".to_string()]; // TODO: Improve symbol handling
 
             let params = RangeQueryParams {
@@ -714,7 +750,11 @@ impl DataClient for DatabentoDataClient {
             match historical_client.get_range_instruments(params).await {
                 Ok(instruments) => {
                     log::info!("Retrieved {} instruments", instruments.len());
-                    // TODO: Send instruments to message bus or cache
+                    for instrument in instruments {
+                        if let Err(e) = data_sender.send(DataEvent::Instrument(instrument)) {
+                            log::error!("Failed to send instrument event: {e}");
+                        }
+                    }
                 }
                 Err(e) => {
                     log::error!("Failed to request instruments: {e}");
@@ -725,11 +765,10 @@ impl DataClient for DatabentoDataClient {
         Ok(())
     }
 
-    fn request_quotes(&self, request: &RequestQuotes) -> anyhow::Result<()> {
+    fn request_quotes(&self, request: RequestQuotes) -> anyhow::Result<()> {
         log::debug!("Request quotes: {request:?}");
 
         let historical_client = self.historical.clone();
-        let request = request.clone();
 
         get_runtime().spawn(async move {
             let symbols = vec![instrument_id_to_symbol_string(
@@ -766,11 +805,10 @@ impl DataClient for DatabentoDataClient {
         Ok(())
     }
 
-    fn request_trades(&self, request: &RequestTrades) -> anyhow::Result<()> {
+    fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
         log::debug!("Request trades: {request:?}");
 
         let historical_client = self.historical.clone();
-        let request = request.clone();
 
         get_runtime().spawn(async move {
             let symbols = vec![instrument_id_to_symbol_string(
@@ -807,11 +845,10 @@ impl DataClient for DatabentoDataClient {
         Ok(())
     }
 
-    fn request_bars(&self, request: &RequestBars) -> anyhow::Result<()> {
+    fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
         log::debug!("Request bars: {request:?}");
 
         let historical_client = self.historical.clone();
-        let request = request.clone();
 
         get_runtime().spawn(async move {
             let symbols = vec![instrument_id_to_symbol_string(

@@ -84,7 +84,7 @@ def test_catalog_query_filtered(
     assert len(deltas) == 2384
 
     deltas = catalog_betfair.order_book_deltas(batched=True)
-    assert len(deltas) == 2007
+    assert len(deltas) == 2009
 
 
 def test_catalog_query_custom_filtered(
@@ -2416,7 +2416,7 @@ def test_backend_session_files_with_optimize_disabled_reads_only_specified_files
     catalog.write_data(trades_batch3)
 
     all_files = catalog._query_files(TradeTick, [str(instrument.id)], None, None)
-    assert len(all_files) == 3, f"Expected 3 files, got {len(all_files)}: {all_files}"
+    assert len(all_files) == 3, f"Expected 3 files, was {len(all_files)}: {all_files}"
     selected_files = [all_files[0]]
 
     # Act
@@ -2434,9 +2434,9 @@ def test_backend_session_files_with_optimize_disabled_reads_only_specified_files
         data.extend(capsule_to_list(chunk))
 
     # Assert
-    assert len(data) == 3, f"Expected 3 trades from one file, got {len(data)}"
+    assert len(data) == 3, f"Expected 3 trades from one file, was {len(data)}"
     prices = {str(trade.price) for trade in data}
-    assert len(prices) == 1, f"Expected trades from single batch, got prices: {prices}"
+    assert len(prices) == 1, f"Expected trades from single batch, was prices: {prices}"
 
 
 def test_backend_session_files_with_optimize_reads_entire_directory(
@@ -2502,6 +2502,6 @@ def test_backend_session_files_with_optimize_reads_entire_directory(
         data.extend(capsule_to_list(chunk))
 
     # Assert - with optimize_file_loading=True, the entire directory is read
-    assert len(data) == 6, f"Expected 6 trades from entire directory, got {len(data)}"
+    assert len(data) == 6, f"Expected 6 trades from entire directory, was {len(data)}"
     prices = {str(trade.price) for trade in data}
-    assert len(prices) == 2, f"Expected trades from both batches, got prices: {prices}"
+    assert len(prices) == 2, f"Expected trades from both batches, was prices: {prices}"

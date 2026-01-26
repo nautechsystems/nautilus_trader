@@ -46,13 +46,17 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
+    super::error::{BinanceWsError, BinanceWsResult},
     handler::BinanceSpotWsFeedHandler,
-    messages::{HandlerCommand, NautilusWsMessage},
+    messages::{BinanceSpotWsMessage, HandlerCommand},
     subscription::MAX_STREAMS_PER_CONNECTION,
 };
-use crate::{
-    common::{consts::BINANCE_SPOT_SBE_WS_URL, credential::Ed25519Credential},
-    websocket::error::{BinanceWsError, BinanceWsResult},
+use crate::common::{
+    consts::{
+        BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION, BINANCE_SPOT_SBE_WS_URL, BINANCE_WS_CONNECTION_QUOTA,
+        BINANCE_WS_SUBSCRIPTION_QUOTA,
+    },
+    credential::Ed25519Credential,
 };
 
 /// Binance Spot WebSocket client for SBE market data streams.
@@ -68,7 +72,8 @@ pub struct BinanceSpotWebSocketClient {
     signal: Arc<AtomicBool>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
-    out_rx: Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>>>,
+    out_rx:
+        Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<BinanceSpotWsMessage>>>>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     subscriptions_state: SubscriptionState,
     request_id_counter: Arc<AtomicU64>,
@@ -196,13 +201,19 @@ impl BinanceSpotWebSocketClient {
             reconnect_max_attempts: None,
         };
 
+        // Configure rate limits for subscription operations
+        let keyed_quotas = vec![(
+            BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION[0].as_str().to_string(),
+            *BINANCE_WS_SUBSCRIPTION_QUOTA,
+        )];
+
         let client = WebSocketClient::connect(
             config,
             Some(raw_handler),
             Some(ping_handler),
             None,
-            vec![],
-            None,
+            keyed_quotas,
+            Some(*BINANCE_WS_CONNECTION_QUOTA),
         )
         .await
         .map_err(|e| {
@@ -256,13 +267,13 @@ impl BinanceSpotWebSocketClient {
         let task_handle = get_runtime().spawn(async move {
             loop {
                 tokio::select! {
-                    _ = cancellation_token.cancelled() => {
+                    () = cancellation_token.cancelled() => {
                         log::debug!("Handler task cancelled");
                         break;
                     }
                     result = handler.next() => {
                         match result {
-                            Some(NautilusWsMessage::Reconnected) => {
+                            Some(BinanceSpotWsMessage::Reconnected) => {
                                 log::info!("WebSocket reconnected, restoring subscriptions");
                                 // Mark all confirmed subscriptions as pending
                                 let all_topics = subscriptions_state.all_topics();
@@ -277,7 +288,7 @@ impl BinanceSpotWebSocketClient {
                                         log::error!("Failed to resubscribe after reconnect: {e}");
                                     }
 
-                                if out_tx.send(NautilusWsMessage::Reconnected).is_err() {
+                                if out_tx.send(BinanceSpotWsMessage::Reconnected).is_err() {
                                     log::debug!("Output channel closed");
                                     break;
                                 }
@@ -384,7 +395,7 @@ impl BinanceSpotWebSocketClient {
     /// # Panics
     ///
     /// Panics if the internal output receiver mutex is poisoned.
-    pub fn stream(&self) -> impl Stream<Item = NautilusWsMessage> + 'static {
+    pub fn stream(&self) -> impl Stream<Item = BinanceSpotWsMessage> + 'static {
         let out_rx = self.out_rx.lock().expect("out_rx lock poisoned").take();
         async_stream::stream! {
             if let Some(mut rx) = out_rx {

@@ -124,7 +124,7 @@ mod tests {
         let price = mantissa_to_price(mantissa, exponent, precision);
         assert!(
             approx_eq!(f64, price.as_f64(), expected, epsilon = 1e-10),
-            "Expected {expected}, got {}",
+            "Expected {expected}, was {}",
             price.as_f64()
         );
         assert_eq!(price.precision, precision);
@@ -143,7 +143,7 @@ mod tests {
         let qty = mantissa_to_quantity(mantissa, exponent, precision);
         assert!(
             approx_eq!(f64, qty.as_f64(), expected, epsilon = 1e-10),
-            "Expected {expected}, got {}",
+            "Expected {expected}, was {}",
             qty.as_f64()
         );
         assert_eq!(qty.precision, precision);

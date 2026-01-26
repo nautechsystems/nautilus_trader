@@ -38,8 +38,9 @@ use enum_dispatch::enum_dispatch;
 use nautilus_core::{
     UnixNanos,
     correctness::{check_equal_u8, check_positive_decimal, check_predicate_true},
+    parsing::min_increment_precision_from_str,
 };
-use rust_decimal::{Decimal, RoundingStrategy, prelude::*};
+use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 
@@ -291,6 +292,9 @@ pub trait Instrument: 'static + Send {
 
     fn activation_ns(&self) -> Option<UnixNanos>;
     fn expiration_ns(&self) -> Option<UnixNanos>;
+    fn has_expiration(&self) -> bool {
+        self.instrument_class().has_expiration()
+    }
 
     fn is_inverse(&self) -> bool;
     fn is_quanto(&self) -> bool {
@@ -329,7 +333,13 @@ pub trait Instrument: 'static + Send {
     fn ts_init(&self) -> UnixNanos;
 
     fn _min_price_increment_precision(&self) -> u8 {
-        self.price_increment().precision
+        // TODO: Optimize by storing min price increment precision (without trailing zeros)
+        min_increment_precision_from_str(&self.price_increment().to_string())
+    }
+
+    fn _min_size_increment_precision(&self) -> u8 {
+        // TODO: Optimize by storing min size increment precision (without trailing zeros)
+        min_increment_precision_from_str(&self.size_increment().to_string())
     }
 
     /// # Errors
@@ -337,18 +347,12 @@ pub trait Instrument: 'static + Send {
     /// Returns an error if the value is not finite or cannot be converted to a `Price`.
     #[inline(always)]
     fn try_make_price(&self, value: f64) -> anyhow::Result<Price> {
-        check_predicate_true(value.is_finite(), "non-finite value passed to make_price")?;
-        let precision = self
-            .price_precision()
-            .min(self._min_price_increment_precision()) as u32;
-        let decimal_value = Decimal::from_f64_retain(value)
-            .ok_or_else(|| anyhow::anyhow!("non-finite value passed to make_price"))?;
+        let dec_value = Decimal::from_str(&value.to_string())
+            .map_err(|_| anyhow::anyhow!("non-finite value passed to make_price"))?;
+        let precision = self._min_price_increment_precision() as u32;
         let rounded_decimal =
-            decimal_value.round_dp_with_strategy(precision, RoundingStrategy::MidpointNearestEven);
-        let rounded = rounded_decimal
-            .to_f64()
-            .ok_or_else(|| anyhow::anyhow!("Decimal out of f64 range in make_price"))?;
-        Ok(Price::new(rounded, self.price_precision()))
+            dec_value.round_dp_with_strategy(precision, RoundingStrategy::MidpointNearestEven);
+        Price::from_decimal_dp(rounded_decimal, self.price_precision())
     }
 
     fn make_price(&self, value: f64) -> Price {
@@ -360,23 +364,19 @@ pub trait Instrument: 'static + Send {
     /// Returns an error if the value is not finite or cannot be converted to a `Quantity`.
     #[inline(always)]
     fn try_make_qty(&self, value: f64, round_down: Option<bool>) -> anyhow::Result<Quantity> {
-        let precision_u8 = self.size_precision();
-        let precision = precision_u8 as u32;
-        let decimal_value = Decimal::from_f64_retain(value)
-            .ok_or_else(|| anyhow::anyhow!("non-finite value passed to make_qty"))?;
-        let rounded_decimal = if round_down.unwrap_or(false) {
-            decimal_value.round_dp_with_strategy(precision, RoundingStrategy::ToZero)
+        let dec_value = Decimal::from_str(&value.to_string())
+            .map_err(|_| anyhow::anyhow!("non-finite value passed to make_qty"))?;
+        let precision = self._min_size_increment_precision() as u32;
+        let strategy = if round_down.unwrap_or(false) {
+            RoundingStrategy::ToZero
         } else {
-            decimal_value.round_dp_with_strategy(precision, RoundingStrategy::MidpointNearestEven)
+            RoundingStrategy::MidpointNearestEven
         };
-        let rounded = rounded_decimal
-            .to_f64()
-            .ok_or_else(|| anyhow::anyhow!("Decimal out of f64 range in make_qty"))?;
-        let increment = 10f64.powi(-(precision_u8 as i32));
-        if value > 0.0 && rounded < increment * 0.1 {
+        let rounded = dec_value.round_dp_with_strategy(precision, strategy);
+        if dec_value > Decimal::ZERO && rounded.is_zero() {
             anyhow::bail!("value rounded to zero for quantity");
         }
-        Ok(Quantity::new(rounded, precision_u8))
+        Quantity::from_decimal_dp(rounded, self.size_precision())
     }
 
     fn make_qty(&self, value: f64, round_down: Option<bool>) -> Quantity {
@@ -385,33 +385,16 @@ pub trait Instrument: 'static + Send {
 
     /// # Errors
     ///
-    /// Returns an error if the quantity or price is not finite or cannot be converted to a `Quantity`.
+    /// Returns an error if the value cannot be converted to a `Quantity`.
     fn try_calculate_base_quantity(
         &self,
         quantity: Quantity,
         last_price: Price,
     ) -> anyhow::Result<Quantity> {
-        check_predicate_true(
-            quantity.as_f64().is_finite(),
-            "non-finite quantity passed to calculate_base_quantity",
-        )?;
-        check_predicate_true(
-            last_price.as_f64().is_finite(),
-            "non-finite price passed to calculate_base_quantity",
-        )?;
-        let quantity_dec = Decimal::from_f64_retain(quantity.as_f64()).ok_or_else(|| {
-            anyhow::anyhow!("non-finite quantity passed to calculate_base_quantity")
-        })?;
-        let price_dec = Decimal::from_f64_retain(last_price.as_f64())
-            .ok_or_else(|| anyhow::anyhow!("non-finite price passed to calculate_base_quantity"))?;
-        let value_decimal = (quantity_dec / price_dec).round_dp_with_strategy(
-            self.size_precision().into(),
-            RoundingStrategy::MidpointNearestEven,
-        );
-        let rounded = value_decimal.to_f64().ok_or_else(|| {
-            anyhow::anyhow!("Decimal out of f64 range in calculate_base_quantity")
-        })?;
-        Ok(Quantity::new(rounded, self.size_precision()))
+        let precision = self._min_size_increment_precision() as u32;
+        let value = (quantity.as_decimal() / last_price.as_decimal())
+            .round_dp_with_strategy(precision, RoundingStrategy::MidpointNearestEven);
+        Quantity::from_decimal_dp(value, self.size_precision())
     }
 
     fn calculate_base_quantity(&self, quantity: Quantity, last_price: Price) -> Quantity {
@@ -430,24 +413,28 @@ pub trait Instrument: 'static + Send {
         use_quote_for_inverse: Option<bool>,
     ) -> Money {
         let use_quote_inverse = use_quote_for_inverse.unwrap_or(false);
-        if self.is_inverse() {
+        let (amount, currency) = if self.is_inverse() {
             if use_quote_inverse {
-                Money::new(quantity.as_f64(), self.quote_currency())
+                (quantity.as_decimal(), self.quote_currency())
             } else {
                 let amount =
-                    quantity.as_f64() * self.multiplier().as_f64() * (1.0 / price.as_f64());
+                    quantity.as_decimal() * self.multiplier().as_decimal() / price.as_decimal();
                 let currency = self
                     .base_currency()
                     .expect("inverse instrument without base_currency");
-                Money::new(amount, currency)
+                (amount, currency)
             }
         } else if self.is_quanto() {
-            let amount = quantity.as_f64() * self.multiplier().as_f64() * price.as_f64();
-            Money::new(amount, self.settlement_currency())
+            let amount =
+                quantity.as_decimal() * self.multiplier().as_decimal() * price.as_decimal();
+            (amount, self.settlement_currency())
         } else {
-            let amount = quantity.as_f64() * self.multiplier().as_f64() * price.as_f64();
-            Money::new(amount, self.quote_currency())
-        }
+            let amount =
+                quantity.as_decimal() * self.multiplier().as_decimal() * price.as_decimal();
+            (amount, self.quote_currency())
+        };
+
+        Money::from_decimal(amount, currency).expect("Invalid notional value")
     }
 
     #[inline(always)]
@@ -455,18 +442,22 @@ pub trait Instrument: 'static + Send {
         let price = if let Some(scheme) = self.tick_scheme() {
             scheme.next_bid_price(value, n, self.price_precision())?
         } else {
-            let increment = self.price_increment().as_f64().abs();
-            if increment == 0.0 {
+            let value = Decimal::from_str(&value.to_string()).ok()?;
+            let increment = self.price_increment().as_decimal();
+            if increment.is_zero() {
                 return None;
             }
             let base = (value / increment).floor() * increment;
-            Price::new(base - (n as f64) * increment, self.price_precision())
+            let result = base - Decimal::from(n) * increment;
+            Price::from_decimal_dp(result, self.price_precision()).ok()?
         };
+
         if self.min_price().is_some_and(|min| price < min)
             || self.max_price().is_some_and(|max| price > max)
         {
             return None;
         }
+
         Some(price)
     }
 
@@ -475,24 +466,29 @@ pub trait Instrument: 'static + Send {
         let price = if let Some(scheme) = self.tick_scheme() {
             scheme.next_ask_price(value, n, self.price_precision())?
         } else {
-            let increment = self.price_increment().as_f64().abs();
-            if increment == 0.0 {
+            let value = Decimal::from_str(&value.to_string()).ok()?;
+            let increment = self.price_increment().as_decimal();
+            if increment.is_zero() {
                 return None;
             }
             let base = (value / increment).ceil() * increment;
-            Price::new(base + (n as f64) * increment, self.price_precision())
+            let result = base + Decimal::from(n) * increment;
+            Price::from_decimal_dp(result, self.price_precision()).ok()?
         };
+
         if self.min_price().is_some_and(|min| price < min)
             || self.max_price().is_some_and(|max| price > max)
         {
             return None;
         }
+
         Some(price)
     }
 
     #[inline]
     fn next_bid_prices(&self, value: f64, n: usize) -> Vec<Price> {
         let mut prices = Vec::with_capacity(n);
+
         for i in 0..n {
             if let Some(price) = self.next_bid_price(value, i as i32) {
                 prices.push(price);
@@ -500,12 +496,14 @@ pub trait Instrument: 'static + Send {
                 break;
             }
         }
+
         prices
     }
 
     #[inline]
     fn next_ask_prices(&self, value: f64, n: usize) -> Vec<Price> {
         let mut prices = Vec::with_capacity(n);
+
         for i in 0..n {
             if let Some(price) = self.next_ask_price(value, i as i32) {
                 prices.push(price);
@@ -513,6 +511,7 @@ pub trait Instrument: 'static + Send {
                 break;
             }
         }
+
         prices
     }
 }
@@ -538,20 +537,13 @@ price_increment={}, size_increment={}, multiplier={}, margin_init={}, margin_mai
     }
 }
 
-pub const EXPIRING_INSTRUMENT_CLASSES: [InstrumentClass; 4] = [
-    InstrumentClass::Future,
-    InstrumentClass::FuturesSpread,
-    InstrumentClass::Option,
-    InstrumentClass::OptionSpread,
-];
-
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
     use proptest::prelude::*;
     use rstest::rstest;
-    use rust_decimal::Decimal;
+    use rust_decimal::{Decimal, prelude::*};
 
     use super::*;
     use crate::{instruments::stubs::*, types::Money};
@@ -565,6 +557,24 @@ mod tests {
     fn default_increment_precision() {
         let inc = default_price_increment(2);
         assert_eq!(inc, Price::new(0.01, 2));
+    }
+
+    #[rstest]
+    #[case(Price::new(0.5, 1), 1)] // 0.5 -> precision 1
+    #[case(Price::new(0.50, 2), 1)] // 0.50 -> precision 1 (trailing zero ignored)
+    #[case(Price::new(0.500, 3), 1)] // 0.500 -> precision 1
+    #[case(Price::new(0.01, 2), 2)] // 0.01 -> precision 2
+    #[case(Price::new(0.010, 3), 2)] // 0.010 -> precision 2
+    #[case(Price::new(0.25, 2), 2)] // 0.25 -> precision 2
+    #[case(Price::new(1.0, 1), 1)] // 1.0 -> precision 1
+    #[case(Price::new(1.00, 2), 2)] // 1.00 -> precision 2 (all zeros)
+    #[case(Price::new(100.0, 0), 0)] // 100 -> precision 0
+    #[case(Price::new(0.001, 3), 3)] // 0.001 -> precision 3
+    fn test_min_increment_precision(#[case] price: Price, #[case] expected: u8) {
+        assert_eq!(
+            nautilus_core::parsing::min_increment_precision_from_str(&price.to_string()),
+            expected
+        );
     }
 
     #[rstest]
@@ -1268,5 +1278,126 @@ mod tests {
     fn check_positive_money_negative(currency_pair_btcusdt: CurrencyPair) {
         let money = Money::new(-0.01, currency_pair_btcusdt.quote_currency());
         check_positive_money(money, "money").unwrap();
+    }
+
+    #[rstest]
+    fn make_price_with_trailing_zeros_in_increment() {
+        // Test instrument with price_increment 0.50 (precision 2, but min_increment_precision 1)
+        // This verifies that trailing zeros in price_increment are handled correctly
+        let instrument = CurrencyPair::new(
+            InstrumentId::from("TEST.VENUE"),
+            Symbol::from("TEST"),
+            Currency::from("BTC"),
+            Currency::from("USD"),
+            2,                   // price_precision
+            2,                   // size_precision
+            Price::new(0.50, 2), // price_increment with trailing zero
+            Quantity::from("0.01"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        // Verify min_increment_precision is 1 (ignoring trailing zero)
+        assert_eq!(instrument._min_price_increment_precision(), 1);
+
+        // Test that make_price rounds to min_increment_precision (1)
+        // 1.234 should round to 1.2 (not 1.23)
+        let price = instrument.make_price(1.234);
+        assert_eq!(price.as_f64(), 1.2);
+
+        // 1.25 should round to 1.2 (half-even rounding)
+        let price = instrument.make_price(1.25);
+        assert_eq!(price.as_f64(), 1.2);
+
+        // 1.35 should round to 1.4 (half-even rounding)
+        let price = instrument.make_price(1.35);
+        assert_eq!(price.as_f64(), 1.4);
+
+        // But output precision should still be 2
+        assert_eq!(price.precision, 2);
+    }
+
+    #[rstest]
+    fn make_qty_with_trailing_zeros_in_increment() {
+        // Test instrument with size_increment 0.50 (precision 2, but min_increment_precision 1)
+        let instrument = CurrencyPair::new(
+            InstrumentId::from("TEST.VENUE"),
+            Symbol::from("TEST"),
+            Currency::from("BTC"),
+            Currency::from("USD"),
+            2, // price_precision
+            2, // size_precision
+            Price::new(0.01, 2),
+            Quantity::new(0.50, 2), // size_increment with trailing zero
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        // Verify min_increment_precision is 1 (ignoring trailing zero)
+        assert_eq!(instrument._min_size_increment_precision(), 1);
+
+        // Test that make_qty rounds to min_increment_precision (1)
+        // 1.234 should round to 1.2 (not 1.23)
+        let qty = instrument.make_qty(1.234, None);
+        assert_eq!(qty.as_f64(), 1.2);
+
+        // 1.25 should round to 1.2 (half-even rounding)
+        let qty = instrument.make_qty(1.25, None);
+        assert_eq!(qty.as_f64(), 1.2);
+
+        // 1.35 should round to 1.4 (half-even rounding)
+        let qty = instrument.make_qty(1.35, None);
+        assert_eq!(qty.as_f64(), 1.4);
+
+        // But output precision should still be 2
+        assert_eq!(qty.precision, 2);
+
+        // Test round_down option
+        let qty = instrument.make_qty(1.99, Some(true));
+        assert_eq!(qty.as_f64(), 1.9);
+    }
+
+    #[rstest]
+    #[case(InstrumentClass::Future, true)]
+    #[case(InstrumentClass::FuturesSpread, true)]
+    #[case(InstrumentClass::Option, true)]
+    #[case(InstrumentClass::OptionSpread, true)]
+    #[case(InstrumentClass::Spot, false)]
+    #[case(InstrumentClass::Swap, false)]
+    #[case(InstrumentClass::Forward, false)]
+    #[case(InstrumentClass::Cfd, false)]
+    #[case(InstrumentClass::Bond, false)]
+    #[case(InstrumentClass::Warrant, false)]
+    #[case(InstrumentClass::SportsBetting, false)]
+    #[case(InstrumentClass::BinaryOption, false)]
+    fn test_instrument_class_has_expiration(
+        #[case] instrument_class: InstrumentClass,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(instrument_class.has_expiration(), expected);
     }
 }

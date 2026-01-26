@@ -1467,7 +1467,7 @@ fn test_request_data(
         ts_init: UnixNanos::default(),
         params: None,
     };
-    adapter.request_data(&req).unwrap();
+    adapter.request_data(req.clone()).unwrap();
 
     let rec = recorder.borrow();
     assert_eq!(rec.len(), 1);
@@ -1501,7 +1501,7 @@ fn test_request_instrument(
         UnixNanos::default(),
         None,
     );
-    adapter.request_instrument(&req).unwrap();
+    adapter.request_instrument(req.clone()).unwrap();
 
     let rec = recorder.borrow();
     assert_eq!(rec.len(), 1);
@@ -1538,7 +1538,7 @@ fn test_request_instruments(
         UnixNanos::default(),
         None,
     );
-    adapter.request_instruments(&req).unwrap();
+    adapter.request_instruments(req.clone()).unwrap();
 
     let rec = recorder.borrow();
     assert_eq!(rec.len(), 1);
@@ -1574,7 +1574,7 @@ fn test_request_book_snapshot(
         UnixNanos::default(),
         None, // params
     );
-    adapter.request_book_snapshot(&req).unwrap();
+    adapter.request_book_snapshot(req.clone()).unwrap();
 
     let rec = recorder.borrow();
     assert_eq!(rec.len(), 1);
@@ -1612,7 +1612,7 @@ fn test_request_quotes(
         UnixNanos::default(),
         None,
     );
-    adapter.request_quotes(&req).unwrap();
+    adapter.request_quotes(req.clone()).unwrap();
 
     let rec = recorder.borrow();
     assert_eq!(rec.len(), 1);
@@ -1647,7 +1647,7 @@ fn test_request_trades(
         UnixNanos::default(),
         None,
     );
-    adapter.request_trades(&req).unwrap();
+    adapter.request_trades(req.clone()).unwrap();
 
     let rec = recorder.borrow();
     assert_eq!(rec.len(), 1);
@@ -1682,7 +1682,7 @@ fn test_request_bars(
         UnixNanos::default(),
         None,
     );
-    adapter.request_bars(&req).unwrap();
+    adapter.request_bars(req.clone()).unwrap();
 
     let rec = recorder.borrow();
     assert_eq!(rec.len(), 1);
@@ -1718,7 +1718,7 @@ fn test_request_order_book_depth(
         UnixNanos::default(),
         None,
     );
-    adapter.request_book_depth(&req).unwrap();
+    adapter.request_book_depth(req.clone()).unwrap();
 
     let rec = recorder.borrow();
     assert_eq!(rec.len(), 1);

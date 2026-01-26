@@ -102,3 +102,10 @@ Session tokens expire after a configurable period (default: 3600 seconds).
 |-------------|--------------------------------------------------|--------------------------------------------------|------------------------------------------------------|
 | Sandbox     | `https://gateway.sandbox.architect.exchange/api` | `wss://gateway.sandbox.architect.exchange/md/ws` | `wss://gateway.sandbox.architect.exchange/orders/ws` |
 | Production  | `https://gateway.architect.exchange/api`         | `wss://gateway.architect.exchange/md/ws`         | `wss://gateway.architect.exchange/orders/ws`         |
+
+## Contributing
+
+:::info
+For additional features or to contribute to the Architect AX adapter, please see our
+[contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).
+:::

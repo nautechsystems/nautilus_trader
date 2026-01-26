@@ -18,6 +18,7 @@ use std::{cell::RefCell, rc::Rc};
 use async_trait::async_trait;
 use nautilus_common::{
     cache::Cache,
+    clients::ExecutionClient,
     clock::{Clock, TestClock},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
@@ -31,8 +32,6 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, Venue},
     types::{AccountBalance, MarginBalance},
 };
-
-use crate::client::ExecutionClient;
 
 /// A stub execution client for testing purposes.
 ///

@@ -590,20 +590,20 @@ mod tests {
 
         // Verify auth completed before subscription
         tokio::select! {
-            _ = auth_completed.notified() => {
+            () = auth_completed.notified() => {
                 // Good - auth completed
             }
-            _ = tokio::time::sleep(Duration::from_secs(1)) => {
+            () = tokio::time::sleep(Duration::from_secs(1)) => {
                 panic!("Auth never completed");
             }
         }
 
         // Verify subscription completed
         tokio::select! {
-            _ = subscribed.notified() => {
+            () = subscribed.notified() => {
                 // Good - subscribed
             }
-            _ = tokio::time::sleep(Duration::from_secs(1)) => {
+            () = tokio::time::sleep(Duration::from_secs(1)) => {
                 panic!("Subscription never completed");
             }
         }

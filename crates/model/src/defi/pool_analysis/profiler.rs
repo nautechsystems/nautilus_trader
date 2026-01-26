@@ -117,9 +117,7 @@ impl PoolProfiler {
     /// - Pool is already initialized (checked via `is_initialized` flag)
     /// - Calculated tick from price doesn't match pool's `initial_tick` (if set)
     pub fn initialize(&mut self, price_sqrt_ratio_x96: U160) {
-        if self.is_initialized {
-            panic!("Pool already initialized");
-        }
+        assert!(!self.is_initialized, "Pool already initialized");
 
         let calculated_tick = get_tick_at_sqrt_ratio(price_sqrt_ratio_x96);
         if let Some(initial_tick) = self.pool.initial_tick {
@@ -144,9 +142,7 @@ impl PoolProfiler {
     ///
     /// Panics if the pool hasn't been initialized with a starting price via [`initialize()`](Self::initialize).
     pub fn check_if_initialized(&self) {
-        if !self.is_initialized {
-            panic!("Pool is not initialized");
-        }
+        assert!(self.is_initialized, "Pool is not initialized");
     }
 
     /// Processes a historical pool event and updates internal state.
@@ -1298,15 +1294,14 @@ impl PoolProfiler {
     /// The utilization rate measures what percentage of total deployed liquidity
     /// is currently active (in-range and earning fees) at the current price tick.
     pub fn liquidity_utilization_rate(&self) -> f64 {
+        const PRECISION: u32 = 1_000_000; // 6 decimal places
+
         let total_liquidity = self.get_total_liquidity();
         let active_liquidity = self.get_active_liquidity();
 
         if total_liquidity == U256::ZERO {
             return 0.0;
         }
-
-        // 6 decimal places
-        const PRECISION: u32 = 1_000_000;
         let ratio = FullMath::mul_div(
             U256::from(active_liquidity),
             U256::from(PRECISION),

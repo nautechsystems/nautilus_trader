@@ -15,7 +15,7 @@
 
 //! Shared parsing helpers that transform BitMEX payloads into Nautilus types.
 
-use std::borrow::Cow;
+use std::{borrow::Cow, str::FromStr};
 
 use chrono::{DateTime, Utc};
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
@@ -137,8 +137,8 @@ pub fn derive_contract_decimal_and_increment(
         1.0
     };
 
-    let mut contract_decimal = Decimal::from_f64_retain(contract_size)
-        .ok_or_else(|| anyhow::anyhow!("Invalid contract size {contract_size}"))?;
+    let mut contract_decimal = Decimal::from_str(&contract_size.to_string())
+        .map_err(|_| anyhow::anyhow!("Invalid contract size {contract_size}"))?;
     if contract_decimal.scale() > max_scale {
         contract_decimal = contract_decimal
             .round_dp_with_strategy(max_scale, RoundingStrategy::MidpointAwayFromZero);
@@ -164,8 +164,8 @@ pub fn convert_contract_quantity(
 ) -> anyhow::Result<Option<Quantity>> {
     value
         .map(|raw| {
-            let mut decimal = Decimal::from_f64_retain(raw)
-                .ok_or_else(|| anyhow::anyhow!("Invalid {field_name} value"))?
+            let mut decimal = Decimal::from_str(&raw.to_string())
+                .map_err(|_| anyhow::anyhow!("Invalid {field_name} value"))?
                 * contract_decimal;
             let scale = decimal.scale();
             if scale > max_scale {
@@ -197,9 +197,9 @@ pub fn parse_fractional_quantity(value: f64, instrument: &InstrumentAny) -> Quan
         return instrument.make_qty(0.0, None);
     }
 
-    instrument.try_make_qty(value, None).unwrap_or_else(|err| {
+    instrument.try_make_qty(value, None).unwrap_or_else(|e| {
         log::warn!(
-            "Failed to convert fractional quantity {value} with precision {}: {err}",
+            "Failed to convert fractional quantity {value} with precision {}: {e}",
             instrument.size_precision(),
         );
         instrument.make_qty(0.0, None)

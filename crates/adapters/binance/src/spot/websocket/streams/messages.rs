@@ -16,7 +16,8 @@
 //! Binance Spot WebSocket message types.
 //!
 //! This module defines:
-//! - [`NautilusWsMessage`]: Output messages emitted by the handler to the client.
+//! - [`BinanceSpotWsMessage`]: Wrapper enum for handler output.
+//! - [`NautilusSpotDataWsMessage`]: Market data messages for data clients.
 //! - [`HandlerCommand`]: Commands sent from the client to the handler.
 //! - Subscription request/response structures for the Binance WebSocket API.
 
@@ -34,26 +35,32 @@ pub use crate::common::sbe::stream::{
     TradesStreamEvent,
 };
 
-/// Normalized output message from the WebSocket handler.
-///
-/// These messages are emitted by the handler and consumed by the client
-/// for routing to the data engine or other consumers.
+/// Output message from the Spot WebSocket handler.
 #[derive(Debug, Clone)]
-pub enum NautilusWsMessage {
+pub enum BinanceSpotWsMessage {
+    /// Public market data message.
+    Data(NautilusSpotDataWsMessage),
+    /// Error from the server.
+    Error(BinanceWsErrorMsg),
+    /// WebSocket reconnected - subscriptions should be restored.
+    Reconnected,
+}
+
+/// Market data message from Binance Spot WebSocket.
+///
+/// These are public messages that don't require authentication.
+#[derive(Debug, Clone)]
+pub enum NautilusSpotDataWsMessage {
     /// Market data (trades, quotes, bars).
     Data(Vec<Data>),
     /// Order book deltas.
     Deltas(OrderBookDeltas),
     /// Instrument definition update.
     Instrument(Box<InstrumentAny>),
-    /// WebSocket error from venue.
-    Error(BinanceWsErrorMsg),
-    /// Raw binary message (unhandled).
+    /// Raw binary message (unhandled SBE).
     RawBinary(Vec<u8>),
     /// Raw JSON message (unhandled).
     RawJson(serde_json::Value),
-    /// Connection was re-established after disconnect.
-    Reconnected,
 }
 
 /// Binance WebSocket error message.

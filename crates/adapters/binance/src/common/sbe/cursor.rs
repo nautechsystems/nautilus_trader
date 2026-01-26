@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// SBE decode cursor - all read methods return SbeDecodeError::BufferUnderrun when buffer too short
+#![allow(clippy::missing_errors_doc)]
+
 //! Zero-copy SBE byte cursor for sequential decoding.
 
 use super::error::{MAX_GROUP_SIZE, SbeDecodeError};

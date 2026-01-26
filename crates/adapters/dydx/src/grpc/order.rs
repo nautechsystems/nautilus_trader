@@ -254,6 +254,7 @@ impl OrderBuilder {
         self.trigger_price = Some(trigger_price);
         self.side = Some(side);
         self.size = Some(size);
+        self.condition_type = Some(ConditionType::StopLoss);
         self.conditional()
     }
 
@@ -266,6 +267,7 @@ impl OrderBuilder {
         self.trigger_price = Some(trigger_price);
         self.side = Some(side);
         self.size = Some(size);
+        self.condition_type = Some(ConditionType::StopLoss);
         self.conditional()
     }
 
@@ -285,6 +287,7 @@ impl OrderBuilder {
         self.trigger_price = Some(trigger_price);
         self.side = Some(side);
         self.size = Some(size);
+        self.condition_type = Some(ConditionType::TakeProfit);
         self.conditional()
     }
 
@@ -302,6 +305,7 @@ impl OrderBuilder {
         self.trigger_price = Some(trigger_price);
         self.side = Some(side);
         self.size = Some(size);
+        self.condition_type = Some(ConditionType::TakeProfit);
         self.conditional()
     }
 
@@ -701,6 +705,62 @@ mod tests {
         // Conditional flag is 32
         assert_eq!(order.order_id.as_ref().unwrap().order_flags, 32);
         assert_eq!(order.conditional_order_trigger_subticks, 4_900_000_000);
+    }
+
+    #[rstest]
+    fn test_stop_limit_sets_condition_type() {
+        let market = sample_market_params();
+        let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 100);
+
+        let order = builder
+            .stop_limit(OrderSide::Sell, dec!(48000), dec!(49000), dec!(0.01))
+            .until(OrderGoodUntil::Block(100))
+            .build()
+            .unwrap();
+
+        assert_eq!(order.condition_type, ConditionType::StopLoss as i32);
+    }
+
+    #[rstest]
+    fn test_stop_market_sets_condition_type() {
+        let market = sample_market_params();
+        let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 101);
+
+        let order = builder
+            .stop_market(OrderSide::Sell, dec!(49000), dec!(0.01))
+            .until(OrderGoodUntil::Block(100))
+            .build()
+            .unwrap();
+
+        assert_eq!(order.condition_type, ConditionType::StopLoss as i32);
+    }
+
+    #[rstest]
+    fn test_take_profit_limit_sets_condition_type() {
+        let market = sample_market_params();
+        let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 102);
+
+        let order = builder
+            .take_profit_limit(OrderSide::Sell, dec!(52000), dec!(51000), dec!(0.01))
+            .until(OrderGoodUntil::Block(100))
+            .build()
+            .unwrap();
+
+        assert_eq!(order.condition_type, ConditionType::TakeProfit as i32);
+    }
+
+    #[rstest]
+    fn test_take_profit_market_sets_condition_type() {
+        let market = sample_market_params();
+        let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 103);
+
+        let order = builder
+            .take_profit_market(OrderSide::Sell, dec!(51000), dec!(0.01))
+            .until(OrderGoodUntil::Block(100))
+            .build()
+            .unwrap();
+
+        assert_eq!(order.condition_type, ConditionType::TakeProfit as i32);
     }
 
     #[rstest]

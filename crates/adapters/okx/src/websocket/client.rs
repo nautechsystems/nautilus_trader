@@ -106,29 +106,31 @@ pub static OKX_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> =
 pub static OKX_WS_ORDER_QUOTA: LazyLock<Quota> =
     LazyLock::new(|| Quota::per_second(NonZeroU32::new(250).unwrap()));
 
-/// Rate limit key for subscription operations (subscribe/unsubscribe/login).
+/// Pre-interned rate limit key for subscription operations (subscribe/unsubscribe/login).
 ///
 /// See: <https://www.okx.com/docs-v5/en/#websocket-api-login>
 /// See: <https://www.okx.com/docs-v5/en/#websocket-api-subscribe>
-pub const OKX_RATE_LIMIT_KEY_SUBSCRIPTION: &str = "subscription";
+pub static OKX_RATE_LIMIT_KEY_SUBSCRIPTION: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from("subscription")]);
 
-/// Rate limit key for order operations (place regular and algo orders).
+/// Pre-interned rate limit key for order operations (place regular and algo orders).
 ///
 /// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-place-order>
 /// See: <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-ws-place-algo-order>
-pub const OKX_RATE_LIMIT_KEY_ORDER: &str = "order";
+pub static OKX_RATE_LIMIT_KEY_ORDER: LazyLock<[Ustr; 1]> = LazyLock::new(|| [Ustr::from("order")]);
 
-/// Rate limit key for cancel operations (cancel regular and algo orders, mass cancel).
+/// Pre-interned rate limit key for cancel operations (cancel regular and algo orders, mass cancel).
 ///
 /// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-cancel-order>
 /// See: <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-ws-cancel-algo-order>
 /// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-mass-cancel-order>
-pub const OKX_RATE_LIMIT_KEY_CANCEL: &str = "cancel";
+pub static OKX_RATE_LIMIT_KEY_CANCEL: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from("cancel")]);
 
-/// Rate limit key for amend operations (amend orders).
+/// Pre-interned rate limit key for amend operations (amend orders).
 ///
 /// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-amend-order>
-pub const OKX_RATE_LIMIT_KEY_AMEND: &str = "amend";
+pub static OKX_RATE_LIMIT_KEY_AMEND: LazyLock<[Ustr; 1]> = LazyLock::new(|| [Ustr::from("amend")]);
 
 /// Provides a WebSocket client for connecting to [OKX](https://okx.com).
 #[derive(Clone)]
@@ -417,12 +419,21 @@ impl OKXWebSocketClient {
         // Configure rate limits for different operation types
         let keyed_quotas = vec![
             (
-                OKX_RATE_LIMIT_KEY_SUBSCRIPTION.to_string(),
+                OKX_RATE_LIMIT_KEY_SUBSCRIPTION[0].as_str().to_string(),
                 *OKX_WS_SUBSCRIPTION_QUOTA,
             ),
-            (OKX_RATE_LIMIT_KEY_ORDER.to_string(), *OKX_WS_ORDER_QUOTA),
-            (OKX_RATE_LIMIT_KEY_CANCEL.to_string(), *OKX_WS_ORDER_QUOTA),
-            (OKX_RATE_LIMIT_KEY_AMEND.to_string(), *OKX_WS_ORDER_QUOTA),
+            (
+                OKX_RATE_LIMIT_KEY_ORDER[0].as_str().to_string(),
+                *OKX_WS_ORDER_QUOTA,
+            ),
+            (
+                OKX_RATE_LIMIT_KEY_CANCEL[0].as_str().to_string(),
+                *OKX_WS_ORDER_QUOTA,
+            ),
+            (
+                OKX_RATE_LIMIT_KEY_AMEND[0].as_str().to_string(),
+                *OKX_WS_ORDER_QUOTA,
+            ),
         ];
 
         let client = WebSocketClient::connect(
@@ -971,6 +982,8 @@ impl OKXWebSocketClient {
     ///
     /// Returns an error if the unsubscribe request fails to send.
     pub async fn unsubscribe_all(&self) -> Result<(), OKXWsError> {
+        const BATCH_SIZE: usize = 256;
+
         let mut all_args = Vec::new();
 
         for entry in self.subscriptions_inst_type.iter() {
@@ -1025,8 +1038,6 @@ impl OKXWebSocketClient {
         }
 
         log::debug!("Batched unsubscribe from {} channels", all_args.len());
-
-        const BATCH_SIZE: usize = 256;
 
         for chunk in all_args.chunks(BATCH_SIZE) {
             self.unsubscribe(chunk.to_vec()).await?;

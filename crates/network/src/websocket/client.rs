@@ -45,6 +45,7 @@ use tokio_tungstenite::connect_async_with_config;
 use tokio_tungstenite::tungstenite::{
     Error, Message, client::IntoClientRequest, http::HeaderValue,
 };
+use ustr::Ustr;
 
 use super::{
     config::WebSocketConfig,
@@ -838,7 +839,7 @@ pub struct WebSocketClient {
     pub(crate) controller_task: tokio::task::JoinHandle<()>,
     pub(crate) connection_mode: Arc<AtomicU8>,
     pub(crate) reconnect_timeout: Duration,
-    pub(crate) rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
+    pub(crate) rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
     pub(crate) writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
 }
 
@@ -882,6 +883,10 @@ impl WebSocketClient {
 
         let connection_mode = inner.connection_mode.clone();
         let reconnect_timeout = inner.reconnect_timeout;
+        let keyed_quotas = keyed_quotas
+            .into_iter()
+            .map(|(key, quota)| (Ustr::from(&key), quota))
+            .collect();
         let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
         let writer_tx = inner.writer_tx.clone();
 
@@ -943,6 +948,10 @@ impl WebSocketClient {
         let controller_task =
             Self::spawn_controller_task(inner, connection_mode.clone(), post_reconnection);
 
+        let keyed_quotas = keyed_quotas
+            .into_iter()
+            .map(|(key, quota)| (Ustr::from(&key), quota))
+            .collect();
         let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
 
         Ok(Self {
@@ -1060,19 +1069,18 @@ impl WebSocketClient {
         self.connection_mode
             .store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
 
-        if let Ok(()) =
-            tokio::time::timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS), async {
-                while !self.is_disconnected() {
-                    tokio::time::sleep(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS))
-                        .await;
-                }
+        if tokio::time::timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS), async {
+            while !self.is_disconnected() {
+                tokio::time::sleep(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
+            }
 
-                if !self.controller_task.is_finished() {
-                    self.controller_task.abort();
-                    log_task_aborted("controller");
-                }
-            })
-            .await
+            if !self.controller_task.is_finished() {
+                self.controller_task.abort();
+                log_task_aborted("controller");
+            }
+        })
+        .await
+            == Ok(())
         {
             log::debug!("Controller task finished");
         } else {
@@ -1090,11 +1098,7 @@ impl WebSocketClient {
     ///
     /// Returns a websocket error if unable to send.
     #[allow(unused_variables)]
-    pub async fn send_text(
-        &self,
-        data: String,
-        keys: Option<Vec<String>>,
-    ) -> Result<(), SendError> {
+    pub async fn send_text(&self, data: String, keys: Option<&[Ustr]>) -> Result<(), SendError> {
         // Check connection state before rate limiting to fail fast
         if self.is_closed() || self.is_disconnecting() {
             return Err(SendError::Closed);
@@ -1133,11 +1137,7 @@ impl WebSocketClient {
     ///
     /// Returns a websocket error if unable to send.
     #[allow(unused_variables)]
-    pub async fn send_bytes(
-        &self,
-        data: Vec<u8>,
-        keys: Option<Vec<String>>,
-    ) -> Result<(), SendError> {
+    pub async fn send_bytes(&self, data: Vec<u8>, keys: Option<&[Ustr]>) -> Result<(), SendError> {
         // Check connection state before rate limiting to fail fast
         if self.is_closed() || self.is_disconnecting() {
             return Err(SendError::Closed);
@@ -2161,8 +2161,9 @@ mod rust_tests {
         );
 
         // First send exhausts burst capacity and triggers connection close
+        let test_key: [Ustr; 1] = [Ustr::from("test_key")];
         client
-            .send_text("msg1".to_string(), Some(vec!["test_key".to_string()]))
+            .send_text("msg1".to_string(), Some(test_key.as_slice()))
             .await
             .unwrap();
 
@@ -2176,7 +2177,7 @@ mod rust_tests {
         // Second send: will hit rate limit (~1s) THEN wait for reconnection (~0.5s)
         let start = std::time::Instant::now();
         let send_result = client
-            .send_text("msg2".to_string(), Some(vec!["test_key".to_string()]))
+            .send_text("msg2".to_string(), Some(test_key.as_slice()))
             .await;
         let elapsed = start.elapsed();
 
@@ -2330,8 +2331,9 @@ mod rust_tests {
 
         // Attempt send - should fail IMMEDIATELY without waiting for rate limit
         let start = std::time::Instant::now();
+        let test_key: [Ustr; 1] = [Ustr::from("test_key")];
         let result = client
-            .send_text("test".to_string(), Some(vec!["test_key".to_string()]))
+            .send_text("test".to_string(), Some(test_key.as_slice()))
             .await;
         let elapsed = start.elapsed();
 

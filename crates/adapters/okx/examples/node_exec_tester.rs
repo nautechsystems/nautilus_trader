@@ -79,17 +79,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Quantity::from("0.01"),
     )
     .with_log_data(false)
-    .with_close_positions_on_stop(false);
+    .with_use_post_only(true)
+    .with_cancel_orders_on_stop(true)
+    .with_close_positions_on_stop(true);
+
+    tester_config.base.external_order_claims = Some(vec![instrument_id]);
 
     // Use UUIDs for unique client order IDs across restarts
     tester_config.base.use_uuid_client_order_ids = true;
     // OKX doesn't allow hyphens in client order IDs
     tester_config.base.use_hyphens_in_client_order_ids = false;
-
-    tester_config.base.external_order_claims = Some(vec![instrument_id]);
-    tester_config.use_post_only = true;
-    // tester_config.cancel_orders_on_stop = false;
-    // tester_config.close_positions_on_stop = false;
 
     let tester = ExecTester::new(tester_config);
 

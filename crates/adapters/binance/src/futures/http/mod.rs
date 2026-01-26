@@ -20,21 +20,18 @@ pub mod error;
 pub mod models;
 pub mod query;
 
-pub use client::{
-    BinanceFundingRate, BinanceFuturesHttpClient, BinanceFuturesInstrument, BinanceOpenInterest,
-    BinanceRawFuturesHttpClient, FundingRateParams, ListenKeyResponse, MarkPriceParams,
-    OpenInterestParams,
-};
+pub use client::{BinanceFuturesHttpClient, BinanceFuturesInstrument, BinanceRawFuturesHttpClient};
 pub use error::{BinanceFuturesHttpError, BinanceFuturesHttpResult};
 pub use models::{
-    BinanceBookTicker, BinanceFuturesAsset, BinanceFuturesCoinExchangeInfo,
+    BinanceBookTicker, BinanceFundingRate, BinanceFuturesAsset, BinanceFuturesCoinExchangeInfo,
     BinanceFuturesCoinSymbol, BinanceFuturesMarkPrice, BinanceFuturesOrder,
     BinanceFuturesTicker24hr, BinanceFuturesUsdExchangeInfo, BinanceFuturesUsdSymbol,
-    BinanceOrderBook, BinancePriceTicker, BinanceServerTime,
+    BinanceOpenInterest, BinanceOrderBook, BinancePriceTicker, BinanceServerTime,
+    ListenKeyResponse,
 };
 pub use query::{
     BinanceBookTickerParams, BinanceDepthParams, BinanceFundingRateParams,
     BinanceIncomeHistoryParams, BinanceMarkPriceParams, BinanceOpenInterestParams,
     BinanceOpenOrdersParams, BinanceOrderQueryParams, BinancePositionRiskParams,
-    BinanceTicker24hrParams, BinanceUserTradesParams,
+    BinanceTicker24hrParams, BinanceUserTradesParams, ListenKeyParams,
 };

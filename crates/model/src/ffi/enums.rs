@@ -21,8 +21,8 @@ use crate::enums::{
     AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
     BookType, ContingencyType, CurrencyType, InstrumentClass, InstrumentCloseType, LiquiditySide,
     MarketStatus, MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
-    PositionAdjustmentType, PositionSide, PriceType, RecordFlag, TimeInForce, TradingState,
-    TrailingOffsetType, TriggerType,
+    OtoTriggerMode, PositionAdjustmentType, PositionSide, PriceType, RecordFlag, TimeInForce,
+    TradingState, TrailingOffsetType, TriggerType,
 };
 
 #[unsafe(no_mangle)]
@@ -362,6 +362,27 @@ pub unsafe extern "C" fn option_kind_from_cstr(ptr: *const c_char) -> OptionKind
     let value = unsafe { cstr_as_str(ptr) };
     OptionKind::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `OptionKind` enum string value, was '{value}'"))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn oto_trigger_mode_to_cstr(value: OtoTriggerMode) -> *const c_char {
+    str_to_cstr(value.as_ref())
+}
+
+/// Returns an enum from a Python string.
+///
+/// # Safety
+///
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `OtoTriggerMode` variant.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn oto_trigger_mode_from_cstr(ptr: *const c_char) -> OtoTriggerMode {
+    let value = unsafe { cstr_as_str(ptr) };
+    OtoTriggerMode::from_str(value)
+        .unwrap_or_else(|_| panic!("invalid `OtoTriggerMode` enum string value, was '{value}'"))
 }
 
 #[unsafe(no_mangle)]

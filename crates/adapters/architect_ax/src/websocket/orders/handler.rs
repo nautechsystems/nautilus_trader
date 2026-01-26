@@ -24,17 +24,40 @@ use std::{
 };
 
 use ahash::AHashMap;
-use nautilus_model::instruments::{Instrument, InstrumentAny};
+use dashmap::DashMap;
+use nautilus_core::{UUID4, nanos::UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_model::{
+    enums::{LiquiditySide, OrderSide as NautilusOrderSide, OrderType},
+    events::{
+        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderExpired, OrderFilled, OrderRejected,
+    },
+    identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
+    instruments::{Instrument, InstrumentAny},
+    types::{Price, Quantity},
+};
 use nautilus_network::websocket::{AuthTracker, WebSocketClient};
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
-use crate::websocket::messages::{
-    AxOrdersWsMessage, AxWsCancelOrder, AxWsCancelOrderResponse, AxWsCancelRejected, AxWsError,
-    AxWsGetOpenOrders, AxWsOpenOrdersResponse, AxWsOrderAcknowledged, AxWsOrderCanceled,
-    AxWsOrderDoneForDay, AxWsOrderExpired, AxWsOrderFilled, AxWsOrderPartiallyFilled,
-    AxWsOrderRejected, AxWsOrderReplaced, AxWsPlaceOrder, AxWsPlaceOrderResponse, OrderMetadata,
+use crate::{
+    common::enums::AxOrderSide,
+    websocket::messages::{
+        AxOrdersWsMessage, AxWsCancelOrder, AxWsCancelRejected, AxWsGetOpenOrders, AxWsOrder,
+        AxWsOrderAcknowledged, AxWsOrderCanceled, AxWsOrderDoneForDay, AxWsOrderEvent,
+        AxWsOrderExpired, AxWsOrderFilled, AxWsOrderPartiallyFilled, AxWsOrderRejected,
+        AxWsOrderReplaced, AxWsOrderResponse, AxWsPlaceOrder, AxWsRawMessage, AxWsTradeExecution,
+        NautilusExecWsMessage, OrderMetadata,
+    },
 };
+
+/// Simple tracking info for pending WebSocket orders.
+#[derive(Clone, Debug)]
+pub struct WsOrderInfo {
+    /// Client order ID for correlation.
+    pub client_order_id: ClientOrderId,
+    /// Instrument symbol.
+    pub symbol: Ustr,
+}
 
 /// Commands sent from the outer client to the inner orders handler.
 #[derive(Debug)]
@@ -54,8 +77,8 @@ pub enum HandlerCommand {
         request_id: i64,
         /// Order placement message.
         order: AxWsPlaceOrder,
-        /// Metadata for response correlation.
-        metadata: OrderMetadata,
+        /// Order info for tracking.
+        order_info: WsOrderInfo,
     },
     /// Cancel an order.
     CancelOrder {
@@ -73,9 +96,16 @@ pub enum HandlerCommand {
     InitializeInstruments(Vec<InstrumentAny>),
     /// Update a single instrument in the cache.
     UpdateInstrument(Box<InstrumentAny>),
+    /// Store order metadata for a pending order.
+    StoreOrderMetadata {
+        /// Client order ID.
+        client_order_id: ClientOrderId,
+        /// Order metadata.
+        metadata: OrderMetadata,
+    },
 }
 
-/// Orders feed handler that processes WebSocket messages.
+/// Orders feed handler that processes WebSocket messages and produces domain events.
 ///
 /// Runs in a dedicated Tokio task and owns the WebSocket client exclusively.
 pub(crate) struct FeedHandler {
@@ -83,12 +113,15 @@ pub(crate) struct FeedHandler {
     client: Option<WebSocketClient>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
-    #[allow(dead_code)] // TODO: Use for sending parsed messages
-    out_tx: tokio::sync::mpsc::UnboundedSender<AxOrdersWsMessage>,
     auth_tracker: AuthTracker,
+    account_id: AccountId,
     instruments: AHashMap<Ustr, InstrumentAny>,
-    pending_orders: AHashMap<i64, OrderMetadata>,
+    pending_orders: AHashMap<i64, WsOrderInfo>,
     message_queue: VecDeque<AxOrdersWsMessage>,
+    orders_metadata: Arc<DashMap<ClientOrderId, OrderMetadata>>,
+    venue_to_client_id: Arc<DashMap<VenueOrderId, ClientOrderId>>,
+    bearer_token: Option<String>,
+    needs_reauthentication: bool,
 }
 
 impl FeedHandler {
@@ -98,19 +131,39 @@ impl FeedHandler {
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
         raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
-        out_tx: tokio::sync::mpsc::UnboundedSender<AxOrdersWsMessage>,
         auth_tracker: AuthTracker,
+        account_id: AccountId,
+        orders_metadata: Arc<DashMap<ClientOrderId, OrderMetadata>>,
+        venue_to_client_id: Arc<DashMap<VenueOrderId, ClientOrderId>>,
     ) -> Self {
         Self {
             signal,
             client: None,
             cmd_rx,
             raw_rx,
-            out_tx,
             auth_tracker,
+            account_id,
             instruments: AHashMap::new(),
             pending_orders: AHashMap::new(),
             message_queue: VecDeque::new(),
+            orders_metadata,
+            venue_to_client_id,
+            bearer_token: None,
+            needs_reauthentication: false,
+        }
+    }
+
+    async fn reauthenticate(&mut self) {
+        if self.bearer_token.is_some() {
+            log::info!("Re-authenticating after reconnection");
+
+            // Ax uses Bearer token in connection headers which persist across reconnect
+            self.auth_tracker.succeed();
+            self.message_queue
+                .push_back(AxOrdersWsMessage::Authenticated);
+            log::info!("Re-authentication completed");
+        } else {
+            log::warn!("Cannot re-authenticate: no bearer token stored");
         }
     }
 
@@ -119,6 +172,11 @@ impl FeedHandler {
     /// This method blocks until a message is available or the handler is stopped.
     pub async fn next(&mut self) -> Option<AxOrdersWsMessage> {
         loop {
+            if self.needs_reauthentication && self.message_queue.is_empty() {
+                self.needs_reauthentication = false;
+                self.reauthenticate().await;
+            }
+
             if let Some(msg) = self.message_queue.pop_front() {
                 return Some(msg);
             }
@@ -128,8 +186,8 @@ impl FeedHandler {
                     self.handle_command(cmd).await;
                 }
 
-                _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
-                    if self.signal.load(Ordering::Relaxed) {
+                () = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
+                    if self.signal.load(Ordering::Acquire) {
                         log::debug!("Stop signal received during idle period");
                         return None;
                     }
@@ -159,7 +217,7 @@ impl FeedHandler {
                         self.message_queue.extend(messages);
                     }
 
-                    if self.signal.load(Ordering::Relaxed) {
+                    if self.signal.load(Ordering::Acquire) {
                         log::debug!("Stop signal received");
                         return None;
                     }
@@ -176,14 +234,16 @@ impl FeedHandler {
             }
             HandlerCommand::Disconnect => {
                 log::debug!("Disconnect command received");
+                self.auth_tracker.fail("Disconnected");
                 if let Some(client) = self.client.take() {
                     client.disconnect().await;
                 }
             }
-            HandlerCommand::Authenticate { token: _ } => {
+            HandlerCommand::Authenticate { token } => {
                 log::debug!("Authenticate command received");
-                // Ax uses Bearer token in connection headers, not a message
-                // This is handled at connection time, so we just mark as authenticated
+                self.bearer_token = Some(token);
+
+                // Ax uses Bearer token in connection headers (handled at connect time)
                 self.auth_tracker.succeed();
                 self.message_queue
                     .push_back(AxOrdersWsMessage::Authenticated);
@@ -191,13 +251,13 @@ impl FeedHandler {
             HandlerCommand::PlaceOrder {
                 request_id,
                 order,
-                metadata,
+                order_info,
             } => {
                 log::debug!(
                     "PlaceOrder command received: request_id={request_id}, symbol={}",
                     order.s
                 );
-                self.pending_orders.insert(request_id, metadata);
+                self.pending_orders.insert(request_id, order_info);
 
                 if let Err(e) = self.send_json(&order).await {
                     log::error!("Failed to send place order message: {e}");
@@ -224,6 +284,12 @@ impl FeedHandler {
             }
             HandlerCommand::UpdateInstrument(inst) => {
                 self.instruments.insert(inst.symbol().inner(), *inst);
+            }
+            HandlerCommand::StoreOrderMetadata {
+                client_order_id,
+                metadata,
+            } => {
+                self.orders_metadata.insert(client_order_id, metadata);
             }
         }
     }
@@ -270,12 +336,14 @@ impl FeedHandler {
             Message::Text(text) => {
                 if text == nautilus_network::RECONNECTED {
                     log::info!("Received WebSocket reconnected signal");
+                    self.auth_tracker.fail("Reconnecting");
+                    self.needs_reauthentication = true;
                     return Some(vec![AxOrdersWsMessage::Reconnected]);
                 }
 
                 log::trace!("Raw websocket message: {text}");
 
-                let value: serde_json::Value = match serde_json::from_str(&text) {
+                let raw_msg: AxWsRawMessage = match serde_json::from_str(&text) {
                     Ok(v) => v,
                     Err(e) => {
                         log::error!("Failed to parse WebSocket message: {e}: {text}");
@@ -283,7 +351,7 @@ impl FeedHandler {
                     }
                 };
 
-                self.classify_and_parse_message(value)
+                self.handle_raw_message(raw_msg)
             }
             Message::Binary(data) => {
                 log::debug!("Received binary message with {} bytes", data.len());
@@ -297,184 +365,454 @@ impl FeedHandler {
         }
     }
 
-    fn classify_and_parse_message(
-        &mut self,
-        value: serde_json::Value,
-    ) -> Option<Vec<AxOrdersWsMessage>> {
-        let obj = value.as_object()?;
-
-        // Response messages have "rid" + "res", event messages have "t"
-        if obj.contains_key("rid") && obj.contains_key("res") {
-            return self.parse_response_message(value);
-        }
-
-        let msg_type = obj.get("t").and_then(|v| v.as_str())?;
-
-        match msg_type {
-            "h" => {
-                log::trace!("Received heartbeat");
-                None
+    fn handle_raw_message(&mut self, raw_msg: AxWsRawMessage) -> Option<Vec<AxOrdersWsMessage>> {
+        match raw_msg {
+            AxWsRawMessage::Error(err) => {
+                log::warn!(
+                    "Order error response: rid={} code={} msg={}",
+                    err.rid,
+                    err.err.code,
+                    err.err.msg
+                );
+                Some(vec![AxOrdersWsMessage::Error(err.into())])
             }
-            "n" => match serde_json::from_value::<AxWsOrderAcknowledged>(value) {
-                Ok(msg) => {
-                    log::debug!("Order acknowledged: {} {}", msg.o.oid, msg.o.s);
-                    Some(vec![AxOrdersWsMessage::OrderAcknowledged(msg)])
-                }
-                Err(e) => {
-                    log::error!("Failed to parse order acknowledged: {e}");
-                    None
-                }
-            },
-            "p" => match serde_json::from_value::<AxWsOrderPartiallyFilled>(value) {
-                Ok(msg) => {
-                    log::debug!(
-                        "Order partially filled: {} {} @ {}",
-                        msg.o.oid,
-                        msg.xs.q,
-                        msg.xs.p
-                    );
-                    Some(vec![AxOrdersWsMessage::OrderPartiallyFilled(msg)])
-                }
-                Err(e) => {
-                    log::error!("Failed to parse order partially filled: {e}");
-                    None
-                }
-            },
-            "f" => match serde_json::from_value::<AxWsOrderFilled>(value) {
-                Ok(msg) => {
-                    log::debug!("Order filled: {} {} @ {}", msg.o.oid, msg.xs.q, msg.xs.p);
-                    Some(vec![AxOrdersWsMessage::OrderFilled(msg)])
-                }
-                Err(e) => {
-                    log::error!("Failed to parse order filled: {e}");
-                    None
-                }
-            },
-            "c" => match serde_json::from_value::<AxWsOrderCanceled>(value) {
-                Ok(msg) => {
-                    log::debug!("Order canceled: {} reason={}", msg.o.oid, msg.xr);
-                    Some(vec![AxOrdersWsMessage::OrderCanceled(msg)])
-                }
-                Err(e) => {
-                    log::error!("Failed to parse order canceled: {e}");
-                    None
-                }
-            },
-            "j" => match serde_json::from_value::<AxWsOrderRejected>(value) {
-                Ok(msg) => {
-                    log::debug!("Order rejected: {} reason={}", msg.o.oid, msg.r);
-                    Some(vec![AxOrdersWsMessage::OrderRejectedRaw(msg)])
-                }
-                Err(e) => {
-                    log::error!("Failed to parse order rejected: {e}");
-                    None
-                }
-            },
-            "x" => match serde_json::from_value::<AxWsOrderExpired>(value) {
-                Ok(msg) => {
-                    log::debug!("Order expired: {}", msg.o.oid);
-                    Some(vec![AxOrdersWsMessage::OrderExpired(msg)])
-                }
-                Err(e) => {
-                    log::error!("Failed to parse order expired: {e}");
-                    None
-                }
-            },
-            "r" => match serde_json::from_value::<AxWsOrderReplaced>(value) {
-                Ok(msg) => {
-                    log::debug!("Order replaced: {}", msg.o.oid);
-                    Some(vec![AxOrdersWsMessage::OrderReplaced(msg)])
-                }
-                Err(e) => {
-                    log::error!("Failed to parse order replaced: {e}");
-                    None
-                }
-            },
-            "d" => match serde_json::from_value::<AxWsOrderDoneForDay>(value) {
-                Ok(msg) => {
-                    log::debug!("Order done for day: {}", msg.o.oid);
-                    Some(vec![AxOrdersWsMessage::OrderDoneForDay(msg)])
-                }
-                Err(e) => {
-                    log::error!("Failed to parse order done for day: {e}");
-                    None
-                }
-            },
-            "e" => match serde_json::from_value::<AxWsCancelRejected>(value) {
-                Ok(msg) => {
-                    log::debug!("Cancel rejected: {} reason={}", msg.oid, msg.r);
-                    Some(vec![AxOrdersWsMessage::CancelRejected(msg)])
-                }
-                Err(e) => {
-                    log::error!("Failed to parse cancel rejected: {e}");
-                    None
-                }
-            },
-            _ => {
-                log::warn!("Unknown message type: {msg_type}");
-                Some(vec![AxOrdersWsMessage::Error(AxWsError::new(format!(
-                    "Unknown message type: {msg_type}"
-                )))])
+            AxWsRawMessage::Response(resp) => self.handle_response(resp),
+            AxWsRawMessage::Event(event) => self.handle_event(*event),
+        }
+    }
+
+    fn handle_response(&mut self, resp: AxWsOrderResponse) -> Option<Vec<AxOrdersWsMessage>> {
+        match resp {
+            AxWsOrderResponse::PlaceOrder(msg) => {
+                log::debug!("Place order response: rid={} oid={}", msg.rid, msg.res.oid);
+                Some(vec![AxOrdersWsMessage::PlaceOrderResponse(msg)])
+            }
+            AxWsOrderResponse::CancelOrder(msg) => {
+                log::debug!(
+                    "Cancel order response: rid={} accepted={}",
+                    msg.rid,
+                    msg.res.cxl_rx
+                );
+                Some(vec![AxOrdersWsMessage::CancelOrderResponse(msg)])
+            }
+            AxWsOrderResponse::OpenOrders(msg) => {
+                log::debug!("Open orders response: {} orders", msg.res.len());
+                Some(vec![AxOrdersWsMessage::OpenOrdersResponse(msg)])
+            }
+            AxWsOrderResponse::List(msg) => {
+                let order_count = msg.res.o.as_ref().map_or(0, |o| o.len());
+                log::debug!(
+                    "List subscription response: rid={} li={} orders={}",
+                    msg.rid,
+                    msg.res.li,
+                    order_count
+                );
+                None
             }
         }
     }
 
-    fn parse_response_message(
-        &mut self,
-        value: serde_json::Value,
-    ) -> Option<Vec<AxOrdersWsMessage>> {
-        let obj = value.as_object()?;
-        let res = obj.get("res")?;
-
-        if res.is_object() {
-            if res.get("oid").is_some() {
-                match serde_json::from_value::<AxWsPlaceOrderResponse>(value) {
-                    Ok(msg) => {
-                        log::debug!("Place order response: rid={} oid={}", msg.rid, msg.res.oid);
-                        Some(vec![AxOrdersWsMessage::PlaceOrderResponse(msg)])
-                    }
-                    Err(e) => {
-                        log::error!("Failed to parse place order response: {e}");
-                        None
-                    }
-                }
-            } else if res.get("cxl_rx").is_some() {
-                match serde_json::from_value::<AxWsCancelOrderResponse>(value) {
-                    Ok(msg) => {
-                        log::debug!(
-                            "Cancel order response: rid={} cxl_rx={}",
-                            msg.rid,
-                            msg.res.cxl_rx
-                        );
-                        Some(vec![AxOrdersWsMessage::CancelOrderResponse(msg)])
-                    }
-                    Err(e) => {
-                        log::error!("Failed to parse cancel order response: {e}");
-                        None
-                    }
-                }
-            } else {
-                log::warn!("Unknown response object format");
+    fn handle_event(&mut self, event: AxWsOrderEvent) -> Option<Vec<AxOrdersWsMessage>> {
+        match event {
+            AxWsOrderEvent::Heartbeat => {
+                log::trace!("Received heartbeat");
                 None
             }
-        } else if res.is_array() {
-            match serde_json::from_value::<AxWsOpenOrdersResponse>(value) {
-                Ok(msg) => {
-                    log::debug!(
-                        "Open orders response: rid={} count={}",
-                        msg.rid,
-                        msg.res.len()
-                    );
-                    Some(vec![AxOrdersWsMessage::OpenOrdersResponse(msg)])
-                }
-                Err(e) => {
-                    log::error!("Failed to parse open orders response: {e}");
-                    None
-                }
-            }
+            AxWsOrderEvent::Acknowledged(msg) => self.handle_order_acknowledged(msg),
+            AxWsOrderEvent::PartiallyFilled(msg) => self.handle_order_partially_filled(msg),
+            AxWsOrderEvent::Filled(msg) => self.handle_order_filled(msg),
+            AxWsOrderEvent::Canceled(msg) => self.handle_order_canceled(msg),
+            AxWsOrderEvent::Rejected(msg) => self.handle_order_rejected(msg),
+            AxWsOrderEvent::Expired(msg) => self.handle_order_expired(msg),
+            AxWsOrderEvent::Replaced(msg) => self.handle_order_replaced(msg),
+            AxWsOrderEvent::DoneForDay(msg) => self.handle_order_done_for_day(msg),
+            AxWsOrderEvent::CancelRejected(msg) => self.handle_cancel_rejected(msg),
+        }
+    }
+
+    fn handle_order_acknowledged(
+        &mut self,
+        msg: AxWsOrderAcknowledged,
+    ) -> Option<Vec<AxOrdersWsMessage>> {
+        log::debug!("Order acknowledged: {} {}", msg.o.oid, msg.o.s);
+
+        if let Some(event) = self.create_order_accepted(&msg.o, msg.ts) {
+            Some(vec![AxOrdersWsMessage::Nautilus(
+                NautilusExecWsMessage::OrderAccepted(event),
+            )])
         } else {
-            log::warn!("Unknown response format");
+            log::warn!(
+                "Could not create OrderAccepted event for order {}",
+                msg.o.oid
+            );
             None
         }
+    }
+
+    fn handle_order_partially_filled(
+        &mut self,
+        msg: AxWsOrderPartiallyFilled,
+    ) -> Option<Vec<AxOrdersWsMessage>> {
+        log::debug!(
+            "Order partially filled: {} {} @ {}",
+            msg.o.oid,
+            msg.xs.q,
+            msg.xs.p
+        );
+
+        if let Some(event) = self.create_order_filled(&msg.o, &msg.xs, msg.ts) {
+            Some(vec![AxOrdersWsMessage::Nautilus(
+                NautilusExecWsMessage::OrderFilled(Box::new(event)),
+            )])
+        } else {
+            log::warn!("Could not create OrderFilled event for order {}", msg.o.oid);
+            None
+        }
+    }
+
+    fn handle_order_filled(&mut self, msg: AxWsOrderFilled) -> Option<Vec<AxOrdersWsMessage>> {
+        log::debug!("Order filled: {} {} @ {}", msg.o.oid, msg.xs.q, msg.xs.p);
+
+        if let Some(event) = self.create_order_filled(&msg.o, &msg.xs, msg.ts) {
+            Some(vec![AxOrdersWsMessage::Nautilus(
+                NautilusExecWsMessage::OrderFilled(Box::new(event)),
+            )])
+        } else {
+            log::warn!("Could not create OrderFilled event for order {}", msg.o.oid);
+            None
+        }
+    }
+
+    fn handle_order_canceled(&mut self, msg: AxWsOrderCanceled) -> Option<Vec<AxOrdersWsMessage>> {
+        log::debug!("Order canceled: {} reason={}", msg.o.oid, msg.xr);
+
+        if let Some(event) = self.create_order_canceled(&msg.o, msg.ts) {
+            Some(vec![AxOrdersWsMessage::Nautilus(
+                NautilusExecWsMessage::OrderCanceled(event),
+            )])
+        } else {
+            log::warn!(
+                "Could not create OrderCanceled event for order {}",
+                msg.o.oid
+            );
+            None
+        }
+    }
+
+    fn handle_order_rejected(&mut self, msg: AxWsOrderRejected) -> Option<Vec<AxOrdersWsMessage>> {
+        log::warn!("Order rejected: {} reason={}", msg.o.oid, msg.r);
+
+        if let Some(event) = self.create_order_rejected(&msg.o, &msg.r, msg.ts) {
+            Some(vec![AxOrdersWsMessage::Nautilus(
+                NautilusExecWsMessage::OrderRejected(event),
+            )])
+        } else {
+            log::warn!(
+                "Could not create OrderRejected event for order {}",
+                msg.o.oid
+            );
+            None
+        }
+    }
+
+    fn handle_order_expired(&mut self, msg: AxWsOrderExpired) -> Option<Vec<AxOrdersWsMessage>> {
+        log::debug!("Order expired: {}", msg.o.oid);
+
+        if let Some(event) = self.create_order_expired(&msg.o, msg.ts) {
+            Some(vec![AxOrdersWsMessage::Nautilus(
+                NautilusExecWsMessage::OrderExpired(event),
+            )])
+        } else {
+            log::warn!(
+                "Could not create OrderExpired event for order {}",
+                msg.o.oid
+            );
+            None
+        }
+    }
+
+    fn handle_order_replaced(&mut self, msg: AxWsOrderReplaced) -> Option<Vec<AxOrdersWsMessage>> {
+        log::debug!("Order replaced: {}", msg.o.oid);
+
+        // Order replaced is treated as accepted with new parameters
+        if let Some(event) = self.create_order_accepted(&msg.o, msg.ts) {
+            Some(vec![AxOrdersWsMessage::Nautilus(
+                NautilusExecWsMessage::OrderAccepted(event),
+            )])
+        } else {
+            log::warn!(
+                "Could not create OrderAccepted event for replaced order {}",
+                msg.o.oid
+            );
+            None
+        }
+    }
+
+    fn handle_order_done_for_day(
+        &mut self,
+        msg: AxWsOrderDoneForDay,
+    ) -> Option<Vec<AxOrdersWsMessage>> {
+        log::debug!("Order done for day: {}", msg.o.oid);
+
+        if let Some(event) = self.create_order_expired(&msg.o, msg.ts) {
+            Some(vec![AxOrdersWsMessage::Nautilus(
+                NautilusExecWsMessage::OrderExpired(event),
+            )])
+        } else {
+            log::warn!(
+                "Could not create OrderExpired event for done-for-day order {}",
+                msg.o.oid
+            );
+            None
+        }
+    }
+
+    fn handle_cancel_rejected(
+        &mut self,
+        msg: AxWsCancelRejected,
+    ) -> Option<Vec<AxOrdersWsMessage>> {
+        log::warn!("Cancel rejected: {} reason={}", msg.oid, msg.r);
+
+        let venue_order_id = VenueOrderId::new(&msg.oid);
+        if let Some(client_order_id) = self.venue_to_client_id.get(&venue_order_id)
+            && let Some(metadata) = self.orders_metadata.get(&client_order_id)
+        {
+            let event = OrderCancelRejected::new(
+                metadata.trader_id,
+                metadata.strategy_id,
+                metadata.instrument_id,
+                metadata.client_order_id,
+                msg.r.into(),
+                UUID4::new(),
+                get_atomic_clock_realtime().get_time_ns(),
+                metadata.ts_init,
+                false,
+                Some(venue_order_id),
+                Some(self.account_id),
+            );
+            Some(vec![AxOrdersWsMessage::Nautilus(
+                NautilusExecWsMessage::OrderCancelRejected(event),
+            )])
+        } else {
+            log::warn!(
+                "Could not find metadata for cancel rejected order {}",
+                msg.oid
+            );
+            None
+        }
+    }
+
+    // ---- Domain event creation methods ----
+
+    fn extract_client_order_id(&self, order: &AxWsOrder) -> Option<ClientOrderId> {
+        order
+            .tag
+            .as_ref()
+            .map(|tag| ClientOrderId::new(tag.as_str()))
+    }
+
+    fn lookup_order_metadata(
+        &self,
+        order: &AxWsOrder,
+    ) -> Option<dashmap::mapref::one::Ref<'_, ClientOrderId, OrderMetadata>> {
+        let venue_order_id = VenueOrderId::new(&order.oid);
+
+        // Try venue_order_id mapping first
+        if let Some(client_order_id) = self.venue_to_client_id.get(&venue_order_id)
+            && let Some(metadata) = self.orders_metadata.get(&*client_order_id)
+        {
+            return Some(metadata);
+        }
+
+        // Fall back to tag field
+        if let Some(client_order_id) = self.extract_client_order_id(order) {
+            return self.orders_metadata.get(&client_order_id);
+        }
+
+        None
+    }
+
+    fn create_order_accepted(&mut self, order: &AxWsOrder, event_ts: i64) -> Option<OrderAccepted> {
+        let venue_order_id = VenueOrderId::new(&order.oid);
+        let metadata = self.lookup_order_metadata(order)?;
+
+        // Extract values before dropping the read guard
+        let client_order_id = metadata.client_order_id;
+        let trader_id = metadata.trader_id;
+        let strategy_id = metadata.strategy_id;
+        let instrument_id = metadata.instrument_id;
+
+        // Drop the read guard before acquiring write lock
+        drop(metadata);
+
+        // Update venue_order_id mapping
+        self.venue_to_client_id
+            .insert(venue_order_id, client_order_id);
+
+        // Update metadata with venue_order_id
+        if let Some(mut entry) = self.orders_metadata.get_mut(&client_order_id) {
+            entry.venue_order_id = Some(venue_order_id);
+        }
+
+        let ts_event = UnixNanos::from(event_ts as u64 * 1_000_000_000);
+
+        Some(OrderAccepted::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            self.account_id,
+            UUID4::new(),
+            ts_event,
+            get_atomic_clock_realtime().get_time_ns(),
+            false,
+        ))
+    }
+
+    fn create_order_filled(
+        &self,
+        order: &AxWsOrder,
+        execution: &AxWsTradeExecution,
+        event_ts: i64,
+    ) -> Option<OrderFilled> {
+        let venue_order_id = VenueOrderId::new(&order.oid);
+        let metadata = self.lookup_order_metadata(order)?;
+
+        let ts_event = UnixNanos::from(event_ts as u64 * 1_000_000_000);
+
+        // AX uses i64 contracts directly - use instrument precision from metadata
+        let last_qty = Quantity::new(execution.q.abs() as f64, metadata.size_precision);
+        let last_px = Price::from_decimal_dp(execution.p, metadata.price_precision).ok()?;
+
+        let order_side = match order.d {
+            AxOrderSide::Buy => NautilusOrderSide::Buy,
+            AxOrderSide::Sell => NautilusOrderSide::Sell,
+        };
+
+        // AX primarily uses limit orders
+        let order_type = OrderType::Limit;
+
+        Some(OrderFilled::new(
+            metadata.trader_id,
+            metadata.strategy_id,
+            metadata.instrument_id,
+            metadata.client_order_id,
+            venue_order_id,
+            self.account_id,
+            TradeId::new(&execution.tid),
+            order_side,
+            order_type,
+            last_qty,
+            last_px,
+            metadata.quote_currency,
+            LiquiditySide::NoLiquiditySide,
+            UUID4::new(),
+            ts_event,
+            get_atomic_clock_realtime().get_time_ns(),
+            false,
+            None, // position_id
+            None, // commission
+        ))
+    }
+
+    fn create_order_canceled(&mut self, order: &AxWsOrder, event_ts: i64) -> Option<OrderCanceled> {
+        let venue_order_id = VenueOrderId::new(&order.oid);
+        let metadata = self.lookup_order_metadata(order)?;
+
+        let client_order_id = metadata.client_order_id;
+        let trader_id = metadata.trader_id;
+        let strategy_id = metadata.strategy_id;
+        let instrument_id = metadata.instrument_id;
+
+        // Drop the reference before removing
+        drop(metadata);
+
+        // Remove from tracking maps
+        self.orders_metadata.remove(&client_order_id);
+        self.venue_to_client_id.remove(&venue_order_id);
+
+        let ts_event = UnixNanos::from(event_ts as u64 * 1_000_000_000);
+
+        Some(OrderCanceled::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            UUID4::new(),
+            ts_event,
+            get_atomic_clock_realtime().get_time_ns(),
+            false,
+            Some(venue_order_id),
+            Some(self.account_id),
+        ))
+    }
+
+    fn create_order_expired(&mut self, order: &AxWsOrder, event_ts: i64) -> Option<OrderExpired> {
+        let venue_order_id = VenueOrderId::new(&order.oid);
+        let metadata = self.lookup_order_metadata(order)?;
+
+        let client_order_id = metadata.client_order_id;
+        let trader_id = metadata.trader_id;
+        let strategy_id = metadata.strategy_id;
+        let instrument_id = metadata.instrument_id;
+
+        // Drop the reference before removing
+        drop(metadata);
+
+        // Remove from tracking maps
+        self.orders_metadata.remove(&client_order_id);
+        self.venue_to_client_id.remove(&venue_order_id);
+
+        let ts_event = UnixNanos::from(event_ts as u64 * 1_000_000_000);
+
+        Some(OrderExpired::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            UUID4::new(),
+            ts_event,
+            get_atomic_clock_realtime().get_time_ns(),
+            false,
+            Some(venue_order_id),
+            Some(self.account_id),
+        ))
+    }
+
+    fn create_order_rejected(
+        &mut self,
+        order: &AxWsOrder,
+        reason: &str,
+        event_ts: i64,
+    ) -> Option<OrderRejected> {
+        let client_order_id = self.extract_client_order_id(order)?;
+        let metadata = self.orders_metadata.get(&client_order_id)?;
+
+        let trader_id = metadata.trader_id;
+        let strategy_id = metadata.strategy_id;
+        let instrument_id = metadata.instrument_id;
+
+        // Drop the reference before removing
+        drop(metadata);
+
+        // Remove from tracking
+        self.orders_metadata.remove(&client_order_id);
+
+        let ts_event = UnixNanos::from(event_ts as u64 * 1_000_000_000);
+
+        Some(OrderRejected::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            self.account_id,
+            reason.to_string().into(),
+            UUID4::new(),
+            ts_event,
+            get_atomic_clock_realtime().get_time_ns(),
+            false,
+            false,
+        ))
     }
 }

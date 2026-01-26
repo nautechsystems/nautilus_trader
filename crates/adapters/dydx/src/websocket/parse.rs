@@ -27,14 +27,15 @@ use dashmap::DashMap;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{OrderSide, OrderStatus},
-    identifiers::{AccountId, InstrumentId},
-    instruments::{Instrument, InstrumentAny},
+    identifiers::AccountId,
+    instruments::Instrument,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
 use rust_decimal::Decimal;
 
 use crate::{
-    common::enums::DydxOrderStatus,
+    common::{enums::DydxOrderStatus, instrument_cache::InstrumentCache},
+    execution::types::OrderContext,
     http::{
         models::{Fill, Order, PerpetualPosition},
         parse::{parse_fill_report, parse_order_status_report, parse_position_status_report},
@@ -53,14 +54,14 @@ use crate::{
 /// # Errors
 ///
 /// Returns an error if:
-/// - clob_pair_id cannot be parsed from string
-/// - Instrument lookup fails for the clob_pair_id
-/// - Field parsing fails (price, size, etc.)
-/// - HTTP parser fails
+/// - clob_pair_id cannot be parsed from string.
+/// - Instrument lookup fails for the clob_pair_id.
+/// - Field parsing fails (price, size, etc.).
+/// - HTTP parser fails.
 pub fn parse_ws_order_report(
     ws_order: &DydxWsOrderSubaccountMessageContents,
-    clob_pair_id_to_instrument: &DashMap<u32, InstrumentId>,
-    instruments: &DashMap<InstrumentId, InstrumentAny>,
+    instrument_cache: &InstrumentCache,
+    order_contexts: &DashMap<u32, OrderContext>,
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
@@ -69,27 +70,22 @@ pub fn parse_ws_order_report(
         ws_order.clob_pair_id
     ))?;
 
-    let instrument_id = *clob_pair_id_to_instrument
-        .get(&clob_pair_id)
+    let instrument = instrument_cache
+        .get_by_clob_id(clob_pair_id)
         .ok_or_else(|| {
-            let available: Vec<u32> = clob_pair_id_to_instrument
-                .iter()
-                .map(|entry| *entry.key())
-                .collect();
-            anyhow::anyhow!(
-                "No instrument cached for clob_pair_id {clob_pair_id}. Available: {available:?}"
-            )
-        })?
-        .value();
-
-    let instrument = instruments
-        .get(&instrument_id)
-        .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found in cache"))?
-        .value()
-        .clone();
+            instrument_cache.log_missing_clob_pair_id(clob_pair_id);
+            anyhow::anyhow!("No instrument cached for clob_pair_id {clob_pair_id}")
+        })?;
 
     let http_order = convert_ws_order_to_http(ws_order)?;
     let mut report = parse_order_status_report(&http_order, &instrument, account_id, ts_init)?;
+
+    // Look up the original Nautilus client_order_id from the order context
+    if let Ok(dydx_client_id) = ws_order.client_id.parse::<u32>()
+        && let Some(ctx) = order_contexts.get(&dydx_client_id)
+    {
+        report.client_order_id = Some(ctx.client_order_id);
+    }
 
     // For untriggered conditional orders with an explicit trigger price we
     // surface `PendingUpdate` to match Nautilus semantics and existing dYdX
@@ -118,8 +114,11 @@ fn convert_ws_order_to_http(
 
     let total_filled: Decimal = ws_order
         .total_filled
-        .parse()
-        .context("Failed to parse total_filled")?;
+        .as_ref()
+        .map(|s| s.parse())
+        .transpose()
+        .context("Failed to parse total_filled")?
+        .unwrap_or(Decimal::ZERO);
 
     // Saturate to zero if total_filled exceeds size (edge case: rounding or partial fills)
     let remaining_size = (size - total_filled).max(Decimal::ZERO);
@@ -128,11 +127,16 @@ fn convert_ws_order_to_http(
 
     let created_at_height: u64 = ws_order
         .created_at_height
-        .parse()
-        .context("Failed to parse created_at_height")?;
+        .as_ref()
+        .map(|s| s.parse())
+        .transpose()
+        .context("Failed to parse created_at_height")?
+        .unwrap_or(0);
 
     let client_metadata: u32 = ws_order
         .client_metadata
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Missing required field: client_metadata"))?
         .parse()
         .context("Failed to parse client_metadata")?;
 
@@ -211,31 +215,29 @@ fn convert_ws_order_to_http(
 /// # Errors
 ///
 /// Returns an error if:
-/// - Instrument lookup fails for the market symbol
-/// - Field parsing fails (price, size, fee, etc.)
-/// - HTTP parser fails
+/// - Instrument lookup fails for the market symbol.
+/// - Field parsing fails (price, size, fee, etc.).
+/// - HTTP parser fails.
 pub fn parse_ws_fill_report(
     ws_fill: &DydxWsFillSubaccountMessageContents,
-    instruments: &DashMap<InstrumentId, InstrumentAny>,
+    instrument_cache: &InstrumentCache,
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
-    let instrument = instruments
-        .iter()
-        .find(|entry| entry.value().id().symbol.as_str() == ws_fill.market.as_str())
+    let instrument = instrument_cache
+        .get_by_market(&ws_fill.market)
         .ok_or_else(|| {
-            let available: Vec<String> = instruments
-                .iter()
-                .map(|entry| entry.value().id().symbol.to_string())
+            let available: Vec<String> = instrument_cache
+                .all_instruments()
+                .into_iter()
+                .map(|inst| inst.id().symbol.to_string())
                 .collect();
             anyhow::anyhow!(
                 "No instrument cached for market '{}'. Available: {:?}",
                 ws_fill.market,
                 available
             )
-        })?
-        .value()
-        .clone();
+        })?;
 
     let http_fill = convert_ws_fill_to_http(ws_fill)?;
     parse_fill_report(&http_fill, &instrument, account_id, ts_init)
@@ -248,20 +250,28 @@ pub fn parse_ws_fill_report(
 /// Returns an error if any field parsing fails.
 fn convert_ws_fill_to_http(ws_fill: &DydxWsFillSubaccountMessageContents) -> anyhow::Result<Fill> {
     let price: Decimal = ws_fill.price.parse().context("Failed to parse price")?;
-
     let size: Decimal = ws_fill.size.parse().context("Failed to parse size")?;
-
     let fee: Decimal = ws_fill.fee.parse().context("Failed to parse fee")?;
 
     let created_at_height: u64 = ws_fill
         .created_at_height
-        .parse()
-        .context("Failed to parse created_at_height")?;
+        .as_ref()
+        .map(|s| s.parse())
+        .transpose()
+        .context("Failed to parse created_at_height")?
+        .unwrap_or(0);
 
     let client_metadata: u32 = ws_fill
         .client_metadata
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Missing required field: client_metadata"))?
         .parse()
         .context("Failed to parse client_metadata")?;
+
+    let order_id = ws_fill
+        .order_id
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("Missing required field: order_id"))?;
 
     let created_at = DateTime::parse_from_rfc3339(&ws_fill.created_at)
         .context("Failed to parse created_at")?
@@ -279,7 +289,7 @@ fn convert_ws_fill_to_http(ws_fill: &DydxWsFillSubaccountMessageContents) -> any
         fee,
         created_at,
         created_at_height,
-        order_id: ws_fill.order_id.clone(),
+        order_id,
         client_metadata,
     })
 }
@@ -292,31 +302,29 @@ fn convert_ws_fill_to_http(ws_fill: &DydxWsFillSubaccountMessageContents) -> any
 /// # Errors
 ///
 /// Returns an error if:
-/// - Instrument lookup fails for the market symbol
-/// - Field parsing fails (size, prices, etc.)
-/// - HTTP parser fails
+/// - Instrument lookup fails for the market symbol.
+/// - Field parsing fails (size, prices, etc.).
+/// - HTTP parser fails.
 pub fn parse_ws_position_report(
     ws_position: &DydxPerpetualPosition,
-    instruments: &DashMap<InstrumentId, InstrumentAny>,
+    instrument_cache: &InstrumentCache,
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<PositionStatusReport> {
-    let instrument = instruments
-        .iter()
-        .find(|entry| entry.value().id().symbol.as_str() == ws_position.market.as_str())
+    let instrument = instrument_cache
+        .get_by_market(&ws_position.market)
         .ok_or_else(|| {
-            let available: Vec<String> = instruments
-                .iter()
-                .map(|entry| entry.value().id().symbol.to_string())
+            let available: Vec<String> = instrument_cache
+                .all_instruments()
+                .into_iter()
+                .map(|inst| inst.id().symbol.to_string())
                 .collect();
             anyhow::anyhow!(
                 "No instrument cached for market '{}'. Available: {:?}",
                 ws_position.market,
                 available
             )
-        })?
-        .value()
-        .clone();
+        })?;
 
     let http_position = convert_ws_position_to_http(ws_position)?;
     parse_position_status_report(&http_position, &instrument, account_id, ts_init)
@@ -415,15 +423,64 @@ fn convert_ws_position_to_http(
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        enums::{LiquiditySide, OrderSide, OrderType, PositionSideSpecified},
+        enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified},
         identifiers::{AccountId, InstrumentId, Symbol, Venue},
-        instruments::CryptoPerpetual,
+        instruments::{CryptoPerpetual, InstrumentAny},
         types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::common::enums::{DydxOrderStatus, DydxOrderType, DydxTimeInForce};
+    use crate::{
+        common::enums::{
+            DydxFillType, DydxLiquidity, DydxMarketStatus, DydxOrderStatus, DydxOrderType,
+            DydxPositionSide, DydxPositionStatus, DydxTickerType, DydxTimeInForce,
+        },
+        http::models::PerpetualMarket,
+        websocket::messages::{DydxPerpetualPosition, DydxWsFillSubaccountMessageContents},
+    };
+
+    /// Creates a test market with BTC-USD ticker and specified clob_pair_id.
+    fn create_test_market(ticker: &str, clob_pair_id: u32) -> PerpetualMarket {
+        PerpetualMarket {
+            clob_pair_id,
+            ticker: ticker.to_string(),
+            status: DydxMarketStatus::Active,
+            base_asset: Some("BTC".to_string()),
+            quote_asset: Some("USD".to_string()),
+            step_size: dec!(0.001),
+            tick_size: dec!(0.01),
+            index_price: Some(dec!(50000)),
+            oracle_price: dec!(50000),
+            price_change_24h: dec!(0),
+            next_funding_rate: dec!(0),
+            next_funding_at: None,
+            min_order_size: Some(dec!(0.001)),
+            market_type: None,
+            initial_margin_fraction: dec!(0.05),
+            maintenance_margin_fraction: dec!(0.03),
+            base_position_notional: None,
+            incremental_position_size: None,
+            incremental_initial_margin_fraction: None,
+            max_position_size: None,
+            open_interest: dec!(1000),
+            atomic_resolution: -10,
+            quantum_conversion_exponent: -9,
+            subticks_per_tick: 1000000,
+            step_base_quantums: 1000000,
+            is_reduce_only: false,
+        }
+    }
+
+    /// Creates an InstrumentCache populated with the test instrument.
+    fn create_test_instrument_cache() -> InstrumentCache {
+        let cache = InstrumentCache::new();
+        let instrument = create_test_instrument();
+        let market = create_test_market("BTC-USD", 1);
+        cache.insert(instrument, market);
+        cache
+    }
 
     fn create_test_instrument() -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
@@ -474,10 +531,10 @@ mod tests {
             order_flags: "0".to_string(),
             good_til_block: Some("1000".to_string()),
             good_til_block_time: None,
-            created_at_height: "900".to_string(),
-            client_metadata: "0".to_string(),
+            created_at_height: Some("900".to_string()),
+            client_metadata: Some("0".to_string()),
             trigger_price: None,
-            total_filled: "0.5".to_string(),
+            total_filled: Some("0.5".to_string()),
             updated_at: Some("2024-11-14T10:00:00Z".to_string()),
             updated_at_height: Some("950".to_string()),
         };
@@ -511,29 +568,24 @@ mod tests {
             order_flags: "0".to_string(),
             good_til_block: Some("2000".to_string()),
             good_til_block_time: None,
-            created_at_height: "1800".to_string(),
-            client_metadata: "0".to_string(),
+            created_at_height: Some("1800".to_string()),
+            client_metadata: Some("0".to_string()),
             trigger_price: None,
-            total_filled: "0.0".to_string(),
+            total_filled: Some("0.0".to_string()),
             updated_at: None,
             updated_at_height: None,
         };
 
-        let clob_pair_id_to_instrument = DashMap::new();
-        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
-        clob_pair_id_to_instrument.insert(1, instrument_id);
-
-        let instruments = DashMap::new();
-        let instrument = create_test_instrument();
-        instruments.insert(instrument_id, instrument);
+        let instrument_cache = create_test_instrument_cache();
 
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
+        let order_contexts: DashMap<u32, OrderContext> = DashMap::new();
 
         let result = parse_ws_order_report(
             &ws_order,
-            &clob_pair_id_to_instrument,
-            &instruments,
+            &instrument_cache,
+            &order_contexts,
             account_id,
             ts_init,
         );
@@ -562,23 +614,23 @@ mod tests {
             order_flags: "0".to_string(),
             good_til_block: Some("1000".to_string()),
             good_til_block_time: None,
-            created_at_height: "900".to_string(),
-            client_metadata: "0".to_string(),
+            created_at_height: Some("900".to_string()),
+            client_metadata: Some("0".to_string()),
             trigger_price: None,
-            total_filled: "0.0".to_string(),
+            total_filled: Some("0.0".to_string()),
             updated_at: None,
             updated_at_height: None,
         };
 
-        let clob_pair_id_to_instrument = DashMap::new();
-        let instruments = DashMap::new();
+        let instrument_cache = InstrumentCache::new(); // Empty cache
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
+        let order_contexts: DashMap<u32, OrderContext> = DashMap::new();
 
         let result = parse_ws_order_report(
             &ws_order,
-            &clob_pair_id_to_instrument,
-            &instruments,
+            &instrument_cache,
+            &order_contexts,
             account_id,
             ts_init,
         );
@@ -594,11 +646,6 @@ mod tests {
 
     #[rstest]
     fn test_convert_ws_fill_to_http() {
-        use crate::{
-            common::enums::{DydxFillType, DydxLiquidity, DydxTickerType},
-            websocket::messages::DydxWsFillSubaccountMessageContents,
-        };
-
         let ws_fill = DydxWsFillSubaccountMessageContents {
             id: "fill123".to_string(),
             subaccount_id: "sub1".to_string(),
@@ -611,9 +658,9 @@ mod tests {
             size: "0.1".to_string(),
             fee: "-2.5".to_string(), // Negative for maker rebate
             created_at: "2024-01-15T10:30:00Z".to_string(),
-            created_at_height: "12345".to_string(),
-            order_id: "order456".to_string(),
-            client_metadata: "999".to_string(),
+            created_at_height: Some("12345".to_string()),
+            order_id: Some("order456".to_string()),
+            client_metadata: Some("999".to_string()),
         };
 
         let result = convert_ws_fill_to_http(&ws_fill);
@@ -633,38 +680,32 @@ mod tests {
 
     #[rstest]
     fn test_parse_ws_fill_report_success() {
-        use crate::{
-            common::enums::{DydxFillType, DydxLiquidity, DydxTickerType},
-            websocket::messages::DydxWsFillSubaccountMessageContents,
-        };
+        let instrument_cache = create_test_instrument_cache();
+        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
 
-        let instrument = create_test_instrument();
-        let instrument_id = instrument.id();
-
-        let instruments = DashMap::new();
-        instruments.insert(instrument_id, instrument);
-
+        // dYdX WS fills use market format "BTC-USD" (not "BTC-USD-PERP")
+        // but the instrument symbol is "BTC-USD-PERP"
         let ws_fill = DydxWsFillSubaccountMessageContents {
             id: "fill789".to_string(),
             subaccount_id: "sub1".to_string(),
             side: OrderSide::Sell,
             liquidity: DydxLiquidity::Taker,
             fill_type: DydxFillType::Limit,
-            market: "BTC-USD-PERP".into(),
+            market: "BTC-USD".into(),
             market_type: DydxTickerType::Perpetual,
             price: "49500.0".to_string(),
             size: "0.5".to_string(),
             fee: "12.375".to_string(), // Positive for taker fee
             created_at: "2024-01-15T11:00:00Z".to_string(),
-            created_at_height: "12400".to_string(),
-            order_id: "order999".to_string(),
-            client_metadata: "888".to_string(),
+            created_at_height: Some("12400".to_string()),
+            order_id: Some("order999".to_string()),
+            client_metadata: Some("888".to_string()),
         };
 
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
 
-        let result = parse_ws_fill_report(&ws_fill, &instruments, account_id, ts_init);
+        let result = parse_ws_fill_report(&ws_fill, &instrument_cache, account_id, ts_init);
         assert!(result.is_ok());
 
         let fill_report = result.unwrap();
@@ -678,12 +719,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_ws_fill_report_missing_instrument() {
-        use crate::{
-            common::enums::{DydxFillType, DydxLiquidity, DydxTickerType},
-            websocket::messages::DydxWsFillSubaccountMessageContents,
-        };
-
-        let instruments = DashMap::new(); // Empty - no instruments cached
+        let instrument_cache = InstrumentCache::new(); // Empty - no instruments cached
 
         let ws_fill = DydxWsFillSubaccountMessageContents {
             id: "fill000".to_string(),
@@ -697,15 +733,15 @@ mod tests {
             size: "1.0".to_string(),
             fee: "-1.5".to_string(),
             created_at: "2024-01-15T12:00:00Z".to_string(),
-            created_at_height: "12500".to_string(),
-            order_id: "order111".to_string(),
-            client_metadata: "777".to_string(),
+            created_at_height: Some("12500".to_string()),
+            order_id: Some("order111".to_string()),
+            client_metadata: Some("777".to_string()),
         };
 
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
 
-        let result = parse_ws_fill_report(&ws_fill, &instruments, account_id, ts_init);
+        let result = parse_ws_fill_report(&ws_fill, &instrument_cache, account_id, ts_init);
         assert!(result.is_err());
         assert!(
             result
@@ -717,16 +753,10 @@ mod tests {
 
     #[rstest]
     fn test_convert_ws_position_to_http() {
-        use nautilus_model::enums::PositionSide;
-
-        use crate::{
-            common::enums::DydxPositionStatus, websocket::messages::DydxPerpetualPosition,
-        };
-
         let ws_position = DydxPerpetualPosition {
             market: "BTC-USD".into(),
             status: DydxPositionStatus::Open,
-            side: PositionSide::Long,
+            side: DydxPositionSide::Long,
             size: "1.5".to_string(),
             max_size: "2.0".to_string(),
             entry_price: "50000.0".to_string(),
@@ -766,22 +796,13 @@ mod tests {
 
     #[rstest]
     fn test_parse_ws_position_report_success() {
-        use nautilus_model::enums::PositionSide;
-
-        use crate::{
-            common::enums::DydxPositionStatus, websocket::messages::DydxPerpetualPosition,
-        };
-
-        let instrument = create_test_instrument();
-        let instrument_id = instrument.id();
-
-        let instruments = DashMap::new();
-        instruments.insert(instrument_id, instrument);
+        let instrument_cache = create_test_instrument_cache();
+        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
 
         let ws_position = DydxPerpetualPosition {
-            market: "BTC-USD-PERP".into(),
+            market: "BTC-USD".into(),
             status: DydxPositionStatus::Open,
-            side: PositionSide::Long,
+            side: DydxPositionSide::Long,
             size: "0.5".to_string(),
             max_size: "1.0".to_string(),
             entry_price: "49500.0".to_string(),
@@ -798,7 +819,7 @@ mod tests {
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
 
-        let result = parse_ws_position_report(&ws_position, &instruments, account_id, ts_init);
+        let result = parse_ws_position_report(&ws_position, &instrument_cache, account_id, ts_init);
         assert!(result.is_ok());
 
         let position_report = result.unwrap();
@@ -811,22 +832,13 @@ mod tests {
 
     #[rstest]
     fn test_parse_ws_position_report_short() {
-        use nautilus_model::enums::PositionSide;
-
-        use crate::{
-            common::enums::DydxPositionStatus, websocket::messages::DydxPerpetualPosition,
-        };
-
-        let instrument = create_test_instrument();
-        let instrument_id = instrument.id();
-
-        let instruments = DashMap::new();
-        instruments.insert(instrument_id, instrument);
+        let instrument_cache = create_test_instrument_cache();
+        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
 
         let ws_position = DydxPerpetualPosition {
-            market: "BTC-USD-PERP".into(),
+            market: "BTC-USD".into(),
             status: DydxPositionStatus::Open,
-            side: PositionSide::Short,
+            side: DydxPositionSide::Short,
             size: "-0.25".to_string(), // Negative for short
             max_size: "0.5".to_string(),
             entry_price: "51000.0".to_string(),
@@ -843,7 +855,7 @@ mod tests {
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
 
-        let result = parse_ws_position_report(&ws_position, &instruments, account_id, ts_init);
+        let result = parse_ws_position_report(&ws_position, &instrument_cache, account_id, ts_init);
         assert!(result.is_ok());
 
         let position_report = result.unwrap();
@@ -854,18 +866,12 @@ mod tests {
 
     #[rstest]
     fn test_parse_ws_position_report_missing_instrument() {
-        use nautilus_model::enums::PositionSide;
-
-        use crate::{
-            common::enums::DydxPositionStatus, websocket::messages::DydxPerpetualPosition,
-        };
-
-        let instruments = DashMap::new(); // Empty - no instruments cached
+        let instrument_cache = InstrumentCache::new(); // Empty - no instruments cached
 
         let ws_position = DydxPerpetualPosition {
             market: "ETH-USD-PERP".into(),
             status: DydxPositionStatus::Open,
-            side: PositionSide::Long,
+            side: DydxPositionSide::Long,
             size: "5.0".to_string(),
             max_size: "10.0".to_string(),
             entry_price: "3000.0".to_string(),
@@ -882,7 +888,7 @@ mod tests {
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
 
-        let result = parse_ws_position_report(&ws_position, &instruments, account_id, ts_init);
+        let result = parse_ws_position_report(&ws_position, &instrument_cache, account_id, ts_init);
         assert!(result.is_err());
         assert!(
             result
@@ -918,29 +924,24 @@ mod tests {
             order_flags: "0".to_string(),
             good_til_block: Some("1000".to_string()),
             good_til_block_time: None,
-            created_at_height: "900".to_string(),
-            client_metadata: "0".to_string(),
+            created_at_height: Some("900".to_string()),
+            client_metadata: Some("0".to_string()),
             trigger_price: None,
-            total_filled: total_filled.to_string(),
+            total_filled: Some(total_filled.to_string()),
             updated_at: Some("2024-11-14T10:00:00Z".to_string()),
             updated_at_height: Some("950".to_string()),
         };
 
-        let clob_pair_id_to_instrument = DashMap::new();
-        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
-        clob_pair_id_to_instrument.insert(1, instrument_id);
-
-        let instruments = DashMap::new();
-        let instrument = create_test_instrument();
-        instruments.insert(instrument_id, instrument);
+        let instrument_cache = create_test_instrument_cache();
 
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
+        let order_contexts: DashMap<u32, OrderContext> = DashMap::new();
 
         let result = parse_ws_order_report(
             &ws_order,
-            &clob_pair_id_to_instrument,
-            &instruments,
+            &instrument_cache,
+            &order_contexts,
             account_id,
             ts_init,
         );
@@ -952,7 +953,6 @@ mod tests {
         let report = result.unwrap();
 
         // Verify status conversion
-        use nautilus_model::enums::OrderStatus;
         let expected_status = match status {
             DydxOrderStatus::Open
             | DydxOrderStatus::BestEffortOpened
@@ -984,29 +984,24 @@ mod tests {
             order_flags: "32".to_string(),
             good_til_block: None,
             good_til_block_time: Some("2024-12-31T23:59:59Z".to_string()),
-            created_at_height: "1000".to_string(),
-            client_metadata: "100".to_string(),
+            created_at_height: Some("1000".to_string()),
+            client_metadata: Some("100".to_string()),
             trigger_price: Some("51500.0".to_string()),
-            total_filled: "0.0".to_string(),
+            total_filled: Some("0.0".to_string()),
             updated_at: Some("2024-11-14T11:00:00Z".to_string()),
             updated_at_height: Some("1050".to_string()),
         };
 
-        let clob_pair_id_to_instrument = DashMap::new();
-        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
-        clob_pair_id_to_instrument.insert(1, instrument_id);
-
-        let instruments = DashMap::new();
-        let instrument = create_test_instrument();
-        instruments.insert(instrument_id, instrument);
+        let instrument_cache = create_test_instrument_cache();
 
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
+        let order_contexts: DashMap<u32, OrderContext> = DashMap::new();
 
         let result = parse_ws_order_report(
             &ws_order,
-            &clob_pair_id_to_instrument,
-            &instruments,
+            &instrument_cache,
+            &order_contexts,
             account_id,
             ts_init,
         );
@@ -1036,29 +1031,24 @@ mod tests {
             order_flags: "0".to_string(),
             good_til_block: Some("1000".to_string()),
             good_til_block_time: None,
-            created_at_height: "900".to_string(),
-            client_metadata: "0".to_string(),
+            created_at_height: Some("900".to_string()),
+            client_metadata: Some("0".to_string()),
             trigger_price: None,
-            total_filled: "0.5".to_string(),
+            total_filled: Some("0.5".to_string()),
             updated_at: Some("2024-11-14T10:01:00Z".to_string()),
             updated_at_height: Some("901".to_string()),
         };
 
-        let clob_pair_id_to_instrument = DashMap::new();
-        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
-        clob_pair_id_to_instrument.insert(1, instrument_id);
-
-        let instruments = DashMap::new();
-        let instrument = create_test_instrument();
-        instruments.insert(instrument_id, instrument);
+        let instrument_cache = create_test_instrument_cache();
 
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
+        let order_contexts: DashMap<u32, OrderContext> = DashMap::new();
 
         let result = parse_ws_order_report(
             &ws_order,
-            &clob_pair_id_to_instrument,
-            &instruments,
+            &instrument_cache,
+            &order_contexts,
             account_id,
             ts_init,
         );
@@ -1087,23 +1077,23 @@ mod tests {
             order_flags: "0".to_string(),
             good_til_block: Some("1000".to_string()),
             good_til_block_time: None,
-            created_at_height: "900".to_string(),
-            client_metadata: "0".to_string(),
+            created_at_height: Some("900".to_string()),
+            client_metadata: Some("0".to_string()),
             trigger_price: None,
-            total_filled: "0.0".to_string(),
+            total_filled: Some("0.0".to_string()),
             updated_at: None,
             updated_at_height: None,
         };
 
-        let clob_pair_id_to_instrument = DashMap::new();
-        let instruments = DashMap::new();
+        let instrument_cache = InstrumentCache::new(); // Empty cache
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
+        let order_contexts: DashMap<u32, OrderContext> = DashMap::new();
 
         let result = parse_ws_order_report(
             &ws_order,
-            &clob_pair_id_to_instrument,
-            &instruments,
+            &instrument_cache,
+            &order_contexts,
             account_id,
             ts_init,
         );
@@ -1119,22 +1109,13 @@ mod tests {
 
     #[rstest]
     fn test_parse_ws_position_closed() {
-        use nautilus_model::enums::PositionSide;
-
-        use crate::{
-            common::enums::DydxPositionStatus, websocket::messages::DydxPerpetualPosition,
-        };
-
-        let instrument = create_test_instrument();
-        let instrument_id = instrument.id();
-
-        let instruments = DashMap::new();
-        instruments.insert(instrument_id, instrument);
+        let instrument_cache = create_test_instrument_cache();
+        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
 
         let ws_position = DydxPerpetualPosition {
-            market: "BTC-USD-PERP".into(),
+            market: "BTC-USD".into(),
             status: DydxPositionStatus::Closed,
-            side: PositionSide::Long,
+            side: DydxPositionSide::Long,
             size: "0.0".to_string(), // Closed = zero size
             max_size: "2.0".to_string(),
             entry_price: "48000.0".to_string(),
@@ -1151,7 +1132,7 @@ mod tests {
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
 
-        let result = parse_ws_position_report(&ws_position, &instruments, account_id, ts_init);
+        let result = parse_ws_position_report(&ws_position, &instrument_cache, account_id, ts_init);
         assert!(result.is_ok());
 
         let position_report = result.unwrap();
@@ -1162,16 +1143,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_ws_fill_with_maker_rebate() {
-        use crate::{
-            common::enums::{DydxFillType, DydxLiquidity, DydxTickerType},
-            websocket::messages::DydxWsFillSubaccountMessageContents,
-        };
-
-        let instrument = create_test_instrument();
-        let instrument_id = instrument.id();
-
-        let instruments = DashMap::new();
-        instruments.insert(instrument_id, instrument);
+        let instrument_cache = create_test_instrument_cache();
 
         let ws_fill = DydxWsFillSubaccountMessageContents {
             id: "fill_rebate".to_string(),
@@ -1179,21 +1151,21 @@ mod tests {
             side: OrderSide::Buy,
             liquidity: DydxLiquidity::Maker,
             fill_type: DydxFillType::Limit,
-            market: "BTC-USD-PERP".into(),
+            market: "BTC-USD".into(),
             market_type: DydxTickerType::Perpetual,
             price: "50000.0".to_string(),
             size: "1.0".to_string(),
             fee: "-15.0".to_string(), // Negative fee = rebate
             created_at: "2024-01-15T13:00:00Z".to_string(),
-            created_at_height: "13000".to_string(),
-            order_id: "order_maker".to_string(),
-            client_metadata: "200".to_string(),
+            created_at_height: Some("13000".to_string()),
+            order_id: Some("order_maker".to_string()),
+            client_metadata: Some("200".to_string()),
         };
 
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
 
-        let result = parse_ws_fill_report(&ws_fill, &instruments, account_id, ts_init);
+        let result = parse_ws_fill_report(&ws_fill, &instrument_cache, account_id, ts_init);
         assert!(result.is_ok());
 
         let fill_report = result.unwrap();
@@ -1204,16 +1176,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_ws_fill_taker_with_fee() {
-        use crate::{
-            common::enums::{DydxFillType, DydxLiquidity, DydxTickerType},
-            websocket::messages::DydxWsFillSubaccountMessageContents,
-        };
-
-        let instrument = create_test_instrument();
-        let instrument_id = instrument.id();
-
-        let instruments = DashMap::new();
-        instruments.insert(instrument_id, instrument);
+        let instrument_cache = create_test_instrument_cache();
 
         let ws_fill = DydxWsFillSubaccountMessageContents {
             id: "fill_taker".to_string(),
@@ -1221,21 +1184,21 @@ mod tests {
             side: OrderSide::Sell,
             liquidity: DydxLiquidity::Taker,
             fill_type: DydxFillType::Limit,
-            market: "BTC-USD-PERP".into(),
+            market: "BTC-USD".into(),
             market_type: DydxTickerType::Perpetual,
             price: "49800.0".to_string(),
             size: "0.75".to_string(),
             fee: "18.675".to_string(), // Positive fee for taker
             created_at: "2024-01-15T14:00:00Z".to_string(),
-            created_at_height: "14000".to_string(),
-            order_id: "order_taker".to_string(),
-            client_metadata: "300".to_string(),
+            created_at_height: Some("14000".to_string()),
+            order_id: Some("order_taker".to_string()),
+            client_metadata: Some("300".to_string()),
         };
 
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
 
-        let result = parse_ws_fill_report(&ws_fill, &instruments, account_id, ts_init);
+        let result = parse_ws_fill_report(&ws_fill, &instrument_cache, account_id, ts_init);
         assert!(result.is_ok());
 
         let fill_report = result.unwrap();

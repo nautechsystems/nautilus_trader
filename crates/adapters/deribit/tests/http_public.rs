@@ -466,7 +466,7 @@ async fn test_get_instrument_invalid_params() {
             assert!(msg.contains("Invalid params"));
             assert!(msg.contains("instrument_name"));
         }
-        other => panic!("Expected ValidationError, got: {other:?}"),
+        other => panic!("Expected ValidationError, was: {other:?}"),
     }
 }
 
@@ -504,7 +504,7 @@ async fn test_get_instrument_not_found() {
             assert_eq!(error_code, 13020);
             assert!(message.contains("instrument_not_found"));
         }
-        other => panic!("Expected DeribitError with code 13020, got: {other:?}"),
+        other => panic!("Expected DeribitError with code 13020, was: {other:?}"),
     }
 }
 
@@ -739,7 +739,7 @@ async fn test_get_last_trades_invalid_params() {
             assert!(msg.contains("Invalid params"));
             assert!(msg.contains("instrument_name"));
         }
-        other => panic!("Expected ValidationError, got: {other:?}"),
+        other => panic!("Expected ValidationError, was: {other:?}"),
     }
 }
 
@@ -781,7 +781,7 @@ async fn test_get_last_trades_instrument_not_found() {
             assert_eq!(error_code, 13020);
             assert!(message.contains("instrument_not_found"));
         }
-        other => panic!("Expected DeribitError with code 13020, got: {other:?}"),
+        other => panic!("Expected DeribitError with code 13020, was: {other:?}"),
     }
 }
 
@@ -908,7 +908,7 @@ async fn test_get_tradingview_chart_data_instrument_not_found() {
             assert_eq!(error_code, 13020);
             assert!(message.contains("instrument_not_found"));
         }
-        other => panic!("Expected DeribitError with code 13020, got: {other:?}"),
+        other => panic!("Expected DeribitError with code 13020, was: {other:?}"),
     }
 }
 
@@ -1014,6 +1014,6 @@ async fn test_get_order_book_instrument_not_found() {
             assert_eq!(error_code, 13020);
             assert!(message.contains("instrument_not_found"));
         }
-        other => panic!("Expected DeribitError with code 13020, got: {other:?}"),
+        other => panic!("Expected DeribitError with code 13020, was: {other:?}"),
     }
 }

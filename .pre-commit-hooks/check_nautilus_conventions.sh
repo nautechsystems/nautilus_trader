@@ -283,8 +283,35 @@ else
   echo "✓ std::fmt conventions are valid"
 fi
 
+# Check for ", got" phrasing in error messages
+echo "Checking for ', got' phrasing..."
+
+# Search for ", got" followed by space, punctuation, or end-of-line
+got_output=$(rg -n ', got[[:space:][:punct:]]|, got$' \
+  crates tests examples nautilus_trader \
+  --type rust --type py --type cython \
+  --glob '!docs/**' \
+  2> /dev/null || true)
+
+if [[ -n "$got_output" ]]; then
+  GOT_VIOLATIONS=$(echo "$got_output" | wc -l | tr -d ' ')
+  echo
+  echo "$got_output" | head -20
+  echo
+  echo -e "${RED}Found $GOT_VIOLATIONS ', got' phrasing violation(s)${NC}"
+  echo
+  echo -e "${YELLOW}To fix:${NC} Use more descriptive alternatives:"
+  echo "  - ', was' for type mismatches"
+  echo "  - ', received' for input validation"
+  echo "  - ', found' for search/lookup results"
+  echo "  See: docs/developer_guide/coding_standards.md#terminology-and-phrasing"
+else
+  GOT_VIOLATIONS=0
+  echo "✓ No ', got' phrasing found"
+fi
+
 # Exit with error if any violations found
-if [ $VIOLATIONS -gt 0 ] || [ $BANNER_VIOLATIONS -gt 0 ] || [ $FMT_VIOLATIONS -gt 0 ]; then
+if [ $VIOLATIONS -gt 0 ] || [ $BANNER_VIOLATIONS -gt 0 ] || [ $FMT_VIOLATIONS -gt 0 ] || [ "$GOT_VIOLATIONS" -gt 0 ]; then
   exit 1
 fi
 

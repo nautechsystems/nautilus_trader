@@ -279,6 +279,8 @@ impl BlockchainDataClientCore {
         to_block: Option<u64>,
         use_copy_command: bool,
     ) -> anyhow::Result<()> {
+        const BATCH_SIZE: usize = 1000;
+
         let to_block = if let Some(block) = to_block {
             block
         } else {
@@ -311,8 +313,6 @@ impl BlockchainDataClientCore {
             BLOCKS_PROCESS_IN_SYNC_REPORT,
         );
 
-        // Batch configuration
-        const BATCH_SIZE: usize = 1000;
         let mut batch: Vec<Block> = Vec::with_capacity(BATCH_SIZE);
 
         let cancellation_token = self.cancellation_token.clone();
@@ -381,6 +381,8 @@ impl BlockchainDataClientCore {
         to_block: Option<u64>,
         reset: bool,
     ) -> anyhow::Result<()> {
+        const EVENT_BATCH_SIZE: usize = 20000;
+
         let pool: SharedPool = self.get_pool(&pool_identifier)?.clone();
         let pool_display = pool.to_full_spec_string();
         let from_block = from_block.unwrap_or(pool.creation_block);
@@ -505,8 +507,6 @@ impl BlockchainDataClientCore {
         let mut last_block_saved = effective_from_block;
         let mut blocks_processed = 0;
 
-        // Batch configuration for events
-        const EVENT_BATCH_SIZE: usize = 20000;
         let mut swap_batch: Vec<PoolSwap> = Vec::with_capacity(EVENT_BATCH_SIZE);
         let mut liquidity_batch: Vec<PoolLiquidityUpdate> = Vec::with_capacity(EVENT_BATCH_SIZE);
         let mut collect_batch: Vec<PoolFeeCollect> = Vec::with_capacity(EVENT_BATCH_SIZE);

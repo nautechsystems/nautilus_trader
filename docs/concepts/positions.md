@@ -453,3 +453,9 @@ how positions aggregate fills, calculate PnL, and handle different OMS configura
 for building robust trading strategies. The position snapshotting mechanism ensures accurate
 historical tracking in `NETTING` mode, while the comprehensive event history supports detailed
 analysis and reconciliation.
+
+## Related guides
+
+- [Orders](orders.md) - Orders that create and modify positions.
+- [Execution](execution.md) - Fill handling that updates positions.
+- [Portfolio](portfolio.md) - Portfolio-level position aggregation.

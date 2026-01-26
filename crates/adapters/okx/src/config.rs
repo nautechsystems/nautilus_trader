@@ -115,7 +115,9 @@ impl OKXDataClientConfig {
     /// Returns the HTTP base URL, falling back to the default when unset.
     #[must_use]
     pub fn http_base_url(&self) -> String {
-        self.base_url_http.clone().unwrap_or_else(get_http_base_url)
+        self.base_url_http
+            .clone()
+            .unwrap_or_else(|| get_http_base_url().to_string())
     }
 
     /// Returns the public WebSocket URL, respecting the demo flag and overrides.
@@ -123,7 +125,7 @@ impl OKXDataClientConfig {
     pub fn ws_public_url(&self) -> String {
         self.base_url_ws_public
             .clone()
-            .unwrap_or_else(|| get_ws_base_url_public(self.is_demo))
+            .unwrap_or_else(|| get_ws_base_url_public(self.is_demo).to_string())
     }
 
     /// Returns the business WebSocket URL, respecting the demo flag and overrides.
@@ -131,7 +133,7 @@ impl OKXDataClientConfig {
     pub fn ws_business_url(&self) -> String {
         self.base_url_ws_business
             .clone()
-            .unwrap_or_else(|| get_ws_base_url_business(self.is_demo))
+            .unwrap_or_else(|| get_ws_base_url_business(self.is_demo).to_string())
     }
 
     /// Returns `true` when the business WebSocket should be instantiated.
@@ -243,7 +245,9 @@ impl OKXExecClientConfig {
     /// Returns the HTTP base URL, falling back to the default when unset.
     #[must_use]
     pub fn http_base_url(&self) -> String {
-        self.base_url_http.clone().unwrap_or_else(get_http_base_url)
+        self.base_url_http
+            .clone()
+            .unwrap_or_else(|| get_http_base_url().to_string())
     }
 
     /// Returns the private WebSocket URL, respecting the demo flag and overrides.
@@ -251,7 +255,7 @@ impl OKXExecClientConfig {
     pub fn ws_private_url(&self) -> String {
         self.base_url_ws_private
             .clone()
-            .unwrap_or_else(|| get_ws_base_url_private(self.is_demo))
+            .unwrap_or_else(|| get_ws_base_url_private(self.is_demo).to_string())
     }
 
     /// Returns the business WebSocket URL, respecting the demo flag and overrides.
@@ -259,6 +263,6 @@ impl OKXExecClientConfig {
     pub fn ws_business_url(&self) -> String {
         self.base_url_ws_business
             .clone()
-            .unwrap_or_else(|| get_ws_base_url_business(self.is_demo))
+            .unwrap_or_else(|| get_ws_base_url_business(self.is_demo).to_string())
     }
 }

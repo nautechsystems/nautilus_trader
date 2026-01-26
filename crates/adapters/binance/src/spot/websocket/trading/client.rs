@@ -27,7 +27,7 @@ use std::{
     fmt::Debug,
     num::NonZeroU32,
     sync::{
-        Arc, Mutex,
+        Arc, LazyLock, Mutex,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
 };
@@ -40,6 +40,7 @@ use nautilus_network::{
     websocket::{PingHandler, WebSocketClient, WebSocketConfig, channel_message_handler},
 };
 use tokio_util::sync::CancellationToken;
+use ustr::Ustr;
 
 use super::{
     error::{BinanceWsApiError, BinanceWsApiResult},
@@ -57,10 +58,11 @@ pub const BINANCE_API_KEY: &str = "BINANCE_API_KEY";
 /// Environment variable key for Binance API secret.
 pub const BINANCE_API_SECRET: &str = "BINANCE_API_SECRET";
 
-/// Rate limit key for order operations (place/cancel/replace).
+/// Pre-interned rate limit key for order operations (place/cancel/replace).
 ///
 /// Binance WebSocket API: 1200 requests per minute per IP (20/sec).
-pub const BINANCE_WS_RATE_LIMIT_KEY_ORDER: &str = "order";
+pub static BINANCE_WS_RATE_LIMIT_KEY_ORDER: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from("order")]);
 
 /// Binance WebSocket API order rate limit: 1200 per minute (20/sec).
 ///
@@ -225,7 +227,7 @@ impl BinanceSpotWsTradingClient {
 
         // Configure rate limits for order operations
         let keyed_quotas = vec![(
-            BINANCE_WS_RATE_LIMIT_KEY_ORDER.to_string(),
+            BINANCE_WS_RATE_LIMIT_KEY_ORDER[0].as_str().to_string(),
             binance_ws_order_quota(),
         )];
 
@@ -268,7 +270,7 @@ impl BinanceSpotWsTradingClient {
         let cancellation_token = self.cancellation_token.clone();
         let handle = get_runtime().spawn(async move {
             tokio::select! {
-                _ = cancellation_token.cancelled() => {
+                () = cancellation_token.cancelled() => {
                     log::debug!("Handler task cancelled");
                 }
                 _ = handler.run() => {

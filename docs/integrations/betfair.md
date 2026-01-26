@@ -118,21 +118,37 @@ Betfair operates as a betting exchange with unique characteristics compared to t
 
 ### Order querying
 
-| Feature              | Supported | Notes                                   |
-|----------------------|-----------|-----------------------------------------|
-| Query open orders    | ✓         | List all active bets.                   |
-| Query order history  | ✓         | Historical betting data.                |
-| Order status updates | ✓         | Real-time bet state changes.            |
-| Trade history        | ✓         | Bet matching and settlement reports.    |
+| Feature              | Supported | Notes                                  |
+|----------------------|-----------|----------------------------------------|
+| Query open orders    | ✓         | List all active bets.                  |
+| Query order history  | ✓         | Historical betting data.               |
+| Order status updates | ✓         | Real-time bet state changes.           |
+| Trade history        | ✓         | Bet matching and settlement reports.   |
 
 ### Contingent orders
 
-| Feature             | Supported | Notes                                  |
-|---------------------|-----------|------------------------------------------|
+| Feature             | Supported | Notes                                   |
+|---------------------|-----------|-----------------------------------------|
 | Order lists         | -         | *Not supported*.                        |
 | OCO orders          | -         | *Not supported*.                        |
 | Bracket orders      | -         | *Not supported*.                        |
 | Conditional orders  | -         | Basic bet conditions only.              |
+
+## Order stream fill handling
+
+The execution client processes order updates from the Betfair Exchange Streaming API.
+When `ignore_external_orders=True`, the client "silently skips" (no warning logs) orders and fills not found in cache:
+
+| Scenario                       | Description                                         |
+|--------------------------------|-----------------------------------------------------|
+| Unknown order in stream update | No venue-to-client order ID mapping exists.         |
+| Unknown order in full image    | Order not found in cache during image sync.         |
+| Unknown fill in full image     | Fill does not match any known order during sync.    |
+
+:::info
+Enable `ignore_external_orders` for multi-node setups where other nodes control their own orders.
+When disabled (the default), these scenarios log warnings.
+:::
 
 ## Configuration
 
@@ -188,6 +204,8 @@ node.add_data_client_factory(BETFAIR, BetfairLiveDataClientFactory)
 node.add_exec_client_factory(BETFAIR, BetfairLiveExecClientFactory)
 node.build()
 ```
+
+## Contributing
 
 :::info
 For additional features or to contribute to the Betfair adapter, please see our

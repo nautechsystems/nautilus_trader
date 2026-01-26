@@ -41,11 +41,15 @@
 //!         └── handler.rs  # Request/response handling
 //! ```
 
+pub mod data;
 pub mod enums;
+pub mod execution;
 pub mod http;
 pub mod websocket;
 
 // Re-export main client types
+pub use data::BinanceSpotDataClient;
 pub use enums::{BinanceCancelReplaceMode, BinanceOrderResponseType, BinanceSpotOrderType};
+pub use execution::BinanceSpotExecutionClient;
 pub use http::client::BinanceSpotHttpClient;
 pub use websocket::{BinanceSpotWebSocketClient, BinanceSpotWsTradingClient};

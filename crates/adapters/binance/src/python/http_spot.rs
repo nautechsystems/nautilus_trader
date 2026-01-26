@@ -26,7 +26,13 @@ use nautilus_model::{
 };
 use pyo3::{IntoPyObjectExt, prelude::*, types::PyList};
 
-use crate::{common::enums::BinanceEnvironment, spot::http::client::BinanceSpotHttpClient};
+use crate::{
+    common::enums::BinanceEnvironment,
+    spot::http::{
+        client::BinanceSpotHttpClient,
+        query::{BatchCancelItem, BatchOrderItem},
+    },
+};
 
 #[pymethods]
 impl BinanceSpotHttpClient {
@@ -138,6 +144,55 @@ impl BinanceSpotHttpClient {
         })
     }
 
+    #[pyo3(name = "request_bars")]
+    #[pyo3(signature = (
+        bar_type,
+        start=None,
+        end=None,
+        limit=None,
+    ))]
+    fn py_request_bars<'py>(
+        &self,
+        py: Python<'py>,
+        bar_type: BarType,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<u32>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let bars = client
+                .request_bars(bar_type, start, end, limit)
+                .await
+                .map_err(to_pyvalue_err)?;
+            Python::attach(|py| {
+                let py_bars: PyResult<Vec<_>> =
+                    bars.into_iter().map(|b| b.into_py_any(py)).collect();
+                let pylist = PyList::new(py, py_bars?)?.into_any().unbind();
+                Ok(pylist)
+            })
+        })
+    }
+
+    #[pyo3(name = "request_account_state")]
+    fn py_request_account_state<'py>(
+        &self,
+        py: Python<'py>,
+        account_id: AccountId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let account_state = client
+                .request_account_state(account_id)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| account_state.into_py_any(py))
+        })
+    }
+
     #[pyo3(name = "request_order_status")]
     #[pyo3(signature = (
         account_id,
@@ -157,7 +212,12 @@ impl BinanceSpotHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let report = client
-                .request_order_status(account_id, instrument_id, venue_order_id, client_order_id)
+                .request_order_status_report(
+                    account_id,
+                    instrument_id,
+                    venue_order_id,
+                    client_order_id,
+                )
                 .await
                 .map_err(to_pyvalue_err)?;
             Python::attach(|py| report.into_py_any(py))
@@ -239,37 +299,6 @@ impl BinanceSpotHttpClient {
                 let py_reports: PyResult<Vec<_>> =
                     reports.into_iter().map(|r| r.into_py_any(py)).collect();
                 let pylist = PyList::new(py, py_reports?)?.into_any().unbind();
-                Ok(pylist)
-            })
-        })
-    }
-
-    #[pyo3(name = "request_bars")]
-    #[pyo3(signature = (
-        bar_type,
-        start=None,
-        end=None,
-        limit=None,
-    ))]
-    fn py_request_bars<'py>(
-        &self,
-        py: Python<'py>,
-        bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
-        limit: Option<u32>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let bars = client
-                .request_bars(bar_type, start, end, limit)
-                .await
-                .map_err(to_pyvalue_err)?;
-            Python::attach(|py| {
-                let py_bars: PyResult<Vec<_>> =
-                    bars.into_iter().map(|b| b.into_py_any(py)).collect();
-                let pylist = PyList::new(py, py_bars?)?.into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -390,6 +419,90 @@ impl BinanceSpotHttpClient {
                 let py_ids: PyResult<Vec<_>> =
                     order_ids.into_iter().map(|id| id.into_py_any(py)).collect();
                 let pylist = PyList::new(py, py_ids?)?.into_any().unbind();
+                Ok(pylist)
+            })
+        })
+    }
+
+    #[pyo3(name = "batch_submit_orders")]
+    fn py_batch_submit_orders<'py>(
+        &self,
+        py: Python<'py>,
+        orders: Vec<BatchOrderItem>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let results = client
+                .submit_order_list(&orders)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let py_results: Vec<_> = results
+                    .into_iter()
+                    .map(|r| match r {
+                        crate::spot::http::models::BatchOrderResult::Success(order) => {
+                            let dict = pyo3::types::PyDict::new(py);
+                            dict.set_item("success", true).ok();
+                            dict.set_item("order_id", order.order_id).ok();
+                            dict.set_item("client_order_id", &order.client_order_id)
+                                .ok();
+                            dict.set_item("symbol", &order.symbol).ok();
+                            dict.into_any().unbind()
+                        }
+                        crate::spot::http::models::BatchOrderResult::Error(err) => {
+                            let dict = pyo3::types::PyDict::new(py);
+                            dict.set_item("success", false).ok();
+                            dict.set_item("code", err.code).ok();
+                            dict.set_item("msg", &err.msg).ok();
+                            dict.into_any().unbind()
+                        }
+                    })
+                    .collect();
+                let pylist = PyList::new(py, py_results)?.into_any().unbind();
+                Ok(pylist)
+            })
+        })
+    }
+
+    #[pyo3(name = "batch_cancel_orders")]
+    fn py_batch_cancel_orders<'py>(
+        &self,
+        py: Python<'py>,
+        cancels: Vec<BatchCancelItem>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let results = client
+                .batch_cancel_orders(&cancels)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let py_results: Vec<_> = results
+                    .into_iter()
+                    .map(|r| match r {
+                        crate::spot::http::models::BatchCancelResult::Success(cancel) => {
+                            let dict = pyo3::types::PyDict::new(py);
+                            dict.set_item("success", true).ok();
+                            dict.set_item("order_id", cancel.order_id).ok();
+                            dict.set_item("orig_client_order_id", &cancel.orig_client_order_id)
+                                .ok();
+                            dict.set_item("symbol", &cancel.symbol).ok();
+                            dict.into_any().unbind()
+                        }
+                        crate::spot::http::models::BatchCancelResult::Error(err) => {
+                            let dict = pyo3::types::PyDict::new(py);
+                            dict.set_item("success", false).ok();
+                            dict.set_item("code", err.code).ok();
+                            dict.set_item("msg", &err.msg).ok();
+                            dict.into_any().unbind()
+                        }
+                    })
+                    .collect();
+                let pylist = PyList::new(py, py_results)?.into_any().unbind();
                 Ok(pylist)
             })
         })

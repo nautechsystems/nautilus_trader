@@ -151,7 +151,7 @@ impl ExecutionAlgorithm for TwapAlgorithm {
             return Ok(());
         };
 
-        let horizon_secs: u64 = horizon_secs_str.parse().map_err(|e| {
+        let horizon_secs: f64 = horizon_secs_str.parse().map_err(|e| {
             log::error!("Cannot parse horizon_secs: {e}");
             anyhow::anyhow!("Invalid horizon_secs")
         })?;
@@ -161,10 +161,24 @@ impl ExecutionAlgorithm for TwapAlgorithm {
             return Ok(());
         };
 
-        let interval_secs: u64 = interval_secs_str.parse().map_err(|e| {
+        let interval_secs: f64 = interval_secs_str.parse().map_err(|e| {
             log::error!("Cannot parse interval_secs: {e}");
             anyhow::anyhow!("Invalid interval_secs")
         })?;
+
+        if !horizon_secs.is_finite() || horizon_secs <= 0.0 {
+            log::error!(
+                "Cannot execute order: horizon_secs={horizon_secs} must be finite and positive"
+            );
+            return Ok(());
+        }
+
+        if !interval_secs.is_finite() || interval_secs <= 0.0 {
+            log::error!(
+                "Cannot execute order: interval_secs={interval_secs} must be finite and positive"
+            );
+            return Ok(());
+        }
 
         if horizon_secs < interval_secs {
             log::error!(
@@ -173,7 +187,7 @@ impl ExecutionAlgorithm for TwapAlgorithm {
             return Ok(());
         }
 
-        let num_intervals = horizon_secs / interval_secs;
+        let num_intervals = (horizon_secs / interval_secs).floor() as u64;
         if num_intervals == 0 {
             log::error!("Cannot execute order: num_intervals is 0");
             return Ok(());
@@ -262,7 +276,7 @@ impl ExecutionAlgorithm for TwapAlgorithm {
 
         self.core.clock().set_timer(
             primary_id.as_str(),
-            Duration::from_secs(interval_secs),
+            Duration::from_secs_f64(interval_secs),
             None,
             None,
             None,
@@ -347,6 +361,7 @@ impl ExecutionAlgorithm for TwapAlgorithm {
     }
 
     fn on_reset(&mut self) -> anyhow::Result<()> {
+        self.unsubscribe_all_strategy_events();
         self.core.reset();
         self.scheduled_sizes.clear();
         Ok(())
@@ -361,10 +376,13 @@ mod tests {
     use nautilus_common::{
         cache::Cache,
         clock::{Clock, TestClock},
+        component::Component,
+        enums::ComponentTrigger,
     };
     use nautilus_core::UUID4;
     use nautilus_model::{
         enums::{OrderSide, TimeInForce},
+        events::OrderEventAny,
         identifiers::{ExecAlgorithmId, InstrumentId, StrategyId, TraderId},
         orders::{LimitOrder, MarketOrder},
         types::Price,
@@ -397,6 +415,12 @@ mod tests {
             .register_default_handler(TimeEventCallback::Rust(std::sync::Arc::new(|_| {})));
 
         algo.core.register(trader_id, clock, cache).unwrap();
+
+        // Transition to Running state for tests
+        algo.transition_state(ComponentTrigger::Initialize).unwrap();
+        algo.transition_state(ComponentTrigger::Start).unwrap();
+        algo.transition_state(ComponentTrigger::StartCompleted)
+            .unwrap();
     }
 
     fn add_instrument_to_cache(algo: &mut TwapAlgorithm) {
@@ -712,5 +736,259 @@ mod tests {
 
         // Sequence completed, scheduled_sizes removed
         assert!(algo.scheduled_sizes.get(&primary_id).is_none());
+    }
+
+    #[rstest]
+    fn test_twap_on_time_event_completes_when_primary_closed() {
+        use nautilus_model::events::OrderCanceled;
+
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&mut algo);
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("20"));
+
+        let order = create_market_order_with_params_and_qty(params, Quantity::from("1.2"));
+        let primary_id = order.client_order_id();
+
+        algo.on_order(order).unwrap();
+        assert_eq!(algo.scheduled_sizes.get(&primary_id).unwrap().len(), 2);
+
+        // Mark primary order as closed (canceled)
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            let mut primary = cache.order(&primary_id).cloned().unwrap();
+
+            let canceled = OrderCanceled::new(
+                primary.trader_id(),
+                primary.strategy_id(),
+                primary.instrument_id(),
+                primary.client_order_id(),
+                UUID4::new(),
+                0.into(),
+                0.into(),
+                false,
+                None,
+                None,
+            );
+            primary.apply(OrderEventAny::Canceled(canceled)).unwrap();
+            cache.update_order(&primary).unwrap();
+        }
+
+        // Timer fires but primary is closed
+        let event = TimeEvent::new(
+            Ustr::from(primary_id.as_str()),
+            UUID4::new(),
+            0.into(),
+            0.into(),
+        );
+        ExecutionAlgorithm::on_time_event(&mut algo, &event).unwrap();
+
+        // Sequence should complete early since primary is closed
+        assert!(algo.scheduled_sizes.get(&primary_id).is_none());
+    }
+
+    #[rstest]
+    fn test_twap_on_stop_cancels_timers() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&mut algo);
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("20"));
+
+        let order = create_market_order_with_params(params);
+        let primary_id = order.client_order_id();
+
+        algo.on_order(order).unwrap();
+
+        // Verify timer is set
+        assert!(
+            algo.core
+                .clock()
+                .timer_names()
+                .contains(&primary_id.as_str())
+        );
+
+        // Stop the algorithm
+        ExecutionAlgorithm::on_stop(&mut algo).unwrap();
+
+        // Timer should be canceled
+        assert!(algo.core.clock().timer_names().is_empty());
+    }
+
+    #[rstest]
+    fn test_twap_fractional_interval_secs() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&mut algo);
+
+        // Use fractional interval like Python tests: 3 second horizon, 0.5 second interval
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("3"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("0.5"));
+
+        let order = create_market_order_with_params(params);
+        let primary_id = order.client_order_id();
+
+        // Should not error - fractional seconds should parse correctly
+        algo.on_order(order).unwrap();
+
+        // 3 / 0.5 = 6 intervals, first spawned immediately, 5 remaining (plus possible remainder)
+        let remaining = algo.scheduled_sizes.get(&primary_id).unwrap();
+        assert!(remaining.len() >= 5);
+    }
+
+    #[rstest]
+    fn test_twap_submits_entire_size_when_qty_per_interval_below_size_increment() {
+        use nautilus_model::instruments::{InstrumentAny, stubs::equity_aapl};
+
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        // Use equity with size_increment of 1 (whole shares only)
+        let instrument = equity_aapl();
+        let instrument_id = instrument.id();
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache
+                .add_instrument(InstrumentAny::Equity(instrument))
+                .unwrap();
+        }
+
+        // 2 shares over 60s with 10s intervals = 6 intervals
+        // 2 / 6 = 0.333... which is less than size_increment of 1
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("10"));
+
+        let order = OrderAny::Market(MarketOrder::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRAT-001"),
+            instrument_id,
+            ClientOrderId::from("O-002"),
+            OrderSide::Buy,
+            Quantity::from("2"),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            0.into(),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            Some(ExecAlgorithmId::new("TWAP")),
+            Some(params),
+            None,
+            None,
+        ));
+
+        let primary_id = order.client_order_id();
+        algo.on_order(order).unwrap();
+
+        // Should submit entire size directly (no scheduling)
+        assert!(algo.scheduled_sizes.get(&primary_id).is_none());
+    }
+
+    #[rstest]
+    fn test_twap_rejects_negative_interval_secs() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&mut algo);
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("-0.5"));
+
+        let order = create_market_order_with_params(params);
+
+        // Should not error but should reject the order (no scheduling)
+        let result = algo.on_order(order);
+        assert!(result.is_ok());
+        assert!(algo.scheduled_sizes.is_empty());
+    }
+
+    #[rstest]
+    fn test_twap_rejects_negative_horizon_secs() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&mut algo);
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("-10"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("1"));
+
+        let order = create_market_order_with_params(params);
+
+        // Should not error but should reject the order (no scheduling)
+        let result = algo.on_order(order);
+        assert!(result.is_ok());
+        assert!(algo.scheduled_sizes.is_empty());
+    }
+
+    #[rstest]
+    fn test_twap_rejects_zero_interval_secs() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&mut algo);
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("0"));
+
+        let order = create_market_order_with_params(params);
+
+        // Should not error but should reject the order (no scheduling)
+        let result = algo.on_order(order);
+        assert!(result.is_ok());
+        assert!(algo.scheduled_sizes.is_empty());
+    }
+
+    #[rstest]
+    fn test_twap_rejects_nan_interval_secs() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&mut algo);
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("NaN"));
+
+        let order = create_market_order_with_params(params);
+
+        let result = algo.on_order(order);
+        assert!(result.is_ok());
+        assert!(algo.scheduled_sizes.is_empty());
+    }
+
+    #[rstest]
+    fn test_twap_rejects_infinity_horizon_secs() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&mut algo);
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("inf"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("10"));
+
+        let order = create_market_order_with_params(params);
+
+        let result = algo.on_order(order);
+        assert!(result.is_ok());
+        assert!(algo.scheduled_sizes.is_empty());
     }
 }

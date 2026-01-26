@@ -488,6 +488,15 @@ impl DataActor for ExecTester {
         } else {
             log::info!("Instrument {instrument_id} not in cache, subscribing...");
             self.subscribe_instrument(instrument_id, client_id, None);
+
+            // Also subscribe to market data to trigger instrument definitions from data providers
+            // (e.g., Databento sends instrument definitions as part of market data subscriptions)
+            if self.config.subscribe_quotes {
+                self.subscribe_quotes(instrument_id, client_id, None);
+            }
+            if self.config.subscribe_trades {
+                self.subscribe_trades(instrument_id, client_id, None);
+            }
         }
 
         Ok(())
@@ -516,7 +525,7 @@ impl DataActor for ExecTester {
             if self.config.use_individual_cancels_on_stop {
                 let cache = self.cache();
                 let open_orders: Vec<OrderAny> = cache
-                    .orders_open(None, Some(&instrument_id), Some(&strategy_id), None)
+                    .orders_open(None, Some(&instrument_id), Some(&strategy_id), None, None)
                     .iter()
                     .map(|o| (*o).clone())
                     .collect();
@@ -530,7 +539,7 @@ impl DataActor for ExecTester {
             } else if self.config.use_batch_cancel_on_stop {
                 let cache = self.cache();
                 let open_orders: Vec<OrderAny> = cache
-                    .orders_open(None, Some(&instrument_id), Some(&strategy_id), None)
+                    .orders_open(None, Some(&instrument_id), Some(&strategy_id), None, None)
                     .iter()
                     .map(|o| (*o).clone())
                     .collect();
@@ -586,7 +595,7 @@ impl DataActor for ExecTester {
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {quote:?}", color = LogColor::Cyan);
+            log_info!("{quote:?}", color = LogColor::Cyan);
         }
 
         self.maintain_orders(quote.bid_price, quote.ask_price);
@@ -595,7 +604,7 @@ impl DataActor for ExecTester {
 
     fn on_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {trade:?}", color = LogColor::Cyan);
+            log_info!("{trade:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
@@ -633,28 +642,28 @@ impl DataActor for ExecTester {
 
     fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {deltas:?}", color = LogColor::Cyan);
+            log_info!("{deltas:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {bar:?}", color = LogColor::Cyan);
+            log_info!("{bar:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_mark_price(&mut self, mark_price: &MarkPriceUpdate) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {mark_price:?}", color = LogColor::Cyan);
+            log_info!("{mark_price:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_index_price(&mut self, index_price: &IndexPriceUpdate) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {index_price:?}", color = LogColor::Cyan);
+            log_info!("{index_price:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
@@ -1283,7 +1292,7 @@ impl ExecTester {
 
         if self.config.bracket_entry_order_type != OrderType::Limit {
             anyhow::bail!(
-                "Only Limit entry orders are supported for brackets, got {:?}",
+                "Only Limit entry orders are supported for brackets, was {:?}",
                 self.config.bracket_entry_order_type
             );
         }

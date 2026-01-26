@@ -39,7 +39,7 @@ use futures_util::StreamExt;
 use nautilus_architect_ax::{
     common::enums::{AxEnvironment, AxMarketDataLevel},
     http::{client::AxRawHttpClient, error::AxHttpError},
-    websocket::{NautilusWsMessage, data::AxMdWebSocketClient},
+    websocket::{NautilusDataWsMessage, data::AxMdWebSocketClient},
 };
 use totp_rs::{Algorithm, Secret, TOTP};
 
@@ -178,24 +178,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             message_count += 1;
 
             match &msg {
-                NautilusWsMessage::Heartbeat => {
+                NautilusDataWsMessage::Heartbeat => {
                     log::debug!("Heartbeat");
                 }
-                NautilusWsMessage::Data(data) => {
+                NautilusDataWsMessage::Data(data) => {
                     for item in data {
                         log::info!("Data: {item:?}");
                     }
                 }
-                NautilusWsMessage::Deltas(deltas) => {
+                NautilusDataWsMessage::Deltas(deltas) => {
                     log::info!("Deltas: {}", deltas.instrument_id);
                 }
-                NautilusWsMessage::Bar(bar) => {
+                NautilusDataWsMessage::Bar(bar) => {
                     log::info!("Bar: {}", bar.bar_type);
                 }
-                NautilusWsMessage::Error(err) => {
+                NautilusDataWsMessage::Error(err) => {
                     log::error!("Error: {}", err.message);
                 }
-                NautilusWsMessage::Reconnected => {
+                NautilusDataWsMessage::Reconnected => {
                     log::warn!("Reconnected");
                 }
             }

@@ -201,7 +201,7 @@ impl Bar {
     pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         let bar_type_obj: Bound<'_, PyAny> = obj.getattr("bar_type")?.extract()?;
         let bar_type_str: String = bar_type_obj.call_method0("__str__")?.extract()?;
-        let bar_type = BarType::from(bar_type_str.as_str());
+        let bar_type = BarType::from(bar_type_str);
 
         let open_py: Bound<'_, PyAny> = obj.getattr("open")?;
         let price_prec: u8 = open_py.getattr("precision")?.extract()?;

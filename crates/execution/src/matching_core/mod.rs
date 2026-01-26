@@ -15,16 +15,12 @@
 
 //! A common `OrderMatchingCore` for the `OrderMatchingEngine` and other components.
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 pub mod handlers;
 
 use nautilus_model::{
-    enums::OrderSideSpecified,
+    enums::{OrderSideSpecified, OrderType},
     identifiers::{ClientOrderId, InstrumentId},
-    orders::{LimitOrderAny, Order, OrderAny, OrderError, PassiveOrderAny, StopOrderAny},
+    orders::{Order, OrderError, PassiveOrderAny, StopOrderAny},
     types::Price,
 };
 
@@ -32,6 +28,89 @@ use crate::matching_core::handlers::{
     FillLimitOrderHandler, ShareableFillLimitOrderHandler, ShareableFillMarketOrderHandler,
     ShareableTriggerStopOrderHandler, TriggerStopOrderHandler,
 };
+
+/// Lightweight order information for matching/trigger checking.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OrderMatchInfo {
+    pub client_order_id: ClientOrderId,
+    pub order_side: OrderSideSpecified,
+    pub order_type: OrderType,
+    pub trigger_price: Option<Price>,
+    pub limit_price: Option<Price>,
+    pub is_activated: bool,
+}
+
+impl OrderMatchInfo {
+    /// Creates a new [`OrderMatchInfo`] instance.
+    #[must_use]
+    pub const fn new(
+        client_order_id: ClientOrderId,
+        order_side: OrderSideSpecified,
+        order_type: OrderType,
+        trigger_price: Option<Price>,
+        limit_price: Option<Price>,
+        is_activated: bool,
+    ) -> Self {
+        Self {
+            client_order_id,
+            order_side,
+            order_type,
+            trigger_price,
+            limit_price,
+            is_activated,
+        }
+    }
+
+    /// Returns true if this is a stop order type that needs trigger checking.
+    #[must_use]
+    pub const fn is_stop(&self) -> bool {
+        self.trigger_price.is_some()
+    }
+
+    /// Returns true if this is a limit order type that needs fill checking.
+    #[must_use]
+    pub const fn is_limit(&self) -> bool {
+        self.limit_price.is_some() && self.trigger_price.is_none()
+    }
+}
+
+impl From<&PassiveOrderAny> for OrderMatchInfo {
+    fn from(order: &PassiveOrderAny) -> Self {
+        match order {
+            PassiveOrderAny::Limit(limit) => Self {
+                client_order_id: limit.client_order_id(),
+                order_side: limit.order_side_specified(),
+                order_type: limit.order_type(),
+                trigger_price: None,
+                limit_price: Some(limit.limit_px()),
+                is_activated: true,
+            },
+            PassiveOrderAny::Stop(stop) => {
+                let limit_price = match stop {
+                    StopOrderAny::LimitIfTouched(o) => Some(o.price),
+                    StopOrderAny::StopLimit(o) => Some(o.price),
+                    StopOrderAny::TrailingStopLimit(o) => Some(o.price),
+                    StopOrderAny::MarketIfTouched(_)
+                    | StopOrderAny::StopMarket(_)
+                    | StopOrderAny::TrailingStopMarket(_) => None,
+                };
+                let is_activated = match stop {
+                    StopOrderAny::TrailingStopMarket(o) => o.is_activated,
+                    StopOrderAny::TrailingStopLimit(o) => o.is_activated,
+                    _ => true,
+                };
+                Self {
+                    client_order_id: stop.client_order_id(),
+                    order_side: stop.order_side_specified(),
+                    order_type: stop.order_type(),
+                    trigger_price: Some(stop.stop_px()),
+                    limit_price,
+                    is_activated,
+                }
+            }
+        }
+    }
+}
 
 /// A generic order matching core.
 #[derive(Clone, Debug)]
@@ -49,8 +128,8 @@ pub struct OrderMatchingCore {
     pub is_bid_initialized: bool,
     pub is_ask_initialized: bool,
     pub is_last_initialized: bool,
-    orders_bid: Vec<PassiveOrderAny>,
-    orders_ask: Vec<PassiveOrderAny>,
+    orders_bid: Vec<OrderMatchInfo>,
+    orders_ask: Vec<OrderMatchInfo>,
     trigger_stop_order: Option<ShareableTriggerStopOrderHandler>,
     fill_market_order: Option<ShareableFillMarketOrderHandler>,
     fill_limit_order: Option<ShareableFillLimitOrderHandler>,
@@ -103,29 +182,29 @@ impl OrderMatchingCore {
     }
 
     #[must_use]
-    pub fn get_order(&self, client_order_id: ClientOrderId) -> Option<&PassiveOrderAny> {
+    pub fn get_order(&self, client_order_id: ClientOrderId) -> Option<&OrderMatchInfo> {
         self.orders_bid
             .iter()
-            .find(|o| o.client_order_id() == client_order_id)
+            .find(|o| o.client_order_id == client_order_id)
             .or_else(|| {
                 self.orders_ask
                     .iter()
-                    .find(|o| o.client_order_id() == client_order_id)
+                    .find(|o| o.client_order_id == client_order_id)
             })
     }
 
     #[must_use]
-    pub const fn get_orders_bid(&self) -> &[PassiveOrderAny] {
+    pub const fn get_orders_bid(&self) -> &[OrderMatchInfo] {
         self.orders_bid.as_slice()
     }
 
     #[must_use]
-    pub const fn get_orders_ask(&self) -> &[PassiveOrderAny] {
+    pub const fn get_orders_ask(&self) -> &[OrderMatchInfo] {
         self.orders_ask.as_slice()
     }
 
     #[must_use]
-    pub fn get_orders(&self) -> Vec<PassiveOrderAny> {
+    pub fn get_orders(&self) -> Vec<OrderMatchInfo> {
         let mut orders = self.orders_bid.clone();
         orders.extend_from_slice(&self.orders_ask);
         orders
@@ -135,11 +214,11 @@ impl OrderMatchingCore {
     pub fn order_exists(&self, client_order_id: ClientOrderId) -> bool {
         self.orders_bid
             .iter()
-            .any(|o| o.client_order_id() == client_order_id)
+            .any(|o| o.client_order_id == client_order_id)
             || self
                 .orders_ask
                 .iter()
-                .any(|o| o.client_order_id() == client_order_id)
+                .any(|o| o.client_order_id == client_order_id)
     }
 
     // -- COMMANDS --------------------------------------------------------------------------------
@@ -167,50 +246,39 @@ impl OrderMatchingCore {
         self.orders_ask.clear();
     }
 
-    /// Adds a passive order to the matching core.
-    ///
-    /// # Errors
-    ///
-    /// Returns an [`OrderError::NotFound`] if the order cannot be added.
-    pub fn add_order(&mut self, order: PassiveOrderAny) -> Result<(), OrderError> {
-        match order.order_side_specified() {
-            OrderSideSpecified::Buy => {
-                self.orders_bid.push(order);
-                Ok(())
-            }
-            OrderSideSpecified::Sell => {
-                self.orders_ask.push(order);
-                Ok(())
-            }
+    /// Adds an order to the matching core.
+    pub fn add_order(&mut self, order: OrderMatchInfo) {
+        match order.order_side {
+            OrderSideSpecified::Buy => self.orders_bid.push(order),
+            OrderSideSpecified::Sell => self.orders_ask.push(order),
         }
     }
 
-    /// Deletes a passive order from the matching core.
+    /// Deletes an order from the matching core by client order ID.
     ///
     /// # Errors
     ///
     /// Returns an [`OrderError::NotFound`] if the order is not present.
-    pub fn delete_order(&mut self, order: &PassiveOrderAny) -> Result<(), OrderError> {
-        match order.order_side_specified() {
-            OrderSideSpecified::Buy => {
-                let index = self
-                    .orders_bid
-                    .iter()
-                    .position(|o| o == order)
-                    .ok_or(OrderError::NotFound(order.client_order_id()))?;
-                self.orders_bid.remove(index);
-                Ok(())
-            }
-            OrderSideSpecified::Sell => {
-                let index = self
-                    .orders_ask
-                    .iter()
-                    .position(|o| o == order)
-                    .ok_or(OrderError::NotFound(order.client_order_id()))?;
-                self.orders_ask.remove(index);
-                Ok(())
-            }
+    pub fn delete_order(&mut self, client_order_id: ClientOrderId) -> Result<(), OrderError> {
+        if let Some(index) = self
+            .orders_bid
+            .iter()
+            .position(|o| o.client_order_id == client_order_id)
+        {
+            self.orders_bid.remove(index);
+            return Ok(());
         }
+
+        if let Some(index) = self
+            .orders_ask
+            .iter()
+            .position(|o| o.client_order_id == client_order_id)
+        {
+            self.orders_ask.remove(index);
+            return Ok(());
+        }
+
+        Err(OrderError::NotFound(client_order_id))
     }
 
     pub fn iterate(&mut self) {
@@ -221,55 +289,46 @@ impl OrderMatchingCore {
     pub fn iterate_bids(&mut self) {
         let orders: Vec<_> = self.orders_bid.clone();
         for order in &orders {
-            self.match_order(order, false);
+            self.match_order(order);
         }
     }
 
     pub fn iterate_asks(&mut self) {
         let orders: Vec<_> = self.orders_ask.clone();
         for order in &orders {
-            self.match_order(order, false);
-        }
-    }
-
-    fn iterate_orders(&mut self, orders: &[PassiveOrderAny]) {
-        for order in orders {
-            self.match_order(order, false);
+            self.match_order(order);
         }
     }
 
     // -- MATCHING --------------------------------------------------------------------------------
 
-    pub fn match_order(&mut self, order: &PassiveOrderAny, _initial: bool) {
-        match order {
-            PassiveOrderAny::Limit(o) => self.match_limit_order(o),
-            PassiveOrderAny::Stop(o) => self.match_stop_order(o),
+    pub fn match_order(&mut self, order: &OrderMatchInfo) {
+        if order.is_stop() {
+            self.match_stop_order(order);
+        } else if order.is_limit() {
+            self.match_limit_order(order);
         }
     }
 
-    pub fn match_limit_order(&mut self, order: &LimitOrderAny) {
-        if self.is_limit_matched(order.order_side_specified(), order.limit_px())
+    fn match_limit_order(&mut self, order: &OrderMatchInfo) {
+        if let Some(limit_price) = order.limit_price
+            && self.is_limit_matched(order.order_side, limit_price)
             && let Some(handler) = &mut self.fill_limit_order
         {
-            handler
-                .0
-                .fill_limit_order(&mut OrderAny::from(order.clone()));
+            handler.0.fill_limit_order(order.client_order_id);
         }
     }
 
-    pub fn match_stop_order(&mut self, order: &StopOrderAny) {
-        match order {
-            StopOrderAny::TrailingStopMarket(o) if !o.is_activated => return,
-            StopOrderAny::TrailingStopLimit(o) if !o.is_activated => return,
-            _ => {}
+    fn match_stop_order(&mut self, order: &OrderMatchInfo) {
+        if !order.is_activated {
+            return;
         }
 
-        if self.is_stop_matched(order.order_side_specified(), order.stop_px())
+        if let Some(trigger_price) = order.trigger_price
+            && self.is_stop_matched(order.order_side, trigger_price)
             && let Some(handler) = &mut self.trigger_stop_order
         {
-            handler
-                .0
-                .trigger_stop_order(&mut OrderAny::from(order.clone()));
+            handler.0.trigger_stop_order(order.client_order_id);
         }
     }
 
@@ -328,16 +387,14 @@ mod tests {
             .quantity(Quantity::from("100"))
             .build();
 
-        matching_core
-            .add_order(PassiveOrderAny::try_from(order.clone()).unwrap())
-            .unwrap();
+        let match_info = OrderMatchInfo::from(&PassiveOrderAny::try_from(order).unwrap());
+        matching_core.add_order(match_info.clone());
 
-        let passive_order: PassiveOrderAny = PassiveOrderAny::try_from(order).unwrap();
-        assert!(matching_core.get_orders_bid().contains(&passive_order));
-        assert!(!matching_core.get_orders_ask().contains(&passive_order));
+        assert!(matching_core.get_orders_bid().contains(&match_info));
+        assert!(!matching_core.get_orders_ask().contains(&match_info));
         assert_eq!(matching_core.get_orders_bid().len(), 1);
         assert!(matching_core.get_orders_ask().is_empty());
-        assert!(matching_core.order_exists(passive_order.client_order_id()));
+        assert!(matching_core.order_exists(match_info.client_order_id));
     }
 
     #[rstest]
@@ -352,16 +409,14 @@ mod tests {
             .quantity(Quantity::from("100"))
             .build();
 
-        matching_core
-            .add_order(PassiveOrderAny::try_from(order.clone()).unwrap())
-            .unwrap();
+        let match_info = OrderMatchInfo::from(&PassiveOrderAny::try_from(order).unwrap());
+        matching_core.add_order(match_info.clone());
 
-        let passive_order: PassiveOrderAny = PassiveOrderAny::try_from(order).unwrap();
-        assert!(matching_core.get_orders_ask().contains(&passive_order));
-        assert!(!matching_core.get_orders_bid().contains(&passive_order));
+        assert!(matching_core.get_orders_ask().contains(&match_info));
+        assert!(!matching_core.get_orders_bid().contains(&match_info));
         assert_eq!(matching_core.get_orders_ask().len(), 1);
         assert!(matching_core.get_orders_bid().is_empty());
-        assert!(matching_core.order_exists(passive_order.client_order_id()));
+        assert!(matching_core.order_exists(match_info.client_order_id));
     }
 
     #[rstest]
@@ -377,10 +432,8 @@ mod tests {
             .build();
 
         let client_order_id = order.client_order_id();
-
-        matching_core
-            .add_order(PassiveOrderAny::try_from(order).unwrap())
-            .unwrap();
+        let match_info = OrderMatchInfo::from(&PassiveOrderAny::try_from(order).unwrap());
+        matching_core.add_order(match_info);
         matching_core.bid = Some(Price::from("100.00"));
         matching_core.ask = Some(Price::from("100.00"));
         matching_core.last = Some(Price::from("100.00"));
@@ -407,7 +460,7 @@ mod tests {
             .quantity(Quantity::from("100"))
             .build();
 
-        let result = matching_core.delete_order(&PassiveOrderAny::try_from(order).unwrap());
+        let result = matching_core.delete_order(order.client_order_id());
         assert!(result.is_err());
     }
 
@@ -425,12 +478,10 @@ mod tests {
             .quantity(Quantity::from("100"))
             .build();
 
-        matching_core
-            .add_order(PassiveOrderAny::try_from(order.clone()).unwrap())
-            .unwrap();
-        matching_core
-            .delete_order(&PassiveOrderAny::try_from(order).unwrap())
-            .unwrap();
+        let client_order_id = order.client_order_id();
+        let match_info = OrderMatchInfo::from(&PassiveOrderAny::try_from(order).unwrap());
+        matching_core.add_order(match_info);
+        matching_core.delete_order(client_order_id).unwrap();
 
         assert!(matching_core.get_orders_ask().is_empty());
         assert!(matching_core.get_orders_bid().is_empty());

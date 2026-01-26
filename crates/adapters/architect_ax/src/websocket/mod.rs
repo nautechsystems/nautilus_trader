@@ -35,7 +35,9 @@ pub mod orders;
 pub use data::{
     AxMdWebSocketClient, AxWsClientError, AxWsResult, HandlerCommand as DataHandlerCommand,
 };
-pub use messages::{AxOrdersWsMessage, AxWsError, NautilusWsMessage, OrderMetadata};
+pub use messages::{
+    AxOrdersWsMessage, AxWsError, NautilusDataWsMessage, NautilusExecWsMessage, OrderMetadata,
+};
 pub use orders::{
     AxOrdersWebSocketClient, AxOrdersWsClientError, AxOrdersWsResult,
     HandlerCommand as OrdersHandlerCommand,

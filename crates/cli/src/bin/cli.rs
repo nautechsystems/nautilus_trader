@@ -14,17 +14,14 @@
 // -------------------------------------------------------------------------------------------------
 
 use clap::Parser;
-use log::LevelFilter;
 use nautilus_cli::opt::NautilusCli;
+use nautilus_common::logging::ensure_logging_initialized;
 
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().ok();
-    simple_logger::SimpleLogger::new()
-        .with_level(LevelFilter::Info)
-        .with_module_level("sqlx", LevelFilter::Off)
-        .init()
-        .unwrap();
+    ensure_logging_initialized();
+
     if let Err(e) = nautilus_cli::run(NautilusCli::parse()).await {
         log::error!("Error executing Nautilus CLI: {e}");
     }

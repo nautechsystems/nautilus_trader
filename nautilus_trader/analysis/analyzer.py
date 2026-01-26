@@ -158,9 +158,15 @@ class PortfolioAnalyzer:
 
         """
         self._positions += positions
+
         for position in positions:
+            if position.realized_pnl is None:
+                continue  # Skip empty shell positions
+
             self.add_trade(position.id, position.realized_pnl)
-            self.add_return(unix_nanos_to_dt(position.ts_closed), position.realized_return)
+
+            if position.ts_closed > 0:
+                self.add_return(unix_nanos_to_dt(position.ts_closed), position.realized_return)
 
     def add_trade(self, position_id: PositionId, realized_pnl: Money) -> None:
         """

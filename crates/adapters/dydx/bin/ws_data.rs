@@ -93,7 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     log::info!("Fetched {} instruments from HTTP", instruments.len());
 
-    let instrument_id = InstrumentId::from(format!("{symbol}-PERP.DYDX").as_str());
+    let instrument_id = InstrumentId::from(format!("{symbol}-PERP.DYDX"));
 
     log::info!("Using instrument: {instrument_id}");
     log::info!("");

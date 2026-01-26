@@ -216,7 +216,7 @@ class DeribitLiveExecClientFactory(LiveExecClientFactory):
         DeribitExecutionClient
 
         """
-        client: nautilus_pyo3.DeribitHttpClient = get_cached_deribit_http_client(
+        http_client: nautilus_pyo3.DeribitHttpClient = get_cached_deribit_http_client(
             api_key=config.api_key,
             api_secret=config.api_secret,
             base_url=config.base_url_http,
@@ -226,14 +226,15 @@ class DeribitLiveExecClientFactory(LiveExecClientFactory):
             retry_delay_ms=config.retry_delay_initial_ms,
             retry_delay_max_ms=config.retry_delay_max_ms,
         )
+
         provider = get_cached_deribit_instrument_provider(
-            client=client,
+            client=http_client,
             instrument_kinds=config.instrument_kinds,
             config=config.instrument_provider,
         )
         return DeribitExecutionClient(
             loop=loop,
-            client=client,
+            http_client=http_client,
             msgbus=msgbus,
             cache=cache,
             clock=clock,

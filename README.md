@@ -16,10 +16,10 @@
 
 | Platform           | Rust   | Python    |
 | :----------------- | :----- | :-------- |
-| `Linux (x86_64)`   | 1.92.0 | 3.12-3.14 |
-| `Linux (ARM64)`    | 1.92.0 | 3.12-3.14 |
-| `macOS (ARM64)`    | 1.92.0 | 3.12-3.14 |
-| `Windows (x86_64)` | 1.92.0 | 3.12-3.14 |
+| `Linux (x86_64)`   | 1.93.0 | 3.12-3.14 |
+| `Linux (ARM64)`    | 1.93.0 | 3.12-3.14 |
+| `macOS (ARM64)`    | 1.93.0 | 3.12-3.14 |
+| `Windows (x86_64)` | 1.93.0 | 3.12-3.14 |
 
 - **Docs**: <https://nautilustrader.io/docs/>
 - **Website**: <https://nautilustrader.io>
@@ -129,7 +129,7 @@ The following integrations are currently supported; see [docs/integrations/](htt
 | [Bybit](https://www.bybit.com)                                               | `BYBIT`               | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/bybit.md)         |
 | [Coinbase International](https://www.coinbase.com/en/international-exchange) | `COINBASE_INTX`       | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/coinbase_intx.md) |
 | [Databento](https://databento.com)                                           | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/databento.md)     |
-| [Deribit](https://www.deribit.com)                                           | `DERIBIT`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/building-orange) | [Guide](docs/integrations/deribit.md)       |
+| [Deribit](https://www.deribit.com)                                           | `DERIBIT`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](docs/integrations/deribit.md)       |
 | [dYdX v3](https://dydx.exchange/)                                            | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/dydx.md)          |
 | [dYdX v4](https://dydx.exchange/)                                            | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/building-orange) | [Guide](docs/integrations/dydx.md)          |
 | [Hyperliquid](https://hyperliquid.xyz)                                       | `HYPERLIQUID`         | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/building-orange) | [Guide](docs/integrations/hyperliquid.md)   |

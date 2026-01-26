@@ -54,18 +54,15 @@
 #![deny(unsafe_code)]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]
-// #![deny(clippy::missing_errors_doc)]
+#![deny(clippy::missing_errors_doc)]
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod common;
 pub mod config;
-pub mod data;
-pub mod execution;
 pub mod factories;
 pub mod futures;
 pub mod spot;
-pub mod websocket;
 
 #[cfg(feature = "python")]
 pub mod python;

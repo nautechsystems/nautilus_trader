@@ -257,7 +257,7 @@ impl From<TimeEventHandler> for TimeEventHandler_API {
     fn from(value: TimeEventHandler) -> Self {
         // Only Rust callbacks are supported in non-python builds
         match value.callback {
-            TimeEventCallback::Rust(_) | TimeEventCallback::RustLocal(_) => TimeEventHandler_API {
+            TimeEventCallback::Rust(_) | TimeEventCallback::RustLocal(_) => Self {
                 event: value.event,
                 callback_ptr: std::ptr::null_mut(),
             },

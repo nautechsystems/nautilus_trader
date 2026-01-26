@@ -198,7 +198,7 @@ class TradingNodeBuilder:
 
                 self._data_engine.register_venue_routing(client, venue)
 
-    def build_exec_clients(  # noqa: C901 (too complex)
+    def build_exec_clients(
         self,
         config: dict[str, LiveExecClientConfig],
     ) -> None:
@@ -261,8 +261,3 @@ class TradingNodeBuilder:
                     venue = Venue(venue)
 
                 self._exec_engine.register_venue_routing(client, venue)
-
-            # Temporary handling for setting specific 'venue' for portfolio
-            if factory.__name__ == "InteractiveBrokersLiveExecClientFactory":
-                # We initialize a new IB venue to avoid importing from the adapter subpackage
-                self._cache.set_specific_venue(Venue("INTERACTIVE_BROKERS"))

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::VecDeque, time::Duration};
+use std::{collections::VecDeque, ops::ControlFlow, pin::Pin, time::Duration};
 
 use ahash::AHashMap;
 use bytes::Bytes;
@@ -124,7 +124,9 @@ impl PostgresCacheDatabase {
         // TODO: expose this via configuration once tests are fixed
         let buffer_interval = Duration::from_millis(0);
 
-        // Use a timer so the task wakes up even when no new message arrives
+        // A sleep used to trigger periodic flushing of the buffer.
+        // When `buffer_interval` is zero we skip using the timer and flush immediately
+        // after every message.
         let flush_timer = tokio::time::sleep(buffer_interval);
         tokio::pin!(flush_timer);
 
@@ -132,39 +134,69 @@ impl PostgresCacheDatabase {
         loop {
             tokio::select! {
                 maybe_msg = rx.recv() => {
-                    if let Some(msg) = maybe_msg {
-                        log::debug!("Received {msg:?}");
-                        if matches!(msg, DatabaseQuery::Close) {
-                            break;
-                        }
-                        buffer.push_back(msg);
-
-                        // If interval is zero flush straight away so tests remain fast
-                        if buffer_interval.is_zero() {
-                            drain_buffer(&pool, &mut buffer).await;
-                        }
-                    } else {
-                        log::debug!("Command channel closed");
+                    let result = handle_query(
+                        maybe_msg,
+                        &mut buffer,
+                        buffer_interval,
+                        &pool,
+                    ).await;
+                    if result.is_break() {
                         break;
                     }
                 }
                 () = &mut flush_timer, if !buffer_interval.is_zero() => {
-                    if !buffer.is_empty() {
-                        drain_buffer(&pool, &mut buffer).await;
-                    }
-
-                    flush_timer.as_mut().reset(Instant::now() + buffer_interval);
+                    flush_buffer(&mut buffer, &pool, &mut flush_timer, buffer_interval).await;
                 }
             }
         }
 
-        // Drain any remaining message
         if !buffer.is_empty() {
             drain_buffer(&pool, &mut buffer).await;
         }
 
         log_task_stopped(CACHE_PROCESS);
     }
+}
+
+async fn handle_query(
+    maybe_msg: Option<DatabaseQuery>,
+    buffer: &mut VecDeque<DatabaseQuery>,
+    buffer_interval: Duration,
+    pool: &PgPool,
+) -> ControlFlow<()> {
+    let Some(msg) = maybe_msg else {
+        log::debug!("Command channel closed");
+        return ControlFlow::Break(());
+    };
+
+    log::debug!("Received {msg:?}");
+
+    if matches!(msg, DatabaseQuery::Close) {
+        if !buffer.is_empty() {
+            drain_buffer(pool, buffer).await;
+        }
+        return ControlFlow::Break(());
+    }
+
+    buffer.push_back(msg);
+
+    if buffer_interval.is_zero() {
+        drain_buffer(pool, buffer).await;
+    }
+
+    ControlFlow::Continue(())
+}
+
+async fn flush_buffer(
+    buffer: &mut VecDeque<DatabaseQuery>,
+    pool: &PgPool,
+    flush_timer: &mut Pin<&mut tokio::time::Sleep>,
+    buffer_interval: Duration,
+) {
+    if !buffer.is_empty() {
+        drain_buffer(pool, buffer).await;
+    }
+    flush_timer.as_mut().reset(Instant::now() + buffer_interval);
 }
 
 /// Retrieves a `PostgresCacheDatabase` using default connection options.

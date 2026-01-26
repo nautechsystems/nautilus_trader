@@ -1332,15 +1332,15 @@ impl OKXHttpClient {
                     (&fee_rate.maker, &fee_rate.taker)
                 };
 
-                let maker = if !maker_str.is_empty() {
+                let maker = if maker_str.is_empty() {
+                    None
+                } else {
                     Decimal::from_str(maker_str).ok().map(|v| -v)
-                } else {
-                    None
                 };
-                let taker = if !taker_str.is_empty() {
-                    Decimal::from_str(taker_str).ok().map(|v| -v)
-                } else {
+                let taker = if taker_str.is_empty() {
                     None
+                } else {
+                    Decimal::from_str(taker_str).ok().map(|v| -v)
                 };
 
                 (maker, taker)
@@ -1433,15 +1433,15 @@ impl OKXHttpClient {
                 (&fee_rate.maker, &fee_rate.taker)
             };
 
-            let maker = if !maker_str.is_empty() {
+            let maker = if maker_str.is_empty() {
+                None
+            } else {
                 Decimal::from_str(maker_str).ok().map(|v| -v)
-            } else {
-                None
             };
-            let taker = if !taker_str.is_empty() {
-                Decimal::from_str(taker_str).ok().map(|v| -v)
-            } else {
+            let taker = if taker_str.is_empty() {
                 None
+            } else {
+                Decimal::from_str(taker_str).ok().map(|v| -v)
             };
 
             (maker, taker)
@@ -1537,6 +1537,15 @@ impl OKXHttpClient {
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
         const OKX_TRADES_MAX_LIMIT: u32 = 100;
+        const MAX_PAGES: usize = 500;
+        const MAX_CONSECUTIVE_EMPTY: usize = 3;
+
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        enum Mode {
+            Latest,
+            Backward,
+            Range,
+        }
 
         let limit = if limit == Some(0) { None } else { limit };
 
@@ -1559,13 +1568,6 @@ impl OKXHttpClient {
         } else {
             end
         };
-
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-        enum Mode {
-            Latest,
-            Backward,
-            Range,
-        }
 
         let mode = match (start, end) {
             (None, None) => Mode::Latest,
@@ -1590,8 +1592,6 @@ impl OKXHttpClient {
                 std::collections::HashSet::new();
             let mut unique_count = 0usize;
             let mut consecutive_empty_pages = 0usize;
-            const MAX_PAGES: usize = 500;
-            const MAX_CONSECUTIVE_EMPTY: usize = 3;
 
             // Only apply default limit when there's no start boundary
             // (start provides a natural stopping point, end alone allows infinite backward pagination)
@@ -1715,22 +1715,7 @@ impl OKXHttpClient {
                 );
 
                 // Extract oldest unique trade ID for next page cursor
-                let oldest_trade_id = if !page_trades.is_empty() {
-                    // Use oldest deduplicated trade ID before reversing
-                    let oldest_id = page_trades.last().map(|t| {
-                        let id = t.trade_id.to_string();
-                        log::debug!(
-                            "Setting cursor from deduplicated trades: oldest_id={}, ts_event={}",
-                            id,
-                            t.ts_event.as_i64()
-                        );
-                        id
-                    });
-                    page_trades.reverse();
-                    page_results.push(page_trades);
-                    consecutive_empty_pages = 0;
-                    oldest_id
-                } else {
+                let oldest_trade_id = if page_trades.is_empty() {
                     // Only apply consecutive empty guard if we've already collected some trades
                     // This allows historical backfills to paginate through empty prelude
                     if unique_count > 0 {
@@ -1750,6 +1735,21 @@ impl OKXHttpClient {
                         );
                         id
                     })
+                } else {
+                    // Use oldest deduplicated trade ID before reversing
+                    let oldest_id = page_trades.last().map(|t| {
+                        let id = t.trade_id.to_string();
+                        log::debug!(
+                            "Setting cursor from deduplicated trades: oldest_id={}, ts_event={}",
+                            id,
+                            t.ts_event.as_i64()
+                        );
+                        id
+                    });
+                    page_trades.reverse();
+                    page_results.push(page_trades);
+                    consecutive_empty_pages = 0;
+                    oldest_id
                 };
 
                 if let Some(ref old_id) = before_trade_id
@@ -1903,6 +1903,13 @@ impl OKXHttpClient {
         const HISTORY_SPLIT_DAYS: i64 = 100;
         const MAX_PAGES_SOFT: usize = 500;
 
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        enum Mode {
+            Latest,
+            Backward,
+            Range,
+        }
+
         let limit = if limit == Some(0) { None } else { limit };
 
         anyhow::ensure!(
@@ -1949,13 +1956,6 @@ impl OKXHttpClient {
             _ => unreachable!("Unsupported aggregation should have been caught above"),
         };
         let slot_ns: i64 = slot_ms * 1_000_000;
-
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-        enum Mode {
-            Latest,
-            Backward,
-            Range,
-        }
 
         let mode = match (start, end) {
             (None, None) => Mode::Latest,
@@ -2128,9 +2128,7 @@ impl OKXHttpClient {
                         .get_history_candles(params2)
                         .await
                         .map_err(anyhow::Error::new)?;
-                    if !raw2.is_empty() {
-                        raw = raw2;
-                    } else {
+                    if raw2.is_empty() {
                         // Step back one page interval and retry loop
                         let jump = (page_cap as i64).saturating_mul(slot_ms.max(1));
                         before_ms = Some(b.saturating_sub(jump));
@@ -2139,6 +2137,8 @@ impl OKXHttpClient {
                             break;
                         }
                         continue;
+                    } else {
+                        raw = raw2;
                     }
                 }
 

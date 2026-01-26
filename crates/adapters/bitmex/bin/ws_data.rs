@@ -81,7 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Give the connection a moment to stabilize
     tokio::time::sleep(Duration::from_millis(500)).await;
 
-    let instrument_id = InstrumentId::from(format!("{symbol}.BITMEX").as_str());
+    let instrument_id = InstrumentId::from(format!("{symbol}.BITMEX"));
     log::info!("Using instrument_id: {instrument_id}");
 
     match subscription_type {
@@ -106,8 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ws_client.subscribe_book_depth10(instrument_id).await?;
         }
         "bars" => {
-            let bar_type =
-                BarType::from(format!("{symbol}.BITMEX-1-MINUTE-LAST-EXTERNAL").as_str());
+            let bar_type = BarType::from(format!("{symbol}.BITMEX-1-MINUTE-LAST-EXTERNAL"));
             log::info!("Subscribing to bars: {bar_type}");
             ws_client.subscribe_bars(bar_type).await?;
         }
@@ -169,8 +168,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             tokio::time::sleep(Duration::from_millis(100)).await;
 
-            let bar_type =
-                BarType::from(format!("{symbol}.BITMEX-1-MINUTE-LAST-EXTERNAL").as_str());
+            let bar_type = BarType::from(format!("{symbol}.BITMEX-1-MINUTE-LAST-EXTERNAL"));
             log::info!("- Subscribing to bars: {bar_type}");
             if let Err(e) = ws_client.subscribe_bars(bar_type).await {
                 log::error!("Failed to subscribe to bars: {e}");

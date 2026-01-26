@@ -15,9 +15,11 @@
 
 //! Binance venue constants and API endpoints.
 
-use std::sync::LazyLock;
+use std::{num::NonZeroU32, sync::LazyLock};
 
 use nautilus_model::identifiers::Venue;
+use nautilus_network::ratelimiter::quota::Quota;
+use ustr::Ustr;
 
 use super::enums::{BinanceRateLimitInterval, BinanceRateLimitType};
 
@@ -204,3 +206,23 @@ pub const BINANCE_EAPI_RATE_LIMITS: &[BinanceRateLimitQuota] = &[
         limit: 200,
     },
 ];
+
+/// WebSocket subscription rate limit: 5 messages per second.
+///
+/// Binance limits incoming WebSocket messages (subscribe/unsubscribe) to 5 per second.
+pub static BINANCE_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> =
+    LazyLock::new(|| Quota::per_second(NonZeroU32::new(5).expect("5 > 0")));
+
+/// WebSocket connection rate limit: 1 per second (conservative).
+///
+/// Binance limits connections to 300 per 5 minutes per IP. This conservative quota
+/// of 1 per second helps avoid hitting the connection limit during reconnection storms.
+pub static BINANCE_WS_CONNECTION_QUOTA: LazyLock<Quota> =
+    LazyLock::new(|| Quota::per_second(NonZeroU32::new(1).expect("1 > 0")));
+
+/// Pre-interned rate limit key for WebSocket subscription operations.
+pub static BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from("subscription")]);
+
+/// Valid order book depth levels for Binance.
+pub const BINANCE_BOOK_DEPTHS: [u32; 7] = [5, 10, 20, 50, 100, 500, 1000];

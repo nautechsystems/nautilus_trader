@@ -1,10 +1,10 @@
 # dYdX
 
-dYdX is one of the largest decentralized cryptocurrency exchanges in terms of daily trading volume
-for crypto derivative products. dYdX runs on smart contracts on the Ethereum blockchain, and allows
-users to trade with no intermediaries. This integration supports live market data ingestion and order
-execution with dYdX v4, which is the first version of the protocol to be fully decentralized with no
-central components.
+dYdX is one of the largest decentralized cryptocurrency exchanges for crypto derivative products.
+This integration supports live market data ingestion and order execution with **dYdX v4**, the first
+fully decentralized version of the protocol running on its own application-specific blockchain (dYdX Chain).
+Unlike previous versions, v4 operates entirely on-chain with no central components, using Cosmos SDK
+and CometBFT (formerly Tendermint) for consensus.
 
 ## Installation
 
@@ -20,22 +20,38 @@ To build from source with all extras (including dYdX):
 uv sync --all-extras
 ```
 
+## Overview
+
+This adapter is implemented in Rust with Python bindings. It provides direct integration with dYdX's
+Indexer API (REST/WebSocket) for market data and gRPC for transaction submission, without requiring
+external client libraries.
+
+### Product support
+
+| Product Type        | Data Feed | Trading | Notes                                        |
+|---------------------|-----------|---------|----------------------------------------------|
+| Perpetual Futures   | ✓         | ✓       | All perpetuals are USDC-settled on v4.       |
+| Spot                | -         | -       | *Not available on dYdX v4*.                  |
+| Options             | -         | -       | *Not available on dYdX v4*.                  |
+
+:::note
+dYdX v4 exclusively supports perpetual futures contracts. All markets are quoted in USD and settled
+in USDC. The protocol does not support spot trading or options.
+:::
+
 ## Examples
 
 You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/dydx/).
 
-## Overview
+## Architecture
 
-This guide assumes a trader is setting up for both live market data feeds, and trade execution.
-The dYdX adapter includes multiple components, which can be used together or separately depending
-on the use case.
+The dYdX adapter includes multiple components which can be used together or separately:
 
-- `DYDXHttpClient`: Low-level HTTP API connectivity.
-- `DYDXWebSocketClient`: Low-level WebSocket API connectivity.
-- `DYDXAccountGRPCAPI`: Low-level gRPC API connectivity for account updates.
+- `DYDXHttpClient`: Low-level HTTP API connectivity for Indexer queries.
+- `DYDXWebSocketClient`: Low-level WebSocket API connectivity for real-time data.
 - `DYDXInstrumentProvider`: Instrument parsing and loading functionality.
-- `DYDXDataClient`: A market data feed manager.
-- `DYDXExecutionClient`: An account management and trade execution gateway.
+- `DYDXDataClient`: Market data feed manager.
+- `DYDXExecutionClient`: Account management and trade execution gateway.
 - `DYDXLiveDataClientFactory`: Factory for dYdX data clients (used by the trading node builder).
 - `DYDXLiveExecClientFactory`: Factory for dYdX execution clients (used by the trading node builder).
 
@@ -70,10 +86,36 @@ In unattended deployments, wrap the `connect()` call in an exponential-backoff l
 
 ## Symbology
 
-Only perpetual contracts are available on dYdX. To be consistent with other adapters and to be
-futureproof in case other products become available on dYdX, NautilusTrader appends `-PERP` for all
-available perpetual symbols. For example, the Bitcoin/USD-C perpetual futures contract is identified
-as `BTC-USD-PERP`. The quote currency for all markets is USD-C. Therefore, dYdX abbreviates it to USD.
+dYdX v4 uses specific symbol conventions for perpetual futures contracts.
+
+### Symbol format
+
+Format: `{Base}-USD-PERP`
+
+All perpetuals on dYdX v4 are:
+
+- Quoted in USD
+- Settled in USDC
+- Use the `.DYDX` venue suffix in Nautilus
+
+Examples:
+
+- `BTC-USD-PERP.DYDX` - Bitcoin perpetual futures
+- `ETH-USD-PERP.DYDX` - Ethereum perpetual futures
+- `SOL-USD-PERP.DYDX` - Solana perpetual futures
+
+To subscribe in your strategy:
+
+```python
+InstrumentId.from_str("BTC-USD-PERP.DYDX")
+InstrumentId.from_str("ETH-USD-PERP.DYDX")
+```
+
+:::info
+The `-PERP` suffix is appended for consistency with other adapters and future-proofing. While dYdX v4
+currently only supports perpetuals, this naming convention allows for potential expansion to other
+product types.
+:::
 
 ## Short-term and long-term orders
 
@@ -199,30 +241,30 @@ dYdX supports perpetual futures trading with a comprehensive set of order types 
 
 ### Position management
 
-| Feature              | Perpetuals | Notes                                          |
+| Feature              | Perpetuals | Notes                                        |
 |--------------------|------------|------------------------------------------------|
-| Query positions     | ✓          | Real-time position updates.                    |
+| Query positions     | ✓          | Real-time position updates.                   |
 | Position mode       | -          | Net position mode only.                       |
 | Leverage control    | ✓          | Per-market leverage settings.                 |
-| Margin mode         | -          | Cross margin only.                             |
+| Margin mode         | -          | Cross margin only.                            |
 
 ### Order querying
 
-| Feature              | Perpetuals | Notes                                          |
-|----------------------|------------|------------------------------------------------|
-| Query open orders    | ✓          | List all active orders.                        |
-| Query order history  | ✓          | Historical order data.                         |
-| Order status updates | ✓          | Real-time order state changes.                |
-| Trade history        | ✓          | Execution and fill reports.                   |
+| Feature              | Perpetuals | Notes                                        |
+|----------------------|------------|----------------------------------------------|
+| Query open orders    | ✓          | List all active orders.                      |
+| Query order history  | ✓          | Historical order data.                       |
+| Order status updates | ✓          | Real-time order state changes.               |
+| Trade history        | ✓          | Execution and fill reports.                  |
 
 ### Contingent orders
 
-| Feature             | Perpetuals | Notes                                          |
-|---------------------|------------|------------------------------------------------|
-| Order lists         | -          | *Not supported*.                               |
-| OCO orders          | -          | *Not supported*.                               |
-| Bracket orders      | -          | *Not supported*.                               |
-| Conditional orders  | ✓          | Stop market and stop limit orders.           |
+| Feature             | Perpetuals | Notes                                         |
+|---------------------|------------|-----------------------------------------------|
+| Order lists         | -          | *Not supported*.                              |
+| OCO orders          | -          | *Not supported*.                              |
+| Bracket orders      | -          | *Not supported*.                              |
+| Conditional orders  | ✓          | Stop market and stop limit orders.            |
 
 ### Order classification
 
@@ -231,61 +273,97 @@ dYdX classifies orders as either **short-term** or **long-term** orders:
 - **Short-term orders**: Default for all orders; intended for high-frequency trading and market orders.
 - **Long-term orders**: Required for conditional orders; use `DYDXOrderTags` to specify.
 
+## Subaccounts
+
+dYdX v4 supports multiple subaccounts per wallet address, allowing segregation of trading strategies
+and risk management within a single wallet.
+
+### Key concepts
+
+- Each wallet address can have multiple numbered subaccounts (0, 1, 2, ..., 127)
+- Subaccount 0 is the **default** and is automatically created on first deposit
+- Each subaccount maintains its own:
+  - Positions
+  - Open orders
+  - Collateral balance
+  - Margin requirements
+
+### Configuration
+
+Specify the subaccount number in the execution client config:
+
+```python
+config = TradingNodeConfig(
+    exec_clients={
+        "DYDX": {
+            "wallet_address": "YOUR_WALLET_ADDRESS",
+            "subaccount": 0,  # Default subaccount
+            "mnemonic": "YOUR_MNEMONIC",
+        },
+    },
+)
+```
+
+:::note
+Most users will use subaccount `0` (the default). Advanced users can configure multiple execution
+clients for different subaccounts to implement strategy segregation or risk isolation.
+:::
+
 ## Configuration
 
-The product types for each client must be specified in the configurations.
+Configure the dYdX adapter through the trading node configuration. Both data and execution clients
+support environment variable fallbacks for credentials and network-specific settings.
 
 ### Data client configuration options
 
-| Option                           | Default | Description |
-|----------------------------------|---------|-------------|
-| `wallet_address`                 | `None`  | Wallet address; loaded from `DYDX_WALLET_ADDRESS`/`DYDX_TESTNET_WALLET_ADDRESS` when omitted. |
-| `is_testnet`                     | `False` | Connect to the dYdX testnet when `True`. |
-| `update_instruments_interval_mins` | `60`  | Interval (minutes) between instrument catalogue refreshes. |
-| `max_retries`                    | `None`  | Maximum retry attempts for REST/WebSocket recovery. |
-| `retry_delay_initial_ms`         | `None`  | Initial delay (milliseconds) between retries. |
-| `retry_delay_max_ms`             | `None`  | Maximum delay (milliseconds) between retries. |
-| `proxy_url`                      | `None`  | Optional proxy URL for HTTP requests. |
+| Option                             | Default | Description |
+|------------------------------------|---------|-------------|
+| `wallet_address`                   | `None`  | Wallet address for fee calculation. Falls back to `DYDX_WALLET_ADDRESS` (mainnet) or `DYDX_TESTNET_WALLET_ADDRESS` (testnet). |
+| `is_testnet`                       | `False` | Connect to dYdX testnet when `True`. |
+| `update_instruments_interval_mins` | `60`    | Interval (minutes) between instrument catalog refreshes. |
+| `max_retries`                      | `3`     | Maximum retry attempts for REST/WebSocket recovery. |
+| `retry_delay_initial_ms`           | `1000`  | Initial delay (milliseconds) between retries. |
+| `retry_delay_max_ms`               | `60000` | Maximum delay (milliseconds) between retries. |
 
 ### Execution client configuration options
 
 | Option                   | Default | Description |
 |--------------------------|---------|-------------|
-| `wallet_address`         | `None`  | Wallet address; loaded from `DYDX_WALLET_ADDRESS`/`DYDX_TESTNET_WALLET_ADDRESS` when omitted. |
-| `subaccount`             | `0`     | Subaccount number (dYdX provisions subaccount `0` by default). |
-| `mnemonic`               | `None`  | Mnemonic used to derive the signing key; loaded from environment when omitted. |
-| `base_url_http`          | `None`  | Override for the REST base URL. |
-| `base_url_ws`            | `None`  | Override for the WebSocket base URL. |
-| `is_testnet`             | `False` | Connect to the dYdX testnet when `True`. |
-| `max_retries`            | `None`  | Maximum retry attempts for order submission/cancel/modify calls. |
-| `retry_delay_initial_ms` | `None`  | Initial delay (milliseconds) between retries. |
-| `retry_delay_max_ms`     | `None`  | Maximum delay (milliseconds) between retries. |
-| `proxy_url`              | `None`  | Optional proxy URL for HTTP requests. |
+| `wallet_address`         | `None`  | Wallet address for the account. Falls back to `DYDX_WALLET_ADDRESS` (mainnet) or `DYDX_TESTNET_WALLET_ADDRESS` (testnet). |
+| `subaccount`             | `0`     | Subaccount number (0-127). Subaccount 0 is the default. |
+| `mnemonic`               | `None`  | BIP-39 mnemonic for transaction signing. Falls back to `DYDX_MNEMONIC` (mainnet) or `DYDX_TESTNET_MNEMONIC` (testnet). |
+| `is_testnet`             | `False` | Connect to dYdX testnet when `True`. |
+| `max_retries`            | `3`     | Maximum retry attempts for order operations. |
+| `retry_delay_initial_ms` | `1000`  | Initial delay (milliseconds) between retries. |
+| `retry_delay_max_ms`     | `60000` | Maximum delay (milliseconds) between retries. |
 
-### Execution clients
+:::note
+**Environment variable resolution**: The adapter automatically resolves credentials from environment
+variables based on the `is_testnet` setting. This allows secure credential management without
+hardcoding sensitive values in configuration files.
+:::
 
-The account type must be a margin account to trade the perpetual futures contracts.
+### Basic setup
 
-The most common use case is to configure a live `TradingNode` to include dYdX
-data and execution clients. To achieve this, add a `DYDX` section to your client
-configuration(s):
+Configure a live `TradingNode` to include dYdX data and execution clients by adding a `DYDX`
+section to your client configurations:
 
 ```python
-from nautilus_trader.live.node import TradingNode
+from nautilus_trader.config import TradingNodeConfig
 
 config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
         "DYDX": {
-            "wallet_address": "YOUR_DYDX_WALLET_ADDRESS",
+            "wallet_address": "dydx1...",  # Or use environment variable
             "is_testnet": False,
         },
     },
     exec_clients={
         "DYDX": {
-            "wallet_address": "YOUR_DYDX_WALLET_ADDRESS",
-            "subaccount": "YOUR_DYDX_SUBACCOUNT_NUMBER"
-            "mnemonic": "YOUR_MNEMONIC",
+            "wallet_address": "dydx1...",  # Or use environment variable
+            "subaccount": 0,
+            "mnemonic": "word1 word2 ...",  # Or use environment variable
             "is_testnet": False,
         },
     },
@@ -312,50 +390,60 @@ node.build()
 
 ### API credentials
 
-There are two options for supplying your credentials to the dYdX clients.
-Either pass the corresponding `wallet_address` and `mnemonic` values to the configuration objects, or
-set the following environment variables:
+The dYdX adapter supports two methods for supplying credentials:
 
-For dYdX live clients, you can set:
+1. **Direct configuration**: Pass `wallet_address` and `mnemonic` in the config
+2. **Environment variables**: Set environment variables (recommended for security)
 
-- `DYDX_WALLET_ADDRESS`
-- `DYDX_MNEMONIC`
+#### Environment variables
 
-For dYdX testnet clients, you can set:
+The adapter automatically selects environment variables based on the `is_testnet` setting:
 
-- `DYDX_TESTNET_WALLET_ADDRESS`
-- `DYDX_TESTNET_MNEMONIC`
+**Mainnet:**
+
+- `DYDX_WALLET_ADDRESS` - Your dYdX wallet address
+- `DYDX_MNEMONIC` - BIP-39 mnemonic phrase for signing
+
+**Testnet:**
+
+- `DYDX_TESTNET_WALLET_ADDRESS` - Your testnet wallet address
+- `DYDX_TESTNET_MNEMONIC` - Testnet mnemonic phrase
 
 :::tip
-We recommend using environment variables to manage your credentials.
+Use environment variables for credential management. This keeps sensitive information out of
+configuration files and source control.
 :::
 
-The data client is using the wallet address to determine the trading fees. The trading fees are used during back tests only.
+:::note
+The data client uses the wallet address to determine trading fees for backtesting purposes. This
+does not affect live trading fee calculation, which is determined by the blockchain state.
+:::
 
-### Testnets
+### Testnet configuration
 
-It's also possible to configure one or both clients to connect to the dYdX testnet.
-Set the `is_testnet` option to `True` (this is `False` by default):
+Configure clients to connect to the dYdX testnet by setting `is_testnet: True`:
 
 ```python
 config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
         "DYDX": {
-            "wallet_address": "YOUR_DYDX_WALLET_ADDRESS",
-            "is_testnet": True,
+            "is_testnet": True,  # Will use DYDX_TESTNET_* environment variables
         },
     },
     exec_clients={
         "DYDX": {
-            "wallet_address": "YOUR_DYDX_WALLET_ADDRESS",
-            "subaccount": "YOUR_DYDX_SUBACCOUNT_NUMBER"
-            "mnemonic": "YOUR_MNEMONIC",
-            "is_testnet": True,
+            "subaccount": 0,
+            "is_testnet": True,  # Will use DYDX_TESTNET_* environment variables
         },
     },
 )
 ```
+
+:::warning
+Ensure you have testnet credentials in the appropriate environment variables (`DYDX_TESTNET_WALLET_ADDRESS`
+and `DYDX_TESTNET_MNEMONIC`) before connecting to testnet.
+:::
 
 ### Parser warnings
 
@@ -368,6 +456,8 @@ In these cases, a *warn and continue* approach is taken (the instrument will not
 Order books can be maintained at full depth or top-of-book quotes depending on the
 subscription. The venue does not provide quotes, but the adapter subscribes to order
 book deltas and sends new quotes to the `DataEngine` when there is a top-of-book price or size change.
+
+## Contributing
 
 :::info
 For additional features or to contribute to the dYdX adapter, please see our

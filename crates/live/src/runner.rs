@@ -20,7 +20,7 @@ use nautilus_common::{
     messages::{
         DataEvent, ExecutionEvent, ExecutionReport, data::DataCommand, execution::TradingCommand,
     },
-    msgbus::{self, switchboard::MessagingSwitchboard},
+    msgbus::{self, MessagingSwitchboard},
     runner::{
         DataCommandSender, TimeEventSender, TradingCommandSender, set_data_cmd_sender,
         set_exec_cmd_sender, set_time_event_sender,
@@ -263,7 +263,7 @@ impl AsyncRunner {
     /// Handles a data command by sending to the DataEngine.
     #[inline]
     pub fn handle_data_command(cmd: DataCommand) {
-        msgbus::send_any(MessagingSwitchboard::data_engine_execute(), &cmd);
+        msgbus::send_data_command(MessagingSwitchboard::data_engine_execute(), cmd);
     }
 
     /// Handles a data event by sending to the appropriate DataEngine endpoint.
@@ -271,20 +271,20 @@ impl AsyncRunner {
     pub fn handle_data_event(event: DataEvent) {
         match event {
             DataEvent::Data(data) => {
-                msgbus::send_any(MessagingSwitchboard::data_engine_process(), &data);
+                msgbus::send_data(MessagingSwitchboard::data_engine_process_data(), data);
             }
             DataEvent::Instrument(data) => {
                 msgbus::send_any(MessagingSwitchboard::data_engine_process(), &data);
             }
             DataEvent::Response(resp) => {
-                msgbus::send_any(MessagingSwitchboard::data_engine_response(), &resp);
+                msgbus::send_data_response(MessagingSwitchboard::data_engine_response(), resp);
             }
             DataEvent::FundingRate(funding_rate) => {
                 msgbus::send_any(MessagingSwitchboard::data_engine_process(), &funding_rate);
             }
             #[cfg(feature = "defi")]
             DataEvent::DeFi(data) => {
-                msgbus::send_any(MessagingSwitchboard::data_engine_process(), &data);
+                msgbus::send_defi_data(MessagingSwitchboard::data_engine_process_defi_data(), data);
             }
         }
     }
@@ -292,53 +292,32 @@ impl AsyncRunner {
     /// Handles an execution command by sending to the ExecEngine.
     #[inline]
     pub fn handle_exec_command(cmd: TradingCommand) {
-        msgbus::send_any(MessagingSwitchboard::exec_engine_execute(), &cmd);
+        msgbus::send_trading_command(MessagingSwitchboard::exec_engine_execute(), cmd);
     }
 
     /// Handles an execution event by sending to the appropriate engine endpoint.
     #[inline]
     pub fn handle_exec_event(event: ExecutionEvent) {
         match event {
-            ExecutionEvent::Order(ref order_event) => {
-                msgbus::send_any(MessagingSwitchboard::exec_engine_process(), order_event);
+            ExecutionEvent::Order(order_event) => {
+                msgbus::send_order_event(MessagingSwitchboard::exec_engine_process(), order_event);
             }
             ExecutionEvent::Report(report) => {
                 Self::handle_exec_report(report);
             }
             ExecutionEvent::Account(ref account) => {
-                msgbus::send_any(MessagingSwitchboard::portfolio_update_account(), account);
+                msgbus::send_account_state(
+                    MessagingSwitchboard::portfolio_update_account(),
+                    account,
+                );
             }
         }
     }
 
     #[inline]
     pub fn handle_exec_report(report: ExecutionReport) {
-        match report {
-            ExecutionReport::OrderStatus(r) => {
-                msgbus::send_any(
-                    MessagingSwitchboard::exec_engine_reconcile_execution_report(),
-                    &*r,
-                );
-            }
-            ExecutionReport::Fill(r) => {
-                msgbus::send_any(
-                    MessagingSwitchboard::exec_engine_reconcile_execution_report(),
-                    &*r,
-                );
-            }
-            ExecutionReport::Position(r) => {
-                msgbus::send_any(
-                    MessagingSwitchboard::exec_engine_reconcile_execution_report(),
-                    &*r,
-                );
-            }
-            ExecutionReport::Mass(r) => {
-                msgbus::send_any(
-                    MessagingSwitchboard::exec_engine_reconcile_execution_mass_status(),
-                    &*r,
-                );
-            }
-        }
+        let endpoint = MessagingSwitchboard::exec_engine_reconcile_execution_report();
+        msgbus::send_execution_report(endpoint, report);
     }
 }
 
@@ -549,11 +528,10 @@ mod tests {
             runner.run().await;
         });
 
-        // Drop data sender to close channel - this should cause runner to exit
         drop(data_tx);
 
-        // Send stop signal to ensure clean shutdown
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // Yield to let runner enter event loop before stop signal
+        tokio::task::yield_now().await;
         signal_tx.send(()).ok();
 
         // Runner should stop when channels close or on signal
@@ -609,13 +587,11 @@ mod tests {
             handle.await.unwrap();
         }
 
-        // Give runner time to process
-        tokio::time::sleep(Duration::from_millis(50)).await;
-
-        // Stop runner
+        // Yield to let runner enter event loop before stop signal
+        tokio::task::yield_now().await;
         signal_tx.send(()).unwrap();
 
-        let _ = tokio::time::timeout(Duration::from_secs(1), runner_handle).await;
+        let _ = tokio::time::timeout(Duration::from_millis(200), runner_handle).await;
     }
 
     #[rstest]
@@ -695,14 +671,14 @@ mod tests {
             None,
         );
 
-        tx.send(ExecutionEvent::Report(ExecutionReport::OrderStatus(
-            Box::new(report),
-        )))
+        tx.send(ExecutionEvent::Report(ExecutionReport::Order(Box::new(
+            report,
+        ))))
         .unwrap();
 
         let received = rx.recv().await.unwrap();
         match received {
-            ExecutionEvent::Report(ExecutionReport::OrderStatus(r)) => {
+            ExecutionEvent::Report(ExecutionReport::Order(r)) => {
                 assert_eq!(r.venue_order_id.as_str(), "V-001");
                 assert_eq!(r.order_status, OrderStatus::Accepted);
             }
@@ -918,9 +894,9 @@ mod tests {
             None,
         );
         exec_evt_tx
-            .send(ExecutionEvent::Report(ExecutionReport::OrderStatus(
-                Box::new(order_status),
-            )))
+            .send(ExecutionEvent::Report(ExecutionReport::Order(Box::new(
+                order_status,
+            ))))
             .unwrap();
 
         // Send execution report (Fill)
@@ -980,13 +956,11 @@ mod tests {
             .send(ExecutionEvent::Account(account_state))
             .unwrap();
 
-        // Give runner time to process all events
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Stop runner
+        // Yield to let runner enter event loop before stop signal
+        tokio::task::yield_now().await;
         signal_tx.send(()).unwrap();
 
-        let result = tokio::time::timeout(Duration::from_secs(1), runner_handle).await;
+        let result = tokio::time::timeout(Duration::from_millis(200), runner_handle).await;
         assert!(
             result.is_ok(),
             "Runner should process all event types and stop cleanly"
@@ -1071,10 +1045,8 @@ mod tests {
             runner.run().await;
         });
 
-        // Give runner time to process queued events
-        tokio::time::sleep(Duration::from_millis(50)).await;
-
-        // Stop runner
+        // Yield to let runner enter event loop before stop signal
+        tokio::task::yield_now().await;
         handle.stop();
 
         let result = tokio::time::timeout(Duration::from_millis(200), runner_task).await;

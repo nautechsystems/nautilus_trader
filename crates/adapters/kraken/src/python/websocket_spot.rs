@@ -78,8 +78,7 @@ impl KrakenSpotWebSocketClient {
         let (resolved_api_key, resolved_api_secret) =
             crate::common::credential::KrakenCredential::resolve_spot(api_key, api_secret)
                 .map(|c| c.into_parts())
-                .map(|(k, s)| (Some(k), Some(s)))
-                .unwrap_or((None, None));
+                .map_or((None, None), |(k, s)| (Some(k), Some(s)));
 
         let (ws_public_url, ws_private_url) = if private {
             // Use provided URL or default to the private endpoint
@@ -103,7 +102,7 @@ impl KrakenSpotWebSocketClient {
 
         let token = CancellationToken::new();
 
-        Ok(KrakenSpotWebSocketClient::new(config, token))
+        Ok(Self::new(config, token))
     }
 
     #[getter]

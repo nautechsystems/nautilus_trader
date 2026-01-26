@@ -864,12 +864,12 @@ impl PyStrategy {
     #[pyo3(name = "clock")]
     fn py_clock(&self) -> PyResult<PyClock> {
         let inner = self.inner();
-        if !inner.core.actor.is_registered() {
+        if inner.core.actor.is_registered() {
+            Ok(inner.clock.clone())
+        } else {
             Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
                 "Strategy must be registered with a trader before accessing clock",
             ))
-        } else {
-            Ok(inner.clock.clone())
         }
     }
 
@@ -877,12 +877,12 @@ impl PyStrategy {
     #[pyo3(name = "cache")]
     fn py_cache(&self) -> PyResult<PyCache> {
         let inner = self.inner();
-        if !inner.core.actor.is_registered() {
+        if inner.core.actor.is_registered() {
+            Ok(PyCache::from_rc(inner.core.actor.cache_rc()))
+        } else {
             Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
                 "Strategy must be registered with a trader before accessing cache",
             ))
-        } else {
-            Ok(PyCache::from_rc(inner.core.actor.cache_rc()))
         }
     }
 

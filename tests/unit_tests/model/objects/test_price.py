@@ -293,12 +293,12 @@ class TestPrice:
     @pytest.mark.parametrize(
         ("value1", "value2", "expected_type", "expected_value"),
         [
-            [Price(0, precision=0), Price(0, precision=0), Decimal, 0],
+            [Price(0, precision=0), Price(0, precision=0), Price, Price(0, precision=0)],
             [
                 Price(0, precision=0),
                 Price(1.1, precision=1),
-                Decimal,
-                Decimal("1.1"),
+                Price,
+                Price(1.1, precision=1),
             ],
             [Price(0, precision=0), 0, Decimal, 0],
             [Price(0, precision=0), 1, Decimal, 1],
@@ -311,8 +311,8 @@ class TestPrice:
             [
                 Price(1, precision=0),
                 Price(1.1, precision=1),
-                Decimal,
-                Decimal("2.1"),
+                Price,
+                Price(2.1, precision=1),
             ],
             [Price(1, precision=0), Decimal("1.1"), Decimal, Decimal("2.1")],
         ],
@@ -334,13 +334,8 @@ class TestPrice:
     @pytest.mark.parametrize(
         ("value1", "value2", "expected_type", "expected_value"),
         [
-            [Price(0, precision=0), Price(0, precision=0), Decimal, 0],
-            [
-                Price(0, precision=0),
-                Price(1.1, precision=1),
-                Decimal,
-                Decimal("-1.1"),
-            ],
+            [Price(0, precision=0), Price(0, precision=0), Price, Price(0, 0)],
+            [Price(0, precision=0), Price(1.1, precision=1), Price, Price(-1.1, 1)],
             [Price(0, precision=0), 0, Decimal, 0],
             [Price(0, precision=0), 1, Decimal, -1],
             [0, Price(0, precision=0), Decimal, 0],
@@ -349,12 +344,7 @@ class TestPrice:
             [Price(0, precision=0), 1.1, float, -1.1],
             [0.1, Price(1, precision=0), float, -0.9],
             [1.1, Price(1, precision=0), float, 0.10000000000000009],
-            [
-                Price(1, precision=0),
-                Price(1.1, precision=1),
-                Decimal,
-                Decimal("-0.1"),
-            ],
+            [Price(1, precision=0), Price(1.1, precision=1), Price, Price(-0.1, 1)],
             [Price(1, precision=0), Decimal("1.1"), Decimal, Decimal("-0.1")],
         ],
     )

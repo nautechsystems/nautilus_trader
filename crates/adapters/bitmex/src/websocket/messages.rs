@@ -24,6 +24,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
+use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::Value;
 use strum::Display;
@@ -333,31 +334,31 @@ pub struct BitmexTradeMsg {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BitmexTradeBinMsg {
-    /// Start time of the bin
+    /// Start time of the bin.
     pub timestamp: DateTime<Utc>,
-    /// Trading instrument symbol
+    /// Trading instrument symbol.
     pub symbol: Ustr,
-    /// Opening price for the period
+    /// Opening price for the period.
     pub open: f64,
-    /// Highest price for the period
+    /// Highest price for the period.
     pub high: f64,
-    /// Lowest price for the period
+    /// Lowest price for the period.
     pub low: f64,
-    /// Closing price for the period
+    /// Closing price for the period.
     pub close: f64,
-    /// Number of trades in the period
+    /// Number of trades in the period.
     pub trades: i64,
-    /// Volume traded in the period
+    /// Volume traded in the period.
     pub volume: i64,
-    /// Volume weighted average price
-    pub vwap: f64,
-    /// Size of the last trade in the period
-    pub last_size: i64,
-    /// Turnover in satoshis
+    /// Volume weighted average price (None when trades=0).
+    pub vwap: Option<f64>,
+    /// Size of the last trade in the period (None when trades=0).
+    pub last_size: Option<i64>,
+    /// Turnover in satoshis.
     pub turnover: i64,
-    /// Home currency volume
+    /// Home currency volume.
     pub home_notional: f64,
-    /// Foreign currency volume
+    /// Foreign currency volume.
     pub foreign_notional: f64,
 }
 
@@ -404,8 +405,10 @@ pub struct BitmexInstrumentMsg {
     pub funding_premium_symbol: Option<Ustr>,
     pub funding_timestamp: Option<DateTime<Utc>>,
     pub funding_interval: Option<DateTime<Utc>>,
-    pub funding_rate: Option<f64>,
-    pub indicative_funding_rate: Option<f64>,
+    #[serde(default, with = "rust_decimal::serde::float_option")]
+    pub funding_rate: Option<Decimal>,
+    #[serde(default, with = "rust_decimal::serde::float_option")]
+    pub indicative_funding_rate: Option<Decimal>,
     pub last_price: Option<f64>,
     pub last_tick_direction: Option<BitmexTickDirection>,
     pub mark_price: Option<f64>,
@@ -904,9 +907,11 @@ pub struct BitmexFundingMsg {
     /// The instrument symbol the funding applies to.
     pub symbol: Ustr,
     /// The funding rate for this interval.
-    pub funding_rate: f64,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub funding_rate: Decimal,
     /// The daily funding rate.
-    pub funding_rate_daily: f64,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub funding_rate_daily: Decimal,
 }
 
 /// Represents an insurance fund update.

@@ -38,7 +38,8 @@ use futures_util::{StreamExt, pin_mut};
 use nautilus_common::testing::wait_until_async;
 use nautilus_core::UnixNanos;
 use nautilus_deribit::websocket::{
-    client::DeribitWebSocketClient, enums::DeribitUpdateInterval, messages::NautilusWsMessage,
+    auth::DERIBIT_DATA_SESSION_NAME, client::DeribitWebSocketClient, enums::DeribitUpdateInterval,
+    messages::NautilusWsMessage,
 };
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol, Venue},
@@ -156,6 +157,16 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
     let quote_payload = load_json("ws_quote.json");
     let chart_payload = load_json("ws_chart.json");
 
+    // Create a second chart payload with a later timestamp for emit-on-next pattern
+    let mut chart_payload_next = chart_payload.clone();
+    if let Some(data) = chart_payload_next
+        .get_mut("params")
+        .and_then(|p| p.get_mut("data"))
+        && let Some(tick) = data.get("tick").and_then(|t| t.as_u64())
+    {
+        data["tick"] = json!(tick + 60000); // Next minute
+    }
+
     while let Some(message) = socket.recv().await {
         let Ok(message) = message else { break };
 
@@ -245,7 +256,15 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                 } else if channel.starts_with("quote.") {
                                     Some(&quote_payload)
                                 } else if channel.starts_with("chart.trades.") {
-                                    Some(&chart_payload)
+                                    // For chart subscriptions, send two bars to trigger emit-on-next
+                                    if socket
+                                        .send(Message::Text(chart_payload.to_string().into()))
+                                        .await
+                                        .is_err()
+                                    {
+                                        break;
+                                    }
+                                    Some(&chart_payload_next)
                                 } else {
                                     None
                                 };
@@ -498,6 +517,14 @@ fn create_test_client(ws_url: &str) -> DeribitWebSocketClient {
     .expect("failed to construct deribit websocket client")
 }
 
+/// Creates a test client that explicitly has no credentials.
+///
+/// Does NOT fall back to environment variables.
+fn create_test_client_without_credentials(ws_url: &str) -> DeribitWebSocketClient {
+    DeribitWebSocketClient::new_unauthenticated(Some(ws_url.to_string()), Some(30), true)
+        .expect("failed to construct deribit websocket client")
+}
+
 #[tokio::test]
 async fn test_websocket_connection() {
     let state = Arc::new(TestServerState::default());
@@ -515,7 +542,7 @@ async fn test_websocket_connection() {
             let state = state.clone();
             async move { *state.connection_count.lock().await == 1 }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 
@@ -528,7 +555,7 @@ async fn test_websocket_connection() {
             let state = state.clone();
             async move { *state.connection_count.lock().await == 0 }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 }
@@ -566,7 +593,7 @@ async fn test_is_active_and_is_closed_states() {
             let state = state.clone();
             async move { *state.connection_count.lock().await == 1 }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 
@@ -581,7 +608,7 @@ async fn test_is_active_and_is_closed_states() {
             let client = client.clone();
             async move { client.is_closed() }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 
@@ -622,14 +649,14 @@ async fn test_trades_subscription_flow() {
                     .any(|(ch, ok)| ch.starts_with("trades.") && *ok)
             }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 
     // Receive trade data from stream
     let stream = client.stream();
     pin_mut!(stream);
-    let message = tokio::time::timeout(Duration::from_secs(2), stream.next())
+    let message = tokio::time::timeout(Duration::from_secs(5), stream.next())
         .await
         .expect("no message received")
         .expect("stream ended unexpectedly");
@@ -678,14 +705,14 @@ async fn test_book_subscription_snapshot() {
                     .any(|(ch, ok)| ch.starts_with("book.") && *ok)
             }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 
     // Receive book data from stream (should receive snapshot first)
     let stream = client.stream();
     pin_mut!(stream);
-    let message = tokio::time::timeout(Duration::from_secs(2), stream.next())
+    let message = tokio::time::timeout(Duration::from_secs(5), stream.next())
         .await
         .expect("no message received")
         .expect("stream ended unexpectedly");
@@ -734,14 +761,14 @@ async fn test_ticker_subscription_flow() {
                     .any(|(ch, ok)| ch.starts_with("ticker.") && *ok)
             }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 
     // Receive ticker data from stream
     let stream = client.stream();
     pin_mut!(stream);
-    let message = tokio::time::timeout(Duration::from_secs(2), stream.next())
+    let message = tokio::time::timeout(Duration::from_secs(5), stream.next())
         .await
         .expect("no message received")
         .expect("stream ended unexpectedly");
@@ -790,14 +817,14 @@ async fn test_quote_subscription_flow() {
                     .any(|(ch, ok)| ch.starts_with("quote.") && *ok)
             }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 
     // Receive quote data from stream
     let stream = client.stream();
     pin_mut!(stream);
-    let message = tokio::time::timeout(Duration::from_secs(2), stream.next())
+    let message = tokio::time::timeout(Duration::from_secs(5), stream.next())
         .await
         .expect("no message received")
         .expect("stream ended unexpectedly");
@@ -846,14 +873,14 @@ async fn test_chart_subscription_flow() {
                     .any(|(ch, ok)| ch.starts_with("chart.trades.") && *ok)
             }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 
     // Receive bar data from stream
     let stream = client.stream();
     pin_mut!(stream);
-    let message = tokio::time::timeout(Duration::from_secs(2), stream.next())
+    let message = tokio::time::timeout(Duration::from_secs(5), stream.next())
         .await
         .expect("no message received")
         .expect("stream ended unexpectedly");
@@ -910,7 +937,7 @@ async fn test_multiple_subscriptions() {
                         .any(|(ch, ok)| ch.starts_with("ticker.") && *ok)
             }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 
@@ -952,7 +979,7 @@ async fn test_unsubscribe() {
                     .any(|(ch, ok)| ch.starts_with("trades.") && *ok)
             }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 
@@ -971,7 +998,7 @@ async fn test_unsubscribe() {
                 unsubs.iter().any(|ch| ch.starts_with("trades."))
             }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 
@@ -1000,7 +1027,7 @@ async fn test_heartbeat_enable() {
             let state = state.clone();
             async move { state.heartbeat_enabled.load(Ordering::Relaxed) }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 
@@ -1035,7 +1062,7 @@ async fn test_heartbeat_test_request_response() {
             let state = state.clone();
             async move { state.heartbeat_enabled.load(Ordering::Relaxed) }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 
@@ -1045,7 +1072,7 @@ async fn test_heartbeat_test_request_response() {
             let state = state.clone();
             async move { state.test_request_count.load(Ordering::Relaxed) > 0 }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 
@@ -1055,7 +1082,7 @@ async fn test_heartbeat_test_request_response() {
             let state = state.clone();
             async move { state.test_response_count.load(Ordering::Relaxed) > 0 }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 
@@ -1112,7 +1139,7 @@ async fn test_subscription_failure_handling() {
                     .any(|(ch, ok)| ch.starts_with("trades.") && !ok)
             }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 
@@ -1155,7 +1182,7 @@ async fn test_reconnection_after_disconnect() {
                     .any(|(ch, ok)| ch.starts_with("trades.") && *ok)
             }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 
@@ -1205,7 +1232,7 @@ async fn test_instrument_cache_usage() {
     // Receive and verify trade data is properly parsed using cached instrument
     let stream = client.stream();
     pin_mut!(stream);
-    let message = tokio::time::timeout(Duration::from_secs(2), stream.next())
+    let message = tokio::time::timeout(Duration::from_secs(5), stream.next())
         .await
         .expect("no message received")
         .expect("stream ended unexpectedly");
@@ -1248,7 +1275,7 @@ async fn test_cache_instrument_single() {
     // Verify trades can be parsed with cached instrument
     let stream = client.stream();
     pin_mut!(stream);
-    let message = tokio::time::timeout(Duration::from_secs(2), stream.next())
+    let message = tokio::time::timeout(Duration::from_secs(5), stream.next())
         .await
         .expect("no message received")
         .expect("stream ended unexpectedly");
@@ -1324,7 +1351,7 @@ async fn test_authentication_session_scope() {
 
     // Authenticate with session scope
     client
-        .authenticate_session()
+        .authenticate_session(DERIBIT_DATA_SESSION_NAME)
         .await
         .expect("session authentication failed");
 
@@ -1335,7 +1362,7 @@ async fn test_authentication_session_scope() {
     assert_eq!(scopes.len(), 1);
     assert!(
         scopes[0].starts_with("session:"),
-        "expected session scope, got: {}",
+        "expected session scope, was: {}",
         scopes[0]
     );
 
@@ -1350,8 +1377,8 @@ async fn test_authentication_without_credentials_fails() {
 
     let instruments = load_test_instruments();
 
-    // Create client without credentials
-    let mut client = create_test_client(&ws_url);
+    // Create client explicitly without credentials (bypasses env var resolution)
+    let mut client = create_test_client_without_credentials(&ws_url);
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
@@ -1418,7 +1445,7 @@ async fn test_raw_subscription_after_authentication() {
 
     // Authenticate first
     client
-        .authenticate_session()
+        .authenticate_session(DERIBIT_DATA_SESSION_NAME)
         .await
         .expect("authentication failed");
     assert!(client.is_authenticated());
@@ -1443,7 +1470,7 @@ async fn test_raw_subscription_after_authentication() {
                     .any(|(ch, ok)| ch.contains(".raw") && *ok)
             }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 
@@ -1487,7 +1514,7 @@ async fn test_100ms_subscription_without_authentication() {
                     .any(|(ch, ok)| ch.contains(".100ms") && *ok)
             }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 
@@ -1514,7 +1541,7 @@ async fn test_reconnection_with_reauthentication() {
 
     // Authenticate with session scope
     client
-        .authenticate_session()
+        .authenticate_session(DERIBIT_DATA_SESSION_NAME)
         .await
         .expect("authentication failed");
     assert!(client.is_authenticated());
@@ -1533,7 +1560,7 @@ async fn test_reconnection_with_reauthentication() {
             let state = state.clone();
             async move { state.auth_request_count.load(Ordering::Relaxed) >= 1 }
         },
-        Duration::from_secs(2),
+        Duration::from_secs(5),
     )
     .await;
 

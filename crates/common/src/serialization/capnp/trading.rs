@@ -260,9 +260,8 @@ impl<'a> ToCapnp<'a> for SubmitOrder {
             self.ts_init,
         );
 
-        let order_init = self.order.init_event();
         let order_init_builder = builder.reborrow().init_order_init();
-        order_init.to_capnp(order_init_builder);
+        self.order_init.to_capnp(order_init_builder);
 
         if let Some(ref position_id) = self.position_id {
             let position_id_builder = builder.reborrow().init_position_id();
@@ -666,7 +665,8 @@ mod tests {
             Some(client_id),
             order.strategy_id(),
             order.instrument_id(),
-            order,
+            order.client_order_id(),
+            order.init_event().clone(),
             None,
             None,
             None,

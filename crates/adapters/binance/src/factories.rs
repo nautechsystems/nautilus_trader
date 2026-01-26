@@ -17,13 +17,26 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use nautilus_common::{cache::Cache, clock::Clock};
-use nautilus_data::client::DataClient;
-use nautilus_model::identifiers::ClientId;
-use nautilus_system::factories::{ClientConfig, DataClientFactory};
+use nautilus_common::{
+    cache::Cache,
+    clients::{DataClient, ExecutionClient},
+    clock::Clock,
+};
+use nautilus_live::ExecutionClientCore;
+use nautilus_model::{
+    enums::{AccountType, OmsType},
+    identifiers::ClientId,
+};
+use nautilus_system::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 
 use crate::{
-    common::consts::BINANCE, config::BinanceDataClientConfig, data::BinanceSpotDataClient,
+    common::{
+        consts::{BINANCE, BINANCE_VENUE},
+        enums::BinanceProductType,
+    },
+    config::{BinanceDataClientConfig, BinanceExecClientConfig},
+    futures::{data::BinanceFuturesDataClient, execution::BinanceFuturesExecutionClient},
+    spot::{data::BinanceSpotDataClient, execution::BinanceSpotExecutionClient},
 };
 
 /// Factory for creating Binance data clients.
@@ -63,8 +76,27 @@ impl DataClientFactory for BinanceDataClientFactory {
             .clone();
 
         let client_id = ClientId::from(name);
-        let client = BinanceSpotDataClient::new(client_id, binance_config)?;
-        Ok(Box::new(client))
+
+        let product_type = binance_config
+            .product_types
+            .first()
+            .copied()
+            .unwrap_or(BinanceProductType::Spot);
+
+        match product_type {
+            BinanceProductType::Spot => {
+                let client = BinanceSpotDataClient::new(client_id, binance_config)?;
+                Ok(Box::new(client))
+            }
+            BinanceProductType::UsdM | BinanceProductType::CoinM => {
+                let client =
+                    BinanceFuturesDataClient::new(client_id, binance_config, product_type)?;
+                Ok(Box::new(client))
+            }
+            _ => {
+                anyhow::bail!("Unsupported product type for Binance data client: {product_type:?}")
+            }
+        }
     }
 
     fn name(&self) -> &'static str {
@@ -73,6 +105,103 @@ impl DataClientFactory for BinanceDataClientFactory {
 
     fn config_type(&self) -> &'static str {
         stringify!(BinanceDataClientConfig)
+    }
+}
+
+/// Factory for creating Binance Spot execution clients.
+#[derive(Debug)]
+pub struct BinanceExecutionClientFactory;
+
+impl BinanceExecutionClientFactory {
+    /// Creates a new [`BinanceExecutionClientFactory`] instance.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for BinanceExecutionClientFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ExecutionClientFactory for BinanceExecutionClientFactory {
+    fn create(
+        &self,
+        name: &str,
+        config: &dyn ClientConfig,
+        cache: Rc<RefCell<Cache>>,
+    ) -> anyhow::Result<Box<dyn ExecutionClient>> {
+        let binance_config = config
+            .as_any()
+            .downcast_ref::<BinanceExecClientConfig>()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Invalid config type for BinanceExecutionClientFactory. Expected BinanceExecClientConfig, was {config:?}",
+                )
+            })?
+            .clone();
+
+        let product_type = binance_config
+            .product_types
+            .first()
+            .copied()
+            .unwrap_or(BinanceProductType::Spot);
+
+        match product_type {
+            BinanceProductType::Spot => {
+                // Spot uses cash account type and hedging OMS
+                let account_type = AccountType::Cash;
+                let oms_type = OmsType::Hedging;
+
+                let core = ExecutionClientCore::new(
+                    binance_config.trader_id,
+                    ClientId::from(name),
+                    *BINANCE_VENUE,
+                    oms_type,
+                    binance_config.account_id,
+                    account_type,
+                    None, // base_currency
+                    cache,
+                );
+
+                let client = BinanceSpotExecutionClient::new(core, binance_config)?;
+                Ok(Box::new(client))
+            }
+            BinanceProductType::UsdM | BinanceProductType::CoinM => {
+                // Futures uses margin account type and netting OMS
+                let account_type = AccountType::Margin;
+                let oms_type = OmsType::Netting;
+
+                let core = ExecutionClientCore::new(
+                    binance_config.trader_id,
+                    ClientId::from(name),
+                    *BINANCE_VENUE,
+                    oms_type,
+                    binance_config.account_id,
+                    account_type,
+                    None, // base_currency
+                    cache,
+                );
+
+                let client = BinanceFuturesExecutionClient::new(core, binance_config)?;
+                Ok(Box::new(client))
+            }
+            _ => {
+                anyhow::bail!(
+                    "Unsupported product type for Binance execution client: {product_type:?}"
+                )
+            }
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        BINANCE
+    }
+
+    fn config_type(&self) -> &'static str {
+        stringify!(BinanceExecClientConfig)
     }
 }
 

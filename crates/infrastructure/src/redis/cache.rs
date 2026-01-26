@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::VecDeque, fmt::Debug, time::Duration};
+use std::{collections::VecDeque, fmt::Debug, ops::ControlFlow, pin::Pin, time::Duration};
 
 use ahash::AHashMap;
 use bytes::Bytes;
@@ -408,24 +408,32 @@ async fn process_commands(
 
     // Buffering
     let mut buffer: VecDeque<DatabaseCommand> = VecDeque::new();
-    let mut last_drain = std::time::Instant::now();
     let buffer_interval = Duration::from_millis(config.buffer_interval_ms.unwrap_or(0) as u64);
+
+    // A sleep used to trigger periodic flushing of the buffer.
+    // When `buffer_interval` is zero we skip using the timer and flush immediately
+    // after every message.
+    let flush_timer = tokio::time::sleep(buffer_interval);
+    tokio::pin!(flush_timer);
 
     // Continue to receive and handle messages until channel is hung up
     loop {
-        if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
-            drain_buffer(&mut con, &trader_key, &mut buffer).await;
-            last_drain = std::time::Instant::now();
-        } else if let Some(cmd) = rx.recv().await {
-            log::trace!("Received {cmd:?}");
-
-            if matches!(cmd.op_type, DatabaseOperation::Close) {
-                break;
+        tokio::select! {
+            maybe_cmd = rx.recv() => {
+                let result = handle_command(
+                    maybe_cmd,
+                    &mut buffer,
+                    buffer_interval,
+                    &mut con,
+                    &trader_key,
+                ).await;
+                if result.is_break() {
+                    break;
+                }
             }
-            buffer.push_back(cmd);
-        } else {
-            log::debug!("Command channel closed");
-            break;
+            () = &mut flush_timer, if !buffer_interval.is_zero() => {
+                flush_buffer(&mut buffer, &mut con, &trader_key, &mut flush_timer, buffer_interval).await;
+            }
         }
     }
 
@@ -436,6 +444,51 @@ async fn process_commands(
 
     log_task_stopped(CACHE_PROCESS);
     Ok(())
+}
+
+async fn handle_command(
+    maybe_cmd: Option<DatabaseCommand>,
+    buffer: &mut VecDeque<DatabaseCommand>,
+    buffer_interval: Duration,
+    con: &mut ConnectionManager,
+    trader_key: &str,
+) -> ControlFlow<()> {
+    let Some(cmd) = maybe_cmd else {
+        log::debug!("Command channel closed");
+        return ControlFlow::Break(());
+    };
+
+    log::trace!("Received {cmd:?}");
+
+    if matches!(cmd.op_type, DatabaseOperation::Close) {
+        if !buffer.is_empty() {
+            drain_buffer(con, trader_key, buffer).await;
+        }
+        return ControlFlow::Break(());
+    }
+
+    buffer.push_back(cmd);
+
+    if buffer_interval.is_zero() {
+        drain_buffer(con, trader_key, buffer).await;
+    }
+
+    ControlFlow::Continue(())
+}
+
+async fn flush_buffer(
+    buffer: &mut VecDeque<DatabaseCommand>,
+    con: &mut ConnectionManager,
+    trader_key: &str,
+    flush_timer: &mut Pin<&mut tokio::time::Sleep>,
+    buffer_interval: Duration,
+) {
+    if !buffer.is_empty() {
+        drain_buffer(con, trader_key, buffer).await;
+    }
+    flush_timer
+        .as_mut()
+        .reset(tokio::time::Instant::now() + buffer_interval);
 }
 
 async fn drain_buffer(

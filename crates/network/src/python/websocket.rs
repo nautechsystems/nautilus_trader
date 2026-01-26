@@ -18,7 +18,10 @@ use std::{
     time::Duration,
 };
 
-use nautilus_core::python::{clone_py_object, to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::{
+    collections::into_ustr_vec,
+    python::{clone_py_object, to_pyruntime_err, to_pyvalue_err},
+};
 use pyo3::{Py, create_exception, exceptions::PyException, prelude::*, types::PyBytes};
 use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
 
@@ -250,6 +253,7 @@ impl WebSocketClient {
         let rate_limiter = slf.rate_limiter.clone();
         let writer_tx = slf.writer_tx.clone();
         let mode = slf.connection_mode.clone();
+        let keys = keys.map(into_ustr_vec);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if !ConnectionMode::from_atomic(&mode).is_active() {
@@ -260,7 +264,7 @@ impl WebSocketClient {
                     msg,
                 )));
             }
-            rate_limiter.await_keys_ready(keys).await;
+            rate_limiter.await_keys_ready(keys.as_deref()).await;
             log::trace!("Sending binary: {data:?}");
 
             let msg = Message::Binary(data.into());
@@ -296,6 +300,7 @@ impl WebSocketClient {
         let rate_limiter = slf.rate_limiter.clone();
         let writer_tx = slf.writer_tx.clone();
         let mode = slf.connection_mode.clone();
+        let keys = keys.map(into_ustr_vec);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if !ConnectionMode::from_atomic(&mode).is_active() {
@@ -305,7 +310,7 @@ impl WebSocketClient {
                 );
                 return Err(to_pyruntime_err(e));
             }
-            rate_limiter.await_keys_ready(keys).await;
+            rate_limiter.await_keys_ready(keys.as_deref()).await;
             log::trace!("Sending text: {data}");
 
             let msg = Message::Text(data);
@@ -505,9 +510,10 @@ counter = Counter()
 
     #[tokio::test]
     async fn basic_client_test() {
+        const N: usize = 10;
+
         Python::initialize();
 
-        const N: usize = 10;
         let mut success_count = 0;
         let header_key = "hello-custom-key".to_string();
         let header_value = "hello-custom-value".to_string();

@@ -33,14 +33,14 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 
 # To find active markets run `python nautilus_trader/adapters/polymarket/scripts/active_markets.py`
 
-# Slug: fed-rate-hike-in-2025
+# Slug: gta-vi-released-before-june-2026
 # Active: True
-# Condition ID: 0x4319532e181605cb15b1bd677759a3bc7f7394b2fdf145195b700eeaedfd5221
-# Token IDs: 60487116984468020978247225474488676749601001829886755968952521846780452448915,
-# 81104637750588840860328515305303028259865221573278091453716127842023614249200
-# Link: https://polymarket.com/event/fed-rate-hike-in-2025
-condition_id = "0x4319532e181605cb15b1bd677759a3bc7f7394b2fdf145195b700eeaedfd5221"
-token_id = "60487116984468020978247225474488676749601001829886755968952521846780452448915"
+# Condition ID: 0xcccb7e7613a087c132b69cbf3a02bece3fdcb824c1da54ae79acc8d4a562d902
+# Token IDs: 8441400852834915183759801017793514978104486628517653995211751018945988243154,
+# 109289569086508934142323222102974769075074494425163878721602922903101062859033
+# Link: https://polymarket.com/event/gta-vi-released-before-june-2026
+condition_id = "0xcccb7e7613a087c132b69cbf3a02bece3fdcb824c1da54ae79acc8d4a562d902"
+token_id = "8441400852834915183759801017793514978104486628517653995211751018945988243154"
 
 instrument_ids = [
     get_polymarket_instrument_id(condition_id, token_id),
@@ -84,10 +84,11 @@ node = TradingNode(config=config_node)
 # Configure and initialize the tester
 config_tester = DataTesterConfig(
     instrument_ids=instrument_ids,
-    subscribe_book_deltas=False,
+    # subscribe_book_deltas=True,
     subscribe_book_at_interval=True,
-    subscribe_quotes=True,
-    subscribe_trades=True,
+    # subscribe_quotes=True,
+    # subscribe_trades=True,
+    book_interval_ms=10,
     can_unsubscribe=False,  # Polymarket does not support unsubscribing from ws streams
 )
 tester = DataTester(config=config_tester)

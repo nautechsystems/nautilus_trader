@@ -54,6 +54,7 @@ features = [
   "postgres",
   "defi",
   "hypersync",
+  "tracing-bridge",
 ]
 strip = false
 

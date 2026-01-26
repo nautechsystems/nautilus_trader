@@ -1482,7 +1482,7 @@ mod tests {
             OrderError::DuplicateFill(trade_id) => {
                 assert_eq!(trade_id, TradeId::from("TRADE-001"));
             }
-            e => panic!("Expected DuplicateFill error, got: {e:?}"),
+            e => panic!("Expected DuplicateFill error, was: {e:?}"),
         }
 
         // Order state should be unchanged after rejected duplicate

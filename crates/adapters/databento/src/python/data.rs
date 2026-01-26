@@ -18,7 +18,7 @@
 use std::path::PathBuf;
 
 use nautilus_core::time::get_atomic_clock_realtime;
-use nautilus_data::client::DataClient;
+use nautilus_common::clients::DataClient;
 use nautilus_model::identifiers::ClientId;
 use pyo3::prelude::*;
 

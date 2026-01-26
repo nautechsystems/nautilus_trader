@@ -241,8 +241,8 @@ VENUES_CMDTY = ["IBCMDTY"]  # self named, in fact mapping to "SMART" when parsin
 RE_CASH = re.compile(r"^(?P<symbol>[A-Z]{3})\/(?P<currency>[A-Z]{3})$")  # "EUR/USD"
 RE_CFD_CASH = re.compile(r"^(?P<symbol>[A-Z]{3})\.(?P<currency>[A-Z]{3})$")  # "EUR.USD"
 RE_OPT = re.compile(
-    r"^(?P<symbol>^[A-Z. ]{1,6})(?P<expiry>\d{6})(?P<right>[CP])(?P<strike>\d{5})(?P<decimal>\d{3})$",
-)  # "AAPL220617C00155000"
+    r"^(?P<symbol>[A-Z.]{1,6}) *(?P<expiry>\d{6})(?P<right>[CP])(?P<strike>\d{5})(?P<decimal>\d{3})$",
+)  # "AAPL220617C00155000" or "SPXW  260120P06835000" (OCC format with padding)
 RE_FUT_UNDERLYING = re.compile(r"^(?P<symbol>\w{1,3})$")  # "ES"
 RE_FUT = re.compile(r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d{2})$")  # "ESM23"
 RE_FUT_ORIGINAL = re.compile(
@@ -1045,7 +1045,7 @@ def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too comple
     elif security_type == "IND":
         symbol = f"^{(contract.localSymbol or contract.symbol)}"
     elif security_type == "OPT":
-        symbol = contract.localSymbol.replace(" ", "")
+        symbol = contract.localSymbol
     elif security_type == "CONTFUT":
         symbol = contract.symbol
     elif security_type == "FUT" and (m := RE_FUT_ORIGINAL.match(contract.localSymbol)):

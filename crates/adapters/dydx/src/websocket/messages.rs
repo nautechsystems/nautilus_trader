@@ -18,7 +18,7 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
-use nautilus_model::enums::{OrderSide, PositionSide};
+use nautilus_model::enums::OrderSide;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ustr::Ustr;
@@ -26,7 +26,7 @@ use ustr::Ustr;
 use super::enums::{DydxWsChannel, DydxWsMessageType, DydxWsOperation};
 use crate::common::enums::{
     DydxCandleResolution, DydxFillType, DydxLiquidity, DydxOrderStatus, DydxOrderType,
-    DydxPositionStatus, DydxTickerType, DydxTimeInForce, DydxTradeType,
+    DydxPositionSide, DydxPositionStatus, DydxTickerType, DydxTimeInForce, DydxTradeType,
 };
 
 /// dYdX WebSocket subscription message.
@@ -78,14 +78,15 @@ pub struct DydxWsConnectedMsg {
 /// Single channel data update message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DydxWsChannelDataMsg {
-    /// The message type ("channel_data").
-    #[serde(rename = "type")]
+    /// The message type (may be absent for channel updates).
+    #[serde(rename = "type", default)]
     pub msg_type: DydxWsMessageType,
     /// The connection ID.
     pub connection_id: String,
     /// The message sequence number.
     pub message_id: u64,
-    /// The channel name.
+    /// The channel name (optional since serde tag parsing may consume it).
+    #[serde(default)]
     pub channel: DydxWsChannel,
     /// Optional channel-specific identifier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -100,14 +101,15 @@ pub struct DydxWsChannelDataMsg {
 /// Batch channel data update message (multiple updates in one message).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DydxWsChannelBatchDataMsg {
-    /// The message type ("channel_batch_data").
-    #[serde(rename = "type")]
+    /// The message type (may be absent for batch channel updates).
+    #[serde(rename = "type", default)]
     pub msg_type: DydxWsMessageType,
     /// The connection ID.
     pub connection_id: String,
     /// The message sequence number.
     pub message_id: u64,
-    /// The channel name.
+    /// The channel name (optional since serde tag parsing may consume it).
+    #[serde(default)]
     pub channel: DydxWsChannel,
     /// Optional channel-specific identifier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -329,10 +331,13 @@ pub struct DydxBlockHeightSubscribedContents {
 /// Block height subscription confirmed message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DydxWsBlockHeightSubscribedData {
-    #[serde(rename = "type")]
+    /// The message type (may be absent due to serde tag parsing).
+    #[serde(rename = "type", default)]
     pub msg_type: DydxWsMessageType,
     pub connection_id: String,
     pub message_id: u64,
+    /// The channel name (may be absent due to serde tag parsing).
+    #[serde(default)]
     pub channel: DydxWsChannel,
     pub id: String,
     pub contents: DydxBlockHeightSubscribedContents,
@@ -349,11 +354,14 @@ pub struct DydxBlockHeightChannelContents {
 /// Block height channel data message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DydxWsBlockHeightChannelData {
-    #[serde(rename = "type")]
+    /// The message type (may be absent due to serde tag parsing).
+    #[serde(rename = "type", default)]
     pub msg_type: DydxWsMessageType,
     pub connection_id: String,
     pub message_id: u64,
     pub id: String,
+    /// The channel name (may be absent due to serde tag parsing).
+    #[serde(default)]
     pub channel: DydxWsChannel,
     pub version: String,
     pub contents: DydxBlockHeightChannelContents,
@@ -522,7 +530,7 @@ pub struct DydxOrderbookSnapshotContents {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DydxAssetBalance {
     pub symbol: Ustr,
-    pub side: OrderSide,
+    pub side: DydxPositionSide,
     pub size: String,
     #[serde(rename = "assetId")]
     pub asset_id: String,
@@ -533,7 +541,7 @@ pub struct DydxAssetBalance {
 pub struct DydxPerpetualPosition {
     pub market: Ustr,
     pub status: DydxPositionStatus,
-    pub side: PositionSide,
+    pub side: DydxPositionSide,
     pub size: String,
     #[serde(rename = "maxSize")]
     pub max_size: String,
@@ -607,13 +615,13 @@ pub struct DydxWsOrderSubaccountMessageContents {
     #[serde(rename = "goodTilBlockTime")]
     pub good_til_block_time: Option<String>,
     #[serde(rename = "createdAtHeight")]
-    pub created_at_height: String,
+    pub created_at_height: Option<String>,
     #[serde(rename = "clientMetadata")]
-    pub client_metadata: String,
+    pub client_metadata: Option<String>,
     #[serde(rename = "triggerPrice")]
     pub trigger_price: Option<String>,
     #[serde(rename = "totalFilled")]
-    pub total_filled: String,
+    pub total_filled: Option<String>,
     #[serde(rename = "updatedAt")]
     pub updated_at: Option<String>,
     #[serde(rename = "updatedAtHeight")]
@@ -639,11 +647,11 @@ pub struct DydxWsFillSubaccountMessageContents {
     #[serde(rename = "createdAt")]
     pub created_at: String,
     #[serde(rename = "createdAtHeight")]
-    pub created_at_height: String,
+    pub created_at_height: Option<String>,
     #[serde(rename = "orderId")]
-    pub order_id: String,
+    pub order_id: Option<String>,
     #[serde(rename = "clientMetadata")]
-    pub client_metadata: String,
+    pub client_metadata: Option<String>,
 }
 
 /// Subaccount subscription contents.
@@ -655,10 +663,11 @@ pub struct DydxWsSubaccountsSubscribedContents {
 /// Subaccounts subscription confirmed message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DydxWsSubaccountsSubscribed {
-    #[serde(rename = "type")]
+    #[serde(rename = "type", default)]
     pub msg_type: DydxWsMessageType,
     pub connection_id: String,
     pub message_id: u64,
+    #[serde(default)]
     pub channel: DydxWsChannel,
     pub id: String,
     pub contents: DydxWsSubaccountsSubscribedContents,
@@ -674,11 +683,12 @@ pub struct DydxWsSubaccountsChannelContents {
 /// Subaccounts channel data message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DydxWsSubaccountsChannelData {
-    #[serde(rename = "type")]
+    #[serde(rename = "type", default)]
     pub msg_type: DydxWsMessageType,
     pub connection_id: String,
     pub message_id: u64,
     pub id: String,
+    #[serde(default)]
     pub channel: DydxWsChannel,
     pub version: String,
     pub contents: DydxWsSubaccountsChannelContents,

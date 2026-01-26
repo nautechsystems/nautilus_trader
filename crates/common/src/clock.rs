@@ -1079,7 +1079,7 @@ mod tests {
 
         // Sort events by timestamp to check order
         let mut event_times: Vec<u64> = events.iter().map(|e| e.ts_event.as_u64()).collect();
-        event_times.sort();
+        event_times.sort_unstable();
 
         assert_eq!(event_times[0], start_time.as_u64()); // immediate_timer fires immediately
         assert_eq!(event_times[1], start_time.as_u64() + 1000); // both timers fire at 1000

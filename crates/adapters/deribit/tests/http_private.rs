@@ -233,7 +233,7 @@ async fn test_get_account_summaries_missing_credentials() {
         DeribitHttpError::MissingCredentials => {
             // Expected error type
         }
-        other => panic!("Expected MissingCredentials, got: {other:?}"),
+        other => panic!("Expected MissingCredentials, was: {other:?}"),
     }
 }
 

@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ops::{AddAssign, SubAssign};
-
 use crate::types::quantity::{Quantity, QuantityRaw};
 
 // TODO: Document panic
@@ -34,30 +32,6 @@ pub extern "C" fn quantity_from_raw(raw: QuantityRaw, precision: u8) -> Quantity
 #[unsafe(no_mangle)]
 pub extern "C" fn quantity_as_f64(qty: &Quantity) -> f64 {
     qty.as_f64()
-}
-
-#[unsafe(no_mangle)]
-#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn quantity_add_assign(mut a: Quantity, b: Quantity) {
-    a.add_assign(b);
-}
-
-#[unsafe(no_mangle)]
-#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn quantity_add_assign_u64(mut a: Quantity, b: u64) {
-    a.add_assign(b);
-}
-
-#[unsafe(no_mangle)]
-#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn quantity_sub_assign(mut a: Quantity, b: Quantity) {
-    a.sub_assign(b);
-}
-
-#[unsafe(no_mangle)]
-#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn quantity_sub_assign_u64(mut a: Quantity, b: u64) {
-    a.sub_assign(b);
 }
 
 #[unsafe(no_mangle)]

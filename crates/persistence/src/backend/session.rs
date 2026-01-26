@@ -16,7 +16,6 @@
 use std::{sync::Arc, vec::IntoIter};
 
 use ahash::{AHashMap, AHashSet};
-use compare::Compare;
 use datafusion::{
     error::Result, logical_expr::expr::Sort, physical_plan::SendableRecordBatchStream, prelude::*,
 };
@@ -29,7 +28,10 @@ use nautilus_serialization::arrow::{
 use object_store::ObjectStore;
 use url::Url;
 
-use super::kmerge_batch::{EagerStream, ElementBatchIter, KMerge};
+use super::{
+    compare::Compare,
+    kmerge_batch::{EagerStream, ElementBatchIter, KMerge},
+};
 
 #[derive(Debug, Default)]
 pub struct TsInitComparator;

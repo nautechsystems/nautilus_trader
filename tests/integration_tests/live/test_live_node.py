@@ -130,8 +130,8 @@ class TestTradingNodeConfiguration:
         # Arrange
         loop = event_loop_for_setup
 
-        monkeypatch.setenv("BINANCE_FUTURES_API_KEY", "SOME_API_KEY")
-        monkeypatch.setenv("BINANCE_FUTURES_API_SECRET", "SOME_API_SECRET")
+        monkeypatch.setenv("BINANCE_API_KEY", "SOME_API_KEY")
+        monkeypatch.setenv("BINANCE_API_SECRET", "SOME_API_SECRET")
 
         config = TradingNodeConfig.parse(RAW_CONFIG)
 

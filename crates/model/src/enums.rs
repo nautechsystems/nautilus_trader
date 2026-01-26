@@ -640,6 +640,17 @@ pub enum InstrumentClass {
     BinaryOption = 12,
 }
 
+impl InstrumentClass {
+    /// Returns whether this instrument class has an expiration.
+    #[must_use]
+    pub const fn has_expiration(&self) -> bool {
+        matches!(
+            self,
+            Self::Future | Self::FuturesSpread | Self::Option | Self::OptionSpread
+        )
+    }
+}
+
 /// The type of event for an instrument close.
 #[repr(C)]
 #[derive(
@@ -935,6 +946,44 @@ pub enum OptionKind {
     Call = 1,
     /// A Put option gives the holder the right, but not the obligation, to sell an underlying asset at a specified strike price within a specified period of time.
     Put = 2,
+}
+
+/// Defines when OTO (One-Triggers-Other) child orders are released.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    AsRefStr,
+    FromRepr,
+    EnumIter,
+    EnumString,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        hash,
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+    )
+)]
+pub enum OtoTriggerMode {
+    /// Release child order(s) pro-rata to each partial fill (default).
+    #[default]
+    Partial = 0,
+    /// Release child order(s) only once the parent is fully filled.
+    Full = 1,
 }
 
 /// The order side for a specific order, or action related to orders.

@@ -652,6 +652,8 @@ node.add_exec_client_factory(OKX, OKXLiveExecClientFactory)
 node.build()
 ```
 
+## Contributing
+
 :::info
 For additional features or to contribute to the OKX adapter, please see our
 [contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).

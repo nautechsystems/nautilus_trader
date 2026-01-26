@@ -74,7 +74,7 @@ impl LogWriter for StdoutWriter {
     }
 
     fn enabled(&self, line: &LogLine) -> bool {
-        // Prevent error logs also writing to stdout
+        // Prevent error logs also writing to stdout (they go to stderr)
         line.level > LevelFilter::Error && line.level <= self.level
     }
 }

@@ -612,7 +612,7 @@ mod tests {
         fn balances(&self) -> AHashMap<Currency, AccountBalance> {
             todo!()
         }
-        fn apply(&mut self, _: AccountState) {
+        fn apply(&mut self, _: AccountState) -> anyhow::Result<()> {
             todo!()
         }
         fn calculate_balance_locked(

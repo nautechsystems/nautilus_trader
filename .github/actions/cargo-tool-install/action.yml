@@ -41,7 +41,7 @@ runs:
       uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
       with:
         path: ${{ runner.tool_cache }}/${{ inputs.tool-name }}
-        key: ${{ inputs.tool-name }}-bin-${{ env.TOOL_VERSION }}
+        key: ${{ inputs.tool-name }}-bin-${{ env.TOOL_VERSION }}-${{ runner.os }}-${{ env.TOOLCHAIN }}
 
     - name: Add tool to PATH
       shell: bash
@@ -54,7 +54,11 @@ runs:
       env:
         TOOL_CACHE: ${{ runner.tool_cache }}
       run: |
-        cargo install --locked \
-          --root "$TOOL_CACHE/$TOOL_NAME" \
-          --version "$TOOL_VERSION" \
-          "$TOOL_NAME"
+        if [[ -x "$TOOL_CACHE/$TOOL_NAME/bin/$TOOL_NAME" ]]; then
+          echo "$TOOL_NAME $TOOL_VERSION already installed from cache"
+        else
+          cargo install --locked \
+            --root "$TOOL_CACHE/$TOOL_NAME" \
+            --version "$TOOL_VERSION" \
+            "$TOOL_NAME"
+        fi

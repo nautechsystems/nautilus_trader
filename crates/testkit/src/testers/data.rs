@@ -599,7 +599,7 @@ impl DataActor for DataTester {
 
     fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {instrument:?}", color = LogColor::Cyan);
+            log_info!("{instrument:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
@@ -628,63 +628,63 @@ impl DataActor for DataTester {
                 }
             }
         } else if self.config.log_data {
-            log_info!("Received {deltas:?}", color = LogColor::Cyan);
+            log_info!("{deltas:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {quote:?}", color = LogColor::Cyan);
+            log_info!("{quote:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {trade:?}", color = LogColor::Cyan);
+            log_info!("{trade:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {bar:?}", color = LogColor::Cyan);
+            log_info!("{bar:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_mark_price(&mut self, mark_price: &MarkPriceUpdate) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {mark_price:?}", color = LogColor::Cyan);
+            log_info!("{mark_price:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_index_price(&mut self, index_price: &IndexPriceUpdate) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {index_price:?}", color = LogColor::Cyan);
+            log_info!("{index_price:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_funding_rate(&mut self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {funding_rate:?}", color = LogColor::Cyan);
+            log_info!("{funding_rate:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_instrument_status(&mut self, data: &InstrumentStatus) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {data:?}", color = LogColor::Cyan);
+            log_info!("{data:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {update:?}", color = LogColor::Cyan);
+            log_info!("{update:?}", color = LogColor::Cyan);
         }
         Ok(())
     }

@@ -67,7 +67,6 @@ fn infer_precision(value: f64) -> u8 {
 fn create_csv_reader<P: AsRef<Path>>(
     filepath: P,
 ) -> anyhow::Result<Reader<Box<dyn std::io::Read>>> {
-    let filepath_ref = filepath.as_ref();
     const MAX_RETRIES: u8 = 3;
     const DELAY_MS: u64 = 100;
     const BUFFER_SIZE: usize = 8 * 1024 * 1024; // 8MB buffer for large files
@@ -97,6 +96,7 @@ fn create_csv_reader<P: AsRef<Path>>(
         unreachable!("Loop should return either Ok or Err");
     }
 
+    let filepath_ref = filepath.as_ref();
     let mut file = open_file_with_retry(filepath_ref, MAX_RETRIES, DELAY_MS)?;
 
     let is_gzipped = filepath_ref
@@ -294,7 +294,7 @@ fn parse_derivative_ticker_record(
         None => parse_instrument_id(&data.exchange, data.symbol),
     };
 
-    let rate = Decimal::try_from(funding_rate).ok()?.normalize();
+    let rate = Decimal::try_from(funding_rate).ok()?;
     let next_funding_ns = if data.predicted_funding_rate.is_some() {
         data.funding_timestamp.map(parse_timestamp)
     } else {

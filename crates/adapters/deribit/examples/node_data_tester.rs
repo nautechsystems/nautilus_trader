@@ -14,6 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Example demonstrating live data testing with the Deribit adapter.
+//!
+//! Run with: `cargo run --example deribit-data-tester --package nautilus-deribit`
 
 use nautilus_common::enums::Environment;
 use nautilus_deribit::{
@@ -64,9 +66,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     let tester_config = DataTesterConfig::new(client_id, instrument_ids)
+        .with_subscribe_quotes(true)
+        .with_subscribe_trades(true)
+        .with_subscribe_index_prices(true)
+        .with_subscribe_mark_prices(true)
         .with_bar_types(bar_types)
         .with_subscribe_bars(true)
         .with_log_data(true);
+
     let tester = DataTester::new(tester_config);
 
     node.add_actor(tester)?;

@@ -369,7 +369,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("close_price") && err.to_string().contains("row 0"),
-            "Expected close_price error at row 0, got: {err}"
+            "Expected close_price error at row 0, was: {err}"
         );
     }
 
@@ -403,7 +403,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("InstrumentCloseType"),
-            "Expected InstrumentCloseType error, got: {err}"
+            "Expected InstrumentCloseType error, was: {err}"
         );
     }
 
@@ -439,7 +439,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("instrument_id"),
-            "Expected missing instrument_id error, got: {err}"
+            "Expected missing instrument_id error, was: {err}"
         );
     }
 

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
+use std::{fmt::Display, str::FromStr};
 
 use nautilus_core::{UUID4, UnixNanos};
 use rust_decimal::Decimal;
@@ -219,11 +219,10 @@ impl OrderStatusReport {
             );
         }
 
-        self.avg_px = Some(Decimal::from_f64_retain(avg_px).ok_or_else(|| {
-            anyhow::anyhow!(
-                "Failed to convert avg_px to Decimal: {avg_px} (possible overflow/underflow)"
-            )
-        })?);
+        self.avg_px =
+            Some(Decimal::from_str(&avg_px.to_string()).map_err(|e| {
+                anyhow::anyhow!("Failed to convert avg_px to Decimal: {avg_px} ({e})")
+            })?);
         Ok(self)
     }
 
@@ -419,7 +418,7 @@ impl Display for OrderStatusReport {
 mod tests {
     use nautilus_core::UnixNanos;
     use rstest::*;
-    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -533,8 +532,8 @@ mod tests {
             .with_avg_px(1.00001)?
             .with_trigger_price(Price::from("0.99000"))
             .with_trigger_type(TriggerType::Default)
-            .with_limit_offset(Decimal::from_f64_retain(0.0001).unwrap())
-            .with_trailing_offset(Decimal::from_f64_retain(0.0002).unwrap())
+            .with_limit_offset(dec!(0.0001))
+            .with_trailing_offset(dec!(0.0002))
             .with_trailing_offset_type(TrailingOffsetType::BasisPoints)
             .with_display_qty(Quantity::from("50"))
             .with_expire_time(UnixNanos::from(4_000_000_000))
@@ -555,20 +554,11 @@ mod tests {
             Some(ClientOrderId::from("O-PARENT"))
         );
         assert_eq!(report.price, Some(Price::from("1.00000")));
-        assert_eq!(
-            report.avg_px,
-            Some(Decimal::from_f64_retain(1.00001).unwrap())
-        );
+        assert_eq!(report.avg_px, Some(dec!(1.00001)));
         assert_eq!(report.trigger_price, Some(Price::from("0.99000")));
         assert_eq!(report.trigger_type, Some(TriggerType::Default));
-        assert_eq!(
-            report.limit_offset,
-            Some(Decimal::from_f64_retain(0.0001).unwrap())
-        );
-        assert_eq!(
-            report.trailing_offset,
-            Some(Decimal::from_f64_retain(0.0002).unwrap())
-        );
+        assert_eq!(report.limit_offset, Some(dec!(0.0001)));
+        assert_eq!(report.trailing_offset, Some(dec!(0.0002)));
         assert_eq!(report.trailing_offset_type, TrailingOffsetType::BasisPoints);
         assert_eq!(report.display_qty, Some(Quantity::from("50")));
         assert_eq!(report.expire_time, Some(UnixNanos::from(4_000_000_000)));
@@ -699,10 +689,7 @@ mod tests {
             .with_reduce_only(true);
 
         assert_eq!(report.price, Some(Price::from("1.00000")));
-        assert_eq!(
-            report.avg_px,
-            Some(Decimal::from_f64_retain(1.00001).unwrap())
-        );
+        assert_eq!(report.avg_px, Some(dec!(1.00001)));
         assert!(report.post_only);
         assert!(report.reduce_only);
         Ok(())

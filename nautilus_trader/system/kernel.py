@@ -259,6 +259,9 @@ class NautilusKernel:
                     "when not safe to bypass logging in a LIVE context",
                 )
 
+        if logging.use_tracing and not nautilus_pyo3.tracing_is_initialized():
+            nautilus_pyo3.init_tracing()
+
         self._log: Logger = Logger(name=name)
         self._log.info("Building system kernel")
 
@@ -1051,7 +1054,7 @@ class NautilusKernel:
 
         self._stop_engines()
         self._cancel_timers()
-        self._flush_writer()
+        self._close_writer()
 
         self._log.info("STOPPED")
         self._is_running = False
@@ -1092,7 +1095,7 @@ class NautilusKernel:
 
         self._stop_engines()
         self._cancel_timers()
-        self._flush_writer()
+        self._close_writer()
 
         self._log.info("STOPPED")
         self._is_running = False
@@ -1439,3 +1442,7 @@ class NautilusKernel:
     def _flush_writer(self) -> None:
         if self._writer is not None:
             self._writer.flush()
+
+    def _close_writer(self) -> None:
+        if self._writer is not None:
+            self._writer.close()

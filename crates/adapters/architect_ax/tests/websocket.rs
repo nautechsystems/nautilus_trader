@@ -39,7 +39,7 @@ use nautilus_architect_ax::{
 };
 use nautilus_common::testing::wait_until_async;
 use nautilus_model::{
-    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, Venue},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TraderId, Venue},
     instruments::{CryptoPerpetual, InstrumentAny},
     types::{Currency, Price, Quantity},
 };
@@ -1035,8 +1035,9 @@ async fn test_orders_client_connection() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/orders/ws");
     let account_id = AccountId::from("AX-001");
+    let trader_id = TraderId::from("TESTER-001");
 
-    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, Some(30));
+    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, Some(30));
 
     client.connect("test_bearer_token").await.unwrap();
     wait_for_connection(&state).await;
@@ -1052,7 +1053,8 @@ async fn test_orders_client_connection() {
 async fn test_orders_client_url_accessor() {
     let ws_url = "ws://localhost:9999/orders/ws".to_string();
     let account_id = AccountId::from("AX-001");
-    let client = AxOrdersWebSocketClient::new(ws_url.clone(), account_id, None);
+    let trader_id = TraderId::from("TESTER-001");
+    let client = AxOrdersWebSocketClient::new(ws_url.clone(), account_id, trader_id, None);
 
     assert_eq!(client.url(), ws_url);
 }
@@ -1062,7 +1064,8 @@ async fn test_orders_client_url_accessor() {
 async fn test_orders_client_account_id_accessor() {
     let ws_url = "ws://localhost:9999/orders/ws".to_string();
     let account_id = AccountId::from("AX-001");
-    let client = AxOrdersWebSocketClient::new(ws_url, account_id, None);
+    let trader_id = TraderId::from("TESTER-001");
+    let client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, None);
 
     assert_eq!(client.account_id(), account_id);
 }
@@ -1071,9 +1074,11 @@ async fn test_orders_client_account_id_accessor() {
 #[tokio::test]
 async fn test_orders_client_not_active_before_connect() {
     let account_id = AccountId::from("AX-001");
+    let trader_id = TraderId::from("TESTER-001");
     let client = AxOrdersWebSocketClient::new(
         "ws://localhost:9999/orders/ws".to_string(),
         account_id,
+        trader_id,
         None,
     );
 
@@ -1085,8 +1090,13 @@ async fn test_orders_client_not_active_before_connect() {
 #[tokio::test]
 async fn test_orders_connection_failure_to_invalid_url() {
     let account_id = AccountId::from("AX-001");
-    let mut client =
-        AxOrdersWebSocketClient::new("ws://127.0.0.1:9999/invalid".to_string(), account_id, None);
+    let trader_id = TraderId::from("TESTER-001");
+    let mut client = AxOrdersWebSocketClient::new(
+        "ws://127.0.0.1:9999/invalid".to_string(),
+        account_id,
+        trader_id,
+        None,
+    );
 
     let result = client.connect("test_token").await;
     assert!(result.is_err());
@@ -1098,8 +1108,9 @@ async fn test_orders_close_sets_closed_flag() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/orders/ws");
     let account_id = AccountId::from("AX-001");
+    let trader_id = TraderId::from("TESTER-001");
 
-    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, None);
+    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, None);
 
     client.connect("test_token").await.unwrap();
     wait_for_connection(&state).await;
@@ -1117,8 +1128,9 @@ async fn test_orders_place_order() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/orders/ws");
     let account_id = AccountId::from("AX-001");
+    let trader_id = TraderId::from("TESTER-001");
 
-    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, None);
+    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, None);
 
     client.connect("test_token").await.unwrap();
     wait_for_connection(&state).await;
@@ -1157,8 +1169,9 @@ async fn test_orders_cancel_order() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/orders/ws");
     let account_id = AccountId::from("AX-001");
+    let trader_id = TraderId::from("TESTER-001");
 
-    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, None);
+    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, None);
 
     client.connect("test_token").await.unwrap();
     wait_for_connection(&state).await;
@@ -1182,8 +1195,9 @@ async fn test_orders_get_open_orders() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/orders/ws");
     let account_id = AccountId::from("AX-001");
+    let trader_id = TraderId::from("TESTER-001");
 
-    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, None);
+    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, None);
 
     client.connect("test_token").await.unwrap();
     wait_for_connection(&state).await;
@@ -1205,9 +1219,11 @@ async fn test_orders_get_open_orders() {
 #[tokio::test]
 async fn test_orders_cache_instrument() {
     let account_id = AccountId::from("AX-001");
+    let trader_id = TraderId::from("TESTER-001");
     let client = AxOrdersWebSocketClient::new(
         "ws://localhost:9999/orders/ws".to_string(),
         account_id,
+        trader_id,
         None,
     );
 
@@ -1222,9 +1238,11 @@ async fn test_orders_cache_instrument() {
 #[tokio::test]
 async fn test_orders_get_cached_instrument_returns_none_for_unknown() {
     let account_id = AccountId::from("AX-001");
+    let trader_id = TraderId::from("TESTER-001");
     let client = AxOrdersWebSocketClient::new(
         "ws://localhost:9999/orders/ws".to_string(),
         account_id,
+        trader_id,
         None,
     );
 
@@ -1349,9 +1367,11 @@ async fn test_md_client_debug() {
 #[tokio::test]
 async fn test_orders_client_debug() {
     let account_id = AccountId::from("AX-001");
+    let trader_id = TraderId::from("TESTER-001");
     let client = AxOrdersWebSocketClient::new(
         "ws://localhost:9999/orders/ws".to_string(),
         account_id,
+        trader_id,
         Some(30),
     );
 

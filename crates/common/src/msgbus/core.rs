@@ -13,207 +13,114 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Core message bus implementation.
+//!
+//! # Design decisions
+//!
+//! ## Why two routing mechanisms?
+//!
+//! The message bus provides typed and Any-based routing to balance performance
+//! and flexibility:
+//!
+//! **Typed routing** optimizes for throughput on known data types:
+//! - `TopicRouter<T>` for pub/sub, `EndpointMap<T>` for point-to-point.
+//! - Handlers implement `Handler<T>`, receive `&T` directly.
+//! - No runtime type checking enables inlining and static dispatch.
+//! - Built-in routers: `QuoteTick`, `TradeTick`, `Bar`, `OrderBookDeltas`,
+//!   `OrderBookDepth10`, `OrderEventAny`, `PositionEvent`, `AccountState`.
+//!
+//! **Any-based routing** provides flexibility for extensibility:
+//! - `subscriptions`/`topics` maps with `ShareableMessageHandler`.
+//! - Handlers implement `Handler<dyn Any>`, receive `&dyn Any`.
+//! - Supports arbitrary message types without modifying the bus.
+//! - Required for Python interop where types aren't known at compile time.
+//!
+//! ## Handler semantics
+//!
+//! **Typed handlers receive `&T` references:**
+//! - Same message delivered to N handlers without cloning.
+//! - Handler decides whether to clone (only if storing).
+//! - Zero-cost for `Copy` types (`QuoteTick`, `TradeTick`, `Bar`).
+//! - Efficient for large types (`OrderBookDeltas`).
+//!
+//! **Any-based handlers pay per-handler overhead:**
+//! - Each handler receives `&dyn Any`, must downcast to `&T`.
+//! - N handlers = N downcasts + N potential clones.
+//! - Runtime type checking on every dispatch.
+//!
+//! ## Performance trade-off
+//!
+//! Typed routing is faster (see `benches/msgbus_typed.rs`, AMD Ryzen 9 7950X):
+//!
+//! | Scenario                    | Typed vs Any |
+//! |-----------------------------|--------------|
+//! | Handler dispatch (noop)     | ~10x faster  |
+//! | Router with 5 subscribers   | ~3.5x faster |
+//! | Router with 10 subscribers  | ~2x faster   |
+//! | High volume (1M messages)   | ~7% faster   |
+//!
+//! Any-based routing pays for flexibility with runtime type checking. Use
+//! typed routing for hot-path data; Any-based for custom types and Python.
+//!
+//! ## Routing paths are separate
+//!
+//! Typed and Any-based routing use separate data structures:
+//! - `publish_quote` routes through `router_quotes`.
+//! - `publish_any` routes through `topics`.
+//!
+//! Publishers and subscribers must use matching APIs. Mixing them causes
+//! silent message loss.
+//!
+//! ## When to use each
+//!
+//! **Typed** (`publish_quote`, `subscribe_quotes`, etc.):
+//! - Market data (quotes, trades, bars, order book updates).
+//! - Order and position events.
+//! - High-frequency data with known types.
+//!
+//! **Any-based** (`publish_any`, `subscribe_any`):
+//! - Custom or user-defined data types.
+//! - Low-frequency messages.
+//! - Python callbacks.
+
 use std::{
+    any::{Any, TypeId},
     cell::RefCell,
     collections::HashMap,
-    fmt::Display,
     hash::{Hash, Hasher},
-    ops::Deref,
     rc::Rc,
 };
 
 use ahash::{AHashMap, AHashSet};
-use handler::ShareableMessageHandler;
 use indexmap::IndexMap;
-use matching::is_matching_backtracking;
-use nautilus_core::{
-    UUID4,
-    correctness::{FAILED, check_predicate_true, check_valid_string_utf8},
+use nautilus_core::{UUID4, correctness::FAILED};
+use nautilus_model::{
+    data::{
+        Bar, Data, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate,
+        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+    },
+    events::{AccountState, OrderEventAny, PositionEvent},
+    identifiers::TraderId,
+    orderbook::OrderBook,
+    orders::OrderAny,
+    position::Position,
 };
-use nautilus_model::identifiers::TraderId;
-use serde::{Deserialize, Serialize};
-use switchboard::MessagingSwitchboard;
+use smallvec::SmallVec;
 use ustr::Ustr;
 
-use super::{handler, matching, set_message_bus, switchboard};
-
-#[inline(always)]
-fn check_fully_qualified_string(value: &Ustr, key: &str) -> anyhow::Result<()> {
-    check_predicate_true(
-        !value.chars().any(|c| c == '*' || c == '?'),
-        &format!("{key} `value` contained invalid characters, was {value}"),
-    )
-}
-
-/// Pattern is a string pattern for a subscription with special characters for pattern matching.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Pattern;
-
-/// Topic is a fully qualified string for publishing data.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Topic;
-
-/// Endpoint is a fully qualified string for sending data.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Endpoint;
-
-/// A message bus string type. It can be a pattern or a topic.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct MStr<T> {
-    value: Ustr,
-    #[serde(skip)]
-    _marker: std::marker::PhantomData<T>,
-}
-
-impl<T> Display for MStr<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
-    }
-}
-
-impl<T> Deref for MStr<T> {
-    type Target = Ustr;
-
-    fn deref(&self) -> &Self::Target {
-        &self.value
-    }
-}
-
-impl<T> AsRef<str> for MStr<T> {
-    fn as_ref(&self) -> &str {
-        self.value.as_str()
-    }
-}
-
-impl MStr<Pattern> {
-    /// Create a new pattern from a string.
-    pub fn pattern<T: AsRef<str>>(value: T) -> Self {
-        let value = Ustr::from(value.as_ref());
-
-        Self {
-            value,
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl From<&str> for MStr<Pattern> {
-    fn from(value: &str) -> Self {
-        Self::pattern(value)
-    }
-}
-
-impl From<String> for MStr<Pattern> {
-    fn from(value: String) -> Self {
-        value.as_str().into()
-    }
-}
-
-impl From<&String> for MStr<Pattern> {
-    fn from(value: &String) -> Self {
-        value.as_str().into()
-    }
-}
-
-impl From<MStr<Topic>> for MStr<Pattern> {
-    fn from(value: MStr<Topic>) -> Self {
-        Self {
-            value: value.value,
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl MStr<Topic> {
-    /// Create a new topic from a fully qualified string.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the topic has white space or invalid characters.
-    pub fn topic<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
-        let topic = Ustr::from(value.as_ref());
-        check_valid_string_utf8(value, stringify!(value))?;
-        check_fully_qualified_string(&topic, stringify!(Topic))?;
-
-        Ok(Self {
-            value: topic,
-            _marker: std::marker::PhantomData,
-        })
-    }
-}
-
-impl From<&str> for MStr<Topic> {
-    fn from(value: &str) -> Self {
-        Self::topic(value).expect(FAILED)
-    }
-}
-
-impl From<String> for MStr<Topic> {
-    fn from(value: String) -> Self {
-        value.as_str().into()
-    }
-}
-
-impl From<&String> for MStr<Topic> {
-    fn from(value: &String) -> Self {
-        value.as_str().into()
-    }
-}
-
-impl From<Ustr> for MStr<Topic> {
-    fn from(value: Ustr) -> Self {
-        value.as_str().into()
-    }
-}
-
-impl From<&Ustr> for MStr<Topic> {
-    fn from(value: &Ustr) -> Self {
-        (*value).into()
-    }
-}
-
-impl MStr<Endpoint> {
-    /// Create a new endpoint from a fully qualified string.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the endpoint has white space or invalid characters.
-    pub fn endpoint<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
-        let endpoint = Ustr::from(value.as_ref());
-        check_valid_string_utf8(value, stringify!(value))?;
-        check_fully_qualified_string(&endpoint, stringify!(Endpoint))?;
-
-        Ok(Self {
-            value: endpoint,
-            _marker: std::marker::PhantomData,
-        })
-    }
-}
-
-impl From<&str> for MStr<Endpoint> {
-    fn from(value: &str) -> Self {
-        Self::endpoint(value).expect(FAILED)
-    }
-}
-
-impl From<String> for MStr<Endpoint> {
-    fn from(value: String) -> Self {
-        value.as_str().into()
-    }
-}
-
-impl From<&String> for MStr<Endpoint> {
-    fn from(value: &String) -> Self {
-        value.as_str().into()
-    }
-}
-
-impl From<Ustr> for MStr<Endpoint> {
-    fn from(value: Ustr) -> Self {
-        value.as_str().into()
-    }
-}
+use super::{
+    ShareableMessageHandler,
+    matching::is_matching_backtracking,
+    mstr::{Endpoint, MStr, Pattern, Topic},
+    set_message_bus,
+    switchboard::MessagingSwitchboard,
+    typed_endpoints::{EndpointMap, IntoEndpointMap},
+    typed_router::TopicRouter,
+};
+use crate::messages::{
+    data::{DataCommand, DataResponse},
+    execution::{ExecutionReport, TradingCommand},
+};
 
 /// Represents a subscription to a particular topic.
 ///
@@ -312,23 +219,60 @@ pub struct MessageBus {
     pub name: String,
     /// If the message bus is backed by a database.
     pub has_backing: bool,
-    /// The switchboard for built-in endpoints.
-    pub switchboard: MessagingSwitchboard,
-    /// Active subscriptions.
-    pub subscriptions: AHashSet<Subscription>,
-    /// Maps a topic to all the handlers registered for it
-    /// this is updated whenever a new subscription is created.
-    pub topics: IndexMap<MStr<Topic>, Vec<Subscription>>,
-    /// Index of endpoint addresses and their handlers.
-    pub endpoints: IndexMap<MStr<Endpoint>, ShareableMessageHandler>,
-    /// Index of request correlation IDs and their response handlers.
-    pub correlation_index: AHashMap<UUID4, ShareableMessageHandler>,
+    pub(crate) switchboard: MessagingSwitchboard,
+    pub(crate) subscriptions: AHashSet<Subscription>,
+    pub(crate) topics: IndexMap<MStr<Topic>, Vec<Subscription>>,
+    pub(crate) endpoints: IndexMap<MStr<Endpoint>, ShareableMessageHandler>,
+    pub(crate) correlation_index: AHashMap<UUID4, ShareableMessageHandler>,
+    pub(crate) router_quotes: TopicRouter<QuoteTick>,
+    pub(crate) router_trades: TopicRouter<TradeTick>,
+    pub(crate) router_bars: TopicRouter<Bar>,
+    pub(crate) router_deltas: TopicRouter<OrderBookDeltas>,
+    pub(crate) router_depth10: TopicRouter<OrderBookDepth10>,
+    pub(crate) router_book_snapshots: TopicRouter<OrderBook>,
+    pub(crate) router_mark_prices: TopicRouter<MarkPriceUpdate>,
+    pub(crate) router_index_prices: TopicRouter<IndexPriceUpdate>,
+    pub(crate) router_funding_rates: TopicRouter<FundingRateUpdate>,
+    pub(crate) router_order_events: TopicRouter<OrderEventAny>,
+    pub(crate) router_position_events: TopicRouter<PositionEvent>,
+    pub(crate) router_account_state: TopicRouter<AccountState>,
+    pub(crate) router_orders: TopicRouter<OrderAny>,
+    pub(crate) router_positions: TopicRouter<Position>,
+    pub(crate) router_greeks: TopicRouter<GreeksData>,
+    #[cfg(feature = "defi")]
+    pub(crate) router_defi_blocks: TopicRouter<nautilus_model::defi::Block>, // nautilus-import-ok
+    #[cfg(feature = "defi")]
+    pub(crate) router_defi_pools: TopicRouter<nautilus_model::defi::Pool>, // nautilus-import-ok
+    #[cfg(feature = "defi")]
+    pub(crate) router_defi_swaps: TopicRouter<nautilus_model::defi::PoolSwap>, // nautilus-import-ok
+    #[cfg(feature = "defi")]
+    pub(crate) router_defi_liquidity: TopicRouter<nautilus_model::defi::PoolLiquidityUpdate>, // nautilus-import-ok
+    #[cfg(feature = "defi")]
+    pub(crate) router_defi_collects: TopicRouter<nautilus_model::defi::PoolFeeCollect>, // nautilus-import-ok
+    #[cfg(feature = "defi")]
+    pub(crate) router_defi_flash: TopicRouter<nautilus_model::defi::PoolFlash>, // nautilus-import-ok
+    #[cfg(feature = "defi")]
+    pub(crate) endpoints_defi_data: IntoEndpointMap<nautilus_model::defi::DefiData>, // nautilus-import-ok
+    pub(crate) endpoints_quotes: EndpointMap<QuoteTick>,
+    pub(crate) endpoints_trades: EndpointMap<TradeTick>,
+    pub(crate) endpoints_bars: EndpointMap<Bar>,
+    pub(crate) endpoints_account_state: EndpointMap<AccountState>,
+    pub(crate) endpoints_trading_commands: IntoEndpointMap<TradingCommand>,
+    pub(crate) endpoints_data_commands: IntoEndpointMap<DataCommand>,
+    pub(crate) endpoints_data_responses: IntoEndpointMap<DataResponse>,
+    pub(crate) endpoints_exec_reports: IntoEndpointMap<ExecutionReport>,
+    pub(crate) endpoints_order_events: IntoEndpointMap<OrderEventAny>,
+    pub(crate) endpoints_data: IntoEndpointMap<Data>,
+    routers_typed: AHashMap<TypeId, Box<dyn Any>>,
+    endpoints_typed: AHashMap<TypeId, Box<dyn Any>>,
 }
 
-// MessageBus is designed for single-threaded use within each async runtime.
-// Thread-local storage ensures each thread gets its own instance, eliminating
-// the need for unsafe Send/Sync implementations that were previously required
-// for global static storage.
+impl Default for MessageBus {
+    /// Creates a new default [`MessageBus`] instance.
+    fn default() -> Self {
+        Self::new(TraderId::from("TRADER-001"), UUID4::new(), None, None)
+    }
+}
 
 impl MessageBus {
     /// Creates a new [`MessageBus`] instance.
@@ -349,13 +293,93 @@ impl MessageBus {
             endpoints: IndexMap::new(),
             correlation_index: AHashMap::new(),
             has_backing: false,
+            router_quotes: TopicRouter::new(),
+            router_trades: TopicRouter::new(),
+            router_bars: TopicRouter::new(),
+            router_deltas: TopicRouter::new(),
+            router_depth10: TopicRouter::new(),
+            router_book_snapshots: TopicRouter::new(),
+            router_mark_prices: TopicRouter::new(),
+            router_index_prices: TopicRouter::new(),
+            router_funding_rates: TopicRouter::new(),
+            router_order_events: TopicRouter::new(),
+            router_position_events: TopicRouter::new(),
+            router_account_state: TopicRouter::new(),
+            router_orders: TopicRouter::new(),
+            router_positions: TopicRouter::new(),
+            router_greeks: TopicRouter::new(),
+            #[cfg(feature = "defi")]
+            router_defi_blocks: TopicRouter::new(),
+            #[cfg(feature = "defi")]
+            router_defi_pools: TopicRouter::new(),
+            #[cfg(feature = "defi")]
+            router_defi_swaps: TopicRouter::new(),
+            #[cfg(feature = "defi")]
+            router_defi_liquidity: TopicRouter::new(),
+            #[cfg(feature = "defi")]
+            router_defi_collects: TopicRouter::new(),
+            #[cfg(feature = "defi")]
+            router_defi_flash: TopicRouter::new(),
+            #[cfg(feature = "defi")]
+            endpoints_defi_data: IntoEndpointMap::new(),
+            endpoints_quotes: EndpointMap::new(),
+            endpoints_trades: EndpointMap::new(),
+            endpoints_bars: EndpointMap::new(),
+            endpoints_account_state: EndpointMap::new(),
+            endpoints_trading_commands: IntoEndpointMap::new(),
+            endpoints_data_commands: IntoEndpointMap::new(),
+            endpoints_data_responses: IntoEndpointMap::new(),
+            endpoints_exec_reports: IntoEndpointMap::new(),
+            endpoints_order_events: IntoEndpointMap::new(),
+            endpoints_data: IntoEndpointMap::new(),
+            routers_typed: AHashMap::new(),
+            endpoints_typed: AHashMap::new(),
         }
+    }
+
+    /// Registers message bus for the current thread.
+    pub fn register_message_bus(self) -> Rc<RefCell<Self>> {
+        let msgbus = Rc::new(RefCell::new(self));
+        set_message_bus(msgbus.clone());
+        msgbus
+    }
+
+    /// Gets or creates a typed router for custom message type `T`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the stored router type doesn't match `T` (internal bug).
+    pub fn router<T: 'static>(&mut self) -> &mut TopicRouter<T> {
+        self.routers_typed
+            .entry(TypeId::of::<T>())
+            .or_insert_with(|| Box::new(TopicRouter::<T>::new()))
+            .downcast_mut::<TopicRouter<T>>()
+            .expect("TopicRouter type mismatch - this is a bug")
+    }
+
+    /// Gets or creates a typed endpoint map for custom message type `T`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the stored endpoint map type doesn't match `T` (internal bug).
+    pub fn endpoint_map<T: 'static>(&mut self) -> &mut EndpointMap<T> {
+        self.endpoints_typed
+            .entry(TypeId::of::<T>())
+            .or_insert_with(|| Box::new(EndpointMap::<T>::new()))
+            .downcast_mut::<EndpointMap<T>>()
+            .expect("EndpointMap type mismatch - this is a bug")
     }
 
     /// Returns the memory address of this instance as a hexadecimal string.
     #[must_use]
     pub fn mem_address(&self) -> String {
         format!("{self:p}")
+    }
+
+    /// Returns a reference to the switchboard.
+    #[must_use]
+    pub fn switchboard(&self) -> &MessagingSwitchboard {
+        &self.switchboard
     }
 
     /// Returns the registered endpoint addresses.
@@ -481,6 +505,28 @@ impl MessageBus {
         })
     }
 
+    /// Fills a buffer with handlers matching a topic.
+    pub(crate) fn fill_matching_any_handlers(
+        &mut self,
+        topic: MStr<Topic>,
+        buf: &mut SmallVec<[ShareableMessageHandler; 64]>,
+    ) {
+        if let Some(subs) = self.topics.get(&topic) {
+            for sub in subs {
+                buf.push(sub.handler.clone());
+            }
+        } else {
+            let mut matches = self.find_topic_matches(topic);
+            matches.sort();
+
+            for sub in &matches {
+                buf.push(sub.handler.clone());
+            }
+
+            self.topics.insert(topic, matches);
+        }
+    }
+
     /// Registers a response handler for a specific correlation ID.
     ///
     /// # Errors
@@ -501,34 +547,457 @@ impl MessageBus {
     }
 }
 
-/// Data specific functions.
-impl MessageBus {
-    // /// Send a [`DataRequest`] to an endpoint that must be a data client implementation.
-    // pub fn send_data_request(&self, message: DataRequest) {
-    //     // TODO: log error
-    //     if let Some(client) = self.get_client(&message.client_id, message.venue) {
-    //         let _ = client.request(message);
-    //     }
-    // }
-    //
-    // /// Send a [`SubscriptionCommand`] to an endpoint that must be a data client implementation.
-    // pub fn send_subscription_command(&self, message: SubscriptionCommand) {
-    //     if let Some(client) = self.get_client(&message.client_id, message.venue) {
-    //         client.through_execute(message);
-    //     }
-    // }
+#[cfg(test)]
+mod tests {
+    use rand::{Rng, SeedableRng, rngs::StdRng};
+    use rstest::rstest;
+    use ustr::Ustr;
 
-    /// Registers message bus for the current thread.
-    pub fn register_message_bus(self) -> Rc<RefCell<Self>> {
-        let msgbus = Rc::new(RefCell::new(self));
-        set_message_bus(msgbus.clone());
-        msgbus
+    use super::*;
+    use crate::msgbus::{
+        self, ShareableMessageHandler, get_message_bus,
+        matching::is_matching_backtracking,
+        stubs::{get_call_check_handler, get_stub_shareable_handler},
+        subscriptions_count_any,
+    };
+
+    #[rstest]
+    fn test_new() {
+        let trader_id = TraderId::default();
+        let msgbus = MessageBus::new(trader_id, UUID4::new(), None, None);
+
+        assert_eq!(msgbus.trader_id, trader_id);
+        assert_eq!(msgbus.name, stringify!(MessageBus));
     }
-}
 
-impl Default for MessageBus {
-    /// Creates a new default [`MessageBus`] instance.
-    fn default() -> Self {
-        Self::new(TraderId::from("TRADER-001"), UUID4::new(), None, None)
+    #[rstest]
+    fn test_endpoints_when_no_endpoints() {
+        let msgbus = get_message_bus();
+        assert!(msgbus.borrow().endpoints().is_empty());
+    }
+
+    #[rstest]
+    fn test_topics_when_no_subscriptions() {
+        let msgbus = get_message_bus();
+        assert!(msgbus.borrow().patterns().is_empty());
+        assert!(!msgbus.borrow().has_subscribers("my-topic"));
+    }
+
+    #[rstest]
+    fn test_is_subscribed_when_no_subscriptions() {
+        let msgbus = get_message_bus();
+        let handler = get_stub_shareable_handler(None);
+
+        assert!(!msgbus.borrow().is_subscribed("my-topic", handler));
+    }
+
+    #[rstest]
+    fn test_get_response_handler_when_no_handler() {
+        let msgbus = get_message_bus();
+        let msgbus_ref = msgbus.borrow();
+        let handler = msgbus_ref.get_response_handler(&UUID4::new());
+        assert!(handler.is_none());
+    }
+
+    #[rstest]
+    fn test_get_response_handler_when_already_registered() {
+        let msgbus = get_message_bus();
+        let mut msgbus_ref = msgbus.borrow_mut();
+        let handler = get_stub_shareable_handler(None);
+
+        let request_id = UUID4::new();
+        msgbus_ref
+            .register_response_handler(&request_id, handler.clone())
+            .unwrap();
+
+        let result = msgbus_ref.register_response_handler(&request_id, handler);
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_get_response_handler_when_registered() {
+        let msgbus = get_message_bus();
+        let mut msgbus_ref = msgbus.borrow_mut();
+        let handler = get_stub_shareable_handler(None);
+
+        let request_id = UUID4::new();
+        msgbus_ref
+            .register_response_handler(&request_id, handler)
+            .unwrap();
+
+        let handler = msgbus_ref.get_response_handler(&request_id).unwrap();
+        assert_eq!(handler.id(), handler.id());
+    }
+
+    #[rstest]
+    fn test_is_registered_when_no_registrations() {
+        let msgbus = get_message_bus();
+        assert!(!msgbus.borrow().is_registered("MyEndpoint"));
+    }
+
+    #[rstest]
+    fn test_register_endpoint() {
+        let msgbus = get_message_bus();
+        let endpoint = "MyEndpoint".into();
+        let handler = get_stub_shareable_handler(None);
+
+        msgbus::register_any(endpoint, handler);
+
+        assert_eq!(msgbus.borrow().endpoints(), vec![endpoint.to_string()]);
+        assert!(msgbus.borrow().get_endpoint(endpoint).is_some());
+    }
+
+    #[rstest]
+    fn test_endpoint_send() {
+        let msgbus = get_message_bus();
+        let endpoint = "MyEndpoint".into();
+        let (handler, checker) = get_call_check_handler(None);
+
+        msgbus::register_any(endpoint, handler);
+        assert!(msgbus.borrow().get_endpoint(endpoint).is_some());
+        assert!(!checker.was_called());
+
+        // Send a message to the endpoint
+        msgbus::send_any(endpoint, &"Test Message");
+        assert!(checker.was_called());
+    }
+
+    #[rstest]
+    fn test_deregsiter_endpoint() {
+        let msgbus = get_message_bus();
+        let endpoint = "MyEndpoint".into();
+        let handler = get_stub_shareable_handler(None);
+
+        msgbus::register_any(endpoint, handler);
+        msgbus::deregister_any(endpoint);
+
+        assert!(msgbus.borrow().endpoints().is_empty());
+    }
+
+    #[rstest]
+    fn test_subscribe() {
+        let msgbus = get_message_bus();
+        let topic = "my-topic";
+        let handler = get_stub_shareable_handler(None);
+
+        msgbus::subscribe_any(topic.into(), handler, Some(1));
+
+        assert!(msgbus.borrow().has_subscribers(topic));
+        assert_eq!(msgbus.borrow().patterns(), vec![topic]);
+    }
+
+    #[rstest]
+    fn test_unsubscribe() {
+        let msgbus = get_message_bus();
+        let topic = "my-topic";
+        let handler = get_stub_shareable_handler(None);
+
+        msgbus::subscribe_any(topic.into(), handler.clone(), None);
+        msgbus::unsubscribe_any(topic.into(), handler);
+
+        assert!(!msgbus.borrow().has_subscribers(topic));
+        assert!(msgbus.borrow().patterns().is_empty());
+    }
+
+    #[rstest]
+    fn test_matching_subscriptions() {
+        let msgbus = get_message_bus();
+        let pattern = "my-pattern";
+
+        let handler_id1 = Ustr::from("1");
+        let handler1 = get_stub_shareable_handler(Some(handler_id1));
+
+        let handler_id2 = Ustr::from("2");
+        let handler2 = get_stub_shareable_handler(Some(handler_id2));
+
+        let handler_id3 = Ustr::from("3");
+        let handler3 = get_stub_shareable_handler(Some(handler_id3));
+
+        let handler_id4 = Ustr::from("4");
+        let handler4 = get_stub_shareable_handler(Some(handler_id4));
+
+        msgbus::subscribe_any(pattern.into(), handler1, None);
+        msgbus::subscribe_any(pattern.into(), handler2, None);
+        msgbus::subscribe_any(pattern.into(), handler3, Some(1));
+        msgbus::subscribe_any(pattern.into(), handler4, Some(2));
+
+        assert_eq!(
+            msgbus.borrow().patterns(),
+            vec![pattern, pattern, pattern, pattern]
+        );
+        assert_eq!(subscriptions_count_any(pattern), 4);
+
+        let topic = pattern;
+        let subs = msgbus.borrow_mut().matching_subscriptions(topic);
+        assert_eq!(subs.len(), 4);
+        assert_eq!(subs[0].handler_id, handler_id4);
+        assert_eq!(subs[1].handler_id, handler_id3);
+        assert_eq!(subs[2].handler_id, handler_id1);
+        assert_eq!(subs[3].handler_id, handler_id2);
+    }
+
+    #[rstest]
+    fn test_subscription_pattern_matching() {
+        let msgbus = get_message_bus();
+        let handler1 = get_stub_shareable_handler(Some(Ustr::from("1")));
+        let handler2 = get_stub_shareable_handler(Some(Ustr::from("2")));
+        let handler3 = get_stub_shareable_handler(Some(Ustr::from("3")));
+
+        msgbus::subscribe_any("data.quotes.*".into(), handler1, None);
+        msgbus::subscribe_any("data.trades.*".into(), handler2, None);
+        msgbus::subscribe_any("data.*.BINANCE.*".into(), handler3, None);
+        assert_eq!(msgbus.borrow().subscriptions().len(), 3);
+
+        let topic = "data.quotes.BINANCE.ETHUSDT";
+        assert_eq!(msgbus.borrow().find_topic_matches(topic.into()).len(), 2);
+
+        let matches = msgbus.borrow_mut().matching_subscriptions(topic);
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].handler_id, Ustr::from("3"));
+        assert_eq!(matches[1].handler_id, Ustr::from("1"));
+    }
+
+    /// A simple reference model for subscription behavior.
+    struct SimpleSubscriptionModel {
+        /// Stores (pattern, handler_id) tuples for active subscriptions.
+        subscriptions: Vec<(String, String)>,
+    }
+
+    impl SimpleSubscriptionModel {
+        fn new() -> Self {
+            Self {
+                subscriptions: Vec::new(),
+            }
+        }
+
+        fn subscribe(&mut self, pattern: &str, handler_id: &str) {
+            let subscription = (pattern.to_string(), handler_id.to_string());
+            if !self.subscriptions.contains(&subscription) {
+                self.subscriptions.push(subscription);
+            }
+        }
+
+        fn unsubscribe(&mut self, pattern: &str, handler_id: &str) -> bool {
+            let subscription = (pattern.to_string(), handler_id.to_string());
+            if let Some(idx) = self.subscriptions.iter().position(|s| s == &subscription) {
+                self.subscriptions.remove(idx);
+                true
+            } else {
+                false
+            }
+        }
+
+        fn is_subscribed(&self, pattern: &str, handler_id: &str) -> bool {
+            self.subscriptions
+                .contains(&(pattern.to_string(), handler_id.to_string()))
+        }
+
+        fn matching_subscriptions(&self, topic: &str) -> Vec<(String, String)> {
+            let topic = topic.into();
+
+            self.subscriptions
+                .iter()
+                .filter(|(pat, _)| is_matching_backtracking(topic, pat.into()))
+                .map(|(pat, id)| (pat.clone(), id.clone()))
+                .collect()
+        }
+
+        fn subscription_count(&self) -> usize {
+            self.subscriptions.len()
+        }
+    }
+
+    #[rstest]
+    fn subscription_model_fuzz_testing() {
+        let mut rng = StdRng::seed_from_u64(42);
+
+        let msgbus = get_message_bus();
+        let mut model = SimpleSubscriptionModel::new();
+
+        // Map from handler_id to handler
+        let mut handlers: Vec<(String, ShareableMessageHandler)> = Vec::new();
+
+        // Generate some patterns
+        let patterns = generate_test_patterns(&mut rng);
+
+        // Generate some handler IDs
+        let handler_ids: Vec<String> = (0..50).map(|i| format!("handler_{i}")).collect();
+
+        // Initialize handlers
+        for id in &handler_ids {
+            let handler = get_stub_shareable_handler(Some(Ustr::from(id)));
+            handlers.push((id.clone(), handler));
+        }
+
+        let num_operations = 50_000;
+        for op_num in 0..num_operations {
+            let operation = rng.random_range(0..4);
+
+            match operation {
+                // Subscribe
+                0 => {
+                    let pattern_idx = rng.random_range(0..patterns.len());
+                    let handler_idx = rng.random_range(0..handlers.len());
+                    let pattern = &patterns[pattern_idx];
+                    let (handler_id, handler) = &handlers[handler_idx];
+
+                    // Apply to reference model
+                    model.subscribe(pattern, handler_id);
+
+                    // Apply to message bus
+                    msgbus::subscribe_any(pattern.as_str().into(), handler.clone(), None);
+
+                    assert_eq!(
+                        model.subscription_count(),
+                        msgbus.borrow().subscriptions().len()
+                    );
+
+                    assert!(
+                        msgbus.borrow().is_subscribed(pattern, handler.clone()),
+                        "Op {op_num}: is_subscribed should return true after subscribe"
+                    );
+                }
+
+                // Unsubscribe
+                1 => {
+                    if model.subscription_count() > 0 {
+                        let sub_idx = rng.random_range(0..model.subscription_count());
+                        let (pattern, handler_id) = model.subscriptions[sub_idx].clone();
+
+                        // Apply to reference model
+                        model.unsubscribe(&pattern, &handler_id);
+
+                        // Find handler
+                        let handler = handlers
+                            .iter()
+                            .find(|(id, _)| id == &handler_id)
+                            .map(|(_, h)| h.clone())
+                            .unwrap();
+
+                        // Apply to message bus
+                        msgbus::unsubscribe_any(pattern.as_str().into(), handler.clone());
+
+                        assert_eq!(
+                            model.subscription_count(),
+                            msgbus.borrow().subscriptions().len()
+                        );
+                        assert!(
+                            !msgbus.borrow().is_subscribed(pattern, handler.clone()),
+                            "Op {op_num}: is_subscribed should return false after unsubscribe"
+                        );
+                    }
+                }
+
+                // Check is_subscribed
+                2 => {
+                    // Get a random pattern and handler
+                    let pattern_idx = rng.random_range(0..patterns.len());
+                    let handler_idx = rng.random_range(0..handlers.len());
+                    let pattern = &patterns[pattern_idx];
+                    let (handler_id, handler) = &handlers[handler_idx];
+
+                    let expected = model.is_subscribed(pattern, handler_id);
+                    let actual = msgbus.borrow().is_subscribed(pattern, handler.clone());
+
+                    assert_eq!(
+                        expected, actual,
+                        "Op {op_num}: Subscription state mismatch for pattern '{pattern}', handler '{handler_id}': expected={expected}, actual={actual}"
+                    );
+                }
+
+                // Check matching_subscriptions
+                3 => {
+                    // Generate a topic
+                    let topic = create_topic(&mut rng);
+
+                    let actual_matches = msgbus.borrow_mut().matching_subscriptions(topic);
+                    let expected_matches = model.matching_subscriptions(&topic);
+
+                    assert_eq!(
+                        expected_matches.len(),
+                        actual_matches.len(),
+                        "Op {}: Match count mismatch for topic '{}': expected={}, actual={}",
+                        op_num,
+                        topic,
+                        expected_matches.len(),
+                        actual_matches.len()
+                    );
+
+                    for sub in &actual_matches {
+                        assert!(
+                            expected_matches
+                                .contains(&(sub.pattern.to_string(), sub.handler_id.to_string())),
+                            "Op {}: Expected match not found: pattern='{}', handler_id='{}'",
+                            op_num,
+                            sub.pattern,
+                            sub.handler_id
+                        );
+                    }
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    fn generate_pattern_from_topic(topic: &str, rng: &mut StdRng) -> String {
+        let mut pattern = String::new();
+
+        for c in topic.chars() {
+            let val: f64 = rng.random();
+            if val < 0.1 {
+                pattern.push('*');
+            } else if val < 0.3 {
+                pattern.push('?');
+            } else if val < 0.5 {
+                continue;
+            } else {
+                pattern.push(c);
+            };
+        }
+
+        pattern
+    }
+
+    fn generate_test_patterns(rng: &mut StdRng) -> Vec<String> {
+        let mut patterns = vec![
+            "data.*.*.*".to_string(),
+            "*.*.BINANCE.*".to_string(),
+            "events.order.*".to_string(),
+            "data.*.*.?USDT".to_string(),
+            "*.trades.*.BTC*".to_string(),
+            "*.*.*.*".to_string(),
+        ];
+
+        // Add some random patterns
+        for _ in 0..50 {
+            match rng.random_range(0..10) {
+                // Use existing pattern
+                0..=1 => {
+                    let idx = rng.random_range(0..patterns.len());
+                    patterns.push(patterns[idx].clone());
+                }
+                // Generate new pattern from topic
+                _ => {
+                    let topic = create_topic(rng);
+                    let pattern = generate_pattern_from_topic(&topic, rng);
+                    patterns.push(pattern);
+                }
+            }
+        }
+
+        patterns
+    }
+
+    fn create_topic(rng: &mut StdRng) -> Ustr {
+        let cat = ["data", "info", "order"];
+        let model = ["quotes", "trades", "orderbooks", "depths"];
+        let venue = ["BINANCE", "BYBIT", "OKX", "FTX", "KRAKEN"];
+        let instrument = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"];
+
+        let cat = cat[rng.random_range(0..cat.len())];
+        let model = model[rng.random_range(0..model.len())];
+        let venue = venue[rng.random_range(0..venue.len())];
+        let instrument = instrument[rng.random_range(0..instrument.len())];
+        Ustr::from(&format!("{cat}.{model}.{venue}.{instrument}"))
     }
 }

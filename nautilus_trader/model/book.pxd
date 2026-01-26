@@ -62,6 +62,7 @@ cdef class OrderBook(Data):
     cpdef midpoint(self)
     cpdef double get_avg_px_for_quantity(self, Quantity quantity, OrderSide order_side)
     cpdef double get_quantity_for_price(self, Price price, OrderSide order_side)
+    cpdef Quantity get_quantity_at_level(self, Price price, OrderSide order_side, uint8_t size_precision)
     cpdef list simulate_fills(self, Order order, uint8_t price_prec, uint8_t size_prec, bint is_aggressive)
     cpdef list get_all_crossed_levels(self, OrderSide order_side, Price price, uint8_t size_prec)
     cpdef void update_quote_tick(self, QuoteTick tick)

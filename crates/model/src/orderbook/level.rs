@@ -153,9 +153,9 @@ impl BookLevel {
     }
 
     /// Adds multiple orders to this price level in FIFO order. Orders must match the level's price.
-    pub fn add_bulk(&mut self, orders: Vec<BookOrder>) {
+    pub fn add_bulk(&mut self, orders: &[BookOrder]) {
         for order in orders {
-            self.add(order);
+            self.add(*order);
         }
     }
 
@@ -276,18 +276,18 @@ mod tests {
     fn test_add_bulk_orders_incorrect_price() {
         let mut level =
             BookLevel::new(BookPrice::new(Price::from("1.00"), OrderSideSpecified::Buy));
-        let orders = vec![
+        let orders = [
             BookOrder::new(OrderSide::Buy, Price::from("1.00"), Quantity::from(10), 1),
             BookOrder::new(OrderSide::Buy, Price::from("2.00"), Quantity::from(20), 2), // Incorrect price
         ];
-        level.add_bulk(orders);
+        level.add_bulk(&orders);
     }
 
     #[rstest]
     fn test_add_bulk_empty() {
         let mut level =
             BookLevel::new(BookPrice::new(Price::from("1.00"), OrderSideSpecified::Buy));
-        level.add_bulk(vec![]);
+        level.add_bulk(&[]);
         assert!(level.is_empty());
     }
 
@@ -586,8 +586,8 @@ mod tests {
             order2_id,
         );
 
-        let orders = vec![order1, order2];
-        level.add_bulk(orders);
+        let orders = [order1, order2];
+        level.add_bulk(&orders);
         assert_eq!(level.len(), 2);
         assert_eq!(level.size(), 30.0);
         assert_eq!(level.exposure(), 60.0);

@@ -68,7 +68,7 @@ class OrderBookActor(Actor):
                 f"best_bid: {bid_prc} best_ask: {ask_prc}",
             )
             self.log.error(f"\n{self.order_book.pprint(num_levels=10)}")
-            raise
+            raise RuntimeError(f"Invalid order book state: bid {bid_prc} > ask {ask_prc}")
 
     def on_stop(self):
         pass

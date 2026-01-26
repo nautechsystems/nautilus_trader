@@ -36,8 +36,8 @@ use nautilus_binance::{
         http::client::BinanceSpotHttpClient,
         websocket::streams::{
             client::BinanceSpotWebSocketClient,
-            handler::{MarketDataMessage, decode_market_data},
-            messages::NautilusWsMessage,
+            messages::{BinanceSpotWsMessage, NautilusSpotDataWsMessage},
+            parse::{MarketDataMessage, decode_market_data},
         },
     },
 };
@@ -109,67 +109,68 @@ async fn main() -> anyhow::Result<()> {
                 message_count += 1;
 
                 match msg {
-                    NautilusWsMessage::Data(data_vec) => {
-                        for data in &data_vec {
-                            match data {
-                                Data::Trade(trade) => {
-                                    trade_count += 1;
-                                    log::info!(
-                                        "Trade: msg={message_count}, instrument={}, price={}, size={}, side={:?}, trade_id={}",
-                                        trade.instrument_id,
-                                        trade.price,
-                                        trade.size,
-                                        trade.aggressor_side,
-                                        trade.trade_id
-                                    );
-                                }
-                                Data::Quote(quote) => {
-                                    quote_count += 1;
-                                    log::info!(
-                                        "Quote: msg={message_count}, instrument={}, bid={}, ask={}, bid_size={}, ask_size={}",
-                                        quote.instrument_id,
-                                        quote.bid_price,
-                                        quote.ask_price,
-                                        quote.bid_size,
-                                        quote.ask_size
-                                    );
-                                }
-                                _ => {
-                                    log::debug!("Other data: msg={message_count}, data={data:?}");
+                    BinanceSpotWsMessage::Data(data_msg) => match data_msg {
+                        NautilusSpotDataWsMessage::Data(data_vec) => {
+                            for data in &data_vec {
+                                match data {
+                                    Data::Trade(trade) => {
+                                        trade_count += 1;
+                                        log::info!(
+                                            "Trade: msg={message_count}, instrument={}, price={}, size={}, side={:?}, trade_id={}",
+                                            trade.instrument_id,
+                                            trade.price,
+                                            trade.size,
+                                            trade.aggressor_side,
+                                            trade.trade_id
+                                        );
+                                    }
+                                    Data::Quote(quote) => {
+                                        quote_count += 1;
+                                        log::info!(
+                                            "Quote: msg={message_count}, instrument={}, bid={}, ask={}, bid_size={}, ask_size={}",
+                                            quote.instrument_id,
+                                            quote.bid_price,
+                                            quote.ask_price,
+                                            quote.bid_size,
+                                            quote.ask_size
+                                        );
+                                    }
+                                    _ => {
+                                        log::debug!("Other data: msg={message_count}, data={data:?}");
+                                    }
                                 }
                             }
                         }
-                    }
-                    NautilusWsMessage::Deltas(deltas) => {
-                        log::info!(
-                            "OrderBook deltas: msg={message_count}, instrument={}, num_deltas={}",
-                            deltas.instrument_id,
-                            deltas.deltas.len()
-                        );
-                    }
-                    NautilusWsMessage::RawBinary(data) => {
-                        // Try to decode and display SBE data
-                        match decode_and_display_sbe(&data) {
-                            Ok(()) => {}
-                            Err(e) => {
-                                log::warn!(
-                                    "Raw binary (decode failed): msg={message_count}, len={}, error={e}",
-                                    data.len()
-                                );
+                        NautilusSpotDataWsMessage::Deltas(deltas) => {
+                            log::info!(
+                                "OrderBook deltas: msg={message_count}, instrument={}, num_deltas={}",
+                                deltas.instrument_id,
+                                deltas.deltas.len()
+                            );
+                        }
+                        NautilusSpotDataWsMessage::RawBinary(data) => {
+                            match decode_and_display_sbe(&data) {
+                                Ok(()) => {}
+                                Err(e) => {
+                                    log::warn!(
+                                        "Raw binary (decode failed): msg={message_count}, len={}, error={e}",
+                                        data.len()
+                                    );
+                                }
                             }
                         }
-                    }
-                    NautilusWsMessage::RawJson(json) => {
-                        log::debug!("Raw JSON: msg={message_count}, json={json}");
-                    }
-                    NautilusWsMessage::Error(err) => {
+                        NautilusSpotDataWsMessage::RawJson(json) => {
+                            log::debug!("Raw JSON: msg={message_count}, json={json}");
+                        }
+                        NautilusSpotDataWsMessage::Instrument(inst) => {
+                            log::info!("Instrument: {inst:?}");
+                        }
+                    },
+                    BinanceSpotWsMessage::Error(err) => {
                         log::error!("WebSocket error: code={}, msg={}", err.code, err.msg);
                     }
-                    NautilusWsMessage::Reconnected => {
+                    BinanceSpotWsMessage::Reconnected => {
                         log::warn!("WebSocket reconnected");
-                    }
-                    NautilusWsMessage::Instrument(inst) => {
-                        log::info!("Instrument: {inst:?}");
                     }
                 }
 

@@ -20,6 +20,8 @@ from nautilus_trader.core import nautilus_pyo3
 # This needs to be a Python import so it can used in the FSM
 from nautilus_trader.model.enums import order_status_to_str
 
+from libc.stdint cimport uint8_t
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport FIXED_SCALAR
 from nautilus_trader.core.rust.model cimport ContingencyType
@@ -1185,18 +1187,19 @@ cdef class Order:
             self.ts_accepted = fill.ts_event
 
         cdef QuantityRaw raw_filled_qty = self.filled_qty._mem.raw + fill.last_qty._mem.raw
+        cdef uint8_t fill_precision = max(self.filled_qty._mem.precision, fill.last_qty._mem.precision)
 
         # Using `PriceRaw` as temporary hack to access int128_t so that negative values can be represented
         cdef PriceRaw raw_leaves_qty = self.quantity._mem.raw - raw_filled_qty
 
         if raw_leaves_qty < 0:
             self.overfill_qty = self.overfill_qty.add(
-                Quantity.from_raw_c(-raw_leaves_qty, fill.last_qty._mem.precision)
+                Quantity.from_raw_c(-raw_leaves_qty, fill_precision)
             )
             raw_leaves_qty = 0  # Clamp to zero
 
-        self.filled_qty.add_assign(fill.last_qty)
-        self.leaves_qty = Quantity.from_raw_c(<QuantityRaw>raw_leaves_qty, fill.last_qty._mem.precision)
+        self.filled_qty = Quantity.from_raw_c(raw_filled_qty, fill_precision)
+        self.leaves_qty = Quantity.from_raw_c(<QuantityRaw>raw_leaves_qty, fill_precision)
         self.avg_px = self._calculate_avg_px(fill.last_qty.as_f64_c(), fill.last_px.as_f64_c())
         self.liquidity_side = fill.liquidity_side
         self._set_slippage()

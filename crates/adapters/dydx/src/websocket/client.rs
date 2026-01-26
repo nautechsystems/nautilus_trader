@@ -29,11 +29,12 @@
 //!
 //! <https://docs.dydx.trade/developers/indexer/websockets>
 
-/// Rate limit key for subscription operations (subscribe/unsubscribe).
+/// Pre-interned rate limit key for subscription operations (subscribe/unsubscribe).
 ///
 /// dYdX allows up to 2 subscription messages per second per connection.
 /// See: <https://docs.dydx.trade/developers/indexer/websockets#rate-limits>
-pub const DYDX_RATE_LIMIT_KEY_SUBSCRIPTION: &str = "subscription";
+pub static DYDX_RATE_LIMIT_KEY_SUBSCRIPTION: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from("subscription")]);
 
 /// WebSocket topic delimiter for dYdX (channel:symbol format).
 pub const DYDX_WS_TOPIC_DELIMITER: char = ':';
@@ -51,11 +52,10 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use dashmap::DashMap;
 use nautilus_common::live::get_runtime;
 use nautilus_model::{
     identifiers::{AccountId, InstrumentId},
-    instruments::{Instrument, InstrumentAny},
+    instruments::InstrumentAny,
 };
 use nautilus_network::{
     mode::ConnectionMode,
@@ -67,11 +67,12 @@ use nautilus_network::{
 use ustr::Ustr;
 
 use super::{
-    enums::NautilusWsMessage,
+    enums::{DydxWsChannel, DydxWsOperation, NautilusWsMessage},
     error::{DydxWsError, DydxWsResult},
     handler::{FeedHandler, HandlerCommand},
+    messages::DydxSubscription,
 };
-use crate::common::credential::DydxCredential;
+use crate::common::{credential::DydxCredential, instrument_cache::InstrumentCache};
 
 /// WebSocket client for dYdX v4 market data and account streams.
 ///
@@ -116,8 +117,11 @@ pub struct DydxWebSocketClient {
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     /// Manual disconnect signal.
     signal: Arc<AtomicBool>,
-    /// Cached instruments for parsing market data (Python-accessible).
-    instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    /// Shared instrument cache for parsing market data.
+    ///
+    /// When constructed via `new_*_with_cache()`, this is shared with HTTP/execution clients.
+    /// When constructed via `new_public()` or `new_private()`, a new cache is created.
+    instrument_cache: Arc<InstrumentCache>,
     /// Optional account ID for account message parsing.
     account_id: Option<AccountId>,
     /// Optional heartbeat interval in seconds.
@@ -140,7 +144,7 @@ impl Clone for DydxWebSocketClient {
             subscriptions: self.subscriptions.clone(),
             connection_mode: self.connection_mode.clone(),
             signal: self.signal.clone(),
-            instruments_cache: self.instruments_cache.clone(),
+            instrument_cache: self.instrument_cache.clone(),
             account_id: self.account_id,
             heartbeat: self.heartbeat,
             cmd_tx: self.cmd_tx.clone(),
@@ -152,10 +156,23 @@ impl Clone for DydxWebSocketClient {
 
 impl DydxWebSocketClient {
     /// Creates a new public WebSocket client for market data.
+    ///
+    /// This creates a new independent instrument cache. To share a cache with
+    /// the HTTP client, use [`Self::new_public_with_cache`] instead.
     #[must_use]
-    pub fn new_public(url: String, _heartbeat: Option<u64>) -> Self {
-        use std::sync::atomic::AtomicU8;
+    pub fn new_public(url: String, heartbeat: Option<u64>) -> Self {
+        Self::new_public_with_cache(url, Arc::new(InstrumentCache::new()), heartbeat)
+    }
 
+    /// Creates a new public WebSocket client with a shared instrument cache.
+    ///
+    /// Use this when you want to share instrument data with the HTTP client.
+    #[must_use]
+    pub fn new_public_with_cache(
+        url: String,
+        instrument_cache: Arc<InstrumentCache>,
+        heartbeat: Option<u64>,
+    ) -> Self {
         // Create dummy command channel (will be replaced on connect)
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
 
@@ -169,9 +186,9 @@ impl DydxWebSocketClient {
                 ConnectionMode::Closed as u8,
             ))),
             signal: Arc::new(AtomicBool::new(false)),
-            instruments_cache: Arc::new(DashMap::new()),
+            instrument_cache,
             account_id: None,
-            heartbeat: _heartbeat,
+            heartbeat,
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
             handler_task: None,
@@ -179,15 +196,36 @@ impl DydxWebSocketClient {
     }
 
     /// Creates a new private WebSocket client for account updates.
+    ///
+    /// This creates a new independent instrument cache. To share a cache with
+    /// the HTTP client, use [`Self::new_private_with_cache`] instead.
     #[must_use]
     pub fn new_private(
         url: String,
         credential: DydxCredential,
         account_id: AccountId,
-        _heartbeat: Option<u64>,
+        heartbeat: Option<u64>,
     ) -> Self {
-        use std::sync::atomic::AtomicU8;
+        Self::new_private_with_cache(
+            url,
+            credential,
+            account_id,
+            Arc::new(InstrumentCache::new()),
+            heartbeat,
+        )
+    }
 
+    /// Creates a new private WebSocket client with a shared instrument cache.
+    ///
+    /// Use this when you want to share instrument data with the HTTP client.
+    #[must_use]
+    pub fn new_private_with_cache(
+        url: String,
+        credential: DydxCredential,
+        account_id: AccountId,
+        instrument_cache: Arc<InstrumentCache>,
+        heartbeat: Option<u64>,
+    ) -> Self {
         // Create dummy command channel (will be replaced on connect)
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
 
@@ -201,9 +239,9 @@ impl DydxWebSocketClient {
                 ConnectionMode::Closed as u8,
             ))),
             signal: Arc::new(AtomicBool::new(false)),
-            instruments_cache: Arc::new(DashMap::new()),
+            instrument_cache,
             account_id: Some(account_id),
-            heartbeat: _heartbeat,
+            heartbeat,
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
             handler_task: None,
@@ -255,9 +293,10 @@ impl DydxWebSocketClient {
     /// Caches a single instrument.
     ///
     /// Any existing instrument with the same ID will be replaced.
+    /// Uses the shared `InstrumentCache` for symbol-based lookups.
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
-        let symbol = instrument.id().symbol.inner();
-        self.instruments_cache.insert(symbol, instrument.clone());
+        self.instrument_cache
+            .insert_instrument_only(instrument.clone());
 
         // Before connect() the handler isn't running; this send will fail and that's expected
         // because connect() replays the instruments via InitializeInstruments
@@ -271,11 +310,14 @@ impl DydxWebSocketClient {
     /// Caches multiple instruments.
     ///
     /// Any existing instruments with the same IDs will be replaced.
+    /// Uses the shared `InstrumentCache` for symbol-based lookups.
     pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
-        for instrument in &instruments {
-            self.instruments_cache
-                .insert(instrument.id().symbol.inner(), instrument.clone());
-        }
+        log::debug!(
+            "Caching {} instruments in WebSocket client",
+            instruments.len()
+        );
+        self.instrument_cache
+            .insert_instruments_only(instruments.clone());
 
         // Before connect() the handler isn't running; this send will fail and that's expected
         // because connect() replays the instruments via InitializeInstruments
@@ -287,10 +329,24 @@ impl DydxWebSocketClient {
         }
     }
 
-    /// Returns a reference to the instruments cache.
+    /// Returns a reference to the shared instrument cache.
     #[must_use]
-    pub fn instruments(&self) -> &Arc<DashMap<Ustr, InstrumentAny>> {
-        &self.instruments_cache
+    pub fn instrument_cache(&self) -> &Arc<InstrumentCache> {
+        &self.instrument_cache
+    }
+
+    /// Returns all cached instruments.
+    ///
+    /// This is a snapshot of the current cache contents.
+    #[must_use]
+    pub fn all_instruments(&self) -> Vec<InstrumentAny> {
+        self.instrument_cache.all_instruments()
+    }
+
+    /// Returns the number of cached instruments.
+    #[must_use]
+    pub fn cached_instruments_count(&self) -> usize {
+        self.instrument_cache.len()
     }
 
     /// Retrieves an instrument from the cache by symbol.
@@ -298,7 +354,15 @@ impl DydxWebSocketClient {
     /// Returns `None` if the instrument is not found.
     #[must_use]
     pub fn get_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
-        self.instruments_cache.get(symbol).map(|r| r.clone())
+        self.instrument_cache.get(symbol)
+    }
+
+    /// Retrieves an instrument from the cache by market ticker (e.g., "BTC-USD").
+    ///
+    /// Returns `None` if the instrument is not found.
+    #[must_use]
+    pub fn get_instrument_by_market(&self, ticker: &str) -> Option<InstrumentAny> {
+        self.instrument_cache.get_by_market(ticker)
     }
 
     /// Takes ownership of the inbound typed message receiver.
@@ -366,12 +430,14 @@ impl DydxWebSocketClient {
         self.out_rx = Some(out_rx);
 
         // Replay cached instruments to the new handler
-        if !self.instruments_cache.is_empty() {
-            let cached_instruments: Vec<InstrumentAny> = self
-                .instruments_cache
-                .iter()
-                .map(|entry| entry.value().clone())
-                .collect();
+        if self.instrument_cache.is_empty() {
+            log::warn!("No cached instruments to replay to WebSocket handler");
+        } else {
+            let cached_instruments = self.instrument_cache.all_instruments();
+            log::debug!(
+                "Replaying {} cached instruments to WebSocket handler",
+                cached_instruments.len()
+            );
             let cmd_tx_guard = self.cmd_tx.read().await;
             if let Err(e) =
                 cmd_tx_guard.send(HandlerCommand::InitializeInstruments(cached_instruments))
@@ -467,7 +533,7 @@ impl DydxWebSocketClient {
         s
     }
 
-    fn topic(channel: super::enums::DydxWsChannel, id: Option<&str>) -> String {
+    fn topic(channel: DydxWsChannel, id: Option<&str>) -> String {
         match id {
             Some(id) => format!("{}{}{}", channel.as_ref(), DYDX_WS_TOPIC_DELIMITER, id),
             None => channel.as_ref().to_string(),
@@ -476,10 +542,18 @@ impl DydxWebSocketClient {
 
     async fn send_and_track_subscribe(
         &self,
-        sub: super::messages::DydxSubscription,
+        sub: DydxSubscription,
         topic: &str,
     ) -> DydxWsResult<()> {
         self.subscriptions.mark_subscribe(topic);
+
+        if let Ok(cmd_tx) = self.cmd_tx.try_read() {
+            let _ = cmd_tx.send(HandlerCommand::RegisterSubscription {
+                topic: topic.to_string(),
+                subscription: sub.clone(),
+            });
+        }
+
         let payload = serde_json::to_string(&sub)?;
         if let Err(e) = self.send_text_inner(&payload).await {
             self.subscriptions.mark_failure(topic);
@@ -491,17 +565,24 @@ impl DydxWebSocketClient {
 
     async fn send_and_track_unsubscribe(
         &self,
-        sub: super::messages::DydxSubscription,
+        sub: DydxSubscription,
         topic: &str,
     ) -> DydxWsResult<()> {
         self.subscriptions.mark_unsubscribe(topic);
+
         let payload = serde_json::to_string(&sub)?;
         if let Err(e) = self.send_text_inner(&payload).await {
-            // Restore reference so the subscription remains active if the unsubscribe fails.
             self.subscriptions.add_reference(topic);
             self.subscriptions.mark_subscribe(topic);
             return Err(e);
         }
+
+        if let Ok(cmd_tx) = self.cmd_tx.try_read() {
+            let _ = cmd_tx.send(HandlerCommand::UnregisterSubscription {
+                topic: topic.to_string(),
+            });
+        }
+
         Ok(())
     }
 
@@ -516,14 +597,14 @@ impl DydxWebSocketClient {
     /// <https://docs.dydx.trade/developers/indexer/websockets#trades-channel>
     pub async fn subscribe_trades(&self, instrument_id: InstrumentId) -> DydxWsResult<()> {
         let ticker = Self::ticker_from_instrument_id(&instrument_id);
-        let topic = Self::topic(super::enums::DydxWsChannel::Trades, Some(&ticker));
+        let topic = Self::topic(DydxWsChannel::Trades, Some(&ticker));
         if !self.subscriptions.add_reference(&topic) {
             return Ok(());
         }
 
-        let sub = super::messages::DydxSubscription {
-            op: super::enums::DydxWsOperation::Subscribe,
-            channel: super::enums::DydxWsChannel::Trades,
+        let sub = DydxSubscription {
+            op: DydxWsOperation::Subscribe,
+            channel: DydxWsChannel::Trades,
             id: Some(ticker),
         };
 
@@ -537,14 +618,14 @@ impl DydxWebSocketClient {
     /// Returns an error if the unsubscription request fails.
     pub async fn unsubscribe_trades(&self, instrument_id: InstrumentId) -> DydxWsResult<()> {
         let ticker = Self::ticker_from_instrument_id(&instrument_id);
-        let topic = Self::topic(super::enums::DydxWsChannel::Trades, Some(&ticker));
+        let topic = Self::topic(DydxWsChannel::Trades, Some(&ticker));
         if !self.subscriptions.remove_reference(&topic) {
             return Ok(());
         }
 
-        let sub = super::messages::DydxSubscription {
-            op: super::enums::DydxWsOperation::Unsubscribe,
-            channel: super::enums::DydxWsChannel::Trades,
+        let sub = DydxSubscription {
+            op: DydxWsOperation::Unsubscribe,
+            channel: DydxWsChannel::Trades,
             id: Some(ticker),
         };
 
@@ -562,14 +643,14 @@ impl DydxWebSocketClient {
     /// <https://docs.dydx.trade/developers/indexer/websockets#orderbook-channel>
     pub async fn subscribe_orderbook(&self, instrument_id: InstrumentId) -> DydxWsResult<()> {
         let ticker = Self::ticker_from_instrument_id(&instrument_id);
-        let topic = Self::topic(super::enums::DydxWsChannel::Orderbook, Some(&ticker));
+        let topic = Self::topic(DydxWsChannel::Orderbook, Some(&ticker));
         if !self.subscriptions.add_reference(&topic) {
             return Ok(());
         }
 
-        let sub = super::messages::DydxSubscription {
-            op: super::enums::DydxWsOperation::Subscribe,
-            channel: super::enums::DydxWsChannel::Orderbook,
+        let sub = DydxSubscription {
+            op: DydxWsOperation::Subscribe,
+            channel: DydxWsChannel::Orderbook,
             id: Some(ticker),
         };
 
@@ -583,14 +664,14 @@ impl DydxWebSocketClient {
     /// Returns an error if the unsubscription request fails.
     pub async fn unsubscribe_orderbook(&self, instrument_id: InstrumentId) -> DydxWsResult<()> {
         let ticker = Self::ticker_from_instrument_id(&instrument_id);
-        let topic = Self::topic(super::enums::DydxWsChannel::Orderbook, Some(&ticker));
+        let topic = Self::topic(DydxWsChannel::Orderbook, Some(&ticker));
         if !self.subscriptions.remove_reference(&topic) {
             return Ok(());
         }
 
-        let sub = super::messages::DydxSubscription {
-            op: super::enums::DydxWsOperation::Unsubscribe,
-            channel: super::enums::DydxWsChannel::Orderbook,
+        let sub = DydxSubscription {
+            op: DydxWsOperation::Unsubscribe,
+            channel: DydxWsChannel::Orderbook,
             id: Some(ticker),
         };
 
@@ -613,14 +694,14 @@ impl DydxWebSocketClient {
     ) -> DydxWsResult<()> {
         let ticker = Self::ticker_from_instrument_id(&instrument_id);
         let id = format!("{ticker}/{resolution}");
-        let topic = Self::topic(super::enums::DydxWsChannel::Candles, Some(&id));
+        let topic = Self::topic(DydxWsChannel::Candles, Some(&id));
         if !self.subscriptions.add_reference(&topic) {
             return Ok(());
         }
 
-        let sub = super::messages::DydxSubscription {
-            op: super::enums::DydxWsOperation::Subscribe,
-            channel: super::enums::DydxWsChannel::Candles,
+        let sub = DydxSubscription {
+            op: DydxWsOperation::Subscribe,
+            channel: DydxWsChannel::Candles,
             id: Some(id),
         };
 
@@ -639,14 +720,14 @@ impl DydxWebSocketClient {
     ) -> DydxWsResult<()> {
         let ticker = Self::ticker_from_instrument_id(&instrument_id);
         let id = format!("{ticker}/{resolution}");
-        let topic = Self::topic(super::enums::DydxWsChannel::Candles, Some(&id));
+        let topic = Self::topic(DydxWsChannel::Candles, Some(&id));
         if !self.subscriptions.remove_reference(&topic) {
             return Ok(());
         }
 
-        let sub = super::messages::DydxSubscription {
-            op: super::enums::DydxWsOperation::Unsubscribe,
-            channel: super::enums::DydxWsChannel::Candles,
+        let sub = DydxSubscription {
+            op: DydxWsOperation::Unsubscribe,
+            channel: DydxWsChannel::Candles,
             id: Some(id),
         };
 
@@ -663,14 +744,14 @@ impl DydxWebSocketClient {
     ///
     /// <https://docs.dydx.trade/developers/indexer/websockets#markets-channel>
     pub async fn subscribe_markets(&self) -> DydxWsResult<()> {
-        let topic = Self::topic(super::enums::DydxWsChannel::Markets, None);
+        let topic = Self::topic(DydxWsChannel::Markets, None);
         if !self.subscriptions.add_reference(&topic) {
             return Ok(());
         }
 
-        let sub = super::messages::DydxSubscription {
-            op: super::enums::DydxWsOperation::Subscribe,
-            channel: super::enums::DydxWsChannel::Markets,
+        let sub = DydxSubscription {
+            op: DydxWsOperation::Subscribe,
+            channel: DydxWsChannel::Markets,
             id: None,
         };
 
@@ -683,14 +764,14 @@ impl DydxWebSocketClient {
     ///
     /// Returns an error if the unsubscription request fails.
     pub async fn unsubscribe_markets(&self) -> DydxWsResult<()> {
-        let topic = Self::topic(super::enums::DydxWsChannel::Markets, None);
+        let topic = Self::topic(DydxWsChannel::Markets, None);
         if !self.subscriptions.remove_reference(&topic) {
             return Ok(());
         }
 
-        let sub = super::messages::DydxSubscription {
-            op: super::enums::DydxWsOperation::Unsubscribe,
-            channel: super::enums::DydxWsChannel::Markets,
+        let sub = DydxSubscription {
+            op: DydxWsOperation::Unsubscribe,
+            channel: DydxWsChannel::Markets,
             id: None,
         };
 
@@ -721,14 +802,14 @@ impl DydxWebSocketClient {
             ));
         }
         let id = format!("{address}/{subaccount_number}");
-        let topic = Self::topic(super::enums::DydxWsChannel::Subaccounts, Some(&id));
+        let topic = Self::topic(DydxWsChannel::Subaccounts, Some(&id));
         if !self.subscriptions.add_reference(&topic) {
             return Ok(());
         }
 
-        let sub = super::messages::DydxSubscription {
-            op: super::enums::DydxWsOperation::Subscribe,
-            channel: super::enums::DydxWsChannel::Subaccounts,
+        let sub = DydxSubscription {
+            op: DydxWsOperation::Subscribe,
+            channel: DydxWsChannel::Subaccounts,
             id: Some(id),
         };
 
@@ -746,14 +827,14 @@ impl DydxWebSocketClient {
         subaccount_number: u32,
     ) -> DydxWsResult<()> {
         let id = format!("{address}/{subaccount_number}");
-        let topic = Self::topic(super::enums::DydxWsChannel::Subaccounts, Some(&id));
+        let topic = Self::topic(DydxWsChannel::Subaccounts, Some(&id));
         if !self.subscriptions.remove_reference(&topic) {
             return Ok(());
         }
 
-        let sub = super::messages::DydxSubscription {
-            op: super::enums::DydxWsOperation::Unsubscribe,
-            channel: super::enums::DydxWsChannel::Subaccounts,
+        let sub = DydxSubscription {
+            op: DydxWsOperation::Unsubscribe,
+            channel: DydxWsChannel::Subaccounts,
             id: Some(id),
         };
 
@@ -770,14 +851,14 @@ impl DydxWebSocketClient {
     ///
     /// <https://docs.dydx.trade/developers/indexer/websockets#block-height-channel>
     pub async fn subscribe_block_height(&self) -> DydxWsResult<()> {
-        let topic = Self::topic(super::enums::DydxWsChannel::BlockHeight, None);
+        let topic = Self::topic(DydxWsChannel::BlockHeight, None);
         if !self.subscriptions.add_reference(&topic) {
             return Ok(());
         }
 
-        let sub = super::messages::DydxSubscription {
-            op: super::enums::DydxWsOperation::Subscribe,
-            channel: super::enums::DydxWsChannel::BlockHeight,
+        let sub = DydxSubscription {
+            op: DydxWsOperation::Subscribe,
+            channel: DydxWsChannel::BlockHeight,
             id: None,
         };
 
@@ -790,14 +871,14 @@ impl DydxWebSocketClient {
     ///
     /// Returns an error if the unsubscription request fails.
     pub async fn unsubscribe_block_height(&self) -> DydxWsResult<()> {
-        let topic = Self::topic(super::enums::DydxWsChannel::BlockHeight, None);
+        let topic = Self::topic(DydxWsChannel::BlockHeight, None);
         if !self.subscriptions.remove_reference(&topic) {
             return Ok(());
         }
 
-        let sub = super::messages::DydxSubscription {
-            op: super::enums::DydxWsOperation::Unsubscribe,
-            channel: super::enums::DydxWsChannel::BlockHeight,
+        let sub = DydxSubscription {
+            op: DydxWsOperation::Unsubscribe,
+            channel: DydxWsChannel::BlockHeight,
             id: None,
         };
 

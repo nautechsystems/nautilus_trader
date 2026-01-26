@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// SBE stream decoders - all methods return StreamDecodeError on decode failure
+#![allow(clippy::missing_errors_doc)]
+
 //! Binance SBE market data stream decoders (schema 1:0).
 //!
 //! These decoders are hand-written for the 4 market data stream message types:
@@ -77,7 +80,7 @@ impl Display for StreamDecodeError {
             Self::BufferTooShort { expected, actual } => {
                 write!(
                     f,
-                    "Buffer too short: expected {expected} bytes, got {actual}"
+                    "Buffer too short: expected {expected} bytes, was {actual}"
                 )
             }
             Self::GroupSizeTooLarge { count, max } => {
@@ -85,7 +88,7 @@ impl Display for StreamDecodeError {
             }
             Self::InvalidUtf8 => write!(f, "Invalid UTF-8 in symbol"),
             Self::SchemaMismatch { expected, actual } => {
-                write!(f, "Schema mismatch: expected {expected}, got {actual}")
+                write!(f, "Schema mismatch: expected {expected}, was {actual}")
             }
             Self::UnknownTemplateId(id) => write!(f, "Unknown template ID: {id}"),
         }

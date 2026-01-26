@@ -1993,7 +1993,7 @@ binance-futures,BTCUSDT,1640995301000000,1640995301100000,false,bid,50099.0,1.0"
         // Should have 2 CLEAR deltas: initial snapshot + mid-day snapshot
         assert_eq!(
             clear_count, 2,
-            "Expected 2 CLEAR deltas (initial + mid-day snapshot), got {clear_count}"
+            "Expected 2 CLEAR deltas (initial + mid-day snapshot), was {clear_count}"
         );
 
         // Verify CLEAR positions:
@@ -2029,7 +2029,7 @@ binance-futures,BTCUSDT,1640995301000000,1640995301100000,false,bid,50099.0,1.0"
         // Should have 2 CLEAR deltas: initial snapshot + mid-day snapshot
         assert_eq!(
             clear_count, 2,
-            "Expected 2 CLEAR deltas (initial + mid-day snapshot), got {clear_count}"
+            "Expected 2 CLEAR deltas (initial + mid-day snapshot), was {clear_count}"
         );
 
         assert_eq!(deltas[0].action, BookAction::Clear);
@@ -2045,7 +2045,7 @@ binance-futures,BTCUSDT,1640995301000000,1640995301100000,false,bid,50099.0,1.0"
         // 0=CLEAR, 1=Add, 2=Add, 3=Update, 4=Update, 5=Delete, 6=CLEAR
         assert_eq!(
             second_clear_idx, 6,
-            "Second CLEAR should be at index 6, got {second_clear_idx}"
+            "Second CLEAR should be at index 6, was {second_clear_idx}"
         );
 
         // CLEAR deltas should NOT have F_LAST when followed by same-timestamp deltas

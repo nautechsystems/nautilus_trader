@@ -17,7 +17,7 @@
 
 use std::{collections::HashMap, time::Duration};
 
-use nautilus_common::enums::Environment;
+use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_core::UUID4;
 use nautilus_data::client::DataClientAdapter;
 use nautilus_model::identifiers::TraderId;
@@ -171,6 +171,13 @@ impl LiveNodeBuilder {
         self
     }
 
+    /// Set the logging configuration.
+    #[must_use]
+    pub fn with_logging(mut self, logging: LoggerConfig) -> Self {
+        self.config.logging = logging;
+        self
+    }
+
     /// Adds a data client factory with configuration.
     ///
     /// # Errors
@@ -265,8 +272,7 @@ impl LiveNodeBuilder {
             if let Some(config) = self.exec_client_configs.remove(&name) {
                 log::debug!("Creating execution client {name}");
 
-                let client =
-                    factory.create(&name, config.as_ref(), kernel.cache(), kernel.clock())?;
+                let client = factory.create(&name, config.as_ref(), kernel.cache())?;
                 let client_id = client.client_id();
 
                 kernel.exec_engine.borrow_mut().register_client(client)?;

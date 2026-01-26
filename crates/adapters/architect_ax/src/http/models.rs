@@ -15,16 +15,20 @@
 
 //! Data transfer objects for deserializing Ax HTTP API payloads.
 
-use std::collections::HashMap;
-
+use ahash::AHashMap;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use crate::common::{
-    enums::{AxCandleWidth, AxInstrumentState, AxOrderSide, AxOrderStatus, AxTimeInForce},
-    parse::{deserialize_decimal_or_zero, deserialize_optional_decimal_from_str},
+    enums::{
+        AxCandleWidth, AxInstrumentState, AxOrderSide, AxOrderStatus, AxOrderType, AxTimeInForce,
+    },
+    parse::{
+        deserialize_decimal_or_zero, deserialize_optional_decimal_from_str,
+        serialize_decimal_as_str, serialize_optional_decimal_as_str,
+    },
 };
 
 /// Default instrument state when not provided by API.
@@ -96,12 +100,12 @@ pub struct AxInstrument {
     /// Initial margin percentage.
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub initial_margin_pct: Decimal,
-    /// Current mark price for the contract (optional).
-    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
-    pub contract_mark_price: Option<Decimal>,
-    /// Contract size (optional).
-    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
-    pub contract_size: Option<Decimal>,
+    /// Contract mark price description (optional).
+    #[serde(default)]
+    pub contract_mark_price: Option<String>,
+    /// Contract size description (optional).
+    #[serde(default)]
+    pub contract_size: Option<String>,
     /// Instrument description (optional).
     #[serde(default)]
     pub description: Option<String>,
@@ -129,9 +133,9 @@ pub struct AxInstrument {
     /// Price quotation format (optional).
     #[serde(default)]
     pub price_quotation: Option<String>,
-    /// Underlying benchmark price (optional).
-    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
-    pub underlying_benchmark_price: Option<Decimal>,
+    /// Underlying benchmark price description (optional).
+    #[serde(default)]
+    pub underlying_benchmark_price: Option<String>,
 }
 
 /// Response payload returned by `GET /instruments`.
@@ -322,11 +326,13 @@ pub struct AxOpenOrder {
 
 /// Response payload returned by `GET /open_orders`.
 ///
-/// Note: The response is a direct array, not wrapped in an object.
-///
 /// # References
 /// - <https://docs.sandbox.x.architect.co/api-reference/order-management/get-open-orders>
-pub type AxOpenOrdersResponse = Vec<AxOpenOrder>;
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxOpenOrdersResponse {
+    /// List of open orders.
+    pub orders: Vec<AxOpenOrder>,
+}
 
 /// Individual fill/trade entry.
 ///
@@ -335,8 +341,10 @@ pub type AxOpenOrdersResponse = Vec<AxOpenOrder>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxFill {
-    /// Execution ID.
-    pub execution_id: String,
+    /// Trade ID (execution identifier).
+    pub trade_id: String,
+    /// Order ID.
+    pub order_id: String,
     /// Fee amount.
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub fee: Decimal,
@@ -527,7 +535,7 @@ pub struct AxRiskSnapshot {
     pub user_id: String,
     /// Per-symbol risk data.
     #[serde(default)]
-    pub per_symbol: HashMap<String, AxPerSymbolRisk>,
+    pub per_symbol: AHashMap<String, AxPerSymbolRisk>,
 }
 
 /// Response payload returned by `GET /risk-snapshot`.
@@ -664,13 +672,14 @@ impl AuthenticateUserRequest {
 /// Request body for `POST /place_order`.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/place-order>
+/// - <https://docs.architect.co/sdk-reference/order-entry>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlaceOrderRequest {
     /// Order side: "B" (buy) or "S" (sell).
     pub d: AxOrderSide,
-    /// Order price as decimal string.
-    pub p: String,
+    /// Order price (limit price).
+    #[serde(serialize_with = "serialize_decimal_as_str")]
+    pub p: Decimal,
     /// Post-only flag (maker-or-cancel).
     pub po: bool,
     /// Order quantity in contracts.
@@ -682,14 +691,23 @@ pub struct PlaceOrderRequest {
     /// Optional order tag (max 10 alphanumeric characters).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
+    /// Order type (defaults to LIMIT if not specified).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_type: Option<AxOrderType>,
+    /// Trigger price for stop-loss orders (required for STOP_LOSS_LIMIT).
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub trigger_price: Option<Decimal>,
 }
 
 impl PlaceOrderRequest {
-    /// Creates a new [`PlaceOrderRequest`].
+    /// Creates a new [`PlaceOrderRequest`] for a limit order.
     #[must_use]
     pub fn new(
         side: AxOrderSide,
-        price: impl Into<String>,
+        price: Decimal,
         quantity: i64,
         symbol: impl Into<String>,
         time_in_force: AxTimeInForce,
@@ -697,12 +715,37 @@ impl PlaceOrderRequest {
     ) -> Self {
         Self {
             d: side,
-            p: price.into(),
+            p: price,
             po: post_only,
             q: quantity,
             s: symbol.into(),
             tif: time_in_force,
             tag: None,
+            order_type: None,
+            trigger_price: None,
+        }
+    }
+
+    /// Creates a new [`PlaceOrderRequest`] for a stop-loss limit order.
+    #[must_use]
+    pub fn new_stop_loss(
+        side: AxOrderSide,
+        limit_price: Decimal,
+        trigger_price: Decimal,
+        quantity: i64,
+        symbol: impl Into<String>,
+        time_in_force: AxTimeInForce,
+    ) -> Self {
+        Self {
+            d: side,
+            p: limit_price,
+            po: false,
+            q: quantity,
+            s: symbol.into(),
+            tif: time_in_force,
+            tag: None,
+            order_type: Some(AxOrderType::StopLossLimit),
+            trigger_price: Some(trigger_price),
         }
     }
 
@@ -710,6 +753,20 @@ impl PlaceOrderRequest {
     #[must_use]
     pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
         self.tag = Some(tag.into());
+        self
+    }
+
+    /// Sets the order type.
+    #[must_use]
+    pub fn with_order_type(mut self, order_type: AxOrderType) -> Self {
+        self.order_type = Some(order_type);
+        self
+    }
+
+    /// Sets the trigger price for stop orders.
+    #[must_use]
+    pub fn with_trigger_price(mut self, trigger_price: Decimal) -> Self {
+        self.trigger_price = Some(trigger_price);
         self
     }
 }
@@ -732,4 +789,83 @@ impl CancelOrderRequest {
             oid: order_id.into(),
         }
     }
+}
+
+/// Request body for `POST /cancel_all_orders`.
+///
+/// # References
+/// - <https://docs.architect.co/sdk-reference/order-entry>
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct CancelAllOrdersRequest {
+    /// Optional symbol filter - only cancel orders for this symbol.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+    /// Optional execution venue filter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_venue: Option<String>,
+}
+
+impl CancelAllOrdersRequest {
+    /// Creates a new [`CancelAllOrdersRequest`] to cancel all orders.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the symbol filter.
+    #[must_use]
+    pub fn with_symbol(mut self, symbol: impl Into<String>) -> Self {
+        self.symbol = Some(symbol.into());
+        self
+    }
+
+    /// Sets the execution venue filter.
+    #[must_use]
+    pub fn with_venue(mut self, venue: impl Into<String>) -> Self {
+        self.execution_venue = Some(venue.into());
+        self
+    }
+}
+
+/// Response payload returned by `POST /cancel_all_orders`.
+///
+/// # References
+/// - <https://docs.architect.co/sdk-reference/order-entry>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxCancelAllOrdersResponse {
+    /// Number of orders canceled.
+    #[serde(default)]
+    pub canceled_count: i64,
+}
+
+/// Request body for batch cancel orders.
+///
+/// # References
+/// - <https://docs.architect.co/sdk-reference/order-entry>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BatchCancelOrdersRequest {
+    /// List of order IDs to cancel.
+    pub order_ids: Vec<String>,
+}
+
+impl BatchCancelOrdersRequest {
+    /// Creates a new [`BatchCancelOrdersRequest`].
+    #[must_use]
+    pub fn new(order_ids: Vec<String>) -> Self {
+        Self { order_ids }
+    }
+}
+
+/// Response payload returned by batch cancel orders.
+///
+/// # References
+/// - <https://docs.architect.co/sdk-reference/order-entry>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxBatchCancelOrdersResponse {
+    /// Number of orders successfully canceled.
+    #[serde(default)]
+    pub canceled_count: i64,
+    /// Order IDs that failed to cancel.
+    #[serde(default)]
+    pub failed_order_ids: Vec<String>,
 }

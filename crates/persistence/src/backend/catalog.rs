@@ -416,6 +416,7 @@ impl ParquetDataCatalog {
     /// # Returns
     ///
     /// Returns the [`PathBuf`] of the created file, or an empty path if no data was provided.
+    /// If the target file already exists, returns the path without writing (skips write).
     ///
     /// # Errors
     ///
@@ -423,7 +424,7 @@ impl ParquetDataCatalog {
     /// - Data serialization to Arrow record batches fails.
     /// - Object store write operations fail.
     /// - File path construction fails.
-    /// - Timestamp interval validation fails after writing.
+    /// - Writing would create non-disjoint timestamp intervals.
     ///
     /// # Panics
     ///
@@ -472,15 +473,33 @@ impl ParquetDataCatalog {
         let directory = self.make_path(T::path_prefix(), instrument_id)?;
         let filename = timestamps_to_filename(start_ts, end_ts);
         let path = PathBuf::from(format!("{directory}/{filename}"));
+        let object_path = self.to_object_path(&path.to_string_lossy());
 
-        // Write all batches to parquet file
+        let file_exists =
+            self.execute_async(async { Ok(self.object_store.head(&object_path).await.is_ok()) })?;
+        if file_exists {
+            log::info!("File {path:?} already exists, skipping write");
+            return Ok(path);
+        }
+
+        if !skip_disjoint_check.unwrap_or(false) {
+            let current_intervals = self.get_directory_intervals(&directory)?;
+            let new_interval = (start_ts.as_u64(), end_ts.as_u64());
+            let mut new_intervals = current_intervals.clone();
+            new_intervals.push(new_interval);
+
+            if !are_intervals_disjoint(&new_intervals) {
+                anyhow::bail!(
+                    "Writing file {filename} with interval ({start_ts}, {end_ts}) would create \
+                    non-disjoint intervals. Existing intervals: {current_intervals:?}"
+                );
+            }
+        }
+
         log::info!(
             "Writing {} batches of {type_name} data to {path:?}",
             batches.len()
         );
-
-        // Convert path to object store path
-        let object_path = self.to_object_path(&path.to_string_lossy());
 
         self.execute_async(async {
             write_batches_to_object_store(
@@ -492,14 +511,6 @@ impl ParquetDataCatalog {
             )
             .await
         })?;
-
-        if !skip_disjoint_check.unwrap_or(false) {
-            let intervals = self.get_directory_intervals(&directory)?;
-
-            if !are_intervals_disjoint(&intervals) {
-                anyhow::bail!("Intervals are not disjoint after writing a new file");
-            }
-        }
 
         Ok(path)
     }

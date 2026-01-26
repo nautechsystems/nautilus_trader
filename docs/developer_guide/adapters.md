@@ -204,6 +204,22 @@ for fixtures, providing a single place for cross-cutting pieces.
 When an adapter has multiple environments or product categories, add a dedicated `common::urls` helper so
 REST/WebSocket base URLs stay in sync with the Python layer.
 
+### URL resolution
+
+Define URL constants and resolution functions in `common/urls.rs`:
+
+```rust
+const VENUE_WS_URL: &str = "wss://stream.venue.com/ws";
+const VENUE_TESTNET_WS_URL: &str = "wss://testnet-stream.venue.com/ws";
+
+pub const fn get_ws_base_url(testnet: bool) -> &'static str {
+    if testnet { VENUE_TESTNET_WS_URL } else { VENUE_WS_URL }
+}
+```
+
+Config structs should provide override fields (`base_url_http`, `base_url_ws`, etc.) that fall back
+to these defaults when unset.
+
 ### Configurations (`config.rs`)
 
 Expose typed config structs in `src/config.rs` so Python callers toggle venue-specific behaviour
@@ -215,6 +231,28 @@ Keep defaults minimal and delegate URL selection to helpers in `common::urls`.
 Centralise HTTP/WebSocket failure handling in an adapter-specific error enum.
 BitMEX, for example, separates retryable, non-retryable, and fatal variants while embedding the original transport
 error—follow that shape so operational tooling can react consistently.
+
+### Adapter-level error aggregation
+
+For adapters with multiple client types, define a top-level error enum in `src/error.rs` that
+aggregates component errors:
+
+```rust
+#[derive(Debug, thiserror::Error)]
+pub enum VenueError {
+    #[error("HTTP error: {0}")]
+    Http(#[from] VenueHttpError),
+
+    #[error("WebSocket error: {0}")]
+    WebSocket(#[from] VenueWsError),
+
+    #[error("Build error: {0}")]
+    Build(#[from] VenueBuildError),
+}
+```
+
+This enables unified error handling at the adapter boundary while preserving component-specific
+error details for debugging.
 
 ### Python exports (`python/mod.rs`)
 
@@ -266,6 +304,29 @@ sync) documented under WebSocket patterns.
 
 Store shared fixtures and payload loaders in `src/common/testing.rs` for use across HTTP and WebSocket unit tests.
 This keeps `#[cfg(test)]` helpers out of production modules and encourages reuse.
+
+### Factory module (`factories.rs`)
+
+Complex adapters may define a `factories.rs` module for converting venue data to Nautilus types.
+This centralizes transformation logic that would otherwise be scattered across HTTP and WebSocket
+parsers:
+
+```rust
+// factories.rs
+pub fn create_instrument(
+    venue_instrument: &VenueInstrument,
+    ts_init: UnixNanos,
+) -> anyhow::Result<InstrumentAny> {
+    match venue_instrument.instrument_type {
+        InstrumentType::Perpetual => parse_perpetual(venue_instrument, ts_init),
+        InstrumentType::Future => parse_future(venue_instrument, ts_init),
+        InstrumentType::Option => parse_option(venue_instrument, ts_init),
+    }
+}
+```
+
+Use this pattern when the same venue data structures are parsed in multiple places (HTTP responses,
+WebSocket updates, historical data).
 
 ## HTTP client patterns
 
@@ -420,6 +481,35 @@ let secret = get_or_env_var_opt(api_secret, api_secret_env);
 - Use `get_or_env_var_opt` for optional credentials (public-only clients).
 - Use `get_or_env_var` when credentials are required (returns error if missing).
 - Document supported environment variables in adapter README files.
+
+**Credential resolver helper:**
+
+Encapsulate environment-based credential resolution in a helper function when the logic involves
+multiple environments or fallback behavior:
+
+```rust
+use nautilus_core::env::get_or_env_var_opt;
+
+fn resolve_credential(
+    api_key: Option<&str>,
+    api_secret: Option<&str>,
+    is_testnet: bool,
+) -> Option<Credential> {
+    let (key_env, secret_env) = if is_testnet {
+        ("{VENUE}_TESTNET_API_KEY", "{VENUE}_TESTNET_API_SECRET")
+    } else {
+        ("{VENUE}_API_KEY", "{VENUE}_API_SECRET")
+    };
+
+    let key = get_or_env_var_opt(api_key, key_env)?;
+    let secret = get_or_env_var_opt(api_secret, secret_env)?;
+
+    Some(Credential::new(key, secret))
+}
+```
+
+This pattern returns `None` when credentials are unavailable, suitable for optional authentication.
+For clients that require credentials, use `get_or_env_var` which returns an error if missing.
 
 ### Error handling and retry logic
 
@@ -610,6 +700,43 @@ On reconnection, restore authentication and subscriptions:
    - If authenticated: Re-authenticate and wait for confirmation.
    - Restore all tracked subscriptions via handler commands.
 
+**Preserving subscription arguments:**
+
+Store original subscription arguments in a separate collection to enable deterministic reconnection
+replay without parsing topics back into arguments:
+
+```rust
+pub struct MyWebSocketClient {
+    subscription_state: Arc<SubscriptionState>,
+    subscription_args: Arc<DashMap<String, SubscriptionArgs>>,  // topic → original args
+    // ...
+}
+
+impl MyWebSocketClient {
+    async fn subscribe(&self, args: SubscriptionArgs) -> Result<(), Error> {
+        let topic = args.to_topic();
+        self.subscription_state.mark_subscribe(&topic);
+        self.subscription_args.insert(topic.clone(), args.clone());
+        self.send_cmd(HandlerCommand::Subscribe(args)).await
+    }
+
+    async fn unsubscribe(&self, topic: &str) -> Result<(), Error> {
+        self.subscription_state.mark_unsubscribe(topic);
+        self.subscription_args.remove(topic);
+        self.send_cmd(HandlerCommand::Unsubscribe(topic.to_string())).await
+    }
+
+    async fn restore_subscriptions(&self) {
+        for entry in self.subscription_args.iter() {
+            let _ = self.send_cmd(HandlerCommand::Subscribe(entry.value().clone())).await;
+        }
+    }
+}
+```
+
+This avoids complex topic parsing and ensures subscriptions are replayed exactly as originally
+requested.
+
 ### Ping/Pong handling
 
 Support both WebSocket control frame pings and application-level text pings:
@@ -634,6 +761,18 @@ WebSocket clients that cache instruments use a **dual-tier pattern** for perform
 
 **Critical implementation detail:** When `cache_instrument()` is called after connection, it must send an `UpdateInstrument` command to the inner handler. Otherwise, instruments added dynamically (e.g., from WebSocket updates) won't be available for parsing market data.
 
+### Handler configuration constants
+
+Define handler-specific tuning constants for consistent behavior:
+
+| Constant                   | Purpose                                          | Typical value |
+|----------------------------|--------------------------------------------------|---------------|
+| `DEFAULT_HEARTBEAT_SECS`   | Interval for sending keep-alive messages.        | 15-30         |
+| `WEBSOCKET_AUTH_WINDOW_MS` | Maximum age for authentication timestamps.       | 5000-30000    |
+| `BATCH_PROCESSING_LIMIT`   | Maximum messages processed per event loop cycle. | 100-1000      |
+
+Place these in `websocket/handler.rs` or `common/consts.rs` depending on scope.
+
 ### Message routing
 
 Define two message enums for the transformation pipeline:
@@ -643,6 +782,35 @@ Define two message enums for the transformation pipeline:
 2. **`NautilusWsMessage`**: Normalized domain messages emitted to the client (data, deltas, order events, errors, `Reconnected`, `Authenticated`). Include a `Raw(serde_json::Value)` variant for unhandled channels during development.
 
 The handler parses incoming JSON into `{Venue}WsMessage`, transforms to `NautilusWsMessage`, and sends via `out_tx`. The client receives from `out_rx` and routes to data/execution callbacks.
+
+#### Message type naming convention
+
+Types prefixed with `Nautilus` contain only Nautilus domain types (normalized data ready for the trading system). Types prefixed with the venue name (e.g., `Binance`, `Deribit`) contain raw exchange-specific types that require further processing.
+
+**Top-level output enum:**
+
+```rust
+pub enum NautilusWsMessage {
+    Data(NautilusDataWsMessage),          // Normalized market data
+    Exec(NautilusExecWsMessage),          // Normalized execution events
+    Error(BinanceWsErrorMsg),
+    Reconnected,
+}
+```
+
+**Pattern for multi-stage processing:**
+
+When execution messages require additional context lookup (e.g., correlating order updates with pending order maps), use a `Raw` variant:
+
+1. The data handler emits `NautilusWsMessage::ExecRaw(raw_msg)` for raw execution messages.
+2. The execution handler receives `ExecRaw`, performs context lookup, and produces `NautilusExecWsMessage`.
+3. The outer client routes normalized `NautilusExecWsMessage` events to callbacks.
+
+This separation ensures:
+
+- `NautilusExecWsMessage` only contains fully-resolved Nautilus domain types.
+- Raw venue messages flow through internal channels without polluting the normalized output.
+- Each handler has a single responsibility (parsing vs context resolution).
 
 ### Error handling
 

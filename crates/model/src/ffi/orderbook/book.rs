@@ -279,6 +279,17 @@ pub extern "C" fn orderbook_get_quantity_for_price(
     book.get_quantity_for_price(price, order_side)
 }
 
+#[unsafe(no_mangle)]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
+pub extern "C" fn orderbook_get_quantity_at_level(
+    book: &OrderBook_API,
+    price: Price,
+    order_side: OrderSide,
+    size_precision: u8,
+) -> Quantity {
+    book.get_quantity_at_level(price, order_side, size_precision)
+}
+
 /// Updates the order book with a quote tick.
 ///
 /// # Panics

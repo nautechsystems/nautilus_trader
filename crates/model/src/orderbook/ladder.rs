@@ -480,7 +480,7 @@ impl BookLadder {
 
                 // Add this fill and continue
                 fills.push((book_order.price, current));
-                cumulative_denominator += current;
+                cumulative_denominator = cumulative_denominator + current;
             }
         }
 
@@ -501,9 +501,9 @@ impl Display for BookLadder {
 #[cfg(test)]
 impl BookLadder {
     /// Adds multiple orders to the ladder.
-    pub fn add_bulk(&mut self, orders: Vec<BookOrder>) {
+    pub fn add_bulk(&mut self, orders: &[BookOrder]) {
         for order in orders {
-            self.add(order, 0);
+            self.add(*order, 0);
         }
     }
 }
@@ -540,7 +540,7 @@ mod tests {
     #[rstest]
     fn test_add_bulk_empty() {
         let mut ladder = BookLadder::new(OrderSideSpecified::Buy, BookType::L3_MBO);
-        ladder.add_bulk(vec![]);
+        ladder.add_bulk(&[]);
         assert!(
             ladder.is_empty(),
             "Adding an empty vector should leave the ladder empty"
@@ -550,12 +550,12 @@ mod tests {
     #[rstest]
     fn test_add_bulk_orders() {
         let mut ladder = BookLadder::new(OrderSideSpecified::Buy, BookType::L3_MBO);
-        let orders = vec![
+        let orders = [
             BookOrder::new(OrderSide::Buy, Price::from("10.00"), Quantity::from(20), 1),
             BookOrder::new(OrderSide::Buy, Price::from("10.00"), Quantity::from(30), 2),
             BookOrder::new(OrderSide::Buy, Price::from("10.00"), Quantity::from(50), 3),
         ];
-        ladder.add_bulk(orders);
+        ladder.add_bulk(&orders);
         // All orders share the same price, so there should be one price level.
         assert_eq!(ladder.len(), 1, "Ladder should have one price level");
         let orders_in_level = ladder.top().unwrap().get_orders();
@@ -611,7 +611,7 @@ mod tests {
         let order3 = BookOrder::new(OrderSide::Buy, Price::from("9.00"), Quantity::from(50), 2);
         let order4 = BookOrder::new(OrderSide::Buy, Price::from("8.00"), Quantity::from(200), 3);
 
-        ladder.add_bulk(vec![order1, order2, order3, order4]);
+        ladder.add_bulk(&[order1, order2, order3, order4]);
         assert_eq!(ladder.len(), 3);
         assert_eq!(ladder.sizes(), 300.0);
         assert_eq!(ladder.exposures(), 2520.0);
@@ -631,7 +631,7 @@ mod tests {
             0,
         );
 
-        ladder.add_bulk(vec![order1, order2, order3, order4]);
+        ladder.add_bulk(&[order1, order2, order3, order4]);
         assert_eq!(ladder.len(), 3);
         assert_eq!(ladder.sizes(), 300.0);
         assert_eq!(ladder.exposures(), 3780.0);
@@ -982,7 +982,7 @@ mod tests {
     fn test_simulate_order_fills_buy() {
         let mut ladder = BookLadder::new(OrderSideSpecified::Sell, BookType::L3_MBO);
 
-        ladder.add_bulk(vec![
+        ladder.add_bulk(&[
             BookOrder {
                 price: Price::from("100.00"),
                 size: Quantity::from(100),
@@ -1031,7 +1031,7 @@ mod tests {
     fn test_simulate_order_fills_sell() {
         let mut ladder = BookLadder::new(OrderSideSpecified::Buy, BookType::L3_MBO);
 
-        ladder.add_bulk(vec![
+        ladder.add_bulk(&[
             BookOrder {
                 price: Price::from("102.00"),
                 size: Quantity::from(100),
@@ -1080,7 +1080,7 @@ mod tests {
     fn test_simulate_order_fills_sell_with_size_at_limit_of_precision() {
         let mut ladder = BookLadder::new(OrderSideSpecified::Buy, BookType::L3_MBO);
 
-        ladder.add_bulk(vec![
+        ladder.add_bulk(&[
             BookOrder {
                 price: Price::from("102.00"),
                 size: Quantity::from("100.000000000"),

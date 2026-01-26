@@ -154,6 +154,6 @@ impl TrailingStopMarketOrder {
     #[pyo3(name = "apply")]
     fn py_apply(&mut self, event: Py<PyAny>, py: Python<'_>) -> PyResult<()> {
         let event_any = pyobject_to_order_event(py, event).unwrap();
-        self.apply(event_any).map(|_| ()).map_err(to_pyruntime_err)
+        self.apply(event_any).map_err(to_pyruntime_err)
     }
 }

@@ -123,6 +123,7 @@ cdef class OrderManager:
         self._modify_order_handler = modify_order_handler
 
         self._submit_order_commands: dict[ClientOrderId, SubmitOrder] = {}
+        self._oto_target_quantities: dict[ClientOrderId, Quantity] = {}
 
     cpdef dict get_submit_order_commands(self):
         """
@@ -173,6 +174,7 @@ cdef class OrderManager:
         Reset the manager, clearing all stateful values.
         """
         self._submit_order_commands.clear()
+        self._oto_target_quantities.clear()
 
     cpdef void cancel_order(self, Order order):
         """
@@ -317,6 +319,8 @@ cdef class OrderManager:
     cpdef void handle_order_rejected(self, OrderRejected rejected):
         Condition.not_none(rejected, "rejected")
 
+        self._oto_target_quantities.pop(rejected.client_order_id, None)
+
         cdef Order order = self._cache.order(rejected.client_order_id)
         if order is None:
             self._log.error(  # pragma: no cover (design-time error)
@@ -331,6 +335,8 @@ cdef class OrderManager:
     cpdef void handle_order_canceled(self, OrderCanceled canceled):
         Condition.not_none(canceled, "canceled")
 
+        self._oto_target_quantities.pop(canceled.client_order_id, None)
+
         cdef Order order = self._cache.order(canceled.client_order_id)
         if order is None:
             self._log.error(  # pragma: no cover (design-time error)
@@ -344,6 +350,8 @@ cdef class OrderManager:
 
     cpdef void handle_order_expired(self, OrderExpired expired):
         Condition.not_none(expired, "expired")
+
+        self._oto_target_quantities.pop(expired.client_order_id, None)
 
         cdef Order order = self._cache.order(expired.client_order_id)
         if order is None:
@@ -384,6 +392,9 @@ cdef class OrderManager:
             )
             return
 
+        if order.is_closed_c():
+            self._oto_target_quantities.pop(filled.client_order_id, None)
+
         cdef:
             PositionId position_id
             ClientId client_id
@@ -392,6 +403,7 @@ cdef class OrderManager:
             Order primary_order
             Order spawn_order
             Quantity parent_filled_qty
+            Quantity target_qty
         if order.contingency_type == ContingencyType.OTO:
             Condition.not_empty(order.linked_order_ids, "order.linked_order_ids")
 
@@ -419,7 +431,11 @@ cdef class OrderManager:
                 if child_order.position_id is None:
                     child_order.position_id = position_id
 
-                if parent_filled_qty._mem.raw != child_order.leaves_qty._mem.raw:
+                # Compare against the target quantity we've already requested (not the
+                # order's leaves_qty which may be stale if multiple fills arrive rapidly)
+                target_qty = self._oto_target_quantities.get(child_order.client_order_id)
+                if target_qty is None or parent_filled_qty._mem.raw != target_qty._mem.raw:
+                    self._oto_target_quantities[child_order.client_order_id] = parent_filled_qty
                     self.modify_order_quantity(child_order, parent_filled_qty)
 
                 if self._submit_order_handler is None:

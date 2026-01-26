@@ -232,3 +232,10 @@ config = TradingNodeConfig(
 When `testnet=True`, the adapter automatically uses testnet environment variables
 (`HYPERLIQUID_TESTNET_PK` and `HYPERLIQUID_TESTNET_VAULT`) instead of mainnet variables.
 :::
+
+## Contributing
+
+:::info
+For additional features or to contribute to the Hyperliquid adapter, please see our
+[contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).
+:::

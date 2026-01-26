@@ -61,6 +61,7 @@ from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOUT
 from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import bar_aggregation_to_str
@@ -461,7 +462,18 @@ class DYDXv4DataClient(LiveMarketDataClient):
 
             deltas = OrderBookDeltas.from_pyo3(pyo3_deltas)
 
-            self._handle_order_book_deltas(deltas)
+            data_type = DataType(
+                OrderBookDeltas,
+                metadata={"instrument_id": request.instrument_id},
+            )
+            self._handle_data_response(
+                data_type=data_type,
+                data=[deltas],
+                correlation_id=request.id,
+                start=None,
+                end=None,
+                params=request.params,
+            )
 
         except Exception as e:
             self._log.error(

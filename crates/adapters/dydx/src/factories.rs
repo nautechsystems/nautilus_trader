@@ -17,9 +17,13 @@
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
-use nautilus_common::{cache::Cache, clock::Clock};
-use nautilus_data::client::DataClient;
-use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
+use log;
+use nautilus_common::{
+    cache::Cache,
+    clients::{DataClient, ExecutionClient},
+    clock::Clock,
+};
+use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
     identifiers::ClientId,
@@ -28,11 +32,14 @@ use nautilus_network::retry::RetryConfig;
 use nautilus_system::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 
 use crate::{
-    common::{consts::DYDX_VENUE, urls},
+    common::{
+        consts::DYDX_VENUE,
+        credential::{DydxCredential, resolve_wallet_address},
+        urls,
+    },
     config::{DYDXExecClientConfig, DydxAdapterConfig, DydxDataClientConfig},
     data::DydxDataClient,
     execution::DydxExecutionClient,
-    grpc::wallet::Wallet,
     http::client::DydxHttpClient,
     websocket::client::DydxWebSocketClient,
 };
@@ -120,7 +127,7 @@ impl DataClientFactory for DydxDataClientFactory {
 
         let ws_client = DydxWebSocketClient::new_public(ws_url, Some(20));
 
-        let client = DydxDataClient::new(client_id, dydx_config, http_client, Some(ws_client))?;
+        let client = DydxDataClient::new(client_id, dydx_config, http_client, ws_client)?;
         Ok(Box::new(client))
     }
 
@@ -157,7 +164,6 @@ impl ExecutionClientFactory for DydxExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: Rc<RefCell<Cache>>,
-        clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let dydx_config = config
             .as_any()
@@ -183,7 +189,6 @@ impl ExecutionClientFactory for DydxExecutionClientFactory {
             dydx_config.account_id,
             account_type,
             None, // base_currency
-            clock,
             cache,
         );
 
@@ -202,26 +207,42 @@ impl ExecutionClientFactory for DydxExecutionClientFactory {
             wallet_address: dydx_config.wallet_address.clone(),
             subaccount: dydx_config.subaccount_number,
             is_testnet: dydx_config.is_testnet(),
-            mnemonic: dydx_config.mnemonic.clone(),
+            private_key: dydx_config.private_key.clone(),
             authenticator_ids: dydx_config.authenticator_ids.clone(),
             max_retries: dydx_config.max_retries.unwrap_or(3),
             retry_delay_initial_ms: dydx_config.retry_delay_initial_ms.unwrap_or(1000),
             retry_delay_max_ms: dydx_config.retry_delay_max_ms.unwrap_or(10000),
         };
 
-        // Derive wallet address from mnemonic if not explicitly provided
-        let wallet_address = match dydx_config.wallet_address.clone() {
-            Some(addr) => addr,
-            None => {
-                let mnemonic = dydx_config.mnemonic.as_ref().ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Either wallet_address or mnemonic must be provided for dYdX execution client"
-                    )
-                })?;
-                let wallet = Wallet::from_mnemonic(mnemonic)?;
-                let account = wallet.account_offline(0)?;
-                account.address
+        log::info!(
+            "Resolving wallet address: config={:?}, is_testnet={}, env_var={}",
+            dydx_config.wallet_address,
+            dydx_config.is_testnet(),
+            if dydx_config.is_testnet() {
+                "DYDX_TESTNET_WALLET_ADDRESS"
+            } else {
+                "DYDX_WALLET_ADDRESS"
             }
+        );
+        let wallet_address = if let Some(addr) =
+            resolve_wallet_address(dydx_config.wallet_address.clone(), dydx_config.is_testnet())
+        {
+            log::info!("Using wallet address from config/env: {addr}");
+            addr
+        } else if let Some(credential) = DydxCredential::resolve(
+            dydx_config.private_key.clone(),
+            dydx_config.is_testnet(),
+            dydx_config.authenticator_ids.clone(),
+        )? {
+            log::info!(
+                "Derived wallet address from private key: {}",
+                credential.address
+            );
+            credential.address
+        } else {
+            anyhow::bail!(
+                "No wallet credentials found: set wallet_address or private_key in config, or use environment variables (DYDX_WALLET_ADDRESS/DYDX_PRIVATE_KEY for mainnet, DYDX_TESTNET_* for testnet)"
+            )
         };
 
         let client = DydxExecutionClient::new(
@@ -303,7 +324,7 @@ mod tests {
             grpc_urls: vec![],
             ws_endpoint: None,
             http_endpoint: None,
-            mnemonic: None,
+            private_key: None,
             wallet_address: Some("dydx1abc123".to_string()),
             subaccount_number: 0,
             authenticator_ids: vec![],
@@ -330,7 +351,7 @@ mod tests {
             grpc_urls: vec![],
             ws_endpoint: None,
             http_endpoint: None,
-            mnemonic: None,
+            private_key: None,
             wallet_address: None,
             subaccount_number: 0,
             authenticator_ids: vec![],
@@ -360,9 +381,8 @@ mod tests {
         let wrong_config = DydxDataClientConfig::default();
 
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
 
-        let result = factory.create("DYDX-TEST", &wrong_config, cache, clock);
+        let result = factory.create("DYDX-TEST", &wrong_config, cache);
         assert!(result.is_err());
         assert!(
             result

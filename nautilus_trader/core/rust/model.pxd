@@ -322,6 +322,13 @@ cdef extern from "../includes/model.h":
         # A Put option gives the holder the right, but not the obligation, to sell an underlying asset at a specified strike price within a specified period of time.
         PUT # = 2,
 
+    # Defines when OTO (One-Triggers-Other) child orders are released.
+    cpdef enum OtoTriggerMode:
+        # Release child order(s) pro-rata to each partial fill (default).
+        PARTIAL # = 0,
+        # Release child order(s) only once the parent is fully filled.
+        FULL # = 1,
+
     # The status for a specific order.
     #
     # An order is considered _open_ for the following status:
@@ -1578,6 +1585,19 @@ cdef extern from "../includes/model.h":
     # Panics if the C string does not correspond to a valid `OptionKind` variant.
     OptionKind option_kind_from_cstr(const char *ptr);
 
+    const char *oto_trigger_mode_to_cstr(OtoTriggerMode value);
+
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    #
+    # Assumes `ptr` is a valid C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `OtoTriggerMode` variant.
+    OtoTriggerMode oto_trigger_mode_from_cstr(const char *ptr);
+
     const char *order_side_to_cstr(OrderSide value);
 
     # Returns an enum from a Python string.
@@ -2106,6 +2126,11 @@ cdef extern from "../includes/model.h":
                                             Price_t price,
                                             OrderSide order_side);
 
+    Quantity_t orderbook_get_quantity_at_level(const OrderBook_API *book,
+                                               Price_t price,
+                                               OrderSide order_side,
+                                               uint8_t size_precision);
+
     # Updates the order book with a quote tick.
     #
     # # Panics
@@ -2220,32 +2245,16 @@ cdef extern from "../includes/model.h":
 
     double money_as_f64(const Money_t *money);
 
-    void money_add_assign(Money_t a, Money_t b);
-
-    void money_sub_assign(Money_t a, Money_t b);
-
     Price_t price_new(double value, uint8_t precision);
 
     Price_t price_from_raw(PriceRaw raw, uint8_t precision);
 
     double price_as_f64(const Price_t *price);
 
-    void price_add_assign(Price_t a, Price_t b);
-
-    void price_sub_assign(Price_t a, Price_t b);
-
     Quantity_t quantity_new(double value, uint8_t precision);
 
     Quantity_t quantity_from_raw(QuantityRaw raw, uint8_t precision);
 
     double quantity_as_f64(const Quantity_t *qty);
-
-    void quantity_add_assign(Quantity_t a, Quantity_t b);
-
-    void quantity_add_assign_u64(Quantity_t a, uint64_t b);
-
-    void quantity_sub_assign(Quantity_t a, Quantity_t b);
-
-    void quantity_sub_assign_u64(Quantity_t a, uint64_t b);
 
     Quantity_t quantity_saturating_sub(Quantity_t a, Quantity_t b);

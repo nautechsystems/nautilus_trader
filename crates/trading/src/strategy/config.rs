@@ -44,7 +44,7 @@ pub struct StrategyConfig {
     /// The external order claim instrument IDs.
     /// External orders for matching instrument IDs will be associated with (claimed by) the strategy.
     pub external_order_claims: Option<Vec<InstrumentId>>,
-    /// If OUO and OCO **open** contingent orders should be managed automatically by the strategy.
+    /// If OTO, OCO, and OUO **open** contingent orders should be managed automatically by the strategy.
     /// Any emulated orders which are active local will be managed by the `OrderEmulator` instead.
     #[serde(default = "default_false")]
     pub manage_contingent_orders: bool,

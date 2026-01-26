@@ -26,7 +26,9 @@ use nautilus_model::{
         prices::{IndexPriceUpdate, MarkPriceUpdate},
     },
     enums::{OmsType, OrderSide, PositionSide},
-    identifiers::{ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Venue},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Venue,
+    },
     instruments::SyntheticInstrument,
     orderbook::OrderBook,
     position::Position,
@@ -329,12 +331,14 @@ impl Cache {
         venue: Option<Venue>,
         instrument_id: Option<InstrumentId>,
         strategy_id: Option<StrategyId>,
+        account_id: Option<AccountId>,
         side: Option<OrderSide>,
     ) -> usize {
         self.orders_open_count(
             venue.as_ref(),
             instrument_id.as_ref(),
             strategy_id.as_ref(),
+            account_id.as_ref(),
             side,
         )
     }
@@ -345,12 +349,14 @@ impl Cache {
         venue: Option<Venue>,
         instrument_id: Option<InstrumentId>,
         strategy_id: Option<StrategyId>,
+        account_id: Option<AccountId>,
         side: Option<OrderSide>,
     ) -> usize {
         self.orders_closed_count(
             venue.as_ref(),
             instrument_id.as_ref(),
             strategy_id.as_ref(),
+            account_id.as_ref(),
             side,
         )
     }
@@ -361,12 +367,14 @@ impl Cache {
         venue: Option<Venue>,
         instrument_id: Option<InstrumentId>,
         strategy_id: Option<StrategyId>,
+        account_id: Option<AccountId>,
         side: Option<OrderSide>,
     ) -> usize {
         self.orders_total_count(
             venue.as_ref(),
             instrument_id.as_ref(),
             strategy_id.as_ref(),
+            account_id.as_ref(),
             side,
         )
     }
@@ -412,12 +420,14 @@ impl Cache {
         venue: Option<Venue>,
         instrument_id: Option<InstrumentId>,
         strategy_id: Option<StrategyId>,
+        account_id: Option<AccountId>,
         side: Option<PositionSide>,
     ) -> usize {
         self.positions_open_count(
             venue.as_ref(),
             instrument_id.as_ref(),
             strategy_id.as_ref(),
+            account_id.as_ref(),
             side,
         )
     }
@@ -428,12 +438,14 @@ impl Cache {
         venue: Option<Venue>,
         instrument_id: Option<InstrumentId>,
         strategy_id: Option<StrategyId>,
+        account_id: Option<AccountId>,
         side: Option<PositionSide>,
     ) -> usize {
         self.positions_closed_count(
             venue.as_ref(),
             instrument_id.as_ref(),
             strategy_id.as_ref(),
+            account_id.as_ref(),
             side,
         )
     }
@@ -444,12 +456,14 @@ impl Cache {
         venue: Option<Venue>,
         instrument_id: Option<InstrumentId>,
         strategy_id: Option<StrategyId>,
+        account_id: Option<AccountId>,
         side: Option<PositionSide>,
     ) -> usize {
         self.positions_total_count(
             venue.as_ref(),
             instrument_id.as_ref(),
             strategy_id.as_ref(),
+            account_id.as_ref(),
             side,
         )
     }

@@ -54,12 +54,13 @@ impl TickBitmap {
     /// Panics if `tick` is not a multiple of the configured tick spacing.
     pub fn flip_tick(&mut self, tick: i32) {
         let remainder = tick % self.tick_spacing;
-        if remainder != 0 {
-            panic!(
-                "Tick must be multiple of tick spacing: tick={}, tick_spacing={}, remainder={}",
-                tick, self.tick_spacing, remainder
-            );
-        }
+        assert!(
+            remainder == 0,
+            "Tick must be multiple of tick spacing: tick={}, tick_spacing={}, remainder={}",
+            tick,
+            self.tick_spacing,
+            remainder
+        );
 
         let compressed_tick = self.compress_tick(tick);
         let (word_position, bit_position) = tick_position(compressed_tick);

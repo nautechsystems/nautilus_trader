@@ -678,6 +678,8 @@ The following limitations and considerations are currently known:
 
 - Historical data requests are not supported, as each would require a minimum one-day replay from the Tardis Machine, potentially with a filter. This approach is neither practical nor efficient.
 
+## Contributing
+
 :::info
 For additional features or to contribute to the Tardis adapter, please see our
 [contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).

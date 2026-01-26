@@ -27,13 +27,15 @@ use std::{
 };
 
 use ahash::AHashMap;
-use nautilus_common::{cache::Cache, clock::Clock, messages::execution::TradingCommand};
+use nautilus_common::{
+    cache::Cache, clients::ExecutionClient, clock::Clock, messages::execution::TradingCommand,
+};
 use nautilus_core::{
     UnixNanos,
     correctness::{FAILED, check_equal},
 };
 use nautilus_execution::{
-    client::ExecutionClient,
+    matching_core::OrderMatchInfo,
     matching_engine::{config::OrderMatchingEngineConfig, engine::OrderMatchingEngine},
     models::{fee::FeeModelAny, fill::FillModel, latency::LatencyModel},
 };
@@ -47,7 +49,6 @@ use nautilus_model::{
     identifiers::{InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
-    orders::PassiveOrderAny,
     types::{AccountBalance, Currency, Money, Price},
 };
 use rust_decimal::Decimal;
@@ -136,6 +137,7 @@ pub struct SimulatedExchange {
     use_random_ids: bool,
     use_reduce_only: bool,
     use_message_queue: bool,
+    use_market_order_acks: bool,
     allow_cash_borrowing: bool,
     frozen_account: bool,
     price_protection_points: u32,
@@ -184,6 +186,7 @@ impl SimulatedExchange {
         use_random_ids: Option<bool>,
         use_reduce_only: Option<bool>,
         use_message_queue: Option<bool>,
+        use_market_order_acks: Option<bool>,
         allow_cash_borrowing: Option<bool>,
         frozen_account: Option<bool>,
         price_protection_points: Option<u32>,
@@ -226,6 +229,7 @@ impl SimulatedExchange {
             use_random_ids: use_random_ids.unwrap_or(false),
             use_reduce_only: use_reduce_only.unwrap_or(true),
             use_message_queue: use_message_queue.unwrap_or(true),
+            use_market_order_acks: use_market_order_acks.unwrap_or(false),
             allow_cash_borrowing: allow_cash_borrowing.unwrap_or(false),
             frozen_account: frozen_account.unwrap_or(false),
             price_protection_points: price_protection_points.unwrap_or(0),
@@ -299,6 +303,7 @@ impl SimulatedExchange {
             self.use_position_ids,
             self.use_random_ids,
             self.use_reduce_only,
+            self.use_market_order_acks,
         )
         .with_price_protection_points(price_protection);
         let instrument_id = instrument.id();
@@ -363,7 +368,7 @@ impl SimulatedExchange {
     }
 
     #[must_use]
-    pub fn get_open_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<PassiveOrderAny> {
+    pub fn get_open_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<OrderMatchInfo> {
         instrument_id
             .and_then(|id| {
                 self.matching_engines
@@ -379,7 +384,7 @@ impl SimulatedExchange {
     }
 
     #[must_use]
-    pub fn get_open_bid_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<PassiveOrderAny> {
+    pub fn get_open_bid_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<OrderMatchInfo> {
         instrument_id
             .and_then(|id| {
                 self.matching_engines
@@ -395,7 +400,7 @@ impl SimulatedExchange {
     }
 
     #[must_use]
-    pub fn get_open_ask_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<PassiveOrderAny> {
+    pub fn get_open_ask_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<OrderMatchInfo> {
         instrument_id
             .and_then(|id| {
                 self.matching_engines
@@ -420,6 +425,12 @@ impl SimulatedExchange {
             .map(|client| client.get_account().unwrap())
     }
 
+    /// Returns a reference to the cache.
+    #[must_use]
+    pub fn cache(&self) -> &Rc<RefCell<Cache>> {
+        &self.cache
+    }
+
     /// # Panics
     ///
     /// Panics if generating account state fails during adjustment.
@@ -436,8 +447,8 @@ impl SimulatedExchange {
                 match account.balance(Some(adjustment.currency)) {
                     Some(balance) => {
                         let mut current_balance = *balance;
-                        current_balance.total += adjustment;
-                        current_balance.free += adjustment;
+                        current_balance.total = current_balance.total + adjustment;
+                        current_balance.free = current_balance.free + adjustment;
 
                         let margins = match account {
                             AccountAny::Margin(margin_account) => margin_account.margins.clone(),
@@ -745,8 +756,14 @@ impl SimulatedExchange {
                 panic!("Execution client should be initialized");
             };
             match command {
-                TradingCommand::SubmitOrder(mut command) => {
-                    matching_engine.process_order(&mut command.order, account_id);
+                TradingCommand::SubmitOrder(command) => {
+                    let mut order = self
+                        .cache
+                        .borrow()
+                        .order(&command.client_order_id)
+                        .cloned()
+                        .expect("Order must exist in cache");
+                    matching_engine.process_order(&mut order, account_id);
                 }
                 TradingCommand::ModifyOrder(ref command) => {
                     matching_engine.process_modify(command, account_id);
@@ -812,10 +829,7 @@ mod tests {
         cache::Cache,
         clock::TestClock,
         messages::execution::{SubmitOrder, TradingCommand},
-        msgbus::{
-            self,
-            stubs::{get_message_saving_handler, get_saved_messages},
-        },
+        msgbus::{self, stubs::get_typed_message_saving_handler},
     };
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_execution::models::{
@@ -834,9 +848,11 @@ mod tests {
             OmsType, OrderSide, OrderType,
         },
         events::AccountState,
-        identifiers::{AccountId, InstrumentId, StrategyId, TradeId, TraderId, Venue},
+        identifiers::{
+            AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, Venue,
+        },
         instruments::{CryptoPerpetual, InstrumentAny, stubs::crypto_perpetual_ethusdt},
-        orders::OrderTestBuilder,
+        orders::{Order, OrderAny, OrderTestBuilder},
         stubs::TestDefault,
         types::{AccountBalance, Currency, Money, Price, Quantity},
     };
@@ -881,6 +897,7 @@ mod tests {
                 None, // use_random_ids
                 None, // use_reduce_only
                 None, // use_message_queue
+                None, // use_market_order_acks
                 None, // allow_cash_borrowing
                 None, // frozen_account
                 None, // price_protection_points
@@ -905,24 +922,30 @@ mod tests {
         exchange
     }
 
-    fn create_submit_order_command(ts_init: UnixNanos) -> TradingCommand {
+    fn create_submit_order_command(
+        ts_init: UnixNanos,
+        client_order_id: &str,
+    ) -> (OrderAny, TradingCommand) {
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let order = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::new(client_order_id))
             .quantity(Quantity::from(1))
             .build();
-        TradingCommand::SubmitOrder(SubmitOrder::new(
+        let command = TradingCommand::SubmitOrder(SubmitOrder::new(
             TraderId::test_default(),
             None,
             StrategyId::test_default(),
             instrument_id,
-            order,
+            order.client_order_id(),
+            order.init_event().clone(),
             None,
             None,
             None, // params
             UUID4::default(),
             ts_init,
-        ))
+        ));
+        (order, command)
     }
 
     #[rstest]
@@ -1291,8 +1314,8 @@ mod tests {
     fn test_accounting() {
         let account_type = AccountType::Margin;
         let mut cache = Cache::default();
-        let handler = get_message_saving_handler::<AccountState>(None);
-        msgbus::register("Portfolio.update_account".into(), handler.clone());
+        let (handler, saving_handler) = get_typed_message_saving_handler::<AccountState>(None);
+        msgbus::register_account_state_endpoint("Portfolio.update_account".into(), handler);
         let margin_account = MarginAccount::new(
             AccountState::new(
                 AccountId::from("SIM-001"),
@@ -1329,7 +1352,7 @@ mod tests {
         exchange.borrow_mut().adjust_account(Money::from("500 USD"));
 
         // Check if we received two messages, one for initial account state and one for adjusted account state
-        let messages = get_saved_messages::<AccountState>(handler);
+        let messages = saving_handler.get_messages();
         assert_eq!(messages.len(), 2);
         let account_state_first = messages.first().unwrap();
         let account_state_second = messages.last().unwrap();
@@ -1350,21 +1373,13 @@ mod tests {
     #[rstest]
     fn test_inflight_commands_binary_heap_ordering_respecting_timestamp_counter() {
         // Create 3 inflight commands with different timestamps and counters
-        let inflight1 = InflightCommand::new(
-            UnixNanos::from(100),
-            1,
-            create_submit_order_command(UnixNanos::from(100)),
-        );
-        let inflight2 = InflightCommand::new(
-            UnixNanos::from(200),
-            2,
-            create_submit_order_command(UnixNanos::from(200)),
-        );
-        let inflight3 = InflightCommand::new(
-            UnixNanos::from(100),
-            2,
-            create_submit_order_command(UnixNanos::from(100)),
-        );
+        let (_, cmd1) = create_submit_order_command(UnixNanos::from(100), "O-1");
+        let (_, cmd2) = create_submit_order_command(UnixNanos::from(200), "O-2");
+        let (_, cmd3) = create_submit_order_command(UnixNanos::from(100), "O-3");
+
+        let inflight1 = InflightCommand::new(UnixNanos::from(100), 1, cmd1);
+        let inflight2 = InflightCommand::new(UnixNanos::from(200), 2, cmd2);
+        let inflight3 = InflightCommand::new(UnixNanos::from(100), 2, cmd3);
 
         // Create a binary heap and push the inflight commands
         let mut inflight_heap = BinaryHeap::new();
@@ -1398,8 +1413,21 @@ mod tests {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
         exchange.borrow_mut().add_instrument(instrument).unwrap();
 
-        let command1 = create_submit_order_command(UnixNanos::from(100));
-        let command2 = create_submit_order_command(UnixNanos::from(200));
+        let (order1, command1) = create_submit_order_command(UnixNanos::from(100), "O-1");
+        let (order2, command2) = create_submit_order_command(UnixNanos::from(200), "O-2");
+
+        exchange
+            .borrow()
+            .cache()
+            .borrow_mut()
+            .add_order(order1, None, None, false)
+            .unwrap();
+        exchange
+            .borrow()
+            .cache()
+            .borrow_mut()
+            .add_order(order2, None, None, false)
+            .unwrap();
 
         exchange.borrow_mut().send(command1);
         exchange.borrow_mut().send(command2);
@@ -1438,8 +1466,22 @@ mod tests {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
         exchange.borrow_mut().add_instrument(instrument).unwrap();
 
-        let command1 = create_submit_order_command(UnixNanos::from(100));
-        let command2 = create_submit_order_command(UnixNanos::from(150));
+        let (order1, command1) = create_submit_order_command(UnixNanos::from(100), "O-1");
+        let (order2, command2) = create_submit_order_command(UnixNanos::from(150), "O-2");
+
+        exchange
+            .borrow()
+            .cache()
+            .borrow_mut()
+            .add_order(order1, None, None, false)
+            .unwrap();
+        exchange
+            .borrow()
+            .cache()
+            .borrow_mut()
+            .add_order(order2, None, None, false)
+            .unwrap();
+
         exchange.borrow_mut().send(command1);
         exchange.borrow_mut().send(command2);
 

@@ -65,7 +65,8 @@ USE_TESTNET = os.getenv("USE_TESTNET", "true").lower() != "false"
 instrument_kinds: tuple[DeribitInstrumentKind, ...] | None = (DeribitInstrumentKind.FUTURE,)
 
 # Define instrument to test with
-perpetual_id = InstrumentId.from_str(f"BTC-PERPETUAL.{DERIBIT}")
+instrument_id = InstrumentId.from_str(f"BTC-PERPETUAL.{DERIBIT}")
+reconciliation_instrument_ids = [instrument_id]
 
 # Order quantity (minimum for BTC-PERPETUAL is 10 USD)
 order_qty = Decimal(10)
@@ -75,10 +76,15 @@ config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
     logging=LoggingConfig(
         log_level="INFO",
+        # use_tracing=True,
         use_pyo3=True,
     ),
     exec_engine=LiveExecEngineConfig(
-        reconciliation=False,  # Disable reconciliation for testing
+        reconciliation=True,
+        # reconciliation_instrument_ids=reconciliation_instrument_ids,
+        open_check_interval_secs=5.0,
+        open_check_open_only=False,
+        position_check_interval_secs=30.0,
     ),
     data_clients={
         DERIBIT: DeribitDataClientConfig(
@@ -114,13 +120,20 @@ node = TradingNode(config=config_node)
 
 # Configure and initialize the tester
 config_tester = ExecTesterConfig(
-    instrument_id=perpetual_id,
-    external_order_claims=[perpetual_id],
+    instrument_id=instrument_id,
+    external_order_claims=[instrument_id],
     order_qty=order_qty,
     subscribe_quotes=True,
     subscribe_trades=True,
-    enable_limit_buys=False,  # Disable order submission (not implemented yet)
-    enable_limit_sells=False,  # Disable order submission (not implemented yet)
+    # enable_limit_buys=False,
+    # enable_limit_sells=False,
+    use_post_only=True,
+    # tob_offset_ticks=0,
+    open_position_on_start_qty=order_qty,
+    # use_batch_cancel_on_stop=True,
+    # use_individual_cancels_on_stop=True,
+    # test_reject_post_only=True,
+    log_data=False,
 )
 tester = ExecTester(config=config_tester)
 

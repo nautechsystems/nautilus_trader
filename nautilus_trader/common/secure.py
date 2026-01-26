@@ -165,6 +165,8 @@ class SecureString:
             return self._value == other
         return False
 
+    __hash__: None = None  # type: ignore[assignment]  # Explicitly unhashable
+
     def __bool__(self) -> bool:
         """
         Return True if the value is non-empty and not cleared.

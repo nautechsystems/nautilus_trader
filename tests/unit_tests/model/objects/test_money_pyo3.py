@@ -209,3 +209,351 @@ class TestMoney:
         # Assert
         assert result1 == result2
         assert result1 == expected
+
+
+class TestMoneyArithmetic:
+    """
+    Comprehensive arithmetic tests for PyO3 Money type.
+
+    PyO3 Money arithmetic returns Money for Money-Money operations (same currency).
+
+    """
+
+    @pytest.mark.parametrize(
+        ("value1", "value2", "expected_type", "expected_value"),
+        [
+            # Money + Money → Money
+            [Money(1.00, USD), Money(2.00, USD), "Money", Money(3.00, USD)],
+            [Money(0.00, USD), Money(0.00, USD), "Money", Money(0.00, USD)],
+            [Money(-1.00, USD), Money(1.00, USD), "Money", Money(0.00, USD)],
+            [Money(100.50, USD), Money(50.25, USD), "Money", Money(150.75, USD)],
+            # Money + int → Decimal
+            [Money(1.00, USD), 2, "Decimal", "3.00"],
+            [Money(0.00, USD), 0, "Decimal", "0.00"],
+            [Money(-1.00, USD), 1, "Decimal", "0.00"],
+            # int + Money → Decimal
+            [2, Money(1.00, USD), "Decimal", "3.00"],
+            [0, Money(0.00, USD), "Decimal", "0.00"],
+            [1, Money(-1.00, USD), "Decimal", "0.00"],
+            # Money + float → float
+            [Money(1.00, USD), 2.5, "float", 3.5],
+            [Money(0.00, USD), 0.0, "float", 0.0],
+            [Money(-1.00, USD), 1.5, "float", 0.5],
+            # float + Money → float
+            [2.5, Money(1.00, USD), "float", 3.5],
+            [0.0, Money(0.00, USD), "float", 0.0],
+            [1.5, Money(-1.00, USD), "float", 0.5],
+        ],
+    )
+    def test_addition_with_various_types(
+        self,
+        value1: Any,
+        value2: Any,
+        expected_type: str,
+        expected_value: Any,
+    ) -> None:
+        # Arrange
+        from decimal import Decimal
+
+        # Act
+        result = value1 + value2
+
+        # Assert
+        if expected_type == "Money":
+            assert isinstance(result, Money)
+            assert result == expected_value
+        elif expected_type == "Decimal":
+            assert isinstance(result, Decimal)
+            assert result == Decimal(expected_value)
+        elif expected_type == "float":
+            assert isinstance(result, float)
+            assert result == expected_value
+
+    def test_addition_with_different_currencies_raises_value_error(self) -> None:
+        # Arrange
+        money1 = Money(1.00, USD)
+        money2 = Money(1.00, AUD)
+
+        # Act, Assert
+        with pytest.raises(ValueError, match="Currency mismatch"):
+            _ = money1 + money2  # type: ignore[operator]
+
+    @pytest.mark.parametrize(
+        ("value1", "value2", "expected_type", "expected_value"),
+        [
+            # Money - Money → Money
+            [Money(3.00, USD), Money(2.00, USD), "Money", Money(1.00, USD)],
+            [Money(0.00, USD), Money(0.00, USD), "Money", Money(0.00, USD)],
+            [Money(1.00, USD), Money(1.00, USD), "Money", Money(0.00, USD)],
+            [Money(100.50, USD), Money(50.25, USD), "Money", Money(50.25, USD)],
+            # Money - int → Decimal
+            [Money(3.00, USD), 2, "Decimal", "1.00"],
+            [Money(0.00, USD), 0, "Decimal", "0.00"],
+            [Money(1.00, USD), 1, "Decimal", "0.00"],
+            # int - Money → Decimal
+            [3, Money(2.00, USD), "Decimal", "1.00"],
+            [0, Money(0.00, USD), "Decimal", "0.00"],
+            [1, Money(1.00, USD), "Decimal", "0.00"],
+            # Money - float → float
+            [Money(3.00, USD), 2.5, "float", 0.5],
+            [Money(0.00, USD), 0.0, "float", 0.0],
+            [Money(1.00, USD), 0.5, "float", 0.5],
+            # float - Money → float
+            [3.5, Money(2.00, USD), "float", 1.5],
+            [0.0, Money(0.00, USD), "float", 0.0],
+            [1.5, Money(1.00, USD), "float", 0.5],
+        ],
+    )
+    def test_subtraction_with_various_types(
+        self,
+        value1: Any,
+        value2: Any,
+        expected_type: str,
+        expected_value: Any,
+    ) -> None:
+        # Arrange
+        from decimal import Decimal
+
+        # Act
+        result = value1 - value2
+
+        # Assert
+        if expected_type == "Money":
+            assert isinstance(result, Money)
+            assert result == expected_value
+        elif expected_type == "Decimal":
+            assert isinstance(result, Decimal)
+            assert result == Decimal(expected_value)
+        elif expected_type == "float":
+            assert isinstance(result, float)
+            assert result == expected_value
+
+    def test_subtraction_with_different_currencies_raises_value_error(self) -> None:
+        # Arrange
+        money1 = Money(1.00, USD)
+        money2 = Money(1.00, AUD)
+
+        # Act, Assert
+        with pytest.raises(ValueError, match="Currency mismatch"):
+            _ = money1 - money2  # type: ignore[operator]
+
+    @pytest.mark.parametrize(
+        ("value1", "value2", "expected_type", "expected_value"),
+        [
+            # Money * int → Decimal
+            [Money(2.00, USD), 3, "Decimal", "6.00"],
+            [Money(0.00, USD), 5, "Decimal", "0.00"],
+            [Money(-2.00, USD), 3, "Decimal", "-6.00"],
+            # int * Money → Decimal
+            [3, Money(2.00, USD), "Decimal", "6.00"],
+            [5, Money(0.00, USD), "Decimal", "0.00"],
+            [3, Money(-2.00, USD), "Decimal", "-6.00"],
+            # Money * float → float
+            [Money(2.00, USD), 1.5, "float", 3.0],
+            [Money(0.00, USD), 5.0, "float", 0.0],
+            [Money(-2.00, USD), 1.5, "float", -3.0],
+            # float * Money → float
+            [1.5, Money(2.00, USD), "float", 3.0],
+            [5.0, Money(0.00, USD), "float", 0.0],
+            [1.5, Money(-2.00, USD), "float", -3.0],
+            # Money * Money → Decimal
+            [Money(2.00, USD), Money(3.00, USD), "Decimal", "6.00"],
+            [Money(1.50, USD), Money(2.00, USD), "Decimal", "3.00"],
+        ],
+    )
+    def test_multiplication_with_various_types(
+        self,
+        value1: Any,
+        value2: Any,
+        expected_type: str,
+        expected_value: Any,
+    ) -> None:
+        # Arrange
+        from decimal import Decimal
+
+        # Act
+        result = value1 * value2
+
+        # Assert
+        if expected_type == "Decimal":
+            assert isinstance(result, Decimal)
+            assert result == Decimal(expected_value)
+        elif expected_type == "float":
+            assert isinstance(result, float)
+            assert result == expected_value
+
+    @pytest.mark.parametrize(
+        ("value1", "value2", "expected_type", "expected_value"),
+        [
+            # Money / int → Decimal
+            [Money(6.00, USD), 3, "Decimal", "2.00"],
+            [Money(0.00, USD), 5, "Decimal", "0.00"],
+            [Money(-6.00, USD), 3, "Decimal", "-2.00"],
+            # int / Money → Decimal
+            [6, Money(3.00, USD), "Decimal", "2.00"],
+            [0, Money(5.00, USD), "Decimal", "0.00"],
+            # Money / float → float
+            [Money(6.00, USD), 2.0, "float", 3.0],
+            [Money(0.00, USD), 5.0, "float", 0.0],
+            [Money(-6.00, USD), 2.0, "float", -3.0],
+            # float / Money → float
+            [6.0, Money(2.00, USD), "float", 3.0],
+            [0.0, Money(5.00, USD), "float", 0.0],
+            # Money / Money → Decimal
+            [Money(6.00, USD), Money(3.00, USD), "Decimal", "2.00"],
+            [Money(10.00, USD), Money(4.00, USD), "Decimal", "2.50"],
+        ],
+    )
+    def test_division_with_various_types(
+        self,
+        value1: Any,
+        value2: Any,
+        expected_type: str,
+        expected_value: Any,
+    ) -> None:
+        # Arrange
+        from decimal import Decimal
+
+        # Act
+        result = value1 / value2
+
+        # Assert
+        if expected_type == "Decimal":
+            assert isinstance(result, Decimal)
+            assert result == Decimal(expected_value)
+        elif expected_type == "float":
+            assert isinstance(result, float)
+            assert result == expected_value
+
+    @pytest.mark.parametrize(
+        ("value1", "value2", "expected_type", "expected_value"),
+        [
+            # Money // int → Decimal
+            [Money(7.00, USD), 3, "Decimal", "2"],
+            [Money(10.00, USD), 3, "Decimal", "3"],
+            # int // Money → Decimal
+            [7, Money(3.00, USD), "Decimal", "2"],
+            [10, Money(3.00, USD), "Decimal", "3"],
+            # Money // float → float
+            [Money(7.00, USD), 3.0, "float", 2.0],
+            [Money(10.00, USD), 3.0, "float", 3.0],
+            # float // Money → float
+            [7.0, Money(3.00, USD), "float", 2.0],
+            [10.0, Money(3.00, USD), "float", 3.0],
+            # Money // Money → Decimal
+            [Money(7.00, USD), Money(3.00, USD), "Decimal", "2"],
+            [Money(10.00, USD), Money(3.00, USD), "Decimal", "3"],
+        ],
+    )
+    def test_floor_division_with_various_types(
+        self,
+        value1: Any,
+        value2: Any,
+        expected_type: str,
+        expected_value: Any,
+    ) -> None:
+        # Arrange
+        from decimal import Decimal
+
+        # Act
+        result = value1 // value2
+
+        # Assert
+        if expected_type == "Decimal":
+            assert isinstance(result, Decimal)
+            assert result == Decimal(expected_value)
+        elif expected_type == "float":
+            assert isinstance(result, float)
+            assert result == expected_value
+
+    @pytest.mark.parametrize(
+        ("value1", "value2", "expected_type", "expected_value"),
+        [
+            # Money % int → Decimal
+            [Money(7.00, USD), 3, "Decimal", "1.00"],
+            [Money(10.00, USD), 3, "Decimal", "1.00"],
+            # Money % float → float
+            [Money(7.00, USD), 3.0, "float", 1.0],
+            [Money(10.00, USD), 3.0, "float", 1.0],
+            # Money % Money → Decimal
+            [Money(7.00, USD), Money(3.00, USD), "Decimal", "1.00"],
+            [Money(10.00, USD), Money(3.00, USD), "Decimal", "1.00"],
+        ],
+    )
+    def test_mod_with_various_types(
+        self,
+        value1: Any,
+        value2: Any,
+        expected_type: str,
+        expected_value: Any,
+    ) -> None:
+        # Arrange
+        from decimal import Decimal
+
+        # Act
+        result = value1 % value2
+
+        # Assert
+        if expected_type == "Decimal":
+            assert isinstance(result, Decimal)
+            assert result == Decimal(expected_value)
+        elif expected_type == "float":
+            assert isinstance(result, float)
+            assert result == expected_value
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            [Money(1.00, USD), "-1.00"],
+            [Money(-1.00, USD), "1.00"],
+            [Money(0.00, USD), "0.00"],
+        ],
+    )
+    def test_negation(self, value: Money, expected: str) -> None:
+        # Arrange
+        from decimal import Decimal
+
+        # Act
+        result = -value  # type: ignore[operator]
+
+        # Assert
+        assert isinstance(result, Decimal)
+        assert result == Decimal(expected)
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            [Money(1.00, USD), "1.00"],
+            [Money(-1.00, USD), "1.00"],
+            [Money(0.00, USD), "0.00"],
+        ],
+    )
+    def test_abs(self, value: Money, expected: str) -> None:
+        # Arrange
+        from decimal import Decimal
+
+        # Act
+        result = abs(value)  # type: ignore[arg-type, var-annotated]
+
+        # Assert
+        assert isinstance(result, Decimal)
+        assert result == Decimal(expected)
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            [Money(1.00, USD), "1.00"],
+            [Money(-1.00, USD), "1.00"],  # PyO3 returns absolute value
+            [Money(0.00, USD), "0.00"],
+        ],
+    )
+    def test_pos(self, value: Money, expected: str) -> None:
+        # Arrange
+        from decimal import Decimal
+
+        # Act
+        result = +value  # type: ignore[operator]
+
+        # Assert
+        assert isinstance(result, Decimal)
+        assert result == Decimal(expected)

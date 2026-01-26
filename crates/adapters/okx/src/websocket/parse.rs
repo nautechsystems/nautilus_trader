@@ -182,10 +182,10 @@ pub fn parse_order_event(
     {
         let ts_event = parse_millisecond_timestamp(msg.u_time);
         let quantity = parse_quantity(&msg.sz, instrument.size_precision())?;
-        let price = if !is_market_price(&msg.px) {
-            Some(parse_price(&msg.px, instrument.price_precision())?)
-        } else {
+        let price = if is_market_price(&msg.px) {
             None
+        } else {
+            Some(parse_price(&msg.px, instrument.price_precision())?)
         };
 
         return Ok(ParsedOrderEvent::Updated(OrderUpdated::new(
@@ -1097,13 +1097,13 @@ pub fn parse_algo_order_status_report(
     let trigger_px = parse_price(msg.trigger_px.as_str(), instrument.price_precision())?;
 
     // Parse limit price if it exists (not -1)
-    let price = if msg.ord_px != "-1" {
+    let price = if msg.ord_px == "-1" {
+        None
+    } else {
         Some(parse_price(
             msg.ord_px.as_str(),
             instrument.price_precision(),
         )?)
-    } else {
-        None
     };
 
     let trigger_type = match msg.trigger_px_type {
@@ -1223,10 +1223,10 @@ pub fn parse_order_status_report(
 
         // Convert quote quantity to base: quantity_base = sz_quote / price
         let quantity_base = if let Some(price) = conversion_price_dec {
-            if !price.is_zero() {
-                Quantity::from_decimal_dp(sz_quote_dec / price, size_precision)?
-            } else {
+            if price.is_zero() {
                 parse_quantity(&msg.sz, size_precision)?
+            } else {
+                Quantity::from_decimal_dp(sz_quote_dec / price, size_precision)?
             }
         } else {
             // No price available, can't convert - use sz as-is temporarily
@@ -3363,6 +3363,7 @@ mod tests {
             Ustr::from("BTC-USDT-SWAP"),
             InstrumentAny::CryptoPerpetual(instrument),
         );
+
         let fee_cache = AHashMap::new();
         let filled_qty_cache = AHashMap::new();
 
@@ -3509,6 +3510,7 @@ mod tests {
             Ustr::from("ETH-USDT-SWAP"),
             InstrumentAny::CryptoPerpetual(instrument),
         );
+
         let fee_cache = AHashMap::new();
         let filled_qty_cache = AHashMap::new();
 
@@ -4077,7 +4079,7 @@ mod tests {
                 assert_eq!(accepted.trader_id, trader_id);
                 assert_eq!(accepted.strategy_id, strategy_id);
             }
-            other => panic!("Expected Accepted, got {other:?}"),
+            other => panic!("Expected Accepted, was {other:?}"),
         }
     }
 
@@ -4123,7 +4125,7 @@ mod tests {
                 assert_eq!(updated.client_order_id, client_order_id);
                 assert_eq!(updated.price, Some(Price::from("51000.00")));
             }
-            other => panic!("Expected Updated, got {other:?}"),
+            other => panic!("Expected Updated, was {other:?}"),
         }
     }
 
@@ -4168,7 +4170,7 @@ mod tests {
                 assert_eq!(updated.client_order_id, client_order_id);
                 assert_eq!(updated.quantity, Quantity::from("0.02000000"));
             }
-            other => panic!("Expected Updated, got {other:?}"),
+            other => panic!("Expected Updated, was {other:?}"),
         }
     }
 
@@ -4211,7 +4213,7 @@ mod tests {
                     Some(VenueOrderId::new("venue_456"))
                 );
             }
-            other => panic!("Expected Canceled, got {other:?}"),
+            other => panic!("Expected Canceled, was {other:?}"),
         }
     }
 
@@ -4252,7 +4254,7 @@ mod tests {
                 assert_eq!(expired.client_order_id, client_order_id);
                 assert_eq!(expired.venue_order_id, Some(VenueOrderId::new("venue_456")));
             }
-            other => panic!("Expected Expired, got {other:?}"),
+            other => panic!("Expected Expired, was {other:?}"),
         }
     }
 
@@ -4295,7 +4297,7 @@ mod tests {
                     Some(VenueOrderId::new("venue_456"))
                 );
             }
-            other => panic!("Expected Triggered, got {other:?}"),
+            other => panic!("Expected Triggered, was {other:?}"),
         }
     }
 
@@ -4340,7 +4342,7 @@ mod tests {
                 assert_eq!(fill.venue_order_id, VenueOrderId::new("venue_456"));
                 assert_eq!(fill.trade_id, TradeId::from("trade_789"));
             }
-            other => panic!("Expected Fill, got {other:?}"),
+            other => panic!("Expected Fill, was {other:?}"),
         }
     }
 
@@ -4444,7 +4446,7 @@ mod tests {
                 assert_eq!(updated.price, Some(Price::from("51000.00")));
             }
             other => {
-                panic!("Expected Updated for PartiallyFilled with price change, got {other:?}")
+                panic!("Expected Updated for PartiallyFilled with price change, was {other:?}")
             }
         }
     }

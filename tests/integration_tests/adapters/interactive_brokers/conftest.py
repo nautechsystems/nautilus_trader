@@ -236,3 +236,97 @@ def exec_client(exec_client_config, venue, event_loop, msgbus, cache, clock):
 @pytest.fixture
 def account_state(venue: Venue) -> AccountState:
     return TestEventStubs.cash_account_state(account_id=AccountId(f"{venue.value}-001"))
+
+
+@pytest.fixture
+def mock_connection_setup(mocker, exec_client):
+    """
+    Fixture to set up common mock connection patterns for IB execution client tests.
+
+    This fixture patches:
+    - reqAccountSummary
+    - wait_until_ready
+    - instrument_provider.initialize
+    - _connect method
+
+    Returns a function that can be called to apply the mocks to an exec_client.
+
+    """
+    from functools import partial
+
+    from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
+
+    def account_summary_setup(client, **kwargs):
+        account_values = IBTestDataStubs.account_values()
+        for summary in account_values:
+            client.accountSummary(
+                req_id=kwargs["reqId"],
+                account=summary["account"],
+                tag=summary["tag"],
+                value=summary["value"],
+                currency=summary["currency"],
+            )
+
+    def _setup_mocks(client=None):
+        """
+        Apply mocks to the provided client or exec_client.
+        """
+        target_client = client or exec_client
+
+        # Mock reqAccountSummary
+        mocker.patch.object(
+            target_client._client._eclient,
+            "reqAccountSummary",
+            side_effect=partial(account_summary_setup, target_client._client),
+        )
+
+        # Mock wait_until_ready
+        async def mock_wait_until_ready(timeout):
+            target_client._client._is_client_ready.set()
+            target_client._client._is_ib_connected.set()
+
+        mocker.patch.object(
+            target_client._client,
+            "wait_until_ready",
+            side_effect=mock_wait_until_ready,
+        )
+
+        # Mock instrument provider initialize
+        mocker.patch.object(
+            target_client.instrument_provider,
+            "initialize",
+            return_value=None,
+        )
+
+        # Set account_summary_loaded to prevent hanging
+        target_client._account_summary_loaded.set()
+
+        # Mock _connect with event handlers
+        async def mock_connect():
+            # Register event handlers as the real _connect does
+            account = target_client.account_id.get_id()
+            target_client._client.subscribe_event(
+                f"accountSummary-{account}",
+                target_client._on_account_summary,
+            )
+            target_client._client.subscribe_event(
+                f"openOrder-{account}",
+                target_client._on_open_order,
+            )
+            target_client._client.subscribe_event(
+                f"orderStatus-{account}",
+                target_client._on_order_status,
+            )
+            target_client._client.subscribe_event(
+                f"execDetails-{account}",
+                target_client._on_exec_details,
+            )
+            target_client._set_connected(True)
+
+        mocker.patch.object(
+            target_client,
+            "_connect",
+            side_effect=mock_connect,
+        )
+
+    return _setup_mocks

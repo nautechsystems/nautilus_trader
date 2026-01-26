@@ -426,9 +426,12 @@ impl BybitHttpClient {
         order_side,
         order_type,
         quantity,
-        time_in_force,
+        time_in_force = None,
         price = None,
+        trigger_price = None,
+        post_only = None,
         reduce_only = false,
+        is_quote_quantity = false,
         is_leverage = false
     ))]
     #[allow(clippy::too_many_arguments)]
@@ -442,9 +445,12 @@ impl BybitHttpClient {
         order_side: OrderSide,
         order_type: OrderType,
         quantity: Quantity,
-        time_in_force: TimeInForce,
+        time_in_force: Option<TimeInForce>,
         price: Option<Price>,
+        trigger_price: Option<Price>,
+        post_only: Option<bool>,
         reduce_only: bool,
+        is_quote_quantity: bool,
         is_leverage: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -461,7 +467,10 @@ impl BybitHttpClient {
                     quantity,
                     time_in_force,
                     price,
+                    trigger_price,
+                    post_only,
                     reduce_only,
+                    is_quote_quantity,
                     is_leverage,
                 )
                 .await
@@ -625,6 +634,27 @@ impl BybitHttpClient {
                 let pylist = PyList::new(py, py_trades?).unwrap().into_any().unbind();
                 Ok(pylist)
             })
+        })
+    }
+
+    #[pyo3(name = "request_orderbook_snapshot")]
+    #[pyo3(signature = (product_type, instrument_id, limit=None))]
+    fn py_request_orderbook_snapshot<'py>(
+        &self,
+        py: Python<'py>,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        limit: Option<u32>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let deltas = client
+                .request_orderbook_snapshot(product_type, instrument_id, limit)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| Ok(deltas.into_py_any(py).unwrap()))
         })
     }
 

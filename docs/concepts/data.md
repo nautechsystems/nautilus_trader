@@ -441,7 +441,7 @@ The `ts_init` field indicates when the message was originally received.
 
 ## Data flow
 
-The platform ensures consistency by flowing data through the same pathways across all system [environment contexts](/concepts/architecture.md#environment-contexts)
+The platform ensures consistency by flowing data through the same pathways across all system [environment contexts](architecture.md#environment-contexts)
 (e.g., `backtest`, `sandbox`, `live`). Data is primarily transported via the `MessageBus` to the `DataEngine`
 and then distributed to subscribed or registered handlers.
 
@@ -1758,3 +1758,9 @@ class GreeksData(Data):
         delta: float = 0.0,
   ) -> GreeksData: ...
 ```
+
+## Related guides
+
+- [Instruments](instruments.md) - Financial instruments referenced by data.
+- [Cache](cache.md) - Data storage and retrieval.
+- [Adapters](adapters.md) - Data sources and connectivity.

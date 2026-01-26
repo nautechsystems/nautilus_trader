@@ -17,6 +17,7 @@
 
 use std::collections::HashMap;
 
+use chrono::{DateTime, Utc};
 use nautilus_model::{
     data::{Data, OrderBookDeltas},
     events::AccountState,
@@ -71,6 +72,7 @@ pub enum DydxWsOperation {
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Hash,
@@ -112,7 +114,8 @@ pub enum DydxWsChannel {
     #[serde(rename = "v4_block_height")]
     #[strum(serialize = "v4_block_height")]
     BlockHeight,
-    /// Unknown/unrecognized channel type.
+    /// Unknown/unrecognized channel type (default when field is missing).
+    #[default]
     #[serde(other)]
     #[strum(to_string = "unknown")]
     Unknown,
@@ -143,6 +146,7 @@ impl DydxWsChannel {
     Clone,
     Copy,
     Debug,
+    Default,
     PartialEq,
     Eq,
     Hash,
@@ -162,7 +166,8 @@ pub enum DydxWsMessageType {
     Subscribed,
     /// Unsubscription confirmed.
     Unsubscribed,
-    /// Channel data update.
+    /// Channel data update (default for missing type field).
+    #[default]
     ChannelData,
     /// Batch channel data update.
     ChannelBatchData,
@@ -189,8 +194,8 @@ pub enum DydxWsMessage {
     ChannelData(DydxWsChannelDataMsg),
     /// Batch of channel data updates.
     ChannelBatchData(DydxWsChannelBatchDataMsg),
-    /// Block height update from chain.
-    BlockHeight(u64),
+    /// Block height update from chain with timestamp.
+    BlockHeight { height: u64, time: DateTime<Utc> },
     /// Error received from the venue or client lifecycle.
     Error(DydxWebSocketError),
     /// Raw message payload that does not yet have a typed representation.
@@ -225,8 +230,8 @@ pub enum NautilusWsMessage {
     SubaccountsChannelData(Box<DydxWsSubaccountsChannelData>),
     /// Oracle price updates from markets channel (for execution client).
     OraclePrices(HashMap<String, DydxOraclePriceMarket>),
-    /// Block height update from chain.
-    BlockHeight(u64),
+    /// Block height update from chain with timestamp.
+    BlockHeight { height: u64, time: DateTime<Utc> },
     /// Error message.
     Error(DydxWebSocketError),
     /// Reconnection notification.

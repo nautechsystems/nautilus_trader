@@ -59,7 +59,7 @@ pub fn parse_pool_created_event_hypersync(log: HypersyncLog) -> anyhow::Result<P
 
         anyhow::ensure!(
             data_bytes.len() >= 32,
-            "PairCreated event data too short: expected at least 32 bytes, got {}",
+            "PairCreated event data too short: expected at least 32 bytes, was {}",
             data_bytes.len()
         );
 
@@ -102,7 +102,7 @@ pub fn parse_pool_created_event_rpc(log: &RpcLog) -> anyhow::Result<PoolCreatedE
 
     anyhow::ensure!(
         data_bytes.len() >= 32,
-        "PairCreated event data too short: expected at least 32 bytes, got {}",
+        "PairCreated event data too short: expected at least 32 bytes, was {}",
         data_bytes.len()
     );
 

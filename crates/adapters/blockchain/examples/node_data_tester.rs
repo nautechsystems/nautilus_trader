@@ -13,6 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Example demonstrating live data testing with the Blockchain adapter.
+//!
+//! Run with: `cargo run --example blockchain-data-tester --package nautilus-blockchain`
+
 use std::{
     ops::{Deref, DerefMut},
     sync::Arc,

@@ -1008,10 +1008,7 @@ class BinanceFuturesAlgoOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 f"Algo order {client_order_id} FINISHED with full fill "
                 f"but order still open - emitting synthetic fill",
             )
-            remaining_qty = Quantity.from_raw(
-                order.quantity._mem.raw - order.filled_qty._mem.raw,
-                order.quantity._mem.precision,
-            )
+            remaining_qty = order.quantity - order.filled_qty
             if avg_px is not None:
                 self._emit_synthetic_fill(
                     exec_client,
@@ -1044,10 +1041,7 @@ class BinanceFuturesAlgoOrderData(msgspec.Struct, kw_only=True, frozen=True):
                     f"Algo order {client_order_id} FINISHED with partial fill "
                     f"but local filled_qty mismatch - emitting synthetic fill",
                 )
-                missing_qty = Quantity.from_raw(
-                    filled_qty._mem.raw - order.filled_qty._mem.raw,
-                    filled_qty._mem.precision,
-                )
+                missing_qty = filled_qty - order.filled_qty
                 self._emit_synthetic_fill(
                     exec_client,
                     order,

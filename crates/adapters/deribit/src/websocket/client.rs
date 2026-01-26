@@ -21,9 +21,8 @@
 
 use std::{
     fmt::Debug,
-    num::NonZeroU32,
     sync::{
-        Arc, LazyLock,
+        Arc,
         atomic::{AtomicBool, AtomicU8, Ordering},
     },
     time::Duration,
@@ -32,18 +31,19 @@ use std::{
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use futures_util::Stream;
-use nautilus_common::live::get_runtime;
+use nautilus_common::{enums::LogColor, live::get_runtime, log_info};
 use nautilus_core::{
     consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    identifiers::InstrumentId,
+    enums::OrderSide,
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     instruments::{Instrument, InstrumentAny},
+    types::{Price, Quantity},
 };
 use nautilus_network::{
     http::USER_AGENT,
     mode::ConnectionMode,
-    ratelimiter::quota::Quota,
     websocket::{
         AuthTracker, PingHandler, SubscriptionState, WebSocketClient, WebSocketConfig,
         channel_message_handler,
@@ -53,20 +53,22 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
-    auth::{AuthState, DEFAULT_SESSION_NAME, send_auth_request, spawn_token_refresh_task},
+    auth::{AuthState, send_auth_request, spawn_token_refresh_task},
     enums::{DeribitUpdateInterval, DeribitWsChannel},
     error::{DeribitWsError, DeribitWsResult},
     handler::{DeribitWsFeedHandler, HandlerCommand},
-    messages::NautilusWsMessage,
+    messages::{
+        DeribitCancelAllByInstrumentParams, DeribitCancelParams, DeribitEditParams,
+        DeribitOrderParams, NautilusWsMessage,
+    },
 };
 use crate::common::{
-    consts::{DERIBIT_TESTNET_WS_URL, DERIBIT_WS_URL},
+    consts::{
+        DERIBIT_TESTNET_WS_URL, DERIBIT_WS_ORDER_KEY, DERIBIT_WS_ORDER_QUOTA,
+        DERIBIT_WS_SUBSCRIPTION_KEY, DERIBIT_WS_SUBSCRIPTION_QUOTA, DERIBIT_WS_URL,
+    },
     credential::Credential,
 };
-
-/// Default Deribit WebSocket subscription rate limit: 20 requests per second.
-pub static DERIBIT_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| Quota::per_second(NonZeroU32::new(20).unwrap()));
 
 /// Authentication timeout in seconds.
 const AUTHENTICATION_TIMEOUT_SECS: u64 = 30;
@@ -93,6 +95,8 @@ pub struct DeribitWebSocketClient {
     subscriptions_state: SubscriptionState,
     instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
     cancellation_token: CancellationToken,
+    account_id: Option<AccountId>,
+    bars_timestamp_on_close: bool,
 }
 
 impl Debug for DeribitWebSocketClient {
@@ -121,6 +125,8 @@ impl Debug for DeribitWebSocketClient {
 impl DeribitWebSocketClient {
     /// Creates a new [`DeribitWebSocketClient`] instance.
     ///
+    /// Falls back to environment variables if credentials are not provided.
+    ///
     /// # Errors
     ///
     /// Returns an error if only one of `api_key` or `api_secret` is provided.
@@ -131,6 +137,25 @@ impl DeribitWebSocketClient {
         heartbeat_interval: Option<u64>,
         is_testnet: bool,
     ) -> anyhow::Result<Self> {
+        Self::new_inner(
+            url,
+            api_key,
+            api_secret,
+            heartbeat_interval,
+            is_testnet,
+            true,
+        )
+    }
+
+    /// Internal constructor with control over environment variable fallback.
+    fn new_inner(
+        url: Option<String>,
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        heartbeat_interval: Option<u64>,
+        is_testnet: bool,
+        env_fallback: bool,
+    ) -> anyhow::Result<Self> {
         let url = url.unwrap_or_else(|| {
             if is_testnet {
                 DERIBIT_TESTNET_WS_URL.to_string()
@@ -139,12 +164,13 @@ impl DeribitWebSocketClient {
             }
         });
 
-        // Resolve credential from config or environment variables
-        let credential = Credential::resolve(api_key, api_secret, is_testnet);
+        // Resolve credential from config or environment variables (if env_fallback is true)
+        let credential =
+            Credential::resolve_with_env_fallback(api_key, api_secret, is_testnet, env_fallback)?;
         if credential.is_some() {
-            log::info!("Deribit credentials loaded (testnet={is_testnet})");
+            log::info!("Credentials loaded (testnet={is_testnet})");
         } else {
-            log::debug!("No Deribit credentials configured - unauthenticated mode");
+            log::debug!("No credentials configured - unauthenticated mode");
         }
 
         let signal = Arc::new(AtomicBool::new(false));
@@ -171,17 +197,44 @@ impl DeribitWebSocketClient {
             subscriptions_state,
             instruments_cache: Arc::new(DashMap::new()),
             cancellation_token: CancellationToken::new(),
+            account_id: None,
+            bars_timestamp_on_close: true,
         })
     }
 
     /// Creates a new public (unauthenticated) client.
+    ///
+    /// Does NOT fall back to environment variables for credentials.
     ///
     /// # Errors
     ///
     /// Returns an error if initialization fails.
     pub fn new_public(is_testnet: bool) -> anyhow::Result<Self> {
         let heartbeat_interval = 10;
-        Self::new(None, None, None, Some(heartbeat_interval), is_testnet)
+        Self::new_inner(
+            None,
+            None,
+            None,
+            Some(heartbeat_interval),
+            is_testnet,
+            false,
+        )
+    }
+
+    /// Creates an unauthenticated client with a custom URL.
+    ///
+    /// Does NOT fall back to environment variables for credentials.
+    /// Useful for testing against mock servers.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if initialization fails.
+    pub fn new_unauthenticated(
+        url: Option<String>,
+        heartbeat_interval: Option<u64>,
+        is_testnet: bool,
+    ) -> anyhow::Result<Self> {
+        Self::new_inner(url, None, None, heartbeat_interval, is_testnet, false)
     }
 
     /// Creates an authenticated client with credentials.
@@ -275,7 +328,6 @@ impl DeribitWebSocketClient {
 
     /// Caches instruments for use during message parsing.
     pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
-        self.instruments_cache.clear();
         for inst in instruments {
             self.instruments_cache
                 .insert(inst.raw_symbol().inner(), inst);
@@ -309,7 +361,11 @@ impl DeribitWebSocketClient {
     ///
     /// Returns an error if the connection fails.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
-        log::info!("Connecting to Deribit WebSocket: {}", self.url);
+        log_info!(
+            "Connecting to WebSocket: {}",
+            self.url,
+            color = LogColor::Blue
+        );
 
         // Reset stop signal
         self.signal.store(false, Ordering::Relaxed);
@@ -337,7 +393,13 @@ impl DeribitWebSocketClient {
         };
 
         // Configure rate limits
-        let keyed_quotas = vec![("subscription".to_string(), *DERIBIT_WS_SUBSCRIPTION_QUOTA)];
+        let keyed_quotas = vec![
+            (
+                DERIBIT_WS_SUBSCRIPTION_KEY.to_string(),
+                *DERIBIT_WS_SUBSCRIPTION_QUOTA,
+            ),
+            (DERIBIT_WS_ORDER_KEY.to_string(), *DERIBIT_WS_ORDER_QUOTA),
+        ];
 
         // Connect the WebSocket
         let ws_client = WebSocketClient::connect(
@@ -346,7 +408,7 @@ impl DeribitWebSocketClient {
             Some(ping_handler),
             None, // post_reconnection
             keyed_quotas,
-            Some(*DERIBIT_WS_SUBSCRIPTION_QUOTA), // Default quota
+            Some(*DERIBIT_WS_SUBSCRIPTION_QUOTA), // Default quota for non-order operations
         )
         .await?;
 
@@ -370,6 +432,8 @@ impl DeribitWebSocketClient {
             out_tx,
             self.auth_tracker.clone(),
             self.subscriptions_state.clone(),
+            self.account_id,
+            self.bars_timestamp_on_close,
         );
 
         // Send client to handler
@@ -379,6 +443,10 @@ impl DeribitWebSocketClient {
         let instruments: Vec<InstrumentAny> =
             self.instruments_cache.iter().map(|r| r.clone()).collect();
         if !instruments.is_empty() {
+            log::debug!(
+                "Sending {} cached instruments to handler",
+                instruments.len()
+            );
             let _ = cmd_tx.send(HandlerCommand::InitializeInstruments(instruments));
         }
 
@@ -401,7 +469,7 @@ impl DeribitWebSocketClient {
                 match handler.next().await {
                     Some(msg) => match msg {
                         NautilusWsMessage::Reconnected => {
-                            log::info!("Reconnected to Deribit WebSocket");
+                            log::info!("Reconnected to WebSocket");
 
                             // Get all subscriptions that should be restored
                             // all_topics() returns confirmed + pending_subscribe, excluding pending_unsubscribe
@@ -483,7 +551,7 @@ impl DeribitWebSocketClient {
         });
 
         self.task_handle = Some(Arc::new(task_handle));
-        log::info!("Connected to Deribit WebSocket");
+        log::info!("Connected to WebSocket");
 
         Ok(())
     }
@@ -494,7 +562,7 @@ impl DeribitWebSocketClient {
     ///
     /// Returns an error if the close operation fails.
     pub async fn close(&self) -> DeribitWsResult<()> {
-        log::info!("Closing Deribit WebSocket connection");
+        log::info!("Closing WebSocket connection");
         self.signal.store(true, Ordering::Relaxed);
 
         let _ = self.cmd_tx.read().await.send(HandlerCommand::Disconnect);
@@ -568,11 +636,7 @@ impl DeribitWebSocketClient {
         // Determine scope
         let scope = session_name.map(|name| format!("session:{name}"));
 
-        log::info!(
-            "Authenticating WebSocket with API key: {}, scope: {}",
-            credential.api_key_masked(),
-            scope.as_deref().unwrap_or("connection (default)")
-        );
+        log::info!("Authenticating WebSocket...");
 
         let rx = self.auth_tracker.begin();
 
@@ -599,17 +663,16 @@ impl DeribitWebSocketClient {
         }
     }
 
-    /// Authenticates with session scope using default session name.
+    /// Authenticates with session scope using the provided session name.
     ///
-    /// Convenience method equivalent to `authenticate(Some("nautilus"))`.
-    /// Session-scoped authentication is recommended for order execution as it
-    /// allows skipping `access_token` in private method payloads.
+    /// Use `DERIBIT_DATA_SESSION_NAME` for data clients and
+    /// `DERIBIT_EXECUTION_SESSION_NAME` for execution clients.
     ///
     /// # Errors
     ///
     /// Returns an error if authentication fails.
-    pub async fn authenticate_session(&self) -> DeribitWsResult<()> {
-        self.authenticate(Some(DEFAULT_SESSION_NAME)).await
+    pub async fn authenticate_session(&self, session_name: &str) -> DeribitWsResult<()> {
+        self.authenticate(Some(session_name)).await
     }
 
     /// Returns the current authentication state containing tokens.
@@ -628,9 +691,17 @@ impl DeribitWebSocketClient {
             .map(|s| s.access_token.clone())
     }
 
-    // ------------------------------------------------------------------------------------------------
-    // Subscription Methods
-    // ------------------------------------------------------------------------------------------------
+    /// Sets the account ID for order/fill reports.
+    pub fn set_account_id(&mut self, account_id: AccountId) {
+        self.account_id = Some(account_id);
+    }
+
+    /// Sets whether bar timestamps should use the close time.
+    ///
+    /// When `true` (default), bar `ts_event` is set to the bar's close time.
+    pub fn set_bars_timestamp_on_close(&mut self, value: bool) {
+        self.bars_timestamp_on_close = value;
+    }
 
     async fn send_subscribe(&self, channels: Vec<String>) -> DeribitWsResult<()> {
         let mut channels_to_subscribe = Vec::new();
@@ -1030,6 +1101,89 @@ impl DeribitWebSocketClient {
         Ok(())
     }
 
+    /// Subscribes to user order updates for all instruments.
+    ///
+    /// Requires authentication. Subscribes to `user.orders.any.any.raw` channel.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if client is not authenticated or subscription fails.
+    pub async fn subscribe_user_orders(&self) -> DeribitWsResult<()> {
+        if !self.is_authenticated() {
+            return Err(DeribitWsError::Authentication(
+                "User orders subscription requires authentication".to_string(),
+            ));
+        }
+        self.send_subscribe(vec!["user.orders.any.any.raw".to_string()])
+            .await
+    }
+
+    /// Unsubscribes from user order updates for all instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unsubscription fails.
+    pub async fn unsubscribe_user_orders(&self) -> DeribitWsResult<()> {
+        self.send_unsubscribe(vec!["user.orders.any.any.raw".to_string()])
+            .await
+    }
+
+    /// Subscribes to user trade/fill updates for all instruments.
+    ///
+    /// Requires authentication. Subscribes to `user.trades.any.any.raw` channel.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if client is not authenticated or subscription fails.
+    pub async fn subscribe_user_trades(&self) -> DeribitWsResult<()> {
+        if !self.is_authenticated() {
+            return Err(DeribitWsError::Authentication(
+                "User trades subscription requires authentication".to_string(),
+            ));
+        }
+        self.send_subscribe(vec!["user.trades.any.any.raw".to_string()])
+            .await
+    }
+
+    /// Unsubscribes from user trade/fill updates for all instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unsubscription fails.
+    pub async fn unsubscribe_user_trades(&self) -> DeribitWsResult<()> {
+        self.send_unsubscribe(vec!["user.trades.any.any.raw".to_string()])
+            .await
+    }
+
+    /// Subscribes to user portfolio updates for all currencies.
+    ///
+    /// Requires authentication. Subscribes to `user.portfolio.any` channel which
+    /// provides real-time account balance and margin updates for all currencies
+    /// (BTC, ETH, USDC, USDT, etc.).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if client is not authenticated or subscription fails.
+    pub async fn subscribe_user_portfolio(&self) -> DeribitWsResult<()> {
+        if !self.is_authenticated() {
+            return Err(DeribitWsError::Authentication(
+                "User portfolio subscription requires authentication".to_string(),
+            ));
+        }
+        self.send_subscribe(vec!["user.portfolio.any".to_string()])
+            .await
+    }
+
+    /// Unsubscribes from user portfolio updates for all currencies.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unsubscription fails.
+    pub async fn unsubscribe_user_portfolio(&self) -> DeribitWsResult<()> {
+        self.send_unsubscribe(vec!["user.portfolio.any".to_string()])
+            .await
+    }
+
     /// Subscribes to multiple channels at once.
     ///
     /// # Errors
@@ -1046,5 +1200,258 @@ impl DeribitWebSocketClient {
     /// Returns an error if unsubscription fails.
     pub async fn unsubscribe(&self, channels: Vec<String>) -> DeribitWsResult<()> {
         self.send_unsubscribe(channels).await
+    }
+
+    /// Submits an order to Deribit via WebSocket.
+    ///
+    /// Routes to `private/buy` or `private/sell` JSON-RPC method based on order side.
+    /// Requires authentication (call `authenticate_session()` first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The client is not authenticated
+    /// - The command fails to send
+    pub async fn submit_order(
+        &self,
+        order_side: OrderSide,
+        params: DeribitOrderParams,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    ) -> DeribitWsResult<()> {
+        if !self.is_authenticated() {
+            return Err(DeribitWsError::Authentication(
+                "Submit order requires authentication. Call authenticate_session() first."
+                    .to_string(),
+            ));
+        }
+
+        log::debug!(
+            "Sending {} order: instrument={}, amount={}, price={:?}, client_order_id={}",
+            order_side,
+            params.instrument_name,
+            params.amount,
+            params.price,
+            client_order_id
+        );
+
+        let cmd = match order_side {
+            OrderSide::Buy => HandlerCommand::Buy {
+                params,
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            },
+            OrderSide::Sell => HandlerCommand::Sell {
+                params,
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            },
+            _ => {
+                return Err(DeribitWsError::ClientError(format!(
+                    "Invalid order side: {order_side}"
+                )));
+            }
+        };
+
+        self.cmd_tx
+            .read()
+            .await
+            .send(cmd)
+            .map_err(|e| DeribitWsError::Send(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Modifies an existing order on Deribit via WebSocket.
+    ///
+    /// The order parameters are sent using the `private/edit` JSON-RPC method.
+    /// Requires authentication (call `authenticate_session()` first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The client is not authenticated
+    /// - The command fails to send
+    #[allow(clippy::too_many_arguments)]
+    pub async fn modify_order(
+        &self,
+        order_id: &str,
+        quantity: Quantity,
+        price: Price,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    ) -> DeribitWsResult<()> {
+        if !self.is_authenticated() {
+            return Err(DeribitWsError::Authentication(
+                "Modify order requires authentication. Call authenticate_session() first."
+                    .to_string(),
+            ));
+        }
+
+        let params = DeribitEditParams {
+            order_id: order_id.to_string(),
+            amount: quantity.as_decimal(),
+            price: Some(price.as_decimal()),
+            post_only: None,
+            reject_post_only: None,
+            reduce_only: None,
+            trigger_price: None,
+        };
+
+        log::debug!(
+            "Sending modify order: order_id={order_id}, quantity={quantity}, price={price}, client_order_id={client_order_id}"
+        );
+
+        self.cmd_tx
+            .read()
+            .await
+            .send(HandlerCommand::Edit {
+                params,
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            })
+            .map_err(|e| DeribitWsError::Send(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Cancels an existing order on Deribit via WebSocket.
+    ///
+    /// The order is cancelled using the `private/cancel` JSON-RPC method.
+    /// Requires authentication (call `authenticate_session()` first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The client is not authenticated
+    /// - The command fails to send
+    pub async fn cancel_order(
+        &self,
+        order_id: &str,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    ) -> DeribitWsResult<()> {
+        if !self.is_authenticated() {
+            return Err(DeribitWsError::Authentication(
+                "Cancel order requires authentication. Call authenticate_session() first."
+                    .to_string(),
+            ));
+        }
+
+        let params = DeribitCancelParams {
+            order_id: order_id.to_string(),
+        };
+
+        log::debug!("Sending cancel order: order_id={order_id}, client_order_id={client_order_id}");
+
+        self.cmd_tx
+            .read()
+            .await
+            .send(HandlerCommand::Cancel {
+                params,
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            })
+            .map_err(|e| DeribitWsError::Send(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Cancels all orders for a specific instrument on Deribit via WebSocket.
+    ///
+    /// Uses the `private/cancel_all_by_instrument` JSON-RPC method.
+    /// Requires authentication (call `authenticate_session()` first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The client is not authenticated
+    /// - The command fails to send
+    pub async fn cancel_all_orders(
+        &self,
+        instrument_id: InstrumentId,
+        order_type: Option<String>,
+    ) -> DeribitWsResult<()> {
+        if !self.is_authenticated() {
+            return Err(DeribitWsError::Authentication(
+                "Cancel all orders requires authentication. Call authenticate_session() first."
+                    .to_string(),
+            ));
+        }
+
+        let instrument_name = instrument_id.symbol.to_string();
+        let params = DeribitCancelAllByInstrumentParams {
+            instrument_name: instrument_name.clone(),
+            order_type,
+        };
+
+        log::debug!("Sending cancel_all_orders: instrument={instrument_name}");
+
+        self.cmd_tx
+            .read()
+            .await
+            .send(HandlerCommand::CancelAllByInstrument {
+                params,
+                instrument_id,
+            })
+            .map_err(|e| DeribitWsError::Send(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Queries the state of an order on Deribit via WebSocket.
+    ///
+    /// Uses the `private/get_order_state` JSON-RPC method.
+    /// Requires authentication (call `authenticate_session()` first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The client is not authenticated
+    /// - The command fails to send
+    pub async fn query_order(
+        &self,
+        order_id: &str,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+    ) -> DeribitWsResult<()> {
+        if !self.is_authenticated() {
+            return Err(DeribitWsError::Authentication(
+                "Query order state requires authentication. Call authenticate_session() first."
+                    .to_string(),
+            ));
+        }
+
+        log::debug!("Sending query_order: order_id={order_id}, client_order_id={client_order_id}");
+
+        self.cmd_tx
+            .read()
+            .await
+            .send(HandlerCommand::GetOrderState {
+                order_id: order_id.to_string(),
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            })
+            .map_err(|e| DeribitWsError::Send(e.to_string()))?;
+
+        Ok(())
     }
 }

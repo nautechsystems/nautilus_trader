@@ -1131,12 +1131,7 @@ class KrakenExecutionClient(LiveExecutionClient):
                 ts_event=report.ts_last,
             )
         elif report.order_status == OrderStatus.ACCEPTED:
-            if order.status in (
-                OrderStatus.ACCEPTED,
-                OrderStatus.FILLED,
-                OrderStatus.CANCELED,
-                OrderStatus.EXPIRED,
-            ):
+            if order.status != OrderStatus.SUBMITTED:
                 return
             self.generate_order_accepted(
                 strategy_id=order.strategy_id,

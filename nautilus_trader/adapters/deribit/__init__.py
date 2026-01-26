@@ -38,10 +38,8 @@ from nautilus_trader.adapters.deribit.providers import DeribitInstrumentProvider
 from nautilus_trader.core.nautilus_pyo3 import DeribitCurrency
 from nautilus_trader.core.nautilus_pyo3 import DeribitHttpClient
 from nautilus_trader.core.nautilus_pyo3 import DeribitInstrumentKind
-from nautilus_trader.core.nautilus_pyo3 import DeribitOptionType
 from nautilus_trader.core.nautilus_pyo3 import DeribitUpdateInterval
 from nautilus_trader.core.nautilus_pyo3 import DeribitWebSocketClient
-from nautilus_trader.core.nautilus_pyo3 import DeribitWsChannel
 
 
 __all__ = [
@@ -58,10 +56,8 @@ __all__ = [
     "DeribitInstrumentProvider",
     "DeribitLiveDataClientFactory",
     "DeribitLiveExecClientFactory",
-    "DeribitOptionType",
     "DeribitUpdateInterval",
     "DeribitWebSocketClient",
-    "DeribitWsChannel",
     "get_cached_deribit_http_client",
     "get_cached_deribit_instrument_provider",
 ]

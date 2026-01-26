@@ -426,7 +426,7 @@ impl KrakenSpotRawHttpClient {
                     })?;
 
                 if !kraken_response.error.is_empty() {
-                    return Err(KrakenHttpError::ApiError(kraken_response.error.clone()));
+                    return Err(KrakenHttpError::ApiError(kraken_response.error));
                 }
 
                 Ok(kraken_response)
@@ -1382,6 +1382,8 @@ impl KrakenSpotHttpClient {
         end: Option<DateTime<Utc>>,
         open_only: bool,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        const PAGE_SIZE: i32 = 50;
+
         let ts_init = self.generate_ts_init();
         let mut all_reports = Vec::new();
 
@@ -1416,7 +1418,6 @@ impl KrakenSpotHttpClient {
         let end_ts = end.map(|dt| dt.timestamp());
 
         let mut offset = 0;
-        const PAGE_SIZE: i32 = 50;
 
         loop {
             let closed_orders = self
@@ -1470,6 +1471,8 @@ impl KrakenSpotHttpClient {
         start: Option<DateTime<Utc>>,
         end: Option<DateTime<Utc>>,
     ) -> anyhow::Result<Vec<FillReport>> {
+        const PAGE_SIZE: i32 = 50;
+
         let ts_init = self.generate_ts_init();
         let mut all_reports = Vec::new();
 
@@ -1478,7 +1481,6 @@ impl KrakenSpotHttpClient {
         let end_ts = end.map(|dt| dt.timestamp());
 
         let mut offset = 0;
-        const PAGE_SIZE: i32 = 50;
 
         loop {
             let trades = self
@@ -1547,7 +1549,7 @@ impl KrakenSpotHttpClient {
         let ts_init = self.generate_ts_init();
         let mut wallet_by_coin: HashMap<Ustr, f64> = HashMap::new();
 
-        for (currency_code, amount_str) in balances_raw.iter() {
+        for (currency_code, amount_str) in &balances_raw {
             let balance = match amount_str.parse::<f64>() {
                 Ok(b) => b,
                 Err(_) => continue,

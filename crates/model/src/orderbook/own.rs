@@ -829,9 +829,9 @@ impl OwnBookLevel {
     }
 
     /// Adds multiple orders to this price level in FIFO order. Orders must match the level's price.
-    pub fn add_bulk(&mut self, orders: Vec<OwnBookOrder>) {
+    pub fn add_bulk(&mut self, orders: &[OwnBookOrder]) {
         for order in orders {
-            self.add(order);
+            self.add(*order);
         }
     }
 

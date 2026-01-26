@@ -89,7 +89,7 @@ pub fn parse_initialize_event_hypersync(log: HypersyncLog) -> anyhow::Result<Poo
     let topics = &log.topics;
     if topics.len() < 4 {
         anyhow::bail!(
-            "Initialize event missing topics: expected 4, got {}",
+            "Initialize event missing topics: expected 4, was {}",
             topics.len()
         );
     }
@@ -125,7 +125,7 @@ pub fn parse_initialize_event_hypersync(log: HypersyncLog) -> anyhow::Result<Poo
         // Validate minimum data length (5 fields × 32 bytes = 160 bytes)
         if data_bytes.len() < 160 {
             anyhow::bail!(
-                "Initialize event data too short: expected at least 160 bytes, got {}",
+                "Initialize event data too short: expected at least 160 bytes, was {}",
                 data_bytes.len()
             );
         }
@@ -173,7 +173,7 @@ pub fn parse_initialize_event_rpc(log: &RpcLog) -> anyhow::Result<PoolCreatedEve
     // topics[3] = currency1 (indexed)
     if log.topics.len() < 4 {
         anyhow::bail!(
-            "Initialize event missing topics: expected 4, got {}",
+            "Initialize event missing topics: expected 4, was {}",
             log.topics.len()
         );
     }
@@ -194,7 +194,7 @@ pub fn parse_initialize_event_rpc(log: &RpcLog) -> anyhow::Result<PoolCreatedEve
     // Validate minimum data length (5 fields × 32 bytes = 160 bytes)
     if data_bytes.len() < 160 {
         anyhow::bail!(
-            "Initialize event data too short: expected at least 160 bytes, got {}",
+            "Initialize event data too short: expected at least 160 bytes, was {}",
             data_bytes.len()
         );
     }

@@ -13,6 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Example demonstrating live data testing with the Databento adapter.
+//!
+//! Run with: `cargo run --example databento-data-tester --package nautilus-databento`
+
 use std::{
     ops::{Deref, DerefMut},
     path::PathBuf,
@@ -59,7 +63,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    // Configure Databento client
     let databento_config = DatabentoLiveClientConfig::new(
         api_key,
         publishers_filepath,
@@ -69,14 +72,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client_factory = DatabentoDataClientFactory::new();
 
-    // Create and register a Databento subscriber actor
     let client_id = ClientId::new("DATABENTO");
-    let instrument_ids = vec![
-        InstrumentId::from("ESZ5.XCME"),
-        // Add more instruments as needed
-    ];
+    let instrument_ids = vec![InstrumentId::from("ESZ6.XCME")];
 
-    // Build the live node with Databento data client
     let mut node = LiveNode::builder(trader_id, environment)?
         .with_name(node_name)
         .with_load_state(false)
@@ -88,7 +86,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let actor = DatabentoSubscriberActor::new(actor_config);
 
     node.add_actor(actor)?;
-
     node.run().await?;
 
     Ok(())
@@ -190,18 +187,18 @@ impl DataActor for DatabentoSubscriberActor {
     }
 
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
-        log_info!("Received {event:?}", color = LogColor::Blue);
+        log_info!("{event:?}", color = LogColor::Blue);
         Ok(())
     }
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        log_info!("Received {quote:?}", color = LogColor::Cyan);
+        log_info!("{quote:?}", color = LogColor::Cyan);
         self.received_quotes.push(*quote);
         Ok(())
     }
 
     fn on_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
-        log_info!("Received {trade:?}", color = LogColor::Cyan);
+        log_info!("{trade:?}", color = LogColor::Cyan);
         self.received_trades.push(*trade);
         Ok(())
     }

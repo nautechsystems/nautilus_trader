@@ -548,7 +548,7 @@ mod tests {
 
         assert!(
             log_contents.contains("nautilus_common::logging::macros"),
-            "Component should contain module path, got:\n{log_contents}"
+            "Component should contain module path, was:\n{log_contents}"
         );
         assert!(
             log_contents.contains("Auto-captured module path message"),

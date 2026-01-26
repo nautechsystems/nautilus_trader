@@ -62,6 +62,34 @@ class TestBinanceCommonParsing:
         assert result == expected
 
     @pytest.mark.parametrize(
+        ("order_type", "expected"),
+        [
+            [BinanceOrderType.LIMIT, OrderType.LIMIT],
+            [BinanceOrderType.MARKET, OrderType.MARKET],
+            [BinanceOrderType.STOP, OrderType.STOP_LIMIT],
+            [BinanceOrderType.STOP_MARKET, OrderType.STOP_MARKET],
+            [BinanceOrderType.TAKE_PROFIT, OrderType.LIMIT_IF_TOUCHED],
+            [BinanceOrderType.TAKE_PROFIT_MARKET, OrderType.MARKET_IF_TOUCHED],
+            [BinanceOrderType.TRAILING_STOP_MARKET, OrderType.TRAILING_STOP_MARKET],
+            [BinanceOrderType.LIQUIDATION, OrderType.MARKET],
+            [BinanceOrderType.ADL, OrderType.MARKET],
+        ],
+    )
+    def test_futures_parse_binance_order_type(self, order_type, expected):
+        # Arrange, Act
+        result = self._futures_enum_parser.parse_binance_order_type(order_type)
+
+        # Assert
+        assert result == expected
+
+    def test_futures_market_order_type_maps_to_market(self):
+        # Arrange, Act
+        result = self._futures_enum_parser.futures_int_to_ext_order_type[OrderType.MARKET]
+
+        # Assert
+        assert result == BinanceOrderType.MARKET
+
+    @pytest.mark.parametrize(
         ("resolution", "expected_type"),
         [
             [

@@ -288,7 +288,7 @@ impl TransportClient {
         )
         .await
         {
-            Ok(Ok(_)) => {
+            Ok(Ok(())) => {
                 self.mark_healthy();
                 true
             }

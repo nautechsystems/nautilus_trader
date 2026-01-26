@@ -18,13 +18,118 @@
 pub mod http;
 pub mod websocket;
 
-use pyo3::prelude::*;
+use std::str::FromStr;
+
+use nautilus_core::python::to_pyvalue_err;
+use pyo3::{prelude::*, types::PyType};
 
 use crate::{
     common::enums::{AxEnvironment, AxMarketDataLevel},
     http::client::AxHttpClient,
     websocket::data::AxMdWebSocketClient,
 };
+
+#[pymethods]
+impl AxEnvironment {
+    fn __repr__(&self) -> String {
+        format!(
+            "<{}.{}: '{}'>",
+            stringify!(AxEnvironment),
+            self.name(),
+            self.value(),
+        )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn name(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn value(&self) -> u8 {
+        *self as u8
+    }
+
+    #[classmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
+        let tokenized = data_str.to_uppercase();
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
+    }
+
+    #[classattr]
+    #[pyo3(name = "SANDBOX")]
+    const fn py_sandbox() -> Self {
+        Self::Sandbox
+    }
+
+    #[classattr]
+    #[pyo3(name = "PRODUCTION")]
+    const fn py_production() -> Self {
+        Self::Production
+    }
+}
+
+#[pymethods]
+impl AxMarketDataLevel {
+    fn __repr__(&self) -> String {
+        format!(
+            "<{}.{}: '{}'>",
+            stringify!(AxMarketDataLevel),
+            self.name(),
+            self.value(),
+        )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn name(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn value(&self) -> u8 {
+        *self as u8
+    }
+
+    #[classmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
+        let tokenized = data_str.to_uppercase();
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
+    }
+
+    #[classattr]
+    #[pyo3(name = "LEVEL_1")]
+    const fn py_level1() -> Self {
+        Self::Level1
+    }
+
+    #[classattr]
+    #[pyo3(name = "LEVEL_2")]
+    const fn py_level2() -> Self {
+        Self::Level2
+    }
+
+    #[classattr]
+    #[pyo3(name = "LEVEL_3")]
+    const fn py_level3() -> Self {
+        Self::Level3
+    }
+}
 
 /// Loaded as `nautilus_pyo3.architect`.
 ///

@@ -17,6 +17,7 @@
 
 use std::any::Any;
 
+use nautilus_model::identifiers::{AccountId, TraderId};
 use nautilus_system::factories::ClientConfig;
 
 use crate::common::enums::{BinanceEnvironment, BinanceProductType};
@@ -66,6 +67,10 @@ impl ClientConfig for BinanceDataClientConfig {
 /// Configuration for Binance execution client.
 #[derive(Clone, Debug)]
 pub struct BinanceExecClientConfig {
+    /// Trader ID for the client.
+    pub trader_id: TraderId,
+    /// Account ID for the client.
+    pub account_id: AccountId,
     /// Product types to trade.
     pub product_types: Vec<BinanceProductType>,
     /// Environment (mainnet or testnet).
@@ -74,10 +79,10 @@ pub struct BinanceExecClientConfig {
     pub base_url_http: Option<String>,
     /// Optional base URL override for WebSocket.
     pub base_url_ws: Option<String>,
-    /// API key for authenticated endpoints (required).
-    pub api_key: String,
-    /// API secret for request signing (required).
-    pub api_secret: String,
+    /// API key for authenticated endpoints (optional, uses env var if not provided).
+    pub api_key: Option<String>,
+    /// API secret for request signing (optional, uses env var if not provided).
+    pub api_secret: Option<String>,
 }
 
 impl ClientConfig for BinanceExecClientConfig {

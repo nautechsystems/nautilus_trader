@@ -359,6 +359,262 @@ fn test_book_get_quantity_for_price() {
 }
 
 #[rstest]
+fn test_book_get_quantity_at_level_empty_book() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    let price = Price::from("1.0");
+
+    assert_eq!(
+        book.get_quantity_at_level(price, OrderSide::Buy, 1),
+        Quantity::zero(1)
+    );
+    assert_eq!(
+        book.get_quantity_at_level(price, OrderSide::Sell, 1),
+        Quantity::zero(1)
+    );
+}
+
+#[rstest]
+fn test_book_get_quantity_at_level_single_level() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    let ask = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("2.000"),
+        Quantity::from("100.0"),
+        1,
+    );
+    let bid = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("1.000"),
+        Quantity::from("50.0"),
+        2,
+    );
+    book.add(ask, 0, 1, 1.into());
+    book.add(bid, 0, 2, 2.into());
+
+    assert_eq!(
+        book.get_quantity_at_level(Price::from("2.000"), OrderSide::Buy, 1),
+        Quantity::from("100.0")
+    );
+    assert_eq!(
+        book.get_quantity_at_level(Price::from("1.000"), OrderSide::Sell, 1),
+        Quantity::from("50.0")
+    );
+}
+
+#[rstest]
+fn test_book_get_quantity_at_level_multiple_levels() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    let ask1 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("2.000"),
+        Quantity::from("100.0"),
+        1,
+    );
+    let ask2 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("2.010"),
+        Quantity::from("200.0"),
+        2,
+    );
+    let ask3 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("2.020"),
+        Quantity::from("300.0"),
+        3,
+    );
+    let bid1 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("1.000"),
+        Quantity::from("50.0"),
+        4,
+    );
+    let bid2 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("0.990"),
+        Quantity::from("75.0"),
+        5,
+    );
+    let bid3 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("0.980"),
+        Quantity::from("125.0"),
+        6,
+    );
+
+    book.add(ask1, 0, 1, 1.into());
+    book.add(ask2, 0, 2, 2.into());
+    book.add(ask3, 0, 3, 3.into());
+    book.add(bid1, 0, 4, 4.into());
+    book.add(bid2, 0, 5, 5.into());
+    book.add(bid3, 0, 6, 6.into());
+
+    assert_eq!(
+        book.get_quantity_at_level(Price::from("2.000"), OrderSide::Buy, 1),
+        Quantity::from("100.0")
+    );
+    assert_eq!(
+        book.get_quantity_at_level(Price::from("2.010"), OrderSide::Buy, 1),
+        Quantity::from("200.0")
+    );
+    assert_eq!(
+        book.get_quantity_at_level(Price::from("2.020"), OrderSide::Buy, 1),
+        Quantity::from("300.0")
+    );
+
+    assert_eq!(
+        book.get_quantity_at_level(Price::from("1.000"), OrderSide::Sell, 1),
+        Quantity::from("50.0")
+    );
+    assert_eq!(
+        book.get_quantity_at_level(Price::from("0.990"), OrderSide::Sell, 1),
+        Quantity::from("75.0")
+    );
+    assert_eq!(
+        book.get_quantity_at_level(Price::from("0.980"), OrderSide::Sell, 1),
+        Quantity::from("125.0")
+    );
+}
+
+#[rstest]
+fn test_book_get_quantity_at_level_nonexistent_price() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    let ask = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("2.000"),
+        Quantity::from("100.0"),
+        1,
+    );
+    let bid = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("1.000"),
+        Quantity::from("50.0"),
+        2,
+    );
+    book.add(ask, 0, 1, 1.into());
+    book.add(bid, 0, 2, 2.into());
+
+    assert_eq!(
+        book.get_quantity_at_level(Price::from("2.005"), OrderSide::Buy, 1),
+        Quantity::zero(1)
+    );
+    assert_eq!(
+        book.get_quantity_at_level(Price::from("0.995"), OrderSide::Sell, 1),
+        Quantity::zero(1)
+    );
+}
+
+#[rstest]
+fn test_book_get_quantity_at_level_vs_cumulative() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    let ask1 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("2.000"),
+        Quantity::from("100.0"),
+        1,
+    );
+    let ask2 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("2.010"),
+        Quantity::from("200.0"),
+        2,
+    );
+    let ask3 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("2.020"),
+        Quantity::from("300.0"),
+        3,
+    );
+    book.add(ask1, 0, 1, 1.into());
+    book.add(ask2, 0, 2, 2.into());
+    book.add(ask3, 0, 3, 3.into());
+
+    assert_eq!(
+        book.get_quantity_at_level(Price::from("2.010"), OrderSide::Buy, 1),
+        Quantity::from("200.0")
+    );
+
+    // Cumulative: 100 + 200 = 300
+    assert_eq!(
+        book.get_quantity_for_price(Price::from("2.010"), OrderSide::Buy),
+        300.0
+    );
+}
+
+#[rstest]
+fn test_book_get_quantity_at_level_after_update() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    let ask = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("2.000"),
+        Quantity::from("100.0"),
+        1,
+    );
+    book.add(ask, 0, 1, 1.into());
+
+    assert_eq!(
+        book.get_quantity_at_level(Price::from("2.000"), OrderSide::Buy, 1),
+        Quantity::from("100.0")
+    );
+
+    let ask_updated = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("2.000"),
+        Quantity::from("150.0"),
+        1,
+    );
+    book.update(ask_updated, 0, 2, 2.into());
+
+    assert_eq!(
+        book.get_quantity_at_level(Price::from("2.000"), OrderSide::Buy, 1),
+        Quantity::from("150.0")
+    );
+}
+
+#[rstest]
+fn test_book_get_quantity_at_level_after_delete() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    let ask = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("2.000"),
+        Quantity::from("100.0"),
+        1,
+    );
+    book.add(ask, 0, 1, 1.into());
+
+    assert_eq!(
+        book.get_quantity_at_level(Price::from("2.000"), OrderSide::Buy, 1),
+        Quantity::from("100.0")
+    );
+
+    let ask_delete = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("2.000"),
+        Quantity::from("0.0"),
+        1,
+    );
+    book.delete(ask_delete, 0, 2, 2.into());
+
+    assert_eq!(
+        book.get_quantity_at_level(Price::from("2.000"), OrderSide::Buy, 1),
+        Quantity::zero(1)
+    );
+}
+
+#[rstest]
 fn test_book_get_price_for_exposure_no_market() {
     let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
     let book = OrderBook::new(instrument_id, BookType::L2_MBP);
@@ -6202,7 +6458,7 @@ fn test_get_all_crossed_levels(
     assert_eq!(
         levels.len(),
         expected.len(),
-        "Expected {} levels, got {}",
+        "Expected {} levels, was {}",
         expected.len(),
         levels.len()
     );

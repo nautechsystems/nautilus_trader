@@ -339,18 +339,26 @@ class ParquetDataCatalog(BaseDataCatalog):
         end = end if end else data[-1].ts_init
         filename = _timestamps_to_filename(start, end)
         parquet_file = f"{directory}/{filename}"
+
+        if self.fs.exists(parquet_file):
+            print(f"File {parquet_file} already exists, skipping write")
+            return
+
+        if not skip_disjoint_check:
+            current_intervals = self._get_directory_intervals(directory)
+            new_intervals = [*current_intervals, (start, end)]
+            if not _are_intervals_disjoint(new_intervals):
+                raise ValueError(
+                    f"Writing file {filename} with interval ({start}, {end}) would create "
+                    f"non-disjoint intervals. Existing intervals: {current_intervals}",
+                )
+
         pq.write_table(
             table,
             where=parquet_file,
             filesystem=self.fs,
             row_group_size=self.max_rows_per_group,
         )
-
-        if not skip_disjoint_check:
-            intervals = self._get_directory_intervals(directory)
-            assert _are_intervals_disjoint(
-                intervals,
-            ), "Intervals are not disjoint after writing a new file"
 
     def _objects_to_table(self, data: list[Data], data_cls: type) -> pa.Table:
         PyCondition.not_empty(data, "data")
@@ -2384,6 +2392,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         other_catalog: ParquetDataCatalog | None = None,
         subdirectory: str = "backtest",
         identifiers: list[str] | None = None,
+        use_ts_event_for_ts_init: bool = False,
     ) -> None:
         """
         Convert stream data from feather files to parquet files.
@@ -2404,6 +2413,8 @@ class ParquetDataCatalog(BaseDataCatalog):
             The subdirectory containing the feather files. Either "backtest" or "live".
         identifiers : list[str], optional
             Filter to only include data containing these identifiers in their instrument_ids or bar_types.
+        use_ts_event_for_ts_init : bool, default False
+            If True, replaces the `ts_init` column with `ts_event` column values before deserializing.
 
         """
         used_catalog = self if other_catalog is None else other_catalog
@@ -2422,6 +2433,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 feather_table,
                 data_cls,
                 convert_bar_type_to_external=True,
+                use_ts_event_for_ts_init=use_ts_event_for_ts_init,
             )
             used_catalog.write_data(file_data)
 
@@ -2444,9 +2456,31 @@ class ParquetDataCatalog(BaseDataCatalog):
         table: pa.Table | pd.DataFrame,
         data_cls: type,
         convert_bar_type_to_external: bool = False,
+        use_ts_event_for_ts_init: bool = False,
     ) -> list[Data]:
         if isinstance(table, pd.DataFrame):
             table = pa.Table.from_pandas(table)
+
+        # Replace ts_init column with ts_event if requested
+        if use_ts_event_for_ts_init:
+            schema = table.schema
+            column_names = schema.names
+
+            if "ts_event" not in column_names or "ts_init" not in column_names:
+                raise ValueError(
+                    "Both 'ts_event' and 'ts_init' columns must exist in the table "
+                    "to use 'use_ts_event_for_ts_init' option",
+                )
+
+            ts_event_idx = column_names.index("ts_event")
+            ts_init_idx = column_names.index("ts_init")
+
+            # Create new arrays with ts_init replaced by ts_event
+            new_arrays = list(table.columns)
+            new_arrays[ts_init_idx] = new_arrays[ts_event_idx]
+
+            # Create new table with updated arrays
+            table = pa.Table.from_arrays(new_arrays, schema=schema)
 
         # Convert metadata from INTERNAL to EXTERNAL if requested
         if convert_bar_type_to_external and table.schema.metadata:

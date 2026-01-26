@@ -517,10 +517,11 @@ mod tests {
 
     #[rstest]
     fn test_order_book_depth10_serializable_trait() {
+        fn assert_serializable<T: Serializable>(_: &T) {}
+
         let depth = create_test_depth10();
 
         // Verify Serializable trait is implemented (compile-time check)
-        fn assert_serializable<T: Serializable>(_: &T) {}
         assert_serializable(&depth);
     }
 

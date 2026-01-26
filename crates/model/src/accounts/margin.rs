@@ -13,8 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Implementation of a *margin* account capable of holding leveraged positions and tracking
-//! instrument-specific leverage ratios.
+//! A margin account capable of holding leveraged positions and tracking instrument-specific
+//! leverage ratios.
+//!
+//! # PnL calculation
+//!
+//! The account calculates PnL differently based on instrument type:
+//!
+//! - **Premium instruments** (options, option spreads, binary options, warrants): Realize
+//!   the notional value as a cash flow on every fill. BUY = negative (premium paid),
+//!   SELL = positive (premium received).
+//!
+//! - **Other instruments**: Only realize PnL on position reduction (fill side opposite to
+//!   entry). Use the minimum of fill and position quantity to avoid double-counting.
 
 #![allow(dead_code)]
 
@@ -30,7 +41,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     accounts::{Account, base::BaseAccount},
-    enums::{AccountType, LiquiditySide, OrderSide},
+    enums::{AccountType, InstrumentClass, LiquiditySide, OrderSide},
     events::{AccountState, OrderFilled},
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
@@ -86,6 +97,7 @@ impl MarginAccount {
     pub fn is_cash_account(&self) -> bool {
         self.account_type == AccountType::Cash
     }
+
     #[must_use]
     pub fn is_margin_account(&self) -> bool {
         self.account_type == AccountType::Margin
@@ -428,8 +440,9 @@ impl Account for MarginAccount {
         self.balances.clone()
     }
 
-    fn apply(&mut self, event: AccountState) {
+    fn apply(&mut self, event: AccountState) -> anyhow::Result<()> {
         self.base_apply(event);
+        Ok(())
     }
 
     fn purge_account_events(&mut self, ts_now: nautilus_core::UnixNanos, lookback_secs: u64) {
@@ -449,12 +462,32 @@ impl Account for MarginAccount {
 
     fn calculate_pnls(
         &self,
-        _instrument: InstrumentAny, // TBD if this should be removed
+        instrument: InstrumentAny,
         fill: OrderFilled,
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
         let mut pnls: Vec<Money> = Vec::new();
 
+        // For premium-based instruments, realize the notional value as a cash flow on every fill
+        let instrument_class = instrument.instrument_class();
+        if matches!(
+            instrument_class,
+            InstrumentClass::Option
+                | InstrumentClass::OptionSpread
+                | InstrumentClass::BinaryOption
+                | InstrumentClass::Warrant
+        ) {
+            let notional = instrument.calculate_notional_value(fill.last_qty, fill.last_px, None);
+            let pnl = if fill.order_side == OrderSide::Buy {
+                Money::from_raw(-notional.raw, notional.currency)
+            } else {
+                notional
+            };
+            pnls.push(pnl);
+            return Ok(pnls);
+        }
+
+        // For other instruments, only realize PnL on position reduction
         if let Some(ref pos) = position
             && pos.quantity.is_positive()
             && pos.entry != fill.order_side
@@ -535,7 +568,11 @@ mod tests {
             VenueOrderId,
             stubs::{uuid4, *},
         },
-        instruments::{CryptoPerpetual, CurrencyPair, InstrumentAny, stubs::*},
+        instruments::{
+            CryptoPerpetual, CurrencyPair, InstrumentAny,
+            stubs::{binary_option, option_contract_appl, *},
+        },
+        orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
         types::{Currency, MarginBalance, Money, Price, Quantity},
     };
@@ -1043,5 +1080,105 @@ mod tests {
 
         margin_account.clear_margin(instrument_id_aud_usd_sim);
         assert!(margin_account.margin(&instrument_id_aud_usd_sim).is_none());
+    }
+
+    #[rstest]
+    fn test_calculate_pnls_for_option_buy_realizes_premium(margin_account: MarginAccount) {
+        let option = option_contract_appl();
+        let option_any = InstrumentAny::OptionContract(option);
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(option.id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("10"))
+            .build();
+
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            &option_any,
+            None,
+            Some(PositionId::new("P-OPT-001")),
+            Some(Price::from("5.50")),
+            None,
+            None,
+            None,
+            None,
+            Some(AccountId::from("SIM-001")),
+        );
+
+        let pnls = margin_account
+            .calculate_pnls(option_any, fill.into(), None)
+            .unwrap();
+
+        // BUY option = pay premium (negative PnL)
+        // 10 contracts * $5.50 = $55.00 premium paid
+        assert_eq!(pnls.len(), 1);
+        assert_eq!(pnls[0], Money::from("-55 USD"));
+    }
+
+    #[rstest]
+    fn test_calculate_pnls_for_option_sell_realizes_premium(margin_account: MarginAccount) {
+        let option = option_contract_appl();
+        let option_any = InstrumentAny::OptionContract(option);
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(option.id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("10"))
+            .build();
+
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            &option_any,
+            None,
+            Some(PositionId::new("P-OPT-002")),
+            Some(Price::from("5.50")),
+            None,
+            None,
+            None,
+            None,
+            Some(AccountId::from("SIM-001")),
+        );
+
+        let pnls = margin_account
+            .calculate_pnls(option_any, fill.into(), None)
+            .unwrap();
+
+        // SELL option = receive premium (positive PnL)
+        // 10 contracts * $5.50 = $55.00 premium received
+        assert_eq!(pnls.len(), 1);
+        assert_eq!(pnls[0], Money::from("55 USD"));
+    }
+
+    #[rstest]
+    fn test_calculate_pnls_for_binary_option(margin_account: MarginAccount) {
+        let binary = binary_option();
+        let binary_any = InstrumentAny::BinaryOption(binary);
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(binary.id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100"))
+            .build();
+
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            &binary_any,
+            None,
+            Some(PositionId::new("P-BIN-001")),
+            Some(Price::from("0.65")),
+            None,
+            None,
+            None,
+            None,
+            Some(AccountId::from("SIM-001")),
+        );
+
+        let pnls = margin_account
+            .calculate_pnls(binary_any, fill.into(), None)
+            .unwrap();
+
+        assert_eq!(pnls.len(), 1);
+        assert!(pnls[0].as_f64() < 0.0);
     }
 }

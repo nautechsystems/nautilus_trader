@@ -1013,6 +1013,8 @@ mod tests {
         #[case] path: PathBuf,
         #[case] bar_index: usize,
     ) {
+        const ONE_SECOND_NS: u64 = 1_000_000_000;
+
         let instrument_id = InstrumentId::from("ESM4.GLBX");
 
         let bars_close = loader
@@ -1044,7 +1046,6 @@ mod tests {
         );
 
         // The difference should be exactly 1 second (1_000_000_000 nanoseconds) for 1s bars
-        const ONE_SECOND_NS: u64 = 1_000_000_000;
         assert_eq!(
             bar_close.ts_event.as_u64() - bar_open.ts_event.as_u64(),
             ONE_SECOND_NS,

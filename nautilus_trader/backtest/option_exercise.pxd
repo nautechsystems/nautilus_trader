@@ -28,7 +28,6 @@ from nautilus_trader.model.position cimport Position
 
 cdef class OptionExerciseModule(SimulationModule):
     cdef public object config
-    cdef public Cache cache
     cdef public dict expiry_timers
     cdef public set processed_expiries
 

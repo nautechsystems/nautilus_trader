@@ -35,7 +35,7 @@ use nautilus_core::{
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    data::{Bar, BarType, TradeTick},
+    data::{Bar, BarType, OrderBookDeltas, TradeTick},
     enums::{OrderSide, OrderType, PositionSideSpecified, TimeInForce},
     events::account::state::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
@@ -60,10 +60,10 @@ use super::{
         BybitInstrumentInverseResponse, BybitInstrumentLinearResponse,
         BybitInstrumentOptionResponse, BybitInstrumentSpotResponse, BybitKlinesResponse,
         BybitNoConvertRepayResponse, BybitOpenOrdersResponse, BybitOrderHistoryResponse,
-        BybitPlaceOrderResponse, BybitPositionListResponse, BybitServerTimeResponse,
-        BybitSetLeverageResponse, BybitSetMarginModeResponse, BybitSetTradingStopResponse,
-        BybitSwitchModeResponse, BybitTickerData, BybitTradeHistoryResponse, BybitTradesResponse,
-        BybitWalletBalanceResponse,
+        BybitOrderbookResponse, BybitPlaceOrderResponse, BybitPositionListResponse,
+        BybitServerTimeResponse, BybitSetLeverageResponse, BybitSetMarginModeResponse,
+        BybitSetTradingStopResponse, BybitSwitchModeResponse, BybitTickerData,
+        BybitTradeHistoryResponse, BybitTradesResponse, BybitWalletBalanceResponse,
     },
     query::{
         BybitAmendOrderParamsBuilder, BybitBatchAmendOrderEntryBuilder,
@@ -72,31 +72,33 @@ use super::{
         BybitCancelAllOrdersParamsBuilder, BybitCancelOrderParamsBuilder, BybitFeeRateParams,
         BybitInstrumentsInfoParams, BybitKlinesParams, BybitKlinesParamsBuilder,
         BybitNoConvertRepayParamsBuilder, BybitOpenOrdersParamsBuilder,
-        BybitOrderHistoryParamsBuilder, BybitPlaceOrderParamsBuilder, BybitPositionListParams,
-        BybitSetLeverageParamsBuilder, BybitSetMarginModeParamsBuilder, BybitSetTradingStopParams,
-        BybitSwitchModeParamsBuilder, BybitTickersParams, BybitTradeHistoryParams,
-        BybitTradesParams, BybitTradesParamsBuilder, BybitWalletBalanceParams,
+        BybitOrderHistoryParamsBuilder, BybitOrderbookParams, BybitPlaceOrderParamsBuilder,
+        BybitPositionListParams, BybitSetLeverageParamsBuilder, BybitSetMarginModeParamsBuilder,
+        BybitSetTradingStopParams, BybitSwitchModeParamsBuilder, BybitTickersParams,
+        BybitTradeHistoryParams, BybitTradesParams, BybitTradesParamsBuilder,
+        BybitWalletBalanceParams,
     },
 };
 use crate::{
     common::{
-        consts::BYBIT_NAUTILUS_BROKER_ID,
+        consts::{BYBIT_BASE_COIN, BYBIT_NAUTILUS_BROKER_ID, BYBIT_QUOTE_COIN},
         credential::Credential,
         enums::{
             BybitAccountType, BybitEnvironment, BybitMarginMode, BybitOpenOnly, BybitOrderFilter,
             BybitOrderSide, BybitOrderType, BybitPositionMode, BybitProductType, BybitTimeInForce,
+            BybitTriggerDirection,
         },
         models::{BybitErrorCheck, BybitResponseCheck},
         parse::{
             bar_spec_to_bybit_interval, make_bybit_symbol, parse_account_state, parse_fill_report,
             parse_inverse_instrument, parse_kline_bar, parse_linear_instrument,
-            parse_option_instrument, parse_order_status_report, parse_position_status_report,
-            parse_spot_instrument, parse_trade_tick,
+            parse_option_instrument, parse_order_status_report, parse_orderbook,
+            parse_position_status_report, parse_spot_instrument, parse_trade_tick,
         },
         symbol::BybitSymbol,
         urls::bybit_http_base_url,
     },
-    http::query::BybitFeeRateParamsBuilder,
+    http::query::{BybitFeeRateParamsBuilder, BybitOrderbookParamsBuilder},
 };
 
 const DEFAULT_RECV_WINDOW_MS: u64 = 5_000;
@@ -662,6 +664,29 @@ impl BybitRawHttpClient {
         self.send_request(
             Method::GET,
             "/v5/market/recent-trade",
+            Some(params),
+            None,
+            false,
+        )
+        .await
+    }
+
+    /// Fetches orderbook from Bybit.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/market/orderbook>
+    pub async fn get_orderbook(
+        &self,
+        params: &BybitOrderbookParams,
+    ) -> Result<BybitOrderbookResponse, BybitHttpError> {
+        self.send_request(
+            Method::GET,
+            "/v5/market/orderbook",
             Some(params),
             None,
             false,
@@ -1950,9 +1975,12 @@ impl BybitHttpClient {
         order_side: OrderSide,
         order_type: OrderType,
         quantity: Quantity,
-        time_in_force: TimeInForce,
+        time_in_force: Option<TimeInForce>,
         price: Option<Price>,
+        trigger_price: Option<Price>,
+        post_only: Option<bool>,
         reduce_only: bool,
+        is_quote_quantity: bool,
         is_leverage: bool,
     ) -> anyhow::Result<OrderStatusReport> {
         let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
@@ -1964,17 +1992,64 @@ impl BybitHttpClient {
             _ => anyhow::bail!("Invalid order side: {order_side:?}"),
         };
 
-        let bybit_order_type = match order_type {
-            OrderType::Market => BybitOrderType::Market,
-            OrderType::Limit => BybitOrderType::Limit,
+        // For stop/conditional orders, Bybit uses Market/Limit with trigger parameters
+        let (bybit_order_type, is_stop_order) = match order_type {
+            OrderType::Market => (BybitOrderType::Market, false),
+            OrderType::Limit => (BybitOrderType::Limit, false),
+            OrderType::StopMarket | OrderType::MarketIfTouched => (BybitOrderType::Market, true),
+            OrderType::StopLimit | OrderType::LimitIfTouched => (BybitOrderType::Limit, true),
             _ => anyhow::bail!("Unsupported order type: {order_type:?}"),
         };
 
-        let bybit_tif = match time_in_force {
-            TimeInForce::Gtc => BybitTimeInForce::Gtc,
-            TimeInForce::Ioc => BybitTimeInForce::Ioc,
-            TimeInForce::Fok => BybitTimeInForce::Fok,
-            _ => anyhow::bail!("Unsupported time in force: {time_in_force:?}"),
+        // Match WebSocket client behavior: Market orders don't send TIF
+        let bybit_tif = if bybit_order_type == BybitOrderType::Market {
+            None
+        } else if post_only == Some(true) {
+            Some(BybitTimeInForce::PostOnly)
+        } else if let Some(tif) = time_in_force {
+            Some(match tif {
+                TimeInForce::Gtc => BybitTimeInForce::Gtc,
+                TimeInForce::Ioc => BybitTimeInForce::Ioc,
+                TimeInForce::Fok => BybitTimeInForce::Fok,
+                _ => anyhow::bail!("Unsupported time in force: {tif:?}"),
+            })
+        } else {
+            None
+        };
+
+        // For SPOT market orders, specify baseCoin/quoteCoin to interpret quantity correctly
+        let market_unit = if product_type == BybitProductType::Spot
+            && bybit_order_type == BybitOrderType::Market
+        {
+            if is_quote_quantity {
+                Some(BYBIT_QUOTE_COIN.to_string())
+            } else {
+                Some(BYBIT_BASE_COIN.to_string())
+            }
+        } else {
+            None
+        };
+
+        // Stop semantics: Buy stops trigger on rise, sell stops trigger on fall
+        // MIT semantics: Buy MIT triggers on fall, sell MIT triggers on rise
+        let trigger_direction = if is_stop_order {
+            match (order_type, order_side) {
+                (OrderType::StopMarket | OrderType::StopLimit, OrderSide::Buy) => {
+                    Some(BybitTriggerDirection::RisesTo)
+                }
+                (OrderType::StopMarket | OrderType::StopLimit, OrderSide::Sell) => {
+                    Some(BybitTriggerDirection::FallsTo)
+                }
+                (OrderType::MarketIfTouched | OrderType::LimitIfTouched, OrderSide::Buy) => {
+                    Some(BybitTriggerDirection::FallsTo)
+                }
+                (OrderType::MarketIfTouched | OrderType::LimitIfTouched, OrderSide::Sell) => {
+                    Some(BybitTriggerDirection::RisesTo)
+                }
+                _ => None,
+            }
+        } else {
+            None
         };
 
         let mut order_entry = BybitBatchPlaceOrderEntryBuilder::default();
@@ -1982,11 +2057,17 @@ impl BybitHttpClient {
         order_entry.side(bybit_side);
         order_entry.order_type(bybit_order_type);
         order_entry.qty(quantity.to_string());
-        order_entry.time_in_force(Some(bybit_tif));
+        order_entry.time_in_force(bybit_tif);
         order_entry.order_link_id(client_order_id.to_string());
+        order_entry.market_unit(market_unit);
+        order_entry.trigger_direction(trigger_direction);
 
         if let Some(price) = price {
             order_entry.price(Some(price.to_string()));
+        }
+
+        if let Some(trigger_price) = trigger_price {
+            order_entry.trigger_price(Some(trigger_price.to_string()));
         }
 
         if reduce_only {
@@ -2906,6 +2987,60 @@ impl BybitHttpClient {
         }
 
         Ok(trades)
+    }
+
+    /// Request an orderbook snapshot for a given symbol.
+    ///
+    /// Bybit limits the amount of levels (depth) for each product type to:
+    /// - Spot: `1..=200` (default: `1`)
+    /// - Linear & Inverse: `1..=500` (default: `25`)
+    /// - Options: `1..=25` (default: `1`)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/market/orderbook>
+    pub async fn request_orderbook_snapshot(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        limit: Option<u32>,
+    ) -> anyhow::Result<OrderBookDeltas> {
+        let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
+        let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
+
+        let mut params_builder = BybitOrderbookParamsBuilder::default();
+        params_builder.category(product_type);
+        params_builder.symbol(bybit_symbol.raw_symbol().to_string());
+
+        if let Some(limit) = limit {
+            let max_limit = match product_type {
+                BybitProductType::Spot => 200,
+                BybitProductType::Option => 25,
+                BybitProductType::Linear | BybitProductType::Inverse => 500,
+            };
+            let clamped_limit = limit.min(max_limit);
+            if limit > max_limit {
+                log::warn!(
+                    "Bybit orderbook snapshot request depth limit exceeds venue maximum; clamping: limit={limit}, clamped_limit={clamped_limit}",
+                );
+            }
+            params_builder.limit(clamped_limit);
+        }
+
+        let params = params_builder.build().map_err(|e| anyhow::anyhow!(e))?;
+        let response = self.inner.get_orderbook(&params).await?;
+
+        let ts_init = self.generate_ts_init();
+        let deltas = parse_orderbook(&response.result, &instrument, ts_init)?;
+
+        Ok(deltas)
     }
 
     /// Request bar/kline history for a given symbol.

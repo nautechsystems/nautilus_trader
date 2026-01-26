@@ -1239,7 +1239,7 @@ async fn test_futures_raw_get_public_executions() {
         .get_public_executions("PF_XBTUSD", None, None, None, None)
         .await;
 
-    assert!(result.is_ok(), "Expected success, got: {:?}", result.err());
+    assert!(result.is_ok(), "Expected success, was: {:?}", result.err());
     let response = result.unwrap();
     assert!(
         !response.elements.is_empty(),
@@ -1781,7 +1781,7 @@ async fn test_spot_raw_rate_limit_error() {
         error.to_string().contains("Rate limit")
             || error.to_string().contains("429")
             || error.to_string().contains("TOO_MANY"),
-        "Expected rate limit error message, got: {error}"
+        "Expected rate limit error message, was: {error}"
     );
 }
 
@@ -1818,6 +1818,6 @@ async fn test_spot_raw_api_error_response() {
     let error = result.unwrap_err();
     assert!(
         error.to_string().contains("credentials") || error.to_string().contains("Missing"),
-        "Expected credentials error, got: {error}"
+        "Expected credentials error, was: {error}"
     );
 }

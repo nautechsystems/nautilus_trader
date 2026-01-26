@@ -21,7 +21,7 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::{check_valid_string_ascii, check_valid_string_utf8};
+use nautilus_core::correctness::{FAILED, check_valid_string_ascii, check_valid_string_utf8};
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[cfg(feature = "defi")]
@@ -113,25 +113,9 @@ impl FromStr for InstrumentId {
     }
 }
 
-impl From<&str> for InstrumentId {
-    /// Creates a [`InstrumentId`] from a string slice.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the `value` string is not valid.
-    fn from(value: &str) -> Self {
-        Self::from_str(value).expect("Invalid InstrumentId string")
-    }
-}
-
-impl From<String> for InstrumentId {
-    /// Creates a [`InstrumentId`] from a string.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the `value` string is not valid.
-    fn from(value: String) -> Self {
-        Self::from(value.as_str())
+impl<T: AsRef<str>> From<T> for InstrumentId {
+    fn from(value: T) -> Self {
+        Self::from_str(value.as_ref()).expect(FAILED)
     }
 }
 

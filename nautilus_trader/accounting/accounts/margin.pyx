@@ -12,13 +12,29 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+A margin account capable of holding leveraged positions and tracking instrument-specific
+leverage ratios.
 
+PnL calculation
+---------------
+The account calculates PnL differently based on instrument type:
+
+- **Premium instruments** (options, option spreads, binary options, warrants): Realize
+  the notional value as a cash flow on every fill. BUY = negative (premium paid),
+  SELL = positive (premium received).
+
+- **Other instruments**: Only realize PnL on position reduction (fill side opposite to
+  entry). Use the minimum of fill and position quantity to avoid double-counting.
+
+"""
 from decimal import Decimal
 
 from nautilus_trader.accounting.margin_models cimport LeveragedMarginModel
 from nautilus_trader.accounting.margin_models cimport MarginModel
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AccountType
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport MoneyRaw
 from nautilus_trader.core.rust.model cimport OrderSide
@@ -74,7 +90,9 @@ cdef class MarginAccount(Account):
         return {
             "type": "MarginAccount",
             "calculate_account_state": obj.calculate_account_state,
-            "events": [AccountState.to_dict_c(event) for event in obj.events_c()]
+            "default_leverage": str(obj.default_leverage),
+            "leverages": {k.to_str(): str(v) for k, v in obj._leverages.items()},
+            "events": [AccountState.to_dict_c(event) for event in obj.events_c()],
         }
 
     @staticmethod
@@ -100,6 +118,15 @@ cdef class MarginAccount(Account):
 
         for event in other_events:
             account.apply(AccountState.from_dict_c(event))
+
+        # Restore leverage settings
+        default_leverage = values.get("default_leverage")
+        if default_leverage is not None:
+            account.set_default_leverage(Decimal(default_leverage))
+
+        leverages = values.get("leverages", {})
+        for instrument_id_str, leverage_str in leverages.items():
+            account.set_leverage(InstrumentId.from_str(instrument_id_str), Decimal(leverage_str))
 
         return account
 
@@ -718,7 +745,19 @@ cdef class MarginAccount(Account):
             Money pnl
             Quantity pnl_quantity
 
-        if position is not None and position.quantity._mem.raw != 0 and position.entry != fill.order_side:
+        if instrument.instrument_class in (
+            InstrumentClass.OPTION,
+            InstrumentClass.OPTION_SPREAD,
+            InstrumentClass.BINARY_OPTION,
+            InstrumentClass.WARRANT,
+        ):
+            # For premium-based instruments, realize the notional value as a cash flow on every fill
+            pnl = instrument.notional_value(fill.last_qty, fill.last_px)
+            if fill.order_side == OrderSide.BUY:
+                pnls[pnl.currency] = Money(-pnl.as_decimal(), pnl.currency)
+            else:
+                pnls[pnl.currency] = Money(pnl.as_decimal(), pnl.currency)
+        elif position is not None and position.quantity._mem.raw != 0 and position.entry != fill.order_side:
             # Calculate and add PnL using the minimum of fill quantity and position quantity
             # to avoid double-limiting that occurs in position._calculate_pnl()
             pnl_quantity = Quantity(

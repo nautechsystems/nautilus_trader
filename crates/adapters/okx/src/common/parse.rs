@@ -406,8 +406,7 @@ pub fn parse_funding_rate_msg(
         .funding_rate
         .as_str()
         .parse::<Decimal>()
-        .map_err(|e| anyhow::anyhow!("Invalid funding_rate value: {e}"))?
-        .normalize();
+        .map_err(|e| anyhow::anyhow!("Invalid funding_rate value: {e}"))?;
 
     let funding_time = Some(parse_millisecond_timestamp(msg.funding_time));
     let ts_event = parse_millisecond_timestamp(msg.ts);
@@ -534,15 +533,7 @@ pub fn parse_order_status_report(
 
         // Convert quote quantity to base: quantity_base = sz_quote / price
         let quantity_base = if let (Some(sz), Some(price)) = (sz_quote_dec, conversion_price_dec) {
-            if !price.is_zero() {
-                let quantity_dec = sz / price;
-                Quantity::from_decimal_dp(quantity_dec, size_precision).map_err(|e| {
-                    anyhow::anyhow!(
-                        "Failed to convert quote-to-base quantity for ord_id={}, sz={sz}, price={price}, quantity_dec={quantity_dec}: {e}",
-                        order.ord_id.as_str()
-                    )
-                })?
-            } else {
+            if price.is_zero() {
                 log::warn!(
                     "Cannot convert quote quantity with zero price: ord_id={}, sz={}, using sz as-is",
                     order.ord_id.as_str(),
@@ -553,6 +544,14 @@ pub fn parse_order_status_report(
                         "Failed to parse fallback quantity for ord_id={}, sz='{}': {e}",
                         order.ord_id.as_str(),
                         order.sz
+                    )
+                })?
+            } else {
+                let quantity_dec = sz / price;
+                Quantity::from_decimal_dp(quantity_dec, size_precision).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to convert quote-to-base quantity for ord_id={}, sz={sz}, price={price}, quantity_dec={quantity_dec}: {e}",
+                        order.ord_id.as_str()
                     )
                 })?
             }
@@ -841,11 +840,11 @@ pub fn parse_position_status_report(
         } else if pos_ccy == quote_ccy {
             // Short position: pos_ccy is quote currency, need to convert to base
             // Use Decimal arithmetic to avoid floating-point precision errors
-            let avg_px_str = if !position.avg_px.is_empty() {
-                &position.avg_px
-            } else {
+            let avg_px_str = if position.avg_px.is_empty() {
                 // If no avg_px, use mark_px as fallback
                 &position.mark_px
+            } else {
+                &position.avg_px
             };
             let avg_px_dec = Decimal::from_str(avg_px_str)?;
 

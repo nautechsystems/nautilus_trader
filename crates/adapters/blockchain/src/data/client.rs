@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_common::{
+    clients::DataClient,
     defi::RequestPoolSnapshot,
     live::get_runtime,
     messages::{
@@ -27,7 +28,6 @@ use nautilus_common::{
         },
     },
 };
-use nautilus_data::client::DataClient;
 use nautilus_model::{
     defi::{DefiData, PoolIdentifier, SharedChain, validation::validate_address},
     identifiers::{ClientId, Venue},
@@ -1002,8 +1002,8 @@ impl DataClient for BlockchainDataClient {
         Ok(())
     }
 
-    fn request_pool_snapshot(&self, cmd: &RequestPoolSnapshot) -> anyhow::Result<()> {
-        let command = DefiDataCommand::Request(DefiRequestCommand::PoolSnapshot(cmd.clone()));
+    fn request_pool_snapshot(&self, cmd: RequestPoolSnapshot) -> anyhow::Result<()> {
+        let command = DefiDataCommand::Request(DefiRequestCommand::PoolSnapshot(cmd));
         self.command_tx.send(command)?;
         Ok(())
     }

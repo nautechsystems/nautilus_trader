@@ -790,6 +790,8 @@ Databento restarts their live gateways every Sunday at the following times (all 
 
 The default 10-minute timeout handles typical maintenance restarts. For unattended systems running through the maintenance window, consider using `reconnect_timeout_mins=None` or a longer timeout. See the [Databento Maintenance Schedule](https://databento.com/docs/api-reference-live/basics/maintenance-schedule) for details.
 
+## Contributing
+
 :::info
 For additional features or to contribute to the Databento adapter, please see our
 [contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).

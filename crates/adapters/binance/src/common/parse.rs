@@ -43,7 +43,7 @@ use serde_json::Value;
 
 use crate::{
     common::{
-        enums::{BinanceContractStatus, BinanceKlineInterval},
+        enums::{BinanceContractStatus, BinanceKlineInterval, BinanceTradingStatus},
         fixed::{mantissa_to_price, mantissa_to_quantity},
         sbe::spot::{
             order_side::OrderSide as SbeOrderSide, order_status::OrderStatus as SbeOrderStatus,
@@ -119,6 +119,14 @@ pub fn parse_usdm_instrument(
         );
     }
 
+    if symbol.status != BinanceTradingStatus::Trading {
+        anyhow::bail!(
+            "Symbol '{}' is not trading (status: {:?})",
+            symbol.symbol,
+            symbol.status
+        );
+    }
+
     let base_currency = get_currency(symbol.base_asset.as_str());
     let quote_currency = get_currency(symbol.quote_asset.as_str());
     let settlement_currency = get_currency(symbol.margin_asset.as_str());
@@ -133,6 +141,12 @@ pub fn parse_usdm_instrument(
         .context("Missing PRICE_FILTER in symbol filters")?;
 
     let tick_size = parse_filter_price(price_filter, "tickSize")?;
+    if tick_size.is_zero() {
+        anyhow::bail!(
+            "Invalid tickSize of 0 for symbol '{}', cannot create instrument",
+            symbol.symbol,
+        );
+    }
     let max_price = parse_filter_price(price_filter, "maxPrice").ok();
     let min_price = parse_filter_price(price_filter, "minPrice").ok();
 
@@ -225,6 +239,12 @@ pub fn parse_coinm_instrument(
         .context("Missing PRICE_FILTER in symbol filters")?;
 
     let tick_size = parse_filter_price(price_filter, "tickSize")?;
+    if tick_size.is_zero() {
+        anyhow::bail!(
+            "Invalid tickSize of 0 for symbol '{}', cannot create instrument",
+            symbol.symbol,
+        );
+    }
     let max_price = parse_filter_price(price_filter, "maxPrice").ok();
     let min_price = parse_filter_price(price_filter, "minPrice").ok();
 
@@ -997,7 +1017,7 @@ mod tests {
                 assert_eq!(perp.price_increment, Price::from_str("0.10").unwrap());
                 assert_eq!(perp.size_increment, Quantity::from_str("0.001").unwrap());
             }
-            other => panic!("Expected CryptoPerpetual, got {other:?}"),
+            other => panic!("Expected CryptoPerpetual, was {other:?}"),
         }
     }
 

@@ -604,6 +604,20 @@ typedef enum OptionKind {
 } OptionKind;
 
 /**
+ * Defines when OTO (One-Triggers-Other) child orders are released.
+ */
+typedef enum OtoTriggerMode {
+    /**
+     * Release child order(s) pro-rata to each partial fill (default).
+     */
+    PARTIAL = 0,
+    /**
+     * Release child order(s) only once the parent is fully filled.
+     */
+    FULL = 1,
+} OtoTriggerMode;
+
+/**
  * The status for a specific order.
  *
  * An order is considered _open_ for the following status:
@@ -2515,6 +2529,21 @@ const char *option_kind_to_cstr(enum OptionKind value);
  */
 enum OptionKind option_kind_from_cstr(const char *ptr);
 
+const char *oto_trigger_mode_to_cstr(enum OtoTriggerMode value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ *
+ * Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `OtoTriggerMode` variant.
+ */
+enum OtoTriggerMode oto_trigger_mode_from_cstr(const char *ptr);
+
 const char *order_side_to_cstr(enum OrderSide value);
 
 /**
@@ -3125,6 +3154,11 @@ double orderbook_get_quantity_for_price(struct OrderBook_API *book,
                                         struct Price_t price,
                                         enum OrderSide order_side);
 
+struct Quantity_t orderbook_get_quantity_at_level(const struct OrderBook_API *book,
+                                                  struct Price_t price,
+                                                  enum OrderSide order_side,
+                                                  uint8_t size_precision);
+
 /**
  * Updates the order book with a quote tick.
  *
@@ -3257,32 +3291,16 @@ struct Money_t money_from_raw(MoneyRaw raw, struct Currency_t currency);
 
 double money_as_f64(const struct Money_t *money);
 
-void money_add_assign(struct Money_t a, struct Money_t b);
-
-void money_sub_assign(struct Money_t a, struct Money_t b);
-
 struct Price_t price_new(double value, uint8_t precision);
 
 struct Price_t price_from_raw(PriceRaw raw, uint8_t precision);
 
 double price_as_f64(const struct Price_t *price);
 
-void price_add_assign(struct Price_t a, struct Price_t b);
-
-void price_sub_assign(struct Price_t a, struct Price_t b);
-
 struct Quantity_t quantity_new(double value, uint8_t precision);
 
 struct Quantity_t quantity_from_raw(QuantityRaw raw, uint8_t precision);
 
 double quantity_as_f64(const struct Quantity_t *qty);
-
-void quantity_add_assign(struct Quantity_t a, struct Quantity_t b);
-
-void quantity_add_assign_u64(struct Quantity_t a, uint64_t b);
-
-void quantity_sub_assign(struct Quantity_t a, struct Quantity_t b);
-
-void quantity_sub_assign_u64(struct Quantity_t a, uint64_t b);
 
 struct Quantity_t quantity_saturating_sub(struct Quantity_t a, struct Quantity_t b);

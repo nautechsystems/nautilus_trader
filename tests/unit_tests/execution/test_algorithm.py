@@ -32,10 +32,12 @@ from nautilus_trader.config import ImportableExecAlgorithmConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.datetime import secs_to_nanos
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
 from nautilus_trader.execution.emulator import OrderEmulator
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data import QuoteTick
@@ -46,11 +48,15 @@ from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.list import OrderList
@@ -1020,3 +1026,461 @@ class TestExecAlgorithm:
             active_only=True,
         ) == Quantity.from_str("0.000")
         assert self.exec_engine.command_count == 5
+
+    def test_spawned_order_denied_restores_primary_quantity(self) -> None:
+        """
+        Test that when a spawned order is denied, the primary order quantity is
+        restored.
+        """
+        # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+        exec_algorithm.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        exec_algorithm.start()
+
+        primary_order = self.strategy.order_factory.market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("1.000")),
+            exec_algorithm_id=ExecAlgorithmId("TWAP"),
+        )
+        self.cache.add_order(primary_order)
+
+        submit_command = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=primary_order.strategy_id,
+            order=primary_order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        exec_algorithm.execute(submit_command)
+
+        spawned_qty = ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.500"))
+        spawned_order = exec_algorithm.spawn_market(
+            primary=primary_order,
+            quantity=spawned_qty,
+            time_in_force=TimeInForce.FOK,
+        )
+        assert primary_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.500"))
+        self.cache.add_order(spawned_order)
+
+        # Act - denial happens from INITIALIZED state
+        denied_event = OrderDenied(
+            trader_id=spawned_order.trader_id,
+            strategy_id=spawned_order.strategy_id,
+            instrument_id=spawned_order.instrument_id,
+            client_order_id=spawned_order.client_order_id,
+            reason="TEST_DENIAL",
+            event_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        spawned_order.apply(denied_event)
+        self.cache.update_order(spawned_order)
+        self.msgbus.publish(
+            topic=f"events.order.{spawned_order.strategy_id.value}",
+            msg=denied_event,
+        )
+
+        # Assert
+        assert primary_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(Decimal("1.000"))
+
+    def test_spawned_order_rejected_restores_primary_quantity(self) -> None:
+        """
+        Test that when a spawned order is rejected, the primary order quantity is
+        restored.
+
+        Rejection happens after SUBMITTED state.
+
+        """
+        # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+        exec_algorithm.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        exec_algorithm.start()
+
+        primary_order = self.strategy.order_factory.market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("1.000")),
+            exec_algorithm_id=ExecAlgorithmId("TWAP"),
+        )
+        self.cache.add_order(primary_order)
+
+        submit_command = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=primary_order.strategy_id,
+            order=primary_order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        exec_algorithm.execute(submit_command)
+
+        spawned_qty = ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.500"))
+        spawned_order = exec_algorithm.spawn_market(
+            primary=primary_order,
+            quantity=spawned_qty,
+            time_in_force=TimeInForce.FOK,
+        )
+        assert primary_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.500"))
+        self.cache.add_order(spawned_order)
+        exec_algorithm.submit_order(spawned_order)
+
+        # Act - rejection happens from SUBMITTED state
+        rejected_event = TestEventStubs.order_rejected(spawned_order)
+        spawned_order.apply(rejected_event)
+        self.cache.update_order(spawned_order)
+        self.msgbus.publish(
+            topic=f"events.order.{spawned_order.strategy_id.value}",
+            msg=rejected_event,
+        )
+
+        # Assert
+        assert primary_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(Decimal("1.000"))
+
+    def test_spawned_order_with_reduce_primary_false_does_not_restore_on_denial(self) -> None:
+        """
+        Test that when reduce_primary=False was used, denial does not affect primary.
+        """
+        # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+        exec_algorithm.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        exec_algorithm.start()
+
+        primary_order = self.strategy.order_factory.market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("1.000")),
+            exec_algorithm_id=ExecAlgorithmId("TWAP"),
+        )
+        self.cache.add_order(primary_order)
+
+        submit_command = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=primary_order.strategy_id,
+            order=primary_order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        exec_algorithm.execute(submit_command)
+
+        spawned_qty = ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.500"))
+        spawned_order = exec_algorithm.spawn_market(
+            primary=primary_order,
+            quantity=spawned_qty,
+            time_in_force=TimeInForce.FOK,
+            reduce_primary=False,
+        )
+        assert primary_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(Decimal("1.000"))
+        self.cache.add_order(spawned_order)
+
+        # Act
+        denied_event = OrderDenied(
+            trader_id=spawned_order.trader_id,
+            strategy_id=spawned_order.strategy_id,
+            instrument_id=spawned_order.instrument_id,
+            client_order_id=spawned_order.client_order_id,
+            reason="TEST_DENIAL",
+            event_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        spawned_order.apply(denied_event)
+        self.cache.update_order(spawned_order)
+        self.msgbus.publish(
+            topic=f"events.order.{spawned_order.strategy_id.value}",
+            msg=denied_event,
+        )
+
+        # Assert - no over-inflation since reduce_primary=False
+        assert primary_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(Decimal("1.000"))
+
+    def test_multiple_spawns_with_one_denied_restores_correctly(self) -> None:
+        """
+        Test that multiple spawns with one denied correctly restores only the denied
+        amount.
+        """
+        # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+        exec_algorithm.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        exec_algorithm.start()
+
+        primary_order = self.strategy.order_factory.market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("1.000")),
+            exec_algorithm_id=ExecAlgorithmId("TWAP"),
+        )
+        self.cache.add_order(primary_order)
+
+        submit_command = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=primary_order.strategy_id,
+            order=primary_order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        exec_algorithm.execute(submit_command)
+
+        spawn1_qty = ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.300"))
+        spawned_order1 = exec_algorithm.spawn_market(
+            primary=primary_order,
+            quantity=spawn1_qty,
+            time_in_force=TimeInForce.FOK,
+        )
+        self.cache.add_order(spawned_order1)
+
+        spawn2_qty = ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.400"))
+        spawned_order2 = exec_algorithm.spawn_market(
+            primary=primary_order,
+            quantity=spawn2_qty,
+            time_in_force=TimeInForce.FOK,
+        )
+        self.cache.add_order(spawned_order2)
+
+        # Primary reduced by 0.7 total (0.3 + 0.4) -> 0.3 remaining
+        assert primary_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.300"))
+
+        # Act - deny only the second spawned order
+        denied_event = OrderDenied(
+            trader_id=spawned_order2.trader_id,
+            strategy_id=spawned_order2.strategy_id,
+            instrument_id=spawned_order2.instrument_id,
+            client_order_id=spawned_order2.client_order_id,
+            reason="TEST_DENIAL",
+            event_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        spawned_order2.apply(denied_event)
+        self.cache.update_order(spawned_order2)
+        self.msgbus.publish(
+            topic=f"events.order.{spawned_order2.strategy_id.value}",
+            msg=denied_event,
+        )
+
+        # Assert - only spawn2's qty (0.4) restored: 0.3 + 0.4 = 0.7
+        assert primary_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.700"))
+
+    def test_spawned_order_accepted_prevents_restoration(self) -> None:
+        """
+        Test that once a spawned order is accepted, subsequent cancellation does not
+        restore the primary quantity (reduction is committed on acceptance).
+        """
+        # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+        exec_algorithm.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        exec_algorithm.start()
+
+        primary_order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("1.000")),
+            price=ETHUSDT_PERP_BINANCE.make_price(Decimal("5000.00")),
+            exec_algorithm_id=ExecAlgorithmId("TWAP"),
+            exec_algorithm_params={"horizon_secs": 2, "interval_secs": 1},
+        )
+        self.cache.add_order(primary_order)
+
+        spawned_qty = ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.500"))
+        spawned_order = exec_algorithm.spawn_limit(
+            primary=primary_order,
+            quantity=spawned_qty,
+            price=ETHUSDT_PERP_BINANCE.make_price(Decimal("5000.00")),
+            time_in_force=TimeInForce.GTC,
+        )
+        exec_algorithm.submit_order(spawned_order)
+
+        # Act - acceptance commits the reduction
+        accepted_event = OrderAccepted(
+            trader_id=spawned_order.trader_id,
+            strategy_id=spawned_order.strategy_id,
+            instrument_id=spawned_order.instrument_id,
+            client_order_id=spawned_order.client_order_id,
+            venue_order_id=VenueOrderId("V-123"),
+            account_id=self.account_id,
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        spawned_order.apply(accepted_event)
+        self.cache.update_order(spawned_order)
+        self.msgbus.publish(
+            topic=f"events.order.{spawned_order.strategy_id.value}",
+            msg=accepted_event,
+        )
+        assert primary_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.500"))
+
+        # Cancel the order - should NOT restore since already accepted
+        canceled_event = OrderCanceled(
+            trader_id=spawned_order.trader_id,
+            strategy_id=spawned_order.strategy_id,
+            instrument_id=spawned_order.instrument_id,
+            client_order_id=spawned_order.client_order_id,
+            venue_order_id=VenueOrderId("V-123"),
+            account_id=self.account_id,
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        spawned_order.apply(canceled_event)
+        self.cache.update_order(spawned_order)
+        self.msgbus.publish(
+            topic=f"events.order.{spawned_order.strategy_id.value}",
+            msg=canceled_event,
+        )
+
+        # Assert - no restoration after acceptance
+        assert primary_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.500"))
+
+    def test_spawn_quantity_exceeds_leaves_qty_raises_error(self) -> None:
+        """
+        Test that spawning more than the primary's leaves_qty raises an error.
+
+        This prevents over-reduction of partially filled orders.
+
+        """
+        # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+        exec_algorithm.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        exec_algorithm.start()
+
+        primary_order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("1.000")),
+            price=ETHUSDT_PERP_BINANCE.make_price(Decimal("5000.00")),
+            exec_algorithm_id=ExecAlgorithmId("TWAP"),
+            exec_algorithm_params={"horizon_secs": 2, "interval_secs": 1},
+        )
+        self.strategy.submit_order(primary_order)
+        self.exchange.process(0)
+
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid_price=5000.0,
+            ask_price=5000.0,
+            bid_size=1.0,
+            ask_size=1.0,
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        # Spawn 0.8 to reduce leaves_qty to 0.2
+        exec_algorithm.spawn_limit(
+            primary=primary_order,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.800")),
+            price=ETHUSDT_PERP_BINANCE.make_price(Decimal("5000.00")),
+            time_in_force=TimeInForce.GTC,
+        )
+        assert primary_order.leaves_qty == ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.200"))
+
+        # Act, Assert - spawning 0.5 exceeds leaves_qty of 0.2
+        with pytest.raises(ValueError, match="exceeds primary leaves_qty"):
+            exec_algorithm.spawn_limit(
+                primary=primary_order,
+                quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.500")),
+                price=ETHUSDT_PERP_BINANCE.make_price(Decimal("5000.00")),
+                time_in_force=TimeInForce.GTC,
+            )
+
+    def test_submit_spawned_order_with_missing_primary_logs_error(self) -> None:
+        """
+        Test that submitting a spawned order when the primary is not in cache logs an
+        error and returns gracefully (no crash).
+        """
+        # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+        exec_algorithm.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        exec_algorithm.start()
+
+        primary_order = self.strategy.order_factory.market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("1.000")),
+            exec_algorithm_id=ExecAlgorithmId("TWAP"),
+            exec_algorithm_params={"horizon_secs": 2, "interval_secs": 1},
+        )
+        self.cache.add_order(primary_order)
+
+        spawned_order = exec_algorithm.spawn_market(
+            primary=primary_order,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.500")),
+            time_in_force=TimeInForce.FOK,
+            reduce_primary=False,
+        )
+
+        # Clear the cache to simulate missing primary
+        self.cache.reset()
+        self.cache.add_instrument(ETHUSDT_PERP_BINANCE)
+
+        # Act - should log error but not crash
+        exec_algorithm.submit_order(spawned_order)
+
+        # Assert
+        assert not self.cache.order_exists(spawned_order.client_order_id)
+
+    def test_submit_primary_order_not_in_cache_adds_to_cache(self) -> None:
+        """
+        Test that submitting a primary order that's not yet in cache adds it.
+        """
+        # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+        exec_algorithm.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        exec_algorithm.start()
+
+        primary_order = self.strategy.order_factory.market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("1.000")),
+        )
+        assert not self.cache.order_exists(primary_order.client_order_id)
+
+        # Act
+        exec_algorithm.submit_order(primary_order)
+
+        # Assert
+        assert self.cache.order_exists(primary_order.client_order_id)

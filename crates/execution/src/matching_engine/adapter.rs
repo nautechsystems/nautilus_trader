@@ -80,7 +80,7 @@ impl OrderEngineAdapter {
         );
         engine
             .borrow_mut()
-            .core
+            .get_core_mut()
             .set_fill_limit_order_handler(handler);
     }
 
@@ -90,7 +90,7 @@ impl OrderEngineAdapter {
         );
         engine
             .borrow_mut()
-            .core
+            .get_core_mut()
             .set_fill_market_order_handler(handler);
     }
 
@@ -100,7 +100,7 @@ impl OrderEngineAdapter {
         );
         engine
             .borrow_mut()
-            .core
+            .get_core_mut()
             .set_trigger_stop_order_handler(handler);
     }
 

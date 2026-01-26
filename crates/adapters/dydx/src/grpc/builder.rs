@@ -39,7 +39,8 @@ use cosmrs::{
 use dydx_proto::{ToAny, dydxprotocol::accountplus::TxExtension};
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 
-use super::{types::ChainId, wallet::Account};
+use super::types::ChainId;
+use crate::execution::wallet::Account;
 
 /// Gas adjustment value to avoid rejected transactions caused by gas underestimation.
 const GAS_MULTIPLIER: f64 = 1.8;

@@ -24,6 +24,7 @@ from ibapi.const import NO_VALID_ID
 from ibapi.errors import CONNECT_FAIL
 from ibapi.server_versions import MAX_CLIENT_VER
 from ibapi.server_versions import MIN_CLIENT_VER
+from ibapi.utils import currentTimeMillis
 
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 from nautilus_trader.common.enums import LogColor
@@ -70,17 +71,32 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         except ConnectionError:
             self._log.error("Connection failed")
             if self._eclient.wrapper:
-                self._eclient.wrapper.error(NO_VALID_ID, CONNECT_FAIL.code(), CONNECT_FAIL.msg())
+                self._eclient.wrapper.error(
+                    NO_VALID_ID,
+                    currentTimeMillis(),
+                    CONNECT_FAIL.code(),
+                    CONNECT_FAIL.msg(),
+                )
         except TimeoutError:
             self._log.warning("Connection timeout")
             if self._eclient.wrapper:
-                self._eclient.wrapper.error(NO_VALID_ID, CONNECT_FAIL.code(), CONNECT_FAIL.msg())
+                self._eclient.wrapper.error(
+                    NO_VALID_ID,
+                    currentTimeMillis(),
+                    CONNECT_FAIL.code(),
+                    CONNECT_FAIL.msg(),
+                )
         except asyncio.CancelledError:
             self._log.info("Connection cancelled")
         except Exception as e:
             self._log.exception("Connection failed", e)
             if self._eclient.wrapper:
-                self._eclient.wrapper.error(NO_VALID_ID, CONNECT_FAIL.code(), CONNECT_FAIL.msg())
+                self._eclient.wrapper.error(
+                    NO_VALID_ID,
+                    currentTimeMillis(),
+                    CONNECT_FAIL.code(),
+                    CONNECT_FAIL.msg(),
+                )
 
     def _msgspec_decoding_hook(self, byte_data: bytes) -> str:
         """
@@ -163,7 +179,7 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         if self._eclient.connectOptions:
             v100version += f" {self._eclient.connectOptions}"
 
-        msg = comm.make_msg(v100version)
+        msg = comm.make_initial_msg(v100version)
         msg2 = str.encode(v100prefix, "ascii") + msg
         await asyncio.to_thread(functools.partial(self._eclient.conn.sendMsg, msg2))
 

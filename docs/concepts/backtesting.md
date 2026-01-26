@@ -413,18 +413,18 @@ When a bar's open price gaps past the trigger price, the stop triggers immediate
 
 Example - SELL `STOP_MARKET` with trigger at 100:
 
-- Previous bar closes at 105
-- Next bar opens at 90 (overnight gap down)
-- Stop triggers at open and fills at 90
+- Previous bar closes at 105.
+- Next bar opens at 90 (overnight gap down).
+- Stop triggers at open and fills at 90.
 
 **Move-through scenario** (bar moves through trigger):
 When a bar opens normally and then its high or low moves through the trigger price, the stop fills at the trigger price. Since we only have OHLC data, we assume the market moved smoothly through the trigger and the order would have filled there.
 
 Example - SELL `STOP_MARKET` with trigger at 100:
 
-- Bar opens at 102 (no gap)
-- Bar low reaches 98, moving through trigger at 100
-- Stop fills at 100 (the trigger price)
+- Bar opens at 102 (no gap).
+- Bar low reaches 98, moving through trigger at 100.
+- Stop fills at 100 (the trigger price).
 
 This behavior caps potential slippage during orderly market moves while still modeling gap slippage accurately. For tick-level precision, use quote or trade tick data instead of bars.
 
@@ -580,7 +580,7 @@ modified (it remains immutable); only the matching core's internal price referen
 When a trade tick triggers order matching, the engine determines fills as follows:
 
 1. **Book reflects trade price**: If the order book has liquidity at the trade price, fills use book depth (standard behavior).
-2. **Book doesn't reflect trade price**: If the book's liquidity is at a different price, the engine uses a "trade-driven fill" at the trade price, capped to `min(order.leaves_qty, trade.size)`.
+2. **Book doesn't reflect trade price**: If the book's liquidity is at a different price, the engine uses a "trade-driven fill" at the order's limit price, capped to `min(order.leaves_qty, trade.size)`.
 
 This ensures that when a trade prints through the spread but the book hasn't updated, fills are bounded by what the trade tick actually evidences. When `liquidity_consumption=False` (default), the same trade size can fill multiple orders within an iteration. When `liquidity_consumption=True`, consumption tracking applies to trade-driven fills as well—repeated fills at the same trade price will be bounded by consumed liquidity until fresh data arrives.
 
@@ -597,8 +597,10 @@ the trade price. This means repeated trades at or beyond the spread can progress
 
 **Fill price:**
 
-- **SELLER trade at P**: The engine sets the core's Best Ask to P (if P < current ask). Resting BUY LIMIT orders at P or higher will fill at the trade price P (if book doesn't have that level) or at book prices (if book does).
-- **BUYER trade at P**: The engine sets the core's Best Bid to P (if P > current bid). Resting SELL LIMIT orders at P or lower will fill at the trade price P (if book doesn't have that level) or at book prices (if book does).
+- **SELLER trade at P**: The engine sets the core's Best Ask to P (if P < current ask). Resting BUY LIMIT orders at P or higher will fill at their limit price (if book doesn't have that level) or at book prices (if book does).
+- **BUYER trade at P**: The engine sets the core's Best Bid to P (if P > current bid). Resting SELL LIMIT orders at P or lower will fill at their limit price (if book doesn't have that level) or at book prices (if book does).
+
+This conservative approach ensures fills occur at the order's limit price rather than potentially better trade prices. For example, a BUY LIMIT at 100.05 triggered by a SELLER trade at 100.00 will fill at 100.05, not 100.00.
 
 **Example:**
 
@@ -642,10 +644,10 @@ When using L2 order book data (e.g., 100ms throttled depth snapshots) combined w
 
 **Common misconception**: Users sometimes expect every trade tick to trigger fills. Remember:
 
-- Only trades on the **opposite** side can fill your orders
-- SELLER trades → potential BUY fills
-- BUYER trades → potential SELL fills
-- Book UPDATE events move the market but only trigger fills if prices cross your order
+- Only trades on the **opposite** side can fill your orders.
+- SELLER trades → potential BUY fills.
+- BUYER trades → potential SELL fills.
+- Book UPDATE events move the market but only trigger fills if prices cross your order.
 
 ### Bar based execution
 
@@ -881,17 +883,17 @@ venue_config = BacktestVenueConfig(
 
 Simulates queue position by controlling the probability of a limit order filling when its price level is touched (but not crossed).
 
-- `0.0`: Never fills at touch (back of queue)
-- `0.5`: 50% chance of filling (middle of queue)
-- `1.0`: Always fills at touch (front of queue)
+- `0.0`: Never fills at touch (back of queue).
+- `0.5`: 50% chance of filling (middle of queue).
+- `1.0`: Always fills at touch (front of queue).
 
 **prob_slippage** (default: `0.0`)
 
 Simulates price slippage on each fill. Only applies to L1 data types (quotes, trades, bars) where real depth is unavailable. Affects all order types when executing as takers.
 
-- `0.0`: No slippage (fills at best price)
-- `0.5`: 50% chance of one tick slippage per fill
-- `1.0`: Always slips one tick
+- `0.0`: No slippage (fills at best price).
+- `0.5`: 50% chance of one tick slippage per fill.
+- `1.0`: Always slips one tick.
 
 #### Order book simulation models
 
@@ -903,6 +905,12 @@ representing expected market liquidity. The matching engine fills orders against
 1. Before processing a fill, the matching engine calls `get_orderbook_for_fill_simulation()`.
 2. If the model returns a synthetic order book, fills execute against that book's liquidity.
 3. If the model returns `None`, standard fill logic applies.
+
+:::note
+When a custom fill model provides a simulated order book, the `liquidity_consumption` tracking is **not** applied.
+Custom fill models are expected to manage their own liquidity simulation within the returned order book.
+Liquidity consumption tracking only affects the built-in fill logic (when `get_orderbook_for_fill_simulation()` returns `None`).
+:::
 
 **Example: ThreeTierFillModel**
 
@@ -992,11 +1000,11 @@ Also verify that:
 
 When you attach a venue to the engine—either for live trading or a back‑test—you must pick one of three accounting modes by passing the `account_type` parameter:
 
-| Account type           | Typical use-case                                         | What the engine locks                                                                                              |
-| ---------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------|
-| Cash                   | Spot trading (e.g. BTC/USDT, stocks)                     | Notional value for every position a pending order would open.                                                      |
-| Margin                 | Derivatives or any product that allows leverage          | Initial margin for each order plus maintenance margin for open positions.                                          |
-| Betting                | Sports betting, book‑making                              | Stake required by the venue; no leverage.                                                                          |
+| Account type           | Typical use-case                                          | What the engine locks                                                                                              |
+| ---------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------|
+| Cash                   | Spot trading (e.g., BTC/USDT, stocks).                    | Notional value for every position a pending order would open.                                                      |
+| Margin                 | Derivatives or any product that allows leverage.          | Initial margin for each order plus maintenance margin for open positions.                                          |
+| Betting                | Sports betting, bookmaking.                               | Stake required by the venue; no leverage.                                                                          |
 
 Example of adding a `CASH` account for a backtest venue:
 
@@ -1165,9 +1173,9 @@ By default, `MarginAccount` uses `LeveragedMarginModel`.
 
 **Account balance impact:**
 
-- **Account Balance**: $10,000
-- **Standard Model**: Cannot trade (requires $3,300 margin)
-- **Leveraged Model**: Can trade (requires only $66 margin)
+- **Account Balance**: $10,000.
+- **Standard Model**: Cannot trade (requires $3,300 margin).
+- **Leveraged Model**: Can trade (requires only $66 margin).
 
 ### Real-world scenarios
 
@@ -1308,3 +1316,9 @@ margin_model=MarginModelConfig(
 ```
 
 The margin model will be automatically applied to the simulated exchange during backtest execution.
+
+## Related guides
+
+- [Strategies](strategies.md) - Develop strategies to backtest.
+- [Visualization](visualization.md) - Generate tearsheets from backtest results.
+- [Reports](reports.md) - Analyze backtest performance data.

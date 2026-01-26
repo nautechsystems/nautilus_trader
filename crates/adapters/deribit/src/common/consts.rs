@@ -15,10 +15,11 @@
 
 //! Core constants for the Deribit adapter.
 
-use std::sync::LazyLock;
+use std::{num::NonZeroU32, sync::LazyLock};
 
 use ahash::AHashSet;
 use nautilus_model::identifiers::Venue;
+use nautilus_network::ratelimiter::quota::Quota;
 use ustr::Ustr;
 
 /// Venue identifier string.
@@ -111,3 +112,93 @@ pub static DERIBIT_RETRY_ERROR_CODES: LazyLock<AHashSet<i64>> = LazyLock::new(||
 pub fn should_retry_error_code(error_code: i64) -> bool {
     DERIBIT_RETRY_ERROR_CODES.contains(&error_code)
 }
+
+/// Deribit error code for post-only order rejection.
+///
+/// Error code `11054` is returned when a post-only order would have
+/// immediately matched against an existing order (taking liquidity).
+pub const DERIBIT_POST_ONLY_ERROR_CODE: i64 = 11054;
+
+/// Default Deribit REST API rate limit: 20 requests per second sustained.
+///
+/// Deribit uses a credit-based system for non-matching engine requests:
+/// - Each request costs 500 credits
+/// - Maximum credits: 50,000
+/// - Refill rate: 10,000 credits/second (~20 sustained req/s)
+/// - Burst capacity: up to 100 requests (50,000 / 500)
+///
+/// # References
+///
+/// <https://docs.deribit.com/#rate-limits>
+pub static DERIBIT_HTTP_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(20).expect("20 is non-zero"))
+        .allow_burst(NonZeroU32::new(100).expect("100 is non-zero"))
+});
+
+/// Deribit matching engine (order operations) rate limit.
+///
+/// Matching engine requests (buy, sell, edit, cancel) have separate limits:
+/// - Default burst: 20
+/// - Default rate: 5 requests/second
+///
+/// Note: Actual limits vary by account tier based on 7-day trading volume.
+pub static DERIBIT_HTTP_ORDER_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(5).expect("5 is non-zero"))
+        .allow_burst(NonZeroU32::new(20).expect("20 is non-zero"))
+});
+
+/// Conservative rate limit for account information endpoints.
+pub static DERIBIT_HTTP_ACCOUNT_QUOTA: LazyLock<Quota> =
+    LazyLock::new(|| Quota::per_second(NonZeroU32::new(5).expect("5 is non-zero")));
+
+/// Global rate limit key for Deribit HTTP requests.
+pub const DERIBIT_GLOBAL_RATE_KEY: &str = "deribit:global";
+
+/// Rate limit key for Deribit order operations (matching engine).
+pub const DERIBIT_ORDER_RATE_KEY: &str = "deribit:orders";
+
+/// Rate limit key for account information endpoints.
+pub const DERIBIT_ACCOUNT_RATE_KEY: &str = "deribit:account";
+
+/// Deribit WebSocket subscription rate limit.
+///
+/// Subscribe methods have custom rate limits:
+/// - Cost per request: 3,000 credits
+/// - Maximum credits: 30,000
+/// - Sustained rate: ~3.3 requests/second
+/// - Burst capacity: 10 requests
+///
+/// # References
+///
+/// <https://support.deribit.com/hc/en-us/articles/25944617523357-Rate-Limits>
+pub static DERIBIT_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(3).expect("3 is non-zero"))
+        .allow_burst(NonZeroU32::new(10).expect("10 is non-zero"))
+});
+
+/// Deribit WebSocket order rate limit: 5 requests per second with 20 burst.
+///
+/// Matching engine operations (buy, sell, edit, cancel) have stricter limits.
+pub static DERIBIT_WS_ORDER_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(5).expect("5 is non-zero"))
+        .allow_burst(NonZeroU32::new(20).expect("20 is non-zero"))
+});
+
+/// Rate limit key for WebSocket subscriptions.
+pub const DERIBIT_WS_SUBSCRIPTION_KEY: &str = "subscription";
+
+/// Rate limit key for WebSocket order operations.
+pub const DERIBIT_WS_ORDER_KEY: &str = "order";
+
+/// Pre-interned rate limit key for WebSocket order operations.
+pub static DERIBIT_RATE_LIMIT_KEY_ORDER: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from(DERIBIT_WS_ORDER_KEY)]);
+
+/// Default grouping for aggregated order book subscriptions.
+pub const DERIBIT_BOOK_DEFAULT_GROUP: &str = "none";
+
+/// Default depth per side for aggregated order book subscriptions.
+pub const DERIBIT_BOOK_DEFAULT_DEPTH: u32 = 10;
+
+/// Supported aggregated order book depths for Deribit.
+pub const DERIBIT_BOOK_VALID_DEPTHS: [u32; 3] = [1, 10, 20];

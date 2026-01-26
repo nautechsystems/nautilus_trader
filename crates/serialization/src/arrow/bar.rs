@@ -445,7 +445,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("open") && err.to_string().contains("row 0"),
-            "Expected open error at row 0, got: {err}"
+            "Expected open error at row 0, was: {err}"
         );
     }
 
@@ -486,7 +486,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("bar_type"),
-            "Expected missing bar_type error, got: {err}"
+            "Expected missing bar_type error, was: {err}"
         );
     }
 

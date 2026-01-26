@@ -27,7 +27,6 @@ high-precision = ["nautilus-model/high-precision"]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
-  "nautilus-data/extension-module",
   "nautilus-execution/extension-module",
   "nautilus-model/extension-module",
   "python",
@@ -36,7 +35,6 @@ extension-module = [
 python = [
   "nautilus-common/python",
   "nautilus-core/python",
-  "nautilus-data/python",
   "nautilus-execution/python",
   "nautilus-model/python",
   "pyo3",
@@ -49,17 +47,15 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
-nautilus-data = { workspace = true }
 nautilus-execution = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-portfolio = { workspace = true }
-nautilus-risk = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
-indexmap = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
+indexmap = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 strum = { workspace = true }

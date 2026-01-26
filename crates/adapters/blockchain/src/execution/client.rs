@@ -17,13 +17,16 @@ use std::{collections::HashSet, sync::Arc};
 
 use alloy::primitives::Address;
 use async_trait::async_trait;
-use nautilus_common::messages::execution::{
-    BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-    GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-    ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+use nautilus_common::{
+    clients::ExecutionClient,
+    messages::execution::{
+        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+        GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
+        ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+    },
 };
 use nautilus_core::UnixNanos;
-use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
+use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::AccountAny,
     defi::{
@@ -164,9 +167,7 @@ impl BlockchainExecutionClient {
             .set_native_currency_balance(native_currency_balance);
 
         // Fetch token balances from the blockchain.
-        if !self.wallet_balance.is_token_universe_initialized() {
-            // TODO sync from transfer events for tokens that wallet interacted with.
-        } else {
+        if self.wallet_balance.is_token_universe_initialized() {
             let tokens: Vec<Address> = self
                 .wallet_balance
                 .token_universe
@@ -179,6 +180,8 @@ impl BlockchainExecutionClient {
                     self.wallet_balance.add_token_balance(token_balance);
                 }
             }
+        } else {
+            // TODO sync from transfer events for tokens that wallet interacted with.
         }
 
         Ok(())

@@ -456,7 +456,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("NULL value at row 0"),
-            "Expected NULL error, got: {err}"
+            "Expected NULL error, was: {err}"
         );
     }
 
@@ -493,7 +493,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("price") && err.to_string().contains("row 0"),
-            "Expected price error at row 0, got: {err}"
+            "Expected price error at row 0, was: {err}"
         );
     }
 
@@ -532,7 +532,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("size") && err.to_string().contains("row 0"),
-            "Expected size error at row 0, got: {err}"
+            "Expected size error at row 0, was: {err}"
         );
     }
 
@@ -570,7 +570,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("AggressorSide"),
-            "Expected AggressorSide error, got: {err}"
+            "Expected AggressorSide error, was: {err}"
         );
     }
 
@@ -608,7 +608,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("instrument_id"),
-            "Expected missing instrument_id error, got: {err}"
+            "Expected missing instrument_id error, was: {err}"
         );
     }
 
@@ -646,7 +646,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("price_precision"),
-            "Expected missing price_precision error, got: {err}"
+            "Expected missing price_precision error, was: {err}"
         );
     }
 

@@ -62,8 +62,5 @@ pub mod config;
 pub mod manager;
 pub mod portfolio;
 
-#[cfg(test)]
-mod tests;
-
 // Re-exports
 pub use portfolio::Portfolio;

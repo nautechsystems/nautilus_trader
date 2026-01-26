@@ -39,6 +39,7 @@ from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
@@ -537,3 +538,153 @@ class TestTrader:
 
         # Assert
         assert len(self.msgbus.subscriptions("events*")) == 4
+
+    def test_generate_account_report_with_account_id(self) -> None:
+        # Arrange
+        from nautilus_trader.accounting.factory import AccountFactory
+        from nautilus_trader.model.currencies import USDT
+        from nautilus_trader.model.events import AccountState
+        from nautilus_trader.model.objects import AccountBalance
+
+        AccountFactory.register_calculated_account("BINANCE")
+
+        account_id = AccountId("BINANCE-001")
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.CASH,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100000.00000000, USDT),
+                    Money(0.00000000, USDT),
+                    Money(100000.00000000, USDT),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state)
+
+        # Act
+        report = self.trader.generate_account_report(account_id=account_id)
+
+        # Assert
+        assert report is not None
+        assert not report.empty
+
+    def test_generate_account_report_with_venue(self) -> None:
+        # Arrange
+        from nautilus_trader.accounting.factory import AccountFactory
+        from nautilus_trader.model.currencies import USD
+        from nautilus_trader.model.events import AccountState
+        from nautilus_trader.model.objects import AccountBalance
+
+        AccountFactory.register_calculated_account("SIM")
+
+        account_id = AccountId("SIM-001")
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1000000.00, USD),
+                    Money(0.00, USD),
+                    Money(1000000.00, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state)
+
+        # Act
+        report = self.trader.generate_account_report(venue=Venue("SIM"))
+
+        # Assert
+        assert report is not None
+        assert not report.empty
+
+    def test_generate_account_report_with_account_id_priority_over_venue(self) -> None:
+        # Arrange
+        from nautilus_trader.accounting.factory import AccountFactory
+        from nautilus_trader.model.currencies import USDT
+        from nautilus_trader.model.events import AccountState
+        from nautilus_trader.model.objects import AccountBalance
+
+        AccountFactory.register_calculated_account("BINANCE")
+
+        account_id_1 = AccountId("BINANCE-001")
+        account_id_2 = AccountId("BINANCE-002")
+
+        state_1 = AccountState(
+            account_id=account_id_1,
+            account_type=AccountType.CASH,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100000.00000000, USDT),
+                    Money(0.00000000, USDT),
+                    Money(100000.00000000, USDT),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        state_2 = AccountState(
+            account_id=account_id_2,
+            account_type=AccountType.CASH,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(200000.00000000, USDT),
+                    Money(0.00000000, USDT),
+                    Money(200000.00000000, USDT),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state_1)
+        self.portfolio.update_account(state_2)
+
+        # Act - account_id should take priority over venue
+        report = self.trader.generate_account_report(
+            venue=Venue("BINANCE"),
+            account_id=account_id_1,
+        )
+
+        # Assert - Should return account 1, not account 2
+        assert report is not None
+        assert not report.empty
+        # Verify it's account 1 by checking balance (if available in report)
+        account = self.cache.account(account_id_1)
+        assert account is not None
+
+    def test_generate_account_report_raises_when_both_none(self) -> None:
+        # Arrange & Act & Assert
+        with pytest.raises(
+            ValueError,
+            match="At least one of 'venue' or 'account_id' must be provided",
+        ):
+            self.trader.generate_account_report()

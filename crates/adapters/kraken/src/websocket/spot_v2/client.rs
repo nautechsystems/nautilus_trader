@@ -1070,6 +1070,8 @@ async fn refresh_auth_token(config: &KrakenDataClientConfig) -> Result<String, K
 /// Supported intervals: 1, 5, 15, 30, 60, 240, 1440, 10080, 21600
 /// (1m, 5m, 15m, 30m, 1h, 4h, 1d, 1w, 2w).
 fn bar_type_to_ws_interval(bar_type: BarType) -> Result<u32, KrakenWsError> {
+    const VALID_INTERVALS: [u32; 9] = [1, 5, 15, 30, 60, 240, 1440, 10080, 21600];
+
     let spec = bar_type.spec();
     let step = spec.step.get() as u32;
 
@@ -1087,7 +1089,6 @@ fn bar_type_to_ws_interval(bar_type: BarType) -> Result<u32, KrakenWsError> {
 
     let interval = base_minutes * step;
 
-    const VALID_INTERVALS: [u32; 9] = [1, 5, 15, 30, 60, 240, 1440, 10080, 21600];
     if !VALID_INTERVALS.contains(&interval) {
         return Err(KrakenWsError::SubscriptionError(format!(
             "Invalid bar interval {interval} minutes for Kraken OHLC streaming. \

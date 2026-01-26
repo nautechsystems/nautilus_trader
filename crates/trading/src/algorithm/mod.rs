@@ -39,15 +39,15 @@ pub mod config;
 pub mod core;
 pub mod twap;
 
-pub use core::ExecutionAlgorithmCore;
+pub use core::{ExecutionAlgorithmCore, StrategyEventHandlers};
 
 pub use config::ExecutionAlgorithmConfig;
 use nautilus_common::{
-    actor::DataActor,
+    actor::{DataActor, registry::try_get_actor_unchecked},
     enums::ComponentState,
     logging::{CMD, EVT, RECV, SEND},
     messages::execution::{CancelOrder, ModifyOrder, SubmitOrder, TradingCommand},
-    msgbus,
+    msgbus::{self, MessagingSwitchboard, TypedHandler},
     timer::TimeEvent,
 };
 use nautilus_core::{UUID4, UnixNanos};
@@ -104,7 +104,10 @@ pub trait ExecutionAlgorithm: DataActor {
     /// # Errors
     ///
     /// Returns an error if command handling fails.
-    fn execute(&mut self, command: TradingCommand) -> anyhow::Result<()> {
+    fn execute(&mut self, command: TradingCommand) -> anyhow::Result<()>
+    where
+        Self: 'static + std::fmt::Debug + Sized,
+    {
         let core = self.core_mut();
         if core.config.log_commands {
             let id = &core.actor.actor_id;
@@ -118,7 +121,8 @@ pub trait ExecutionAlgorithm: DataActor {
         match command {
             TradingCommand::SubmitOrder(cmd) => {
                 self.subscribe_to_strategy_events(cmd.strategy_id);
-                self.on_order(cmd.order)
+                let order = self.core_mut().get_order(&cmd.client_order_id)?;
+                self.on_order(order)
             }
             TradingCommand::SubmitOrderList(cmd) => {
                 self.subscribe_to_strategy_events(cmd.strategy_id);
@@ -203,7 +207,7 @@ pub trait ExecutionAlgorithm: DataActor {
         }
 
         let topic = format!("events.order.{}", order.strategy_id());
-        msgbus::publish(topic.into(), &event);
+        msgbus::publish_order_event(topic.into(), &OrderEventAny::Canceled(event));
 
         Ok(())
     }
@@ -226,6 +230,46 @@ pub trait ExecutionAlgorithm: DataActor {
         )
     }
 
+    /// Generates an OrderPendingUpdate event for an order.
+    fn generate_order_pending_update(&mut self, order: &OrderAny) -> OrderPendingUpdate {
+        let ts_now = self.core_mut().clock().timestamp_ns();
+
+        OrderPendingUpdate::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            order
+                .account_id()
+                .expect("Order must have account_id for pending update"),
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            false, // reconciliation
+            order.venue_order_id(),
+        )
+    }
+
+    /// Generates an OrderPendingCancel event for an order.
+    fn generate_order_pending_cancel(&mut self, order: &OrderAny) -> OrderPendingCancel {
+        let ts_now = self.core_mut().clock().timestamp_ns();
+
+        OrderPendingCancel::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            order
+                .account_id()
+                .expect("Order must have account_id for pending cancel"),
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            false, // reconciliation
+            order.venue_order_id(),
+        )
+    }
+
     /// Spawns a market order from a primary order.
     ///
     /// Creates a new market order with:
@@ -235,7 +279,9 @@ pub trait ExecutionAlgorithm: DataActor {
     /// - exec_spawn_id set to the primary order's client order ID.
     ///
     /// If `reduce_primary` is true, the primary order's quantity will be reduced
-    /// by the spawned quantity.
+    /// by the spawned quantity. If the spawned order is subsequently denied or
+    /// rejected (before acceptance), the deducted quantity is automatically
+    /// restored to the primary order.
     fn spawn_market(
         &mut self,
         primary: &mut OrderAny,
@@ -245,14 +291,17 @@ pub trait ExecutionAlgorithm: DataActor {
         tags: Option<Vec<Ustr>>,
         reduce_primary: bool,
     ) -> MarketOrder {
-        if reduce_primary {
-            self.reduce_primary_order(primary, quantity);
-        }
-
+        // Generate spawn ID first so we can track the reduction
         let core = self.core_mut();
         let client_order_id = core.spawn_client_order_id(&primary.client_order_id());
         let ts_init = core.clock().timestamp_ns();
         let exec_algorithm_id = core.exec_algorithm_id;
+
+        if reduce_primary {
+            self.reduce_primary_order(primary, quantity);
+            self.core_mut()
+                .track_pending_spawn_reduction(client_order_id, quantity);
+        }
 
         MarketOrder::new(
             primary.trader_id(),
@@ -286,7 +335,9 @@ pub trait ExecutionAlgorithm: DataActor {
     /// - exec_spawn_id set to the primary order's client order ID
     ///
     /// If `reduce_primary` is true, the primary order's quantity will be reduced
-    /// by the spawned quantity.
+    /// by the spawned quantity. If the spawned order is subsequently denied or
+    /// rejected (before acceptance), the deducted quantity is automatically
+    /// restored to the primary order.
     #[allow(clippy::too_many_arguments)]
     fn spawn_limit(
         &mut self,
@@ -302,14 +353,17 @@ pub trait ExecutionAlgorithm: DataActor {
         tags: Option<Vec<Ustr>>,
         reduce_primary: bool,
     ) -> LimitOrder {
-        if reduce_primary {
-            self.reduce_primary_order(primary, quantity);
-        }
-
+        // Generate spawn ID first so we can track the reduction
         let core = self.core_mut();
         let client_order_id = core.spawn_client_order_id(&primary.client_order_id());
         let ts_init = core.clock().timestamp_ns();
         let exec_algorithm_id = core.exec_algorithm_id;
+
+        if reduce_primary {
+            self.reduce_primary_order(primary, quantity);
+            self.core_mut()
+                .track_pending_spawn_reduction(client_order_id, quantity);
+        }
 
         LimitOrder::new(
             primary.trader_id(),
@@ -349,7 +403,9 @@ pub trait ExecutionAlgorithm: DataActor {
     /// - exec_spawn_id set to the primary order's client order ID
     ///
     /// If `reduce_primary` is true, the primary order's quantity will be reduced
-    /// by the spawned quantity.
+    /// by the spawned quantity. If the spawned order is subsequently denied or
+    /// rejected (before acceptance), the deducted quantity is automatically
+    /// restored to the primary order.
     #[allow(clippy::too_many_arguments)]
     fn spawn_market_to_limit(
         &mut self,
@@ -357,22 +413,25 @@ pub trait ExecutionAlgorithm: DataActor {
         quantity: Quantity,
         time_in_force: TimeInForce,
         expire_time: Option<UnixNanos>,
-        post_only: bool,
         reduce_only: bool,
         display_qty: Option<Quantity>,
+        emulation_trigger: Option<TriggerType>,
         tags: Option<Vec<Ustr>>,
         reduce_primary: bool,
     ) -> MarketToLimitOrder {
-        if reduce_primary {
-            self.reduce_primary_order(primary, quantity);
-        }
-
+        // Generate spawn ID first so we can track the reduction
         let core = self.core_mut();
         let client_order_id = core.spawn_client_order_id(&primary.client_order_id());
         let ts_init = core.clock().timestamp_ns();
         let exec_algorithm_id = core.exec_algorithm_id;
 
-        MarketToLimitOrder::new(
+        if reduce_primary {
+            self.reduce_primary_order(primary, quantity);
+            self.core_mut()
+                .track_pending_spawn_reduction(client_order_id, quantity);
+        }
+
+        let mut order = MarketToLimitOrder::new(
             primary.trader_id(),
             primary.strategy_id(),
             primary.instrument_id(),
@@ -381,7 +440,7 @@ pub trait ExecutionAlgorithm: DataActor {
             quantity,
             time_in_force,
             expire_time,
-            post_only,
+            false, // post_only
             reduce_only,
             false, // quote_quantity
             display_qty,
@@ -395,20 +454,31 @@ pub trait ExecutionAlgorithm: DataActor {
             tags.or_else(|| primary.tags().map(|t| t.to_vec())),
             UUID4::new(),
             ts_init,
-        )
+        );
+
+        if emulation_trigger.is_some() {
+            order.set_emulation_trigger(emulation_trigger);
+        }
+
+        order
     }
 
     /// Reduces the primary order's quantity by the spawn quantity.
     ///
     /// Generates an `OrderUpdated` event and applies it to the primary order,
     /// then updates the order in the cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `spawn_qty` exceeds the primary order's `leaves_qty`.
     fn reduce_primary_order(&mut self, primary: &mut OrderAny, spawn_qty: Quantity) {
-        let primary_qty = primary.quantity();
+        let leaves_qty = primary.leaves_qty();
         assert!(
-            primary_qty >= spawn_qty,
-            "Spawn order quantity must be less than or equal to primary order quantity"
+            leaves_qty >= spawn_qty,
+            "Spawn quantity {spawn_qty} exceeds primary leaves_qty {leaves_qty}"
         );
 
+        let primary_qty = primary.quantity();
         let new_qty = Quantity::from_raw(primary_qty.raw - spawn_qty.raw, primary_qty.precision);
 
         let core = self.core_mut();
@@ -442,6 +512,90 @@ pub trait ExecutionAlgorithm: DataActor {
             .expect("Failed to update order in cache");
     }
 
+    /// Restores the primary order quantity after a spawned order is denied or rejected.
+    ///
+    /// This is called when a spawned order fails before acceptance. The quantity
+    /// that was deducted from the primary order is restored (up to the spawned
+    /// order's leaves_qty to handle partial fills).
+    fn restore_primary_order_quantity(&mut self, order: &OrderAny) {
+        let Some(exec_spawn_id) = order.exec_spawn_id() else {
+            return;
+        };
+
+        let reduction_qty = {
+            let core = self.core_mut();
+            core.take_pending_spawn_reduction(&order.client_order_id())
+        };
+
+        let Some(reduction_qty) = reduction_qty else {
+            return;
+        };
+
+        let primary = {
+            let cache = self.core_mut().cache();
+            cache.order(&exec_spawn_id).cloned()
+        };
+
+        let Some(mut primary) = primary else {
+            log::warn!(
+                "Cannot restore primary order quantity: primary order {exec_spawn_id} not found",
+            );
+            return;
+        };
+
+        // Cap restore amount by leaves_qty to handle partial fills before rejection
+        let restore_raw = std::cmp::min(reduction_qty.raw, order.leaves_qty().raw);
+        if restore_raw == 0 {
+            return;
+        }
+
+        let restored_qty = Quantity::from_raw(
+            primary.quantity().raw + restore_raw,
+            primary.quantity().precision,
+        );
+
+        let core = self.core_mut();
+        let ts_now = core.clock().timestamp_ns();
+
+        let updated = OrderUpdated::new(
+            primary.trader_id(),
+            primary.strategy_id(),
+            primary.instrument_id(),
+            primary.client_order_id(),
+            restored_qty,
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            false, // reconciliation
+            primary.venue_order_id(),
+            primary.account_id(),
+            None, // price
+            None, // trigger_price
+            None, // protection_price
+        );
+
+        if let Err(e) = primary.apply(OrderEventAny::Updated(updated)) {
+            log::warn!("Failed to apply OrderUpdated for quantity restoration: {e}");
+            return;
+        }
+
+        {
+            let cache_rc = core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            if let Err(e) = cache.update_order(&primary) {
+                log::warn!("Failed to update primary order in cache: {e}");
+                return;
+            }
+        }
+
+        log::info!(
+            "Restored primary order {} quantity to {} after spawned order {} was denied/rejected",
+            primary.client_order_id(),
+            restored_qty,
+            order.client_order_id()
+        );
+    }
+
     /// Submits an order to the execution engine via the risk engine.
     ///
     /// # Errors
@@ -472,7 +626,8 @@ pub trait ExecutionAlgorithm: DataActor {
             client_id,
             strategy_id,
             order.instrument_id(),
-            order.clone(),
+            order.client_order_id(),
+            order.init_event().clone(),
             order.exec_algorithm_id(),
             position_id,
             None, // params
@@ -485,9 +640,9 @@ pub trait ExecutionAlgorithm: DataActor {
             log::info!("{id} {SEND}{CMD} {command:?}");
         }
 
-        msgbus::send_any(
-            "RiskEngine.execute".into(),
-            &TradingCommand::SubmitOrder(command),
+        msgbus::send_trading_command(
+            MessagingSwitchboard::risk_engine_execute(),
+            TradingCommand::SubmitOrder(command),
         );
 
         Ok(())
@@ -500,18 +655,55 @@ pub trait ExecutionAlgorithm: DataActor {
     /// Returns an error if order modification fails.
     fn modify_order(
         &mut self,
-        order: &OrderAny,
+        order: &mut OrderAny,
         quantity: Option<Quantity>,
         price: Option<Price>,
         trigger_price: Option<Price>,
         client_id: Option<ClientId>,
     ) -> anyhow::Result<()> {
-        let core = self.core_mut();
+        let qty_changing = quantity.is_some_and(|q| q != order.quantity());
+        let price_changing = price.is_some() && price != order.price();
+        let trigger_changing = trigger_price.is_some() && trigger_price != order.trigger_price();
 
+        if !qty_changing && !price_changing && !trigger_changing {
+            log::error!(
+                "Cannot create command ModifyOrder: \
+                quantity, price and trigger were either None \
+                or the same as existing values."
+            );
+            return Ok(());
+        }
+
+        if order.is_closed() || order.is_pending_cancel() {
+            log::warn!(
+                "Cannot create command ModifyOrder: state is {:?}, {order:?}",
+                order.status()
+            );
+            return Ok(());
+        }
+
+        let core = self.core_mut();
         let trader_id = core.trader_id().expect("Trader ID not set");
         let strategy_id = order.strategy_id();
-        let ts_init = core.clock().timestamp_ns();
 
+        if !order.is_active_local() {
+            let event = self.generate_order_pending_update(order);
+            if let Err(e) = order.apply(OrderEventAny::PendingUpdate(event)) {
+                log::warn!("InvalidStateTrigger: {e}, did not apply pending update event");
+                return Ok(());
+            }
+
+            {
+                let cache_rc = self.core_mut().cache_rc();
+                let mut cache = cache_rc.borrow_mut();
+                cache.update_order(order).ok();
+            }
+
+            let topic = format!("events.order.{strategy_id}");
+            msgbus::publish_order_event(topic.into(), &OrderEventAny::PendingUpdate(event));
+        }
+
+        let ts_init = self.core_mut().clock().timestamp_ns();
         let command = ModifyOrder::new(
             trader_id,
             client_id,
@@ -527,21 +719,24 @@ pub trait ExecutionAlgorithm: DataActor {
             None, // params
         );
 
-        if core.config.log_commands {
-            let id = &core.actor.actor_id;
+        if self.core_mut().config.log_commands {
+            let id = &self.core_mut().actor.actor_id;
             log::info!("{id} {SEND}{CMD} {command:?}");
         }
 
-        // Route based on order state
-        if order.is_emulated() {
-            msgbus::send_any(
-                "OrderEmulator.execute".into(),
-                &TradingCommand::ModifyOrder(command),
+        let has_emulation_trigger = order
+            .emulation_trigger()
+            .is_some_and(|t| t != TriggerType::NoTrigger);
+
+        if order.is_emulated() || has_emulation_trigger {
+            msgbus::send_trading_command(
+                MessagingSwitchboard::order_emulator_execute(),
+                TradingCommand::ModifyOrder(command),
             );
         } else {
-            msgbus::send_any(
-                "ExecEngine.execute".into(),
-                &TradingCommand::ModifyOrder(command),
+            msgbus::send_trading_command(
+                MessagingSwitchboard::risk_engine_execute(),
+                TradingCommand::ModifyOrder(command),
             );
         }
 
@@ -571,6 +766,21 @@ pub trait ExecutionAlgorithm: DataActor {
         if status != OrderStatus::Initialized && status != OrderStatus::Released {
             anyhow::bail!(
                 "Cannot modify order in place: status is {status:?}, expected INITIALIZED or RELEASED"
+            );
+        }
+
+        // Validate order type compatibility
+        if price.is_some() && order.price().is_none() {
+            anyhow::bail!(
+                "Cannot modify order in place: {} orders do not have a LIMIT price",
+                order.order_type()
+            );
+        }
+
+        if trigger_price.is_some() && order.trigger_price().is_none() {
+            anyhow::bail!(
+                "Cannot modify order in place: {} orders do not have a STOP trigger price",
+                order.order_type()
             );
         }
 
@@ -621,15 +831,39 @@ pub trait ExecutionAlgorithm: DataActor {
     /// Returns an error if order cancellation fails.
     fn cancel_order(
         &mut self,
-        order: &OrderAny,
+        order: &mut OrderAny,
         client_id: Option<ClientId>,
     ) -> anyhow::Result<()> {
-        let core = self.core_mut();
+        if order.is_closed() || order.is_pending_cancel() {
+            log::warn!(
+                "Cannot cancel order: state is {:?}, {order:?}",
+                order.status()
+            );
+            return Ok(());
+        }
 
+        let core = self.core_mut();
         let trader_id = core.trader_id().expect("Trader ID not set");
         let strategy_id = order.strategy_id();
-        let ts_init = core.clock().timestamp_ns();
 
+        if !order.is_active_local() {
+            let event = self.generate_order_pending_cancel(order);
+            if let Err(e) = order.apply(OrderEventAny::PendingCancel(event)) {
+                log::warn!("InvalidStateTrigger: {e}, did not apply pending cancel event");
+                return Ok(());
+            }
+
+            {
+                let cache_rc = self.core_mut().cache_rc();
+                let mut cache = cache_rc.borrow_mut();
+                cache.update_order(order).ok();
+            }
+
+            let topic = format!("events.order.{strategy_id}");
+            msgbus::publish_order_event(topic.into(), &OrderEventAny::PendingCancel(event));
+        }
+
+        let ts_init = self.core_mut().clock().timestamp_ns();
         let command = CancelOrder::new(
             trader_id,
             client_id,
@@ -642,23 +876,24 @@ pub trait ExecutionAlgorithm: DataActor {
             None, // params
         );
 
-        if core.config.log_commands {
-            let id = &core.actor.actor_id;
+        if self.core_mut().config.log_commands {
+            let id = &self.core_mut().actor.actor_id;
             log::info!("{id} {SEND}{CMD} {command:?}");
         }
 
-        // Route based on order state
-        if order.is_emulated()
-            || matches!(order.emulation_trigger(), Some(t) if t != TriggerType::NoTrigger)
-        {
-            msgbus::send_any(
-                "OrderEmulator.execute".into(),
-                &TradingCommand::CancelOrder(command),
+        let has_emulation_trigger = order
+            .emulation_trigger()
+            .is_some_and(|t| t != TriggerType::NoTrigger);
+
+        if order.is_emulated() || order.status() == OrderStatus::Released || has_emulation_trigger {
+            msgbus::send_trading_command(
+                MessagingSwitchboard::order_emulator_execute(),
+                TradingCommand::CancelOrder(command),
             );
         } else {
-            msgbus::send_any(
-                "ExecEngine.execute".into(),
-                &TradingCommand::CancelOrder(command),
+            msgbus::send_trading_command(
+                MessagingSwitchboard::exec_engine_execute(),
+                TradingCommand::CancelOrder(command),
             );
         }
 
@@ -668,26 +903,75 @@ pub trait ExecutionAlgorithm: DataActor {
     /// Subscribes to events from a strategy.
     ///
     /// This is called automatically when the first order is received from a strategy.
-    fn subscribe_to_strategy_events(&mut self, strategy_id: StrategyId) {
+    fn subscribe_to_strategy_events(&mut self, strategy_id: StrategyId)
+    where
+        Self: 'static + std::fmt::Debug + Sized,
+    {
         let core = self.core_mut();
         if core.is_strategy_subscribed(&strategy_id) {
             return;
         }
 
-        // TODO: Subscribe to strategy event topics via message bus
-        // Python implementation subscribes to:
-        // - events.order.{strategy_id} -> _handle_event
-        // - events.position.{strategy_id} -> _handle_event
-        // This requires creating ShareableMessageHandler callbacks that route to
-        // handle_order_event/handle_position_event, similar to DataActor pattern
+        let actor_id = core.actor.actor_id.inner();
+
+        let order_topic = format!("events.order.{strategy_id}");
+        let order_actor_id = actor_id;
+        let order_handler = TypedHandler::from(move |event: &OrderEventAny| {
+            if let Some(mut algo) = try_get_actor_unchecked::<Self>(&order_actor_id) {
+                algo.handle_order_event(event.clone());
+            } else {
+                log::error!(
+                    "ExecutionAlgorithm {order_actor_id} not found for order event handling"
+                );
+            }
+        });
+        msgbus::subscribe_order_events(order_topic.clone().into(), order_handler.clone(), None);
+
+        let position_topic = format!("events.position.{strategy_id}");
+        let position_handler = TypedHandler::from(move |event: &PositionEvent| {
+            if let Some(mut algo) = try_get_actor_unchecked::<Self>(&actor_id) {
+                algo.handle_position_event(event.clone());
+            } else {
+                log::error!("ExecutionAlgorithm {actor_id} not found for position event handling");
+            }
+        });
+        msgbus::subscribe_position_events(
+            position_topic.clone().into(),
+            position_handler.clone(),
+            None,
+        );
+
+        let handlers = StrategyEventHandlers {
+            order_topic,
+            order_handler,
+            position_topic,
+            position_handler,
+        };
+        core.store_strategy_event_handlers(strategy_id, handlers);
 
         core.add_subscribed_strategy(strategy_id);
-        log::debug!("Subscribed to events for strategy {strategy_id}");
+        log::info!("Subscribed to events for strategy {strategy_id}");
+    }
+
+    /// Unsubscribes from all strategy event handlers.
+    ///
+    /// This should be called before reset to properly clean up msgbus subscriptions.
+    fn unsubscribe_all_strategy_events(&mut self) {
+        let handlers = self.core_mut().take_strategy_event_handlers();
+        for (strategy_id, h) in handlers {
+            msgbus::unsubscribe_order_events(h.order_topic.into(), &h.order_handler);
+            msgbus::unsubscribe_position_events(h.position_topic.into(), &h.position_handler);
+            log::info!("Unsubscribed from events for strategy {strategy_id}");
+        }
+        self.core_mut().clear_subscribed_strategies();
     }
 
     /// Handles an order event, filtering for algorithm-owned orders.
     fn handle_order_event(&mut self, event: OrderEventAny) {
-        // Get order from cache to check if it belongs to this algorithm
+        if self.core_mut().state() != ComponentState::Running {
+            return;
+        }
+
         let order = {
             let cache = self.core_mut().cache();
             cache.order(&event.client_order_id()).cloned()
@@ -697,7 +981,6 @@ pub trait ExecutionAlgorithm: DataActor {
             return;
         };
 
-        // Filter: only process events for orders owned by this algorithm
         let Some(order_algo_id) = order.exec_algorithm_id() else {
             return;
         };
@@ -716,14 +999,33 @@ pub trait ExecutionAlgorithm: DataActor {
 
         match &event {
             OrderEventAny::Initialized(e) => self.on_order_initialized(e.clone()),
-            OrderEventAny::Denied(e) => self.on_order_denied(*e),
+            OrderEventAny::Denied(e) => {
+                self.restore_primary_order_quantity(&order);
+                self.on_order_denied(*e);
+            }
             OrderEventAny::Emulated(e) => self.on_order_emulated(*e),
             OrderEventAny::Released(e) => self.on_order_released(*e),
             OrderEventAny::Submitted(e) => self.on_order_submitted(*e),
-            OrderEventAny::Rejected(e) => self.on_order_rejected(*e),
-            OrderEventAny::Accepted(e) => self.on_order_accepted(*e),
-            OrderEventAny::Canceled(e) => self.on_algo_order_canceled(*e),
-            OrderEventAny::Expired(e) => self.on_order_expired(*e),
+            OrderEventAny::Rejected(e) => {
+                self.restore_primary_order_quantity(&order);
+                self.on_order_rejected(*e);
+            }
+            OrderEventAny::Accepted(e) => {
+                // Commit reduction - order accepted by venue
+                self.core_mut()
+                    .take_pending_spawn_reduction(&order.client_order_id());
+                self.on_order_accepted(*e);
+            }
+            OrderEventAny::Canceled(e) => {
+                self.core_mut()
+                    .take_pending_spawn_reduction(&order.client_order_id());
+                self.on_algo_order_canceled(*e);
+            }
+            OrderEventAny::Expired(e) => {
+                self.core_mut()
+                    .take_pending_spawn_reduction(&order.client_order_id());
+                self.on_order_expired(*e);
+            }
             OrderEventAny::Triggered(e) => self.on_order_triggered(*e),
             OrderEventAny::PendingUpdate(e) => self.on_order_pending_update(*e),
             OrderEventAny::PendingCancel(e) => self.on_order_pending_cancel(*e),
@@ -738,6 +1040,10 @@ pub trait ExecutionAlgorithm: DataActor {
 
     /// Handles a position event.
     fn handle_position_event(&mut self, event: PositionEvent) {
+        if self.core_mut().state() != ComponentState::Running {
+            return;
+        }
+
         {
             let core = self.core_mut();
             if core.config.log_events {
@@ -784,6 +1090,7 @@ pub trait ExecutionAlgorithm: DataActor {
     ///
     /// Returns an error if reset fails.
     fn on_reset(&mut self) -> anyhow::Result<()> {
+        self.unsubscribe_all_strategy_events();
         self.core_mut().reset();
         Ok(())
     }
@@ -896,11 +1203,17 @@ mod tests {
         actor::{DataActor, DataActorCore},
         cache::Cache,
         clock::TestClock,
+        component::Component,
+        enums::ComponentTrigger,
     };
     use nautilus_model::{
         enums::OrderSide,
-        identifiers::{ClientOrderId, ExecAlgorithmId, InstrumentId, StrategyId, TraderId},
-        orders::{MarketOrder, OrderAny, stubs::TestOrderStubs},
+        events::{OrderAccepted, OrderCanceled, OrderDenied, OrderRejected},
+        identifiers::{
+            AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, StrategyId, TraderId,
+            VenueOrderId,
+        },
+        orders::{LimitOrder, MarketOrder, OrderAny, stubs::TestOrderStubs},
         types::{Price, Quantity},
     };
     use rstest::rstest;
@@ -967,6 +1280,12 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         algo.core.register(trader_id, clock, cache).unwrap();
+
+        // Transition to Running state for tests
+        algo.transition_state(ComponentTrigger::Initialize).unwrap();
+        algo.transition_state(ComponentTrigger::Start).unwrap();
+        algo.transition_state(ComponentTrigger::StartCompleted)
+            .unwrap();
     }
 
     #[rstest]
@@ -1236,9 +1555,9 @@ mod tests {
             Quantity::from("0.5"),
             TimeInForce::Gtc,
             None,  // expire_time
-            false, // post_only
             false, // reduce_only
             None,  // display_qty
+            None,  // emulation_trigger
             None,  // tags
             false, // reduce_primary
         );
@@ -1322,7 +1641,6 @@ mod tests {
         // Make accepted so OrderUpdated can be applied
         let mut primary = TestOrderStubs::make_accepted_order(&order);
 
-        // Add order to cache first
         {
             let cache_rc = algo.core.cache_rc();
             let mut cache = cache_rc.borrow_mut();
@@ -1365,7 +1683,6 @@ mod tests {
         // Make accepted so OrderUpdated can be applied
         let mut primary = TestOrderStubs::make_accepted_order(&order);
 
-        // Add order to cache first
         {
             let cache_rc = algo.core.cache_rc();
             let mut cache = cache_rc.borrow_mut();
@@ -1422,8 +1739,6 @@ mod tests {
 
     #[rstest]
     fn test_algorithm_modify_order_in_place_updates_quantity() {
-        use nautilus_model::orders::LimitOrder;
-
         let mut algo = create_test_algorithm();
         register_algorithm(&mut algo);
 
@@ -1455,7 +1770,6 @@ mod tests {
             0.into(),
         ));
 
-        // Add order to cache
         {
             let cache_rc = algo.core.cache_rc();
             let mut cache = cache_rc.borrow_mut();
@@ -1471,8 +1785,6 @@ mod tests {
 
     #[rstest]
     fn test_algorithm_modify_order_in_place_rejects_no_changes() {
-        use nautilus_model::orders::LimitOrder;
-
         let mut algo = create_test_algorithm();
         register_algorithm(&mut algo);
 
@@ -1514,6 +1826,566 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("no parameters differ")
+        );
+    }
+
+    #[rstest]
+    fn test_spawned_order_denied_restores_primary_quantity() {
+        let mut algo = create_test_algorithm();
+        register_algorithm(&mut algo);
+
+        let instrument_id = InstrumentId::from("BTC/USDT.BINANCE");
+        let exec_algorithm_id = algo.id();
+
+        let mut primary = OrderAny::Market(MarketOrder::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRAT-001"),
+            instrument_id,
+            ClientOrderId::from("O-001"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            0.into(),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            Some(exec_algorithm_id),
+            None,
+            None,
+            None,
+        ));
+
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache.add_order(primary.clone(), None, None, false).unwrap();
+        }
+
+        let spawned = algo.spawn_market(
+            &mut primary,
+            Quantity::from("0.5"),
+            TimeInForce::Fok,
+            false,
+            None,
+            true,
+        );
+
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache.update_order(&primary).unwrap();
+        }
+
+        assert_eq!(primary.quantity(), Quantity::from("0.5"));
+
+        let mut spawned_order = OrderAny::Market(spawned);
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache
+                .add_order(spawned_order.clone(), None, None, false)
+                .unwrap();
+        }
+
+        let denied = OrderDenied::new(
+            spawned_order.trader_id(),
+            spawned_order.strategy_id(),
+            spawned_order.instrument_id(),
+            spawned_order.client_order_id(),
+            "TEST_DENIAL".into(),
+            UUID4::new(),
+            0.into(),
+            0.into(),
+        );
+
+        spawned_order.apply(OrderEventAny::Denied(denied)).unwrap();
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache.update_order(&spawned_order).unwrap();
+        }
+
+        algo.handle_order_event(OrderEventAny::Denied(denied));
+
+        let restored_primary = {
+            let cache = algo.core.cache();
+            cache.order(&ClientOrderId::from("O-001")).cloned().unwrap()
+        };
+        assert_eq!(restored_primary.quantity(), Quantity::from("1.0"));
+    }
+
+    #[rstest]
+    fn test_spawned_order_rejected_restores_primary_quantity() {
+        let mut algo = create_test_algorithm();
+        register_algorithm(&mut algo);
+
+        let instrument_id = InstrumentId::from("BTC/USDT.BINANCE");
+        let exec_algorithm_id = algo.id();
+
+        let mut primary = OrderAny::Market(MarketOrder::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRAT-001"),
+            instrument_id,
+            ClientOrderId::from("O-001"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            0.into(),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            Some(exec_algorithm_id),
+            None,
+            None,
+            None,
+        ));
+
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache.add_order(primary.clone(), None, None, false).unwrap();
+        }
+
+        let spawned = algo.spawn_market(
+            &mut primary,
+            Quantity::from("0.5"),
+            TimeInForce::Fok,
+            false,
+            None,
+            true,
+        );
+
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache.update_order(&primary).unwrap();
+        }
+
+        assert_eq!(primary.quantity(), Quantity::from("0.5"));
+
+        let mut spawned_order = OrderAny::Market(spawned);
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache
+                .add_order(spawned_order.clone(), None, None, false)
+                .unwrap();
+        }
+
+        let rejected = OrderRejected::new(
+            spawned_order.trader_id(),
+            spawned_order.strategy_id(),
+            spawned_order.instrument_id(),
+            spawned_order.client_order_id(),
+            AccountId::from("BINANCE-001"),
+            "TEST_REJECTION".into(),
+            UUID4::new(),
+            0.into(),
+            0.into(),
+            false,
+            false,
+        );
+
+        spawned_order
+            .apply(OrderEventAny::Rejected(rejected))
+            .unwrap();
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache.update_order(&spawned_order).unwrap();
+        }
+
+        algo.handle_order_event(OrderEventAny::Rejected(rejected));
+
+        let restored_primary = {
+            let cache = algo.core.cache();
+            cache.order(&ClientOrderId::from("O-001")).cloned().unwrap()
+        };
+        assert_eq!(restored_primary.quantity(), Quantity::from("1.0"));
+    }
+
+    #[rstest]
+    fn test_spawned_order_with_reduce_primary_false_does_not_restore() {
+        let mut algo = create_test_algorithm();
+        register_algorithm(&mut algo);
+
+        let instrument_id = InstrumentId::from("BTC/USDT.BINANCE");
+        let exec_algorithm_id = algo.id();
+
+        let mut primary = OrderAny::Market(MarketOrder::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRAT-001"),
+            instrument_id,
+            ClientOrderId::from("O-001"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            0.into(),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            Some(exec_algorithm_id),
+            None,
+            None,
+            None,
+        ));
+
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache.add_order(primary.clone(), None, None, false).unwrap();
+        }
+
+        let spawned = algo.spawn_market(
+            &mut primary,
+            Quantity::from("0.5"),
+            TimeInForce::Fok,
+            false,
+            None,
+            false,
+        );
+
+        assert_eq!(primary.quantity(), Quantity::from("1.0"));
+
+        let mut spawned_order = OrderAny::Market(spawned);
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache
+                .add_order(spawned_order.clone(), None, None, false)
+                .unwrap();
+        }
+
+        let denied = OrderDenied::new(
+            spawned_order.trader_id(),
+            spawned_order.strategy_id(),
+            spawned_order.instrument_id(),
+            spawned_order.client_order_id(),
+            "TEST_DENIAL".into(),
+            UUID4::new(),
+            0.into(),
+            0.into(),
+        );
+
+        spawned_order.apply(OrderEventAny::Denied(denied)).unwrap();
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache.update_order(&spawned_order).unwrap();
+        }
+
+        algo.handle_order_event(OrderEventAny::Denied(denied));
+
+        let final_primary = {
+            let cache = algo.core.cache();
+            cache.order(&ClientOrderId::from("O-001")).cloned().unwrap()
+        };
+        assert_eq!(final_primary.quantity(), Quantity::from("1.0"));
+    }
+
+    #[rstest]
+    fn test_multiple_spawns_with_one_denied_restores_correctly() {
+        let mut algo = create_test_algorithm();
+        register_algorithm(&mut algo);
+
+        let instrument_id = InstrumentId::from("BTC/USDT.BINANCE");
+        let exec_algorithm_id = algo.id();
+
+        let mut primary = OrderAny::Market(MarketOrder::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRAT-001"),
+            instrument_id,
+            ClientOrderId::from("O-001"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            0.into(),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            Some(exec_algorithm_id),
+            None,
+            None,
+            None,
+        ));
+
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache.add_order(primary.clone(), None, None, false).unwrap();
+        }
+
+        let spawned1 = algo.spawn_market(
+            &mut primary,
+            Quantity::from("0.3"),
+            TimeInForce::Fok,
+            false,
+            None,
+            true,
+        );
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache.update_order(&primary).unwrap();
+        }
+
+        let spawned2 = algo.spawn_market(
+            &mut primary,
+            Quantity::from("0.4"),
+            TimeInForce::Fok,
+            false,
+            None,
+            true,
+        );
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache.update_order(&primary).unwrap();
+        }
+
+        assert_eq!(primary.quantity(), Quantity::from("0.3"));
+
+        let spawned_order1 = OrderAny::Market(spawned1);
+        let mut spawned_order2 = OrderAny::Market(spawned2);
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache.add_order(spawned_order1, None, None, false).unwrap();
+            cache
+                .add_order(spawned_order2.clone(), None, None, false)
+                .unwrap();
+        }
+
+        let denied = OrderDenied::new(
+            spawned_order2.trader_id(),
+            spawned_order2.strategy_id(),
+            spawned_order2.instrument_id(),
+            spawned_order2.client_order_id(),
+            "TEST_DENIAL".into(),
+            UUID4::new(),
+            0.into(),
+            0.into(),
+        );
+
+        spawned_order2.apply(OrderEventAny::Denied(denied)).unwrap();
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache.update_order(&spawned_order2).unwrap();
+        }
+
+        algo.handle_order_event(OrderEventAny::Denied(denied));
+
+        let restored_primary = {
+            let cache = algo.core.cache();
+            cache.order(&ClientOrderId::from("O-001")).cloned().unwrap()
+        };
+        assert_eq!(restored_primary.quantity(), Quantity::from("0.7"));
+    }
+
+    #[rstest]
+    fn test_spawned_order_accepted_prevents_restoration() {
+        let mut algo = create_test_algorithm();
+        register_algorithm(&mut algo);
+
+        let instrument_id = InstrumentId::from("BTC/USDT.BINANCE");
+        let exec_algorithm_id = algo.id();
+
+        let mut primary = OrderAny::Market(MarketOrder::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRAT-001"),
+            instrument_id,
+            ClientOrderId::from("O-001"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            0.into(),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            Some(exec_algorithm_id),
+            None,
+            None,
+            None,
+        ));
+
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache.add_order(primary.clone(), None, None, false).unwrap();
+        }
+
+        let spawned = algo.spawn_market(
+            &mut primary,
+            Quantity::from("0.5"),
+            TimeInForce::Fok,
+            false,
+            None,
+            true,
+        );
+
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache.update_order(&primary).unwrap();
+        }
+
+        assert_eq!(primary.quantity(), Quantity::from("0.5"));
+
+        let mut spawned_order = OrderAny::Market(spawned);
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache
+                .add_order(spawned_order.clone(), None, None, false)
+                .unwrap();
+        }
+
+        let accepted = OrderAccepted::new(
+            spawned_order.trader_id(),
+            spawned_order.strategy_id(),
+            spawned_order.instrument_id(),
+            spawned_order.client_order_id(),
+            VenueOrderId::from("V-123"),
+            AccountId::from("BINANCE-001"),
+            UUID4::new(),
+            0.into(),
+            0.into(),
+            false,
+        );
+
+        spawned_order
+            .apply(OrderEventAny::Accepted(accepted))
+            .unwrap();
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache.update_order(&spawned_order).unwrap();
+        }
+
+        algo.handle_order_event(OrderEventAny::Accepted(accepted));
+
+        let primary_after_accept = {
+            let cache = algo.core.cache();
+            cache.order(&ClientOrderId::from("O-001")).cloned().unwrap()
+        };
+        assert_eq!(primary_after_accept.quantity(), Quantity::from("0.5"));
+
+        // Cancel after acceptance - no restoration should occur
+        let canceled = OrderCanceled::new(
+            spawned_order.trader_id(),
+            spawned_order.strategy_id(),
+            spawned_order.instrument_id(),
+            spawned_order.client_order_id(),
+            UUID4::new(),
+            0.into(),
+            0.into(),
+            false,
+            Some(VenueOrderId::from("V-123")),
+            Some(AccountId::from("BINANCE-001")),
+        );
+
+        spawned_order
+            .apply(OrderEventAny::Canceled(canceled))
+            .unwrap();
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache.update_order(&spawned_order).unwrap();
+        }
+
+        algo.handle_order_event(OrderEventAny::Canceled(canceled));
+
+        let final_primary = {
+            let cache = algo.core.cache();
+            cache.order(&ClientOrderId::from("O-001")).cloned().unwrap()
+        };
+        assert_eq!(final_primary.quantity(), Quantity::from("0.5"));
+    }
+
+    #[rstest]
+    #[should_panic(expected = "exceeds primary leaves_qty")]
+    fn test_spawn_quantity_exceeds_leaves_qty_panics() {
+        let mut algo = create_test_algorithm();
+        register_algorithm(&mut algo);
+
+        let instrument_id = InstrumentId::from("BTC/USDT.BINANCE");
+        let exec_algorithm_id = algo.id();
+
+        let mut primary = OrderAny::Market(MarketOrder::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRAT-001"),
+            instrument_id,
+            ClientOrderId::from("O-001"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            0.into(),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            Some(exec_algorithm_id),
+            None,
+            None,
+            None,
+        ));
+
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache.add_order(primary.clone(), None, None, false).unwrap();
+        }
+
+        let _ = algo.spawn_market(
+            &mut primary,
+            Quantity::from("0.8"),
+            TimeInForce::Fok,
+            false,
+            None,
+            true,
+        );
+
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache.update_order(&primary).unwrap();
+        }
+
+        assert_eq!(primary.quantity(), Quantity::from("0.2"));
+        assert_eq!(primary.leaves_qty(), Quantity::from("0.2"));
+
+        // Should panic - spawning 0.5 when only 0.2 leaves_qty remains
+        let _ = algo.spawn_market(
+            &mut primary,
+            Quantity::from("0.5"),
+            TimeInForce::Fok,
+            false,
+            None,
+            true,
         );
     }
 }

@@ -441,7 +441,7 @@ def test_alerts_at_or_before_last_timestamp_fire(engine: BacktestEngine):
 
     # Assert - only 3 alerts fire (those at or before last data timestamp)
     assert len(strategy.alert_timestamps) == 3, (
-        f"Expected 3 alerts, got {len(strategy.alert_timestamps)}"
+        f"Expected 3 alerts, was {len(strategy.alert_timestamps)}"
     )
     assert_monotonic(strategy.alert_timestamps, "alerts at last timestamp")
 
@@ -506,6 +506,6 @@ def test_chained_alerts_at_last_timestamp(engine: BacktestEngine):
 
     # Assert - all 3 chained alerts should fire (all at last timestamp)
     assert len(strategy.alert_timestamps) == 3, (
-        f"Expected 3 chained alerts, got {len(strategy.alert_timestamps)}"
+        f"Expected 3 chained alerts, was {len(strategy.alert_timestamps)}"
     )
     assert_monotonic(strategy.alert_timestamps, "chained alerts at last timestamp")

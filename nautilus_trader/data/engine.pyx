@@ -1073,7 +1073,7 @@ cdef class DataEngine(Component):
 
         if command.params.get("aggregate_spread_quotes", False):
             instrument = self._cache.instrument(command.instrument_id)
-            if instrument and instrument.is_spread() and len(instrument.legs()) > 1:
+            if instrument and instrument.is_spread():
                 self._start_spread_quote_aggregator(client, command)
                 return
 
@@ -1314,7 +1314,7 @@ cdef class DataEngine(Component):
 
         if command.params.get("aggregate_spread_quotes", False):
             instrument = self._cache.instrument(command.instrument_id)
-            if instrument and instrument.is_spread() and len(instrument.legs()) > 1:
+            if instrument and instrument.is_spread():
                 self._stop_spread_quote_aggregator(client, command)
                 return
 
@@ -1458,7 +1458,7 @@ cdef class DataEngine(Component):
         # "aggregate_spread_quotes" allows to aggregate spread quotes from component quotes
         if isinstance(request, RequestQuoteTicks) and request.params.get("aggregate_spread_quotes", False):
             instrument = self._cache.instrument(request.instrument_id)
-            if instrument and instrument.is_spread() and len(instrument.legs()) > 1:
+            if instrument and instrument.is_spread():
                 if self._should_request_spread_quote_ticks(request):
                     self._handle_spread_quote_tick_request(request)
                     return
@@ -2044,11 +2044,11 @@ cdef class DataEngine(Component):
 
             buffer_deltas.append(delta)
 
-            is_last_delta = delta.flags == RecordFlag.F_LAST
+            is_last_delta = delta.flags & RecordFlag.F_LAST
             if is_last_delta:
                 deltas = OrderBookDeltas(
                     instrument_id=instrument_id,
-                    deltas=buffer_deltas
+                    deltas=buffer_deltas,
                 )
                 self._msgbus.publish_c(
                     topic=self._topic_cache.get_deltas_topic(instrument_id, historical),
@@ -2080,7 +2080,7 @@ cdef class DataEngine(Component):
             for delta in deltas.deltas:
                 buffer_deltas.append(delta)
 
-                is_last_delta = delta.flags == RecordFlag.F_LAST
+                is_last_delta = delta.flags & RecordFlag.F_LAST
                 if is_last_delta:
                     deltas_to_publish = OrderBookDeltas(
                         instrument_id=instrument_id,
@@ -2689,6 +2689,8 @@ cdef class DataEngine(Component):
 
         if bar_type.spec.is_time_aggregated():
             time_bars_origin_offset = self._time_bars_origin_offset.get(bar_type.spec.aggregation) or params.get("time_bars_origin_offset")
+            time_bars_skip_first_non_full_bar = params.get("skip_first_non_full_bar", self._time_bars_skip_first_non_full_bar)
+
             aggregator = TimeBarAggregator(
                 instrument=instrument,
                 bar_type=aggregated_bar_type,
@@ -2696,7 +2698,7 @@ cdef class DataEngine(Component):
                 clock=self._clock,
                 interval_type=self._time_bars_interval_type,
                 timestamp_on_close=self._time_bars_timestamp_on_close,
-                skip_first_non_full_bar=self._time_bars_skip_first_non_full_bar,
+                skip_first_non_full_bar=time_bars_skip_first_non_full_bar,
                 build_with_no_updates=self._time_bars_build_with_no_updates,
                 time_bars_origin_offset=time_bars_origin_offset,
                 bar_build_delay=self._time_bars_build_delay,

@@ -28,6 +28,92 @@ use ed25519_dalek::{Signature, Signer, SigningKey};
 use ustr::Ustr;
 use zeroize::ZeroizeOnDrop;
 
+use super::enums::{BinanceEnvironment, BinanceProductType};
+
+/// Resolves API credentials from config or environment variables.
+///
+/// For live environments, uses shared env vars:
+/// - `BINANCE_API_KEY`
+/// - `BINANCE_API_SECRET`
+///
+/// For testnet environments, uses product-specific env vars:
+/// - Spot: `BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`
+/// - Futures: `BINANCE_FUTURES_TESTNET_API_KEY` / `BINANCE_FUTURES_TESTNET_API_SECRET`
+///
+/// # Errors
+///
+/// Returns an error if credentials cannot be resolved from config or environment.
+pub fn resolve_credentials(
+    config_api_key: Option<String>,
+    config_api_secret: Option<String>,
+    environment: BinanceEnvironment,
+    product_type: BinanceProductType,
+) -> anyhow::Result<(String, String)> {
+    let (key_var, secret_var) = match environment {
+        BinanceEnvironment::Testnet => match product_type {
+            BinanceProductType::Spot | BinanceProductType::Margin | BinanceProductType::Options => {
+                ("BINANCE_TESTNET_API_KEY", "BINANCE_TESTNET_API_SECRET")
+            }
+            BinanceProductType::UsdM | BinanceProductType::CoinM => (
+                "BINANCE_FUTURES_TESTNET_API_KEY",
+                "BINANCE_FUTURES_TESTNET_API_SECRET",
+            ),
+        },
+        BinanceEnvironment::Mainnet => ("BINANCE_API_KEY", "BINANCE_API_SECRET"),
+    };
+
+    let api_key = config_api_key
+        .or_else(|| std::env::var(key_var).ok())
+        .ok_or_else(|| anyhow::anyhow!("{key_var} not found in config or environment"))?;
+
+    let api_secret = config_api_secret
+        .or_else(|| std::env::var(secret_var).ok())
+        .ok_or_else(|| anyhow::anyhow!("{secret_var} not found in config or environment"))?;
+
+    Ok((api_key, api_secret))
+}
+
+/// Resolves optional Ed25519 credentials from config or environment variables.
+///
+/// Ed25519 credentials are used for SBE market data streams and are optional.
+///
+/// For live environments:
+/// - `BINANCE_ED25519_API_KEY` / `BINANCE_ED25519_API_SECRET`
+///
+/// For testnet environments:
+/// - Spot: `BINANCE_TESTNET_ED25519_API_KEY` / `BINANCE_TESTNET_ED25519_API_SECRET`
+/// - Futures: `BINANCE_FUTURES_TESTNET_ED25519_API_KEY` / `BINANCE_FUTURES_TESTNET_ED25519_API_SECRET`
+///
+/// Returns `None` if credentials are not configured.
+#[must_use]
+pub fn resolve_ed25519_credentials(
+    config_api_key: Option<String>,
+    config_api_secret: Option<String>,
+    environment: BinanceEnvironment,
+    product_type: BinanceProductType,
+) -> Option<(String, String)> {
+    let (key_var, secret_var) = match environment {
+        BinanceEnvironment::Testnet => match product_type {
+            BinanceProductType::Spot | BinanceProductType::Margin | BinanceProductType::Options => {
+                (
+                    "BINANCE_TESTNET_ED25519_API_KEY",
+                    "BINANCE_TESTNET_ED25519_API_SECRET",
+                )
+            }
+            BinanceProductType::UsdM | BinanceProductType::CoinM => (
+                "BINANCE_FUTURES_TESTNET_ED25519_API_KEY",
+                "BINANCE_FUTURES_TESTNET_ED25519_API_SECRET",
+            ),
+        },
+        BinanceEnvironment::Mainnet => ("BINANCE_ED25519_API_KEY", "BINANCE_ED25519_API_SECRET"), // gitleaks:allow
+    };
+
+    let api_key = config_api_key.or_else(|| std::env::var(key_var).ok())?;
+    let api_secret = config_api_secret.or_else(|| std::env::var(secret_var).ok())?;
+
+    Some((api_key, api_secret))
+}
+
 /// Binance API credentials for signing requests (HMAC SHA256).
 ///
 /// Uses HMAC SHA256 with hexadecimal encoding, as required by Binance REST API signing.
