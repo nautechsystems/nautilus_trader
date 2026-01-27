@@ -426,7 +426,10 @@ class PolymarketDataLoader:
             If event with slug is not found or has no markets.
 
         """
-        event = await cls.fetch_event_by_slug(slug, http_client)
+        # Create client once to reuse for all requests
+        client = http_client or nautilus_pyo3.HttpClient()
+
+        event = await cls.fetch_event_by_slug(slug, client)
         markets = event.get("markets", [])
 
         if not markets:
@@ -440,7 +443,7 @@ class PolymarketDataLoader:
                 continue
 
             # Fetch detailed market info from CLOB API
-            market_details = await cls.fetch_market_details(condition_id, http_client)
+            market_details = await cls.fetch_market_details(condition_id, client)
 
             tokens = market_details.get("tokens", [])
             if not tokens:
@@ -457,7 +460,7 @@ class PolymarketDataLoader:
                 outcome=outcome,
             )
 
-            loader = cls(instrument, token_id=token_id, http_client=http_client)
+            loader = cls(instrument, token_id=token_id, http_client=client)
             loaders.append(loader)
 
         return loaders
