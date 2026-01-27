@@ -400,6 +400,7 @@ class PolymarketDataLoader:
     async def from_event_slug(
         cls,
         slug: str,
+        token_index: int = 0,
         http_client: nautilus_pyo3.HttpClient | None = None,
     ) -> list[PolymarketDataLoader]:
         """
@@ -412,6 +413,8 @@ class PolymarketDataLoader:
         ----------
         slug : str
             The event slug to fetch.
+        token_index : int, default 0
+            The index of the token to use (0 for first outcome, 1 for second).
         http_client : nautilus_pyo3.HttpClient, optional
             The HTTP client to use for requests. If not provided, a new client will be created.
 
@@ -423,7 +426,7 @@ class PolymarketDataLoader:
         Raises
         ------
         ValueError
-            If event with slug is not found or has no markets.
+            If event with slug is not found, has no markets, or token_index is out of range.
 
         """
         # Create client once to reuse for all requests
@@ -449,8 +452,13 @@ class PolymarketDataLoader:
             if not tokens:
                 continue
 
-            # Create loader for first token (YES outcome by default)
-            token = tokens[0]
+            if token_index >= len(tokens):
+                raise ValueError(
+                    f"Token index {token_index} out of range "
+                    f"(market {condition_id} has {len(tokens)} tokens)",
+                )
+
+            token = tokens[token_index]
             token_id = token["token_id"]
             outcome = token["outcome"]
 
