@@ -151,6 +151,7 @@ def fixture_exec_engine_open_check(event_loop, msgbus, cache, clock, exec_client
         config=LiveExecEngineConfig(
             open_check_interval_secs=0.1,  # 100ms for fast testing
             open_check_open_only=False,
+            open_check_threshold_ms=0,  # Disable threshold for immediate reconciliation in tests
             reconciliation_startup_delay_secs=0.0,  # No delay for testing
         ),
     )
@@ -227,6 +228,7 @@ def fixture_exec_engine_combined(event_loop, msgbus, cache, clock, exec_client):
             inflight_check_interval_ms=100,
             inflight_check_threshold_ms=50,
             open_check_interval_secs=0.2,
+            open_check_threshold_ms=0,  # Disable threshold for immediate reconciliation in tests
             reconciliation_startup_delay_secs=0.0,  # No delay for testing
         ),
     )
@@ -1098,6 +1100,7 @@ def fixture_exec_engine_continuous(event_loop, msgbus, cache, clock, exec_client
             inflight_check_retries=2,
             open_check_interval_secs=0.1,
             open_check_open_only=False,
+            open_check_threshold_ms=0,  # Disable threshold for immediate reconciliation in tests
             reconciliation_startup_delay_secs=0.0,  # No delay for testing
         ),
     )
@@ -1831,7 +1834,7 @@ async def test_missing_order_respects_retry_threshold(
 
 @pytest.mark.asyncio
 async def test_missing_order_skips_when_local_activity_recent(
-    exec_engine_open_check,
+    exec_engine_open_check_custom_threshold,
     exec_client,
     cache,
     account_id,
@@ -1840,7 +1843,7 @@ async def test_missing_order_skips_when_local_activity_recent(
     """
     Test that recent local activity defers the missing-order reconciliation path.
     """
-    exec_engine = exec_engine_open_check
+    exec_engine = exec_engine_open_check_custom_threshold
     order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
     cache.add_order(order)
 
@@ -1874,7 +1877,7 @@ async def test_missing_order_skips_when_local_activity_recent(
 
 @pytest.mark.asyncio
 async def test_recent_order_skipped_from_missing_check(
-    exec_engine,
+    exec_engine_open_check_custom_threshold,
     exec_client,
     cache,
     account_id,
@@ -1883,6 +1886,7 @@ async def test_recent_order_skipped_from_missing_check(
     """
     Test that very recently submitted orders are skipped from missing order checks.
     """
+    exec_engine = exec_engine_open_check_custom_threshold
     # Arrange
     order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
     cache.add_order(order)
@@ -3074,3 +3078,157 @@ def test_validate_open_orders_consistency_detects_inconsistency(
     exec_engine_open_check._validate_open_orders_consistency()
 
     # Assert - method should log error but not raise
+
+
+@pytest.mark.asyncio
+async def test_reconcile_order_reports_defers_with_recent_local_activity(
+    exec_engine_open_check_custom_threshold,
+    cache,
+    account_id,
+):
+    """
+    Test _reconcile_order_reports defers reconciliation when there's recent local
+    activity.
+
+    This tests the race condition fix where reconciliation should be deferred if the
+    order has had recent local activity (within the threshold), to avoid creating
+    inferred fills before real fills arrive from the venue.
+
+    """
+    exec_engine = exec_engine_open_check_custom_threshold
+
+    # Arrange - create order with recent activity
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    # Use current time for events (recent activity)
+    current_ns = exec_engine._clock.timestamp_ns()
+
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id, ts_event=current_ns)
+    order.apply(submitted)
+    exec_engine.process(submitted)
+
+    accepted = TestEventStubs.order_accepted(
+        order,
+        account_id=account_id,
+        venue_order_id=VenueOrderId("V-1"),
+        ts_event=current_ns,
+    )
+    order.apply(accepted)
+    exec_engine.process(accepted)
+    cache.update_order(order)
+
+    # Create venue report showing partial fill (mismatch with local state)
+    report = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("V-1"),
+        order_side=order.side,
+        order_type=order.order_type,
+        time_in_force=TimeInForce.GTC,
+        order_status=OrderStatus.PARTIALLY_FILLED,
+        price=order.price,
+        quantity=order.quantity,
+        filled_qty=Quantity.from_int(50),  # Venue shows 50 filled, local shows 0
+        avg_px=Decimal("1.00000"),
+        report_id=UUID4(),
+        ts_accepted=current_ns,
+        ts_last=current_ns,
+        ts_init=current_ns,
+    )
+
+    # Track if reconciliation was called
+    reconciled_count = 0
+    original_reconcile = exec_engine._reconcile_order_report
+
+    def capture_reconcile(r, trades, **kwargs):
+        nonlocal reconciled_count
+        reconciled_count += 1
+        return original_reconcile(r, trades, **kwargs)
+
+    exec_engine._reconcile_order_report = capture_reconcile
+
+    # Act - try to reconcile with recent local activity
+    exec_engine._reconcile_order_reports([report], set())
+
+    # Assert - reconciliation should be deferred due to recent local activity
+    assert reconciled_count == 0, "Reconciliation should be deferred with recent local activity"
+    assert order.status == OrderStatus.ACCEPTED  # Order state unchanged
+    assert order.filled_qty == Quantity.from_int(0)  # No inferred fill created
+
+
+@pytest.mark.asyncio
+async def test_reconcile_order_reports_proceeds_after_threshold_exceeded(
+    exec_engine_open_check_custom_threshold,
+    cache,
+    account_id,
+):
+    """
+    Test _reconcile_order_reports proceeds with reconciliation after threshold is
+    exceeded.
+
+    This verifies that reconciliation happens when the local activity is older than the
+    configured threshold.
+
+    """
+    exec_engine = exec_engine_open_check_custom_threshold
+
+    # Arrange - create order with OLD activity (older than threshold)
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    # Use old timestamp (well past the 200ms threshold)
+    current_ns = exec_engine._clock.timestamp_ns()
+    old_ts = current_ns - 500_000_000  # 500ms ago, well past the 200ms threshold
+
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id, ts_event=old_ts)
+    order.apply(submitted)
+    exec_engine.process(submitted)
+
+    accepted = TestEventStubs.order_accepted(
+        order,
+        account_id=account_id,
+        venue_order_id=VenueOrderId("V-1"),
+        ts_event=old_ts,
+    )
+    order.apply(accepted)
+    exec_engine.process(accepted)
+    cache.update_order(order)
+
+    # Create venue report showing partial fill
+    report = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("V-1"),
+        order_side=order.side,
+        order_type=order.order_type,
+        time_in_force=TimeInForce.GTC,
+        order_status=OrderStatus.PARTIALLY_FILLED,
+        price=order.price,
+        quantity=order.quantity,
+        filled_qty=Quantity.from_int(50),
+        avg_px=Decimal("1.00000"),
+        report_id=UUID4(),
+        ts_accepted=old_ts,
+        ts_last=current_ns,
+        ts_init=current_ns,
+    )
+
+    # Track if reconciliation was called
+    reconciled_count = 0
+    original_reconcile = exec_engine._reconcile_order_report
+
+    def capture_reconcile(r, trades, **kwargs):
+        nonlocal reconciled_count
+        reconciled_count += 1
+        return original_reconcile(r, trades, **kwargs)
+
+    exec_engine._reconcile_order_report = capture_reconcile
+
+    # Act - reconcile with old local activity (past threshold)
+    exec_engine._reconcile_order_reports([report], set())
+
+    # Assert - reconciliation should proceed since activity is past threshold
+    assert reconciled_count == 1, "Reconciliation should proceed when threshold exceeded"
