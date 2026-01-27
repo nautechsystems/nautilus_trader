@@ -509,3 +509,102 @@ async def test_get_event_markets(event_data):
         == "0xed7d522e06d2f1f9015a468884cfdb2be7e737a33f130c1237a40f18bc739267"
     )
     assert "25F or below" in markets[0]["question"]
+
+
+@pytest.mark.asyncio
+async def test_from_event_slug(event_data, market_details_data):
+    # Arrange
+    mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
+
+    event_response = Mock()
+    event_response.status = 200
+    event_response.body = msgspec.json.encode([event_data])  # API returns array
+
+    details_response = Mock()
+    details_response.status = 200
+    details_response.body = msgspec.json.encode(market_details_data)
+
+    # Event fetch + 3 market detail fetches (one per market in event)
+    mock_http_client.get = AsyncMock(
+        side_effect=[event_response, details_response, details_response, details_response],
+    )
+
+    # Act
+    loaders = await PolymarketDataLoader.from_event_slug(
+        "highest-temperature-in-nyc-on-january-26",
+        http_client=mock_http_client,
+    )
+
+    # Assert
+    assert len(loaders) == 3
+    for loader in loaders:
+        assert loader.token_id == market_details_data["tokens"][0]["token_id"]
+        assert loader.instrument is not None
+
+    # Verify API calls
+    assert mock_http_client.get.call_count == 4  # 1 event + 3 market details
+    # First call should be to events API
+    assert mock_http_client.get.call_args_list[0].kwargs["url"] == (
+        "https://gamma-api.polymarket.com/events"
+    )
+    # Subsequent calls should be to CLOB market details API
+    for i in range(1, 4):
+        assert (
+            "https://clob.polymarket.com/markets/"
+            in (mock_http_client.get.call_args_list[i].kwargs["url"])
+        )
+
+
+@pytest.mark.asyncio
+async def test_from_event_slug_with_token_index(event_data, market_details_data):
+    # Arrange
+    mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
+
+    event_response = Mock()
+    event_response.status = 200
+    event_response.body = msgspec.json.encode([event_data])
+
+    details_response = Mock()
+    details_response.status = 200
+    details_response.body = msgspec.json.encode(market_details_data)
+
+    mock_http_client.get = AsyncMock(
+        side_effect=[event_response, details_response, details_response, details_response],
+    )
+
+    # Act - request second token (No outcome)
+    loaders = await PolymarketDataLoader.from_event_slug(
+        "highest-temperature-in-nyc-on-january-26",
+        token_index=1,
+        http_client=mock_http_client,
+    )
+
+    # Assert
+    assert len(loaders) == 3
+    for loader in loaders:
+        # Should use second token (No outcome)
+        assert loader.token_id == market_details_data["tokens"][1]["token_id"]
+
+
+@pytest.mark.asyncio
+async def test_from_event_slug_token_index_out_of_range(event_data, market_details_data):
+    # Arrange
+    mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
+
+    event_response = Mock()
+    event_response.status = 200
+    event_response.body = msgspec.json.encode([event_data])
+
+    details_response = Mock()
+    details_response.status = 200
+    details_response.body = msgspec.json.encode(market_details_data)
+
+    mock_http_client.get = AsyncMock(side_effect=[event_response, details_response])
+
+    # Act & Assert
+    with pytest.raises(ValueError, match="Token index 5 out of range"):
+        await PolymarketDataLoader.from_event_slug(
+            "highest-temperature-in-nyc-on-january-26",
+            token_index=5,
+            http_client=mock_http_client,
+        )
