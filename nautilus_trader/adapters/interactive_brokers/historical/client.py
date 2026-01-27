@@ -180,7 +180,7 @@ class HistoricInteractiveBrokersClient:
 
         return list(self._data_client.instrument_provider._instruments.values())
 
-    async def request_bars(
+    async def request_bars(  # noqa: C901
         self,
         bar_specifications: list[str],
         end_date_time: datetime.datetime,
@@ -253,42 +253,48 @@ class HistoricInteractiveBrokersClient:
         if not contracts and not instrument_ids:
             raise ValueError("Either contracts or instrument_ids must be provided")
 
+        contract_instrument_pairs = []
+
         # Convert instrument_id strings or InstrumentId objects to IBContracts
-        contracts.extend(
-            [
-                await self._data_client.instrument_provider.instrument_id_to_ib_contract(
-                    InstrumentId.from_str(instrument_id)
-                    if isinstance(instrument_id, str)
-                    else instrument_id,
-                )
-                for instrument_id in instrument_ids
-            ],
-        )
+        for instrument_id in instrument_ids:
+            contract = await self._data_client.instrument_provider.instrument_id_to_ib_contract(
+                InstrumentId.from_str(instrument_id)
+                if isinstance(instrument_id, str)
+                else instrument_id,
+            )
+            contract_instrument_pairs.append((instrument_id, contract))
+
+        # Convert IBContract objects to instrument_ids
+        for contract in contracts:
+            venue = self._data_client.instrument_provider.determine_venue_from_contract(
+                contract,
+            )
+            instrument_id = ib_contract_to_instrument_id(
+                contract,
+                venue,
+                self._instrument_provider_config.symbology_method,
+            )
+            contract_instrument_pairs.append((instrument_id, contract))
 
         # Ensure instruments are fetched and cached
-        await self._fetch_instruments_if_not_cached(contracts)
+        await self._fetch_instruments_if_not_cached(
+            contracts=[contract for _, contract in contract_instrument_pairs],
+        )
         data: list[Bar] = []
 
-        for contract in contracts:
+        for instrument_id, contract in contract_instrument_pairs:
             for bar_spec in bar_specifications:
-                venue = self._data_client.instrument_provider.determine_venue_from_contract(
-                    contract,
-                )
-                instrument_id = ib_contract_to_instrument_id(
-                    contract,
-                    venue,
-                    self._instrument_provider_config.symbology_method,
-                )
                 bar_type = BarType(
                     instrument_id,
                     BarSpecification.from_str(bar_spec),
                     AggregationSource.EXTERNAL,
                 )
-
                 bars = await self._data_client.get_historical_bars_chunked(
                     bar_type=bar_type,
                     contract=contract,
-                    start_date_time=start_date_time,
+                    start_date_time=pd.Timestamp(start_date_time)
+                    if start_date_time is not None
+                    else None,
                     end_date_time=end_date_time,
                     duration=duration,
                     use_rth=use_rth,

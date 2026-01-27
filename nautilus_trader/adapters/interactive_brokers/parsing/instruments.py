@@ -1168,7 +1168,10 @@ def instrument_id_to_ib_contract(
             contract_details_map,
         )
     elif symbology_method == SymbologyMethod.IB_RAW:
-        return instrument_id_to_ib_contract_raw_symbology(instrument_id)
+        return instrument_id_to_ib_contract_raw_symbology(
+            instrument_id,
+            contract_details_map=contract_details_map,
+        )
     else:
         raise NotImplementedError(f"{symbology_method} not implemented")
 
@@ -1308,7 +1311,10 @@ def instrument_id_to_bag_contract(
         raise ValueError(f"Failed to create BAG contract from spread {instrument_id}: {e}")
 
 
-def instrument_id_to_ib_contract_raw_symbology(instrument_id: InstrumentId) -> IBContract:
+def instrument_id_to_ib_contract_raw_symbology(
+    instrument_id: InstrumentId,
+    contract_details_map: dict[InstrumentId, IBContractDetails] | None = None,
+) -> IBContract:
     local_symbol, security_type = instrument_id.symbol.value.rsplit("=", 1)
     exchange = instrument_id.venue.value.replace("/", ".")
 
@@ -1336,6 +1342,30 @@ def instrument_id_to_ib_contract_raw_symbology(instrument_id: InstrumentId) -> I
             secType=security_type,
             exchange=exchange,
             localSymbol=local_symbol,
+        )
+    elif security_type == "FUT":
+        if contract_details_map is None:
+            raise ValueError(
+                "Unable to build IBContract for futures security: contract_details_map is None.",
+            )
+
+        contract_details = contract_details_map[instrument_id]
+
+        if contract_details.contract is None:
+            raise ValueError(f"Failed to find contract details for instrument {instrument_id}")
+
+        currency = contract_details.contract.currency
+        multiplier = contract_details.contract.multiplier
+        lastTradeDateOrContractMonth = contract_details.contractMonth
+        symbol = contract_details.contract.symbol
+
+        return IBContract(
+            secType=security_type,
+            exchange=exchange,
+            currency=currency,
+            multiplier=multiplier,
+            symbol=symbol,
+            lastTradeDateOrContractMonth=lastTradeDateOrContractMonth,
         )
     else:
         return IBContract(
