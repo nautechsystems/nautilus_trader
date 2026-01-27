@@ -78,6 +78,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed Interactive Brokers external order ID collision where orders placed via TWS/other clients (orderId=0) could cause fills to be attributed to wrong orders (#3465), thanks @shzhng
 - Fixed Interactive Brokers position reconciliation double-counting partial fills from open orders (#3476), thanks @shzhng
 - Fixed Interactive Brokers future chain building for index instruments (#3483), thanks @davidsblom
+- Fixed reconciliation race condition where inferred fills were generated before real fills arrived, causing double-counting and overfill errors
 - Fixed Kraken spot instrument fee/margin parsing where parameters were incorrectly swapped
 - Fixed Polymarket order state race condition where `PLACEMENT` events could arrive late
 - Fixed Polymarket duplicate WebSocket subscriptions (#3403), thanks for reporting @santivazq

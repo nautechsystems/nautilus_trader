@@ -1491,6 +1491,8 @@ class LiveExecutionEngine(ExecutionEngine):
         all_order_reports: list[OrderStatusReport],
         open_order_ids: set[ClientOrderId],
     ) -> None:
+        ts_now = self._clock.timestamp_ns()
+
         for report in all_order_reports:
             is_in_open_ids = report.client_order_id in open_order_ids
 
@@ -1531,6 +1533,17 @@ class LiveExecutionEngine(ExecutionEngine):
                     self._log.debug(
                         f"Skipping reconciliation for {report.client_order_id!r}: "
                         f"instrument {report.instrument_id} not in include list",
+                    )
+                    continue
+
+                # Check for recent local activity to avoid race conditions with in-flight fills
+                local_activity = self._order_local_activity_ns.get(report.client_order_id)
+                if local_activity and (ts_now - local_activity) < self._open_check_threshold_ns:
+                    self._log.info(
+                        f"Deferring reconciliation for {report.client_order_id!r}: "
+                        f"recent local activity ({(ts_now - local_activity) / 1_000_000:.0f}ms < "
+                        f"threshold={self.open_check_threshold_ms}ms), "
+                        f"reason was: {reconcile_reason}",
                     )
                     continue
 
