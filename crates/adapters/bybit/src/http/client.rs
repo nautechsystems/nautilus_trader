@@ -3032,7 +3032,6 @@ impl BybitHttpClient {
     ) -> anyhow::Result<Vec<FundingRateUpdate>> {
         let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
-        let ts_init = self.generate_ts_init();
 
         let start_ms = start.map(|dt| dt.timestamp_millis());
         let mut seen_timestamps: AHashSet<i64> = AHashSet::new();
@@ -3092,7 +3091,7 @@ impl BybitHttpClient {
                 }
 
                 if !seen_timestamps.contains(time)
-                    && let Ok(funding_rate) = parse_funding_rate(funding, &instrument, ts_init)
+                    && let Ok(funding_rate) = parse_funding_rate(funding, &instrument)
                 {
                     page_funding_rates.push(funding_rate);
                     seen_timestamps.insert(*time);

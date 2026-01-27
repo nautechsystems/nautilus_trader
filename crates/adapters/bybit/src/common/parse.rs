@@ -584,20 +584,16 @@ pub fn parse_trade_tick(
 pub fn parse_funding_rate(
     funding: &BybitFunding,
     instrument: &InstrumentAny,
-    ts_init: UnixNanos,
 ) -> anyhow::Result<FundingRateUpdate> {
-    let rate = parse_decimal(&funding.funding_rate, "funding.funding_rate")?;
-    let ts_event = parse_millis_timestamp(
-        &funding.funding_rate_timestamp,
-        "funding.funding_rate_timestamp",
-    )?;
+    let rate = parse_decimal(&funding.funding_rate, "funding.rate")?;
+    let ts_event = parse_millis_timestamp(&funding.funding_rate_timestamp, "funding.timestamp")?;
 
     Ok(FundingRateUpdate::new(
         instrument.id(),
         rate,
         None, // next_funding_ns not provided with historical funding rates
         ts_event,
-        ts_init,
+        ts_event,
     ))
 }
 
