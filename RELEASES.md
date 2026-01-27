@@ -48,6 +48,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed typo in `OrderBook.simulate_fills` error message (#3405), thanks @Johnkhk
 - Fixed registering msgbus with OptionExerciseModule (#3383), thanks @davidsblom
 - Fixed directory URI handling in ParquetDataCatalog for S3 and cloud storage (#3378), thanks @KaulSe
+- Fixed IB adapter crash when handling external orders (placed via TWS) with empty orderRef
 - Fixed instrument cache race condition during `LiveNode` (Rust) startup (#3385), thanks @filipmacek
 - Fixed quickstart MACD strategy logic (#3377), thanks for reporting @SisyphusCoin
 - Fixed reconciliation timing (for v2 Rust) - process instruments before reconciliation (#3415), thanks @filipmacek

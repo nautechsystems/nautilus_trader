@@ -403,10 +403,17 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             order_type = mapped_order_type_info
             time_in_force = ib_to_nautilus_time_in_force[ib_order.tif]
 
+        # For external orders (placed via TWS/other clients), orderRef is empty.
+        # Use the venue_order_id value as client_order_id to ensure uniqueness.
+        if ib_order.orderRef:
+            client_order_id = ClientOrderId(ib_order.orderRef)
+        else:
+            client_order_id = ClientOrderId(venue_order_id.value)
+
         order_status = OrderStatusReport(
             account_id=self.account_id,
             instrument_id=instrument.id,
-            venue_order_id=get_venue_order_id(ib_order.orderId, ib_order.permId),
+            venue_order_id=venue_order_id,
             order_side=ib_to_nautilus_order_side[ib_order.action],
             order_type=order_type,
             time_in_force=time_in_force,
@@ -418,7 +425,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             ts_accepted=ts_init,
             ts_last=ts_init,
             ts_init=ts_init,
-            client_order_id=ClientOrderId(ib_order.orderRef),
+            client_order_id=client_order_id,
             # order_list_id=,
             # contingency_type=,
             expire_time=expire_time,
@@ -668,15 +675,18 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # Determine order side
         order_side = OrderSide[ORDER_SIDE_TO_ORDER_ACTION[execution.side]]
 
-        # Create client order ID from order reference if available
-        client_order_id = None
+        # Create venue order ID
+        venue_order_id = get_venue_order_id(execution.orderId, execution.permId)
+
+        # Create client order ID from order reference if available.
+        # For external orders (placed via TWS/other clients), orderRef is empty.
+        # Use venue_order_id.value as client_order_id to ensure uniqueness.
         if execution.orderRef:
             # Remove the order ID suffix that IB adds
             order_ref = execution.orderRef.rsplit(":", 1)[0]
             client_order_id = ClientOrderId(order_ref)
-
-        # Create venue order ID
-        venue_order_id = get_venue_order_id(execution.orderId, execution.permId)
+        else:
+            client_order_id = ClientOrderId(venue_order_id.value)
 
         # Create trade ID
         trade_id = TradeId(execution.execId)
@@ -1436,13 +1446,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self._send_order_status_report(report)
 
     def _on_open_order(self, order_ref: str, order: IBOrder, order_state: IBOrderState) -> None:
-        if not order.orderRef:
-            self._log.warning(
-                f"ClientOrderId not available, order={order.__dict__}, state={order_state.__dict__}",
-            )
-            return
+        # For external orders (placed via TWS/other clients), orderRef is empty.
+        # Use venue_order_id.value as client_order_id to match OrderStatusReport generation.
+        venue_order_id = get_venue_order_id(order.orderId, order.permId)
+        if order.orderRef:
+            client_order_id = ClientOrderId(order_ref)
+        else:
+            client_order_id = ClientOrderId(venue_order_id.value)
 
-        if not (nautilus_order := self._cache.order(ClientOrderId(order_ref))):
+        if not (nautilus_order := self._cache.order(client_order_id)):
             self.create_task(self.handle_order_status_report(order))
             return
 
@@ -1553,7 +1565,19 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             )
             return
 
-        nautilus_order = self._cache.order(ClientOrderId(order_ref))
+        # For external orders (placed via TWS/other clients), order_ref may be empty.
+        # Use venue_order_id.value as client_order_id to match the OrderStatusReport generation.
+        if order_ref:
+            client_order_id = ClientOrderId(order_ref)
+        elif venue_order_id is not None:
+            client_order_id = ClientOrderId(venue_order_id.value)
+        else:
+            self._log.warning(
+                f"Cannot determine client_order_id: {order_ref=}, {venue_order_id=}",
+            )
+            return
+
+        nautilus_order = self._cache.order(client_order_id)
 
         if nautilus_order:
             # Update order with average fill price if provided and order is filled/partially filled
@@ -1591,7 +1615,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             ):
                 self._order_filled_qty.pop(venue_order_id, None)
         else:
-            self._log.warning(f"ClientOrderId {order_ref} not found in Cache")
+            self._log.warning(f"ClientOrderId {client_order_id} not found in Cache")
 
     def _on_exec_details(
         self,
@@ -1600,12 +1624,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         commission_report: CommissionAndFeesReport,
         contract: IBContract,
     ) -> None:
-        if not execution.orderRef:
-            self._log.warning(f"ClientOrderId not available, execution={execution.__dict__}")
-            return
-
-        client_order_id = ClientOrderId(order_ref)
         venue_order_id = get_venue_order_id(execution.orderId, execution.permId)
+
+        # For external orders (placed via TWS/other clients), orderRef is empty.
+        # Use venue_order_id.value as client_order_id to match OrderStatusReport generation.
+        if execution.orderRef:
+            client_order_id = ClientOrderId(order_ref)
+        else:
+            client_order_id = ClientOrderId(venue_order_id.value)
 
         # Find order by client_order_id or venue_order_id
         nautilus_order = self._find_order_for_execution(client_order_id, venue_order_id)
