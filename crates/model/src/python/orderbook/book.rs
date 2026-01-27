@@ -200,7 +200,7 @@ impl OrderBook {
     }
 
     #[pyo3(name = "bids_filtered_to_dict")]
-    #[pyo3(signature = (depth=None, own_book=None, status=None, accepted_buffer_ns=None, ts_now=None))]
+    #[pyo3(signature = (depth=None, own_book=None, status=None, accepted_buffer_ns=None, ts_now=None, own_synthetic_book=None))]
     fn py_bids_filtered_to_dict(
         &self,
         depth: Option<usize>,
@@ -208,6 +208,7 @@ impl OrderBook {
         status: Option<std::collections::HashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
+        own_synthetic_book: Option<&OwnOrderBook>,
     ) -> IndexMap<Decimal, Decimal> {
         self.bids_filtered_as_map(
             depth,
@@ -215,11 +216,12 @@ impl OrderBook {
             status.map(|s| s.into_iter().collect()),
             accepted_buffer_ns,
             ts_now,
+            own_synthetic_book,
         )
     }
 
     #[pyo3(name = "asks_filtered_to_dict")]
-    #[pyo3(signature = (depth=None, own_book=None, status=None, accepted_buffer_ns=None, ts_now=None))]
+    #[pyo3(signature = (depth=None, own_book=None, status=None, accepted_buffer_ns=None, ts_now=None, own_synthetic_book=None))]
     fn py_asks_filtered_to_dict(
         &self,
         depth: Option<usize>,
@@ -227,6 +229,7 @@ impl OrderBook {
         status: Option<std::collections::HashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
+        own_synthetic_book: Option<&OwnOrderBook>,
     ) -> IndexMap<Decimal, Decimal> {
         self.asks_filtered_as_map(
             depth,
@@ -234,6 +237,7 @@ impl OrderBook {
             status.map(|s| s.into_iter().collect()),
             accepted_buffer_ns,
             ts_now,
+            own_synthetic_book,
         )
     }
 

@@ -516,7 +516,9 @@ impl OrderBook {
         status: Option<AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
+        own_synthetic_book: Option<&OwnOrderBook>,
     ) -> IndexMap<Decimal, Decimal> {
+        let status_clone = status.clone();
         let mut public_map = self
             .bids(depth)
             .map(|level| (level.price.value.as_decimal(), level.size_decimal()))
@@ -527,6 +529,16 @@ impl OrderBook {
                 &mut public_map,
                 own_book.bid_quantity(status, None, None, accepted_buffer_ns, now),
             );
+        }
+
+        if let Some(own_synthetic_book) = own_synthetic_book {
+            let synthetic_as_bids = own_synthetic_book
+                .ask_quantity(status_clone, None, None, accepted_buffer_ns, now)
+                .into_iter()
+                .map(|(price, quantity)| (Decimal::ONE - price, quantity))
+                .collect::<IndexMap<Decimal, Decimal>>();
+
+            filter_quantities(&mut public_map, synthetic_as_bids);
         }
 
         public_map
@@ -544,7 +556,9 @@ impl OrderBook {
         status: Option<AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
+        own_synthetic_book: Option<&OwnOrderBook>,
     ) -> IndexMap<Decimal, Decimal> {
+        let status_clone = status.clone();
         let mut public_map = self
             .asks(depth)
             .map(|level| (level.price.value.as_decimal(), level.size_decimal()))
@@ -555,6 +569,16 @@ impl OrderBook {
                 &mut public_map,
                 own_book.ask_quantity(status, None, None, accepted_buffer_ns, now),
             );
+        }
+
+        if let Some(own_synthetic_book) = own_synthetic_book {
+            let synthetic_as_asks = own_synthetic_book
+                .bid_quantity(status_clone, None, None, accepted_buffer_ns, now)
+                .into_iter()
+                .map(|(price, quantity)| (Decimal::ONE - price, quantity))
+                .collect::<IndexMap<Decimal, Decimal>>();
+
+            filter_quantities(&mut public_map, synthetic_as_asks);
         }
 
         public_map

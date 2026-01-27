@@ -1326,8 +1326,8 @@ fn test_book_filtered_book_empty_own_book() {
     book.add(ask_order, 0, 2, 2.into());
 
     // No own book provided, filtered map should be identical to regular map
-    let bids_filtered = book.bids_filtered_as_map(None, None, None, None, None);
-    let asks_filtered = book.asks_filtered_as_map(None, None, None, None, None);
+    let bids_filtered = book.bids_filtered_as_map(None, None, None, None, None, None);
+    let asks_filtered = book.asks_filtered_as_map(None, None, None, None, None, None);
 
     let bids_regular = book.bids_as_map(None);
     let asks_regular = book.asks_as_map(None);
@@ -1405,8 +1405,8 @@ fn test_book_filtered_book_with_own_orders() {
     own_book.add(own_ask_order);
 
     // Get filtered maps
-    let bids_filtered = book.bids_filtered_as_map(None, Some(&own_book), None, None, None);
-    let asks_filtered = book.asks_filtered_as_map(None, Some(&own_book), None, None, None);
+    let bids_filtered = book.bids_filtered_as_map(None, Some(&own_book), None, None, None, None);
+    let asks_filtered = book.asks_filtered_as_map(None, Some(&own_book), None, None, None, None);
 
     // Check that own order sizes are subtracted
     assert_eq!(bids_filtered.get(&dec!(100.00)), Some(&dec!(50))); // 100 - 50 = 50
@@ -1475,8 +1475,8 @@ fn test_book_filtered_with_own_orders_exact_size() {
     own_book.add(own_ask_order);
 
     // Get filtered maps
-    let bids_filtered = book.bids_filtered_as_map(None, Some(&own_book), None, None, None);
-    let asks_filtered = book.asks_filtered_as_map(None, Some(&own_book), None, None, None);
+    let bids_filtered = book.bids_filtered_as_map(None, Some(&own_book), None, None, None, None);
+    let asks_filtered = book.asks_filtered_as_map(None, Some(&own_book), None, None, None, None);
 
     // Price levels should be removed as resulting size is zero
     assert!(!bids_filtered.contains_key(&dec!(100.00)));
@@ -1543,8 +1543,8 @@ fn test_book_filtered_with_own_orders_larger_size() {
     own_book.add(own_ask_order);
 
     // Get filtered maps
-    let bids_filtered = book.bids_filtered_as_map(None, Some(&own_book), None, None, None);
-    let asks_filtered = book.asks_filtered_as_map(None, Some(&own_book), None, None, None);
+    let bids_filtered = book.bids_filtered_as_map(None, Some(&own_book), None, None, None, None);
+    let asks_filtered = book.asks_filtered_as_map(None, Some(&own_book), None, None, None, None);
 
     // Price levels should be removed as resulting size is zero or negative
     assert!(!bids_filtered.contains_key(&dec!(100.00)));
@@ -1611,12 +1611,178 @@ fn test_book_filtered_with_own_orders_different_level() {
     own_book.add(own_ask_order);
 
     // Get filtered maps
-    let bids_filtered = book.bids_filtered_as_map(None, Some(&own_book), None, None, None);
-    let asks_filtered = book.asks_filtered_as_map(None, Some(&own_book), None, None, None);
+    let bids_filtered = book.bids_filtered_as_map(None, Some(&own_book), None, None, None, None);
+    let asks_filtered = book.asks_filtered_as_map(None, Some(&own_book), None, None, None, None);
 
     // Public book levels should be unchanged as own orders are at different levels
     assert_eq!(bids_filtered.get(&dec!(100.00)), Some(&dec!(100)));
     assert_eq!(asks_filtered.get(&dec!(101.00)), Some(&dec!(100)));
+}
+
+#[rstest]
+fn test_book_filtered_with_synthetic_orders() {
+    let instrument_yes_id = InstrumentId::from("YES.XNAS");
+    let instrument_no_id = InstrumentId::from("NO.XNAS");
+    let mut book = OrderBook::new(instrument_yes_id, BookType::L2_MBP);
+    let mut synthetic_book = OwnOrderBook::new(instrument_no_id);
+
+    // Public book levels
+    let bid_order = BookOrder::new(OrderSide::Buy, Price::from("0.40"), Quantity::from(100), 1);
+    let ask_order = BookOrder::new(OrderSide::Sell, Price::from("0.60"), Quantity::from(100), 2);
+
+    book.add(bid_order, 0, 1, 1.into());
+    book.add(ask_order, 0, 2, 2.into());
+
+    // Synthetic orders: ask at 0.60 -> bid at 0.40, bid at 0.40 -> ask at 0.60
+    let synthetic_ask_order = OwnBookOrder::new(
+        TraderId::test_default(),
+        ClientOrderId::from("SYN-ASK-1"),
+        Some(VenueOrderId::from("1")),
+        OrderSideSpecified::Sell,
+        Price::from("0.60"),
+        Quantity::from(30),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        1.into(),
+        1.into(),
+        1.into(),
+        1.into(),
+    );
+
+    let synthetic_bid_order = OwnBookOrder::new(
+        TraderId::test_default(),
+        ClientOrderId::from("SYN-BID-1"),
+        Some(VenueOrderId::from("2")),
+        OrderSideSpecified::Buy,
+        Price::from("0.40"),
+        Quantity::from(20),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        2.into(),
+        2.into(),
+        2.into(),
+        2.into(),
+    );
+
+    synthetic_book.add(synthetic_ask_order);
+    synthetic_book.add(synthetic_bid_order);
+
+    let bids_filtered =
+        book.bids_filtered_as_map(None, None, None, None, None, Some(&synthetic_book));
+    let asks_filtered =
+        book.asks_filtered_as_map(None, None, None, None, None, Some(&synthetic_book));
+
+    assert_eq!(bids_filtered.get(&dec!(0.40)), Some(&dec!(70))); // 100 - 30
+    assert_eq!(asks_filtered.get(&dec!(0.60)), Some(&dec!(80))); // 100 - 20
+}
+
+#[rstest]
+fn test_book_filtered_with_own_and_synthetic_orders() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+    let mut own_book = OwnOrderBook::new(instrument_id);
+    let mut synthetic_book = OwnOrderBook::new(instrument_id);
+
+    // Public book levels
+    let bid_order = BookOrder::new(OrderSide::Buy, Price::from("0.40"), Quantity::from(100), 1);
+    let ask_order = BookOrder::new(OrderSide::Sell, Price::from("0.60"), Quantity::from(100), 2);
+
+    book.add(bid_order, 0, 1, 1.into());
+    book.add(ask_order, 0, 2, 2.into());
+
+    // Own orders
+    let own_bid_order = OwnBookOrder::new(
+        TraderId::test_default(),
+        ClientOrderId::from("OWN-BID-1"),
+        Some(VenueOrderId::from("1")),
+        OrderSideSpecified::Buy,
+        Price::from("0.40"),
+        Quantity::from(10),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        1.into(),
+        1.into(),
+        1.into(),
+        1.into(),
+    );
+
+    let own_ask_order = OwnBookOrder::new(
+        TraderId::test_default(),
+        ClientOrderId::from("OWN-ASK-1"),
+        Some(VenueOrderId::from("2")),
+        OrderSideSpecified::Sell,
+        Price::from("0.60"),
+        Quantity::from(5),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        2.into(),
+        2.into(),
+        2.into(),
+        2.into(),
+    );
+
+    own_book.add(own_bid_order);
+    own_book.add(own_ask_order);
+
+    // Synthetic orders: ask at 0.60 -> bid at 0.40, bid at 0.40 -> ask at 0.60
+    let synthetic_ask_order = OwnBookOrder::new(
+        TraderId::test_default(),
+        ClientOrderId::from("SYN-ASK-1"),
+        Some(VenueOrderId::from("3")),
+        OrderSideSpecified::Sell,
+        Price::from("0.60"),
+        Quantity::from(30),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        3.into(),
+        3.into(),
+        3.into(),
+        3.into(),
+    );
+
+    let synthetic_bid_order = OwnBookOrder::new(
+        TraderId::test_default(),
+        ClientOrderId::from("SYN-BID-1"),
+        Some(VenueOrderId::from("4")),
+        OrderSideSpecified::Buy,
+        Price::from("0.40"),
+        Quantity::from(20),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        4.into(),
+        4.into(),
+        4.into(),
+        4.into(),
+    );
+
+    synthetic_book.add(synthetic_ask_order);
+    synthetic_book.add(synthetic_bid_order);
+
+    let bids_filtered = book.bids_filtered_as_map(
+        None,
+        Some(&own_book),
+        None,
+        None,
+        None,
+        Some(&synthetic_book),
+    );
+    let asks_filtered = book.asks_filtered_as_map(
+        None,
+        Some(&own_book),
+        None,
+        None,
+        None,
+        Some(&synthetic_book),
+    );
+
+    assert_eq!(bids_filtered.get(&dec!(0.40)), Some(&dec!(60))); // 100 - 10 - 30
+    assert_eq!(asks_filtered.get(&dec!(0.60)), Some(&dec!(75))); // 100 - 5 - 20
 }
 
 #[rstest]
@@ -1723,17 +1889,19 @@ fn test_book_filtered_with_status_filter() {
         Some(status_filter.clone()),
         None,
         None,
+        None,
     );
     let asks_filtered =
-        book.asks_filtered_as_map(None, Some(&own_book), Some(status_filter), None, None);
-
+        book.asks_filtered_as_map(None, Some(&own_book), Some(status_filter), None, None, None);
     // Check that only ACCEPTED own orders are subtracted
     assert_eq!(bids_filtered.get(&dec!(100.00)), Some(&dec!(70))); // 100 - 30 = 70
     assert_eq!(asks_filtered.get(&dec!(101.00)), Some(&dec!(70))); // 100 - 30 = 70
 
     // Get filtered maps without status filter (should subtract all own orders)
-    let bids_all_filtered = book.bids_filtered_as_map(None, Some(&own_book), None, None, None);
-    let asks_all_filtered = book.asks_filtered_as_map(None, Some(&own_book), None, None, None);
+    let bids_all_filtered =
+        book.bids_filtered_as_map(None, Some(&own_book), None, None, None, None);
+    let asks_all_filtered =
+        book.asks_filtered_as_map(None, Some(&own_book), None, None, None, None);
 
     assert_eq!(bids_all_filtered.get(&dec!(100.00)), Some(&dec!(30))); // 100 - 30 - 40 = 30
     assert_eq!(asks_all_filtered.get(&dec!(101.00)), Some(&dec!(30))); // 100 - 30 - 40 = 30
@@ -1828,8 +1996,8 @@ fn test_book_filtered_with_depth_limit() {
     own_book.add(own_ask_order);
 
     // Get filtered maps with depth limit
-    let bids_filtered = book.bids_filtered_as_map(Some(2), Some(&own_book), None, None, None);
-    let asks_filtered = book.asks_filtered_as_map(Some(2), Some(&own_book), None, None, None);
+    let bids_filtered = book.bids_filtered_as_map(Some(2), Some(&own_book), None, None, None, None);
+    let asks_filtered = book.asks_filtered_as_map(Some(2), Some(&own_book), None, None, None, None);
 
     // Check that depth limit is respected and filtering still works
     assert_eq!(bids_filtered.len(), 2);
@@ -1959,6 +2127,7 @@ fn test_book_filtered_with_accepted_buffer() {
         Some(status_filter.clone()),
         Some(accepted_buffer),
         Some(now.into()),
+        None,
     );
 
     let asks_filtered = book.asks_filtered_as_map(
@@ -1967,6 +2136,7 @@ fn test_book_filtered_with_accepted_buffer() {
         Some(status_filter.clone()),
         Some(accepted_buffer),
         Some(now.into()),
+        None,
     );
 
     // Only older orders should be filtered out, recent orders should still be included
@@ -1983,6 +2153,7 @@ fn test_book_filtered_with_accepted_buffer() {
         Some(status_filter.clone()),
         Some(short_buffer),
         Some(now.into()),
+        None,
     );
 
     let asks_short_buffer = book.asks_filtered_as_map(
@@ -1991,6 +2162,7 @@ fn test_book_filtered_with_accepted_buffer() {
         Some(status_filter.clone()),
         Some(short_buffer),
         Some(now.into()),
+        None,
     );
 
     // All orders should be filtered out
@@ -2007,6 +2179,7 @@ fn test_book_filtered_with_accepted_buffer() {
         Some(status_filter.clone()),
         Some(long_buffer),
         Some(now.into()),
+        None,
     );
 
     let asks_long_buffer = book.asks_filtered_as_map(
@@ -2015,6 +2188,7 @@ fn test_book_filtered_with_accepted_buffer() {
         Some(status_filter.clone()),
         Some(long_buffer),
         Some(now.into()),
+        None,
     );
 
     // No orders should be filtered out (all too recent)
@@ -2087,6 +2261,7 @@ fn test_book_filtered_with_accepted_buffer_mixed_statuses() {
         None,
         Some(accepted_buffer),
         Some(now.into()),
+        None,
     );
 
     // ACCEPTED order should be filtered (500 + 300 = 800 < 1000)
@@ -2104,6 +2279,7 @@ fn test_book_filtered_with_accepted_buffer_mixed_statuses() {
         Some(status_filter),
         Some(accepted_buffer),
         Some(now.into()),
+        None,
     );
 
     // Only SUBMITTED orders should be filtered, buffer doesn't apply
@@ -2121,6 +2297,7 @@ fn test_book_filtered_with_accepted_buffer_mixed_statuses() {
         Some(status_filter_both.clone()),
         Some(accepted_buffer),
         Some(now.into()),
+        None,
     );
 
     // Both orders should be filtered, buffer applies to ACCEPTED
@@ -2136,6 +2313,7 @@ fn test_book_filtered_with_accepted_buffer_mixed_statuses() {
         Some(status_filter_both),
         Some(long_buffer),
         Some(now.into()),
+        None,
     );
 
     // Only SUBMITTED order is filtered, ACCEPTED is too recent
