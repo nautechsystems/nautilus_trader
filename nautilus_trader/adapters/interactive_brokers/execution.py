@@ -1526,8 +1526,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # Cache filled quantity for use in OrderStatusReport generation during reconciliation.
         # IB's openOrder callback doesn't include accurate filledQuantity, but orderStatus does.
         # venue_order_id is used as key since orderRef may be empty for external orders.
-        if filled > 0 and venue_order_id is not None:
-            self._order_filled_qty[venue_order_id] = filled
+        # Convert to Decimal defensively in case IB API sends it as a string (IB API bug/edge case)
+        filled_decimal = Decimal(filled) if not isinstance(filled, Decimal) else filled
+        if filled_decimal > 0 and venue_order_id is not None:
+            self._order_filled_qty[venue_order_id] = filled_decimal
 
         if order_status in ["ApiCancelled", "Cancelled"]:
             status = OrderStatus.CANCELED
@@ -1656,7 +1658,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             strategy_id=nautilus_order.strategy_id,
             instrument_id=nautilus_order.instrument_id,
             client_order_id=nautilus_order.client_order_id,
-            venue_order_id=get_venue_order_id(execution.orderId, execution.permId),
+            venue_order_id=nautilus_order.venue_order_id,
             venue_position_id=None,
             trade_id=TradeId(execution.execId),
             order_side=OrderSide[ORDER_SIDE_TO_ORDER_ACTION[execution.side]],
@@ -1815,7 +1817,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 strategy_id=nautilus_order.strategy_id,
                 instrument_id=nautilus_order.instrument_id,  # Keep spread ID
                 client_order_id=nautilus_order.client_order_id,
-                venue_order_id=get_venue_order_id(execution.orderId, execution.permId),
+                venue_order_id=nautilus_order.venue_order_id,
                 venue_position_id=None,
                 trade_id=TradeId(execution.execId),
                 order_side=combo_order_side,
@@ -1875,8 +1877,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             leg_trade_id_str = f"{execution.execId}-{leg_position}"
             leg_trade_id = TradeId(leg_trade_id_str)
 
-            # Unique venue_order_id for leg
-            base_venue_order_id = get_venue_order_id(execution.orderId, execution.permId)
+            # Unique venue_order_id for leg, based on parent order's venue_order_id
+            base_venue_order_id = nautilus_order.venue_order_id
             leg_venue_order_id = VenueOrderId(f"{base_venue_order_id.value}-LEG-{leg_position}")
 
             price_magnifier = self.instrument_provider.get_price_magnifier(leg_instrument_id)

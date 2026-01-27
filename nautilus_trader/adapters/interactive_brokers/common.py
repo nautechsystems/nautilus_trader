@@ -139,7 +139,7 @@ class IBContract(NautilusConfig, frozen=True, repr_omit_defaults=True):
     multiplier: str = ""
 
     # options
-    strike: float = 0.0
+    strike: float | str = ""
     right: str = ""
 
     # If set to true, contract details requests and historical data queries can be performed pertaining
