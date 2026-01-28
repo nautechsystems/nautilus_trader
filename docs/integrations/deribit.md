@@ -231,6 +231,38 @@ strategy.submit_order(stop_order)
 | Batch Modify  | -         | *Not yet implemented*.                     |
 | Batch Cancel  | -         | *Not yet implemented*.                     |
 
+### Post-only behavior
+
+Deribit offers two post-only modes:
+
+1. **Price adjustment (Deribit default)**: If a post-only order would cross the spread and execute,
+   Deribit automatically adjusts the price to one tick inside the spread
+2. **Reject mode**: Order is immediately rejected if it would cross the spread
+
+The Nautilus adapter uses **reject mode** (`reject_post_only=true`) to ensure deterministic behavior.
+If a post-only order would take liquidity, it is rejected with error code `11054`, and an `OrderRejected`
+event is emitted with the `due_post_only` flag set to `true`.
+
+This allows strategies to differentiate between:
+- Orders rejected due to post-only violation (attempted to take liquidity)
+- Orders rejected for other reasons (insufficient margin, invalid price, etc.)
+
+### Order modification
+
+The adapter uses Deribit's native `private/edit` endpoint rather than cancel-and-replace.
+This provides several advantages:
+
+| Benefit | Description |
+|---------|-------------|
+| Single request | Faster execution, lower latency than cancel + new order |
+| Queue priority preservation | Keeps position when only reducing quantity or keeping same price |
+| Fill history maintained | Partial fills remain linked to the same order ID |
+
+**Queue priority rules:**
+- **Decreasing quantity only**: Keeps queue position
+- **Same price**: Keeps queue position
+- **Increasing quantity or changing price**: Loses queue position (treated as new order)
+
 ### Position management
 
 | Feature           | Supported | Notes                                     |
