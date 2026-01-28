@@ -6,11 +6,11 @@ and a leading platform for crypto derivatives trading.
 
 This integration supports live market data ingest and order execution for:
 
-- **Perpetual Futures** (BTC-PERPETUAL, ETH-PERPETUAL)
-- **Dated Futures** (quarterly expiration contracts)
-- **Options** (BTC and ETH options with various strikes and expirations)
-- **Spot** (BTC_USDC, ETH_USDC)
-- **Combo Instruments** (future spreads and option spreads)
+- **Perpetual Futures** (e.g., BTC-PERPETUAL, ETH-PERPETUAL)
+- **Dated Futures** (e.g., BTC-28MAR25, ETH-27JUN25)
+- **Options** (e.g., BTC-28MAR25-100000-C)
+- **Spot** (e.g., BTC_USDC, ETH_USDC)
+- **Combo Instruments** (e.g., future spreads, option spreads)
 
 ## Overview
 
