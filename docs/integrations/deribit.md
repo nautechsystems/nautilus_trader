@@ -111,6 +111,63 @@ Examples:
 InstrumentId.from_str("BTC_USDC.DERIBIT")
 ```
 
+## Order book subscriptions
+
+Deribit provides two types of order book feeds, each suited for different use cases.
+
+### Raw feeds (tick-by-tick)
+
+Raw channels deliver every single update as an individual message. Subscribing to a raw order book
+gives you a notification for every order insertion, update, or deletion in the book.
+
+- **Requires authenticated connection** (safeguard against abuse)
+- Use when you need every price level change for HFT or market making
+- Higher message volume
+
+### Aggregated feeds (batched)
+
+Aggregated channels deliver updates in batches at a fixed interval (e.g., every 100ms).
+This groups multiple order book changes into single messages.
+
+- Available without authentication
+- Recommended for most use cases
+- Lower message volume, easier to process
+- Default interval: 100ms
+
+### Subscription parameters
+
+The Nautilus adapter supports both feed types via subscription parameters:
+
+| Parameter | Values | Notes |
+|-----------|--------|-------|
+| `interval` | `raw`, `100ms`, `agg2` | Default: `100ms`. Use `raw` for tick-by-tick (requires auth) |
+| `depth` | `1`, `10`, `20` | Default: `10`. Number of price levels per side |
+
+```python
+from nautilus_trader.model.identifiers import InstrumentId
+
+instrument_id = InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
+
+# Default: 100ms aggregated feed (no authentication required)
+strategy.subscribe_order_book_deltas(instrument_id)
+
+# Raw feed: Pass interval parameter (requires API credentials)
+strategy.subscribe_order_book_deltas(
+    instrument_id,
+    params={"interval": "raw"},
+)
+```
+
+:::note
+Raw order book feeds require an authenticated WebSocket connection. Ensure API credentials are
+configured before subscribing to raw feeds.
+:::
+
+:::tip
+For most strategies, the default 100ms aggregated feed provides sufficient granularity with
+significantly lower message overhead. Only use raw feeds when tick-by-tick precision is essential.
+:::
+
 ## Orders capability
 
 Below are the order types, execution instructions, and time-in-force options supported on Deribit.
