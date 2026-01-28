@@ -2998,11 +2998,10 @@ impl BybitHttpClient {
         let params = params_builder.build().map_err(|e| anyhow::anyhow!(e))?;
         let response = self.inner.get_recent_trades(&params).await?;
 
-        let ts_init = self.generate_ts_init();
         let mut trades = Vec::new();
 
         for trade in response.result.list {
-            if let Ok(trade_tick) = parse_trade_tick(&trade, &instrument, ts_init) {
+            if let Ok(trade_tick) = parse_trade_tick(&trade, &instrument, None) {
                 trades.push(trade_tick);
             }
         }
@@ -3188,8 +3187,7 @@ impl BybitHttpClient {
         let params = params_builder.build().map_err(|e| anyhow::anyhow!(e))?;
         let response = self.inner.get_orderbook(&params).await?;
 
-        let ts_init = self.generate_ts_init();
-        let deltas = parse_orderbook(&response.result, &instrument, ts_init)?;
+        let deltas = parse_orderbook(&response.result, &instrument, None)?;
 
         Ok(deltas)
     }
@@ -3282,7 +3280,6 @@ impl BybitHttpClient {
                 break;
             }
 
-            let ts_init = self.generate_ts_init();
             let mut page_bars = Vec::with_capacity(klines_with_ts.len());
 
             let mut earliest_ts: Option<i64> = None;
@@ -3300,7 +3297,7 @@ impl BybitHttpClient {
 
                 if !seen_timestamps.contains(start_time)
                     && let Ok(bar) =
-                        parse_kline_bar(kline, &instrument, bar_type, timestamp_on_close, ts_init)
+                        parse_kline_bar(kline, &instrument, bar_type, timestamp_on_close, None)
                 {
                     page_bars.push(bar);
                     seen_timestamps.insert(*start_time);
