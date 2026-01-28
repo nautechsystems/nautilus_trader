@@ -28,7 +28,9 @@ from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_condition_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
 from nautilus_trader.adapters.polymarket.http.errors import PolymarketAPIError
+from nautilus_trader.adapters.polymarket.loaders import PolymarketDataLoader
 from nautilus_trader.common.component import LiveClock
+from nautilus_trader.common.config import resolve_path
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition
@@ -62,6 +64,28 @@ def _check_clob_response(response: dict[str, Any] | str) -> dict[str, Any]:
     return response
 
 
+class PolymarketInstrumentProviderConfig(InstrumentProviderConfig, frozen=True, kw_only=True):
+    """
+    Configuration for ``PolymarketInstrumentProvider`` instances.
+
+    Parameters
+    ----------
+    event_slug_builder : str, optional
+        A fully qualified path to a callable that returns a list of event slugs to fetch.
+        The callable should have signature: `() -> list[str]`.
+
+        When set, the provider will call this function on each initialization/refresh cycle
+        to dynamically generate event slugs, then fetch only those specific events from
+        the Gamma API. This is much more efficient than `load_all=True` for niche markets
+        with predictable slug patterns (e.g., temperature markets, UpDown crypto markets).
+
+        Example: "myproject.slugs:build_temperature_slugs"
+
+    """
+
+    event_slug_builder: str | None = None
+
+
 class PolymarketInstrumentProvider(InstrumentProvider):
     """
     Provides Nautilus instrument definitions from Polymarket.
@@ -72,7 +96,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         The Polymarket CLOB HTTP client.
     clock : LiveClock
         The clock instance.
-    config : InstrumentProviderConfig, optional
+    config : PolymarketInstrumentProviderConfig, optional
         The instrument provider configuration, by default None.
     http_client : HttpClient, optional
         The HTTP client for Gamma API requests.
@@ -83,10 +107,11 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         self,
         client: ClobClient,
         clock: LiveClock,
-        config: InstrumentProviderConfig | None = None,
+        config: PolymarketInstrumentProviderConfig | None = None,
         http_client: HttpClient | None = None,
     ) -> None:
         super().__init__(config=config)
+        self.config: PolymarketInstrumentProviderConfig | None = config
         self._clock = clock
         self._client = client
         self._http_client = http_client or HttpClient(timeout_secs=30)
@@ -96,10 +121,70 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         self._encoder = msgspec.json.Encoder()
 
     async def load_all_async(self, filters: dict | None = None) -> None:
-        if self._config.use_gamma_markets:
+        # Check for event_slug_builder first (most efficient for niche markets)
+        if self.config and self.config.event_slug_builder:
+            await self._load_from_event_slugs(filters)
+        elif self._config.use_gamma_markets:
             await self._load_all_using_gamma_markets(filters)
         else:
             await self._load_markets([], filters)
+
+    async def _load_from_event_slugs(self, filters: dict | None = None) -> None:
+        """
+        Load instruments by fetching specific events via their slugs.
+
+        This method resolves the configured `event_slug_builder` callable,
+        invokes it to get a list of event slugs, then fetches each event
+        from the Gamma API and loads all instruments from their markets.
+
+        """
+        # Resolve and call the slug builder (config and event_slug_builder checked in load_all_async)
+        assert self.config is not None
+        assert self.config.event_slug_builder is not None
+        slug_builder = resolve_path(self.config.event_slug_builder)
+        event_slugs: list[str] = slug_builder()
+
+        self._log.info(f"Loading instruments from {len(event_slugs)} event slugs")
+
+        instruments_loaded = 0
+        events_loaded = 0
+
+        for slug in event_slugs:
+            try:
+                event = await PolymarketDataLoader._fetch_event_by_slug(
+                    slug=slug,
+                    http_client=self._http_client,
+                )
+                events_loaded += 1
+
+                for market in event.get("markets", []):
+                    condition_id = market.get("conditionId")
+                    if not condition_id:
+                        continue
+
+                    normalized_market = normalize_gamma_market_to_clob_format(market)
+
+                    for token_info in normalized_market.get("tokens", []):
+                        token_id = token_info["token_id"]
+                        if not token_id:
+                            if self._log_warnings:
+                                self._log.warning(f"Market {condition_id} had an empty token")
+                            continue
+
+                        outcome = token_info["outcome"]
+                        self._load_instrument(normalized_market, token_id, outcome)
+                        instruments_loaded += 1
+
+            except ValueError as e:
+                # Event not found - log and continue
+                if self._log_warnings:
+                    self._log.warning(f"Event slug '{slug}' not found: {e}")
+            except Exception as e:
+                self._log.error(f"Failed to load event slug '{slug}': {e}")
+
+        self._log.info(
+            f"Loaded {instruments_loaded} instruments from {events_loaded} events",
+        )
 
     async def _load_all_using_gamma_markets(self, filters: dict | None = None) -> None:
         filters = filters.copy() if filters is not None else {}
