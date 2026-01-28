@@ -4355,7 +4355,7 @@ cdef class Actor(Component):
 
         # Update indicators
         cdef list indicators = self._indicators_for_bars.get(bar.bar_type.id_spec_key())
-        if indicators:
+        if indicators and not bar.is_revision:
             self._handle_indicators_for_bar(indicators, bar)
 
         if historical:

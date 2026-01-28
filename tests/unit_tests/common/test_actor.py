@@ -33,6 +33,7 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.indicators.base import Indicator
 from nautilus_trader.model.currencies import EUR
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar
@@ -1207,6 +1208,50 @@ class TestActor:
         # Assert
         assert actor.calls == ["on_start", "on_bar"]
         assert actor.store[0] == bar
+
+    def test_handle_bar_does_not_update_indicators_for_revision_bars(self) -> None:
+        class CountingIndicator(Indicator):
+            def __init__(self):
+                super().__init__([])
+                self.calls = 0
+
+            def handle_bar(self, bar):
+                self.calls += 1
+
+            def _reset(self):
+                self.calls = 0
+
+        # Arrange
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        bar = TestDataStubs.bar_5decimal()
+        actor.register_indicator_for_bars(bar.bar_type, CountingIndicator())
+        indicator = actor.registered_indicators[0]
+
+        revision_bar = Bar(
+            bar_type=bar.bar_type,
+            open=bar.open,
+            high=bar.high,
+            low=bar.low,
+            close=bar.close,
+            volume=bar.volume,
+            ts_event=bar.ts_event,
+            ts_init=bar.ts_init,
+            is_revision=True,
+        )
+
+        # Act
+        actor.handle_bar(revision_bar)
+        actor.handle_bar(bar)
+
+        # Assert
+        assert indicator.calls == 1
 
     def test_handle_bars(self) -> None:
         # Arrange
