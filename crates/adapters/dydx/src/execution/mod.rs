@@ -1796,47 +1796,49 @@ impl ExecutionClient for DydxExecutionClient {
         }
 
         let client_order_id = cmd.client_order_id;
-
-        // Validate order exists in cache and is not closed
-        let cache = self.core.cache();
-
-        let order = match cache.order(&client_order_id) {
-            Some(order) => order,
-            None => {
-                log::error!("Cannot cancel order {client_order_id}: not found in cache");
-                return Ok(()); // Not an error - order may have been filled/canceled already
-            }
-        };
-
-        // Validate order is not already closed
-        if order.is_closed() {
-            log::warn!(
-                "CancelOrder command for {} when order already {} (will not send to exchange)",
-                client_order_id,
-                order.status()
-            );
-            return Ok(());
-        }
-
-        // Retrieve instrument from cache
         let instrument_id = cmd.instrument_id;
-        let instrument = match cache.instrument(&instrument_id) {
-            Some(instrument) => instrument,
-            None => {
+        let strategy_id = cmd.strategy_id;
+        let venue_order_id = cmd.venue_order_id;
+
+        let (order_time_in_force, order_expire_time) = {
+            let cache = self.core.cache();
+
+            let order = match cache.order(&client_order_id) {
+                Some(order) => order,
+                None => {
+                    log::error!("Cannot cancel order {client_order_id}: not found in cache");
+                    return Ok(()); // Not an error - order may have been filled/canceled already
+                }
+            };
+
+            // Validate order is not already closed
+            if order.is_closed() {
+                log::warn!(
+                    "CancelOrder command for {} when order already {} (will not send to exchange)",
+                    client_order_id,
+                    order.status()
+                );
+                return Ok(());
+            }
+
+            // Verify instrument exists (no need to hold reference)
+            if cache.instrument(&instrument_id).is_none() {
                 log::error!(
                     "Cannot cancel order {client_order_id}: instrument {instrument_id} not found in cache"
                 );
                 return Ok(()); // Not an error - missing instrument is a cache issue
             }
-        };
 
-        log::debug!(
-            "Cancelling order {} for instrument {}",
-            client_order_id,
-            instrument.id()
-        );
+            // Extract data needed for order_flags fallback
+            (
+                order.time_in_force(),
+                order.expire_time().map(nanos_to_secs_i64),
+            )
+        }; // Cache borrow released here
 
-        // Get execution components
+        log::debug!("Cancelling order {client_order_id} for instrument {instrument_id}");
+
+        // Get execution components (no cache borrow held)
         let (tx_manager, broadcaster, order_builder) = match self.get_execution_components() {
             Ok(components) => components,
             Err(e) => {
@@ -1846,8 +1848,6 @@ impl ExecutionClient for DydxExecutionClient {
         };
 
         let block_height = self.block_time_monitor.current_block_height() as u32;
-        let strategy_id = cmd.strategy_id;
-        let venue_order_id = cmd.venue_order_id;
 
         // Convert client_order_id to u32 before async block
         let client_id_u32 = match self.get_client_order_id_int(client_order_id) {
@@ -1866,10 +1866,9 @@ impl ExecutionClient for DydxExecutionClient {
                 log::warn!(
                     "Order context not found for {client_order_id}, deriving flags from order"
                 );
-                let expire_time = order.expire_time().map(nanos_to_secs_i64);
                 types::OrderLifetime::from_time_in_force(
-                    order.time_in_force(),
-                    expire_time,
+                    order_time_in_force, // Using extracted value
+                    order_expire_time,   // Using extracted value
                     false,
                     order_builder.max_short_term_secs(),
                 )
