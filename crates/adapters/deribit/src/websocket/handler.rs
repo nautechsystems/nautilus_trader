@@ -1486,15 +1486,20 @@ impl DeribitWsFeedHandler {
                                 && let Some(instrument) =
                                     self.instruments_cache.get(&ticker_msg.instrument_name)
                             {
-                                let mark_price =
-                                    parse_ticker_to_mark_price(&ticker_msg, instrument, ts_init);
-                                let index_price =
-                                    parse_ticker_to_index_price(&ticker_msg, instrument, ts_init);
-
-                                return Some(NautilusWsMessage::Data(vec![
-                                    Data::MarkPriceUpdate(mark_price),
-                                    Data::IndexPriceUpdate(index_price),
-                                ]));
+                                match (
+                                    parse_ticker_to_mark_price(&ticker_msg, instrument, ts_init),
+                                    parse_ticker_to_index_price(&ticker_msg, instrument, ts_init),
+                                ) {
+                                    (Ok(mark_price), Ok(index_price)) => {
+                                        return Some(NautilusWsMessage::Data(vec![
+                                            Data::MarkPriceUpdate(mark_price),
+                                            Data::IndexPriceUpdate(index_price),
+                                        ]));
+                                    }
+                                    (Err(e), _) | (_, Err(e)) => {
+                                        log::warn!("Failed to parse ticker prices: {e}");
+                                    }
+                                }
                             }
                         }
                         DeribitWsChannel::Perpetual => {

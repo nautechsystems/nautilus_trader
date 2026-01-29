@@ -493,8 +493,8 @@ pub fn parse_account_state(
         // - locked: total - free = initial_margin
         //
         // Key: available_funds = margin_balance - initial_margin
-        let total = Money::new(summary.margin_balance, currency);
-        let free = Money::new(summary.available_funds, currency);
+        let total = Money::from_decimal(summary.margin_balance, currency)?;
+        let free = Money::from_decimal(summary.available_funds, currency)?;
         let locked = Money::from_raw(total.raw - free.raw, currency);
 
         let balance = AccountBalance::new(total, locked, free);
@@ -505,9 +505,9 @@ pub fn parse_account_state(
             (summary.initial_margin, summary.maintenance_margin)
         {
             // Only create margin balance if there are actual margin requirements
-            if initial_margin > 0.0 || maintenance_margin > 0.0 {
-                let initial = Money::new(initial_margin, currency);
-                let maintenance = Money::new(maintenance_margin, currency);
+            if !initial_margin.is_zero() || !maintenance_margin.is_zero() {
+                let initial = Money::from_decimal(initial_margin, currency)?;
+                let maintenance = Money::from_decimal(maintenance_margin, currency)?;
 
                 // Create a synthetic instrument_id for account-level margins
                 // SAFETY: Format string "ACCOUNT-{currency}" always produces valid ASCII
@@ -655,8 +655,8 @@ pub fn parse_trade_tick(
         "sell" => AggressorSide::Seller,
         other => anyhow::bail!("Invalid trade direction: {other}"),
     };
-    let price = Price::new(trade.price, price_precision);
-    let size = Quantity::new(trade.amount, size_precision);
+    let price = Price::from_decimal_dp(trade.price, price_precision)?;
+    let size = Quantity::from_decimal_dp(trade.amount, size_precision)?;
     let ts_event = UnixNanos::from((trade.timestamp as u64) * NANOSECONDS_IN_MILLISECOND);
     let trade_id = TradeId::new(&trade.trade_id);
 

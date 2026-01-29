@@ -76,8 +76,8 @@ pub fn parse_trade_msg(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let price = Price::new(msg.price, price_precision);
-    let size = Quantity::new(msg.amount.abs(), size_precision);
+    let price = Price::from_decimal_dp(msg.price, price_precision)?;
+    let size = Quantity::from_decimal_dp(msg.amount.abs(), size_precision)?;
 
     let aggressor_side = match msg.direction.as_str() {
         "buy" => AggressorSide::Buyer,
@@ -369,10 +369,12 @@ pub fn parse_ticker_to_quote(
         .best_ask_price
         .context("Missing best_ask_price in ticker")?;
 
-    let bid_price = Price::new(bid_price_val, price_precision);
-    let ask_price = Price::new(ask_price_val, price_precision);
-    let bid_size = Quantity::new(msg.best_bid_amount.unwrap_or(0.0), size_precision);
-    let ask_size = Quantity::new(msg.best_ask_amount.unwrap_or(0.0), size_precision);
+    let bid_price = Price::from_decimal_dp(bid_price_val, price_precision)?;
+    let ask_price = Price::from_decimal_dp(ask_price_val, price_precision)?;
+    let bid_size =
+        Quantity::from_decimal_dp(msg.best_bid_amount.unwrap_or_default(), size_precision)?;
+    let ask_size =
+        Quantity::from_decimal_dp(msg.best_ask_amount.unwrap_or_default(), size_precision)?;
     let ts_event = UnixNanos::new(msg.timestamp * NANOSECONDS_IN_MILLISECOND);
 
     QuoteTick::new_checked(
@@ -400,10 +402,10 @@ pub fn parse_quote_msg(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let bid_price = Price::new(msg.best_bid_price, price_precision);
-    let ask_price = Price::new(msg.best_ask_price, price_precision);
-    let bid_size = Quantity::new(msg.best_bid_amount, size_precision);
-    let ask_size = Quantity::new(msg.best_ask_amount, size_precision);
+    let bid_price = Price::from_decimal_dp(msg.best_bid_price, price_precision)?;
+    let ask_price = Price::from_decimal_dp(msg.best_ask_price, price_precision)?;
+    let bid_size = Quantity::from_decimal_dp(msg.best_bid_amount, size_precision)?;
+    let ask_size = Quantity::from_decimal_dp(msg.best_ask_amount, size_precision)?;
     let ts_event = UnixNanos::new(msg.timestamp * NANOSECONDS_IN_MILLISECOND);
 
     QuoteTick::new_checked(
@@ -418,33 +420,49 @@ pub fn parse_quote_msg(
 }
 
 /// Parses a Deribit ticker message into a Nautilus `MarkPriceUpdate`.
-#[must_use]
+///
+/// # Errors
+///
+/// Returns an error if the price cannot be converted to the required precision.
 pub fn parse_ticker_to_mark_price(
     msg: &DeribitTickerMsg,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> MarkPriceUpdate {
+) -> anyhow::Result<MarkPriceUpdate> {
     let instrument_id = instrument.id();
     let price_precision = instrument.price_precision();
-    let value = Price::new(msg.mark_price, price_precision);
+    let value = Price::from_decimal_dp(msg.mark_price, price_precision)?;
     let ts_event = UnixNanos::new(msg.timestamp * NANOSECONDS_IN_MILLISECOND);
 
-    MarkPriceUpdate::new(instrument_id, value, ts_event, ts_init)
+    Ok(MarkPriceUpdate::new(
+        instrument_id,
+        value,
+        ts_event,
+        ts_init,
+    ))
 }
 
 /// Parses a Deribit ticker message into a Nautilus `IndexPriceUpdate`.
-#[must_use]
+///
+/// # Errors
+///
+/// Returns an error if the price cannot be converted to the required precision.
 pub fn parse_ticker_to_index_price(
     msg: &DeribitTickerMsg,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> IndexPriceUpdate {
+) -> anyhow::Result<IndexPriceUpdate> {
     let instrument_id = instrument.id();
     let price_precision = instrument.price_precision();
-    let value = Price::new(msg.index_price, price_precision);
+    let value = Price::from_decimal_dp(msg.index_price, price_precision)?;
     let ts_event = UnixNanos::new(msg.timestamp * NANOSECONDS_IN_MILLISECOND);
 
-    IndexPriceUpdate::new(instrument_id, value, ts_event, ts_init)
+    Ok(IndexPriceUpdate::new(
+        instrument_id,
+        value,
+        ts_event,
+        ts_init,
+    ))
 }
 
 /// Parses a Deribit ticker message into a Nautilus `FundingRateUpdate`.
@@ -1213,13 +1231,13 @@ mod tests {
         // Verify the message was deserialized correctly
         assert_eq!(msg.instrument_name.as_str(), "BTC-PERPETUAL");
         assert_eq!(msg.timestamp, 1_765_541_474_086);
-        assert_eq!(msg.best_bid_price, Some(92283.5));
-        assert_eq!(msg.best_ask_price, Some(92284.0));
-        assert_eq!(msg.best_bid_amount, Some(117660.0));
-        assert_eq!(msg.best_ask_amount, Some(186520.0));
-        assert_eq!(msg.mark_price, 92281.78);
-        assert_eq!(msg.index_price, 92263.55);
-        assert_eq!(msg.open_interest, 1132329370.0);
+        assert_eq!(msg.best_bid_price, Some(dec!(92283.5)));
+        assert_eq!(msg.best_ask_price, Some(dec!(92284.0)));
+        assert_eq!(msg.best_bid_amount, Some(dec!(117660.0)));
+        assert_eq!(msg.best_ask_amount, Some(dec!(186520.0)));
+        assert_eq!(msg.mark_price, dec!(92281.78));
+        assert_eq!(msg.index_price, dec!(92263.55));
+        assert_eq!(msg.open_interest, dec!(1132329370.0));
 
         let quote = parse_ticker_to_quote(&msg, &instrument, UnixNanos::default()).unwrap();
 
@@ -1242,10 +1260,10 @@ mod tests {
         // Verify the message was deserialized correctly
         assert_eq!(msg.instrument_name.as_str(), "BTC-PERPETUAL");
         assert_eq!(msg.timestamp, 1_765_541_767_174);
-        assert_eq!(msg.best_bid_price, 92288.0);
-        assert_eq!(msg.best_ask_price, 92288.5);
-        assert_eq!(msg.best_bid_amount, 133440.0);
-        assert_eq!(msg.best_ask_amount, 99470.0);
+        assert_eq!(msg.best_bid_price, dec!(92288.0));
+        assert_eq!(msg.best_ask_price, dec!(92288.5));
+        assert_eq!(msg.best_bid_amount, dec!(133440.0));
+        assert_eq!(msg.best_ask_amount, dec!(99470.0));
 
         let quote = parse_quote_msg(&msg, &instrument, UnixNanos::default()).unwrap();
 
@@ -1451,7 +1469,8 @@ mod tests {
         let msg: DeribitTickerMsg =
             serde_json::from_value(response["params"]["data"].clone()).unwrap();
 
-        let mark_price = parse_ticker_to_mark_price(&msg, &instrument, UnixNanos::default());
+        let mark_price =
+            parse_ticker_to_mark_price(&msg, &instrument, UnixNanos::default()).unwrap();
 
         assert_eq!(mark_price.instrument_id, instrument.id());
         assert_eq!(mark_price.value, instrument.make_price(92281.78));
@@ -1469,7 +1488,8 @@ mod tests {
         let msg: DeribitTickerMsg =
             serde_json::from_value(response["params"]["data"].clone()).unwrap();
 
-        let index_price = parse_ticker_to_index_price(&msg, &instrument, UnixNanos::default());
+        let index_price =
+            parse_ticker_to_index_price(&msg, &instrument, UnixNanos::default()).unwrap();
 
         assert_eq!(index_price.instrument_id, instrument.id());
         assert_eq!(index_price.value, instrument.make_price(92263.55));
