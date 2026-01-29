@@ -557,7 +557,7 @@ pub fn parse_option_instrument(
 pub fn parse_trade_tick(
     trade: &BybitTrade,
     instrument: &InstrumentAny,
-    ts_init: UnixNanos,
+    ts_init: Option<UnixNanos>,
 ) -> anyhow::Result<TradeTick> {
     let price =
         parse_price_with_precision(&trade.price, instrument.price_precision(), "trade.price")?;
@@ -567,6 +567,7 @@ pub fn parse_trade_tick(
     let trade_id = TradeId::new_checked(trade.exec_id.as_str())
         .context("invalid exec_id in Bybit trade payload")?;
     let ts_event = parse_millis_timestamp(&trade.time, "trade.time")?;
+    let ts_init = ts_init.unwrap_or(ts_event);
 
     TradeTick::new_checked(
         instrument.id(),
@@ -601,9 +602,10 @@ pub fn parse_funding_rate(
 pub fn parse_orderbook(
     result: &BybitOrderbookResult,
     instrument: &InstrumentAny,
-    ts_init: UnixNanos,
+    ts_init: Option<UnixNanos>,
 ) -> anyhow::Result<OrderBookDeltas> {
     let ts_event = parse_millis_i64(result.ts, "orderbook.timestamp")?;
+    let ts_init = ts_init.unwrap_or(ts_event);
 
     let instrument_id = instrument.id();
     let price_precision = instrument.price_precision();
@@ -682,7 +684,7 @@ pub fn parse_kline_bar(
     instrument: &InstrumentAny,
     bar_type: BarType,
     timestamp_on_close: bool,
-    ts_init: UnixNanos,
+    ts_init: Option<UnixNanos>,
 ) -> anyhow::Result<Bar> {
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
@@ -708,7 +710,7 @@ pub fn parse_kline_bar(
             .context("bar timestamp overflowed when adjusting to close time")?;
         ts_event = UnixNanos::from(updated);
     }
-    let ts_init = if ts_init.is_zero() { ts_event } else { ts_init };
+    let ts_init = ts_init.unwrap_or(ts_event);
 
     Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init)
         .context("failed to construct Bar from Bybit kline entry")
@@ -1330,7 +1332,7 @@ mod tests {
         let response: BybitTradesResponse = serde_json::from_str(&json).unwrap();
         let trade = &response.result.list[0];
 
-        let tick = parse_trade_tick(trade, &instrument, TS).unwrap();
+        let tick = parse_trade_tick(trade, &instrument, Some(TS)).unwrap();
 
         assert_eq!(tick.instrument_id, instrument.id());
         assert_eq!(tick.price, instrument.make_price(27450.50));
@@ -1356,7 +1358,7 @@ mod tests {
             AggregationSource::External,
         );
 
-        let bar = parse_kline_bar(kline, &instrument, bar_type, false, TS).unwrap();
+        let bar = parse_kline_bar(kline, &instrument, bar_type, false, Some(TS)).unwrap();
 
         assert_eq!(bar.bar_type.to_string(), bar_type.to_string());
         assert_eq!(bar.open, instrument.make_price(27450.0));
