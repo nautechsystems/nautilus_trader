@@ -41,7 +41,7 @@ use rust_decimal::Decimal;
 use crate::{
     common::{
         consts::DERIBIT_VENUE,
-        enums::{DeribitInstrumentKind, DeribitOptionType},
+        enums::{DeribitOptionType, DeribitProductType},
     },
     http::models::{
         DeribitAccountSummary, DeribitInstrument, DeribitOrderBook, DeribitPublicTrade,
@@ -131,10 +131,8 @@ pub fn parse_deribit_instrument_any(
     ts_event: UnixNanos,
 ) -> anyhow::Result<Option<InstrumentAny>> {
     match instrument.kind {
-        DeribitInstrumentKind::Spot => {
-            parse_spot_instrument(instrument, ts_init, ts_event).map(Some)
-        }
-        DeribitInstrumentKind::Future => {
+        DeribitProductType::Spot => parse_spot_instrument(instrument, ts_init, ts_event).map(Some),
+        DeribitProductType::Future => {
             // Check if it's a perpetual
             if instrument.instrument_name.as_str().contains("PERPETUAL") {
                 parse_perpetual_instrument(instrument, ts_init, ts_event).map(Some)
@@ -142,10 +140,10 @@ pub fn parse_deribit_instrument_any(
                 parse_future_instrument(instrument, ts_init, ts_event).map(Some)
             }
         }
-        DeribitInstrumentKind::Option => {
+        DeribitProductType::Option => {
             parse_option_instrument(instrument, ts_init, ts_event).map(Some)
         }
-        DeribitInstrumentKind::FutureCombo | DeribitInstrumentKind::OptionCombo => {
+        DeribitProductType::FutureCombo | DeribitProductType::OptionCombo => {
             log::debug!(
                 "Skipping combo instrument: {} (kind={:?})",
                 instrument.instrument_name,

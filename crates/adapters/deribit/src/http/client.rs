@@ -50,7 +50,7 @@ use super::{
     error::DeribitHttpError,
     models::{
         DeribitAccountSummariesResponse, DeribitCurrency, DeribitInstrument, DeribitJsonRpcRequest,
-        DeribitJsonRpcResponse, DeribitPosition, DeribitUserTradesResponse,
+        DeribitJsonRpcResponse, DeribitPosition, DeribitProductType, DeribitUserTradesResponse,
     },
     query::{
         GetAccountSummariesParams, GetInstrumentParams, GetInstrumentsParams,
@@ -851,7 +851,7 @@ impl DeribitHttpClient {
     pub async fn request_instruments(
         &self,
         currency: DeribitCurrency,
-        kind: Option<super::models::DeribitInstrumentKind>,
+        kind: Option<DeribitProductType>,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
         // Build parameters
         let params = if let Some(k) = kind {

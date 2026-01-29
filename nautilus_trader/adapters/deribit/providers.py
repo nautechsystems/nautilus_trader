@@ -21,7 +21,7 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.nautilus_pyo3 import DeribitCurrency
-from nautilus_trader.core.nautilus_pyo3 import DeribitInstrumentKind
+from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import instruments_from_pyo3
 
@@ -34,8 +34,8 @@ class DeribitInstrumentProvider(InstrumentProvider):
     ----------
     client : nautilus_pyo3.DeribitHttpClient
         The Deribit HTTP client.
-    instrument_kinds : tuple[DeribitInstrumentKind, ...], optional
-        The instrument kinds to load.
+    product_types : tuple[DeribitProductType, ...], optional
+        The product types to load.
     config : InstrumentProviderConfig, optional
         The instrument provider configuration, by default None.
 
@@ -44,27 +44,27 @@ class DeribitInstrumentProvider(InstrumentProvider):
     def __init__(
         self,
         client: nautilus_pyo3.DeribitHttpClient,
-        instrument_kinds: tuple[DeribitInstrumentKind, ...] | None = None,
+        product_types: tuple[DeribitProductType, ...] | None = None,
         config: InstrumentProviderConfig | None = None,
     ) -> None:
         super().__init__(config=config)
         self._client = client
-        self._instrument_kinds = instrument_kinds
+        self._product_types = product_types
         self._log_warnings = config.log_warnings if config else True
 
         self._instruments_pyo3: list[nautilus_pyo3.Instrument] = []
 
     @property
-    def instrument_kinds(self) -> tuple[DeribitInstrumentKind, ...] | None:
+    def product_types(self) -> tuple[DeribitProductType, ...] | None:
         """
-        Return the Deribit instrument kinds configured for the provider.
+        Return the Deribit product types configured for the provider.
 
         Returns
         -------
-        tuple[DeribitInstrumentKind, ...] | None
+        tuple[DeribitProductType, ...] | None
 
         """
-        return self._instrument_kinds
+        return self._product_types
 
     def instruments_pyo3(self) -> list[Any]:
         """
@@ -82,9 +82,9 @@ class DeribitInstrumentProvider(InstrumentProvider):
         self._log.info(f"Loading all instruments{filters_str}")
 
         all_pyo3_instruments = []
-        if self._instrument_kinds:
+        if self._product_types:
             # Load each instrument kind separately
-            for kind in self._instrument_kinds:
+            for kind in self._product_types:
                 pyo3_instruments = await self._client.request_instruments(
                     DeribitCurrency.ANY,
                     kind,
@@ -123,8 +123,8 @@ class DeribitInstrumentProvider(InstrumentProvider):
             PyCondition.equal(instrument_id.venue, DERIBIT_VENUE, "instrument_id.venue", "DERIBIT")
 
         all_pyo3_instruments = []
-        if self._instrument_kinds:
-            for kind in self._instrument_kinds:
+        if self._product_types:
+            for kind in self._product_types:
                 pyo3_instruments = await self._client.request_instruments(
                     DeribitCurrency.ANY,
                     kind,

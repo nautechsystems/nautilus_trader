@@ -28,7 +28,7 @@ use nautilus_common::enums::Environment;
 use nautilus_deribit::{
     config::{DeribitDataClientConfig, DeribitExecClientConfig},
     factories::{DeribitDataClientFactory, DeribitExecutionClientFactory},
-    http::models::DeribitInstrumentKind,
+    http::models::DeribitProductType,
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_config = DeribitDataClientConfig {
         api_key: None,    // Will use env var
         api_secret: None, // Will use env var
-        instrument_kinds: vec![DeribitInstrumentKind::Future],
+        product_types: vec![DeribitProductType::Future],
         use_testnet,
         ..Default::default()
     };
@@ -64,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         account_id,
         api_key: None,    // Will use env var
         api_secret: None, // Will use env var
-        instrument_kinds: vec![DeribitInstrumentKind::Future],
+        product_types: vec![DeribitProductType::Future],
         use_testnet,
         ..Default::default()
     };

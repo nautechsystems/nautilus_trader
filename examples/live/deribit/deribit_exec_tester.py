@@ -46,7 +46,7 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.core.nautilus_pyo3 import DeribitInstrumentKind
+from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
@@ -61,8 +61,8 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # Use testnet by default for safety
 USE_TESTNET = os.getenv("USE_TESTNET", "true").lower() != "false"
 
-# Optional: Filter by instrument kinds
-instrument_kinds: tuple[DeribitInstrumentKind, ...] | None = (DeribitInstrumentKind.FUTURE,)
+# Optional: Filter by product types
+product_types: tuple[DeribitProductType, ...] | None = (DeribitProductType.FUTURE,)
 
 # Define instrument to test with
 instrument_id = InstrumentId.from_str(f"BTC-PERPETUAL.{DERIBIT}")
@@ -90,7 +90,7 @@ config_node = TradingNodeConfig(
         DERIBIT: DeribitDataClientConfig(
             api_key=None,  # Will use env var
             api_secret=None,  # Will use env var
-            instrument_kinds=instrument_kinds,
+            product_types=product_types,
             instrument_provider=InstrumentProviderConfig(
                 load_all=True,
             ),
@@ -102,7 +102,7 @@ config_node = TradingNodeConfig(
         DERIBIT: DeribitExecClientConfig(
             api_key=None,  # Will use env var
             api_secret=None,  # Will use env var
-            instrument_kinds=instrument_kinds,
+            product_types=product_types,
             instrument_provider=InstrumentProviderConfig(
                 load_all=True,
             ),
