@@ -599,6 +599,17 @@ It's possible to override the default base URLs for both HTTP and WebSocket APIs
 | Production  | `https://www.deribit.com`  | `wss://www.deribit.com/ws/api/v2`  |
 | Testnet     | `https://test.deribit.com` | `wss://test.deribit.com/ws/api/v2` |
 
+## Server infrastructure
+
+Deribit's matching engine is located in **Equinix LD4, Slough, UK**. For latency-sensitive strategies,
+consider hosting in or near London. Colocation and cross-connect options are available directly
+from Deribit for institutional clients.
+
+For most users connecting via internet, the adapter's built-in retry logic, heartbeat monitoring,
+and automatic reconnection handling provide reliable connectivity.
+
+For more details, see the [Server Infrastructure article](https://support.deribit.com/hc/en-us/articles/25944617582877).
+
 ## Contributing
 
 :::info
