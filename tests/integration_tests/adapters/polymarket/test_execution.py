@@ -2830,9 +2830,12 @@ class TestPolymarketBatchOrderSubmission:
         mock_post_orders.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_submit_order_list_with_post_only_denied(self, mocker):
+    async def test_submit_order_list_with_post_only_and_ioc_denied(self, mocker):
         """
-        Test that post_only orders in batch are denied.
+        Test that post_only orders with IOC time_in_force are denied.
+
+        Post-only orders are only supported with GTC or GTD time in force.
+
         """
         # Arrange
         mock_generate_denied = mocker.patch.object(
@@ -2841,12 +2844,13 @@ class TestPolymarketBatchOrderSubmission:
         )
         mock_post_orders = mocker.patch.object(self.http_client, "post_orders")
 
-        # Create a post_only limit order
+        # Create a post_only limit order with IOC (not supported)
         post_only_order = self.strategy.order_factory.limit(
             instrument_id=ELECTION_INSTRUMENT.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_str("10"),
             price=Price.from_str("0.50"),
+            time_in_force=TimeInForce.IOC,
             post_only=True,
         )
         self.cache.add_order(post_only_order, None)
@@ -2871,5 +2875,326 @@ class TestPolymarketBatchOrderSubmission:
         # Assert
         mock_generate_denied.assert_called_once()
         denied_call = mock_generate_denied.call_args
-        assert "POST_ONLY_NOT_SUPPORTED" in denied_call.kwargs["reason"]
+        assert "POST_ONLY_REQUIRES_GTC_OR_GTD" in denied_call.kwargs["reason"]
         mock_post_orders.assert_not_called()
+
+
+# =====================================================================================
+# Tests for cancel_all_global, cancel_market_orders, and post_only support
+# =====================================================================================
+
+
+class TestPolymarketCancelAndPostOnly:
+    """
+    Tests for cancel_all_global, cancel_market_orders, and post_only order support.
+    """
+
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
+        # Fixture Setup
+        self.loop = request.getfixturevalue("event_loop")
+        self.loop.set_debug(True)
+
+        self.clock = LiveClock()
+        self.trader_id = TestIdStubs.trader_id()
+        self.venue = POLYMARKET_VENUE
+        self.account_id = AccountId(f"{self.venue.value}-001")
+
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+
+        self.cache = TestComponentStubs.cache()
+
+        # Mock HTTP client
+        self.http_client = MagicMock(spec=ClobClient)
+        self.http_client.get_address.return_value = "0xa3D82Ed56F4c68d2328Fb8c29e568Ba2cAF7d7c8"
+
+        # Mock the creds attribute
+        mock_creds = MagicMock()
+        mock_creds.api_key = "test_api_key"
+        self.http_client.creds = mock_creds
+
+        # Mock instrument provider
+        self.provider = MagicMock(spec=PolymarketInstrumentProvider)
+        self.provider.initialize = AsyncMock()
+
+        # Mock WebSocket auth
+        self.ws_auth = MagicMock(spec=PolymarketWebSocketAuth)
+
+        self.portfolio = Portfolio(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        self.data_engine = DataEngine(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        self.exec_engine = ExecutionEngine(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        self.risk_engine = RiskEngine(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Create execution client
+        config = PolymarketExecClientConfig()
+        self.exec_client = PolymarketExecutionClient(
+            loop=self.loop,
+            http_client=self.http_client,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            instrument_provider=self.provider,
+            ws_auth=self.ws_auth,
+            config=config,
+            name=None,
+        )
+
+        # Prevent actual WebSocket connections in tests
+        mock_ws_client = MagicMock()
+        mock_ws_client.is_disconnected.return_value = False
+        mock_ws_client.is_connected.return_value = True
+        mock_ws_client.has_subscriptions = True
+        mock_ws_client.subscriptions = []
+        mock_ws_client.market_subscriptions.return_value = []
+        mock_ws_client.connect = AsyncMock()
+        mock_ws_client.disconnect = AsyncMock()
+        mock_ws_client.subscribe = AsyncMock()
+        mock_ws_client.unsubscribe = AsyncMock()
+        mock_ws_client.add_subscription = MagicMock()
+        self.exec_client._ws_client = mock_ws_client
+
+        self.exec_engine.register_client(self.exec_client)
+
+        self.strategy = Strategy()
+        self.strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Add test instrument to cache
+        self.cache.add_instrument(ELECTION_INSTRUMENT)
+
+    # -------------------------------------------------------------------------
+    # Tests for cancel_all_global
+    # -------------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_cancel_all_global_success(self, mocker):
+        """
+        Test successful global cancel all orders.
+        """
+        # Arrange
+        mock_cancel_all = mocker.patch.object(self.http_client, "cancel_all")
+        mock_cancel_all.return_value = {
+            "canceled": ["order1", "order2", "order3"],
+            "not_canceled": {},
+        }
+
+        # Act
+        await self.exec_client._cancel_all_global()
+
+        # Assert
+        mock_cancel_all.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cancel_all_global_partial_failure(self, mocker):
+        """
+        Test cancel all with some orders not canceled.
+        """
+        # Arrange
+        mock_cancel_all = mocker.patch.object(self.http_client, "cancel_all")
+        mock_cancel_all.return_value = {
+            "canceled": ["order1"],
+            "not_canceled": {"order2": "Order already filled"},
+        }
+
+        # Act
+        await self.exec_client._cancel_all_global()
+
+        # Assert
+        mock_cancel_all.assert_called_once()
+
+    # -------------------------------------------------------------------------
+    # Tests for cancel_market_orders
+    # -------------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_cancel_market_orders_success(self, mocker):
+        """
+        Test cancel orders for a specific market.
+        """
+        # Arrange
+        mock_cancel_market = mocker.patch.object(
+            self.http_client,
+            "cancel_market_orders",
+        )
+        mock_cancel_market.return_value = {
+            "canceled": ["order1", "order2"],
+            "not_canceled": {},
+        }
+
+        # Act
+        await self.exec_client._cancel_market_orders(
+            instrument_id=ELECTION_INSTRUMENT.id,
+        )
+
+        # Assert
+        mock_cancel_market.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cancel_market_orders_all_markets(self, mocker):
+        """
+        Test cancel orders for all markets (no instrument_id).
+        """
+        # Arrange
+        mock_cancel_market = mocker.patch.object(
+            self.http_client,
+            "cancel_market_orders",
+        )
+        mock_cancel_market.return_value = {
+            "canceled": ["order1"],
+            "not_canceled": {},
+        }
+
+        # Act
+        await self.exec_client._cancel_market_orders()
+
+        # Assert
+        mock_cancel_market.assert_called_once_with("", "")
+
+    # -------------------------------------------------------------------------
+    # Tests for post_only order support
+    # -------------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_submit_post_only_order_with_gtc_success(self, mocker):
+        """
+        Test successful post_only order submission with GTC time in force.
+        """
+        # Arrange
+        mock_create_order = mocker.patch.object(self.http_client, "create_order")
+        mock_post_order = mocker.patch.object(self.http_client, "post_order")
+
+        mock_create_order.return_value = {"signed_order": "mock_signed"}
+        mock_post_order.return_value = {"success": True, "orderID": "post_only_order_1"}
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("10"),
+            price=Price.from_str("0.50"),
+            time_in_force=TimeInForce.GTC,
+            post_only=True,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        await self.exec_client._submit_order(submit_order)
+
+        # Assert
+        mock_create_order.assert_called_once()
+        mock_post_order.assert_called_once()
+        # Verify post_only=True was passed
+        call_args = mock_post_order.call_args
+        assert call_args[0][2] is True  # post_only parameter
+
+    @pytest.mark.asyncio
+    async def test_submit_post_only_order_with_fok_denied(self, mocker):
+        """
+        Test post_only order with FOK time in force is denied.
+        """
+        # Arrange
+        mock_generate_denied = mocker.patch.object(
+            self.exec_client,
+            "generate_order_denied",
+        )
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("10"),
+            price=Price.from_str("0.50"),
+            time_in_force=TimeInForce.FOK,
+            post_only=True,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        await self.exec_client._submit_order(submit_order)
+
+        # Assert
+        mock_generate_denied.assert_called_once()
+        denied_call = mock_generate_denied.call_args
+        assert "POST_ONLY_REQUIRES_GTC_OR_GTD" in denied_call.kwargs["reason"]
+
+    @pytest.mark.asyncio
+    async def test_submit_post_only_order_with_ioc_denied(self, mocker):
+        """
+        Test post_only order with IOC time in force is denied.
+        """
+        # Arrange
+        mock_generate_denied = mocker.patch.object(
+            self.exec_client,
+            "generate_order_denied",
+        )
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("10"),
+            price=Price.from_str("0.50"),
+            time_in_force=TimeInForce.IOC,
+            post_only=True,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        await self.exec_client._submit_order(submit_order)
+
+        # Assert
+        mock_generate_denied.assert_called_once()
+        denied_call = mock_generate_denied.call_args
+        assert "POST_ONLY_REQUIRES_GTC_OR_GTD" in denied_call.kwargs["reason"]

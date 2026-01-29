@@ -958,6 +958,92 @@ class PolymarketExecutionClient(LiveExecutionClient):
         finally:
             await self._retry_manager_pool.release(retry_manager)
 
+    async def _cancel_all_global(self) -> None:
+        """
+        Cancel all orders for this API key using Polymarket's cancel_all endpoint.
+
+        This cancels ALL orders across all markets and strategies. Use with caution as
+        it cannot be filtered by instrument or strategy.
+
+        """
+        self._log.info("Canceling ALL orders globally via Polymarket cancel_all endpoint")
+
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
+            response: JSON | None = await retry_manager.run(
+                "cancel_all_global",
+                [],
+                asyncio.to_thread,
+                self._http_client.cancel_all,
+            )
+            if not response or not retry_manager.result:
+                self._log.error(f"Failed to cancel all orders: {retry_manager.message}")
+            else:
+                canceled = response.get("canceled", [])
+                not_canceled = response.get("not_canceled", {})
+                self._log.info(
+                    f"Cancel all result: {len(canceled)} canceled, "
+                    f"{len(not_canceled)} not canceled",
+                )
+                for order_id, reason in not_canceled.items():
+                    self._log.warning(f"Order {order_id} not canceled: {reason}")
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
+
+    async def _cancel_market_orders(
+        self,
+        instrument_id: InstrumentId | None = None,
+        asset_id: str = "",
+    ) -> None:
+        """
+        Cancel orders for a specific market using Polymarket's cancel_market_orders
+        endpoint.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument ID to derive the market (condition_id).
+        asset_id : str, optional
+            The specific asset ID (token_id) to cancel orders for.
+
+        """
+        from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_condition_id
+        from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
+
+        market = ""
+        if instrument_id is not None:
+            market = get_polymarket_condition_id(instrument_id)
+            if not asset_id:
+                asset_id = get_polymarket_token_id(instrument_id)
+
+        self._log.info(
+            f"Canceling orders for market={market or 'ALL'}, asset_id={asset_id or 'ALL'}",
+        )
+
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
+            response: JSON | None = await retry_manager.run(
+                "cancel_market_orders",
+                [instrument_id] if instrument_id else [],
+                asyncio.to_thread,
+                self._http_client.cancel_market_orders,
+                market,
+                asset_id,
+            )
+            if not response or not retry_manager.result:
+                self._log.error(f"Failed to cancel market orders: {retry_manager.message}")
+            else:
+                canceled = response.get("canceled", [])
+                not_canceled = response.get("not_canceled", {})
+                self._log.info(
+                    f"Cancel market orders result: {len(canceled)} canceled, "
+                    f"{len(not_canceled)} not canceled",
+                )
+                for order_id, reason in not_canceled.items():
+                    self._log.warning(f"Order {order_id} not canceled: {reason}")
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
+
     async def _submit_order(self, command: SubmitOrder) -> None:
         await self._maintain_active_market(command.instrument_id)
 
@@ -981,17 +1067,18 @@ class PolymarketExecutionClient(LiveExecutionClient):
             )
             return
 
-        if order.is_post_only:
+        # post_only orders only supported with GTC or GTD time_in_force
+        if order.is_post_only and order.time_in_force not in (TimeInForce.GTC, TimeInForce.GTD):
             self._log.error(
                 f"Cannot submit order {order.client_order_id}: "
-                "Post-only orders not supported on Polymarket",
+                "Post-only orders require GTC or GTD time in force",
                 LogColor.RED,
             )
             self.generate_order_denied(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
-                reason="POST_ONLY_NOT_SUPPORTED",
+                reason="POST_ONLY_REQUIRES_GTC_OR_GTD",
                 ts_event=self._clock.timestamp_ns(),
             )
             return
@@ -1043,8 +1130,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
         if order.is_reduce_only:
             return "REDUCE_ONLY_NOT_SUPPORTED"
 
-        if order.is_post_only:
-            return "POST_ONLY_NOT_SUPPORTED"
+        if order.is_post_only and order.time_in_force not in (TimeInForce.GTC, TimeInForce.GTD):
+            return "POST_ONLY_REQUIRES_GTC_OR_GTD"
 
         if order.time_in_force not in VALID_POLYMARKET_TIME_IN_FORCE:
             return "UNSUPPORTED_TIME_IN_FORCE"
@@ -1156,7 +1243,11 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
             order_type = convert_tif_to_polymarket_order_type(order.time_in_force)
             signed_orders_args.append(
-                PostOrdersArgs(order=signed_order, orderType=order_type),
+                PostOrdersArgs(
+                    order=signed_order,
+                    orderType=order_type,
+                    postOnly=order.is_post_only,
+                ),
             )
 
         interval = self._clock.timestamp() - signing_start
@@ -1356,9 +1447,14 @@ class PolymarketExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
-        await self._post_signed_order(order, signed_order)
+        await self._post_signed_order(order, signed_order, post_only=order.is_post_only)
 
-    async def _post_signed_order(self, order: Order, signed_order) -> None:
+    async def _post_signed_order(
+        self,
+        order: Order,
+        signed_order,
+        post_only: bool = False,
+    ) -> None:
         retry_manager = await self._retry_manager_pool.acquire()
         try:
             response: JSON | None = await retry_manager.run(
@@ -1368,6 +1464,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 self._http_client.post_order,
                 signed_order,
                 convert_tif_to_polymarket_order_type(order.time_in_force),
+                post_only,
             )
             if not response or not response.get("success"):
                 self.generate_order_rejected(
