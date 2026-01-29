@@ -351,6 +351,55 @@ Deribit returns error code `10028` (too_many_requests) when you exceed the allow
 Repeated violations may result in temporary throttling.
 :::
 
+## Connection management
+
+### Platform limits
+
+| Limit | Value |
+|-------|-------|
+| Maximum connections per IP | 32 |
+| Maximum sessions per API key | 16 |
+| Maximum API keys per (sub)account | 8 |
+
+### Session-based authentication
+
+The adapter uses **separate WebSocket sessions** for data and execution clients, each with its own
+authentication scope:
+
+| Client | Session Name | Purpose |
+|--------|--------------|---------|
+| Data client | `nautilus-data` | Market data subscriptions (raw feeds require auth) |
+| Execution client | `nautilus-execution` | Order operations (buy, sell, edit, cancel) |
+
+**Authentication flow:**
+1. WebSocket connects to Deribit
+2. Client authenticates using `client_signature` grant type with session scope
+3. Tokens are automatically refreshed at 80% of expiry time (continuous refresh cycle)
+4. On reconnection, re-authentication occurs automatically
+
+This session-based approach allows:
+- Independent token management per client type
+- Isolated failure domains (data auth failure doesn't affect execution)
+- Clear audit trail in Deribit's session logs
+
+### Best practices
+
+The adapter follows Deribit's [recommended connection practices](https://support.deribit.com/hc/en-us/articles/25944603459613):
+
+1. **Uses WebSocket subscriptions** for real-time data instead of REST polling—fewer requests,
+   lower latency, and reduced rate limit consumption
+2. **Authenticates all connections** when credentials are provided. Authenticated users benefit
+   from higher rate limits and are less likely to be IP rate-limited
+3. **Implements heartbeats** (default 10 second interval) to maintain connection health and
+   detect disconnections early
+4. **Handles reconnection** automatically with re-authentication and subscription recovery
+
+:::tip
+Always provide API credentials even for public data access. Authenticated connections have higher
+rate limits, and Deribit contacts authenticated clients before applying restrictions during
+high-load periods.
+:::
+
 ## Authentication
 
 Deribit uses API key authentication with HMAC-SHA256 signatures for private endpoints.
