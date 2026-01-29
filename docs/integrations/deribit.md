@@ -4,13 +4,7 @@ Founded in 2016, Deribit is a cryptocurrency derivatives exchange specializing i
 Ethereum options and futures. It is one of the largest crypto options exchanges by volume,
 and a leading platform for crypto derivatives trading.
 
-This integration supports live market data ingest and order execution for:
-
-- **Perpetual Futures** (e.g., BTC-PERPETUAL, ETH-PERPETUAL)
-- **Dated Futures** (e.g., BTC-28MAR25, ETH-27JUN25)
-- **Options** (e.g., BTC-28MAR25-100000-C)
-- **Spot** (e.g., BTC_USDC, ETH_USDC)
-- **Combo Instruments** (e.g., future spreads, option spreads)
+This integration supports live market data ingest and order execution with Deribit.
 
 ## Overview
 
@@ -120,19 +114,19 @@ Deribit provides two types of order book feeds, each suited for different use ca
 Raw channels deliver every single update as an individual message. Subscribing to a raw order book
 gives you a notification for every order insertion, update, or deletion in the book.
 
-- **Requires authenticated connection** (safeguard against abuse)
-- Use when you need every price level change for HFT or market making
-- Higher message volume
+- Requires authenticated connection (safeguard against abuse).
+- Use when you need every price level change for HFT or market making.
+- Higher message volume.
 
 ### Aggregated feeds (batched)
 
 Aggregated channels deliver updates in batches at a fixed interval (e.g., every 100ms).
 This groups multiple order book changes into single messages.
 
-- Available without authentication
-- Recommended for most use cases
-- Lower message volume, easier to process
-- Default interval: 100ms
+- Available without authentication.
+- Recommended for most use cases.
+- Lower message volume, easier to process.
+- Default interval: 100ms.
 
 ### Subscription parameters
 
@@ -383,9 +377,9 @@ authentication scope:
 
 This session-based approach allows:
 
-- Independent token management per client type
-- Isolated failure domains (data auth failure doesn't affect execution)
-- Clear audit trail in Deribit's session logs
+- Independent token management per client type.
+- Isolated failure domains (data auth failure doesn't affect execution).
+- Clear audit trail in Deribit's session logs.
 
 ### Best practices
 
@@ -466,9 +460,9 @@ config = TradingNodeConfig(
 
 When testnet mode is enabled:
 
-- HTTP requests use `https://test.deribit.com`
-- WebSocket connections use `wss://test.deribit.com/ws/api/v2`
-- Credentials are loaded from `DERIBIT_TESTNET_API_KEY` and `DERIBIT_TESTNET_API_SECRET` environment variables
+- HTTP requests use `https://test.deribit.com`.
+- WebSocket connections use `wss://test.deribit.com/ws/api/v2`.
+- Loads credentials from `DERIBIT_TESTNET_API_KEY` and `DERIBIT_TESTNET_API_SECRET` environment variables.
 
 :::note
 Testnet API keys are separate from production keys. You must create API keys specifically for the testnet through the testnet interface at [test.deribit.com](https://test.deribit.com).
@@ -480,9 +474,9 @@ Testnet API keys are separate from production keys. You must create API keys spe
 
 | Option                             | Default    | Description |
 |------------------------------------|------------|-------------|
-| `api_key`                          | `None`     | Deribit API key; loaded from environment variables when omitted. |
-| `api_secret`                       | `None`     | Deribit API secret; loaded from environment variables when omitted. |
-| `instrument_kinds`                 | `None`     | Instrument kinds to load (Future, Option, Spot, etc.). If `None`, loads all kinds. |
+| `api_key`                          | `None`     | Deribit API key; loads from environment variables when omitted. |
+| `api_secret`                       | `None`     | Deribit API secret; loads from environment variables when omitted. |
+| `product_types`                    | `None`     | Product types to load (Future, Option, Spot, etc.). If `None`, loads all types. |
 | `base_url_http`                    | `None`     | Override for the HTTP REST base URL. |
 | `base_url_ws`                      | `None`     | Override for the WebSocket base URL. |
 | `is_testnet`                       | `False`    | Use Deribit testnet endpoints when `True`. |
@@ -496,9 +490,9 @@ Testnet API keys are separate from production keys. You must create API keys spe
 
 | Option                   | Default    | Description |
 |--------------------------|------------|-------------|
-| `api_key`                | `None`     | Deribit API key; loaded from environment variables when omitted. |
-| `api_secret`             | `None`     | Deribit API secret; loaded from environment variables when omitted. |
-| `instrument_kinds`       | `None`     | Instrument kinds to load (Future, Option, Spot, etc.). If `None`, defaults to Future. |
+| `api_key`                | `None`     | Deribit API key; loads from environment variables when omitted. |
+| `api_secret`             | `None`     | Deribit API secret; loads from environment variables when omitted. |
+| `product_types`          | `None`     | Product types to load (Future, Option, Spot, etc.). If `None`, defaults to Future. |
 | `base_url_http`          | `None`     | Override for the HTTP REST base URL. |
 | `base_url_ws`            | `None`     | Override for the WebSocket base URL. |
 | `is_testnet`             | `False`    | Use Deribit testnet endpoints when `True`. |
@@ -519,16 +513,16 @@ from nautilus_trader.adapters.deribit import DeribitLiveDataClientFactory
 from nautilus_trader.adapters.deribit import DeribitLiveExecClientFactory
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.core.nautilus_pyo3 import DeribitInstrumentKind
+from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
 from nautilus_trader.live.node import TradingNode
 
 config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
         DERIBIT: DeribitDataClientConfig(
-            api_key=None,           # Will use DERIBIT_API_KEY env var
-            api_secret=None,        # Will use DERIBIT_API_SECRET env var
-            instrument_kinds=(DeribitInstrumentKind.Future,),
+            api_key=None,           # Uses DERIBIT_API_KEY env var
+            api_secret=None,        # Uses DERIBIT_API_SECRET env var
+            product_types=(DeribitProductType.Future,),
             instrument_provider=InstrumentProviderConfig(load_all=True),
             is_testnet=False,
         ),
@@ -537,7 +531,7 @@ config = TradingNodeConfig(
         DERIBIT: DeribitExecClientConfig(
             api_key=None,
             api_secret=None,
-            instrument_kinds=(DeribitInstrumentKind.Future,),
+            product_types=(DeribitProductType.Future,),
             instrument_provider=InstrumentProviderConfig(load_all=True),
             is_testnet=False,
         ),
@@ -570,26 +564,26 @@ For Deribit testnet clients:
 We recommend using environment variables to manage your credentials.
 :::
 
-### Instrument kinds
+### Product types
 
-The `instrument_kinds` configuration option controls which Deribit instrument families are loaded.
-Available options via the `DeribitInstrumentKind` enum:
+The `product_types` configuration option controls which Deribit product families are loaded.
+Available options via the `DeribitProductType` enum:
 
-- `DeribitInstrumentKind.Future` - Perpetual and dated futures
-- `DeribitInstrumentKind.Option` - Call and put options
-- `DeribitInstrumentKind.Spot` - Spot trading pairs
-- `DeribitInstrumentKind.FutureCombo` - Future spread instruments
-- `DeribitInstrumentKind.OptionCombo` - Option spread instruments
+- `DeribitProductType.Future` - Perpetual and dated futures.
+- `DeribitProductType.Option` - Call and put options.
+- `DeribitProductType.Spot` - Spot trading pairs.
+- `DeribitProductType.FutureCombo` - Future spread instruments.
+- `DeribitProductType.OptionCombo` - Option spread instruments.
 
-Example loading multiple instrument kinds:
+Example loading multiple product types:
 
 ```python
-from nautilus_trader.core.nautilus_pyo3 import DeribitInstrumentKind
+from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
 
 config = DeribitDataClientConfig(
-    instrument_kinds=(
-        DeribitInstrumentKind.Future,
-        DeribitInstrumentKind.Option,
+    product_types=(
+        DeribitProductType.Future,
+        DeribitProductType.Option,
     ),
     # ... other config
 )
