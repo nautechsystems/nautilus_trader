@@ -35,6 +35,7 @@ use nautilus_deribit::http::{
     },
 };
 use nautilus_network::http::HttpClient;
+use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 
 #[derive(Clone, Default)]
@@ -420,9 +421,9 @@ async fn test_get_instrument_success() {
     assert_eq!(instrument.instrument_id, 124972);
     assert_eq!(instrument.base_currency.as_str(), "BTC");
     assert_eq!(instrument.quote_currency.as_str(), "USD");
-    assert_eq!(instrument.contract_size, 10.0);
-    assert_eq!(instrument.tick_size, 0.5);
-    assert_eq!(instrument.min_trade_amount, 10.0);
+    assert_eq!(instrument.contract_size, dec!(10.0));
+    assert_eq!(instrument.tick_size, dec!(0.5));
+    assert_eq!(instrument.min_trade_amount, dec!(10.0));
     assert!(instrument.is_active);
     assert_eq!(instrument.kind, DeribitInstrumentKind::Future);
 
@@ -549,7 +550,7 @@ async fn test_get_instruments_success() {
     let option = &instruments[2];
     assert_eq!(option.instrument_name.as_str(), "BTC-27DEC24-100000-C");
     assert_eq!(option.kind, DeribitInstrumentKind::Option);
-    assert_eq!(option.strike, Some(100000.0));
+    assert_eq!(option.strike, Some(dec!(100000.0)));
 
     let combo = &instruments[3];
     assert_eq!(combo.instrument_name.as_str(), "BTC-COMBO-1");
@@ -662,18 +663,18 @@ async fn test_get_last_trades_success() {
     let first_trade = &trades_response.trades[0];
     assert_eq!(first_trade.instrument_name, "ETH-PERPETUAL");
     assert_eq!(first_trade.direction, "sell");
-    assert_eq!(first_trade.price, 2968.3);
-    assert_eq!(first_trade.amount, 1.0);
+    assert_eq!(first_trade.price, dec!(2968.3));
+    assert_eq!(first_trade.amount, dec!(1.0));
     assert_eq!(first_trade.trade_id, "ETH-284830839");
     assert_eq!(first_trade.trade_seq, 203024587);
     assert_eq!(first_trade.tick_direction, 0);
-    assert_eq!(first_trade.index_price, 2967.73);
-    assert_eq!(first_trade.mark_price, 2968.01);
+    assert_eq!(first_trade.index_price, dec!(2967.73));
+    assert_eq!(first_trade.mark_price, dec!(2968.01));
 
     // Verify last trade (buy order with larger size)
     let last_trade = &trades_response.trades[9];
     assert_eq!(last_trade.direction, "buy");
-    assert_eq!(last_trade.amount, 106.0);
+    assert_eq!(last_trade.amount, dec!(106.0));
     assert_eq!(last_trade.trade_id, "ETH-284830854");
 
     // Verify request was tracked
@@ -943,12 +944,12 @@ async fn test_get_order_book_success() {
     assert_eq!(order_book.asks.len(), 20, "Should return 20 ask levels");
 
     // Verify best bid
-    assert_eq!(order_book.best_bid_price, Some(87002.5));
-    assert_eq!(order_book.best_bid_amount, Some(199190.0));
+    assert_eq!(order_book.best_bid_price, Some(dec!(87002.5)));
+    assert_eq!(order_book.best_bid_amount, Some(dec!(199190.0)));
 
     // Verify best ask
-    assert_eq!(order_book.best_ask_price, Some(87003.0));
-    assert_eq!(order_book.best_ask_amount, Some(125090.0));
+    assert_eq!(order_book.best_ask_price, Some(dec!(87003.0)));
+    assert_eq!(order_book.best_ask_amount, Some(dec!(125090.0)));
 
     // Verify first bid level
     assert_eq!(order_book.bids[0][0], 87002.5); // price
