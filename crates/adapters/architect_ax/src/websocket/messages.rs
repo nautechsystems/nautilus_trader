@@ -21,7 +21,8 @@
 use nautilus_core::{
     UnixNanos,
     serialization::{
-        deserialize_optional_decimal, serialize_decimal_as_str, serialize_optional_decimal_as_str,
+        deserialize_optional_decimal_str, serialize_decimal_as_str,
+        serialize_optional_decimal_as_str,
     },
 };
 use nautilus_model::{
@@ -508,7 +509,7 @@ pub struct AxWsPlaceOrder {
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "serialize_optional_decimal_as_str",
-        deserialize_with = "deserialize_optional_decimal",
+        deserialize_with = "deserialize_optional_decimal_str",
         default
     )]
     pub trigger_price: Option<Decimal>,

@@ -32,8 +32,8 @@ use crate::{
             BybitTriggerDirection, BybitTriggerType, BybitWsOrderRequestOp,
         },
         parse::{
-            deserialize_decimal_or_zero, deserialize_optional_decimal,
-            deserialize_optional_decimal_or_zero,
+            deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero,
+            deserialize_optional_decimal_str,
         },
     },
     websocket::enums::BybitWsOperation,
@@ -900,7 +900,7 @@ pub struct BybitWsAccountPosition {
     pub position_value: String,
     pub risk_id: i64,
     pub risk_limit_value: String,
-    #[serde(deserialize_with = "deserialize_optional_decimal")]
+    #[serde(deserialize_with = "deserialize_optional_decimal_str")]
     pub entry_price: Option<Decimal>,
     pub mark_price: String,
     pub leverage: String,

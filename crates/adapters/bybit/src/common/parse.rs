@@ -19,8 +19,8 @@ use std::{convert::TryFrom, str::FromStr};
 
 use anyhow::Context;
 pub use nautilus_core::serialization::{
-    deserialize_decimal_or_zero, deserialize_optional_decimal,
-    deserialize_optional_decimal_or_zero, deserialize_string_to_u8,
+    deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero,
+    deserialize_optional_decimal_str, deserialize_string_to_u8,
 };
 use nautilus_core::{UUID4, datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
 use nautilus_model::{
