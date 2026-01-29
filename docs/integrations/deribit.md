@@ -418,6 +418,25 @@ To create API credentials:
 Keep your API secret secure. Never share it or commit it to version control.
 :::
 
+### API key scopes
+
+Each API key on Deribit is assigned a default access scope, which defines the maximum permissions.
+Configure appropriate permissions when [creating your API key](https://support.deribit.com/hc/en-us/articles/26268257333661):
+
+| Scope | Required For |
+|-------|-------------|
+| `account:read` | Account information, portfolio data |
+| `trade:read` | View orders and positions |
+| `trade:read_write` | Place, modify, and cancel orders |
+| `wallet:read` | View balances and transaction history |
+
+**Recommended minimum for trading:** `account:read`, `trade:read_write`, `wallet:read`
+
+:::tip
+Follow the principle of least privilege. For data-only access (market data, no trading),
+create a read-only key without `trade:read_write`.
+:::
+
 ## Testnet
 
 Deribit provides a testnet environment for testing strategies without real funds.
