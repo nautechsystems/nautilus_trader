@@ -244,6 +244,7 @@ If a post-only order would take liquidity, it is rejected with error code `11054
 event is emitted with the `due_post_only` flag set to `true`.
 
 This allows strategies to differentiate between:
+
 - Orders rejected due to post-only violation (attempted to take liquidity)
 - Orders rejected for other reasons (insufficient margin, invalid price, etc.)
 
@@ -259,6 +260,7 @@ This provides several advantages:
 | Fill history maintained | Partial fills remain linked to the same order ID |
 
 **Queue priority rules:**
+
 - **Decreasing quantity only**: Keeps queue position
 - **Same price**: Keeps queue position
 - **Increasing quantity or changing price**: Loses queue position (treated as new order)
@@ -339,6 +341,7 @@ Higher matching engine limits are available for market makers and high-volume tr
 7-day trading volume tiers.
 
 The Nautilus adapter implements this using token bucket rate limiters configured as:
+
 - `DERIBIT_HTTP_REST_QUOTA`: 20 req/sec with 100 burst (non-matching REST)
 - `DERIBIT_HTTP_ORDER_QUOTA`: 5 req/sec with 20 burst (matching engine REST)
 - `DERIBIT_WS_ORDER_QUOTA`: 5 req/sec with 20 burst (matching engine WebSocket)
@@ -372,12 +375,14 @@ authentication scope:
 | Execution client | `nautilus-execution` | Order operations (buy, sell, edit, cancel) |
 
 **Authentication flow:**
+
 1. WebSocket connects to Deribit
 2. Client authenticates using `client_signature` grant type with session scope
 3. Tokens are automatically refreshed at 80% of expiry time (continuous refresh cycle)
 4. On reconnection, re-authentication occurs automatically
 
 This session-based approach allows:
+
 - Independent token management per client type
 - Isolated failure domains (data auth failure doesn't affect execution)
 - Clear audit trail in Deribit's session logs
