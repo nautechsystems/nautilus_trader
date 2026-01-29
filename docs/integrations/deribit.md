@@ -310,14 +310,41 @@ over time. The adapter enforces these quotas to prevent rate limit violations.
 | Subscribe/unsubscribe | 3 req/sec (10 burst) | Subscription operations.              |
 | Order operations    | 5 req/sec (20 burst)  | Buy, sell, edit, cancel via WebSocket. |
 
-:::info
-**Credit-based system**: Deribit's rate limiting uses credits rather than simple request counts:
-
-- Non-matching requests: 500 credits each, max 50,000 credits, refill 10,000/sec (~20 sustained req/s)
-- Matching engine requests: Separate limits that vary by account tier based on 7-day trading volume
-
-For more details, see the official documentation: <https://docs.deribit.com/#rate-limits>
+:::note
+The Nautilus adapter uses WebSocket for order submission (not REST) for lower latency.
+Order operations are rate-limited by `DERIBIT_WS_ORDER_QUOTA` (5 req/sec, 20 burst).
 :::
+
+### Credit-based system details
+
+Deribit uses a sophisticated credit-based rate limiting system where credits are replenished
+continuously at a fixed rate—each second, credits "drip" back into your sub-account's credit pool.
+
+**Non-matching engine requests:**
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| Cost per request | 500 credits | Each API call consumes credits |
+| Maximum pool | 50,000 credits | Allows 100 request burst |
+| Refill rate | 10,000 credits/sec | ~20 sustained requests/second |
+
+**Matching engine requests (default tier):**
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| Sustained rate | 5 requests/sec | Continuous rate limit |
+| Burst capacity | 20 requests | Maximum burst before throttling |
+
+Higher matching engine limits are available for market makers and high-volume traders based on
+7-day trading volume tiers.
+
+The Nautilus adapter implements this using token bucket rate limiters configured as:
+- `DERIBIT_HTTP_REST_QUOTA`: 20 req/sec with 100 burst (non-matching REST)
+- `DERIBIT_HTTP_ORDER_QUOTA`: 5 req/sec with 20 burst (matching engine REST)
+- `DERIBIT_WS_ORDER_QUOTA`: 5 req/sec with 20 burst (matching engine WebSocket)
+- `DERIBIT_WS_SUBSCRIPTION_QUOTA`: 3 req/sec with 10 burst (subscribe/unsubscribe)
+
+For more details, see the [Rate Limits article](https://support.deribit.com/hc/en-us/articles/25944617523357-Rate-Limits).
 
 :::warning
 Deribit returns error code `10028` (too_many_requests) when you exceed the allowed quota.
