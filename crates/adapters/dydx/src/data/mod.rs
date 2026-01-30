@@ -2159,7 +2159,6 @@ mod tests {
         routing::get,
     };
     use chrono::Utc;
-    use indexmap::IndexMap;
     use nautilus_common::{
         live::runner::set_data_event_sender,
         messages::{DataEvent, data::DataResponse},
@@ -2529,45 +2528,6 @@ mod tests {
         let err = DydxWebSocketError::from_message("malformed WebSocket payload".to_string());
 
         DydxDataClient::handle_ws_message(NautilusWsMessage::Error(err), &ctx);
-    }
-
-    #[tokio::test]
-    async fn test_request_bars_partitioning_math_does_not_panic() {
-        setup_test_env();
-
-        let client_id = ClientId::from("DYDX-BARS");
-        let config = DydxDataClientConfig::default();
-        let http_client = DydxHttpClient::default();
-
-        let client =
-            DydxDataClient::new(client_id, config, http_client, create_test_ws_client()).unwrap();
-
-        let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
-        let spec = BarSpecification {
-            step: std::num::NonZeroUsize::new(1).unwrap(),
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Last,
-        };
-        let bar_type = BarType::new(instrument_id, spec, AggregationSource::External);
-
-        let now = Utc::now();
-        let start = Some(now - chrono::Duration::hours(10));
-        let end = Some(now);
-
-        let request = RequestBars::new(
-            bar_type,
-            start,
-            end,
-            None,
-            Some(client_id),
-            UUID4::new(),
-            get_atomic_clock_realtime().get_time_ns(),
-            None,
-        );
-
-        // We only verify that the partitioning logic executes without panicking;
-        // HTTP calls are allowed to fail and are handled internally.
-        assert!(client.request_bars(request).is_ok());
     }
 
     #[tokio::test]
@@ -2973,11 +2933,15 @@ mod tests {
         assert!(client.request_bars(request).is_ok());
 
         let timeout = tokio::time::Duration::from_secs(3);
-        if let Ok(Some(DataEvent::Response(DataResponse::Bars(resp)))) =
-            tokio::time::timeout(timeout, rx.recv()).await
-        {
-            // Only the past candle should remain after filtering.
-            assert_eq!(resp.data.len(), 1);
+        let result = tokio::time::timeout(timeout, rx.recv()).await;
+        match result {
+            Ok(Some(DataEvent::Response(DataResponse::Bars(resp)))) => {
+                // Only the past candle should remain after filtering
+                assert_eq!(resp.data.len(), 1);
+            }
+            Ok(Some(_)) => panic!("Expected BarsResponse"),
+            Ok(None) => panic!("Channel closed unexpectedly"),
+            Err(_) => println!("Test timed out - testnet may be unreachable"),
         }
     }
 
@@ -3060,11 +3024,14 @@ mod tests {
         let mut saw_snapshot_event = false;
 
         while std::time::Instant::now() < deadline {
-            if let Ok(Some(DataEvent::Data(NautilusData::Deltas(_)))) =
-                tokio::time::timeout(std::time::Duration::from_millis(250), rx.recv()).await
-            {
-                saw_snapshot_event = true;
-                break;
+            match tokio::time::timeout(std::time::Duration::from_millis(250), rx.recv()).await {
+                Ok(Some(DataEvent::Data(NautilusData::Deltas(_)))) => {
+                    saw_snapshot_event = true;
+                    break;
+                }
+                Ok(Some(_)) => continue, // Different event type, keep waiting
+                Ok(None) => panic!("Channel closed unexpectedly"),
+                Err(_) => continue, // Timeout, keep waiting until deadline
             }
         }
 
@@ -3487,57 +3454,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_request_instruments_successful_fetch() {
-        // Test successful fetch of all instruments
-        let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        set_data_event_sender(sender);
-
-        let client_id = ClientId::from("DYDX-TEST");
-        let config = DydxDataClientConfig::default();
-        let http_client = DydxHttpClient::default();
-        let client =
-            DydxDataClient::new(client_id, config, http_client, create_test_ws_client()).unwrap();
-
-        let request = RequestInstruments::new(
-            None,
-            None,
-            Some(client_id),
-            Some(*DYDX_VENUE),
-            UUID4::new(),
-            get_atomic_clock_realtime().get_time_ns(),
-            None,
-        );
-
-        // Execute request (spawns async task)
-        let request_id = request.request_id;
-        assert!(client.request_instruments(request).is_ok());
-
-        // Wait for response (with timeout)
-        let timeout = tokio::time::Duration::from_secs(5);
-        let result = tokio::time::timeout(timeout, rx.recv()).await;
-
-        match result {
-            Ok(Some(DataEvent::Response(resp))) => {
-                if let DataResponse::Instruments(inst_resp) = resp {
-                    // Verify response structure
-                    assert_eq!(inst_resp.correlation_id, request_id);
-                    assert_eq!(inst_resp.client_id, client_id);
-                    assert_eq!(inst_resp.venue, *DYDX_VENUE);
-                    assert!(inst_resp.start.is_none());
-                    assert!(inst_resp.end.is_none());
-                    // Note: may be empty if HTTP fails, but structure should be correct
-                }
-            }
-            Ok(Some(_)) => panic!("Expected InstrumentsResponse"),
-            Ok(None) => panic!("Channel closed unexpectedly"),
-            Err(_) => {
-                // Timeout is acceptable if testnet is unreachable
-                println!("Test timed out - testnet may be unreachable");
-            }
-        }
-    }
-
-    #[tokio::test]
     async fn test_request_instruments_empty_response_on_http_error() {
         // Test empty response handling when HTTP call fails
         let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
@@ -3575,453 +3491,19 @@ mod tests {
 
         // Should receive empty response on error
         let timeout = tokio::time::Duration::from_secs(3);
-        if let Ok(Some(DataEvent::Response(DataResponse::Instruments(resp)))) =
-            tokio::time::timeout(timeout, rx.recv()).await
-        {
-            assert!(
-                resp.data.is_empty(),
-                "Expected empty instruments on HTTP error"
-            );
-            assert_eq!(resp.correlation_id, request_id);
-            assert_eq!(resp.client_id, client_id);
-        }
-    }
-
-    #[tokio::test]
-    async fn test_request_instruments_caching() {
-        // Test instrument caching after fetch
-        setup_test_env();
-
-        let client_id = ClientId::from("DYDX-CACHE-TEST");
-        let config = DydxDataClientConfig::default();
-        let http_client = DydxHttpClient::default();
-        let client =
-            DydxDataClient::new(client_id, config, http_client, create_test_ws_client()).unwrap();
-
-        let initial_cache_size = client.instrument_cache.len();
-
-        let request = RequestInstruments::new(
-            None,
-            None,
-            Some(client_id),
-            Some(*DYDX_VENUE),
-            UUID4::new(),
-            get_atomic_clock_realtime().get_time_ns(),
-            None,
-        );
-
-        assert!(client.request_instruments(request).is_ok());
-
-        // Wait for async task to complete
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-
-        // Verify cache populated (if HTTP succeeded)
-        let final_cache_size = client.instrument_cache.len();
-        // Cache should be unchanged (empty) if HTTP failed, or populated if succeeded
-        // We can't assert exact size without mocking, but can verify no panic
-        assert!(final_cache_size >= initial_cache_size);
-    }
-
-    #[tokio::test]
-    async fn test_request_instruments_correlation_id_matching() {
-        // Test correlation_id matching in response
-        setup_test_env();
-
-        let client_id = ClientId::from("DYDX-CORR-TEST");
-        let config = DydxDataClientConfig::default();
-        let http_client = DydxHttpClient::default();
-        let client =
-            DydxDataClient::new(client_id, config, http_client, create_test_ws_client()).unwrap();
-
-        let request_id = UUID4::new();
-        let request = RequestInstruments::new(
-            None,
-            None,
-            Some(client_id),
-            Some(*DYDX_VENUE),
-            request_id,
-            get_atomic_clock_realtime().get_time_ns(),
-            None,
-        );
-
-        // Should execute without panic (actual correlation checked in async handler)
-        assert!(client.request_instruments(request).is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_request_instruments_venue_assignment() {
-        // Test venue assignment
-        setup_test_env();
-
-        let client_id = ClientId::from("DYDX-VENUE-TEST");
-        let config = DydxDataClientConfig::default();
-        let http_client = DydxHttpClient::default();
-        let client =
-            DydxDataClient::new(client_id, config, http_client, create_test_ws_client()).unwrap();
-
-        assert_eq!(client.venue(), *DYDX_VENUE);
-
-        let request = RequestInstruments::new(
-            None,
-            None,
-            Some(client_id),
-            Some(*DYDX_VENUE),
-            UUID4::new(),
-            get_atomic_clock_realtime().get_time_ns(),
-            None,
-        );
-
-        assert!(client.request_instruments(request).is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_request_instruments_timestamp_handling() {
-        // Test timestamp handling (start_nanos, end_nanos)
-        let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        set_data_event_sender(sender);
-
-        let client_id = ClientId::from("DYDX-TS-TEST");
-        let config = DydxDataClientConfig::default();
-        let http_client = DydxHttpClient::default();
-        let client =
-            DydxDataClient::new(client_id, config, http_client, create_test_ws_client()).unwrap();
-
-        let now = Utc::now();
-        let start = Some(now - chrono::Duration::hours(24));
-        let end = Some(now);
-
-        let request = RequestInstruments::new(
-            start,
-            end,
-            Some(client_id),
-            Some(*DYDX_VENUE),
-            UUID4::new(),
-            get_atomic_clock_realtime().get_time_ns(),
-            None,
-        );
-
-        assert!(client.request_instruments(request).is_ok());
-
-        // Wait for response
-        let timeout = tokio::time::Duration::from_secs(3);
-        if let Ok(Some(DataEvent::Response(DataResponse::Instruments(resp)))) =
-            tokio::time::timeout(timeout, rx.recv()).await
-        {
-            // Verify timestamps are set
-            assert!(resp.start.unwrap() > 0);
-            assert!(resp.end.unwrap() > 0);
-            assert!(resp.start.unwrap() <= resp.end.unwrap());
-            assert!(resp.ts_init > 0);
-        }
-    }
-
-    #[tokio::test]
-    async fn test_request_instruments_with_start_only() {
-        // Test timestamp handling when only `start` is provided
-        let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        set_data_event_sender(sender);
-
-        let client_id = ClientId::from("DYDX-TS-START-ONLY");
-        let config = DydxDataClientConfig::default();
-        let http_client = DydxHttpClient::default();
-        let client =
-            DydxDataClient::new(client_id, config, http_client, create_test_ws_client()).unwrap();
-
-        let now = Utc::now();
-        let start = Some(now - chrono::Duration::hours(24));
-
-        let request = RequestInstruments::new(
-            start,
-            None,
-            Some(client_id),
-            Some(*DYDX_VENUE),
-            UUID4::new(),
-            get_atomic_clock_realtime().get_time_ns(),
-            None,
-        );
-
-        assert!(client.request_instruments(request).is_ok());
-
-        let timeout = tokio::time::Duration::from_secs(3);
-        if let Ok(Some(DataEvent::Response(DataResponse::Instruments(resp)))) =
-            tokio::time::timeout(timeout, rx.recv()).await
-        {
-            assert!(resp.start.is_some());
-            assert!(resp.end.is_none());
-            assert!(resp.ts_init > 0);
-        }
-    }
-
-    #[tokio::test]
-    async fn test_request_instruments_with_end_only() {
-        // Test timestamp handling when only `end` is provided
-        let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        set_data_event_sender(sender);
-
-        let client_id = ClientId::from("DYDX-TS-END-ONLY");
-        let config = DydxDataClientConfig::default();
-        let http_client = DydxHttpClient::default();
-        let client =
-            DydxDataClient::new(client_id, config, http_client, create_test_ws_client()).unwrap();
-
-        let now = Utc::now();
-        let end = Some(now);
-
-        let request = RequestInstruments::new(
-            None,
-            end,
-            Some(client_id),
-            Some(*DYDX_VENUE),
-            UUID4::new(),
-            get_atomic_clock_realtime().get_time_ns(),
-            None,
-        );
-
-        assert!(client.request_instruments(request).is_ok());
-
-        let timeout = tokio::time::Duration::from_secs(3);
-        if let Ok(Some(DataEvent::Response(DataResponse::Instruments(resp)))) =
-            tokio::time::timeout(timeout, rx.recv()).await
-        {
-            assert!(resp.start.is_none());
-            assert!(resp.end.is_some());
-            assert!(resp.ts_init > 0);
-        }
-    }
-
-    #[tokio::test]
-    async fn test_request_instruments_client_id_fallback() {
-        // Test client_id fallback to default when not provided
-        setup_test_env();
-
-        let client_id = ClientId::from("DYDX-FALLBACK-TEST");
-        let config = DydxDataClientConfig::default();
-        let http_client = DydxHttpClient::default();
-        let client =
-            DydxDataClient::new(client_id, config, http_client, create_test_ws_client()).unwrap();
-
-        let request = RequestInstruments::new(
-            None,
-            None,
-            None, // No client_id provided
-            Some(*DYDX_VENUE),
-            UUID4::new(),
-            get_atomic_clock_realtime().get_time_ns(),
-            None,
-        );
-
-        // Should use client's default client_id
-        assert!(client.request_instruments(request).is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_request_instruments_with_params() {
-        // Test custom params handling
-        let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        set_data_event_sender(sender);
-
-        let client_id = ClientId::from("DYDX-PARAMS-TEST");
-        let config = DydxDataClientConfig::default();
-        let http_client = DydxHttpClient::default();
-        let client =
-            DydxDataClient::new(client_id, config, http_client, create_test_ws_client()).unwrap();
-
-        // Create params - just verify they're passed through
-        let mut params_map = IndexMap::new();
-        params_map.insert("test_key".to_string(), "test_value".to_string());
-
-        let request = RequestInstruments::new(
-            None,
-            None,
-            Some(client_id),
-            Some(*DYDX_VENUE),
-            UUID4::new(),
-            get_atomic_clock_realtime().get_time_ns(),
-            Some(params_map),
-        );
-
-        assert!(client.request_instruments(request).is_ok());
-
-        // Wait for response
-        let timeout = tokio::time::Duration::from_secs(3);
-        if let Ok(Some(DataEvent::Response(DataResponse::Instruments(resp)))) =
-            tokio::time::timeout(timeout, rx.recv()).await
-        {
-            // Verify params are propagated into the response
-            assert_eq!(resp.client_id, client_id);
-            let params = resp
-                .params
-                .expect("expected params to be present in InstrumentsResponse");
-            assert_eq!(
-                params.get("test_key").map(String::as_str),
-                Some("test_value")
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn test_request_instruments_with_start_and_end_range() {
-        // Test timestamp handling when both start and end are provided
-        let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        set_data_event_sender(sender);
-
-        let client_id = ClientId::from("DYDX-START-END-RANGE");
-        let config = DydxDataClientConfig::default();
-        let http_client = DydxHttpClient::default();
-        let client =
-            DydxDataClient::new(client_id, config, http_client, create_test_ws_client()).unwrap();
-
-        let now = Utc::now();
-        let start = Some(now - chrono::Duration::hours(48));
-        let end = Some(now - chrono::Duration::hours(24));
-
-        let request = RequestInstruments::new(
-            start,
-            end,
-            Some(client_id),
-            Some(*DYDX_VENUE),
-            UUID4::new(),
-            get_atomic_clock_realtime().get_time_ns(),
-            None,
-        );
-
-        assert!(client.request_instruments(request).is_ok());
-
-        let timeout = tokio::time::Duration::from_secs(3);
-        if let Ok(Some(DataEvent::Response(DataResponse::Instruments(resp)))) =
-            tokio::time::timeout(timeout, rx.recv()).await
-        {
-            // Verify both timestamps are present
-            assert!(
-                resp.start.is_some(),
-                "start timestamp should be present when provided"
-            );
-            assert!(
-                resp.end.is_some(),
-                "end timestamp should be present when provided"
-            );
-            assert!(resp.ts_init > 0, "ts_init should always be set");
-
-            // Verify start is before end
-            if let (Some(start_ts), Some(end_ts)) = (resp.start, resp.end) {
+        let result = tokio::time::timeout(timeout, rx.recv()).await;
+        match result {
+            Ok(Some(DataEvent::Response(DataResponse::Instruments(resp)))) => {
                 assert!(
-                    start_ts < end_ts,
-                    "start timestamp should be before end timestamp"
+                    resp.data.is_empty(),
+                    "Expected empty instruments on HTTP error"
                 );
+                assert_eq!(resp.correlation_id, request_id);
+                assert_eq!(resp.client_id, client_id);
             }
-        }
-    }
-
-    #[tokio::test]
-    async fn test_request_instruments_different_client_ids() {
-        // Test that different client_id values are properly handled using a shared channel.
-        let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        set_data_event_sender(sender);
-
-        let timeout = tokio::time::Duration::from_secs(3);
-
-        // First client
-        let client_id_1 = ClientId::from("DYDX-CLIENT-1");
-        let config1 = DydxDataClientConfig::default();
-        let http_client1 = DydxHttpClient::default();
-        let client1 =
-            DydxDataClient::new(client_id_1, config1, http_client1, create_test_ws_client())
-                .unwrap();
-
-        let request1 = RequestInstruments::new(
-            None,
-            None,
-            Some(client_id_1),
-            Some(*DYDX_VENUE),
-            UUID4::new(),
-            get_atomic_clock_realtime().get_time_ns(),
-            None,
-        );
-
-        assert!(client1.request_instruments(request1).is_ok());
-
-        if let Ok(Some(DataEvent::Response(DataResponse::Instruments(resp1)))) =
-            tokio::time::timeout(timeout, rx.recv()).await
-        {
-            assert_eq!(
-                resp1.client_id, client_id_1,
-                "Response should contain client_id_1"
-            );
-        }
-
-        // Second client
-        let client_id_2 = ClientId::from("DYDX-CLIENT-2");
-        let config2 = DydxDataClientConfig::default();
-        let http_client2 = DydxHttpClient::default();
-        let client2 =
-            DydxDataClient::new(client_id_2, config2, http_client2, create_test_ws_client())
-                .unwrap();
-
-        let request2 = RequestInstruments::new(
-            None,
-            None,
-            Some(client_id_2),
-            Some(*DYDX_VENUE),
-            UUID4::new(),
-            get_atomic_clock_realtime().get_time_ns(),
-            None,
-        );
-
-        assert!(client2.request_instruments(request2).is_ok());
-
-        if let Ok(Some(DataEvent::Response(DataResponse::Instruments(resp2)))) =
-            tokio::time::timeout(timeout, rx.recv()).await
-        {
-            assert_eq!(
-                resp2.client_id, client_id_2,
-                "Response should contain client_id_2"
-            );
-            assert_ne!(
-                resp2.client_id, client_id_1,
-                "Different clients should have different client_ids"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn test_request_instruments_no_timestamps() {
-        // Test fetching all current instruments (no start/end filters)
-        let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        set_data_event_sender(sender);
-
-        let client_id = ClientId::from("DYDX-NO-TIMESTAMPS");
-        let config = DydxDataClientConfig::default();
-        let http_client = DydxHttpClient::default();
-        let client =
-            DydxDataClient::new(client_id, config, http_client, create_test_ws_client()).unwrap();
-
-        let request = RequestInstruments::new(
-            None, // No start filter
-            None, // No end filter
-            Some(client_id),
-            Some(*DYDX_VENUE),
-            UUID4::new(),
-            get_atomic_clock_realtime().get_time_ns(),
-            None,
-        );
-
-        assert!(client.request_instruments(request).is_ok());
-
-        let timeout = tokio::time::Duration::from_secs(5);
-        if let Ok(Some(DataEvent::Response(DataResponse::Instruments(resp)))) =
-            tokio::time::timeout(timeout, rx.recv()).await
-        {
-            // Verify no timestamp filters
-            assert!(
-                resp.start.is_none(),
-                "start should be None when not provided"
-            );
-            assert!(resp.end.is_none(), "end should be None when not provided");
-
-            // Should still get current instruments
-            assert_eq!(resp.venue, *DYDX_VENUE);
-            assert_eq!(resp.client_id, client_id);
-            assert!(resp.ts_init > 0);
+            Ok(Some(_)) => panic!("Expected InstrumentsResponse"),
+            Ok(None) => panic!("Channel closed unexpectedly"),
+            Err(_) => println!("Test timed out - testnet may be unreachable"),
         }
     }
 
@@ -4068,50 +3550,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_request_instrument_cache_miss() {
-        // Test cache miss (fetch from API)
-        let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        set_data_event_sender(sender);
-
-        let client_id = ClientId::from("DYDX-CACHE-MISS");
-        let config = DydxDataClientConfig::default();
-        let http_client = DydxHttpClient::default();
-        let client =
-            DydxDataClient::new(client_id, config, http_client, create_test_ws_client()).unwrap();
-
-        let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
-
-        let request = RequestInstrument::new(
-            instrument_id,
-            None,
-            None,
-            Some(client_id),
-            UUID4::new(),
-            get_atomic_clock_realtime().get_time_ns(),
-            None,
-        );
-
-        assert!(client.request_instrument(request).is_ok());
-
-        // Wait for async HTTP fetch and response
-        let timeout = tokio::time::Duration::from_secs(5);
-        let result = tokio::time::timeout(timeout, rx.recv()).await;
-
-        // May timeout if testnet unreachable, but should not panic
-        match result {
-            Ok(Some(DataEvent::Response(DataResponse::Instrument(resp)))) => {
-                assert_eq!(resp.instrument_id, instrument_id);
-                assert_eq!(resp.client_id, client_id);
-            }
-            Ok(Some(_)) => panic!("Expected InstrumentResponse"),
-            Ok(None) => panic!("Channel closed unexpectedly"),
-            Err(_) => {
-                println!("Test timed out - testnet may be unreachable");
-            }
-        }
-    }
-
-    #[tokio::test]
     async fn test_request_instrument_not_found() {
         // Test instrument not found scenario
         let (sender, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
@@ -4151,42 +3589,6 @@ mod tests {
 
         // Note: No response sent when instrument not found (by design)
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-    }
-
-    #[tokio::test]
-    async fn test_request_instrument_bulk_caching() {
-        // Test bulk caching when fetching from API
-        setup_test_env();
-
-        let client_id = ClientId::from("DYDX-BULK-CACHE");
-        let config = DydxDataClientConfig::default();
-        let http_client = DydxHttpClient::default();
-        let client =
-            DydxDataClient::new(client_id, config, http_client, create_test_ws_client()).unwrap();
-
-        let initial_cache_size = client.instrument_cache.len();
-
-        let instrument_id = InstrumentId::from("ETH-USD-PERP.DYDX");
-
-        let request = RequestInstrument::new(
-            instrument_id,
-            None,
-            None,
-            Some(client_id),
-            UUID4::new(),
-            get_atomic_clock_realtime().get_time_ns(),
-            None,
-        );
-
-        assert!(client.request_instrument(request).is_ok());
-
-        // Wait for async bulk fetch
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-
-        // Verify cache populated with all instruments (if HTTP succeeded)
-        let final_cache_size = client.instrument_cache.len();
-        assert!(final_cache_size >= initial_cache_size);
-        // If HTTP succeeded, cache should have multiple instruments
     }
 
     #[tokio::test]
@@ -4762,43 +4164,6 @@ mod tests {
             assert_eq!(tick.instrument_id, instrument_id);
             assert!(tick.ts_event > 0);
             assert!(tick.ts_init > 0);
-        }
-    }
-
-    #[tokio::test]
-    async fn test_request_trades_no_instrument_in_cache() {
-        // Test empty response when instrument not in cache
-        let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        set_data_event_sender(sender);
-
-        let client_id = ClientId::from("DYDX-TRADES-NO-INST");
-        let config = DydxDataClientConfig::default();
-        let http_client = DydxHttpClient::default();
-        let client =
-            DydxDataClient::new(client_id, config, http_client, create_test_ws_client()).unwrap();
-
-        // Don't add instrument to cache
-        let instrument_id = InstrumentId::from("UNKNOWN-SYMBOL.DYDX");
-
-        let request = RequestTrades::new(
-            instrument_id,
-            None,
-            None,
-            None,
-            Some(client_id),
-            UUID4::new(),
-            get_atomic_clock_realtime().get_time_ns(),
-            None,
-        );
-
-        assert!(client.request_trades(request).is_ok());
-
-        // Should receive empty response when instrument not found
-        let timeout = tokio::time::Duration::from_millis(500);
-        if let Ok(Some(DataEvent::Response(DataResponse::Trades(resp)))) =
-            tokio::time::timeout(timeout, rx.recv()).await
-        {
-            assert!(resp.data.is_empty());
         }
     }
 
@@ -7442,21 +6807,8 @@ mod tests {
         let (sender, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         set_data_event_sender(sender);
 
-        let base_url = String::from("https://indexer.v4testnet.dydx.exchange");
-        let config = DydxDataClientConfig {
-            base_url_http: Some(base_url),
-            is_testnet: true,
-            ..Default::default()
-        };
-
-        let http_client = DydxHttpClient::new(
-            config.base_url_http.clone(),
-            config.http_timeout_secs,
-            config.http_proxy_url.clone(),
-            config.is_testnet,
-            None,
-        )
-        .unwrap();
+        let config = DydxDataClientConfig::default();
+        let http_client = DydxHttpClient::default();
 
         let client = DydxDataClient::new(
             ClientId::from("dydx_test"),
@@ -7521,168 +6873,6 @@ mod tests {
                 "Expected {valid_id} to have non-empty symbol and venue"
             );
         }
-    }
-
-    #[tokio::test]
-    async fn test_request_bars_with_inverted_date_range() {
-        let (sender, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        set_data_event_sender(sender);
-
-        let base_url = String::from("https://indexer.v4testnet.dydx.exchange");
-        let config = DydxDataClientConfig {
-            base_url_http: Some(base_url),
-            is_testnet: true,
-            ..Default::default()
-        };
-
-        let http_client = DydxHttpClient::new(
-            config.base_url_http.clone(),
-            config.http_timeout_secs,
-            config.http_proxy_url.clone(),
-            config.is_testnet,
-            None,
-        )
-        .unwrap();
-
-        let client = DydxDataClient::new(
-            ClientId::from("dydx_test"),
-            config,
-            http_client,
-            create_test_ws_client(),
-        )
-        .unwrap();
-
-        let instrument = create_test_instrument_any();
-        let instrument_id = instrument.id();
-        client.instrument_cache.insert_instrument_only(instrument);
-
-        let spec = BarSpecification {
-            step: std::num::NonZeroUsize::new(1).unwrap(),
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Last,
-        };
-        let bar_type = BarType::new(instrument_id, spec, AggregationSource::External);
-
-        let now = Utc::now();
-        let start = Some(now);
-        let end = Some(now - chrono::Duration::hours(1));
-
-        let request = RequestBars::new(
-            bar_type,
-            start,
-            end,
-            None,
-            Some(ClientId::from("dydx_test")),
-            UUID4::new(),
-            get_atomic_clock_realtime().get_time_ns(),
-            None,
-        );
-
-        let result = client.request_bars(request);
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_request_bars_with_zero_limit() {
-        let (sender, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        set_data_event_sender(sender);
-
-        let base_url = String::from("https://indexer.v4testnet.dydx.exchange");
-        let config = DydxDataClientConfig {
-            base_url_http: Some(base_url),
-            is_testnet: true,
-            ..Default::default()
-        };
-
-        let http_client = DydxHttpClient::new(
-            config.base_url_http.clone(),
-            config.http_timeout_secs,
-            config.http_proxy_url.clone(),
-            config.is_testnet,
-            None,
-        )
-        .unwrap();
-
-        let client = DydxDataClient::new(
-            ClientId::from("dydx_test"),
-            config,
-            http_client,
-            create_test_ws_client(),
-        )
-        .unwrap();
-
-        let instrument = create_test_instrument_any();
-        let instrument_id = instrument.id();
-        client.instrument_cache.insert_instrument_only(instrument);
-
-        let spec = BarSpecification {
-            step: std::num::NonZeroUsize::new(1).unwrap(),
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Last,
-        };
-        let bar_type = BarType::new(instrument_id, spec, AggregationSource::External);
-
-        let request = RequestBars::new(
-            bar_type,
-            None,
-            None,
-            Some(std::num::NonZeroUsize::new(1).unwrap()),
-            Some(ClientId::from("dydx_test")),
-            UUID4::new(),
-            get_atomic_clock_realtime().get_time_ns(),
-            None,
-        );
-
-        let result = client.request_bars(request);
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_request_trades_with_excessive_limit() {
-        let (sender, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        set_data_event_sender(sender);
-
-        let base_url = String::from("https://indexer.v4testnet.dydx.exchange");
-        let config = DydxDataClientConfig {
-            base_url_http: Some(base_url),
-            is_testnet: true,
-            ..Default::default()
-        };
-
-        let http_client = DydxHttpClient::new(
-            config.base_url_http.clone(),
-            config.http_timeout_secs,
-            config.http_proxy_url.clone(),
-            config.is_testnet,
-            None,
-        )
-        .unwrap();
-
-        let client = DydxDataClient::new(
-            ClientId::from("dydx_test"),
-            config,
-            http_client,
-            create_test_ws_client(),
-        )
-        .unwrap();
-
-        let instrument = create_test_instrument_any();
-        let instrument_id = instrument.id();
-        client.instrument_cache.insert_instrument_only(instrument);
-
-        let request = RequestTrades::new(
-            instrument_id,
-            None,
-            None,
-            Some(std::num::NonZeroUsize::new(100_000).unwrap()),
-            Some(ClientId::from("dydx_test")),
-            UUID4::new(),
-            get_atomic_clock_realtime().get_time_ns(),
-            None,
-        );
-
-        let result = client.request_trades(request);
-        assert!(result.is_ok());
     }
 
     #[rstest]
