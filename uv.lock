@@ -173,14 +173,14 @@ wheels = [
 
 [[package]]
 name = "betfair-parser"
-version = "0.18.0"
+version = "0.19.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "msgspec" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f4/ff/79e27eb24ce5f9d2860773cde7b76ddf60c876a4a10534777da82d496578/betfair_parser-0.18.0.tar.gz", hash = "sha256:b7c9e8e9eed4087469e840b6a41aba985aa0531903b7f314db5ee7ce8e0cccda", size = 55949, upload-time = "2025-11-24T08:49:37.655Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/42/d8/aeb6b6e15811ff6149ce1298cc18f1d19aca8d1f57a3f69a0e244fb343db/betfair_parser-0.19.1.tar.gz", hash = "sha256:b46701e6be0952da00742c6f44307f1db1cdffd94e3bb70bd06a8b306f87ab62", size = 56002, upload-time = "2026-01-28T14:05:52.915Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ec/85/6ae6e17ca3a6f37e3fc8fb844217801c38be80e5b8331e30a8261d4204cc/betfair_parser-0.18.0-py3-none-any.whl", hash = "sha256:f15bbc2bec6382a253ecf04b2658aa5c2bc9db7c6850537ee3b0cd8418c22950", size = 67676, upload-time = "2025-11-24T08:49:36.663Z" },
+    { url = "https://files.pythonhosted.org/packages/54/09/ce1e789cdf55418aab943f51cdf4b2f58f2876484b315995c73a6772adfc/betfair_parser-0.19.1-py3-none-any.whl", hash = "sha256:af8b990c497f936bc437982549149f01fc405806e4652a3bd9d05ed721e8a099", size = 67761, upload-time = "2026-01-28T14:05:51.937Z" },
 ]
 
 [[package]]
@@ -1680,7 +1680,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "bech32", marker = "python_full_version < '3.14' and extra == 'dydx'", specifier = ">=1.2.0,<2.0.0" },
-    { name = "betfair-parser", marker = "extra == 'betfair'", specifier = "==0.18.0" },
+    { name = "betfair-parser", marker = "extra == 'betfair'", specifier = "==0.19.1" },
     { name = "bip-utils", marker = "python_full_version < '3.14' and extra == 'dydx'", specifier = ">=2.10.0,<3.0.0" },
     { name = "click", specifier = ">=8.0.0,<9.0.0" },
     { name = "defusedxml", marker = "python_full_version < '3.14' and extra == 'ib'", specifier = ">=0.7.1,<1.0.0" },
@@ -1699,7 +1699,7 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=22.0.0" },
     { name = "pycryptodome", marker = "python_full_version < '3.14' and extra == 'dydx'", specifier = ">=3.20.0,<4.0.0" },
     { name = "pytz", specifier = ">=2025.2.0" },
-    { name = "tqdm", specifier = ">=4.67.1,<5.0.0" },
+    { name = "tqdm", specifier = ">=4.67.2,<5.0.0" },
     { name = "uvloop", marker = "sys_platform != 'win32'", specifier = "==0.22.1,<1.0.0" },
     { name = "v4-proto", marker = "python_full_version < '3.14' and extra == 'dydx'", specifier = "==7.0.5" },
 ]
@@ -2985,14 +2985,14 @@ wheels = [
 
 [[package]]
 name = "tqdm"
-version = "4.67.1"
+version = "4.67.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a8/4b/29b4ef32e036bb34e4ab51796dd745cdba7ed47ad142a9f4a1eb8e0c744d/tqdm-4.67.1.tar.gz", hash = "sha256:f8aef9c52c08c13a65f30ea34f4e5aac3fd1a34959879d7e59e63027286627f2", size = 169737, upload-time = "2024-11-24T20:12:22.481Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/27/89/4b0001b2dab8df0a5ee2787dcbe771de75ded01f18f1f8d53dedeea2882b/tqdm-4.67.2.tar.gz", hash = "sha256:649aac53964b2cb8dec76a14b405a4c0d13612cb8933aae547dd144eacc99653", size = 169514, upload-time = "2026-01-30T23:12:06.555Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d0/30/dc54f88dd4a2b5dc8a0279bdd7270e735851848b762aeb1c1184ed1f6b14/tqdm-4.67.1-py3-none-any.whl", hash = "sha256:26445eca388f82e72884e0d580d5464cd801a3ea01e63e5601bdff9ba6a48de2", size = 78540, upload-time = "2024-11-24T20:12:19.698Z" },
+    { url = "https://files.pythonhosted.org/packages/f5/e2/31eac96de2915cf20ccaed0225035db149dfb9165a9ed28d4b252ef3f7f7/tqdm-4.67.2-py3-none-any.whl", hash = "sha256:9a12abcbbff58b6036b2167d9d3853042b9d436fe7330f06ae047867f2f8e0a7", size = 78354, upload-time = "2026-01-30T23:12:04.368Z" },
 ]
 
 [[package]]

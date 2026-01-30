@@ -194,7 +194,7 @@ rand = { version = "0.9.2", default-features = false, features = [
   "std",
   "thread_rng",
 ] }
-redis = { version = "1.0.2", default-features = false, features = [
+redis = { version = "1.0.3", default-features = false, features = [
   "connection-manager",
   "sentinel",
   "streams",

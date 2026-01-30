@@ -106,6 +106,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Added Deribit integration documentation (#3508), thanks @filipmacek
 - Added Polymarket data loader rate limiting
 - Migrated Nautilus internal logging to `log` crate (external `tracing` available via `use_tracing` config)
+- Renamed Deribit instrument kind enum to product type (#3512), thanks @filipmacek
 - Refactored execution clients to use `OrderEventEmitter` in Rust (#3469), thanks @filipmacek
 - Refactored computation of greeks (#3393), thanks @faysou
 - Refactored `TearsheetConfig.charts` to chart objects (removed `chart_args`) (#3398), thanks @KaulSe
