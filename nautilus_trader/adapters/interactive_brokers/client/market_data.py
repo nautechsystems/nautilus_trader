@@ -272,8 +272,8 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
     ) -> None:
         """
         Subscribe to index market data for a specified instrument using reqMktData. This
-        method is used for index contracts that don't support reqTickByTickData (^SPX.CBOE for example).  
-        TODO: Per interactive brokers some CME exhange indexes do support reqTickByTickData. 
+        method is used for index contracts that don't support reqTickByTickData (^SPX.CBOE for example).
+        Note: Per interactive brokers some CME exchange indexes do support reqTickByTickData.
 
         Parameters
         ----------
@@ -845,7 +845,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         self._subscription_tick_data[req_id][tick_type] = price
 
         if subscription.name[1] == "index_market_data":
-            # Create and an index price tick
+            # Create an index price tick
             await self._try_create_index_price_tick_from_market_data(subscription, req_id)
         else:
             # Check if we have both bid and ask prices to create a quote tick
@@ -936,9 +936,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         self,
         subscription: Subscription,
         req_id: int,
-
     ) -> None:
-        
         if req_id not in self._subscription_tick_data:
             return
 
