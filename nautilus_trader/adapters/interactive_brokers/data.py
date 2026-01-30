@@ -178,11 +178,11 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 f"Cannot subscribe to index prices for {command.instrument_id}: instrument not found",
             )
             return
-    
+
         await self._client.subscribe_index_market_data(
             instrument_id=command.instrument_id,
             contract=contract,
-            generic_tick_list="",  # Empty for basic bid/ask data
+            generic_tick_list="",  # Empty for basic price updates
         )
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
