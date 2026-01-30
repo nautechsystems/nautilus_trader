@@ -788,25 +788,27 @@ impl ExecutionClient for DydxExecutionClient {
 
         // Check block height is available for short-term orders
         let current_block = self.block_time_monitor.current_block_height();
+        let order = self
+            .core
+            .cache()
+            .order(&cmd.client_order_id)
+            .cloned()
+            .ok_or_else(|| {
+                anyhow::anyhow!("Order not found in cache for {}", cmd.client_order_id)
+            })?;
 
-        // Hold cache borrow for all order access, clone only when needed for async
-        let cache = self.core.cache();
-        let order = cache.order(&cmd.client_order_id).ok_or_else(|| {
-            anyhow::anyhow!("Order not found in cache for {}", cmd.client_order_id)
-        })?;
+        let client_order_id = order.client_order_id();
+        let instrument_id = order.instrument_id();
+        let strategy_id = order.strategy_id();
 
         if current_block == 0 {
             let reason = "Block height not initialized";
-            log::warn!(
-                "Cannot submit order {}: {}",
-                order.client_order_id(),
-                reason
-            );
+            log::warn!("Cannot submit order {client_order_id}: {reason}");
             let ts_event = self.clock.get_time_ns();
             self.emitter.emit_order_rejected_event(
-                order.strategy_id(),
-                order.instrument_id(),
-                order.client_order_id(),
+                strategy_id,
+                instrument_id,
+                client_order_id,
                 reason,
                 ts_event,
                 false,
@@ -816,7 +818,7 @@ impl ExecutionClient for DydxExecutionClient {
 
         // Check if order is already closed
         if order.is_closed() {
-            log::warn!("Cannot submit closed order {}", order.client_order_id());
+            log::warn!("Cannot submit closed order {client_order_id}");
             return Ok(());
         }
 
@@ -834,9 +836,9 @@ impl ExecutionClient for DydxExecutionClient {
                 log::error!("{reason}");
                 let ts_event = self.clock.get_time_ns();
                 self.emitter.emit_order_rejected_event(
-                    order.strategy_id(),
-                    order.instrument_id(),
-                    order.client_order_id(),
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
                     reason,
                     ts_event,
                     false,
@@ -848,9 +850,9 @@ impl ExecutionClient for DydxExecutionClient {
                 log::error!("{reason}");
                 let ts_event = self.clock.get_time_ns();
                 self.emitter.emit_order_rejected_event(
-                    order.strategy_id(),
-                    order.instrument_id(),
-                    order.client_order_id(),
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
                     &reason,
                     ts_event,
                     false,
@@ -859,7 +861,7 @@ impl ExecutionClient for DydxExecutionClient {
             }
         }
 
-        self.emitter.emit_order_submitted(order);
+        self.emitter.emit_order_submitted(&order);
 
         // Get execution components (must be initialized after connect())
         let (tx_manager, broadcaster, order_builder) = match self.get_execution_components() {
@@ -868,9 +870,9 @@ impl ExecutionClient for DydxExecutionClient {
                 log::error!("Failed to get execution components: {e}");
                 let ts_event = self.clock.get_time_ns();
                 self.emitter.emit_order_rejected_event(
-                    order.strategy_id(),
-                    order.instrument_id(),
-                    order.client_order_id(),
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
                     &e.to_string(),
                     ts_event,
                     false,
@@ -879,11 +881,7 @@ impl ExecutionClient for DydxExecutionClient {
             }
         };
 
-        let client_order_id = order.client_order_id();
-        let instrument_id = order.instrument_id();
         let block_height = self.block_time_monitor.current_block_height() as u32;
-        #[allow(clippy::redundant_clone)]
-        let order_clone = order.clone();
 
         // Generate client_order_id as u32 before async block (dYdX requires u32 client IDs)
         let client_id_u32 = self.generate_client_order_id_int(client_order_id);
@@ -916,12 +914,13 @@ impl ExecutionClient for DydxExecutionClient {
 
         // Register order context for WebSocket correlation and cancellation
         let ts_submitted = self.clock.get_time_ns();
+        let trader_id = order.trader_id();
         self.register_order_context(
             client_id_u32,
             OrderContext {
                 client_order_id,
-                trader_id: order.trader_id(),
-                strategy_id: order.strategy_id(),
+                trader_id,
+                strategy_id,
                 instrument_id,
                 submitted_at: ts_submitted,
                 order_flags,
@@ -930,18 +929,18 @@ impl ExecutionClient for DydxExecutionClient {
 
         self.spawn_order_task(
             "submit_order",
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
+            strategy_id,
+            instrument_id,
+            client_order_id,
             async move {
                 // Build the order message based on order type
-                let (msg, order_type_str) = match order_clone.order_type() {
+                let (msg, order_type_str) = match order.order_type() {
                     OrderType::Market => {
                         let msg = order_builder.build_market_order(
                             instrument_id,
                             client_id_u32,
-                            order_clone.order_side(),
-                            order_clone.quantity(),
+                            order.order_side(),
+                            order.quantity(),
                             block_height,
                         )?;
                         (msg, "market")
@@ -951,14 +950,14 @@ impl ExecutionClient for DydxExecutionClient {
                         let msg = order_builder.build_limit_order(
                             instrument_id,
                             client_id_u32,
-                            order_clone.order_side(),
-                            order_clone
+                            order.order_side(),
+                            order
                                 .price()
                                 .ok_or_else(|| anyhow::anyhow!("Limit order missing price"))?,
-                            order_clone.quantity(),
-                            order_clone.time_in_force(),
-                            order_clone.is_post_only(),
-                            order_clone.is_reduce_only(),
+                            order.quantity(),
+                            order.time_in_force(),
+                            order.is_post_only(),
+                            order.is_reduce_only(),
                             block_height,
                             expire_time, // Uses default_short_term_expiry if configured
                         )?;
@@ -967,79 +966,79 @@ impl ExecutionClient for DydxExecutionClient {
                     // Conditional orders use their own expiration logic (not affected by default_short_term_expiry)
                     // They are always stored on-chain with long-term semantics
                     OrderType::StopMarket => {
-                        let trigger_price = order_clone.trigger_price().ok_or_else(|| {
+                        let trigger_price = order.trigger_price().ok_or_else(|| {
                             anyhow::anyhow!("Stop market order missing trigger_price")
                         })?;
-                        let cond_expire = order_clone.expire_time().map(nanos_to_secs_i64);
+                        let cond_expire = order.expire_time().map(nanos_to_secs_i64);
                         let msg = order_builder.build_stop_market_order(
                             instrument_id,
                             client_id_u32,
-                            order_clone.order_side(),
+                            order.order_side(),
                             trigger_price,
-                            order_clone.quantity(),
-                            order_clone.is_reduce_only(),
+                            order.quantity(),
+                            order.is_reduce_only(),
                             cond_expire,
                         )?;
                         (msg, "stop_market")
                     }
                     OrderType::StopLimit => {
-                        let trigger_price = order_clone.trigger_price().ok_or_else(|| {
+                        let trigger_price = order.trigger_price().ok_or_else(|| {
                             anyhow::anyhow!("Stop limit order missing trigger_price")
                         })?;
-                        let limit_price = order_clone.price().ok_or_else(|| {
+                        let limit_price = order.price().ok_or_else(|| {
                             anyhow::anyhow!("Stop limit order missing limit price")
                         })?;
-                        let cond_expire = order_clone.expire_time().map(nanos_to_secs_i64);
+                        let cond_expire = order.expire_time().map(nanos_to_secs_i64);
                         let msg = order_builder.build_stop_limit_order(
                             instrument_id,
                             client_id_u32,
-                            order_clone.order_side(),
+                            order.order_side(),
                             trigger_price,
                             limit_price,
-                            order_clone.quantity(),
-                            order_clone.time_in_force(),
-                            order_clone.is_post_only(),
-                            order_clone.is_reduce_only(),
+                            order.quantity(),
+                            order.time_in_force(),
+                            order.is_post_only(),
+                            order.is_reduce_only(),
                             cond_expire,
                         )?;
                         (msg, "stop_limit")
                     }
                     // dYdX TakeProfitMarket maps to Nautilus MarketIfTouched
                     OrderType::MarketIfTouched => {
-                        let trigger_price = order_clone.trigger_price().ok_or_else(|| {
+                        let trigger_price = order.trigger_price().ok_or_else(|| {
                             anyhow::anyhow!("Take profit market order missing trigger_price")
                         })?;
-                        let cond_expire = order_clone.expire_time().map(nanos_to_secs_i64);
+                        let cond_expire = order.expire_time().map(nanos_to_secs_i64);
                         let msg = order_builder.build_take_profit_market_order(
                             instrument_id,
                             client_id_u32,
-                            order_clone.order_side(),
+                            order.order_side(),
                             trigger_price,
-                            order_clone.quantity(),
-                            order_clone.is_reduce_only(),
+                            order.quantity(),
+                            order.is_reduce_only(),
                             cond_expire,
                         )?;
                         (msg, "take_profit_market")
                     }
                     // dYdX TakeProfitLimit maps to Nautilus LimitIfTouched
                     OrderType::LimitIfTouched => {
-                        let trigger_price = order_clone.trigger_price().ok_or_else(|| {
+                        let trigger_price = order.trigger_price().ok_or_else(|| {
                             anyhow::anyhow!("Take profit limit order missing trigger_price")
                         })?;
-                        let limit_price = order_clone.price().ok_or_else(|| {
+                        let limit_price = order.price().ok_or_else(|| {
                             anyhow::anyhow!("Take profit limit order missing limit price")
                         })?;
-                        let cond_expire = order_clone.expire_time().map(nanos_to_secs_i64);
+                        let cond_expire = order.expire_time().map(nanos_to_secs_i64);
                         let msg = order_builder.build_take_profit_limit_order(
                             instrument_id,
                             client_id_u32,
-                            order_clone.order_side(),
+                            order.order_side(),
                             trigger_price,
                             limit_price,
-                            order_clone.quantity(),
-                            order_clone.time_in_force(),
-                            order_clone.is_post_only(),
-                            order_clone.is_reduce_only(),
+                            order.quantity(),
+                            order.time_in_force(),
+                            order.is_post_only(),
+                            order.is_reduce_only(),
                             cond_expire,
                         )?;
                         (msg, "take_profit_limit")
@@ -1942,49 +1941,46 @@ impl ExecutionClient for DydxExecutionClient {
             anyhow::bail!("Cannot cancel orders: not connected");
         }
 
-        // Query all open orders from cache
-        let cache = self.core.cache();
-        let mut open_orders: Vec<_> = cache
-            .orders_open(None, None, None, None, None)
-            .into_iter()
-            .collect();
-
         let instrument_id = cmd.instrument_id;
-        open_orders.retain(|order| order.instrument_id() == instrument_id);
+        let order_side_filter = cmd.order_side;
 
-        // Filter by order_side if specified (NoOrderSide means all sides)
-        if cmd.order_side != OrderSide::NoOrderSide {
-            let order_side = cmd.order_side;
-            open_orders.retain(|order| order.order_side() == order_side);
-        }
+        // Extract order data from cache with short-lived borrow
+        // Collect (client_order_id, time_in_force, expire_time) for each matching order
+        let order_data: Vec<(ClientOrderId, TimeInForce, Option<UnixNanos>)> = {
+            let cache = self.core.cache();
+            cache
+                .orders_open(None, None, None, None, None)
+                .into_iter()
+                .filter(|order| order.instrument_id() == instrument_id)
+                .filter(|order| {
+                    order_side_filter == OrderSide::NoOrderSide
+                        || order.order_side() == order_side_filter
+                })
+                .map(|order| {
+                    (
+                        order.client_order_id(),
+                        order.time_in_force(),
+                        order.expire_time(),
+                    )
+                })
+                .collect()
+        }; // Cache borrow released here
 
-        // Split orders into short-term and long-term based on TimeInForce
-        // Short-term: IOC, FOK (expire by block height)
-        // Long-term: GTC, GTD, DAY, POST_ONLY (expire by timestamp)
-        let mut short_term_orders = Vec::new();
-        let mut long_term_orders = Vec::new();
-
-        for order in &open_orders {
-            match order.time_in_force() {
-                TimeInForce::Ioc | TimeInForce::Fok => short_term_orders.push(order),
-                TimeInForce::Gtc
-                | TimeInForce::Gtd
-                | TimeInForce::Day
-                | TimeInForce::AtTheOpen
-                | TimeInForce::AtTheClose => long_term_orders.push(order),
-            }
-        }
+        // Count short-term vs long-term for logging
+        let short_term_count = order_data
+            .iter()
+            .filter(|(_, tif, _)| matches!(tif, TimeInForce::Ioc | TimeInForce::Fok))
+            .count();
+        let long_term_count = order_data.len() - short_term_count;
 
         log::debug!(
-            "Cancel all orders: total={}, short_term={}, long_term={}, instrument_id={}, order_side={:?}",
-            open_orders.len(),
-            short_term_orders.len(),
-            long_term_orders.len(),
-            instrument_id,
-            cmd.order_side
+            "Cancel all orders: total={}, short_term={}, long_term={}, instrument_id={instrument_id}, order_side={order_side_filter:?}",
+            order_data.len(),
+            short_term_count,
+            long_term_count
         );
 
-        // Get execution components
+        // Get execution components (no cache borrow held)
         let (tx_manager, broadcaster, order_builder) = match self.get_execution_components() {
             Ok(components) => components,
             Err(e) => {
@@ -1998,9 +1994,8 @@ impl ExecutionClient for DydxExecutionClient {
         // Collect (instrument_id, client_id, order_flags) tuples for cancel
         // Use stored order_flags from order context to ensure correct cancellation
         let mut orders_to_cancel = Vec::new();
-        for order in &open_orders {
-            let client_order_id = order.client_order_id();
-            if let Some(client_id_u32) = self.get_client_order_id_int(client_order_id) {
+        for (client_order_id, time_in_force, expire_time) in &order_data {
+            if let Some(client_id_u32) = self.get_client_order_id_int(*client_order_id) {
                 // Get stored order_flags from order context
                 let order_flags = self.get_order_context(client_id_u32).map_or_else(
                     || {
@@ -2008,10 +2003,10 @@ impl ExecutionClient for DydxExecutionClient {
                         log::warn!(
                             "Order context not found for {client_order_id}, deriving flags from order"
                         );
-                        let expire_time = order.expire_time().map(nanos_to_secs_i64);
+                        let expire_secs = expire_time.map(nanos_to_secs_i64);
                         types::OrderLifetime::from_time_in_force(
-                            order.time_in_force(),
-                            expire_time,
+                            *time_in_force,
+                            expire_secs,
                             false,
                             order_builder.max_short_term_secs(),
                         )
