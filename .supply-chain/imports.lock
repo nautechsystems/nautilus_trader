@@ -855,13 +855,6 @@ criteria = "safe-to-deploy"
 version = "1.0.3"
 aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
 
-[[audits.google.audits.iana-time-zone]]
-who = "Manish Goregaokar <manishearth@google.com>"
-criteria = "safe-to-deploy"
-version = "0.1.61"
-notes = "Some unsafe: interfacing with system timezone APIs"
-aggregated-from = "https://chromium.googlesource.com/chromium/src/+/main/third_party/rust/chromium_crates_io/supply-chain/audits.toml?format=TEXT"
-
 [[audits.google.audits.icu_collections]]
 who = "Manish Goregaokar <manishearth@google.com>"
 criteria = "safe-to-deploy"
@@ -1712,6 +1705,11 @@ who = "J.C. Jones <jc@divviup.org>"
 criteria = "safe-to-deploy"
 delta = "0.9.3 -> 0.9.5"
 
+[[audits.isrg.audits.rand_distr]]
+who = "David Cook <dcook@divviup.org>"
+criteria = "safe-to-deploy"
+delta = "0.4.3 -> 0.5.1"
+
 [[audits.isrg.audits.rayon]]
 who = "Brandon Pitman <bran@bran.land>"
 criteria = "safe-to-deploy"
@@ -2132,18 +2130,6 @@ criteria = "safe-to-deploy"
 version = "0.4.3"
 aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
 
-[[audits.mozilla.audits.iana-time-zone]]
-who = "Mark Hammond <mhammond@skippinet.com.au>"
-criteria = "safe-to-deploy"
-delta = "0.1.61 -> 0.1.63"
-aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
-
-[[audits.mozilla.audits.iana-time-zone]]
-who = "Erich Gubler <erichdongubler@gmail.com>"
-criteria = "safe-to-deploy"
-delta = "0.1.63 -> 0.1.64"
-aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
-
 [[audits.mozilla.audits.icu_collections]]
 who = "Makoto Kato <m_kato@ga2.so-net.ne.jp>"
 criteria = "safe-to-deploy"
@@ -2336,6 +2322,20 @@ notes = """
 A tiny bit of unsafe code to implement functionality that isn't in stable rust
 yet, but it's all valid. Otherwise it's a pretty simple crate.
 """
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.proc-macro-error-attr2]]
+who = "Kagami Sascha Rosylight <saschanaz@outlook.com>"
+criteria = "safe-to-deploy"
+version = "2.0.0"
+notes = "No unsafe block."
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.proc-macro-error2]]
+who = "Kagami Sascha Rosylight <saschanaz@outlook.com>"
+criteria = "safe-to-deploy"
+version = "2.0.1"
+notes = "No unsafe block with a lovely `#![forbid(unsafe_code)]`."
 aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
 
 [[audits.mozilla.audits.quinn-udp]]

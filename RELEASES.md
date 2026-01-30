@@ -67,6 +67,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed Binance Spot `client_order_id` replaced with UUID (#3500), thanks for reporting @mrbaron3
 - Fixed Bybit demo trading by using HTTP REST API for order operations (Bybit demo does not support WebSocket Trade API)
 - Fixed Bybit HOUR bars not triggering on_bar (#3474), thanks for reporting @88z
+- Fixed Bybit historical requests to use ts_event as ts_init (#3502), thanks @dxwil
 - Fixed Databento `databento_data` to fetch definitions for full date range (#3414), thanks @Johnkhk
 - Fixed Databento zero-length interval at dataset boundary (#3429), thanks @shzhng
 - Fixed Databento empty underlying for index-based derivatives (#3480), thanks for reporting @davidsblom
@@ -102,6 +103,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Added Deribit rate limiting for HTTP and WebSocket clients (#3424), thanks @filipmacek
 - Added Deribit side-specific order cancellation (#3442), thanks @filipmacek
 - Added Deribit real-time portfolio WS subscription (#3444), thanks @filipmacek
+- Added Deribit integration documentation (#3508), thanks @filipmacek
 - Added Polymarket data loader rate limiting
 - Migrated Nautilus internal logging to `log` crate (external `tracing` available via `use_tracing` config)
 - Refactored execution clients to use `OrderEventEmitter` in Rust (#3469), thanks @filipmacek
@@ -119,11 +121,13 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Improved `OptionExerciseModule` logging and fix cache reference (#3388), thanks @davidsblom
 - Improved execution reports builder pattern in Rust (#3417), thanks @filipmacek
 - Improved visualization to use fill report for create_bars_with_fills (#3466), thanks @faysou
+- Improved Deribit with high-performance `Decimal` deserialization (#3510), thanks @filipmacek
 - Refined closing of streaming writer (#3394), thanks @faysou
 - Refined handling of `skip_first_non_full_bar` in `TimeBarAggregator` (#3395), thanks @faysou
 - Refined greeks safeguards and docs (#3407), thanks @faysou
 - Refined processing of gaps in aggregated historical bars (#3412), thanks @faysou
 - Refined Interactive Brokers adapter (#3195), thanks @faysou
+- Refined Interactive Brokers query of option chains (#3481), thanks @faysou
 - Refined `OptionExerciseModule` (#3423), thanks @faysou
 - Refined instrument `is_spread()` method (#3434), thanks @faysou
 - Refined `OrderBookDeltas.batch` (#3437), thanks @faysou

@@ -106,7 +106,7 @@ nautilus-tardis = { path = "crates/adapters/tardis", version = "0.53.0", default
 # Core dependencies
 # -----------------------------------------------------------------------------
 ahash = { version = "0.8.12", features = ["serde"] }
-alloy-primitives = { version = "1.5.3", default-features = false, features = [
+alloy-primitives = { version = "1.5.4", default-features = false, features = [
   "std",
   "serde",
 ] }
@@ -131,7 +131,7 @@ chrono = { version = "0.4.43", default-features = false, features = [
   "clock",
 ] }
 chrono-tz = "0.10.4"
-clap = { version = "4.5.55", features = ["derive", "env"] }
+clap = { version = "4.5.56", features = ["derive", "env"] }
 dashmap = "6.1.0"
 datafusion = { version = "52.1.0", default-features = false, features = [
   "parquet",
@@ -293,7 +293,7 @@ alloy-signer = { version = "1.5.2", default-features = false }
 alloy-signer-local = { version = "1.5.2", default-features = false, features = [
   "mnemonic",
 ] }
-alloy-sol-types = "1.5.3"
+alloy-sol-types = "1.5.4"
 arc-swap = "1.8.0"
 cosmrs = { version = "0.22.0", default-features = false, features = ["bip32"] }
 csv = "1.4.0"
@@ -344,7 +344,7 @@ pretty_assertions = "1.4.1"
 proptest = { version = "1.9.0", default-features = false, features = ["std"] }
 rstest = "0.26.1"
 tempfile = "3.24.0"
-turmoil = "0.7.0"
+turmoil = "0.7.1"
 
 # -----------------------------------------------------------------------------
 # Build dependencies

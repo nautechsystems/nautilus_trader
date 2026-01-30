@@ -151,11 +151,11 @@ version = "1.5.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-core]]
-version = "1.5.3"
+version = "1.5.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-dyn-abi]]
-version = "1.5.3"
+version = "1.5.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-eip2124]]
@@ -179,7 +179,7 @@ version = "1.5.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-json-abi]]
-version = "1.5.3"
+version = "1.5.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-json-rpc]]
@@ -195,7 +195,7 @@ version = "1.5.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-primitives]]
-version = "1.5.3"
+version = "1.5.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-provider]]
@@ -235,23 +235,23 @@ version = "1.5.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-sol-macro]]
-version = "1.5.3"
+version = "1.5.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-sol-macro-expander]]
-version = "1.5.3"
+version = "1.5.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-sol-macro-input]]
-version = "1.5.3"
+version = "1.5.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-sol-type-parser]]
-version = "1.5.3"
+version = "1.5.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-sol-types]]
-version = "1.5.3"
+version = "1.5.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-transport]]
@@ -595,11 +595,11 @@ version = "0.2.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.clap]]
-version = "4.5.55"
+version = "4.5.56"
 criteria = "safe-to-deploy"
 
 [[exemptions.clap_builder]]
-version = "4.5.55"
+version = "4.5.56"
 criteria = "safe-to-deploy"
 
 [[exemptions.clap_derive]]
@@ -1238,6 +1238,10 @@ criteria = "safe-to-deploy"
 version = "0.1.1"
 criteria = "safe-to-run"
 
+[[exemptions.iana-time-zone]]
+version = "0.1.65"
+criteria = "safe-to-deploy"
+
 [[exemptions.impl-codec]]
 version = "0.6.0"
 criteria = "safe-to-deploy"
@@ -1331,7 +1335,7 @@ version = "0.1.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.keccak-asm]]
-version = "0.1.4"
+version = "0.1.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.lalrpop-util]]
@@ -1754,14 +1758,6 @@ criteria = "safe-to-deploy"
 version = "3.4.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.proc-macro-error-attr2]]
-version = "2.0.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.proc-macro-error2]]
-version = "2.0.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.proc-macro2]]
 version = "1.0.106"
 criteria = "safe-to-deploy"
@@ -2171,7 +2167,7 @@ version = "0.9.9"
 criteria = "safe-to-deploy"
 
 [[exemptions.sha3-asm]]
-version = "0.1.4"
+version = "0.1.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.signal-hook-registry]]
@@ -2275,7 +2271,7 @@ version = "2.0.114"
 criteria = "safe-to-deploy"
 
 [[exemptions.syn-solidity]]
-version = "1.5.3"
+version = "1.5.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.sync_wrapper]]
@@ -2443,7 +2439,7 @@ version = "0.28.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.turmoil]]
-version = "0.7.0"
+version = "0.7.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.twox-hash]]
@@ -2835,11 +2831,11 @@ version = "0.8.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.zerocopy]]
-version = "0.8.34"
+version = "0.8.36"
 criteria = "safe-to-deploy"
 
 [[exemptions.zerocopy-derive]]
-version = "0.8.34"
+version = "0.8.36"
 criteria = "safe-to-deploy"
 
 [[exemptions.zeroize_derive]]
