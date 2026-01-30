@@ -33,7 +33,7 @@ use nautilus_model::{
 
 use super::{
     DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
-    KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column,
+    KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column, validate_precision_bytes,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -155,6 +155,10 @@ impl DecodeFromRecordBatch for TradeTick {
             1,
             DataType::FixedSizeBinary(PRECISION_BYTES),
         )?;
+
+        validate_precision_bytes(price_values, "price")?;
+        validate_precision_bytes(size_values, "size")?;
+
         let aggressor_side_values =
             extract_column::<UInt8Array>(cols, "aggressor_side", 2, DataType::UInt8)?;
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 4, DataType::UInt64)?;

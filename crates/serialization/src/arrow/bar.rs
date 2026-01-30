@@ -28,7 +28,7 @@ use nautilus_model::{
 
 use super::{
     DecodeDataFromRecordBatch, EncodingError, KEY_BAR_TYPE, KEY_PRICE_PRECISION,
-    KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column,
+    KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column, validate_precision_bytes,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -171,6 +171,12 @@ impl DecodeFromRecordBatch for Bar {
         )?;
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 5, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 6, DataType::UInt64)?;
+
+        validate_precision_bytes(open_values, "open")?;
+        validate_precision_bytes(high_values, "high")?;
+        validate_precision_bytes(low_values, "low")?;
+        validate_precision_bytes(close_values, "close")?;
+        validate_precision_bytes(volume_values, "volume")?;
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {

@@ -25,7 +25,7 @@ use nautilus_model::{data::QuoteTick, identifiers::InstrumentId, types::fixed::P
 
 use super::{
     DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
-    KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column,
+    KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column, validate_precision_bytes,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -177,24 +177,10 @@ impl DecodeFromRecordBatch for QuoteTick {
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 4, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 5, DataType::UInt64)?;
 
-        if bid_price_values.value_length() != PRECISION_BYTES {
-            return Err(EncodingError::ParseError(
-                "bid_price",
-                format!(
-                    "Invalid value length: expected {PRECISION_BYTES}, found {}",
-                    bid_price_values.value_length()
-                ),
-            ));
-        }
-        if ask_price_values.value_length() != PRECISION_BYTES {
-            return Err(EncodingError::ParseError(
-                "ask_price",
-                format!(
-                    "Invalid value length: expected {PRECISION_BYTES}, found {}",
-                    ask_price_values.value_length()
-                ),
-            ));
-        }
+        validate_precision_bytes(bid_price_values, "bid_price")?;
+        validate_precision_bytes(ask_price_values, "ask_price")?;
+        validate_precision_bytes(bid_size_values, "bid_size")?;
+        validate_precision_bytes(ask_size_values, "ask_size")?;
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|row| {

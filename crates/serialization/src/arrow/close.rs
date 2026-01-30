@@ -30,7 +30,7 @@ use nautilus_model::{
 
 use super::{
     DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, decode_price,
-    extract_column,
+    extract_column, validate_precision_bytes,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -125,16 +125,7 @@ impl DecodeFromRecordBatch for InstrumentClose {
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 2, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 3, DataType::UInt64)?;
 
-        // Validate value length
-        if close_price_values.value_length() != PRECISION_BYTES {
-            return Err(EncodingError::ParseError(
-                "close_price",
-                format!(
-                    "Invalid value length: expected {PRECISION_BYTES}, found {}",
-                    close_price_values.value_length()
-                ),
-            ));
-        }
+        validate_precision_bytes(close_price_values, "close_price")?;
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|row| {
