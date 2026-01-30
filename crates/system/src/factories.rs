@@ -71,7 +71,6 @@ pub trait ExecutionClientFactory: Debug {
         name: &str,
         config: &dyn ClientConfig,
         cache: Rc<RefCell<Cache>>,
-        clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>>;
 
     /// Returns the name of this factory.

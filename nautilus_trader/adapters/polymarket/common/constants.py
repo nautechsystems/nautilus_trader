@@ -43,3 +43,5 @@ POLYMARKET_FINALIZED_TRADE_STATUSES: Final[tuple[PolymarketTradeStatus, ...]] = 
     PolymarketTradeStatus.MINED,
     PolymarketTradeStatus.CONFIRMED,
 )
+
+POLYMARKET_HTTP_RATE_LIMIT: Final[int] = 100  # requests per minute

@@ -19,7 +19,7 @@
 //! orchestrator and the network layer. It exclusively owns the `WebSocketClient` and
 //! processes commands from the client via an unbounded channel.
 //!
-//! ## Key Responsibilities
+//! ## Responsibilities
 //!
 //! - Command processing: Receives `HandlerCommand` from client, serializes to JSON requests.
 //! - Response decoding: Parses SBE binary responses using schema 3 decoders.

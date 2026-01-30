@@ -39,6 +39,7 @@ from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
+from nautilus_trader.data.messages import RequestFundingRates
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestOrderBookDepth
@@ -847,6 +848,18 @@ class LiveMarketDataClient(MarketDataClient):
             log_msg=f"request: trades {request.instrument_id}",
         )
 
+    def request_funding_rates(self, request: RequestFundingRates) -> None:
+        time_range_str = format_utc_timerange(request.start, request.end)
+        limit_str = f" limit={request.limit}" if request.limit != 0 else ""
+        self._log.info(
+            f"Request {request.instrument_id} funding rates{time_range_str}{limit_str}",
+            LogColor.BLUE,
+        )
+        self.create_task(
+            self._request_funding_rates(request),
+            log_msg=f"request: funding rates {request.instrument_id}",
+        )
+
     def request_bars(self, request: RequestBars) -> None:
         time_range_str = format_utc_timerange(request.start, request.end)
         limit_str = f" limit={request.limit}" if request.limit != 0 else ""
@@ -1046,6 +1059,11 @@ class LiveMarketDataClient(MarketDataClient):
     async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_trade_ticks` coroutine",  # pragma: no cover
+        )
+
+    async def _request_funding_rates(self, request: RequestFundingRates) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_request_funding_rates` coroutine",  # pragma: no cover
         )
 
     async def _request_bars(self, request: RequestBars) -> None:

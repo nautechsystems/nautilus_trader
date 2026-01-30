@@ -175,7 +175,6 @@ impl ExecutionClientFactory for AxExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: Rc<RefCell<Cache>>,
-        clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let ax_config = config
             .as_any()
@@ -199,7 +198,6 @@ impl ExecutionClientFactory for AxExecutionClientFactory {
             ax_config.account_id,
             account_type,
             None, // base_currency
-            clock,
             cache,
         );
 

@@ -18,7 +18,7 @@ use std::{any::Any, sync::Arc};
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
-    data::{Bar, BarType, DataType, QuoteTick, TradeTick},
+    data::{Bar, BarType, DataType, FundingRateUpdate, QuoteTick, TradeTick},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::InstrumentAny,
     orderbook::OrderBook,
@@ -288,6 +288,49 @@ impl TradesResponse {
 }
 
 #[derive(Clone, Debug)]
+pub struct FundingRatesResponse {
+    pub correlation_id: UUID4,
+    pub client_id: ClientId,
+    pub instrument_id: InstrumentId,
+    pub data: Vec<FundingRateUpdate>,
+    pub start: Option<UnixNanos>,
+    pub end: Option<UnixNanos>,
+    pub ts_init: UnixNanos,
+    pub params: Option<IndexMap<String, String>>,
+}
+
+impl FundingRatesResponse {
+    /// Converts to a dyn Any trait object for messaging.
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    /// Creates a new [`FundingRatesResponse`] instance.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        correlation_id: UUID4,
+        client_id: ClientId,
+        instrument_id: InstrumentId,
+        data: Vec<FundingRateUpdate>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        ts_init: UnixNanos,
+        params: Option<IndexMap<String, String>>,
+    ) -> Self {
+        Self {
+            correlation_id,
+            client_id,
+            instrument_id,
+            data,
+            start,
+            end,
+            ts_init,
+            params,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct BarsResponse {
     pub correlation_id: UUID4,
     pub client_id: ClientId,
@@ -322,9 +365,9 @@ impl BarsResponse {
             client_id,
             bar_type,
             data,
+            ts_init,
             start,
             end,
-            ts_init,
             params,
         }
     }

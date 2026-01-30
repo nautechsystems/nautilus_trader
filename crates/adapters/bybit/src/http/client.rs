@@ -35,7 +35,7 @@ use nautilus_core::{
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    data::{Bar, BarType, OrderBookDeltas, TradeTick},
+    data::{Bar, BarType, FundingRateUpdate, OrderBookDeltas, TradeTick},
     enums::{OrderSide, OrderType, PositionSideSpecified, TimeInForce},
     events::account::state::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
@@ -57,7 +57,7 @@ use super::{
     error::BybitHttpError,
     models::{
         BybitAccountDetailsResponse, BybitBorrowResponse, BybitFeeRate, BybitFeeRateResponse,
-        BybitInstrumentInverseResponse, BybitInstrumentLinearResponse,
+        BybitFundingResponse, BybitInstrumentInverseResponse, BybitInstrumentLinearResponse,
         BybitInstrumentOptionResponse, BybitInstrumentSpotResponse, BybitKlinesResponse,
         BybitNoConvertRepayResponse, BybitOpenOrdersResponse, BybitOrderHistoryResponse,
         BybitOrderbookResponse, BybitPlaceOrderResponse, BybitPositionListResponse,
@@ -70,35 +70,33 @@ use super::{
         BybitBatchCancelOrderEntryBuilder, BybitBatchCancelOrderParamsBuilder,
         BybitBatchPlaceOrderEntryBuilder, BybitBorrowParamsBuilder,
         BybitCancelAllOrdersParamsBuilder, BybitCancelOrderParamsBuilder, BybitFeeRateParams,
+        BybitFeeRateParamsBuilder, BybitFundingParams, BybitFundingParamsBuilder,
         BybitInstrumentsInfoParams, BybitKlinesParams, BybitKlinesParamsBuilder,
         BybitNoConvertRepayParamsBuilder, BybitOpenOrdersParamsBuilder,
-        BybitOrderHistoryParamsBuilder, BybitOrderbookParams, BybitPlaceOrderParamsBuilder,
-        BybitPositionListParams, BybitSetLeverageParamsBuilder, BybitSetMarginModeParamsBuilder,
-        BybitSetTradingStopParams, BybitSwitchModeParamsBuilder, BybitTickersParams,
-        BybitTradeHistoryParams, BybitTradesParams, BybitTradesParamsBuilder,
+        BybitOrderHistoryParamsBuilder, BybitOrderbookParams, BybitOrderbookParamsBuilder,
+        BybitPlaceOrderParamsBuilder, BybitPositionListParams, BybitSetLeverageParamsBuilder,
+        BybitSetMarginModeParamsBuilder, BybitSetTradingStopParams, BybitSwitchModeParamsBuilder,
+        BybitTickersParams, BybitTradeHistoryParams, BybitTradesParams, BybitTradesParamsBuilder,
         BybitWalletBalanceParams,
     },
 };
-use crate::{
-    common::{
-        consts::{BYBIT_BASE_COIN, BYBIT_NAUTILUS_BROKER_ID, BYBIT_QUOTE_COIN},
-        credential::Credential,
-        enums::{
-            BybitAccountType, BybitEnvironment, BybitMarginMode, BybitOpenOnly, BybitOrderFilter,
-            BybitOrderSide, BybitOrderType, BybitPositionMode, BybitProductType, BybitTimeInForce,
-            BybitTriggerDirection,
-        },
-        models::{BybitErrorCheck, BybitResponseCheck},
-        parse::{
-            bar_spec_to_bybit_interval, make_bybit_symbol, parse_account_state, parse_fill_report,
-            parse_inverse_instrument, parse_kline_bar, parse_linear_instrument,
-            parse_option_instrument, parse_order_status_report, parse_orderbook,
-            parse_position_status_report, parse_spot_instrument, parse_trade_tick,
-        },
-        symbol::BybitSymbol,
-        urls::bybit_http_base_url,
+use crate::common::{
+    consts::{BYBIT_BASE_COIN, BYBIT_NAUTILUS_BROKER_ID, BYBIT_QUOTE_COIN},
+    credential::Credential,
+    enums::{
+        BybitAccountType, BybitEnvironment, BybitMarginMode, BybitOpenOnly, BybitOrderFilter,
+        BybitOrderSide, BybitOrderType, BybitPositionMode, BybitProductType, BybitTimeInForce,
+        BybitTriggerDirection,
     },
-    http::query::{BybitFeeRateParamsBuilder, BybitOrderbookParamsBuilder},
+    models::{BybitErrorCheck, BybitResponseCheck},
+    parse::{
+        bar_spec_to_bybit_interval, make_bybit_symbol, parse_account_state, parse_fill_report,
+        parse_funding_rate, parse_inverse_instrument, parse_kline_bar, parse_linear_instrument,
+        parse_option_instrument, parse_order_status_report, parse_orderbook,
+        parse_position_status_report, parse_spot_instrument, parse_trade_tick,
+    },
+    symbol::BybitSymbol,
+    urls::bybit_http_base_url,
 };
 
 const DEFAULT_RECV_WINDOW_MS: u64 = 5_000;
@@ -664,6 +662,29 @@ impl BybitRawHttpClient {
         self.send_request(
             Method::GET,
             "/v5/market/recent-trade",
+            Some(params),
+            None,
+            false,
+        )
+        .await
+    }
+
+    /// Fetches funding data from Bybit.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/market/history-fund-rate>
+    pub async fn get_funding_history(
+        &self,
+        params: &BybitFundingParams,
+    ) -> Result<BybitFundingResponse, BybitHttpError> {
+        self.send_request(
+            Method::GET,
+            "/v5/market/funding/history",
             Some(params),
             None,
             false,
@@ -2977,16 +2998,145 @@ impl BybitHttpClient {
         let params = params_builder.build().map_err(|e| anyhow::anyhow!(e))?;
         let response = self.inner.get_recent_trades(&params).await?;
 
-        let ts_init = self.generate_ts_init();
         let mut trades = Vec::new();
 
         for trade in response.result.list {
-            if let Ok(trade_tick) = parse_trade_tick(&trade, &instrument, ts_init) {
+            if let Ok(trade_tick) = parse_trade_tick(&trade, &instrument, None) {
                 trades.push(trade_tick);
             }
         }
 
         Ok(trades)
+    }
+
+    /// Request funding rate history for a given symbol.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/market/history-fund-rate>
+    pub async fn request_funding_rates(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<FundingRateUpdate>> {
+        let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
+        let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
+
+        let start_ms = start.map(|dt| dt.timestamp_millis());
+        let mut seen_timestamps: AHashSet<i64> = AHashSet::new();
+
+        let mut pages: Vec<Vec<FundingRateUpdate>> = Vec::new();
+        let mut total_funding_rates = 0usize;
+        let mut current_end = end.map(|dt| dt.timestamp_millis());
+
+        loop {
+            let mut params_builder = BybitFundingParamsBuilder::default();
+            params_builder.category(product_type);
+            params_builder.symbol(bybit_symbol.raw_symbol().to_string());
+            params_builder.limit(200u32); // Limit for data size per page (maximum for the Bybit API)
+
+            if let Some(start_val) = start_ms {
+                params_builder.start_time(start_val);
+            }
+            if let Some(end_val) = current_end {
+                params_builder.end_time(end_val);
+            }
+
+            let params = params_builder.build().map_err(|e| anyhow::anyhow!(e))?;
+            let response = self.inner.get_funding_history(&params).await?;
+
+            let funding_rates = response.result.list;
+            if funding_rates.is_empty() {
+                break;
+            }
+
+            let mut funding_rates_with_ts: Vec<(i64, _)> = funding_rates
+                .into_iter()
+                .filter_map(|f| {
+                    f.funding_rate_timestamp
+                        .parse::<i64>()
+                        .ok()
+                        .map(|ts| (ts, f))
+                })
+                .collect();
+
+            funding_rates_with_ts.sort_by_key(|(ts, _)| *ts);
+
+            let has_new = funding_rates_with_ts
+                .iter()
+                .any(|(ts, _)| !seen_timestamps.contains(ts));
+            if !has_new {
+                break;
+            }
+
+            let mut page_funding_rates = Vec::with_capacity(funding_rates_with_ts.len());
+
+            let mut earliest_ts: Option<i64> = None;
+
+            for (time, funding) in &funding_rates_with_ts {
+                // Track earliest timestamp for pagination
+                if earliest_ts.is_none_or(|ts| *time < ts) {
+                    earliest_ts = Some(*time);
+                }
+
+                if !seen_timestamps.contains(time)
+                    && let Ok(funding_rate) = parse_funding_rate(funding, &instrument)
+                {
+                    page_funding_rates.push(funding_rate);
+                    seen_timestamps.insert(*time);
+                }
+            }
+
+            total_funding_rates += page_funding_rates.len();
+            pages.push(page_funding_rates);
+
+            // Check if we've reached the requested limit
+            if let Some(limit_val) = limit
+                && total_funding_rates >= limit_val as usize
+            {
+                break;
+            }
+
+            // Move end time backwards to get earlier data
+            // Set new end to be 1ms before the first bar of this page
+            let Some(earliest_funding_time) = earliest_ts else {
+                break;
+            };
+            if let Some(start_val) = start_ms
+                && earliest_funding_time <= start_val
+            {
+                break;
+            }
+
+            current_end = Some(earliest_funding_time - 1);
+        }
+
+        // Reverse pages and flatten to get chronological order (oldest to newest)
+        let mut all_funding_rates: Vec<FundingRateUpdate> = Vec::with_capacity(total_funding_rates);
+        for page in pages.into_iter().rev() {
+            all_funding_rates.extend(page);
+        }
+
+        // If limit is specified and we have more funding rates, return the last N rates (most recent)
+        if let Some(limit_val) = limit {
+            let limit_usize = limit_val as usize;
+            if all_funding_rates.len() > limit_usize {
+                let start_idx = all_funding_rates.len() - limit_usize;
+                return Ok(all_funding_rates[start_idx..].to_vec());
+            }
+        }
+
+        Ok(all_funding_rates)
     }
 
     /// Request an orderbook snapshot for a given symbol.
@@ -3037,8 +3187,7 @@ impl BybitHttpClient {
         let params = params_builder.build().map_err(|e| anyhow::anyhow!(e))?;
         let response = self.inner.get_orderbook(&params).await?;
 
-        let ts_init = self.generate_ts_init();
-        let deltas = parse_orderbook(&response.result, &instrument, ts_init)?;
+        let deltas = parse_orderbook(&response.result, &instrument, None)?;
 
         Ok(deltas)
     }
@@ -3131,7 +3280,6 @@ impl BybitHttpClient {
                 break;
             }
 
-            let ts_init = self.generate_ts_init();
             let mut page_bars = Vec::with_capacity(klines_with_ts.len());
 
             let mut earliest_ts: Option<i64> = None;
@@ -3149,7 +3297,7 @@ impl BybitHttpClient {
 
                 if !seen_timestamps.contains(start_time)
                     && let Ok(bar) =
-                        parse_kline_bar(kline, &instrument, bar_type, timestamp_on_close, ts_init)
+                        parse_kline_bar(kline, &instrument, bar_type, timestamp_on_close, None)
                 {
                     page_bars.push(bar);
                     seen_timestamps.insert(*start_time);

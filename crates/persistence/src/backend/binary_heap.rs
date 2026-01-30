@@ -364,7 +364,11 @@ impl<T> Drop for Hole<'_, T> {
         // Fill the hole again
         unsafe {
             let pos = self.pos;
-            ptr::copy_nonoverlapping(&*self.elt, self.data.get_unchecked_mut(pos), 1);
+            ptr::copy_nonoverlapping(
+                ptr::from_ref(&*self.elt),
+                self.data.get_unchecked_mut(pos),
+                1,
+            );
         }
     }
 }

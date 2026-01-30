@@ -999,6 +999,8 @@ async fn test_md_rapid_subscribe_unsubscribe() {
 #[rstest]
 #[tokio::test]
 async fn test_md_subscribe_same_symbol_different_levels() {
+    // Architect allows only one subscription per symbol - the second subscription
+    // at a different level should be skipped (deduplication)
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
@@ -1016,15 +1018,21 @@ async fn test_md_subscribe_same_symbol_different_levels() {
         .await
         .unwrap();
 
+    // Only one subscription should be sent (L1), L2 should be skipped
     wait_until_async(
-        || async { state.subscriptions.lock().await.len() >= 2 },
+        || async { state.subscriptions.lock().await.len() == 1 },
         Duration::from_secs(5),
     )
     .await;
 
     let subs = state.subscriptions.lock().await.clone();
+    assert_eq!(
+        subs.len(),
+        1,
+        "Expected 1 subscription, found {}",
+        subs.len()
+    );
     assert!(subs.iter().any(|s| s.contains("LEVEL_1")));
-    assert!(subs.iter().any(|s| s.contains("LEVEL_2")));
 
     client.close().await;
 }

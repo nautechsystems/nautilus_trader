@@ -16,8 +16,8 @@
 //! Example demonstrating live execution testing with the dYdX adapter.
 //!
 //! Prerequisites:
-//! - Set `DYDX_MNEMONIC` (or `DYDX_TESTNET_MNEMONIC` for testnet)
-//! - Optionally set `DYDX_WALLET_ADDRESS` (derived from mnemonic if not set)
+//! - Set `DYDX_PRIVATE_KEY` (or `DYDX_TESTNET_PRIVATE_KEY` for testnet)
+//! - Optionally set `DYDX_WALLET_ADDRESS` (derived from private key if not set)
 //!
 //! Run with: `cargo run --example dydx-exec-tester --package nautilus-dydx`
 
@@ -59,17 +59,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let instrument_id = InstrumentId::from("ETH-USD-PERP.DYDX");
 
     // Load credentials from environment
-    let mnemonic_key = if is_testnet {
-        "DYDX_TESTNET_MNEMONIC"
+    let private_key_env = if is_testnet {
+        "DYDX_TESTNET_PRIVATE_KEY"
     } else {
-        "DYDX_MNEMONIC"
+        "DYDX_PRIVATE_KEY"
     };
-    let mnemonic = get_env_option(mnemonic_key);
+    let private_key = get_env_option(private_key_env);
     let wallet_address = get_env_option("DYDX_WALLET_ADDRESS");
 
-    if mnemonic.is_none() && wallet_address.is_none() {
+    if private_key.is_none() && wallet_address.is_none() {
         return Err(
-            format!("Set {mnemonic_key} or DYDX_WALLET_ADDRESS environment variable").into(),
+            format!("Set {private_key_env} or DYDX_WALLET_ADDRESS environment variable").into(),
         );
     }
 
@@ -82,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         trader_id,
         account_id,
         network,
-        mnemonic,
+        private_key,
         wallet_address,
         subaccount_number: 0,
         grpc_endpoint: None,

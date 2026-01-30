@@ -36,7 +36,6 @@ use nautilus_binance::{
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
-    clock::{Clock, TestClock},
     live::runner::set_exec_event_sender,
     messages::{
         ExecutionEvent,
@@ -552,7 +551,6 @@ fn create_test_execution_client(
     let client_id = ClientId::from("BINANCE");
 
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
 
     let core = ExecutionClientCore::new(
         trader_id,
@@ -562,7 +560,6 @@ fn create_test_execution_client(
         account_id,
         AccountType::Cash,
         None,
-        clock,
         cache.clone(),
     );
 
@@ -662,6 +659,7 @@ async fn test_submit_order_generates_submitted_and_accepted_events() {
     let (mut client, mut rx, cache) = create_test_execution_client(base_url);
     add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
 
+    client.start().unwrap();
     client.connect().await.unwrap();
 
     let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
@@ -744,6 +742,7 @@ async fn test_cancel_all_orders_generates_canceled_events() {
     let (mut client, mut rx, cache) = create_test_execution_client(base_url);
     add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
 
+    client.start().unwrap();
     client.connect().await.unwrap();
 
     let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
@@ -791,6 +790,7 @@ async fn test_query_account_generates_account_state_event() {
     let (mut client, mut rx, cache) = create_test_execution_client(base_url);
     add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
 
+    client.start().unwrap();
     client.connect().await.unwrap();
 
     let query_cmd = QueryAccount::new(

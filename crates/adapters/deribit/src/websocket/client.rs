@@ -84,7 +84,6 @@ pub struct DeribitWebSocketClient {
     is_testnet: bool,
     heartbeat_interval: Option<u64>,
     credential: Option<Credential>,
-    is_authenticated: Arc<AtomicBool>,
     auth_state: Arc<tokio::sync::RwLock<Option<AuthState>>>,
     signal: Arc<AtomicBool>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
@@ -105,17 +104,10 @@ impl Debug for DeribitWebSocketClient {
             .field("url", &self.url)
             .field("is_testnet", &self.is_testnet)
             .field("has_credentials", &self.credential.is_some())
-            .field(
-                "is_authenticated",
-                &self.is_authenticated.load(Ordering::Relaxed),
-            )
+            .field("is_authenticated", &self.auth_tracker.is_authenticated())
             .field(
                 "has_auth_state",
-                &self
-                    .auth_state
-                    .try_read()
-                    .map(|s| s.is_some())
-                    .unwrap_or(false),
+                &self.auth_state.try_read().is_ok_and(|s| s.is_some()),
             )
             .field("heartbeat_interval", &self.heartbeat_interval)
             .finish_non_exhaustive()
@@ -181,7 +173,6 @@ impl DeribitWebSocketClient {
             is_testnet,
             heartbeat_interval,
             credential,
-            is_authenticated: Arc::new(AtomicBool::new(false)),
             auth_state: Arc::new(tokio::sync::RwLock::new(None)),
             signal,
             connection_mode: Arc::new(ArcSwap::from_pointee(AtomicU8::new(
@@ -458,7 +449,7 @@ impl DeribitWebSocketClient {
         // Spawn handler task
         let subscriptions_state = self.subscriptions_state.clone();
         let credential = self.credential.clone();
-        let is_authenticated = self.is_authenticated.clone();
+        let auth_tracker = self.auth_tracker.clone();
         let auth_state = self.auth_state.clone();
 
         let task_handle = get_runtime().spawn(async move {
@@ -484,8 +475,8 @@ impl DeribitWebSocketClient {
                             if let Some(cred) = &credential {
                                 log::info!("Re-authenticating after reconnection...");
 
-                                // Reset authenticated state
-                                is_authenticated.store(false, Ordering::Release);
+                                // Begin auth attempt so succeed() will update state
+                                let _rx = auth_tracker.begin();
                                 pending_reauth = true;
 
                                 // Get the previously used scope for re-authentication
@@ -518,7 +509,6 @@ impl DeribitWebSocketClient {
 
                             if pending_reauth {
                                 pending_reauth = false;
-                                is_authenticated.store(true, Ordering::Release);
                                 log::info!(
                                     "Re-authentication successful (scope: {}), resubscribing to channels",
                                     result.scope
@@ -532,7 +522,6 @@ impl DeribitWebSocketClient {
                                 }
                             } else {
                                 // Initial authentication completed
-                                is_authenticated.store(true, Ordering::Release);
                                 log::debug!(
                                     "Auth state stored: scope={}, expires_in={}s",
                                     result.scope,
@@ -576,6 +565,8 @@ impl DeribitWebSocketClient {
             .await;
         }
 
+        self.auth_tracker.invalidate();
+
         Ok(())
     }
 
@@ -607,7 +598,7 @@ impl DeribitWebSocketClient {
     /// Returns whether the client is authenticated.
     #[must_use]
     pub fn is_authenticated(&self) -> bool {
-        self.is_authenticated.load(Ordering::Acquire)
+        self.auth_tracker.is_authenticated()
     }
 
     /// Authenticates the WebSocket session with Deribit.
@@ -652,7 +643,6 @@ impl DeribitWebSocketClient {
             .await
         {
             Ok(()) => {
-                self.is_authenticated.store(true, Ordering::Release);
                 log::info!("WebSocket authenticated successfully");
                 Ok(())
             }

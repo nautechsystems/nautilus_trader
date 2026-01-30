@@ -1,0 +1,41 @@
+[
+  {
+    "id": "2890",
+    "slug": "nba-mavericks-vs-grizzlies",
+    "title": "NBA: Will the Mavericks beat the Grizzlies?",
+    "active": true,
+    "closed": false,
+    "archived": false,
+    "markets": [
+      {
+        "conditionId": "0x064d33e3f5703792aafa92bfb0ee10e08f461b1b34c02c1f02671892ede1609a"
+      }
+    ]
+  },
+  {
+    "id": "2891",
+    "slug": "nfl-falcons-vs-panthers",
+    "title": "NFL: Will the Falcons beat the Panthers?",
+    "active": true,
+    "closed": false,
+    "archived": false,
+    "markets": [
+      {
+        "conditionId": "0x8e0c65676f129764a604fcf618b4f92c34e5dfd2ce4a4cbf7a6bcdfa942241af"
+      }
+    ]
+  },
+  {
+    "id": "2892",
+    "slug": "nfl-49ers-vs-packers",
+    "title": "Will the 49ers beat the Packers?",
+    "active": true,
+    "closed": false,
+    "archived": false,
+    "markets": [
+      {
+        "conditionId": "0x6c11c9bd1f87bde6bf11c380b63298a57d682ae7902b3d0d94656dd9ff0b483e"
+      }
+    ]
+  }
+]

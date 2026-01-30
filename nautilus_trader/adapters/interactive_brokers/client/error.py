@@ -18,6 +18,7 @@ from typing import Final
 
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.model.identifiers import VenueOrderId
 
 
 class InteractiveBrokersClientErrorMixin(BaseMixin):
@@ -106,7 +107,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
                 await self._handle_subscription_error(req_id, error_code, error_string)
             elif self._requests.get(req_id=req_id):
                 await self._handle_request_error(req_id, error_code, error_string)
-            elif req_id in self._order_id_to_order_ref:
+            elif VenueOrderId(str(req_id)) in self._order_id_to_order_ref:
                 await self._handle_order_error(req_id, error_code, error_string)
             else:
                 self._log.warning(f"Unhandled error: {error_code} for req_id {req_id}")
@@ -213,7 +214,8 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
             The error message string.
 
         """
-        order_ref = self._order_id_to_order_ref.get(req_id, None)
+        # Use VenueOrderId as dict key (for orders we placed, req_id is the valid orderId)
+        order_ref = self._order_id_to_order_ref.get(VenueOrderId(str(req_id)), None)
 
         if not order_ref:
             self._log.warning(f"Order reference not found for req_id {req_id}")

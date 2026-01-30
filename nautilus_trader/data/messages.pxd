@@ -188,6 +188,10 @@ cdef class RequestTradeTicks(RequestData):
     pass
 
 
+cdef class RequestFundingRates(RequestData):
+    pass
+
+
 cdef class RequestBars(RequestData):
     cdef readonly BarType bar_type
     """The bar type for the request.\n\n:returns: `BarType`"""

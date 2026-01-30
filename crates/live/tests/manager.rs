@@ -21,7 +21,16 @@
 use std::{cell::RefCell, rc::Rc};
 
 use ahash::AHashSet;
-use nautilus_common::{cache::Cache, clock::TestClock};
+use async_trait::async_trait;
+use nautilus_common::{
+    cache::Cache,
+    clients::ExecutionClient,
+    clock::TestClock,
+    messages::execution::{
+        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateOrderStatusReports, ModifyOrder,
+        QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+    },
+};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::{
     engine::ExecutionEngine, reconciliation::process_mass_status_for_reconciliation,
@@ -45,7 +54,7 @@ use nautilus_model::{
     orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rstest::rstest;
 use rust_decimal_macros::dec;
@@ -5845,4 +5854,276 @@ async fn test_reconciliation_instrument_ids_filters_position_reports() {
         !has_excluded_position,
         "No position should be created for excluded instrument"
     );
+}
+
+struct MockExecutionClient {
+    client_id: ClientId,
+    account_id: AccountId,
+    venue: Venue,
+    order_reports: RefCell<Vec<OrderStatusReport>>,
+}
+
+impl MockExecutionClient {
+    fn new(order_reports: Vec<OrderStatusReport>) -> Self {
+        Self {
+            client_id: test_client_id(),
+            account_id: test_account_id(),
+            venue: test_venue(),
+            order_reports: RefCell::new(order_reports),
+        }
+    }
+}
+
+#[async_trait(?Send)]
+impl ExecutionClient for MockExecutionClient {
+    fn is_connected(&self) -> bool {
+        true
+    }
+
+    fn client_id(&self) -> ClientId {
+        self.client_id
+    }
+
+    fn account_id(&self) -> AccountId {
+        self.account_id
+    }
+
+    fn venue(&self) -> Venue {
+        self.venue
+    }
+
+    fn oms_type(&self) -> OmsType {
+        OmsType::Hedging
+    }
+
+    fn get_account(&self) -> Option<AccountAny> {
+        None
+    }
+
+    fn generate_account_state(
+        &self,
+        _balances: Vec<AccountBalance>,
+        _margins: Vec<MarginBalance>,
+        _reported: bool,
+        _ts_event: UnixNanos,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn start(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn stop(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn submit_order(&self, _cmd: &SubmitOrder) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn submit_order_list(&self, _cmd: &SubmitOrderList) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn modify_order(&self, _cmd: &ModifyOrder) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn cancel_order(&self, _cmd: &CancelOrder) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn cancel_all_orders(&self, _cmd: &CancelAllOrders) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn batch_cancel_orders(&self, _cmd: &BatchCancelOrders) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn query_order(&self, _cmd: &QueryOrder) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn generate_order_status_reports(
+        &self,
+        _cmd: &GenerateOrderStatusReports,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        Ok(self.order_reports.borrow().clone())
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_check_open_orders_defers_with_recent_local_activity() {
+    // Test that reconciliation is deferred when there's recent local activity
+    // within the threshold, to avoid race conditions with in-flight fills.
+    let config = ExecutionManagerConfig {
+        open_check_threshold_ns: 200_000_000, // 200ms threshold
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    ctx.add_instrument(test_instrument());
+
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let instrument_id = test_instrument_id();
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(client_order_id)
+        .instrument_id(instrument_id)
+        .quantity(Quantity::from("10.0"))
+        .price(Price::from("100.0"))
+        .build();
+    let submitted = TestOrderEventStubs::submitted(&order, test_account_id());
+    order.apply(submitted).unwrap();
+    let accepted = TestOrderEventStubs::accepted(&order, test_account_id(), venue_order_id);
+    order.apply(accepted).unwrap();
+    ctx.add_order(order.clone());
+
+    ctx.manager.record_local_activity(client_order_id);
+
+    let report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument_id,
+        OrderStatus::PartiallyFilled,
+        Quantity::from("10.0"),
+        Quantity::from("5.0"),
+    )
+    .with_avg_px(100.0)
+    .unwrap();
+
+    let mock_client = Rc::new(MockExecutionClient::new(vec![report]));
+    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client];
+
+    let events = ctx.manager.check_open_orders(&clients).await;
+
+    assert!(
+        events.is_empty(),
+        "Reconciliation should be deferred with recent local activity"
+    );
+    let cached_order = ctx.get_order(&client_order_id).unwrap();
+    assert_eq!(cached_order.status(), OrderStatus::Accepted);
+    assert_eq!(cached_order.filled_qty(), Quantity::from("0.0"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_check_open_orders_proceeds_after_threshold_exceeded() {
+    // Test that reconciliation proceeds when the local activity is older than
+    // the configured threshold.
+    let config = ExecutionManagerConfig {
+        open_check_threshold_ns: 200_000_000, // 200ms threshold
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    ctx.add_instrument(test_instrument());
+
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let instrument_id = test_instrument_id();
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(client_order_id)
+        .instrument_id(instrument_id)
+        .quantity(Quantity::from("10.0"))
+        .price(Price::from("100.0"))
+        .build();
+    let submitted = TestOrderEventStubs::submitted(&order, test_account_id());
+    order.apply(submitted).unwrap();
+    let accepted = TestOrderEventStubs::accepted(&order, test_account_id(), venue_order_id);
+    order.apply(accepted).unwrap();
+    ctx.add_order(order.clone());
+
+    ctx.manager.record_local_activity(client_order_id);
+    ctx.advance_time(500_000_000);
+
+    let report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument_id,
+        OrderStatus::PartiallyFilled,
+        Quantity::from("10.0"),
+        Quantity::from("5.0"),
+    )
+    .with_avg_px(100.0)
+    .unwrap();
+
+    let mock_client = Rc::new(MockExecutionClient::new(vec![report]));
+    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client];
+
+    let events = ctx.manager.check_open_orders(&clients).await;
+
+    assert_eq!(
+        events.len(),
+        1,
+        "Reconciliation should proceed when threshold exceeded"
+    );
+    if let OrderEventAny::Filled(filled) = &events[0] {
+        assert_eq!(filled.last_qty, Quantity::from("5.0"));
+    } else {
+        panic!("Expected OrderFilled event, was {:?}", events[0]);
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_check_open_orders_proceeds_without_local_activity() {
+    // Test that reconciliation proceeds normally when there's no recorded
+    // local activity for the order.
+    let config = ExecutionManagerConfig {
+        open_check_threshold_ns: 200_000_000, // 200ms threshold
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    ctx.add_instrument(test_instrument());
+
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let instrument_id = test_instrument_id();
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(client_order_id)
+        .instrument_id(instrument_id)
+        .quantity(Quantity::from("10.0"))
+        .price(Price::from("100.0"))
+        .build();
+    let submitted = TestOrderEventStubs::submitted(&order, test_account_id());
+    order.apply(submitted).unwrap();
+    let accepted = TestOrderEventStubs::accepted(&order, test_account_id(), venue_order_id);
+    order.apply(accepted).unwrap();
+    ctx.add_order(order.clone());
+
+    let report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument_id,
+        OrderStatus::PartiallyFilled,
+        Quantity::from("10.0"),
+        Quantity::from("5.0"),
+    )
+    .with_avg_px(100.0)
+    .unwrap();
+
+    let mock_client = Rc::new(MockExecutionClient::new(vec![report]));
+    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client];
+
+    let events = ctx.manager.check_open_orders(&clients).await;
+
+    assert_eq!(
+        events.len(),
+        1,
+        "Reconciliation should proceed without local activity"
+    );
+    if let OrderEventAny::Filled(filled) = &events[0] {
+        assert_eq!(filled.last_qty, Quantity::from("5.0"));
+    } else {
+        panic!("Expected OrderFilled event, was {:?}", events[0]);
+    }
 }

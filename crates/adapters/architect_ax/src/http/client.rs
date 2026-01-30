@@ -104,11 +104,7 @@ impl Default for AxRawHttpClient {
 
 impl Debug for AxRawHttpClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let has_session_token = self
-            .session_token
-            .read()
-            .map(|guard| guard.is_some())
-            .unwrap_or(false);
+        let has_session_token = self.session_token.read().is_ok_and(|guard| guard.is_some());
         f.debug_struct(stringify!(AxRawHttpClient))
             .field("base_url", &self.base_url)
             .field("orders_base_url", &self.orders_base_url)
@@ -842,22 +838,15 @@ impl AxRawHttpClient {
 pub struct AxHttpClient {
     pub(crate) inner: Arc<AxRawHttpClient>,
     pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
-    cache_initialized: AtomicBool,
+    cache_initialized: Arc<AtomicBool>,
 }
 
 impl Clone for AxHttpClient {
     fn clone(&self) -> Self {
-        let cache_initialized = AtomicBool::new(false);
-
-        let is_initialized = self.cache_initialized.load(Ordering::Acquire);
-        if is_initialized {
-            cache_initialized.store(true, Ordering::Release);
-        }
-
         Self {
             inner: self.inner.clone(),
             instruments_cache: self.instruments_cache.clone(),
-            cache_initialized,
+            cache_initialized: self.cache_initialized.clone(),
         }
     }
 }
@@ -896,7 +885,7 @@ impl AxHttpClient {
                 proxy_url,
             )?),
             instruments_cache: Arc::new(DashMap::new()),
-            cache_initialized: AtomicBool::new(false),
+            cache_initialized: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -930,7 +919,7 @@ impl AxHttpClient {
                 proxy_url,
             )?),
             instruments_cache: Arc::new(DashMap::new()),
-            cache_initialized: AtomicBool::new(false),
+            cache_initialized: Arc::new(AtomicBool::new(false)),
         })
     }
 

@@ -479,7 +479,7 @@ pub struct DydxCandle {
     /// Starting open interest.
     pub starting_open_interest: String,
     /// Market ticker.
-    pub ticker: String,
+    pub ticker: Ustr,
     /// Number of trades.
     pub trades: i64,
     /// USD volume.

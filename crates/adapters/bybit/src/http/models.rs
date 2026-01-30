@@ -519,6 +519,35 @@ pub struct BybitTradeResult {
 /// - <https://bybit-exchange.github.io/docs/v5/market/recent-trade>
 pub type BybitTradesResponse = BybitResponse<BybitTradeResult>;
 
+/// Funding entry returned by `GET /v5/market/funding/history`.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/market/history-fund-rate>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitFunding {
+    pub symbol: Ustr,
+    pub funding_rate: String,
+    pub funding_rate_timestamp: String,
+}
+
+/// Funding list result returned by Bybit.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/market/history-fund-rate>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitFundingResult {
+    pub category: BybitProductType,
+    pub list: Vec<BybitFunding>,
+}
+
+/// Response alias for historical funding requests.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/market/history-fund-rate>
+pub type BybitFundingResponse = BybitResponse<BybitFundingResult>;
+
 /// Orderbook result returned by Bybit.
 ///
 /// # References

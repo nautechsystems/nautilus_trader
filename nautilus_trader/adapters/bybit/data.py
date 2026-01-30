@@ -28,6 +28,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import RequestFundingRates
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
@@ -244,12 +245,6 @@ class BybitDataClient(LiveMarketDataClient):
 
         return ws_client
 
-    def _bar_spec_to_bybit_interval(self, bar_spec) -> str:
-        return nautilus_pyo3.bybit_bar_spec_to_interval(
-            bar_spec.aggregation,
-            bar_spec.step,
-        )
-
     async def _update_instruments(self, interval_mins: int) -> None:
         while True:
             try:
@@ -340,12 +335,12 @@ class BybitDataClient(LiveMarketDataClient):
         await ws_client.subscribe_trades(pyo3_instrument_id)
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
             command.bar_type.instrument_id.value,
         )
-        interval = self._bar_spec_to_bybit_interval(command.bar_type.spec)
         ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.subscribe_klines(pyo3_instrument_id, interval)
+        await ws_client.subscribe_bars(pyo3_bar_type)
 
     async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
         # Bybit doesn't have a separate funding rate subscription
@@ -406,12 +401,12 @@ class BybitDataClient(LiveMarketDataClient):
         await ws_client.unsubscribe_trades(pyo3_instrument_id)
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
             command.bar_type.instrument_id.value,
         )
-        interval = self._bar_spec_to_bybit_interval(command.bar_type.spec)
         ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
-        await ws_client.unsubscribe_klines(pyo3_instrument_id, interval)
+        await ws_client.unsubscribe_bars(pyo3_bar_type)
 
     async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
         # Bybit doesn't have a separate funding rate subscription
@@ -493,6 +488,37 @@ class BybitDataClient(LiveMarketDataClient):
         self._handle_trade_ticks(
             request.instrument_id,
             filtered_trades,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
+
+    async def _request_funding_rates(self, request: RequestFundingRates) -> None:
+        if request.limit == 0:
+            limit = None
+        else:
+            limit = request.limit
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+            request.instrument_id.value,
+        )
+        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+            pyo3_instrument_id.symbol.value,
+        )
+
+        pyo3_funding_rates = await self._http_client.request_funding_rates(
+            product_type=product_type,
+            instrument_id=pyo3_instrument_id,
+            start=ensure_pydatetime_utc(request.start),
+            end=ensure_pydatetime_utc(request.end),
+            limit=limit,
+        )
+        funding_rates = FundingRateUpdate.from_pyo3_list(pyo3_funding_rates)
+
+        self._handle_funding_rates(
+            request.instrument_id,
+            funding_rates,
             request.id,
             request.start,
             request.end,

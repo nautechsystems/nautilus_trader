@@ -330,7 +330,7 @@ impl Ord for TimeEventHandler {
 /// # Threading
 ///
 /// The timer mutates its internal state and should only be used from its owning thread.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct TestTimer {
     /// The name of the timer.
     pub name: Ustr,
@@ -741,7 +741,7 @@ mod tests {
                     && timer.next_time_ns().as_u64() > stop_time_ns
                 {
                     // The timer should expire on the next advance/iteration
-                    let mut test_timer = timer;
+                    let mut test_timer = timer.clone();
                     let events: Vec<TimeEvent> = test_timer
                         .advance(UnixNanos::from(stop_time_ns + 1))
                         .collect();

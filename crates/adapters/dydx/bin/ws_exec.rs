@@ -21,23 +21,23 @@
 //! Usage:
 //! ```bash
 //! # Test against testnet (default)
-//! DYDX_MNEMONIC="your mnemonic" cargo run --bin dydx-ws-exec -p nautilus-dydx
+//! DYDX_PRIVATE_KEY="your hex private key" cargo run --bin dydx-ws-exec -p nautilus-dydx
 //!
 //! # Test against mainnet
-//! DYDX_MNEMONIC="your mnemonic" \
+//! DYDX_PRIVATE_KEY="your hex private key" \
 //! DYDX_WS_URL=wss://indexer.dydx.trade/v4/ws \
 //! DYDX_HTTP_URL=https://indexer.dydx.trade \
 //! cargo run --bin dydx-ws-exec -p nautilus-dydx -- --mainnet
 //!
 //! # With custom subaccount
-//! DYDX_MNEMONIC="your mnemonic" cargo run --bin dydx-ws-exec -p nautilus-dydx -- --subaccount 1
+//! DYDX_PRIVATE_KEY="your hex private key" cargo run --bin dydx-ws-exec -p nautilus-dydx -- --subaccount 1
 //! ```
 
 use std::{env, time::Duration};
 
 use nautilus_dydx::{
     common::consts::{DYDX_TESTNET_HTTP_URL, DYDX_TESTNET_WS_URL},
-    grpc::wallet::Wallet,
+    execution::wallet::Wallet,
     http::client::DydxHttpClient,
     websocket::{NautilusWsMessage, client::DydxWebSocketClient},
 };
@@ -57,7 +57,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|s| s.parse::<u32>().ok())
         .unwrap_or(DEFAULT_SUBACCOUNT);
 
-    let mnemonic = env::var("DYDX_MNEMONIC").expect("DYDX_MNEMONIC environment variable not set");
+    let private_key =
+        env::var("DYDX_PRIVATE_KEY").expect("DYDX_PRIVATE_KEY environment variable not set");
 
     let ws_url = if is_mainnet {
         env::var("DYDX_WS_URL").unwrap_or_else(|_| "wss://indexer.dydx.trade/v4/ws".to_string())
@@ -79,8 +80,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("Subaccount: {subaccount_number}");
     log::info!("");
 
-    let wallet = Wallet::from_mnemonic(&mnemonic)?;
-    let account = wallet.account_offline(subaccount_number)?;
+    let wallet = Wallet::from_private_key(&private_key)?;
+    let account = wallet.account_offline()?;
     let wallet_address = account.address.clone();
     log::info!("Wallet address: {wallet_address}");
     log::info!("");

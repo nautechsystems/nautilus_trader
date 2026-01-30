@@ -1172,16 +1172,15 @@ mod tests {
 
         let res = check_positive_money(money, "money");
 
-        match should_succeed {
-            true => assert!(res.is_ok(), "expected Ok(..) for {amount}"),
-            false => {
-                assert!(res.is_err(), "expected Err(..) for {amount}");
-                let msg = res.unwrap_err().to_string();
-                assert!(
-                    msg.contains("not positive"),
-                    "error message should mention positivity; got: {msg:?}"
-                );
-            }
+        if should_succeed {
+            assert!(res.is_ok(), "expected Ok(..) for {amount}");
+        } else {
+            assert!(res.is_err(), "expected Err(..) for {amount}");
+            let msg = res.unwrap_err().to_string();
+            assert!(
+                msg.contains("not positive"),
+                "error message should mention positivity; got: {msg:?}"
+            );
         }
     }
 }

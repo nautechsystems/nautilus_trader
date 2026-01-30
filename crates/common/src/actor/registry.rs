@@ -87,7 +87,7 @@ impl<T: Actor> Deref for ActorRef<T> {
 impl<T: Actor> DerefMut for ActorRef<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // SAFETY: Type was verified at construction time
-        unsafe { &mut *(self.actor_rc.get() as *mut T) }
+        unsafe { &mut *self.actor_rc.get().cast::<T>() }
     }
 }
 

@@ -2,15 +2,20 @@
 
 Released on TBD (UTC).
 
+This will be the final release with support for the dYdX v3 (legacy) API. Future releases will only support dYdX v4 (Cosmos-based).
+
 ### Enhancements
 - Added sandbox execution adapter in Rust
 - Added multi-account execution support (#3194), thanks @faysou
+- Added matching engine `queue_position` tracking heuristic for backtests
+- Added tracing subscriber for external Rust library logs (`use_tracing=True` in `LoggingConfig`, filter with `RUST_LOG` env var)
 - Added `use_market_order_acks` venue config option to generate `OrderAccepted` events for market orders before filling (mimics behavior of venues like Binance)
 - Added `oto_trigger_mode` venue config option to control whether OTO child orders activate on partial fills (PARTIAL) or only after full fill (FULL) (default PARTIAL) (#3454), thanks @godnight10061
+- Added `request_funding_rates` and `FundingRateUpdate` Arrow serialization (#3467), thanks @dxwil
+- Added Polymarket data loader event-level API support (#3484), thanks @jsemldonado
 - Improved tearsheet with dynamic Nautilus version and refined run info table (#3396), thanks @KaulSe
 
 ### Breaking Changes
-- Removed `init_tracing()` function from Python bindings (tracing crate removed from Rust codebase; `RUST_LOG` no longer has any effect)
 - Removed dead `subscribe_order_book_snapshots` and `unsubscribe_order_book_snapshots` methods from `LiveMarketDataClient` (were never called by the data engine)
 - Removed OKX URL environment variable overrides (`OKX_BASE_URL_HTTP`, `OKX_BASE_URL_WS_*`, `OKX_DEMO_BASE_URL_WS_*`); use config `base_url_*` fields instead
 - Removed deprecated `get_ws_base_url` function from OKX Rust adapter; use `get_ws_base_url_private` or `get_ws_base_url_public` instead
@@ -52,14 +57,23 @@ Released on TBD (UTC).
 - Fixed `request_order_book_snapshot` and add Bybit support (#3416), thanks @dxwil
 - Fixed Redis cache buffer flushing during idle periods (#3426), thanks for reporting @santivazq
 - Fixed Betfair dropped fills from premature cache update
+- Fixed Betfair duplicate cancel event race condition
+- Fixed Betfair stream batch handling and modify/cancel edge cases
 - Fixed Binance Spot WebSocket subscription acknowledgment parsing (#3382), thanks @Johnkhk
 - Fixed Binance Futures instrument parsing for margin requirements (#3420), thanks @linimin
-- Fixed Binance algo order quantity `AttributeError` on _mem access
+- Fixed Binance algo order quantity `AttributeError` on `_mem` access
+- Fixed Binance `cancel_all_orders` to route futures algo orders through correct cancel endpoint
+- Fixed Binance Spot `OrderStatusReport.avg_px` always None (#3499), thanks for reporting @mrbaron3
+- Fixed Binance Spot `client_order_id` replaced with UUID (#3500), thanks for reporting @mrbaron3
 - Fixed Bybit demo trading by using HTTP REST API for order operations (Bybit demo does not support WebSocket Trade API)
+- Fixed Bybit HOUR bars not triggering on_bar (#3474), thanks for reporting @88z
+- Fixed Bybit historical requests to use ts_event as ts_init (#3502), thanks @dxwil
 - Fixed Databento `databento_data` to fetch definitions for full date range (#3414), thanks @Johnkhk
 - Fixed Databento zero-length interval at dataset boundary (#3429), thanks @shzhng
+- Fixed Databento empty underlying for index-based derivatives (#3480), thanks for reporting @davidsblom
 - Fixed Deribit auth token refresh race condition (#3402), thanks @filipmacek
 - Fixed Deribit race condition between response and subscription (#3436), thanks @filipmacek
+- Fixed Deribit grouped book channel parsing (#3473), thanks @filipmacek
 - Fixed Interactive Brokers `fetch_all_open_orders` in client cache key preventing connection sharing (#3441), thanks @shzhng
 - Fixed Interactive Brokers synthetic position order reconciliation causing filled_qty mismatch errors during periodic consistency checks (#3443), thanks @shzhng
 - Fixed Interactive Brokers reconciliation error when account has no positions (#3459), thanks @shzhng
@@ -68,10 +82,15 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers minor bugs with options (#3452), thanks @shzhng
 - Fixed Interactive Brokers partial fill state transition errors where `openOrder` callbacks after fills caused invalid `PARTIALLY_FILLED` -> `ACCEPTED` transitions, thanks @shzhng
 - Fixed Interactive Brokers OrderStatusReport filled_qty always being 0 for open orders causing reconciliation errors, thanks @shzhng
+- Fixed Interactive Brokers external order ID collision where orders placed via TWS/other clients (orderId=0) could cause fills to be attributed to wrong orders (#3465), thanks @shzhng
+- Fixed Interactive Brokers position reconciliation double-counting partial fills from open orders (#3476), thanks @shzhng
+- Fixed Interactive Brokers future chain building for index instruments (#3483), thanks @davidsblom
+- Fixed reconciliation race condition where inferred fills were generated before real fills arrived, causing double-counting and overfill errors
 - Fixed Kraken spot instrument fee/margin parsing where parameters were incorrectly swapped
 - Fixed Polymarket order state race condition where `PLACEMENT` events could arrive late
 - Fixed Polymarket duplicate WebSocket subscriptions (#3403), thanks for reporting @santivazq
 - Fixed Polymarket duplicate trade_id for multi-order fills (#3450), thanks for reporting @santivazq
+- Fixed Polymarket `load_all_async` ignoring time-based filters (#3475), thanks @Coyote-Den
 - Fixed `MarketIfTouchedOrder` fill price during bar processing to use trigger price instead of bar extremes, thanks @HaakonFlaaronning
 
 ### Internal Improvements
@@ -84,23 +103,32 @@ Released on TBD (UTC).
 - Added Deribit rate limiting for HTTP and WebSocket clients (#3424), thanks @filipmacek
 - Added Deribit side-specific order cancellation (#3442), thanks @filipmacek
 - Added Deribit real-time portfolio WS subscription (#3444), thanks @filipmacek
+- Added Deribit integration documentation (#3508), thanks @filipmacek
 - Added Polymarket data loader rate limiting
-- Removed `tracing` crate from Rust codebase, migrated to `log` crate for simpler logging
+- Migrated Nautilus internal logging to `log` crate (external `tracing` available via `use_tracing` config)
+- Refactored execution clients to use `OrderEventEmitter` in Rust (#3469), thanks @filipmacek
 - Refactored computation of greeks (#3393), thanks @faysou
 - Refactored `TearsheetConfig.charts` to chart objects (removed `chart_args`) (#3398), thanks @KaulSe
+- Refactored Betfair order matching to use `rfo` as primary key
 - Refactored Deribit WS client to use standard Nautilus method names (#3418), thanks @filipmacek
+- Refactored dYdX v4 execution client in Rust (#3477), thanks @filipmacek
+- Refactored Kraken spot quotes to use dedicated Ticker channel
 - Refactored Polymarket WebSocket to multi-client pool pattern
+- Improved `cancel_all_orders` to include inflight orders
 - Improved pnl FX conversions in portfolio (#3335), thanks @faysou
 - Improved live timers to use `BTreeMap` for storage (#3392), thanks @faysou
 - Improved checks before writing data in catalog._write_chunk (#3411), thanks @faysou
 - Improved `OptionExerciseModule` logging and fix cache reference (#3388), thanks @davidsblom
 - Improved execution reports builder pattern in Rust (#3417), thanks @filipmacek
 - Improved visualization to use fill report for create_bars_with_fills (#3466), thanks @faysou
+- Improved Deribit with high-performance `Decimal` deserialization (#3510), thanks @filipmacek
+- Improved precision-mode validation for Arrow data (#3511), thanks for reporting @2-5
 - Refined closing of streaming writer (#3394), thanks @faysou
 - Refined handling of `skip_first_non_full_bar` in `TimeBarAggregator` (#3395), thanks @faysou
 - Refined greeks safeguards and docs (#3407), thanks @faysou
 - Refined processing of gaps in aggregated historical bars (#3412), thanks @faysou
 - Refined Interactive Brokers adapter (#3195), thanks @faysou
+- Refined Interactive Brokers query of option chains (#3481), thanks @faysou
 - Refined `OptionExerciseModule` (#3423), thanks @faysou
 - Refined instrument `is_spread()` method (#3434), thanks @faysou
 - Refined `OrderBookDeltas.batch` (#3437), thanks @faysou
@@ -112,12 +140,13 @@ Released on TBD (UTC).
 - Upgraded Cython to v3.2.4
 - Upgraded `capnp` and `capnpc` crates to v0.25.0
 - Upgraded `databento` crate to v0.39.0
-- Upgraded `datafusion` crate to v52.0.0
+- Upgraded `datafusion` crate to v52.1.0
 - Upgraded `tokio` crate to v1.49.0
 
 ### Documentation Updates
 
 ### Deprecations
+- Deprecated Betfair legacy `customer_order_ref` truncation (first 32 characters); the adapter now uses last 32 characters for better entropy. Legacy truncation support during startup reconciliation will be removed in a future version.
 
 ---
 

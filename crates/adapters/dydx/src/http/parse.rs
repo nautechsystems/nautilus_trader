@@ -216,7 +216,7 @@ pub fn parse_instrument_any(
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     // Parse instrument ID with Nautilus perpetual suffix and keep raw symbol as venue ticker
-    let instrument_id = parse_instrument_id(&definition.ticker);
+    let instrument_id = parse_instrument_id(definition.ticker);
     let raw_symbol = Symbol::from(definition.ticker.as_str());
 
     // Parse currencies from ticker using helper function
@@ -317,6 +317,7 @@ mod tests {
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
+    use ustr::Ustr;
 
     use super::*;
     use crate::{
@@ -333,10 +334,10 @@ mod tests {
     fn create_test_market() -> PerpetualMarket {
         PerpetualMarket {
             clob_pair_id: 1,
-            ticker: "BTC-USD".to_string(),
+            ticker: Ustr::from("BTC-USD"),
             status: DydxMarketStatus::Active,
-            base_asset: Some("BTC".to_string()),
-            quote_asset: Some("USD".to_string()),
+            base_asset: Some(Ustr::from("BTC")),
+            quote_asset: Some(Ustr::from("USD")),
             step_size: Decimal::from_str("0.001").unwrap(),
             tick_size: Decimal::from_str("1").unwrap(),
             index_price: Some(Decimal::from_str("50000").unwrap()),
@@ -397,7 +398,7 @@ mod tests {
     #[rstest]
     fn test_parse_instrument_any_invalid_ticker() {
         let mut market = create_test_market();
-        market.ticker = "INVALID".to_string();
+        market.ticker = Ustr::from("INVALID");
 
         let result = parse_instrument_any(&market, None, None, UnixNanos::default());
         assert!(result.is_err());
@@ -816,8 +817,10 @@ use nautilus_model::{
     types::{Money, Price, Quantity},
 };
 
-use super::models::{Fill, Order, PerpetualPosition};
-use crate::common::enums::{DydxLiquidity, DydxOrderStatus};
+use super::models::{Fill, Order, PerpetualPosition, Subaccount};
+use crate::common::enums::{DydxConditionType, DydxLiquidity, DydxOrderStatus};
+#[cfg(test)]
+use crate::common::enums::{DydxFillType, DydxPositionStatus, DydxTickerType};
 
 /// Map dYdX order status to Nautilus OrderStatus.
 fn parse_order_status(status: &DydxOrderStatus) -> OrderStatus {
@@ -881,12 +884,11 @@ pub fn parse_order_status_report(
     let price = Price::from_decimal_dp(order.price, price_precision)
         .context("failed to parse order price")?;
 
-    let ts_accepted = order.good_til_block_time.map_or(ts_init, |dt| {
+    // Use updated_at for both ts_accepted and ts_last (not good_til_block_time which is the expiry)
+    let ts_accepted = order.updated_at.map_or(ts_init, |dt| {
         UnixNanos::from(dt.timestamp_millis() as u64 * 1_000_000)
     });
-    let ts_last = order.updated_at.map_or(ts_init, |dt| {
-        UnixNanos::from(dt.timestamp_millis() as u64 * 1_000_000)
-    });
+    let ts_last = ts_accepted;
 
     let mut report = OrderStatusReport::new(
         account_id,
@@ -914,9 +916,9 @@ pub fn parse_order_status_report(
 
         if let Some(condition_type) = order.condition_type {
             let trigger_type = match condition_type {
-                crate::common::enums::DydxConditionType::StopLoss => TriggerType::LastPrice,
-                crate::common::enums::DydxConditionType::TakeProfit => TriggerType::LastPrice,
-                crate::common::enums::DydxConditionType::Unspecified => TriggerType::Default,
+                DydxConditionType::StopLoss => TriggerType::LastPrice,
+                DydxConditionType::TakeProfit => TriggerType::LastPrice,
+                DydxConditionType::Unspecified => TriggerType::Default,
             };
             report = report.with_trigger_type(trigger_type);
         }
@@ -1212,7 +1214,7 @@ pub fn parse_account_state(
 ///
 /// Returns an error if balance fields cannot be parsed.
 pub fn parse_http_account_state(
-    subaccount: &crate::http::models::Subaccount,
+    subaccount: &Subaccount,
     account_id: AccountId,
     instruments: &std::collections::HashMap<InstrumentId, InstrumentAny>,
     oracle_prices: &std::collections::HashMap<InstrumentId, Decimal>,
@@ -1347,6 +1349,7 @@ mod reconciliation_tests {
     use rstest::rstest;
     use rust_decimal::prelude::ToPrimitive;
     use rust_decimal_macros::dec;
+    use ustr::Ustr;
 
     use super::*;
 
@@ -1481,7 +1484,7 @@ mod reconciliation_tests {
             created_at_height: Some(1000),
             client_metadata: 0,
             trigger_price: Some(dec!(49000.0)),
-            condition_type: Some(crate::common::enums::DydxConditionType::StopLoss),
+            condition_type: Some(DydxConditionType::StopLoss),
             conditional_order_trigger_subticks: Some(490000),
             execution: None,
             updated_at: Some(Utc::now()),
@@ -1510,9 +1513,9 @@ mod reconciliation_tests {
             id: "fill789".to_string(),
             side: OrderSide::Buy,
             liquidity: DydxLiquidity::Taker,
-            fill_type: crate::common::enums::DydxFillType::Limit,
-            market: "BTC-USD".to_string(),
-            market_type: crate::common::enums::DydxTickerType::Perpetual,
+            fill_type: DydxFillType::Limit,
+            market: Ustr::from("BTC-USD"),
+            market_type: DydxTickerType::Perpetual,
             price: dec!(50100.0),
             size: dec!(1.0),
             fee: dec!(-5.01),
@@ -1540,8 +1543,8 @@ mod reconciliation_tests {
         let ts_init = UnixNanos::default();
 
         let position = PerpetualPosition {
-            market: "BTC-USD".to_string(),
-            status: crate::common::enums::DydxPositionStatus::Open,
+            market: Ustr::from("BTC-USD"),
+            status: DydxPositionStatus::Open,
             side: OrderSide::Buy,
             size: dec!(2.5),
             max_size: dec!(3.0),
@@ -1574,8 +1577,8 @@ mod reconciliation_tests {
         let ts_init = UnixNanos::default();
 
         let position = PerpetualPosition {
-            market: "BTC-USD".to_string(),
-            status: crate::common::enums::DydxPositionStatus::Open,
+            market: Ustr::from("BTC-USD"),
+            status: DydxPositionStatus::Open,
             side: OrderSide::Sell,
             size: dec!(-1.5),
             max_size: dec!(1.5),
@@ -1606,8 +1609,8 @@ mod reconciliation_tests {
         let ts_init = UnixNanos::default();
 
         let position = PerpetualPosition {
-            market: "BTC-USD".to_string(),
-            status: crate::common::enums::DydxPositionStatus::Closed,
+            market: Ustr::from("BTC-USD"),
+            status: DydxPositionStatus::Closed,
             side: OrderSide::Buy,
             size: dec!(0.0),
             max_size: dec!(2.0),
@@ -1734,8 +1737,8 @@ mod reconciliation_tests {
 
         // Position 1: Long position
         let long_position = PerpetualPosition {
-            market: "BTC-USD".to_string(),
-            status: crate::common::enums::DydxPositionStatus::Open,
+            market: Ustr::from("BTC-USD"),
+            status: DydxPositionStatus::Open,
             side: OrderSide::Buy,
             size: dec!(1.5),
             max_size: dec!(1.5),
@@ -1759,8 +1762,8 @@ mod reconciliation_tests {
 
         // Position 2: Short position (should be handled separately if from different market)
         let short_position = PerpetualPosition {
-            market: "BTC-USD".to_string(),
-            status: crate::common::enums::DydxPositionStatus::Open,
+            market: Ustr::from("BTC-USD"),
+            status: DydxPositionStatus::Open,
             side: OrderSide::Sell,
             size: dec!(-2.0),
             max_size: dec!(2.0),
@@ -1794,9 +1797,9 @@ mod reconciliation_tests {
             id: "fill-zero-fee".to_string(),
             side: OrderSide::Sell,
             liquidity: DydxLiquidity::Maker,
-            fill_type: crate::common::enums::DydxFillType::Limit,
-            market: "BTC-USD".to_string(),
-            market_type: crate::common::enums::DydxTickerType::Perpetual,
+            fill_type: DydxFillType::Limit,
+            market: Ustr::from("BTC-USD"),
+            market_type: DydxTickerType::Perpetual,
             price: dec!(50000.0),
             size: dec!(0.1),
             fee: dec!(0.0), // Zero fee (e.g., fee rebate or promotional period)
@@ -1824,9 +1827,9 @@ mod reconciliation_tests {
             id: "fill-maker-rebate".to_string(),
             side: OrderSide::Buy,
             liquidity: DydxLiquidity::Maker,
-            fill_type: crate::common::enums::DydxFillType::Limit,
-            market: "BTC-USD".to_string(),
-            market_type: crate::common::enums::DydxTickerType::Perpetual,
+            fill_type: DydxFillType::Limit,
+            market: Ustr::from("BTC-USD"),
+            market_type: DydxTickerType::Perpetual,
             price: dec!(50000.0),
             size: dec!(1.0),
             fee: dec!(-2.5), // Negative fee = rebate

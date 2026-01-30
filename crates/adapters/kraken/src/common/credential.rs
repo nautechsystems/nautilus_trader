@@ -15,12 +15,19 @@
 
 //! Request signing and authentication credentials for the Kraken API.
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::atomic::{AtomicU64, Ordering},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use aws_lc_rs::{digest, hmac};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_urlencoded;
 use zeroize::{Zeroize, ZeroizeOnDrop};
+
+/// Global atomic counter for nonce uniqueness within the same microsecond.
+static NONCE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// API credentials for Kraken authentication.
 #[derive(Clone, Debug, Zeroize, ZeroizeOnDrop)]
@@ -230,6 +237,21 @@ impl KrakenCredential {
     }
 }
 
+/// Generates a unique nonce for Kraken API requests.
+///
+/// Combines microseconds since epoch with an atomic counter to guarantee uniqueness
+/// even when multiple requests are made within the same microsecond.
+#[must_use]
+pub fn generate_nonce() -> u64 {
+    let micros = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("System time before UNIX epoch")
+        .as_micros() as u64;
+
+    let counter = NONCE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    micros.wrapping_add(counter)
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -240,6 +262,17 @@ mod tests {
     fn test_credential_creation() {
         let cred = KrakenCredential::new("test_key", "test_secret");
         assert_eq!(cred.api_key(), "test_key");
+    }
+
+    #[rstest]
+    fn test_generate_nonce_uniqueness() {
+        let nonces: Vec<u64> = (0..1000).map(|_| generate_nonce()).collect();
+        let unique: std::collections::HashSet<u64> = nonces.iter().copied().collect();
+        assert_eq!(
+            nonces.len(),
+            unique.len(),
+            "Generated nonces should be unique"
+        );
     }
 
     #[rstest]

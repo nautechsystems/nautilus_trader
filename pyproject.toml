@@ -104,7 +104,7 @@ dev = [
 ]
 test = [
   "aiohttp>=3.13.3,<4.0.0",
-  "coverage>=7.13.1,<8.0.0",
+  "coverage>=7.13.2,<8.0.0",
   "pytest>=7.4.4,<8.0.0", # Intentionally held at 7.x
   "pytest-aiohttp>=1.1.0,<2.0.0",
   "pytest-asyncio==0.23.8", # Pinned to 0.23.8 for stability

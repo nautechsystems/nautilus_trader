@@ -3363,6 +3363,7 @@ mod tests {
             Ustr::from("BTC-USDT-SWAP"),
             InstrumentAny::CryptoPerpetual(instrument),
         );
+
         let fee_cache = AHashMap::new();
         let filled_qty_cache = AHashMap::new();
 
@@ -3509,6 +3510,7 @@ mod tests {
             Ustr::from("ETH-USDT-SWAP"),
             InstrumentAny::CryptoPerpetual(instrument),
         );
+
         let fee_cache = AHashMap::new();
         let filled_qty_cache = AHashMap::new();
 

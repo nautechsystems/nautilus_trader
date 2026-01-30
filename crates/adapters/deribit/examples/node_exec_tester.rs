@@ -42,9 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     // Read USE_TESTNET from environment (default true for safety)
-    let use_testnet = std::env::var("USE_TESTNET")
-        .map(|v| v.to_lowercase() != "false")
-        .unwrap_or(true);
+    let use_testnet = std::env::var("USE_TESTNET").map_or(true, |v| v.to_lowercase() != "false");
 
     let environment = Environment::Live;
     let trader_id = TraderId::from("TESTER-001");

@@ -850,6 +850,10 @@ impl KrakenSpotRawHttpClient {
                 KrakenHttpError::ParseError(format!("Failed to parse response: {e}"))
             })?;
 
+        if !kraken_response.error.is_empty() {
+            return Err(KrakenHttpError::ApiError(kraken_response.error));
+        }
+
         kraken_response
             .result
             .ok_or_else(|| KrakenHttpError::ParseError("Missing result in response".to_string()))

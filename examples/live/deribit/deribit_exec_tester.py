@@ -76,6 +76,7 @@ config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
     logging=LoggingConfig(
         log_level="INFO",
+        # use_tracing=True,
         use_pyo3=True,
     ),
     exec_engine=LiveExecEngineConfig(

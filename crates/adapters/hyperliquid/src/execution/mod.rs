@@ -31,11 +31,14 @@ use nautilus_common::{
         },
     },
 };
-use nautilus_core::{MUTEX_POISONED, UnixNanos, time::get_atomic_clock_realtime};
-use nautilus_live::ExecutionClientCore;
+use nautilus_core::{
+    MUTEX_POISONED, UnixNanos,
+    time::{AtomicTime, get_atomic_clock_realtime},
+};
+use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{OmsType, OrderType},
+    enums::{AccountType, OmsType, OrderType},
     identifiers::{AccountId, ClientId, Venue},
     orders::{Order, any::OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -62,12 +65,11 @@ use crate::{
 #[derive(Debug)]
 pub struct HyperliquidExecutionClient {
     core: ExecutionClientCore,
+    clock: &'static AtomicTime,
     config: HyperliquidExecClientConfig,
+    emitter: ExecutionEventEmitter,
     http_client: HyperliquidHttpClient,
     ws_client: HyperliquidWebSocketClient,
-    started: bool,
-    connected: bool,
-    instruments_initialized: bool,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
     ws_stream_handle: Mutex<Option<JoinHandle<()>>>,
 }
@@ -183,21 +185,29 @@ impl HyperliquidExecutionClient {
             Some(core.account_id),
         );
 
+        let clock = get_atomic_clock_realtime();
+        let emitter = ExecutionEventEmitter::new(
+            clock,
+            core.trader_id,
+            core.account_id,
+            AccountType::Margin,
+            None,
+        );
+
         Ok(Self {
             core,
+            clock,
             config,
+            emitter,
             http_client,
             ws_client,
-            started: false,
-            connected: false,
-            instruments_initialized: false,
             pending_tasks: Mutex::new(Vec::new()),
             ws_stream_handle: Mutex::new(None),
         })
     }
 
     async fn ensure_instruments_initialized_async(&mut self) -> anyhow::Result<()> {
-        if self.instruments_initialized {
+        if self.core.instruments_initialized() {
             return Ok(());
         }
 
@@ -219,12 +229,12 @@ impl HyperliquidExecutionClient {
             }
         }
 
-        self.instruments_initialized = true;
+        self.core.set_instruments_initialized();
         Ok(())
     }
 
     fn ensure_instruments_initialized(&mut self) -> anyhow::Result<()> {
-        if self.instruments_initialized {
+        if self.core.instruments_initialized() {
             return Ok(());
         }
 
@@ -263,17 +273,10 @@ impl HyperliquidExecutionClient {
                 crate::common::parse::parse_account_balances_and_margins(cross_margin_summary)
                     .context("failed to parse account balances and margins")?;
 
-            let ts_event = if let Some(time_ms) = state.time {
-                nautilus_core::UnixNanos::from(time_ms * 1_000_000)
-            } else {
-                nautilus_core::time::get_atomic_clock_realtime().get_time_ns()
-            };
-
             // Generate account state event
-            self.core.generate_account_state(
-                balances, margins, true, // reported
-                ts_event,
-            )?;
+            let ts_event = self.clock.get_time_ns();
+            self.emitter
+                .emit_account_state(balances, margins, true, ts_event);
 
             log::info!("Account state updated successfully");
         } else {
@@ -324,7 +327,7 @@ impl HyperliquidExecutionClient {
 #[async_trait(?Send)]
 impl ExecutionClient for HyperliquidExecutionClient {
     fn is_connected(&self) -> bool {
-        self.connected
+        self.core.is_connected()
     }
 
     fn client_id(&self) -> ClientId {
@@ -344,7 +347,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
     }
 
     fn get_account(&self) -> Option<AccountAny> {
-        self.core.get_account()
+        self.core.cache().account(&self.core.account_id).cloned()
     }
 
     fn generate_account_state(
@@ -354,14 +357,18 @@ impl ExecutionClient for HyperliquidExecutionClient {
         reported: bool,
         ts_event: UnixNanos,
     ) -> anyhow::Result<()> {
-        self.core
-            .generate_account_state(balances, margins, reported, ts_event)
+        self.emitter
+            .emit_account_state(balances, margins, reported, ts_event);
+        Ok(())
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
-        if self.started {
+        if self.core.is_started() {
             return Ok(());
         }
+
+        let sender = get_exec_event_sender();
+        self.emitter.set_sender(sender);
 
         log::info!(
             "Starting Hyperliquid execution client: client_id={}, account_id={}, is_testnet={}, vault_address={:?}, http_proxy_url={:?}, ws_proxy_url={:?}",
@@ -381,8 +388,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
             log::warn!("Failed to initialize account state: {e}");
         }
 
-        self.connected = true;
-        self.started = true;
+        self.core.set_connected();
+        self.core.set_started();
 
         // Start WebSocket stream for execution updates
         if let Err(e) = get_runtime().block_on(self.start_ws_stream()) {
@@ -392,8 +399,9 @@ impl ExecutionClient for HyperliquidExecutionClient {
         log::info!("Hyperliquid execution client started");
         Ok(())
     }
+
     fn stop(&mut self) -> anyhow::Result<()> {
-        if !self.started {
+        if self.core.is_stopped() {
             return Ok(());
         }
 
@@ -408,7 +416,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         self.abort_pending_tasks();
 
         // Disconnect WebSocket
-        if self.connected {
+        if self.core.is_connected() {
             let runtime = get_runtime();
             runtime.block_on(async {
                 if let Err(e) = self.ws_client.disconnect().await {
@@ -417,15 +425,22 @@ impl ExecutionClient for HyperliquidExecutionClient {
             });
         }
 
-        self.connected = false;
-        self.started = false;
+        self.core.set_disconnected();
+        self.core.set_stopped();
 
         log::info!("Hyperliquid execution client stopped");
         Ok(())
     }
 
     fn submit_order(&self, command: &SubmitOrder) -> anyhow::Result<()> {
-        let order = self.core.get_order(&command.client_order_id)?;
+        let order = self
+            .core
+            .cache()
+            .order(&command.client_order_id)
+            .cloned()
+            .ok_or_else(|| {
+                anyhow::anyhow!("Order not found in cache for {}", command.client_order_id)
+            })?;
 
         if order.is_closed() {
             log::warn!("Cannot submit closed order {}", order.client_order_id());
@@ -433,23 +448,17 @@ impl ExecutionClient for HyperliquidExecutionClient {
         }
 
         if let Err(e) = self.validate_order_submission(&order) {
-            self.core.generate_order_rejected(
-                order.strategy_id(),
-                order.instrument_id(),
-                order.client_order_id(),
+            let ts_event = self.clock.get_time_ns();
+            self.emitter.emit_order_rejected(
+                &order,
                 &format!("validation-error: {e}"),
-                command.ts_init,
+                ts_event,
                 false,
             );
             return Err(e);
         }
 
-        self.core.generate_order_submitted(
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            command.ts_init,
-        );
+        self.emitter.emit_order_submitted(&order);
 
         let http_client = self.http_client.clone();
 
@@ -500,12 +509,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
         // Generate submitted events for all orders
         for order in &orders {
-            self.core.generate_order_submitted(
-                order.strategy_id(),
-                order.instrument_id(),
-                order.client_order_id(),
-                command.ts_init,
-            );
+            self.emitter.emit_order_submitted(order);
         }
 
         self.spawn_task("submit_order_list", async move {
@@ -665,7 +669,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         log::debug!("Cancelling all orders: {command:?}");
 
         // Query cache for all open orders matching the instrument and side
-        let cache = self.core.cache().borrow();
+        let cache = self.core.cache();
         let open_orders = cache.orders_open(
             Some(&self.core.venue),
             Some(&command.instrument_id),
@@ -776,7 +780,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         log::debug!("Querying order: {command:?}");
 
         // Get venue order ID from cache
-        let cache = self.core.cache().borrow();
+        let cache = self.core.cache();
         let venue_order_id = cache.venue_order_id(&command.client_order_id);
 
         let venue_order_id = match venue_order_id {
@@ -823,7 +827,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.connected {
+        if self.core.is_connected() {
             return Ok(());
         }
 
@@ -844,8 +848,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         // Initialize account state
         self.refresh_account_state().await?;
 
-        self.connected = true;
-        self.core.set_connected(true);
+        self.core.set_connected();
 
         // Start WebSocket stream for execution updates
         if let Err(e) = self.start_ws_stream().await {
@@ -857,7 +860,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if !self.connected {
+        if self.core.is_disconnected() {
             return Ok(());
         }
 
@@ -869,8 +872,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         // Abort any pending tasks
         self.abort_pending_tasks();
 
-        self.connected = false;
-        self.core.set_connected(false);
+        self.core.set_disconnected();
 
         log::info!("Disconnected: client_id={}", self.core.client_id);
         Ok(())
@@ -1028,8 +1030,6 @@ impl HyperliquidExecutionClient {
             }
 
             log::info!("Subscribed to Hyperliquid execution updates");
-
-            let _clock = get_atomic_clock_realtime();
 
             loop {
                 let event = ws_client.next_event().await;

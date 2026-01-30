@@ -182,7 +182,7 @@ impl KrakenSpotWebSocketClient {
             // Cache instruments after connection is established
             client.cache_instruments(instruments_any);
 
-            let stream = client.stream();
+            let stream = client.stream().map_err(to_pyruntime_err)?;
 
             get_runtime().spawn(async move {
                 tokio::pin!(stream);

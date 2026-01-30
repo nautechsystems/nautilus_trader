@@ -26,6 +26,7 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
@@ -155,6 +156,13 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         **kwargs: Any,
     ) -> list[TradeTick]:
         return self.query(data_cls=TradeTick, identifiers=instrument_ids, **kwargs)
+
+    def funding_rates(
+        self,
+        instrument_ids: list[str] | None = None,
+        **kwargs: Any,
+    ) -> list[FundingRateUpdate]:
+        return self.query(data_cls=FundingRateUpdate, identifiers=instrument_ids, **kwargs)
 
     def bars(
         self,

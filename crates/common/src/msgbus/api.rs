@@ -1024,6 +1024,7 @@ pub fn send_response(correlation_id: &UUID4, message: DataResponse) {
             DataResponse::Book(resp) => handler.0.handle(resp),
             DataResponse::Quotes(resp) => handler.0.handle(resp),
             DataResponse::Trades(resp) => handler.0.handle(resp),
+            DataResponse::FundingRates(resp) => handler.0.handle(resp),
             DataResponse::Bars(resp) => handler.0.handle(resp),
         }
     } else {

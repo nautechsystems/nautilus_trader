@@ -116,6 +116,11 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
         If liquidity consumption should be tracked per price level. When enabled, fills
         consume available liquidity which resets when fresh data arrives at that level.
         When disabled, each iteration can fill against the full book liquidity independently.
+    queue_position : bool, default False
+        If queue position tracking should be enabled for limit orders during trade
+        execution mode. When enabled, limit orders only fill after the quantity ahead
+        of them (at order placement time) has been traded through or the price level
+        is deleted. Requires trade_execution=True.
     allow_cash_borrowing : bool, default False
         If borrowing is allowed for cash accounts (negative balances).
     frozen_account : bool, default False
@@ -152,6 +157,7 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     bar_adaptive_high_low_ordering: bool = False
     trade_execution: bool = False
     liquidity_consumption: bool = False
+    queue_position: bool = False
     allow_cash_borrowing: bool = False
     frozen_account: bool = False
     price_protection_points: int = 0

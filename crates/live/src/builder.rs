@@ -272,8 +272,7 @@ impl LiveNodeBuilder {
             if let Some(config) = self.exec_client_configs.remove(&name) {
                 log::debug!("Creating execution client {name}");
 
-                let client =
-                    factory.create(&name, config.as_ref(), kernel.cache(), kernel.clock())?;
+                let client = factory.create(&name, config.as_ref(), kernel.cache())?;
                 let client_id = client.client_id();
 
                 kernel.exec_engine.borrow_mut().register_client(client)?;

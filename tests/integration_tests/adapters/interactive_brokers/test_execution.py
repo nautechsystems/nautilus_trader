@@ -28,6 +28,7 @@ from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
@@ -112,17 +113,19 @@ def on_cancel_order_setup(exec_client, client, status, order_id, manual_cancel_o
     """
     Directly call the handler, bypassing the message queue.
     """
-    # Get the order_ref from the client's order_id mapping
-    order_ref_obj = client._order_id_to_order_ref.get(order_id)
+    # Get the order_ref from the client's order_id mapping using VenueOrderId
+    venue_order_id = VenueOrderId(str(order_id))
+    order_ref_obj = client._order_id_to_order_ref.get(venue_order_id)
     if order_ref_obj:
         order_ref = order_ref_obj.order_id
-        # Call the handler directly
+        # Call the handler directly with the updated signature
         exec_client._on_order_status(
             order_ref=order_ref,
             order_status=status,
             avg_fill_price=0.0,
             filled=Decimal(0),
             remaining=Decimal(100),
+            venue_order_id=venue_order_id,
         )
 
 

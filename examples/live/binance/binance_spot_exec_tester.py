@@ -118,11 +118,13 @@ config_strat = ExecTesterConfig(
     instrument_id=instrument_id,
     external_order_claims=[instrument_id],
     order_qty=order_qty,
+    # open_position_on_start_qty=order_qty,
+    enable_limit_buys=True,
+    enable_limit_sells=True,
     # enable_stop_buys=True,
     # enable_stop_sells=True,
-    # open_position_on_start_qty=order_qty,
     # tob_offset_ticks=0,
-    # log_data=False,
+    log_data=False,
 )
 
 # Instantiate your strategy

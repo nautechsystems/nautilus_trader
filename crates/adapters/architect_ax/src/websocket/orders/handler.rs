@@ -374,6 +374,15 @@ impl FeedHandler {
                     err.err.code,
                     err.err.msg
                 );
+
+                if let Some(order_info) = self.pending_orders.remove(&err.rid) {
+                    self.orders_metadata.remove(&order_info.client_order_id);
+                    log::debug!(
+                        "Cleaned up metadata for failed order: {}",
+                        order_info.client_order_id
+                    );
+                }
+
                 Some(vec![AxOrdersWsMessage::Error(err.into())])
             }
             AxWsRawMessage::Response(resp) => self.handle_response(resp),
@@ -602,8 +611,6 @@ impl FeedHandler {
         }
     }
 
-    // ---- Domain event creation methods ----
-
     fn extract_client_order_id(&self, order: &AxWsOrder) -> Option<ClientOrderId> {
         order
             .tag
@@ -681,8 +688,8 @@ impl FeedHandler {
 
         let ts_event = UnixNanos::from(event_ts as u64 * 1_000_000_000);
 
-        // AX uses i64 contracts directly - use instrument precision from metadata
-        let last_qty = Quantity::new(execution.q.abs() as f64, metadata.size_precision);
+        // AX uses u64 contracts - use instrument precision from metadata
+        let last_qty = Quantity::new(execution.q as f64, metadata.size_precision);
         let last_px = Price::from_decimal_dp(execution.p, metadata.price_precision).ok()?;
 
         let order_side = match order.d {
@@ -692,6 +699,13 @@ impl FeedHandler {
 
         // AX primarily uses limit orders
         let order_type = OrderType::Limit;
+
+        // agg=true means aggressor (taker), agg=false means maker
+        let liquidity_side = if execution.agg {
+            LiquiditySide::Taker
+        } else {
+            LiquiditySide::Maker
+        };
 
         Some(OrderFilled::new(
             metadata.trader_id,
@@ -706,7 +720,7 @@ impl FeedHandler {
             last_qty,
             last_px,
             metadata.quote_currency,
-            LiquiditySide::NoLiquiditySide,
+            liquidity_side,
             UUID4::new(),
             ts_event,
             get_atomic_clock_realtime().get_time_ns(),

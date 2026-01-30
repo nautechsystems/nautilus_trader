@@ -30,7 +30,6 @@ use nautilus_core::{
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Serialize};
-use ustr::Ustr;
 
 use crate::{
     enums::{InstrumentClass, OrderSide, OrderSideSpecified, PositionAdjustmentType, PositionSide},
@@ -335,7 +334,7 @@ impl Position {
                 PositionAdjustmentType::Commission,
                 Some(commission.as_decimal()),
                 None,
-                Some(Ustr::from(fill.client_order_id.as_ref())),
+                Some(fill.client_order_id.inner()),
                 UUID4::new(),
                 fill.ts_event,
                 fill.ts_init,

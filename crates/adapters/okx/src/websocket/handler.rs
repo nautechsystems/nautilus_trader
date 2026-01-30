@@ -21,7 +21,7 @@
 //! and sending via the WebSocket. Raw messages are received from the network, deserialized,
 //! and transformed into `NautilusWsMessage` events which are emitted back to the client.
 //!
-//! Key responsibilities:
+//! Responsibilities:
 //! - Command processing: Receives `HandlerCommand` from client, executes WebSocket operations.
 //! - Message transformation: Parses raw venue messages into Nautilus domain events.
 //! - Pending state tracking: Owns `AHashMap` for matching requests/responses (single-threaded).
@@ -38,6 +38,7 @@ use std::{
 
 use ahash::AHashMap;
 use dashmap::DashMap;
+use nautilus_common::cache::fifo::FifoCache;
 use nautilus_core::{AtomicTime, UUID4, nanos::UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
     enums::{OrderStatus, OrderType},
@@ -219,10 +220,10 @@ pub(super) struct OKXWsFeedHandler {
     pending_messages: VecDeque<NautilusWsMessage>,
     active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
     client_id_aliases: Arc<DashMap<ClientOrderId, ClientOrderId>>,
-    emitted_order_accepted: AHashMap<VenueOrderId, ()>,
+    emitted_accepted: FifoCache<VenueOrderId, 10_000>,
     instruments_cache: AHashMap<Ustr, InstrumentAny>,
-    fee_cache: AHashMap<Ustr, Money>,           // Key is order ID
-    filled_qty_cache: AHashMap<Ustr, Quantity>, // Key is order ID
+    fee_cache: AHashMap<Ustr, Money>,
+    filled_qty_cache: AHashMap<Ustr, Quantity>,
     order_state_cache: AHashMap<ClientOrderId, OrderStateSnapshot>,
     funding_rate_cache: AHashMap<Ustr, (Ustr, u64)>, // Cache (funding_rate, funding_time) by inst_id
     last_account_state: Option<AccountState>,
@@ -261,7 +262,7 @@ impl OKXWsFeedHandler {
             pending_messages: VecDeque::new(),
             active_client_orders,
             client_id_aliases,
-            emitted_order_accepted: AHashMap::new(),
+            emitted_accepted: FifoCache::new(),
             instruments_cache: AHashMap::new(),
             fee_cache: AHashMap::new(),
             filled_qty_cache: AHashMap::new(),
@@ -861,8 +862,7 @@ impl OKXWsFeedHandler {
                         | OrderStatus::Filled
                         | OrderStatus::Rejected,
                 ) {
-                    self.emitted_order_accepted
-                        .remove(&status_report.venue_order_id);
+                    self.emitted_accepted.remove(&status_report.venue_order_id);
                     if let Some(client_order_id) = status_report.client_order_id {
                         self.order_state_cache.remove(&client_order_id);
                         self.active_client_orders.remove(&client_order_id);
@@ -1000,13 +1000,13 @@ impl OKXWsFeedHandler {
                             };
 
                             // Check if already emitted from orders channel push
-                            if self.emitted_order_accepted.contains_key(&v_order_id) {
+                            if self.emitted_accepted.contains(&v_order_id) {
                                 log::debug!(
                                     "Skipping duplicate OrderAccepted from operation response for venue_order_id={v_order_id}"
                                 );
                                 return None;
                             }
-                            self.emitted_order_accepted.insert(v_order_id, ());
+                            self.emitted_accepted.add(v_order_id);
 
                             let accepted = OrderAccepted::new(
                                 trader_id,
@@ -1516,13 +1516,13 @@ impl OKXWsFeedHandler {
 
         match event {
             ParsedOrderEvent::Accepted(accepted) => {
-                if self.emitted_order_accepted.contains_key(&venue_order_id) {
+                if self.emitted_accepted.contains(&venue_order_id) {
                     log::debug!(
                         "Skipping duplicate OrderAccepted for venue_order_id={venue_order_id}"
                     );
                     return;
                 }
-                self.emitted_order_accepted.insert(venue_order_id, ());
+                self.emitted_accepted.add(venue_order_id);
                 self.update_order_state_cache(
                     &canonical_client_id,
                     msg,
@@ -1625,7 +1625,7 @@ impl OKXWsFeedHandler {
         client_order_id: &ClientOrderId,
         venue_order_id: &VenueOrderId,
     ) {
-        self.emitted_order_accepted.remove(venue_order_id);
+        self.emitted_accepted.remove(venue_order_id);
         self.order_state_cache.remove(client_order_id);
         self.active_client_orders.remove(client_order_id);
         self.client_id_aliases.remove(client_order_id);
@@ -2503,7 +2503,6 @@ fn create_okx_timeout_error(msg: String) -> OKXWsError {
 mod tests {
     use std::sync::{Arc, atomic::AtomicBool};
 
-    use ahash::AHashMap;
     use dashmap::DashMap;
     use nautilus_model::{
         identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
@@ -2511,7 +2510,6 @@ mod tests {
     };
     use nautilus_network::websocket::{AuthTracker, SubscriptionState};
     use rstest::rstest;
-    use ustr::Ustr;
 
     use super::{NautilusWsMessage, OKXWsFeedHandler};
     use crate::websocket::parse::OrderStateSnapshot;
@@ -2569,148 +2567,6 @@ mod tests {
             "sMsg": "Insufficient balance"
         })];
         assert!(!super::is_post_only_rejection("50000", &data));
-    }
-
-    #[rstest]
-    fn test_cleanup_alias_removes_canonical_entry() {
-        let aliases: DashMap<ClientOrderId, ClientOrderId> = DashMap::new();
-        let canonical = ClientOrderId::new("PARENT-001");
-        aliases.insert(canonical, canonical);
-
-        aliases.remove(&canonical);
-        aliases.retain(|_, v| *v != canonical);
-
-        assert!(!aliases.contains_key(&canonical));
-        assert!(aliases.is_empty());
-    }
-
-    #[rstest]
-    fn test_cleanup_alias_removes_child_alias_pointing_to_canonical() {
-        let aliases: DashMap<ClientOrderId, ClientOrderId> = DashMap::new();
-        let canonical = ClientOrderId::new("PARENT-001");
-        let child = ClientOrderId::new("CHILD-001");
-        aliases.insert(canonical, canonical);
-        aliases.insert(child, canonical);
-
-        aliases.remove(&canonical);
-        aliases.retain(|_, v| *v != canonical);
-
-        assert!(!aliases.contains_key(&canonical));
-        assert!(!aliases.contains_key(&child));
-        assert!(aliases.is_empty());
-    }
-
-    #[rstest]
-    fn test_cleanup_alias_does_not_affect_unrelated_entries() {
-        let aliases: DashMap<ClientOrderId, ClientOrderId> = DashMap::new();
-        let canonical1 = ClientOrderId::new("PARENT-001");
-        let child1 = ClientOrderId::new("CHILD-001");
-        let canonical2 = ClientOrderId::new("PARENT-002");
-        let child2 = ClientOrderId::new("CHILD-002");
-        aliases.insert(canonical1, canonical1);
-        aliases.insert(child1, canonical1);
-        aliases.insert(canonical2, canonical2);
-        aliases.insert(child2, canonical2);
-
-        aliases.remove(&canonical1);
-        aliases.retain(|_, v| *v != canonical1);
-
-        assert!(!aliases.contains_key(&canonical1));
-        assert!(!aliases.contains_key(&child1));
-        assert!(aliases.contains_key(&canonical2));
-        assert!(aliases.contains_key(&child2));
-        assert_eq!(aliases.len(), 2);
-    }
-
-    #[rstest]
-    fn test_cleanup_alias_handles_multiple_children() {
-        let aliases: DashMap<ClientOrderId, ClientOrderId> = DashMap::new();
-        let canonical = ClientOrderId::new("PARENT-001");
-        let child1 = ClientOrderId::new("CHILD-001");
-        let child2 = ClientOrderId::new("CHILD-002");
-        let child3 = ClientOrderId::new("CHILD-003");
-        aliases.insert(canonical, canonical);
-        aliases.insert(child1, canonical);
-        aliases.insert(child2, canonical);
-        aliases.insert(child3, canonical);
-
-        aliases.remove(&canonical);
-        aliases.retain(|_, v| *v != canonical);
-
-        assert!(aliases.is_empty());
-    }
-
-    #[rstest]
-    fn test_cleanup_removes_from_all_caches() {
-        let emitted_accepted: DashMap<VenueOrderId, ()> = DashMap::new();
-        let order_state_cache: AHashMap<ClientOrderId, u32> = AHashMap::new();
-        let active_orders: DashMap<ClientOrderId, ()> = DashMap::new();
-        let aliases: DashMap<ClientOrderId, ClientOrderId> = DashMap::new();
-        let fee_cache: AHashMap<Ustr, f64> = AHashMap::new();
-        let filled_qty_cache: AHashMap<Ustr, f64> = AHashMap::new();
-        let canonical = ClientOrderId::new("PARENT-001");
-        let child = ClientOrderId::new("CHILD-001");
-        let venue_id = VenueOrderId::new("VENUE-001");
-
-        emitted_accepted.insert(venue_id, ());
-        let mut order_state = order_state_cache;
-        order_state.insert(canonical, 1);
-        active_orders.insert(canonical, ());
-        aliases.insert(canonical, canonical);
-        aliases.insert(child, canonical);
-        let mut fees = fee_cache;
-        fees.insert(venue_id.inner(), 0.001);
-        let mut filled = filled_qty_cache;
-        filled.insert(venue_id.inner(), 1.0);
-
-        emitted_accepted.remove(&venue_id);
-        order_state.remove(&canonical);
-        active_orders.remove(&canonical);
-        aliases.remove(&canonical);
-        aliases.retain(|_, v| *v != canonical);
-        fees.remove(&venue_id.inner());
-        filled.remove(&venue_id.inner());
-
-        assert!(emitted_accepted.is_empty());
-        assert!(order_state.is_empty());
-        assert!(active_orders.is_empty());
-        assert!(aliases.is_empty());
-        assert!(fees.is_empty());
-        assert!(filled.is_empty());
-    }
-
-    #[rstest]
-    fn test_alias_registration_parent_with_child() {
-        let aliases: DashMap<ClientOrderId, ClientOrderId> = DashMap::new();
-        let parent = ClientOrderId::new("PARENT-001");
-        let child = ClientOrderId::new("CHILD-001");
-        aliases.insert(parent, parent);
-        aliases.insert(child, parent);
-
-        assert_eq!(*aliases.get(&parent).unwrap(), parent);
-        assert_eq!(*aliases.get(&child).unwrap(), parent);
-    }
-
-    #[rstest]
-    fn test_alias_registration_standalone_order() {
-        let aliases: DashMap<ClientOrderId, ClientOrderId> = DashMap::new();
-        let order_id = ClientOrderId::new("ORDER-001");
-        aliases.insert(order_id, order_id);
-
-        assert_eq!(*aliases.get(&order_id).unwrap(), order_id);
-    }
-
-    #[rstest]
-    fn test_alias_lookup_returns_canonical() {
-        let aliases: DashMap<ClientOrderId, ClientOrderId> = DashMap::new();
-        let canonical = ClientOrderId::new("PARENT-001");
-        let child = ClientOrderId::new("CHILD-001");
-
-        aliases.insert(canonical, canonical);
-        aliases.insert(child, canonical);
-
-        let resolved = aliases.get(&child).map(|v| *v);
-        assert_eq!(resolved, Some(canonical));
     }
 
     #[rstest]

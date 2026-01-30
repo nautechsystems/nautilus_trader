@@ -73,6 +73,7 @@ from nautilus_trader.live.retry import RetryManagerPool
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TrailingOffsetType
@@ -1365,30 +1366,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         finally:
             await self._retry_manager_pool.release(retry_manager)
 
-    async def _cancel_orders_individual(self, orders: list[Order]) -> None:
-        for order in orders:
-            retry_manager = await self._retry_manager_pool.acquire()
-            try:
-                await retry_manager.run(
-                    "cancel_order",
-                    [order.client_order_id, order.venue_order_id],
-                    self._cancel_order_single,
-                    instrument_id=order.instrument_id,
-                    client_order_id=order.client_order_id,
-                    venue_order_id=order.venue_order_id,
-                )
-                if not retry_manager.result:
-                    self.generate_order_cancel_rejected(
-                        order.strategy_id,
-                        order.instrument_id,
-                        order.client_order_id,
-                        order.venue_order_id,
-                        retry_manager.message,
-                        self._clock.timestamp_ns(),
-                    )
-            finally:
-                await self._retry_manager_pool.release(retry_manager)
-
     async def _cancel_algo_orders_batch(
         self,
         instrument_id: InstrumentId,
@@ -1438,16 +1415,36 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             strategy_id=command.strategy_id,
         )
 
+        # Filter to only SUBMITTED since PENDING_CANCEL/UPDATE are already in orders_open
+        inflight_orders_strategy: list[Order] = [
+            o
+            for o in self._cache.orders_inflight(
+                instrument_id=command.instrument_id,
+                strategy_id=command.strategy_id,
+            )
+            if o.status == OrderStatus.SUBMITTED
+        ]
+
+        all_strategy_orders = open_orders_strategy + inflight_orders_strategy
+
+        # Count total orders across all strategies (for multi-strategy safety check)
         open_orders_total_count = self._cache.orders_open_count(
             instrument_id=command.instrument_id,
         )
+        submitted_orders_total_count = sum(
+            1
+            for o in self._cache.orders_inflight(instrument_id=command.instrument_id)
+            if o.status == OrderStatus.SUBMITTED
+        )
+        total_orders_count = open_orders_total_count + submitted_orders_total_count
 
-        if open_orders_total_count == len(open_orders_strategy):
+        # Only use batch cancel if this strategy owns all orders for the instrument
+        if total_orders_count == len(all_strategy_orders):
             algo_orders: list[Order] = []
             regular_orders: list[Order] = []
 
             if self._binance_account_type.is_futures:
-                for order in open_orders_strategy:
+                for order in all_strategy_orders:
                     if order.order_type in BINANCE_FUTURES_ALGO_ORDER_TYPES:
                         # Triggered algo orders become regular orders and need regular cancel
                         if order.client_order_id in self._triggered_algo_order_ids:
@@ -1457,7 +1454,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     else:
                         regular_orders.append(order)
             else:
-                regular_orders = open_orders_strategy
+                regular_orders = all_strategy_orders
 
             if algo_orders:
                 await self._cancel_algo_orders_batch(command.instrument_id, algo_orders)
@@ -1466,8 +1463,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 await self._cancel_orders_batch(command.instrument_id, regular_orders)
             return
 
-        # Not every strategy order is included in all orders - so must cancel individually
-        await self._cancel_orders_individual(open_orders_strategy)
+        # Not every order belongs to this strategy - cancel individually or in batches
+        await self._cancel_orders_for_strategy(all_strategy_orders, command)
 
     async def _cancel_order_single(
         self,
@@ -1516,6 +1513,37 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 order_id=int(venue_order_id.value) if venue_order_id else None,
                 orig_client_order_id=client_order_id.value if client_order_id else None,
             )
+
+    async def _cancel_orders_for_strategy(
+        self,
+        orders: list[Order],
+        command: CancelAllOrders,
+    ) -> None:
+        await self._cancel_orders_individual(orders)
+
+    async def _cancel_orders_individual(self, orders: list[Order]) -> None:
+        for order in orders:
+            retry_manager = await self._retry_manager_pool.acquire()
+            try:
+                await retry_manager.run(
+                    "cancel_order",
+                    [order.client_order_id, order.venue_order_id],
+                    self._cancel_order_single,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                )
+                if not retry_manager.result:
+                    self.generate_order_cancel_rejected(
+                        order.strategy_id,
+                        order.instrument_id,
+                        order.client_order_id,
+                        order.venue_order_id,
+                        retry_manager.message,
+                        self._clock.timestamp_ns(),
+                    )
+            finally:
+                await self._retry_manager_pool.release(retry_manager)
 
     # -- WEBSOCKET EVENT HANDLERS -----------------------------------------------------------------
 

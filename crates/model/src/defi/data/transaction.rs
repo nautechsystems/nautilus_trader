@@ -73,10 +73,10 @@ impl Transaction {
             block_number,
             from,
             to,
+            value,
+            transaction_index,
             gas,
             gas_price,
-            transaction_index,
-            value,
         }
     }
 }

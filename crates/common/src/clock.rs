@@ -478,7 +478,7 @@ impl TestClock {
             );
         }
 
-        events.sort_by(|a, b| a.ts_event.cmp(&b.ts_event));
+        events.sort_by_key(|a| a.ts_event);
         events
     }
 

@@ -1173,14 +1173,21 @@ cdef class Strategy(Actor):
         Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(instrument_id, "instrument_id")
 
-        cdef list open_orders = self.cache.orders_open(
+        cdef list[Order] open_orders = self.cache.orders_open(
             venue=None,  # Faster query filtering
             instrument_id=instrument_id,
             strategy_id=self.id,
             side=order_side,
         )
 
-        cdef list emulated_orders = self.cache.orders_emulated(
+        cdef list[Order] emulated_orders = self.cache.orders_emulated(
+            venue=None,  # Faster query filtering
+            instrument_id=instrument_id,
+            strategy_id=self.id,
+            side=order_side,
+        )
+
+        cdef list[Order] inflight_orders = self.cache.orders_inflight(
             venue=None,  # Faster query filtering
             instrument_id=instrument_id,
             strategy_id=self.id,
@@ -1188,9 +1195,9 @@ cdef class Strategy(Actor):
         )
 
         cdef str order_side_str = " " + order_side_to_str(order_side) if order_side != OrderSide.NO_ORDER_SIDE else ""
-        if not open_orders and not emulated_orders:
+        if not open_orders and not emulated_orders and not inflight_orders:
             self.log.info(
-                f"No {instrument_id.to_str()} open or emulated{order_side_str} "
+                f"No {instrument_id.to_str()} open, emulated, or inflight{order_side_str} "
                 f"orders to cancel")
             return
 
@@ -1206,6 +1213,13 @@ cdef class Strategy(Actor):
             self.log.info(
                 f"Canceling {emulated_count} emulated{order_side_str} "
                 f"{instrument_id.to_str()} order{'' if emulated_count == 1 else 's'}",
+            )
+
+        cdef int inflight_count = len(inflight_orders)
+        if inflight_count:
+            self.log.info(
+                f"Canceling {inflight_count} inflight{order_side_str} "
+                f"{instrument_id.to_str()} order{'' if inflight_count == 1 else 's'}",
             )
 
         cdef:
@@ -1240,7 +1254,7 @@ cdef class Strategy(Actor):
 
         cdef CancelAllOrders command
 
-        if open_count > 0:
+        if open_count > 0 or inflight_count > 0:
             command = CancelAllOrders(
                 trader_id=self.trader_id,
                 strategy_id=self.id,

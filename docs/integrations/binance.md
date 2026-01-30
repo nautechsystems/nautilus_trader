@@ -126,6 +126,24 @@ Only *limit* order types support `post_only`.
 | Batch Modify       | -    | -      | ✓            | ✓            | Modify multiple orders in single request. Futures only. |
 | Batch Cancel       | ✓    | ✓      | ✓            | ✓            | Cancel multiple orders in single request.    |
 
+#### Cancel all orders behavior
+
+When calling `cancel_all_orders()` from a strategy, the adapter includes orders in both open and inflight (SUBMITTED) states.
+This ensures that orders submitted but not yet acknowledged by Binance are also canceled.
+
+**Multi-strategy safety**: When multiple strategies trade the same instrument, the adapter compares orders owned by the requesting strategy against all orders for that instrument. If the strategy owns all orders, a single cancel-all API call is used. Otherwise, per-strategy cancels are sent (batch for regular orders, individual for algo orders) to avoid affecting other strategies' orders.
+
+**Futures algo orders**: For Binance Futures, conditional order types (STOP_MARKET, STOP_LIMIT, TAKE_PROFIT, TAKE_PROFIT_MARKET, TRAILING_STOP_MARKET) require a different cancel endpoint than regular orders.
+The adapter automatically routes these "algo" orders through the correct endpoint. Once an algo order triggers and becomes a regular order, it uses the standard cancel endpoint.
+
+**Endpoints used**:
+
+| Account Type | Regular Orders                  | Algo Orders (batch)              | Algo Orders (individual)    |
+|--------------|---------------------------------|----------------------------------|-----------------------------|
+| Spot/Margin  | `DELETE /api/v3/openOrders`     | N/A                              | N/A                         |
+| USDT Futures | `DELETE /fapi/v1/allOpenOrders` | `DELETE /fapi/v1/algoOpenOrders` | `DELETE /fapi/v1/algoOrder` |
+| Coin Futures | `DELETE /dapi/v1/allOpenOrders` | `DELETE /dapi/v1/algoOpenOrders` | `DELETE /dapi/v1/algoOrder` |
+
 ### Position management
 
 | Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                      |

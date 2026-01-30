@@ -22,6 +22,7 @@ from nautilus_trader.common.component import Clock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import RequestFundingRates
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestOrderBookDepth
@@ -31,6 +32,7 @@ from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -83,6 +85,7 @@ class MockMarketDataClient(MarketDataClient):
         self.instruments: list[Instrument] = []
         self.quote_ticks: list[QuoteTick] = []
         self.trade_ticks: list[TradeTick] = []
+        self.funding_rates: list[FundingRateUpdate] = []
         self.bars: list[Bar] = []
         self.order_book_depths: list[OrderBookDepth10] = []
 
@@ -119,6 +122,16 @@ class MockMarketDataClient(MarketDataClient):
         self._handle_trade_ticks_py(
             request.instrument_id,
             self.trade_ticks,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
+
+    def request_funding_rates(self, request: RequestFundingRates) -> None:
+        self._handle_funding_rates_py(
+            request.instrument_id,
+            self.funding_rates,
             request.id,
             request.start,
             request.end,

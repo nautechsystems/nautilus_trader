@@ -106,7 +106,7 @@ nautilus-tardis = { path = "crates/adapters/tardis", version = "0.53.0", default
 # Core dependencies
 # -----------------------------------------------------------------------------
 ahash = { version = "0.8.12", features = ["serde"] }
-alloy-primitives = { version = "1.5.2", default-features = false, features = [
+alloy-primitives = { version = "1.5.4", default-features = false, features = [
   "std",
   "serde",
 ] }
@@ -131,9 +131,9 @@ chrono = { version = "0.4.43", default-features = false, features = [
   "clock",
 ] }
 chrono-tz = "0.10.4"
-clap = { version = "4.5.54", features = ["derive", "env"] }
+clap = { version = "4.5.56", features = ["derive", "env"] }
 dashmap = "6.1.0"
-datafusion = { version = "52.0.0", default-features = false, features = [
+datafusion = { version = "52.1.0", default-features = false, features = [
   "parquet",
   "regex_expressions",
   "unicode_expressions",
@@ -242,7 +242,7 @@ sqlx = { version = "0.8.6", default-features = false, features = [
   "rust_decimal",
 ] }
 strum = { version = "0.27.2", features = ["derive"] }
-sysinfo = { version = "0.37.2", default-features = false, features = [
+sysinfo = { version = "0.38.0", default-features = false, features = [
   "system",
 ] }
 tabled = { version = "0.20.0", default-features = false, features = [
@@ -269,10 +269,17 @@ toml = { version = "0.9.11", default-features = false, features = [
   "parse",
   "serde",
 ] }
+tracing = { version = "0.1.44", default-features = false, features = ["std"] }
+tracing-subscriber = { version = "0.3.22", default-features = false, features = [
+  "std",
+  "env-filter",
+  "fmt",
+  "registry",
+] }
 unbounded-interval-tree = { version = "1.1.2", default-features = false }
 url = { version = "2.5.8", default-features = false }
 ustr = { version = "1.1.0", features = ["serde"] }
-uuid = { version = "1.19.0", features = ["v4", "serde"] }
+uuid = { version = "1.20.0", features = ["v4", "serde"] }
 webpki-roots = "1.0.5"
 
 # -----------------------------------------------------------------------------
@@ -286,26 +293,25 @@ alloy-signer = { version = "1.5.2", default-features = false }
 alloy-signer-local = { version = "1.5.2", default-features = false, features = [
   "mnemonic",
 ] }
-alloy-sol-types = "1.5.2"
+alloy-sol-types = "1.5.4"
 arc-swap = "1.8.0"
-bip32 = "0.5.3"
 cosmrs = { version = "0.22.0", default-features = false, features = ["bip32"] }
 csv = "1.4.0"
-databento = { version = "0.39.0", default-features = false, features = [
+databento = { version = "0.40.0", default-features = false, features = [
   "historical",
   "live",
 ] }
 dydx-proto = "0.4.0"
 fallible-streaming-iterator = "0.1.9"
 flate2 = "1.1.8"
-hypersync-client = { version = "0.23.0" }
+hypersync-client = { version = "1.0.0" }
 hypersync-schema = { version = "0.4.0" }
 itoa = "1.0.17"
 prost = { version = "0.13.5", default-features = false, features = ["std"] }
 ryu = "1.0.22"
 serde_repr = "0.1.20"
 serde_with = "3.16.1"
-time = { version = "0.3.45", default-features = false, features = [
+time = { version = "0.3.46", default-features = false, features = [
   "macros",
   "parsing",
   "serde",
@@ -338,7 +344,7 @@ pretty_assertions = "1.4.1"
 proptest = { version = "1.9.0", default-features = false, features = ["std"] }
 rstest = "0.26.1"
 tempfile = "3.24.0"
-turmoil = "0.7.0"
+turmoil = "0.7.1"
 
 # -----------------------------------------------------------------------------
 # Build dependencies
@@ -354,9 +360,9 @@ walkdir = "2.5.0"
 cargo-audit = "0.22.0"
 cargo-deny = "0.19.0"
 cargo-edit = "0.13.8"
-cargo-llvm-cov = "0.6.24"
+cargo-llvm-cov = "0.8.2"
 cargo-machete = "0.9.1"
-cargo-nextest = "0.9.123"
+cargo-nextest = "0.9.124"
 cargo-vet = "0.10.2"
 lychee = "0.22.0"
 
@@ -506,6 +512,18 @@ explicit_iter_loop = "warn"
 uninlined_format_args = "warn"
 
 # Pedantic (explicitness and clarity)
+borrow_as_ptr = "warn"
+copy_iterator = "warn"
+expl_impl_clone_on_copy = "warn"
+inconsistent_struct_constructor = "warn"
+iter_nth_zero = "warn"
+map_flatten = "warn"
+match_bool = "warn"
+mut_mut = "warn"
+naive_bytecount = "warn"
+option_option = "warn"
+ptr_as_ptr = "warn"
+verbose_bit_mask = "warn"
 semicolon_if_nothing_returned = "warn"
 unnested_or_patterns = "warn"
 filter_map_next = "warn"

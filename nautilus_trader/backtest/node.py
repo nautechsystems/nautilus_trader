@@ -409,6 +409,7 @@ class BacktestNode:
                 bar_adaptive_high_low_ordering=venue_config.bar_adaptive_high_low_ordering,
                 trade_execution=venue_config.trade_execution,
                 liquidity_consumption=venue_config.liquidity_consumption,
+                queue_position=venue_config.queue_position,
                 allow_cash_borrowing=venue_config.allow_cash_borrowing,
                 price_protection_points=get_price_protection_points(venue_config),
             )

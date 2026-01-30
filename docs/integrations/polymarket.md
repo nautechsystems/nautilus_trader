@@ -479,49 +479,42 @@ The following limitations are currently known:
 
 ### Data client configuration options
 
-| Option                          | Default           | Description |
-|---------------------------------|-------------------|-------------|
-| `venue`                         | `POLYMARKET`      | Venue identifier registered for the data client. |
-| `private_key`                   | `None`            | Wallet private key; sourced from `POLYMARKET_PK` when omitted. |
-| `signature_type`                | `0`               | Signature scheme (0 = EOA, 1 = email proxy, 2 = browser wallet proxy). |
-| `funder`                        | `None`            | USDC.e funding wallet; sourced from `POLYMARKET_FUNDER` when omitted. |
-| `api_key`                       | `None`            | API key; sourced from `POLYMARKET_API_KEY` when omitted. |
-| `api_secret`                    | `None`            | API secret; sourced from `POLYMARKET_API_SECRET` when omitted. |
-| `passphrase`                    | `None`            | API passphrase; sourced from `POLYMARKET_PASSPHRASE` when omitted. |
-| `base_url_http`                 | `None`            | Override for the REST base URL. |
-| `base_url_ws`                   | `None`            | Override for the WebSocket base URL. |
-| `ws_connection_initial_delay_secs` | `5`           | Delay (seconds) before the first WebSocket connection to buffer subscriptions. |
-| `ws_connection_delay_secs`      | `0.1`             | Delay (seconds) between subsequent WebSocket connection attempts. |
-| `update_instruments_interval_mins` | `60`          | Interval (minutes) between instrument catalogue refreshes. |
-| `compute_effective_deltas`      | `False`           | Compute effective order book deltas for bandwidth savings. |
-| `drop_quotes_missing_side`      | `True`            | Drop quotes with missing bid/ask prices instead of substituting boundary values. |
+| Option                             | Default      | Description |
+|------------------------------------|--------------|-------------|
+| `venue`                            | `POLYMARKET` | Venue identifier registered for the data client. |
+| `private_key`                      | `None`       | Wallet private key; sourced from `POLYMARKET_PK` when omitted. |
+| `signature_type`                   | `0`          | Signature scheme (0 = EOA, 1 = email proxy, 2 = browser wallet proxy). |
+| `funder`                           | `None`       | USDC.e funding wallet; sourced from `POLYMARKET_FUNDER` when omitted. |
+| `api_key`                          | `None`       | API key; sourced from `POLYMARKET_API_KEY` when omitted. |
+| `api_secret`                       | `None`       | API secret; sourced from `POLYMARKET_API_SECRET` when omitted. |
+| `passphrase`                       | `None`       | API passphrase; sourced from `POLYMARKET_PASSPHRASE` when omitted. |
+| `base_url_http`                    | `None`       | Override for the REST base URL. |
+| `base_url_ws`                      | `None`       | Override for the WebSocket base URL. |
+| `ws_connection_initial_delay_secs` | `5`          | Delay (seconds) before the first WebSocket connection to buffer subscriptions. |
+| `ws_connection_delay_secs`         | `0.1`        | Delay (seconds) between subsequent WebSocket connection attempts. |
+| `update_instruments_interval_mins` | `60`         | Interval (minutes) between instrument catalogue refreshes. |
+| `compute_effective_deltas`         | `False`      | Compute effective order book deltas for bandwidth savings. |
+| `drop_quotes_missing_side`         | `True`       | Drop quotes with missing bid/ask prices instead of substituting boundary values. |
 
 ### Execution client configuration options
 
-| Option                           | Default      | Description |
-|----------------------------------|--------------|-------------|
-| `venue`                          | `POLYMARKET` | Venue identifier registered for the execution client. |
-| `private_key`                    | `None`       | Wallet private key; sourced from `POLYMARKET_PK` when omitted. |
-| `signature_type`                 | `0`          | Signature scheme (0 = EOA, 1 = email proxy, 2 = browser wallet proxy). |
-| `funder`                         | `None`       | USDC.e funding wallet; sourced from `POLYMARKET_FUNDER` when omitted. |
-| `api_key`                        | `None`       | API key; sourced from `POLYMARKET_API_KEY` when omitted. |
-| `api_secret`                     | `None`       | API secret; sourced from `POLYMARKET_API_SECRET` when omitted. |
-| `passphrase`                     | `None`       | API passphrase; sourced from `POLYMARKET_PASSPHRASE` when omitted. |
-| `base_url_http`                  | `None`       | Override for the REST base URL. |
-| `base_url_ws`                    | `None`       | Override for the WebSocket base URL. |
-| `max_retries`                    | `None`       | Maximum retry attempts for submit/cancel requests. |
-| `retry_delay_initial_ms`         | `None`       | Initial delay (milliseconds) between retries. |
-| `retry_delay_max_ms`             | `None`       | Maximum delay (milliseconds) between retries. |
-| `ack_timeout_secs`               | `5.0`        | Timeout (seconds) to wait for order/trade acknowledgment from cache. |
-| `generate_order_history_from_trades` | `False` | Generate synthetic order history from trade reports when `True` (experimental). |
-| `log_raw_ws_messages`            | `False`      | Log raw WebSocket payloads at INFO level when `True`. |
-
-## Contributing
-
-:::info
-For additional features or to contribute to the Polymarket adapter, please see our
-[contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).
-:::
+| Option                               | Default      | Description |
+|--------------------------------------|--------------|-------------|
+| `venue`                              | `POLYMARKET` | Venue identifier registered for the execution client. |
+| `private_key`                        | `None`       | Wallet private key; sourced from `POLYMARKET_PK` when omitted. |
+| `signature_type`                     | `0`          | Signature scheme (0 = EOA, 1 = email proxy, 2 = browser wallet proxy). |
+| `funder`                             | `None`       | USDC.e funding wallet; sourced from `POLYMARKET_FUNDER` when omitted. |
+| `api_key`                            | `None`       | API key; sourced from `POLYMARKET_API_KEY` when omitted. |
+| `api_secret`                         | `None`       | API secret; sourced from `POLYMARKET_API_SECRET` when omitted. |
+| `passphrase`                         | `None`       | API passphrase; sourced from `POLYMARKET_PASSPHRASE` when omitted. |
+| `base_url_http`                      | `None`       | Override for the REST base URL. |
+| `base_url_ws`                        | `None`       | Override for the WebSocket base URL. |
+| `max_retries`                        | `None`       | Maximum retry attempts for submit/cancel requests. |
+| `retry_delay_initial_ms`             | `None`       | Initial delay (milliseconds) between retries. |
+| `retry_delay_max_ms`                 | `None`       | Maximum delay (milliseconds) between retries. |
+| `ack_timeout_secs`                   | `5.0`        | Timeout (seconds) to wait for order/trade acknowledgment from cache. |
+| `generate_order_history_from_trades` | `False`      | Generate synthetic order history from trade reports when `True` (experimental). |
+| `log_raw_ws_messages`                | `False`      | Log raw WebSocket payloads at INFO level when `True`. |
 
 ## Historical data loading
 
@@ -539,6 +532,36 @@ The loader fetches data from two primary sources:
 1. **Polymarket Gamma API** - Market metadata, instrument details, and active market listings.
 2. **Polymarket CLOB API** - Price/trade history timeseries and order book history snapshots.
 
+### Method naming conventions
+
+The loader provides two ways to access the Polymarket APIs:
+
+| Prefix    | Type             | Use case                                                               |
+|-----------|------------------|------------------------------------------------------------------------|
+| `query_*` | Static methods   | API exploration without an instrument. No loader instance needed.      |
+| `fetch_*` | Instance methods | Data fetching with a configured loader. Uses the loader's HTTP client. |
+
+**Use `query_*` when** you want to explore markets, discover events, or fetch metadata
+before committing to a specific instrument:
+
+```python
+# No loader needed - just query the API directly
+market = await PolymarketDataLoader.query_market_by_slug("some-market")
+event = await PolymarketDataLoader.query_event_by_slug("some-event")
+```
+
+**Use `fetch_*` when** you have a loader instance and want to fetch data using its
+configured HTTP client (for coordinated rate limiting across multiple calls):
+
+```python
+loader = await PolymarketDataLoader.from_market_slug("some-market")
+
+# All fetch calls share the loader's HTTP client
+markets = await loader.fetch_markets(active=True, limit=100)
+events = await loader.fetch_events(active=True)
+details = await loader.fetch_market_details(condition_id)
+```
+
 ### Finding markets
 
 Use the provided utility scripts to discover active markets:
@@ -553,41 +576,55 @@ python nautilus_trader/adapters/polymarket/scripts/list_updown_markets.py
 
 ### Basic usage
 
-:::note
-All data loader methods are **asynchronous** and must be called with `await`.
-:::
+The recommended way to create a loader is using the factory classmethods, which handle
+all the API calls and instrument creation automatically:
 
 ```python
 import asyncio
 
 from nautilus_trader.adapters.polymarket import PolymarketDataLoader
-from nautilus_trader.adapters.polymarket import parse_polymarket_instrument
 
-async def load_market_data():
-    # Discovery methods are static - no instance needed
-    market = await PolymarketDataLoader.find_market_by_slug("gta-vi-released-before-june-2026")
-    condition_id = market["conditionId"]
+async def main():
+    # Create loader from market slug (recommended)
+    loader = await PolymarketDataLoader.from_market_slug("gta-vi-released-before-june-2026")
 
-    market_details = await PolymarketDataLoader.fetch_market_details(condition_id)
-    token = market_details["tokens"][0]
-    token_id = token["token_id"]
+    # Loader is ready to use with instrument and token_id set
+    print(loader.instrument)
+    print(loader.token_id)
 
-    instrument = parse_polymarket_instrument(
-        market_info=market_details,
-        token_id=token_id,
-        outcome=token["outcome"],
-    )
-
-    return instrument, token_id
-
-# Run the async function and create a loader bound to the instrument
-instrument, token_id = asyncio.run(load_market_data())
-loader = PolymarketDataLoader(instrument=instrument, token_id=token_id)
+asyncio.run(main())
 ```
 
-:::note
-You can also skip the manual wiring and call `await PolymarketDataLoader.from_market_slug(...)`, which fetches the metadata and returns a loader that already has `instrument` and `token_id` set.
-:::
+For events with multiple markets (e.g., temperature buckets), use `from_event_slug`:
+
+```python
+# Returns a list of loaders, one per market in the event
+loaders = await PolymarketDataLoader.from_event_slug("highest-temperature-in-nyc-on-january-26")
+```
+
+### Discovering markets and events
+
+Use `fetch_markets()` and `fetch_events()` to discover available markets programmatically:
+
+```python
+loader = await PolymarketDataLoader.from_market_slug("any-market")
+
+# List active markets
+markets = await loader.fetch_markets(active=True, closed=False, limit=100)
+for market in markets:
+    print(f"{market['slug']}: {market['question']}")
+
+# List active events
+events = await loader.fetch_events(active=True, limit=50)
+for event in events:
+    print(f"{event['slug']}: {event['title']}")
+
+# Get all markets within a specific event
+event_markets = await loader.get_event_markets("highest-temperature-in-nyc-on-january-26")
+```
+
+For quick exploration without creating a loader, use the static `query_*` methods
+(see [Method naming conventions](#method-naming-conventions) above).
 
 ### Fetching order book history
 
@@ -764,3 +801,10 @@ instrument_id = get_polymarket_instrument_id(
     token_id="8441400852834915183759801017793514978104486628517653995211751018945988243154"
 )
 ```
+
+## Contributing
+
+:::info
+For additional features or to contribute to the Polymarket adapter, please see our
+[contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).
+:::

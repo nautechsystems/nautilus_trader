@@ -3,16 +3,16 @@
     {
       "user_id": "3c90c3cc-0d44-4b50-8888-8dd25736052a",
       "symbol": "BTC-PERP",
-      "open_quantity": 2,
-      "open_notional": "90000.00",
+      "signed_quantity": 2,
+      "signed_notional": "90000.00",
       "timestamp": "2023-11-07T12:30:45Z",
       "realized_pnl": "1250.50"
     },
     {
       "user_id": "3c90c3cc-0d44-4b50-8888-8dd25736052a",
       "symbol": "ETH-PERP",
-      "open_quantity": -5,
-      "open_notional": "-14000.00",
+      "signed_quantity": -5,
+      "signed_notional": "-14000.00",
       "timestamp": "2023-11-07T10:15:30Z",
       "realized_pnl": "-125.75"
     }

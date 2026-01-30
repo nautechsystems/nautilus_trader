@@ -705,12 +705,14 @@ impl From<KrakenFuturesOrderType> for OrderType {
     }
 }
 
-impl From<OrderSide> for KrakenOrderSide {
-    fn from(value: OrderSide) -> Self {
+impl TryFrom<OrderSide> for KrakenOrderSide {
+    type Error = &'static str;
+
+    fn try_from(value: OrderSide) -> Result<Self, Self::Error> {
         match value {
-            OrderSide::Buy => Self::Buy,
-            OrderSide::Sell => Self::Sell,
-            OrderSide::NoOrderSide => Self::Buy, // Default fallback
+            OrderSide::Buy => Ok(Self::Buy),
+            OrderSide::Sell => Ok(Self::Sell),
+            OrderSide::NoOrderSide => Err("Cannot convert NoOrderSide to KrakenOrderSide"),
         }
     }
 }

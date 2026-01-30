@@ -356,6 +356,7 @@ impl Logger {
             log_components_only,
             is_colored,
             print_config: _,
+            use_tracing: _,
         } = config;
 
         // Pre-sort module filters by descending path length for O(n) longest-prefix lookup
@@ -734,6 +735,7 @@ mod tests {
                 log_components_only: false,
                 is_colored: true,
                 print_config: false,
+                use_tracing: false,
             }
         );
     }
@@ -751,6 +753,7 @@ mod tests {
                 log_components_only: false,
                 is_colored: true,
                 print_config: true,
+                use_tracing: false,
             }
         );
     }
@@ -772,6 +775,7 @@ mod tests {
                 log_components_only: true,
                 is_colored: true,
                 print_config: false,
+                use_tracing: false,
             }
         );
     }

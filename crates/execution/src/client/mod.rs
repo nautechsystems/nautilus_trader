@@ -33,7 +33,7 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
 };
 
-pub mod base;
+pub mod core;
 
 use nautilus_common::clients::ExecutionClient;
 

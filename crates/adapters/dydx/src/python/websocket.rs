@@ -32,7 +32,10 @@ use pyo3::prelude::*;
 
 use crate::{
     common::{credential::DydxCredential, parse::extract_raw_symbol},
-    websocket::{client::DydxWebSocketClient, error::DydxWsError, handler::HandlerCommand},
+    websocket::{
+        client::DydxWebSocketClient, enums::NautilusWsMessage, error::DydxWsError,
+        handler::HandlerCommand,
+    },
 };
 
 fn to_pyvalue_err_dydx(e: DydxWsError) -> PyErr {
@@ -51,13 +54,12 @@ impl DydxWebSocketClient {
     #[pyo3(name = "new_private")]
     fn py_new_private(
         url: String,
-        mnemonic: String,
-        account_index: u32,
+        private_key: String,
         authenticator_ids: Vec<u64>,
         account_id: AccountId,
         heartbeat: Option<u64>,
     ) -> PyResult<Self> {
-        let credential = DydxCredential::from_mnemonic(&mnemonic, account_index, authenticator_ids)
+        let credential = DydxCredential::from_private_key(&private_key, authenticator_ids)
             .map_err(to_pyvalue_err)?;
         Ok(Self::new_private(url, credential, account_id, heartbeat))
     }
@@ -113,7 +115,7 @@ impl DydxWebSocketClient {
 
                     while let Some(msg) = rx.recv().await {
                         match msg {
-                            crate::websocket::enums::NautilusWsMessage::Data(items) => {
+                            NautilusWsMessage::Data(items) => {
                                 Python::attach(|py| {
                                     for data in items {
                                         use nautilus_model::python::data::data_to_pycapsule;
@@ -124,7 +126,7 @@ impl DydxWebSocketClient {
                                     }
                                 });
                             }
-                            crate::websocket::enums::NautilusWsMessage::Deltas(deltas) => {
+                            NautilusWsMessage::Deltas(deltas) => {
                                 Python::attach(|py| {
                                     use nautilus_model::{
                                         data::{Data, OrderBookDeltas_API},
@@ -137,10 +139,10 @@ impl DydxWebSocketClient {
                                     }
                                 });
                             }
-                            crate::websocket::enums::NautilusWsMessage::Error(err) => {
+                            NautilusWsMessage::Error(err) => {
                                 log::error!("dYdX WebSocket error: {err}");
                             }
-                            crate::websocket::enums::NautilusWsMessage::Reconnected => {
+                            NautilusWsMessage::Reconnected => {
                                 log::info!("dYdX WebSocket reconnected");
                             }
                             _ => {

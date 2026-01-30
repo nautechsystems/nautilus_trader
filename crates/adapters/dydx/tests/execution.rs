@@ -40,6 +40,7 @@ use nautilus_network::http::HttpClient;
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
+use ustr::Ustr;
 
 fn test_data_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
@@ -125,10 +126,10 @@ async fn start_test_server()
 fn create_test_instrument() -> InstrumentAny {
     let market = PerpetualMarket {
         clob_pair_id: 0,
-        ticker: "BTC-USD".to_string(),
+        ticker: Ustr::from("BTC-USD"),
         status: DydxMarketStatus::Active,
-        base_asset: Some("BTC".to_string()),
-        quote_asset: Some("USD".to_string()),
+        base_asset: Some(Ustr::from("BTC")),
+        quote_asset: Some(Ustr::from("USD")),
         step_size: dec!(0.001),
         tick_size: dec!(1),
         index_price: Some(dec!(50000)),
@@ -181,7 +182,7 @@ fn create_test_order() -> Order {
         good_til_block_time: None,
         created_at_height: Some(12345),
         client_metadata: 0,
-        ticker: Some("BTC-USD".to_string()),
+        ticker: Some(Ustr::from("BTC-USD")),
         updated_at: None,
         updated_at_height: None,
         trigger_price: None,
@@ -199,7 +200,7 @@ fn create_test_fill() -> Fill {
         side: OrderSide::Buy,
         liquidity: DydxLiquidity::Taker,
         fill_type: DydxFillType::Limit,
-        market: "BTC-USD".to_string(),
+        market: Ustr::from("BTC-USD"),
         market_type: DydxTickerType::Perpetual,
         price: dec!(50000),
         size: dec!(0.05),

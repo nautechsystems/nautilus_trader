@@ -185,11 +185,11 @@ pub struct AxPosition {
     pub user_id: String,
     /// Instrument symbol.
     pub symbol: Ustr,
-    /// Open quantity (positive for long, negative for short).
-    pub open_quantity: i64,
-    /// Open notional value.
+    /// Signed quantity (positive for long, negative for short).
+    pub signed_quantity: i64,
+    /// Signed notional value.
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
-    pub open_notional: Decimal,
+    pub signed_notional: Decimal,
     /// Position timestamp.
     pub timestamp: DateTime<Utc>,
     /// Realized profit and loss.
@@ -308,9 +308,9 @@ pub struct AxOpenOrder {
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub p: Decimal,
     /// Quantity.
-    pub q: i64,
+    pub q: u64,
     /// Remaining quantity.
-    pub rq: i64,
+    pub rq: u64,
     /// Symbol.
     pub s: Ustr,
     /// Time in force.
@@ -318,7 +318,7 @@ pub struct AxOpenOrder {
     /// User ID.
     pub u: String,
     /// Executed quantity.
-    pub xq: i64,
+    pub xq: u64,
     /// Optional order tag.
     #[serde(default)]
     pub tag: Option<String>,
@@ -353,8 +353,10 @@ pub struct AxFill {
     /// Execution price.
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub price: Decimal,
-    /// Executed quantity.
-    pub quantity: i64,
+    /// Executed quantity (always non-negative).
+    pub quantity: u64,
+    /// Order side.
+    pub side: AxOrderSide,
     /// Instrument symbol.
     pub symbol: Ustr,
     /// Execution timestamp.
@@ -398,11 +400,11 @@ pub struct AxCandle {
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub close: Decimal,
     /// Buy volume.
-    pub buy_volume: i64,
+    pub buy_volume: u64,
     /// Sell volume.
-    pub sell_volume: i64,
+    pub sell_volume: u64,
     /// Total volume.
-    pub volume: i64,
+    pub volume: u64,
     /// Candle width/interval.
     pub width: AxCandleWidth,
 }
@@ -473,11 +475,11 @@ pub struct AxFundingRatesResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxPerSymbolRisk {
-    /// Open quantity.
-    pub open_quantity: i64,
-    /// Open notional value.
+    /// Signed quantity (positive for long, negative for short).
+    pub signed_quantity: i64,
+    /// Signed notional value.
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
-    pub open_notional: Decimal,
+    pub signed_notional: Decimal,
     /// Average entry price.
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub average_price: Decimal,
@@ -683,7 +685,7 @@ pub struct PlaceOrderRequest {
     /// Post-only flag (maker-or-cancel).
     pub po: bool,
     /// Order quantity in contracts.
-    pub q: i64,
+    pub q: u64,
     /// Order symbol.
     pub s: String,
     /// Time in force.
@@ -708,7 +710,7 @@ impl PlaceOrderRequest {
     pub fn new(
         side: AxOrderSide,
         price: Decimal,
-        quantity: i64,
+        quantity: u64,
         symbol: impl Into<String>,
         time_in_force: AxTimeInForce,
         post_only: bool,
@@ -732,7 +734,7 @@ impl PlaceOrderRequest {
         side: AxOrderSide,
         limit_price: Decimal,
         trigger_price: Decimal,
-        quantity: i64,
+        quantity: u64,
         symbol: impl Into<String>,
         time_in_force: AxTimeInForce,
     ) -> Self {

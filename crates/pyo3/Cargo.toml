@@ -80,6 +80,7 @@ high-precision = [
 hypersync = ["nautilus-blockchain/hypersync"]
 postgres = ["nautilus-infrastructure/postgres"]
 redis = ["nautilus-infrastructure/redis"]
+tracing-bridge = ["nautilus-common/tracing-bridge"]
 
 [package.metadata.docs.rs]
 all-features = true

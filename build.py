@@ -137,13 +137,21 @@ RUST_LIBS: list[str] = [str(path) for path in RUST_LIB_PATHS]
 
 
 def _set_feature_flags() -> list[str]:
-    features = "cython-compat,ffi,python,extension-module,postgres"
-    flags = ["--no-default-features", "--features"]
+    feature_list = [
+        "cython-compat",
+        "extension-module",
+        "ffi",
+        "postgres",
+        "python",
+        "tracing-bridge",
+    ]
 
     if HIGH_PRECISION:
-        features += ",high-precision"
+        feature_list.append("high-precision")
 
-    flags.append(features)
+    feature_list.sort()
+
+    flags = ["--no-default-features", "--features", ",".join(feature_list)]
 
     return flags
 

@@ -32,7 +32,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     UUID4, UnixNanos,
-    datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
+    datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND, nanos_to_millis},
 };
 use nautilus_execution::{
     engine::ExecutionEngine,
@@ -370,8 +370,8 @@ impl ExecutionManager {
         let mut fills_applied = 0usize;
 
         let fill_reports = &adjusted_fill_reports;
-
         let mut seen_trade_ids: AHashSet<TradeId> = AHashSet::new();
+
         for fills in fill_reports.values() {
             for fill in fills {
                 if !seen_trade_ids.insert(fill.trade_id) {
@@ -623,6 +623,7 @@ impl ExecutionManager {
         // Process orphan fills (fills without matching order reports)
         let processed_venue_order_ids: AHashSet<VenueOrderId> =
             order_reports.keys().copied().collect();
+
         for (venue_order_id, fills) in fill_reports {
             if processed_venue_order_ids.contains(venue_order_id) {
                 continue;
@@ -837,6 +838,7 @@ impl ExecutionManager {
         let threshold_ns = self.config.inflight_threshold_ms * NANOSECONDS_IN_MILLISECOND;
 
         let mut to_check = Vec::new();
+
         for (client_order_id, check) in &self.inflight_checks {
             if current_time - check.ts_submitted > threshold_ns {
                 to_check.push(*client_order_id);
@@ -957,12 +959,27 @@ impl ExecutionManager {
         }
 
         // Reconcile reports against cached orders
+        let ts_now = self.clock.borrow().timestamp_ns();
         let mut events = Vec::new();
+
         for report in all_reports {
             if let Some(client_order_id) = &report.client_order_id
                 && let Some(order) = self.get_order(client_order_id)
             {
+                // Check for recent local activity to avoid race conditions with in-flight fills
+                if let Some(&last_activity) = self.order_local_activity_ns.get(client_order_id)
+                    && (ts_now - last_activity) < self.config.open_check_threshold_ns
+                {
+                    let elapsed_ms = nanos_to_millis((ts_now - last_activity).as_u64());
+                    let threshold_ms = nanos_to_millis(self.config.open_check_threshold_ns);
+                    log::info!(
+                        "Deferring reconciliation for {client_order_id}: recent local activity ({elapsed_ms}ms < threshold={threshold_ms}ms)",
+                    );
+                    continue;
+                }
+
                 let instrument = self.get_instrument(&report.instrument_id);
+
                 if let Some(event) =
                     self.reconcile_order_report(&order, &report, instrument.as_ref())
                 {
@@ -1103,9 +1120,13 @@ impl ExecutionManager {
     }
 
     /// Records local activity for the specified order.
-    pub fn record_local_activity(&mut self, client_order_id: ClientOrderId, ts_event: UnixNanos) {
-        self.order_local_activity_ns
-            .insert(client_order_id, ts_event);
+    ///
+    /// Uses the current clock time (receipt time) instead of venue time to accurately
+    /// track when we last processed activity for this order. This avoids race conditions
+    /// where network/queue latency makes events appear "old" even though they just arrived.
+    pub fn record_local_activity(&mut self, client_order_id: ClientOrderId) {
+        let ts_now = self.clock.borrow().timestamp_ns();
+        self.order_local_activity_ns.insert(client_order_id, ts_now);
     }
 
     /// Clears reconciliation tracking state for an order.

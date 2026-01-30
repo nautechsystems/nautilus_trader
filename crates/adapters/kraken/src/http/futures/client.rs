@@ -1690,12 +1690,16 @@ impl KrakenFuturesHttpClient {
             _ => anyhow::bail!("Unsupported order type: {order_type:?}"),
         };
 
+        let kraken_side: KrakenOrderSide = order_side
+            .try_into()
+            .map_err(|e| anyhow::anyhow!("Invalid order side: {e}"))?;
+
         let mut builder = KrakenFuturesSendOrderParamsBuilder::default();
         builder
             .cli_ord_id(client_order_id.to_string())
             .broker(NAUTILUS_KRAKEN_BROKER_ID)
             .symbol(raw_symbol)
-            .side(KrakenOrderSide::from(order_side))
+            .side(kraken_side)
             .size(quantity.to_string())
             .order_type(kraken_order_type);
 

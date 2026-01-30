@@ -63,6 +63,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import VenueOrderId
 
 
 class InteractiveBrokersClient(
@@ -166,7 +167,7 @@ class InteractiveBrokersClient(
             str,
             dict[str, Execution | (CommissionAndFeesReport | str)],
         ] = {}
-        self._order_id_to_order_ref: dict[int, AccountOrderRef] = {}
+        self._order_id_to_order_ref: dict[VenueOrderId, AccountOrderRef] = {}
         self._next_valid_order_id: int = -1
 
         # Instrument provider (set by data/execution clients during connection)
@@ -467,6 +468,14 @@ class InteractiveBrokersClient(
 
         """
         if task.exception():
+            # exc = task.exception()
+            # exc_type = type(exc)
+            # exc_traceback = exc.__traceback__
+            # stack_trace = traceback.format_exception(exc_type, exc, exc_traceback)
+            # stack_trace_str = "".join(stack_trace)
+            # self._log.error(
+            #     f"Error on '{task.get_name()}': {exc!r}\n{stack_trace_str}",
+            # )
             self._log.error(
                 f"Error on '{task.get_name()}': {task.exception()!r}",
             )
@@ -714,6 +723,18 @@ class InteractiveBrokersClient(
             while True:
                 handler_task = await self._msg_handler_task_queue.get()
                 await handler_task()
+                # try:
+                #     await handler_task()
+                # except Exception as e:
+                #     exc_type = type(e)
+                #     exc_traceback = e.__traceback__
+                #     stack_trace = traceback.format_exception(exc_type, e, exc_traceback)
+                #     stack_trace_str = "".join(stack_trace)
+                #     task_name = getattr(handler_task, "__name__", str(handler_task))
+                #     self._log.error(
+                #         f"Exception in message handler task '{task_name}': {e!r}\n{stack_trace_str}",
+                #     )
+                #     raise
                 self._msg_handler_task_queue.task_done()
         except asyncio.CancelledError:
             log_msg = f"Handler task processing was cancelled. (qsize={self._msg_handler_task_queue.qsize()})."

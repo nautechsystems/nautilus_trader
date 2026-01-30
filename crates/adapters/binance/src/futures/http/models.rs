@@ -31,9 +31,10 @@ use ustr::Ustr;
 
 use crate::common::{
     enums::{
-        BinanceContractStatus, BinanceFuturesOrderType, BinanceIncomeType, BinanceMarginType,
-        BinanceOrderStatus, BinancePositionSide, BinancePriceMatch, BinanceSelfTradePreventionMode,
-        BinanceSide, BinanceTimeInForce, BinanceTradingStatus, BinanceWorkingType,
+        BinanceAlgoStatus, BinanceAlgoType, BinanceContractStatus, BinanceFuturesOrderType,
+        BinanceIncomeType, BinanceMarginType, BinanceOrderStatus, BinancePositionSide,
+        BinancePriceMatch, BinanceSelfTradePreventionMode, BinanceSide, BinanceTimeInForce,
+        BinanceTradingStatus, BinanceWorkingType,
     },
     models::BinanceRateLimit,
 };
@@ -1123,6 +1124,193 @@ pub struct ListenKeyResponse {
     pub listen_key: String,
 }
 
+/// Algo order response from Binance Futures Algo Service API.
+///
+/// Algo orders are conditional orders (STOP_MARKET, STOP_LIMIT, TAKE_PROFIT,
+/// TAKE_PROFIT_MARKET, TRAILING_STOP_MARKET) that are managed by Binance's
+/// Algo Service rather than the traditional order matching engine.
+///
+/// # References
+///
+/// - <https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/New-Algo-Order>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BinanceFuturesAlgoOrder {
+    /// Unique algo order ID assigned by Binance.
+    pub algo_id: i64,
+    /// Client-specified algo order ID for idempotency.
+    pub client_algo_id: String,
+    /// Algo type (currently only `Conditional` is supported).
+    pub algo_type: BinanceAlgoType,
+    /// Order type (STOP_MARKET, STOP, TAKE_PROFIT, TAKE_PROFIT_MARKET, TRAILING_STOP_MARKET).
+    #[serde(rename = "type")]
+    pub order_type: BinanceFuturesOrderType,
+    /// Trading symbol.
+    pub symbol: Ustr,
+    /// Order side (BUY/SELL).
+    pub side: BinanceSide,
+    /// Position side (BOTH, LONG, SHORT).
+    #[serde(default)]
+    pub position_side: Option<BinancePositionSide>,
+    /// Time in force.
+    #[serde(default)]
+    pub time_in_force: Option<BinanceTimeInForce>,
+    /// Order quantity.
+    #[serde(default)]
+    pub quantity: Option<String>,
+    /// Algo order status.
+    #[serde(default)]
+    pub algo_status: Option<BinanceAlgoStatus>,
+    /// Trigger price for the conditional order.
+    #[serde(default)]
+    pub trigger_price: Option<String>,
+    /// Limit price (for STOP/TAKE_PROFIT limit orders).
+    #[serde(default)]
+    pub price: Option<String>,
+    /// Working type for trigger price calculation (CONTRACT_PRICE or MARK_PRICE).
+    #[serde(default)]
+    pub working_type: Option<BinanceWorkingType>,
+    /// Close all position flag.
+    #[serde(default)]
+    pub close_position: Option<bool>,
+    /// Price protection enabled.
+    #[serde(default)]
+    pub price_protect: Option<bool>,
+    /// Reduce-only flag.
+    #[serde(default)]
+    pub reduce_only: Option<bool>,
+    /// Activation price for TRAILING_STOP_MARKET orders.
+    #[serde(default)]
+    pub activate_price: Option<String>,
+    /// Callback rate for TRAILING_STOP_MARKET orders (0.1 to 10, where 1 = 1%).
+    #[serde(default)]
+    pub callback_rate: Option<String>,
+    /// Order creation time in milliseconds.
+    #[serde(default)]
+    pub create_time: Option<i64>,
+    /// Last update time in milliseconds.
+    #[serde(default)]
+    pub update_time: Option<i64>,
+    /// Trigger time in milliseconds (when the algo order triggered).
+    #[serde(default)]
+    pub trigger_time: Option<i64>,
+    /// Order ID in matching engine (populated when algo order is triggered).
+    #[serde(default)]
+    pub actual_order_id: Option<String>,
+    /// Executed quantity in matching engine (populated when algo order is triggered).
+    #[serde(default)]
+    pub executed_qty: Option<String>,
+    /// Average fill price in matching engine (populated when algo order is triggered).
+    #[serde(default)]
+    pub avg_price: Option<String>,
+}
+
+impl BinanceFuturesAlgoOrder {
+    /// Converts this Binance algo order to a Nautilus [`OrderStatusReport`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if quantity parsing fails.
+    pub fn to_order_status_report(
+        &self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        size_precision: u8,
+    ) -> anyhow::Result<OrderStatusReport> {
+        let ts_now = get_atomic_clock_realtime().get_time_ns();
+        let ts_event = self
+            .update_time
+            .or(self.create_time)
+            .map_or(ts_now, |t| UnixNanos::from((t * 1_000_000) as u64));
+
+        let client_order_id = ClientOrderId::new(&self.client_algo_id);
+        let venue_order_id = self.actual_order_id.as_ref().map_or_else(
+            || VenueOrderId::new(self.algo_id.to_string()),
+            |id| VenueOrderId::new(id.clone()),
+        );
+
+        let order_side = match self.side {
+            BinanceSide::Buy => OrderSide::Buy,
+            BinanceSide::Sell => OrderSide::Sell,
+        };
+
+        let order_type = self.parse_order_type();
+        let time_in_force = self
+            .time_in_force
+            .as_ref()
+            .map_or(TimeInForce::Gtc, |tif| tif.to_nautilus_time_in_force());
+        let order_status = self.parse_order_status();
+
+        let quantity: Decimal = self
+            .quantity
+            .as_ref()
+            .map_or(Ok(Decimal::ZERO), |q| q.parse())
+            .context("invalid quantity")?;
+        let filled_qty: Decimal = self
+            .executed_qty
+            .as_ref()
+            .map_or(Ok(Decimal::ZERO), |q| q.parse())
+            .context("invalid executed_qty")?;
+
+        Ok(OrderStatusReport::new(
+            account_id,
+            instrument_id,
+            Some(client_order_id),
+            venue_order_id,
+            order_side,
+            order_type,
+            time_in_force,
+            order_status,
+            Quantity::new(quantity.to_string().parse()?, size_precision),
+            Quantity::new(filled_qty.to_string().parse()?, size_precision),
+            ts_event,
+            ts_event,
+            ts_now,
+            Some(UUID4::new()),
+        ))
+    }
+
+    fn parse_order_type(&self) -> OrderType {
+        self.order_type.into()
+    }
+
+    fn parse_order_status(&self) -> OrderStatus {
+        match self.algo_status {
+            Some(BinanceAlgoStatus::New) => OrderStatus::Accepted,
+            Some(BinanceAlgoStatus::Triggering) => OrderStatus::Accepted,
+            Some(BinanceAlgoStatus::Triggered) => OrderStatus::Accepted,
+            Some(BinanceAlgoStatus::Finished) => {
+                // Check executed_qty to determine if filled or canceled
+                if let Some(qty) = &self.executed_qty
+                    && let Ok(dec) = qty.parse::<Decimal>()
+                    && !dec.is_zero()
+                {
+                    return OrderStatus::Filled;
+                }
+                OrderStatus::Canceled
+            }
+            Some(BinanceAlgoStatus::Canceled) => OrderStatus::Canceled,
+            Some(BinanceAlgoStatus::Expired) => OrderStatus::Expired,
+            Some(BinanceAlgoStatus::Rejected) => OrderStatus::Rejected,
+            Some(BinanceAlgoStatus::Unknown) | None => OrderStatus::Initialized,
+        }
+    }
+}
+
+/// Cancel response for algo orders from Binance Futures Algo Service API.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BinanceFuturesAlgoOrderCancelResponse {
+    /// Algo order ID that was canceled.
+    pub algo_id: i64,
+    /// Client algo order ID.
+    pub client_algo_id: String,
+    /// Response code (200 for success).
+    pub code: i32,
+    /// Response message.
+    pub msg: String,
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -1377,5 +1565,82 @@ mod tests {
         assert_eq!(position.leverage, Some("10".to_string()));
         assert_eq!(position.isolated, Some(true));
         assert_eq!(position.position_side, Some(BinancePositionSide::Long));
+    }
+
+    #[rstest]
+    fn test_parse_algo_order() {
+        let json = r#"{
+            "algoId": 123456789,
+            "clientAlgoId": "test-algo-order-1",
+            "algoType": "CONDITIONAL",
+            "type": "STOP_MARKET",
+            "symbol": "BTCUSDT",
+            "side": "BUY",
+            "positionSide": "BOTH",
+            "timeInForce": "GTC",
+            "quantity": "0.001",
+            "algoStatus": "NEW",
+            "triggerPrice": "45000.00",
+            "workingType": "MARK_PRICE",
+            "reduceOnly": false,
+            "createTime": 1625474304765,
+            "updateTime": 1625474304765
+        }"#;
+
+        let order: BinanceFuturesAlgoOrder =
+            serde_json::from_str(json).expect("Failed to parse algo order");
+
+        assert_eq!(order.algo_id, 123456789);
+        assert_eq!(order.client_algo_id, "test-algo-order-1");
+        assert_eq!(order.algo_type, BinanceAlgoType::Conditional);
+        assert_eq!(order.order_type, BinanceFuturesOrderType::StopMarket);
+        assert_eq!(order.symbol.as_str(), "BTCUSDT");
+        assert_eq!(order.side, BinanceSide::Buy);
+        assert_eq!(order.algo_status, Some(BinanceAlgoStatus::New));
+        assert_eq!(order.trigger_price, Some("45000.00".to_string()));
+    }
+
+    #[rstest]
+    fn test_parse_algo_order_triggered() {
+        let json = r#"{
+            "algoId": 123456789,
+            "clientAlgoId": "test-algo-order-2",
+            "algoType": "CONDITIONAL",
+            "type": "TAKE_PROFIT",
+            "symbol": "ETHUSDT",
+            "side": "SELL",
+            "algoStatus": "TRIGGERED",
+            "triggerPrice": "2500.00",
+            "price": "2500.00",
+            "actualOrderId": "987654321",
+            "executedQty": "0.5",
+            "avgPrice": "2499.50"
+        }"#;
+
+        let order: BinanceFuturesAlgoOrder =
+            serde_json::from_str(json).expect("Failed to parse triggered algo order");
+
+        assert_eq!(order.algo_status, Some(BinanceAlgoStatus::Triggered));
+        assert_eq!(order.order_type, BinanceFuturesOrderType::TakeProfit);
+        assert_eq!(order.actual_order_id, Some("987654321".to_string()));
+        assert_eq!(order.executed_qty, Some("0.5".to_string()));
+    }
+
+    #[rstest]
+    fn test_parse_algo_order_cancel_response() {
+        let json = r#"{
+            "algoId": 123456789,
+            "clientAlgoId": "test-algo-order-1",
+            "code": 200,
+            "msg": "success"
+        }"#;
+
+        let response: BinanceFuturesAlgoOrderCancelResponse =
+            serde_json::from_str(json).expect("Failed to parse algo cancel response");
+
+        assert_eq!(response.algo_id, 123456789);
+        assert_eq!(response.client_algo_id, "test-algo-order-1");
+        assert_eq!(response.code, 200);
+        assert_eq!(response.msg, "success");
     }
 }

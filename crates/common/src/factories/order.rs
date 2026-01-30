@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Factories for constructing domain objects such as orders.
+//! Factory for constructing order objects.
 
 use std::{cell::RefCell, rc::Rc};
 

@@ -54,7 +54,7 @@ impl TardisInstrumentMiniInfo {
     ) -> Self {
         Self {
             instrument_id,
-            raw_symbol: raw_symbol.unwrap_or(Ustr::from(instrument_id.symbol.as_str())),
+            raw_symbol: raw_symbol.unwrap_or(instrument_id.symbol.inner()),
             exchange,
             price_precision,
             size_precision,

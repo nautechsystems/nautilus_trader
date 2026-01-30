@@ -16,11 +16,15 @@
 //! Conversion functions that translate AX API schemas into Nautilus types.
 
 pub use nautilus_core::serialization::{
-    deserialize_decimal_or_zero, deserialize_optional_decimal,
-    deserialize_optional_decimal_from_str, deserialize_optional_decimal_or_zero, parse_decimal,
+    deserialize_decimal_or_zero, deserialize_optional_decimal_from_str,
+    deserialize_optional_decimal_or_zero, deserialize_optional_decimal_str, parse_decimal,
     parse_optional_decimal, serialize_decimal_as_str, serialize_optional_decimal_as_str,
 };
-use nautilus_model::{data::BarSpecification, enums::BarAggregation};
+use nautilus_model::{
+    data::BarSpecification,
+    enums::BarAggregation,
+    types::{Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw},
+};
 
 use super::enums::AxCandleWidth;
 
@@ -54,12 +58,72 @@ pub fn map_bar_spec_to_candle_width(spec: &BarSpecification) -> anyhow::Result<A
     }
 }
 
+/// Converts a [`Quantity`] to an i64 contract count for AX orders.
+///
+/// AX uses integer contracts only. Uses integer arithmetic to avoid
+/// floating-point precision issues.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The quantity represents a fractional number of contracts.
+/// - The quantity is zero.
+pub fn quantity_to_contracts(quantity: Quantity) -> anyhow::Result<u64> {
+    let raw = quantity.raw;
+    let scale = 10_u64.pow(FIXED_PRECISION as u32) as QuantityRaw;
+
+    // AX requires whole contract quantities
+    if !raw.is_multiple_of(scale) {
+        anyhow::bail!(
+            "AX requires whole contract quantities, was {}",
+            quantity.as_f64()
+        );
+    }
+
+    let contracts = (raw / scale) as u64;
+    if contracts == 0 {
+        anyhow::bail!("Order quantity must be at least 1 contract");
+    }
+    Ok(contracts)
+}
+
 #[cfg(test)]
 mod tests {
-    use nautilus_model::enums::PriceType;
+    use nautilus_model::{enums::PriceType, types::Quantity};
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_quantity_to_contracts_valid_precision_zero() {
+        let qty = Quantity::new(10.0, 0);
+        let result = quantity_to_contracts(qty);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 10);
+    }
+
+    #[rstest]
+    fn test_quantity_to_contracts_valid_with_precision() {
+        // Whole number with non-zero precision should work
+        let qty = Quantity::new(10.0, 2);
+        let result = quantity_to_contracts(qty);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 10);
+    }
+
+    #[rstest]
+    fn test_quantity_to_contracts_fractional_rejects() {
+        let qty = Quantity::new(10.5, 1);
+        let result = quantity_to_contracts(qty);
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_quantity_to_contracts_zero_rejects() {
+        let qty = Quantity::new(0.0, 0);
+        let result = quantity_to_contracts(qty);
+        assert!(result.is_err());
+    }
 
     #[rstest]
     fn test_map_bar_spec_1_second() {

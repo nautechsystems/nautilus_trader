@@ -137,7 +137,6 @@ impl ExecutionClientFactory for BlockchainExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: Rc<RefCell<Cache>>,
-        clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let blockchain_execution_config = config
             .as_any()
@@ -156,7 +155,6 @@ impl ExecutionClientFactory for BlockchainExecutionClientFactory {
             blockchain_execution_config.client_id,
             AccountType::Wallet,
             None,
-            clock,
             cache,
         );
 

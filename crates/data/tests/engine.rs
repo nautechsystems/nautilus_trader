@@ -37,12 +37,12 @@ use nautilus_common::{
     clock::{Clock, TestClock},
     messages::data::{
         DataCommand, RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCommand,
-        RequestCustomData, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
-        SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
-        SubscribeCommand, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
-        SubscribeInstrument, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
-        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCommand,
-        UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+        RequestCustomData, RequestFundingRates, RequestInstrument, RequestInstruments,
+        RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+        SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData, SubscribeFundingRates,
+        SubscribeIndexPrices, SubscribeInstrument, SubscribeMarkPrices, SubscribeQuotes,
+        SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
+        UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
         UnsubscribeInstrument, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
     },
     msgbus::{
@@ -1231,6 +1231,43 @@ fn test_execute_request_trades(
         None, // params
     );
     let cmd = DataCommand::Request(RequestCommand::Trades(req));
+    data_engine.execute(cmd.clone());
+
+    assert_eq!(recorder.borrow()[0], cmd);
+}
+
+#[rstest]
+fn test_execute_request_funding_rates(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let req = RequestFundingRates::new(
+        audusd_sim.id,
+        None, // start
+        None, // end
+        None, // limit
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None, // params
+    );
+    let cmd = DataCommand::Request(RequestCommand::FundingRates(req));
     data_engine.execute(cmd.clone());
 
     assert_eq!(recorder.borrow()[0], cmd);

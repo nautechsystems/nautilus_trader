@@ -1518,7 +1518,7 @@ impl DeribitHttpClient {
                     continue;
                 }
 
-                let symbol = Ustr::from(position.instrument_name.as_str());
+                let symbol = position.instrument_name;
                 if let Some(instrument) = self.get_instrument(&symbol) {
                     let report =
                         parse_position_status_report(position, &instrument, account_id, ts_init);

@@ -23,7 +23,9 @@ import pytest
 from ibapi.order_cancel import OrderCancel as IBOrderCancel
 
 from nautilus_trader.adapters.interactive_brokers.client.common import AccountOrderRef
+from nautilus_trader.adapters.interactive_brokers.client.common import get_venue_order_id
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
+from nautilus_trader.model.identifiers import VenueOrderId
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
 
@@ -171,7 +173,8 @@ async def test_openOrder(ib_client):
     )
 
     # Assert
-    assert ib_client._order_id_to_order_ref[order.orderId]
+    venue_order_id = get_venue_order_id(order.orderId, order.permId)
+    assert ib_client._order_id_to_order_ref[venue_order_id]
     assert mock_request.result == [order]
     handler_mock.assert_not_called()
 
@@ -206,8 +209,12 @@ async def test_process_open_order_when_request_not_present(ib_client):
 @pytest.mark.asyncio
 async def test_orderStatus(ib_client):
     # Arrange
+    venue_order_id = VenueOrderId("1")
     ib_client._order_id_to_order_ref = {
-        1: AccountOrderRef(order_id=1, account_id="DU123456"),
+        venue_order_id: AccountOrderRef(
+            order_id="O-20240102-1754-001-000-1",
+            account_id="DU123456",
+        ),
     }
     handler_func = Mock()
     ib_client._event_subscriptions = Mock()
@@ -231,7 +238,8 @@ async def test_orderStatus(ib_client):
     # Assert
     ib_client._event_subscriptions.get.assert_called_with("orderStatus-DU123456", None)
     handler_func.assert_called_with(
-        order_ref=1,
+        venue_order_id=venue_order_id,
+        order_ref="O-20240102-1754-001-000-1",
         order_status="Filled",
         avg_fill_price=100.0,
         filled=Decimal(100),
@@ -242,8 +250,12 @@ async def test_orderStatus(ib_client):
 @pytest.mark.asyncio
 async def test_orderStatus_with_zero_avg_fill_price(ib_client):
     # Arrange
+    venue_order_id = VenueOrderId("1")
     ib_client._order_id_to_order_ref = {
-        1: AccountOrderRef(order_id=1, account_id="DU123456"),
+        venue_order_id: AccountOrderRef(
+            order_id="O-20240102-1754-001-000-1",
+            account_id="DU123456",
+        ),
     }
     handler_func = Mock()
     ib_client._event_subscriptions = Mock()
@@ -267,7 +279,8 @@ async def test_orderStatus_with_zero_avg_fill_price(ib_client):
     # Assert
     ib_client._event_subscriptions.get.assert_called_with("orderStatus-DU123456", None)
     handler_func.assert_called_with(
-        order_ref=1,
+        venue_order_id=venue_order_id,
+        order_ref="O-20240102-1754-001-000-1",
         order_status="PartiallyFilled",
         avg_fill_price=0.0,
         filled=Decimal(50),

@@ -32,7 +32,8 @@ use dashmap::DashMap;
 use nautilus_common::live::get_runtime;
 use nautilus_core::{UUID4, consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt};
 use nautilus_model::{
-    enums::{OrderSide, OrderType, TimeInForce},
+    data::BarType,
+    enums::{AggregationSource, BarAggregation, OrderSide, OrderType, PriceType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
@@ -59,7 +60,7 @@ use crate::{
             BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType, BybitTimeInForce,
             BybitTriggerDirection, BybitTriggerType, BybitWsOrderRequestOp,
         },
-        parse::{extract_raw_symbol, make_bybit_symbol},
+        parse::{bar_spec_to_bybit_interval, extract_raw_symbol, make_bybit_symbol},
         symbol::BybitSymbol,
         urls::{bybit_ws_private_url, bybit_ws_public_url, bybit_ws_trade_url},
     },
@@ -125,11 +126,11 @@ pub struct BybitWebSocketClient {
     signal: Arc<AtomicBool>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     subscriptions: SubscriptionState,
-    is_authenticated: Arc<AtomicBool>,
     account_id: Option<AccountId>,
     mm_level: Arc<AtomicU8>,
     bars_timestamp_on_close: bool,
     instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    bar_types_cache: Arc<DashMap<String, BarType>>,
     funding_cache: FundingCache,
     cancellation_token: CancellationToken,
 }
@@ -163,11 +164,11 @@ impl Clone for BybitWebSocketClient {
             signal: Arc::clone(&self.signal),
             task_handle: None, // Each clone gets its own task handle
             subscriptions: self.subscriptions.clone(),
-            is_authenticated: Arc::clone(&self.is_authenticated),
             account_id: self.account_id,
             mm_level: Arc::clone(&self.mm_level),
             bars_timestamp_on_close: self.bars_timestamp_on_close,
             instruments_cache: Arc::clone(&self.instruments_cache),
+            bar_types_cache: Arc::clone(&self.bar_types_cache),
             funding_cache: Arc::clone(&self.funding_cache),
             cancellation_token: self.cancellation_token.clone(),
         }
@@ -216,8 +217,8 @@ impl BybitWebSocketClient {
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
             subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
-            is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
+            bar_types_cache: Arc::new(DashMap::new()),
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
             bars_timestamp_on_close: true,
@@ -265,8 +266,8 @@ impl BybitWebSocketClient {
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
             subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
-            is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
+            bar_types_cache: Arc::new(DashMap::new()),
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
             bars_timestamp_on_close: true,
@@ -314,8 +315,8 @@ impl BybitWebSocketClient {
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
             subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
-            is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
+            bar_types_cache: Arc::new(DashMap::new()),
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
             bars_timestamp_on_close: true,
@@ -465,13 +466,14 @@ impl BybitWebSocketClient {
         let credential = self.credential.clone();
         let requires_auth = self.requires_auth;
         let funding_cache = Arc::clone(&self.funding_cache);
+        let bar_types_cache = Arc::clone(&self.bar_types_cache);
         let account_id = self.account_id;
         let product_type = self.product_type;
         let bars_timestamp_on_close = self.bars_timestamp_on_close;
         let mm_level = Arc::clone(&self.mm_level);
         let cmd_tx_for_reconnect = cmd_tx.clone();
         let auth_tracker = self.auth_tracker.clone();
-        let is_authenticated = Arc::clone(&self.is_authenticated);
+        let auth_tracker_for_handler = auth_tracker.clone();
 
         let stream_handle = get_runtime().spawn(async move {
             let mut handler = FeedHandler::new(
@@ -483,9 +485,10 @@ impl BybitWebSocketClient {
                 product_type,
                 bars_timestamp_on_close,
                 mm_level.clone(),
-                auth_tracker,
+                auth_tracker_for_handler,
                 subscriptions.clone(),
                 funding_cache.clone(),
+                bar_types_cache.clone(),
             );
 
             // Helper closure to resubscribe all tracked subscriptions after reconnection
@@ -564,10 +567,12 @@ impl BybitWebSocketClient {
                         funding_cache.write().await.clear();
 
                         if requires_auth {
-                            is_authenticated.store(false, Ordering::Relaxed);
                             log::debug!("Re-authenticating after reconnection");
 
                             if let Some(cred) = &credential {
+                                // Begin auth attempt so succeed() will update state
+                                let _rx = auth_tracker.begin();
+
                                 let expires = chrono::Utc::now().timestamp_millis()
                                     + WEBSOCKET_AUTH_WINDOW_MS;
                                 let signature = cred.sign_websocket_auth(expires);
@@ -610,7 +615,6 @@ impl BybitWebSocketClient {
                     }
                     Some(NautilusWsMessage::Authenticated) => {
                         log::debug!("Authenticated, resubscribing");
-                        is_authenticated.store(true, Ordering::Relaxed);
                         resubscribe_all().await;
                         continue;
                     }
@@ -684,7 +688,7 @@ impl BybitWebSocketClient {
             log::debug!("No task handle to await");
         }
 
-        self.is_authenticated.store(false, Ordering::Relaxed);
+        self.auth_tracker.invalidate();
 
         log::debug!("Closed");
 
@@ -1032,32 +1036,70 @@ impl BybitWebSocketClient {
     /// # References
     ///
     /// <https://bybit-exchange.github.io/docs/v5/websocket/public/kline>
-    pub async fn subscribe_klines(
-        &self,
-        instrument_id: InstrumentId,
-        interval: impl Into<String>,
-    ) -> BybitWsResult<()> {
+    pub async fn subscribe_bars(&self, bar_type: BarType) -> BybitWsResult<()> {
+        let spec = bar_type.spec();
+
+        // Bybit klines are always last-trade OHLC from the exchange
+        if spec.price_type != PriceType::Last {
+            return Err(BybitWsError::ClientError(format!(
+                "Bybit bars only support LAST price type, received {}",
+                spec.price_type
+            )));
+        }
+        if bar_type.aggregation_source() != AggregationSource::External {
+            return Err(BybitWsError::ClientError(format!(
+                "Bybit bars only support EXTERNAL aggregation source, received {}",
+                bar_type.aggregation_source()
+            )));
+        }
+
+        // Reject MINUTE with step >= 60, require HOUR aggregation instead
+        let step = spec.step.get();
+        if spec.aggregation == BarAggregation::Minute && step >= 60 {
+            let hours = step / 60;
+            return Err(BybitWsError::ClientError(format!(
+                "Invalid bar type: {step}-MINUTE not supported, use {hours}-HOUR instead"
+            )));
+        }
+
+        let interval = bar_spec_to_bybit_interval(spec.aggregation, spec.step.get() as u64)
+            .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
+
+        let instrument_id = bar_type.instrument_id();
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
         let topic = format!(
             "{}.{}.{raw_symbol}",
             BybitWsPublicChannel::Kline.as_ref(),
-            interval.into()
+            interval
         );
+
+        // Coordinate with reference counting to avoid duplicate cache entries
+        if self.subscriptions.get_reference_count(&topic) == 0 {
+            self.bar_types_cache.insert(topic.clone(), bar_type);
+        }
+
         self.subscribe(vec![topic]).await
     }
 
     /// Unsubscribes from kline/candlestick updates for a specific instrument.
-    pub async fn unsubscribe_klines(
-        &self,
-        instrument_id: InstrumentId,
-        interval: impl Into<String>,
-    ) -> BybitWsResult<()> {
+    pub async fn unsubscribe_bars(&self, bar_type: BarType) -> BybitWsResult<()> {
+        let spec = bar_type.spec();
+        let interval = bar_spec_to_bybit_interval(spec.aggregation, spec.step.get() as u64)
+            .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
+
+        let instrument_id = bar_type.instrument_id();
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
         let topic = format!(
             "{}.{}.{raw_symbol}",
             BybitWsPublicChannel::Kline.as_ref(),
-            interval.into()
+            interval
         );
+
+        // Coordinate with reference counting to preserve cache for other subscribers
+        if self.subscriptions.get_reference_count(&topic) == 1 {
+            self.bar_types_cache.remove(&topic);
+        }
+
         self.unsubscribe(vec![topic]).await
     }
 
@@ -1178,7 +1220,7 @@ impl BybitWebSocketClient {
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
     ) -> BybitWsResult<()> {
-        if !self.is_authenticated.load(Ordering::Relaxed) {
+        if !self.auth_tracker.is_authenticated() {
             return Err(BybitWsError::Authentication(
                 "Must be authenticated to place orders".to_string(),
             ));
@@ -1213,7 +1255,7 @@ impl BybitWebSocketClient {
         instrument_id: InstrumentId,
         venue_order_id: Option<VenueOrderId>,
     ) -> BybitWsResult<()> {
-        if !self.is_authenticated.load(Ordering::Relaxed) {
+        if !self.auth_tracker.is_authenticated() {
             return Err(BybitWsError::Authentication(
                 "Must be authenticated to amend orders".to_string(),
             ));
@@ -1249,7 +1291,7 @@ impl BybitWebSocketClient {
         instrument_id: InstrumentId,
         venue_order_id: Option<VenueOrderId>,
     ) -> BybitWsResult<()> {
-        if !self.is_authenticated.load(Ordering::Relaxed) {
+        if !self.auth_tracker.is_authenticated() {
             return Err(BybitWsError::Authentication(
                 "Must be authenticated to cancel orders".to_string(),
             ));
@@ -1282,7 +1324,7 @@ impl BybitWebSocketClient {
         strategy_id: StrategyId,
         orders: Vec<BybitWsPlaceOrderParams>,
     ) -> BybitWsResult<()> {
-        if !self.is_authenticated.load(Ordering::Relaxed) {
+        if !self.auth_tracker.is_authenticated() {
             return Err(BybitWsError::Authentication(
                 "Must be authenticated to place orders".to_string(),
             ));
@@ -1412,7 +1454,7 @@ impl BybitWebSocketClient {
         #[allow(unused_variables)] strategy_id: StrategyId,
         orders: Vec<BybitWsAmendOrderParams>,
     ) -> BybitWsResult<()> {
-        if !self.is_authenticated.load(Ordering::Relaxed) {
+        if !self.auth_tracker.is_authenticated() {
             return Err(BybitWsError::Authentication(
                 "Must be authenticated to amend orders".to_string(),
             ));
@@ -1460,7 +1502,7 @@ impl BybitWebSocketClient {
         strategy_id: StrategyId,
         orders: Vec<BybitWsCancelOrderParams>,
     ) -> BybitWsResult<()> {
-        if !self.is_authenticated.load(Ordering::Relaxed) {
+        if !self.auth_tracker.is_authenticated() {
             return Err(BybitWsError::Authentication(
                 "Must be authenticated to cancel orders".to_string(),
             ));
@@ -2105,6 +2147,9 @@ impl BybitWebSocketClient {
         };
 
         let payload = serde_json::to_string(&auth_message)?;
+
+        // Begin auth attempt so succeed() will update state
+        let _rx = self.auth_tracker.begin();
 
         self.cmd_tx
             .read()

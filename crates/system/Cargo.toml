@@ -27,6 +27,7 @@ streaming = ["nautilus-persistence"]
 extension-module = ["python", "pyo3/extension-module", "streaming"]
 live = ["nautilus-common/live"]
 python = ["pyo3", "streaming"]
+tracing-bridge = ["nautilus-common/tracing-bridge"]
 
 [package.metadata.docs.rs]
 all-features = true

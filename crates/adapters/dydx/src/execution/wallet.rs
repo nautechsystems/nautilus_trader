@@ -15,15 +15,14 @@
 
 //! Wallet and account management for dYdX v4.
 //!
-//! This module provides wallet functionality for deriving accounts from BIP-39 mnemonics
-//! and managing signing keys for Cosmos SDK transactions.
+//! This module provides wallet functionality for managing signing keys for Cosmos SDK transactions.
+//! Wallets are created from hex-encoded private keys.
 
-use std::{fmt::Debug, str::FromStr};
+use std::fmt::Debug;
 
 use anyhow::Context;
 use cosmrs::{
     AccountId,
-    bip32::{DerivationPath, Language, Mnemonic, Seed},
     crypto::{PublicKey, secp256k1::SigningKey},
     tx,
 };
@@ -33,94 +32,113 @@ use cosmrs::{
 /// See [Cosmos accounts](https://docs.cosmos.network/main/learn/beginner/accounts).
 const BECH32_PREFIX_DYDX: &str = "dydx";
 
-/// Hierarchical Deterministic (HD) [wallet](https://dydx.exchange/crypto-learning/glossary?#wallet)
-/// which allows multiple addresses and signing keys from one master seed.
+/// Wallet for dYdX v4 transaction signing.
 ///
-/// [BIP-44](https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki) introduced a wallet
-/// standard to derive multiple accounts for different chains from a single seed (which allows
-/// recovery of the whole tree of keys).
-///
-/// This `Wallet` uses the Cosmos ATOM derivation path to generate dYdX addresses.
+/// A wallet holds a secp256k1 private key used to sign Cosmos SDK transactions.
+/// The private key bytes are stored to allow recreating SigningKey (which doesn't
+/// implement Clone). Address and account_id are pre-computed during construction
+/// to avoid repeated derivation.
 ///
 /// # Security
 ///
-/// The `Seed` type from bip32 implements `Drop` for secure cleanup of seed material.
-///
-/// Note: Deriving `zeroize::ZeroizeOnDrop` is not possible because `bip32::Seed` does not
-/// expose the `zeroize::Zeroize` trait (it uses internal Drop-based cleanup).
-///
-/// See also [Mastering Bitcoin](https://github.com/bitcoinbook/bitcoinbook/blob/develop/ch05_wallets.adoc).
+/// Private key bytes should be treated as sensitive material.
 pub struct Wallet {
-    seed: Seed,
+    /// Raw private key bytes (32 bytes for secp256k1).
+    /// Stored separately because SigningKey doesn't implement Clone or expose bytes.
+    private_key_bytes: Box<[u8]>,
+    /// Pre-computed dYdX address (bech32 encoded).
+    address: String,
+    /// Pre-computed Cosmos SDK account ID.
+    account_id: AccountId,
 }
 
 impl Debug for Wallet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Wallet))
-            .field("seed", &"<redacted>")
+            .field("private_key_bytes", &"<redacted>")
+            .field("address", &self.address)
             .finish()
     }
 }
 
+impl Clone for Wallet {
+    fn clone(&self) -> Self {
+        Self {
+            private_key_bytes: self.private_key_bytes.clone(),
+            address: self.address.clone(),
+            account_id: self.account_id.clone(),
+        }
+    }
+}
+
 impl Wallet {
-    /// Derive a seed from a 24-word English mnemonic phrase.
+    /// Create a wallet from a hex-encoded private key.
+    ///
+    /// The private key should be a 32-byte secp256k1 key encoded as hex,
+    /// optionally with a `0x` prefix. Address and account ID are derived
+    /// during construction.
     ///
     /// # Errors
     ///
-    /// Returns an error if the mnemonic is invalid or cannot be converted to a seed.
-    pub fn from_mnemonic(mnemonic: &str) -> anyhow::Result<Self> {
-        let word_count = mnemonic.split_whitespace().count();
-        let mnemonic_obj = Mnemonic::new(mnemonic, Language::English).with_context(|| {
-            format!(
-                "Invalid BIP-39 mnemonic: expected 12, 15, 18, 21, or 24 words, was {word_count}. \
-                 Ensure words are space-separated and from the BIP-39 English wordlist"
-            )
-        })?;
-        let seed = mnemonic_obj.to_seed("");
-        Ok(Self { seed })
-    }
+    /// Returns an error if the private key is invalid hex or not a valid secp256k1 key.
+    pub fn from_private_key(private_key_hex: &str) -> anyhow::Result<Self> {
+        let key_bytes = hex::decode(private_key_hex.trim_start_matches("0x"))
+            .context("Invalid hex private key")?;
 
-    /// Derive a dYdX account with zero account and sequence numbers.
-    ///
-    /// Account and sequence numbers must be fetched from the chain before signing transactions.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the account derivation fails.
-    pub fn account_offline(&self, index: u32) -> Result<Account, anyhow::Error> {
-        self.derive_account(index, BECH32_PREFIX_DYDX)
-    }
+        // Validate the key and derive address/account_id
+        let signing_key = SigningKey::from_slice(&key_bytes)
+            .map_err(|e| anyhow::anyhow!("Invalid secp256k1 private key: {e}"))?;
 
-    fn derive_account(&self, index: u32, prefix: &str) -> Result<Account, anyhow::Error> {
-        // BIP-44 derivation path for Cosmos (coin type 118)
-        // See https://github.com/satoshilabs/slips/blob/master/slip-0044.md
-        let derivation_str = format!("m/44'/118'/0'/0/{index}");
-        let derivation_path = DerivationPath::from_str(&derivation_str)?;
-        let private_key = SigningKey::derive_from_path(&self.seed, &derivation_path)?;
-        let public_key = private_key.public_key();
-        let account_id = public_key.account_id(prefix).map_err(anyhow::Error::msg)?;
+        let public_key = signing_key.public_key();
+        let account_id = public_key
+            .account_id(BECH32_PREFIX_DYDX)
+            .map_err(|e| anyhow::anyhow!("Failed to derive account ID: {e}"))?;
         let address = account_id.to_string();
 
-        Ok(Account {
-            index,
+        Ok(Self {
+            private_key_bytes: key_bytes.into_boxed_slice(),
             address,
             account_id,
-            key: private_key,
+        })
+    }
+
+    /// Get a dYdX account with zero account and sequence numbers.
+    ///
+    /// Creates an account using the pre-computed address/account_id.
+    /// SigningKey is recreated from stored bytes (it doesn't implement Clone).
+    /// Account and sequence numbers must be set before signing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the signing key creation fails.
+    pub fn account_offline(&self) -> Result<Account, anyhow::Error> {
+        // SigningKey doesn't impl Clone, so recreate from stored bytes
+        let key = SigningKey::from_slice(&self.private_key_bytes)
+            .map_err(|e| anyhow::anyhow!("Failed to create signing key: {e}"))?;
+
+        Ok(Account {
+            address: self.address.clone(),
+            account_id: self.account_id.clone(),
+            key,
             account_number: 0,
             sequence_number: 0,
         })
     }
+
+    /// Returns the pre-computed wallet address.
+    #[must_use]
+    pub fn address(&self) -> &str {
+        &self.address
+    }
 }
 
-/// Represents a derived dYdX account.
+/// Represents a dYdX account.
 ///
 /// An account contains the signing key and metadata needed to sign and broadcast transactions.
 /// The `account_number` and `sequence_number` must be set from on-chain data before signing.
 ///
 /// See also [`Wallet`].
 pub struct Account {
-    /// Derivation index of the account.
-    pub index: u32,
     /// dYdX address (bech32 encoded).
     pub address: String,
     /// Cosmos SDK account ID.
@@ -136,7 +154,6 @@ pub struct Account {
 impl Debug for Account {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Account))
-            .field("index", &self.index)
             .field("address", &self.address)
             .field("account_id", &self.account_id)
             .field("key", &"<redacted>")

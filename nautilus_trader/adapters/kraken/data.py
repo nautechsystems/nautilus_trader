@@ -475,7 +475,6 @@ class KrakenDataClient(LiveMarketDataClient):
         await self._ensure_futures_ws_connected()
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
         await self._ws_client_futures.subscribe_mark_price(pyo3_instrument_id)
-        self._log.info(f"Subscribed to mark price for {instrument_id}", LogColor.BLUE)
 
     async def _subscribe_index_prices(self, command: SubscribeIndexPrices) -> None:
         instrument_id = command.instrument_id
@@ -495,7 +494,6 @@ class KrakenDataClient(LiveMarketDataClient):
         await self._ensure_futures_ws_connected()
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
         await self._ws_client_futures.subscribe_index_price(pyo3_instrument_id)
-        self._log.info(f"Subscribed to index price for {instrument_id}", LogColor.BLUE)
 
     async def _unsubscribe_mark_prices(self, command: UnsubscribeMarkPrices) -> None:
         instrument_id = command.instrument_id
@@ -510,7 +508,6 @@ class KrakenDataClient(LiveMarketDataClient):
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
         await self._ws_client_futures.unsubscribe_mark_price(pyo3_instrument_id)
-        self._log.info(f"Unsubscribed from mark price for {instrument_id}", LogColor.BLUE)
 
     async def _unsubscribe_index_prices(self, command: UnsubscribeIndexPrices) -> None:
         instrument_id = command.instrument_id
@@ -525,7 +522,6 @@ class KrakenDataClient(LiveMarketDataClient):
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
         await self._ws_client_futures.unsubscribe_index_price(pyo3_instrument_id)
-        self._log.info(f"Unsubscribed from index price for {instrument_id}", LogColor.BLUE)
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
         all_pyo3_instruments = []

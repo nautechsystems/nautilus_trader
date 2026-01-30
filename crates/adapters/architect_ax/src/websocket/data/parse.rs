@@ -442,7 +442,6 @@ mod tests {
     #[rstest]
     fn test_parse_book_l1_quote() {
         let book = AxMdBookL1 {
-            t: "1".to_string(),
             ts: 1700000000,
             tn: 12345,
             s: Ustr::from("BTC-PERP"),
@@ -470,7 +469,6 @@ mod tests {
     #[rstest]
     fn test_parse_book_l2_deltas() {
         let book = AxMdBookL2 {
-            t: "2".to_string(),
             ts: 1700000000,
             tn: 12345,
             s: Ustr::from("BTC-PERP"),
@@ -511,7 +509,6 @@ mod tests {
     #[rstest]
     fn test_parse_book_l3_deltas() {
         let book = AxMdBookL3 {
-            t: "3".to_string(),
             ts: 1700000000,
             tn: 12345,
             s: Ustr::from("BTC-PERP"),
@@ -540,7 +537,6 @@ mod tests {
     #[rstest]
     fn test_parse_trade_tick() {
         let trade = AxMdTrade {
-            t: "s".to_string(),
             ts: 1700000000,
             tn: 12345,
             s: Ustr::from("BTC-PERP"),
@@ -676,7 +672,6 @@ mod tests {
     #[rstest]
     fn test_parse_book_l1_empty_sides() {
         let book = AxMdBookL1 {
-            t: "1".to_string(),
             ts: 1700000000,
             tn: 12345,
             s: Ustr::from("TEST-PERP"),
@@ -698,7 +693,6 @@ mod tests {
     #[rstest]
     fn test_parse_book_l2_empty_book() {
         let book = AxMdBookL2 {
-            t: "2".to_string(),
             ts: 1700000000,
             tn: 12345,
             s: Ustr::from("TEST-PERP"),
@@ -722,7 +716,6 @@ mod tests {
         use crate::common::enums::AxCandleWidth;
 
         let candle = AxMdCandle {
-            t: "c".to_string(),
             symbol: Ustr::from("BTC-PERP"),
             ts: 1700000000,
             open: dec!(50000.00),

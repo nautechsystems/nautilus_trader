@@ -17,7 +17,7 @@
 //!
 //! This binary tests order submission via gRPC to dYdX v4 **mainnet**.
 //! It demonstrates:
-//! - Wallet initialization from mnemonic
+//! - Wallet initialization from private key
 //! - gRPC client setup
 //! - Instrument loading from HTTP API
 //! - Order submission via gRPC (market and limit orders)
@@ -26,12 +26,12 @@
 //! Usage:
 //! ```bash
 //! # Set environment variables
-//! export DYDX_MNEMONIC="your mnemonic here"
+//! export DYDX_PRIVATE_KEY="your hex private key here"
 //! export DYDX_GRPC_URL="https://dydx-grpc.publicnode.com:443"  # Optional
 //! export DYDX_HTTP_URL="https://indexer.dydx.trade"  # Optional
 //!
 //! **Requirements**:
-//! - Valid dYdX mainnet wallet mnemonic (24 words)
+//! - Valid dYdX mainnet wallet private key (hex)
 //! - Mainnet funds in subaccount 0
 //! - Network access to mainnet gRPC and HTTP endpoints
 //!
@@ -44,6 +44,7 @@ use nautilus_dydx::{
         consts::{DYDX_GRPC_URLS, DYDX_HTTP_URL, DYDX_TESTNET_GRPC_URLS, DYDX_TESTNET_HTTP_URL},
         enums::DydxOrderStatus,
     },
+    execution::wallet::{Account, Wallet},
     grpc::{
         TxBuilder,
         client::DydxGrpcClient,
@@ -51,7 +52,6 @@ use nautilus_dydx::{
             OrderBuilder, OrderGoodUntil, OrderMarketParams, SHORT_TERM_ORDER_MAXIMUM_LIFETIME,
         },
         types::ChainId,
-        wallet::{Account, Wallet},
     },
     http::{
         client::{DydxHttpClient, DydxRawHttpClient},
@@ -81,22 +81,22 @@ const DEFAULT_QUANTITY: &str = "0.001";
 
 #[derive(Debug, Deserialize)]
 struct Credentials {
-    mnemonic: String,
+    private_key: String,
     #[serde(default)]
     subaccount: u32,
 }
 
 fn load_credentials() -> Result<Credentials, Box<dyn std::error::Error>> {
-    if let Ok(mnemonic) = env::var("DYDX_MNEMONIC") {
-        log::info!("Loaded credentials from DYDX_MNEMONIC environment variable");
+    if let Ok(private_key) = env::var("DYDX_PRIVATE_KEY") {
+        log::info!("Loaded credentials from DYDX_PRIVATE_KEY environment variable");
         return Ok(Credentials {
-            mnemonic,
+            private_key,
             subaccount: DEFAULT_SUBACCOUNT,
         });
     }
 
     Err(
-        "No credentials found. Please set DYDX_MNEMONIC environment variable"
+        "No credentials found. Please set DYDX_PRIVATE_KEY environment variable"
             .to_string()
             .into(),
     )
@@ -182,8 +182,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("");
 
     // Initialize wallet
-    let wallet = Wallet::from_mnemonic(&creds.mnemonic)?;
-    let mut account = wallet.account_offline(subaccount_number)?;
+    let wallet = Wallet::from_private_key(&creds.private_key)?;
+    let mut account = wallet.account_offline()?;
     let wallet_address = account.address.clone();
     log::info!("Wallet address: {wallet_address}");
 
@@ -379,8 +379,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn run_all_edge_case_tests(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let is_mainnet = args.iter().any(|a| a == "--mainnet");
     let creds = load_credentials()?;
-    let wallet = Wallet::from_mnemonic(&creds.mnemonic)?;
-    let mut account = wallet.account_offline(0)?;
+    let wallet = Wallet::from_private_key(&creds.private_key)?;
+    let mut account = wallet.account_offline()?;
     let wallet_address = account.address.clone();
 
     rustls::crypto::aws_lc_rs::default_provider()

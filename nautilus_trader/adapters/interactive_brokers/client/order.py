@@ -26,8 +26,10 @@ from ibapi.order_state import OrderState as IBOrderState
 
 from nautilus_trader.adapters.interactive_brokers.client.common import AccountOrderRef
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
+from nautilus_trader.adapters.interactive_brokers.client.common import get_venue_order_id
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.model.identifiers import VenueOrderId
 
 
 class InteractiveBrokersClientOrderMixin(BaseMixin):
@@ -54,7 +56,9 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
             details, and order specifics.
 
         """
-        self._order_id_to_order_ref[order.orderId] = AccountOrderRef(
+        # For orders we place, orderId is valid (permId not yet assigned)
+        venue_order_id = VenueOrderId(str(order.orderId))
+        self._order_id_to_order_ref[venue_order_id] = AccountOrderRef(
             account_id=order.account,
             order_id=order.orderRef.rsplit(":", 1)[0],
         )
@@ -275,7 +279,8 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
             request.result.append(order)
 
             # Validate and add reverse mapping, if not exists
-            if order_ref := self._order_id_to_order_ref.get(order.orderId):
+            venue_order_id = get_venue_order_id(order.orderId, order.permId)
+            if order_ref := self._order_id_to_order_ref.get(venue_order_id):
                 if not (
                     order_ref.account_id == order.account and order_ref.order_id == order.orderRef
                 ):
@@ -284,7 +289,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                         f"was (account={order.account}, order_id={order.orderRef}",
                     )
             else:
-                self._order_id_to_order_ref[order.orderId] = AccountOrderRef(
+                self._order_id_to_order_ref[venue_order_id] = AccountOrderRef(
                     account_id=order.account,
                     order_id=order.orderRef,
                 )
@@ -328,14 +333,16 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         Note: Often there are duplicate orderStatus messages.
 
         """
-        order_ref = self._order_id_to_order_ref.get(order_id, None)
+        venue_order_id = get_venue_order_id(order_id, perm_id)
+        order_ref = self._order_id_to_order_ref.get(venue_order_id, None)
 
         if order_ref:
             name = f"orderStatus-{order_ref.account_id}"
 
             if handler := self._event_subscriptions.get(name, None):
                 handler(
-                    order_ref=self._order_id_to_order_ref[order_id].order_id,
+                    venue_order_id=venue_order_id,
+                    order_ref=order_ref.order_id,
                     order_status=status,
                     avg_fill_price=avg_fill_price,
                     filled=filled,

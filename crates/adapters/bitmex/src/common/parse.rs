@@ -295,9 +295,7 @@ pub const fn parse_aggressor_side(side: &Option<BitmexSide>) -> AggressorSide {
 /// Maps BitMEX liquidity indicators onto Nautilus liquidity sides.
 #[must_use]
 pub fn parse_liquidity_side(liquidity: &Option<BitmexLiquidityIndicator>) -> LiquiditySide {
-    liquidity
-        .map(std::convert::Into::into)
-        .unwrap_or(LiquiditySide::NoLiquiditySide)
+    liquidity.map_or(LiquiditySide::NoLiquiditySide, std::convert::Into::into)
 }
 
 /// Derives a Nautilus position side from the BitMEX `currentQty` value.

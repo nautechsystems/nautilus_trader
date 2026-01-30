@@ -183,6 +183,9 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
             else None
         )
 
+        filled_qty_decimal = Decimal(self.z)
+        avg_px = Decimal(self.Z) / filled_qty_decimal if filled_qty_decimal > 0 else None
+
         return OrderStatusReport(
             account_id=account_id,
             instrument_id=instrument_id,
@@ -200,7 +203,7 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
             quantity=Quantity.from_str(self.q),
             filled_qty=Quantity.from_str(self.z),
             display_qty=display_qty,
-            avg_px=None,
+            avg_px=avg_px,
             post_only=post_only,
             reduce_only=False,
             report_id=UUID4(),
@@ -217,13 +220,16 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
         Handle BinanceSpotOrderUpdateData as payload of executionReport event.
         """
         client_order_id_str: str = self.c
-        if not client_order_id_str or not client_order_id_str.startswith("O"):
+        if not client_order_id_str:
             client_order_id_str = self.C
-        client_order_id = ClientOrderId(client_order_id_str or UUID4().value)
+        client_order_id = ClientOrderId(client_order_id_str) if client_order_id_str else None
         ts_event = millis_to_nanos(self.T)
         venue_order_id = VenueOrderId(str(self.i))
         instrument_id = exec_client._get_cached_instrument_id(self.s)
-        strategy_id = exec_client._cache.strategy_id_for_order(client_order_id)
+        strategy_id = None
+
+        if client_order_id:
+            strategy_id = exec_client._cache.strategy_id_for_order(client_order_id)
 
         if strategy_id is None:
             report = self.parse_to_order_status_report(

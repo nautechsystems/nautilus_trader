@@ -21,7 +21,8 @@
 use nautilus_core::{
     UnixNanos,
     serialization::{
-        deserialize_optional_decimal, serialize_decimal_as_str, serialize_optional_decimal_as_str,
+        deserialize_optional_decimal_str, serialize_decimal_as_str,
+        serialize_optional_decimal_as_str,
     },
 };
 use nautilus_model::{
@@ -161,12 +162,93 @@ pub struct AxMdUnsubscribeCandles {
 /// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/md-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdHeartbeat {
-    /// Message type (always "h").
-    pub t: String,
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
     /// Transaction number.
     pub tn: i64,
+}
+
+/// Incoming market data WebSocket message.
+///
+/// Deserializes directly from JSON using the "t" field as discriminator.
+#[derive(Clone, Debug)]
+pub enum AxMdMessage {
+    BookL1(AxMdBookL1),
+    BookL2(AxMdBookL2),
+    BookL3(AxMdBookL3),
+    TickerOrTrade(AxMdTickerOrTrade),
+    Candle(AxMdCandle),
+    Heartbeat(AxMdHeartbeat),
+    /// Subscription response (success or already subscribed).
+    SubscriptionResponse(AxMdSubscriptionResponse),
+    Error(AxWsError),
+}
+
+/// Subscription response from market data WebSocket.
+#[derive(Clone, Debug, Deserialize)]
+pub struct AxMdSubscriptionResponse {
+    /// Request ID for correlation.
+    pub rid: i64,
+    /// Result payload (contains subscribed symbol or candle info).
+    pub result: AxMdSubscriptionResult,
+}
+
+/// Result payload for subscription response.
+#[derive(Clone, Debug, Deserialize)]
+pub struct AxMdSubscriptionResult {
+    /// Subscribed symbol (for regular subscriptions).
+    #[serde(default)]
+    pub subscribed: Option<String>,
+    /// Subscribed candle info (for candle subscriptions).
+    #[serde(default)]
+    pub subscribed_candle: Option<String>,
+    /// Unsubscribed symbol (for unsubscription responses).
+    #[serde(default)]
+    pub unsubscribed: Option<String>,
+    /// Unsubscribed candle info (for candle unsubscription responses).
+    #[serde(default)]
+    pub unsubscribed_candle: Option<String>,
+}
+
+/// Error response from market data WebSocket with nested error object.
+#[derive(Clone, Debug, Deserialize)]
+pub struct AxMdErrorResponse {
+    /// Request ID for correlation.
+    pub rid: Option<i64>,
+    /// Nested error object containing code and message.
+    pub error: AxMdErrorInner,
+}
+
+/// Inner error object for market data WebSocket errors.
+#[derive(Clone, Debug, Deserialize)]
+pub struct AxMdErrorInner {
+    /// Error code.
+    pub code: i32,
+    /// Error message.
+    pub message: String,
+}
+
+impl From<AxMdErrorResponse> for AxWsError {
+    fn from(resp: AxMdErrorResponse) -> Self {
+        Self {
+            code: Some(resp.error.code.to_string()),
+            message: resp.error.message,
+            request_id: resp.rid,
+        }
+    }
+}
+
+/// Ticker or trade message from market data WebSocket.
+///
+/// Both share the same "s"/"t" message type but have different fields.
+/// Ticker has OHLCV fields, trade does not.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum AxMdTickerOrTrade {
+    /// Ticker/statistics message (has OHLCV fields).
+    Ticker(AxMdTicker),
+    /// Trade message (no OHLCV fields).
+    Trade(AxMdTrade),
 }
 
 /// Ticker/statistics message from market data WebSocket.
@@ -175,8 +257,6 @@ pub struct AxMdHeartbeat {
 /// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/md-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdTicker {
-    /// Message type (always "s").
-    pub t: String,
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
     /// Transaction number.
@@ -187,7 +267,7 @@ pub struct AxMdTicker {
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub p: Decimal,
     /// Last quantity.
-    pub q: i64,
+    pub q: u64,
     /// Open price (24h).
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub o: Decimal,
@@ -198,7 +278,7 @@ pub struct AxMdTicker {
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub h: Decimal,
     /// Volume (24h).
-    pub v: i64,
+    pub v: u64,
     /// Open interest.
     #[serde(default)]
     pub oi: Option<i64>,
@@ -206,14 +286,10 @@ pub struct AxMdTicker {
 
 /// Trade message from market data WebSocket.
 ///
-/// Note: Uses same "s" message type as ticker but with different fields.
-///
 /// # References
 /// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/md-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdTrade {
-    /// Message type (always "s").
-    pub t: String,
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
     /// Transaction number.
@@ -224,10 +300,69 @@ pub struct AxMdTrade {
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub p: Decimal,
     /// Trade quantity.
-    pub q: i64,
+    pub q: u64,
     /// Trade direction: "B" (buy) or "S" (sell). Optional for some message types.
     #[serde(default)]
     pub d: Option<AxOrderSide>,
+}
+
+impl<'de> Deserialize<'de> for AxMdMessage {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error;
+
+        let value = serde_json::Value::deserialize(deserializer)?;
+
+        // Handle subscription response messages (have "result" field)
+        if value.get("result").is_some() {
+            return serde_json::from_value(value)
+                .map(AxMdMessage::SubscriptionResponse)
+                .map_err(D::Error::custom);
+        }
+
+        // Handle error response messages (have "error" field but no "t")
+        if value.get("error").is_some() && value.get("t").is_none() {
+            return serde_json::from_value::<AxMdErrorResponse>(value)
+                .map(|resp| Self::Error(resp.into()))
+                .map_err(D::Error::custom);
+        }
+
+        // Handle data messages (have "t" field)
+        let t = value
+            .get("t")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| D::Error::missing_field("t"))?;
+
+        match t {
+            "1" => serde_json::from_value(value)
+                .map(AxMdMessage::BookL1)
+                .map_err(D::Error::custom),
+            "2" => serde_json::from_value(value)
+                .map(AxMdMessage::BookL2)
+                .map_err(D::Error::custom),
+            "3" => serde_json::from_value(value)
+                .map(AxMdMessage::BookL3)
+                .map_err(D::Error::custom),
+            "s" | "t" => serde_json::from_value(value)
+                .map(AxMdMessage::TickerOrTrade)
+                .map_err(D::Error::custom),
+            "c" => serde_json::from_value(value)
+                .map(AxMdMessage::Candle)
+                .map_err(D::Error::custom),
+            "h" => serde_json::from_value(value)
+                .map(AxMdMessage::Heartbeat)
+                .map_err(D::Error::custom),
+            "e" => serde_json::from_value::<AxWsErrorResponse>(value)
+                .map(|resp| Self::Error(resp.into()))
+                .map_err(D::Error::custom),
+            other => Err(D::Error::unknown_variant(
+                other,
+                &["h", "s", "t", "c", "1", "2", "3", "e"],
+            )),
+        }
+    }
 }
 
 /// Candle/OHLCV message from market data WebSocket.
@@ -236,8 +371,6 @@ pub struct AxMdTrade {
 /// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/md-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdCandle {
-    /// Message type (always "c").
-    pub t: String,
     /// Instrument symbol.
     pub symbol: Ustr,
     /// Candle timestamp (Unix epoch).
@@ -255,11 +388,11 @@ pub struct AxMdCandle {
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub close: Decimal,
     /// Total volume.
-    pub volume: i64,
+    pub volume: u64,
     /// Buy volume.
-    pub buy_volume: i64,
+    pub buy_volume: u64,
     /// Sell volume.
-    pub sell_volume: i64,
+    pub sell_volume: u64,
     /// Candle width/interval.
     pub width: AxCandleWidth,
 }
@@ -271,7 +404,7 @@ pub struct AxBookLevel {
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub p: Decimal,
     /// Quantity at this level.
-    pub q: i64,
+    pub q: u64,
 }
 
 /// Price level entry with individual order breakdown (L3).
@@ -281,9 +414,9 @@ pub struct AxBookLevelL3 {
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub p: Decimal,
     /// Total quantity at this level.
-    pub q: i64,
+    pub q: u64,
     /// Individual order quantities at this price.
-    pub o: Vec<i64>,
+    pub o: Vec<u64>,
 }
 
 /// Level 1 order book update (best bid/ask).
@@ -292,8 +425,6 @@ pub struct AxBookLevelL3 {
 /// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/md-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdBookL1 {
-    /// Message type (always "1").
-    pub t: String,
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
     /// Transaction number.
@@ -312,8 +443,6 @@ pub struct AxMdBookL1 {
 /// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/md-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdBookL2 {
-    /// Message type (always "2").
-    pub t: String,
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
     /// Transaction number.
@@ -332,8 +461,6 @@ pub struct AxMdBookL2 {
 /// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/md-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdBookL3 {
-    /// Message type (always "3").
-    pub t: String,
     /// Timestamp (Unix epoch seconds).
     pub ts: i64,
     /// Transaction number.
@@ -361,7 +488,7 @@ pub struct AxWsPlaceOrder {
     /// Order side: "B" (buy) or "S" (sell).
     pub d: AxOrderSide,
     /// Order quantity.
-    pub q: i64,
+    pub q: u64,
     /// Order price (limit price).
     #[serde(
         serialize_with = "serialize_decimal_as_str",
@@ -382,7 +509,7 @@ pub struct AxWsPlaceOrder {
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "serialize_optional_decimal_as_str",
-        deserialize_with = "deserialize_optional_decimal",
+        deserialize_with = "deserialize_optional_decimal_str",
         default
     )]
     pub trigger_price: Option<Decimal>,
@@ -518,11 +645,11 @@ pub struct AxWsOrder {
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub p: Decimal,
     /// Order quantity.
-    pub q: i64,
+    pub q: u64,
     /// Executed quantity.
-    pub xq: i64,
+    pub xq: u64,
     /// Remaining quantity.
-    pub rq: i64,
+    pub rq: u64,
     /// Order status.
     pub o: AxOrderStatus,
     /// Order side.
@@ -576,7 +703,7 @@ pub struct AxWsTradeExecution {
     /// Instrument symbol.
     pub s: Ustr,
     /// Executed quantity.
-    pub q: i64,
+    pub q: u64,
     /// Execution price.
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub p: Decimal,
@@ -1057,8 +1184,8 @@ mod tests {
     #[rstest]
     fn test_load_md_heartbeat_from_file() {
         let json = include_str!("../../test_data/ws_md_heartbeat.json");
-        let msg: AxMdHeartbeat = serde_json::from_str(json).unwrap();
-        assert_eq!(msg.t, "h");
+        let msg: AxMdMessage = serde_json::from_str(json).unwrap();
+        assert!(matches!(msg, AxMdMessage::Heartbeat(_)));
     }
 
     #[rstest]

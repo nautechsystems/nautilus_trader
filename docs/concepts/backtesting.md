@@ -649,6 +649,69 @@ When using L2 order book data (e.g., 100ms throttled depth snapshots) combined w
 - BUYER trades → potential SELL fills.
 - Book UPDATE events move the market but only trigger fills if prices cross your order.
 
+#### Queue position tracking
+
+When `queue_position=True` is enabled alongside `trade_execution=True`, the matching engine simulates
+queue position for limit orders. This provides more realistic fill behavior by tracking how many
+orders are "ahead" of your order at a given price level.
+
+**How it works:**
+
+1. **Order placement**: When a LIMIT order is accepted, the engine snapshots the current same-side
+   book depth at the order's price level. This represents the orders ahead in the queue.
+
+2. **Trade ticks**: When trade ticks occur at the order's price level, the "quantity ahead" is
+   decremented by the trade size. Only trades on the correct side affect the queue (BUYER trades
+   decrement queue for SELL orders, SELLER trades decrement queue for BUY orders). Trades with
+   `NO_AGGRESSOR` (common in historical datasets lacking aggressor metadata) affect both sides—
+   this is pessimistic but prevents orders from stalling indefinitely.
+
+3. **Fill eligibility**: The order becomes eligible to fill only when the quantity ahead reaches zero.
+   On the tick that clears the queue, only the excess volume (trade size minus queue ahead) is
+   available for fill—preventing overfill.
+
+4. **Price level DELETE**: If the order book level is deleted (BookAction.DELETE), the queue clears
+   immediately, making the order fill-eligible. UPDATE actions are ignored (queue unchanged).
+
+5. **Order modification**: If the order is modified (price or quantity change), the queue position
+   resets—the order moves to the back of the queue at its new price level.
+
+**Configuration:**
+
+```python
+from nautilus_trader.backtest.config import BacktestVenueConfig
+
+venue_config = BacktestVenueConfig(
+    name="SIM",
+    oms_type="NETTING",
+    account_type="MARGIN",
+    starting_balances=["100_000 USD"],
+    trade_execution=True,      # Required for queue_position
+    queue_position=True,       # Enable queue position tracking
+)
+```
+
+**Example scenario:**
+
+1. Order book shows 100 units at bid 100.00.
+2. You place a BUY LIMIT at 100.00 for 50 units. Queue ahead = 100.
+3. SELLER trade of 80 units at 100.00 → queue ahead = 20. No fill yet.
+4. SELLER trade of 30 units at 100.00 → queue clears with 10 excess. Fill = 10 units.
+5. Next SELLER trade of 50 units → fill remaining 40 units.
+
+**Limitations:**
+
+- Only applies to `LIMIT` orders. Stop-limit and limit-if-touched orders are not tracked in this implementation.
+- Queue position is per-order, not shared across multiple orders at the same price.
+- The queue snapshot is based on book state at order acceptance time.
+- Trades with `NO_AGGRESSOR` decrement queue for both sides, which may cause orders to fill sooner than in reality (pessimistic for queue estimation, but prevents stalling).
+
+:::note
+Queue position tracking provides a heuristic simulation of queue dynamics. Real exchange queue
+behavior depends on many factors (order priority rules, hidden orders, etc.) that cannot be
+perfectly reconstructed from historical data.
+:::
+
 ### Bar based execution
 
 Bar data provides a summary of market activity with four key prices for each time period (assuming bars are aggregated by trades):

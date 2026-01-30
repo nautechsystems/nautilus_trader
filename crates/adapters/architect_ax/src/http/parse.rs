@@ -20,8 +20,8 @@ use nautilus_core::{UUID4, nanos::UnixNanos};
 use nautilus_model::{
     data::{Bar, BarSpecification, BarType},
     enums::{
-        AccountType, AggregationSource, BarAggregation, LiquiditySide, OrderSide, OrderType,
-        PositionSideSpecified, PriceType,
+        AccountType, AggregationSource, BarAggregation, CurrencyType, LiquiditySide, OrderSide,
+        OrderType, PositionSideSpecified, PriceType,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
@@ -34,37 +34,34 @@ use rust_decimal::Decimal;
 use super::models::{AxBalancesResponse, AxCandle, AxFill, AxInstrument, AxOpenOrder, AxPosition};
 use crate::common::{consts::AX_VENUE, enums::AxCandleWidth};
 
-/// Converts a Decimal value to a Price.
-///
-/// # Errors
-///
-/// Returns an error if the Decimal cannot be converted to Price.
 fn decimal_to_price(value: Decimal, field_name: &str) -> anyhow::Result<Price> {
     Price::from_decimal(value)
         .with_context(|| format!("Failed to convert {field_name} Decimal to Price"))
 }
 
-/// Converts a Decimal value to a Quantity.
-///
-/// # Errors
-///
-/// Returns an error if the Decimal cannot be converted to Quantity.
 fn decimal_to_quantity(value: Decimal, field_name: &str) -> anyhow::Result<Quantity> {
     Quantity::from_decimal(value)
         .with_context(|| format!("Failed to convert {field_name} Decimal to Quantity"))
 }
 
-/// Converts a Decimal to a Price with specific precision.
 fn decimal_to_price_dp(value: Decimal, precision: u8, field: &str) -> anyhow::Result<Price> {
     Price::from_decimal_dp(value, precision).with_context(|| {
         format!("Failed to construct Price for {field} with precision {precision}")
     })
 }
 
-/// Gets or creates a Currency from a currency code string.
-#[must_use]
+// TODO: Define a new instrument type for equity perpetuals rather than using CryptoPerpetual
+// with a synthetic currency for the underlying stock. CurrencyType has no Equity variant,
+// so we use Crypto as a placeholder for these synthetic assets.
 fn get_currency(code: &str) -> Currency {
-    Currency::from(code)
+    Currency::try_from_str(code).unwrap_or_else(|| {
+        // Create new currency with precision 0 (whole units for equity perps)
+        let currency = Currency::new(code, 0, 0, code, CurrencyType::Crypto);
+        if let Err(e) = Currency::register(currency, false) {
+            log::warn!("Failed to register currency '{code}': {e}");
+        }
+        currency
+    })
 }
 
 /// Converts an Ax candle width to a Nautilus bar specification.
@@ -153,7 +150,6 @@ pub fn parse_perp_instrument(
         symbol_prefix
     };
     let base_currency = get_currency(base_code);
-
     let quote_currency = get_currency(quote_code);
     let settlement_currency = quote_currency;
 
@@ -219,7 +215,7 @@ pub fn parse_account_state(
             continue;
         }
 
-        let currency = Currency::from(symbol_str);
+        let currency = get_currency(symbol_str);
 
         let total = Money::from_decimal(balance.amount, currency)
             .with_context(|| format!("Failed to convert balance for {symbol_str}"))?;
@@ -306,11 +302,9 @@ pub fn parse_order_status_report(
 
     report = report.with_price(price);
 
-    // Calculate average price if there are fills
-    if order.xq > 0 {
-        let avg_px = price.as_f64();
-        report = report.with_avg_px(avg_px)?;
-    }
+    // We don't set avg_px here since the order endpoint only provides the
+    // limit price, not actual fill prices. True average would need to be
+    // calculated from fill reports.
 
     Ok(report)
 }
@@ -336,18 +330,11 @@ pub fn parse_fill_report(
     let venue_order_id = VenueOrderId::new(&fill.order_id);
     let trade_id = TradeId::new_checked(&fill.trade_id).context("Invalid trade_id in Ax fill")?;
 
-    // Ax doesn't provide order side in fills, infer from quantity sign
-    let order_side = if fill.quantity >= 0 {
-        OrderSide::Buy
-    } else {
-        OrderSide::Sell
-    };
+    // Use explicit side field from fill
+    let order_side: OrderSide = fill.side.into();
 
     let last_px = decimal_to_price_dp(fill.price, instrument.price_precision(), "fill.price")?;
-    let last_qty = Quantity::new(
-        fill.quantity.unsigned_abs() as f64,
-        instrument.size_precision(),
-    );
+    let last_qty = Quantity::new(fill.quantity as f64, instrument.size_precision());
 
     // Parse fee (Ax returns positive fee, Nautilus uses negative for costs)
     let currency = Currency::USD();
@@ -400,17 +387,17 @@ pub fn parse_position_status_report(
 ) -> anyhow::Result<PositionStatusReport> {
     let instrument_id = instrument.id();
 
-    // Determine position side and quantity from open_quantity sign
-    let (position_side, quantity) = if position.open_quantity > 0 {
+    // Determine position side and quantity from signed_quantity sign
+    let (position_side, quantity) = if position.signed_quantity > 0 {
         (
             PositionSideSpecified::Long,
-            Quantity::new(position.open_quantity as f64, instrument.size_precision()),
+            Quantity::new(position.signed_quantity as f64, instrument.size_precision()),
         )
-    } else if position.open_quantity < 0 {
+    } else if position.signed_quantity < 0 {
         (
             PositionSideSpecified::Short,
             Quantity::new(
-                position.open_quantity.unsigned_abs() as f64,
+                position.signed_quantity.unsigned_abs() as f64,
                 instrument.size_precision(),
             ),
         )
@@ -422,9 +409,9 @@ pub fn parse_position_status_report(
     };
 
     // Calculate average entry price from notional / quantity
-    let avg_px_open = if position.open_quantity != 0 {
-        let qty_dec = Decimal::from(position.open_quantity.abs());
-        Some(position.open_notional / qty_dec)
+    let avg_px_open = if position.signed_quantity != 0 {
+        let qty_dec = Decimal::from(position.signed_quantity.abs());
+        Some(position.signed_notional / qty_dec)
     } else {
         None
     };
@@ -499,9 +486,18 @@ mod tests {
     }
 
     #[rstest]
-    fn test_get_currency() {
+    fn test_get_currency_known() {
         let currency = get_currency("USD");
         assert_eq!(currency.code, Ustr::from("USD"));
+        assert_eq!(currency.precision, 2);
+    }
+
+    #[rstest]
+    fn test_get_currency_unknown_creates_new() {
+        // Unknown currencies (like stock tickers) should be created with precision 0
+        let currency = get_currency("NVDA");
+        assert_eq!(currency.code, Ustr::from("NVDA"));
+        assert_eq!(currency.precision, 0);
     }
 
     #[rstest]

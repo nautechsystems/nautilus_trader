@@ -13,22 +13,30 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import pytest
 
 from nautilus_trader.adapters.binance.common.enums import BinanceFuturesPositionSide
 from nautilus_trader.adapters.binance.common.enums import BinanceKlineInterval
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
+from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
+from nautilus_trader.adapters.binance.common.schemas.account import BinanceOrder
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceCandlestick
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEnumParser
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesBalanceInfo
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEnumParser
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
@@ -392,3 +400,100 @@ def test_binance_futures_parse_to_balances() -> None:
     # Act, Assert (`AccountBalance` asserts invariants)
     for info in balance_infos:
         info.parse_to_account_balance()
+
+
+class TestBinanceOrderParsing:
+    def setup(self):
+        self._spot_enum_parser = BinanceSpotEnumParser()
+        self._futures_enum_parser = BinanceFuturesEnumParser()
+
+    def test_binance_order_spot_avg_px_calculated_from_cumulative_fields(self):
+        # Arrange: Spot order with cummulativeQuoteQty and executedQty (no avgPrice)
+        order = BinanceOrder(
+            symbol="BTCUSDT",
+            orderId=12345,
+            clientOrderId="test-order-1",
+            price="50000.00",
+            origQty="0.1",
+            executedQty="0.1",
+            cummulativeQuoteQty="5000.00",  # 50000 * 0.1 = 5000
+            status=BinanceOrderStatus.FILLED,
+            timeInForce=BinanceTimeInForce.GTC,
+            type=BinanceOrderType.LIMIT,
+            side=BinanceOrderSide.BUY,
+            time=1700000000000,
+            updateTime=1700000001000,
+        )
+
+        # Act
+        report = order.parse_to_order_status_report(
+            account_id=AccountId("BINANCE-001"),
+            instrument_id=TestInstrumentProvider.btcusdt_binance().id,
+            report_id=UUID4(),
+            enum_parser=self._spot_enum_parser,
+            treat_expired_as_canceled=False,
+            ts_init=0,
+        )
+
+        expected_avg_px = Decimal("5000.00") / Decimal("0.1")
+        assert report.avg_px == expected_avg_px
+
+    def test_binance_order_spot_avg_px_none_when_zero_fills(self):
+        # Arrange: Spot order with zero executedQty
+        order = BinanceOrder(
+            symbol="BTCUSDT",
+            orderId=12345,
+            clientOrderId="test-order-2",
+            price="50000.00",
+            origQty="0.1",
+            executedQty="0",
+            cummulativeQuoteQty="0",
+            status=BinanceOrderStatus.NEW,
+            timeInForce=BinanceTimeInForce.GTC,
+            type=BinanceOrderType.LIMIT,
+            side=BinanceOrderSide.BUY,
+            time=1700000000000,
+            updateTime=1700000001000,
+        )
+
+        # Act
+        report = order.parse_to_order_status_report(
+            account_id=AccountId("BINANCE-001"),
+            instrument_id=TestInstrumentProvider.btcusdt_binance().id,
+            report_id=UUID4(),
+            enum_parser=self._spot_enum_parser,
+            treat_expired_as_canceled=False,
+            ts_init=0,
+        )
+
+        assert report.avg_px is None
+
+    def test_binance_order_futures_avg_px_from_avg_price_field(self):
+        # Arrange: Futures order with avgPrice field
+        order = BinanceOrder(
+            symbol="BTCUSDT",
+            orderId=12345,
+            clientOrderId="test-order-3",
+            price="50000.00",
+            origQty="0.1",
+            executedQty="0.1",
+            avgPrice="50100.00",  # Futures-specific field
+            status=BinanceOrderStatus.FILLED,
+            timeInForce=BinanceTimeInForce.GTC,
+            type=BinanceOrderType.LIMIT,
+            side=BinanceOrderSide.BUY,
+            time=1700000000000,
+            updateTime=1700000001000,
+        )
+
+        # Act
+        report = order.parse_to_order_status_report(
+            account_id=AccountId("BINANCE-001"),
+            instrument_id=TestInstrumentProvider.btcusdt_binance().id,
+            report_id=UUID4(),
+            enum_parser=self._futures_enum_parser,
+            treat_expired_as_canceled=False,
+            ts_init=0,
+        )
+
+        assert report.avg_px == Decimal("50100.00")

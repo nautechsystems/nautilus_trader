@@ -20,6 +20,7 @@ from decimal import Decimal
 import msgspec
 
 from nautilus_trader.accounting.accounts.margin import MarginAccount
+from nautilus_trader.adapters.binance.common.constants import BINANCE_FUTURES_ALGO_ORDER_TYPES
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
 from nautilus_trader.adapters.binance.common.enums import BinanceExecutionType
@@ -52,6 +53,7 @@ from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import BatchCancelOrders
+from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
@@ -494,6 +496,57 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             f"Batch cancel completed: {len(successful_cancels)} successful, "
             f"{len(failed_cancels)} failed out of {len(valid_cancels)} valid orders",
         )
+
+    async def _cancel_orders_for_strategy(
+        self,
+        orders: list[Order],
+        command: CancelAllOrders,
+    ) -> None:
+        if not orders:
+            return
+
+        # Split into algo orders (need individual cancel) vs regular orders (can batch)
+        algo_orders: list[Order] = []
+        regular_orders: list[Order] = []
+
+        for order in orders:
+            if order.order_type in BINANCE_FUTURES_ALGO_ORDER_TYPES:
+                # Triggered algo orders become regular orders
+                if order.client_order_id in self._triggered_algo_order_ids:
+                    regular_orders.append(order)
+                else:
+                    algo_orders.append(order)
+            else:
+                regular_orders.append(order)
+
+        # Algo orders must use individual cancel (routes to algo endpoint via _cancel_order_single)
+        if algo_orders:
+            await self._cancel_orders_individual(algo_orders)
+
+        if regular_orders:
+            cancels = [
+                CancelOrder(
+                    trader_id=command.trader_id,
+                    strategy_id=command.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    command_id=UUID4(),
+                    ts_init=command.ts_init,
+                )
+                for order in regular_orders
+            ]
+
+            valid_cancels = self._filter_valid_cancels(cancels)
+            if valid_cancels:
+                successful_cancels, failed_cancels = await self._process_cancel_batches(
+                    valid_cancels,
+                    command.instrument_id.symbol.value,
+                )
+                self._log.info(
+                    f"Strategy cancel completed: {len(successful_cancels)} successful, "
+                    f"{len(failed_cancels)} failed out of {len(valid_cancels)} valid orders",
+                )
 
     def _filter_valid_cancels(self, cancels: list[CancelOrder]) -> list[CancelOrder]:
         # Filter out orders that are already closed or not found

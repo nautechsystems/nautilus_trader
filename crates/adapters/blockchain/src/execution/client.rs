@@ -60,8 +60,6 @@ pub struct BlockchainExecutionClient {
     wallet_balance: WalletBalance,
     /// Contract interface for ERC-20 token interactions.
     erc20_contract: Erc20Contract,
-    /// Whether the client is currently connected.
-    connected: bool,
     /// HTTP RPC client for blockchain queries.
     http_rpc_client: Arc<BlockchainHttpRpcClient>,
 }
@@ -97,7 +95,6 @@ impl BlockchainExecutionClient {
 
         Ok(Self {
             core: core_client,
-            connected: false,
             wallet_balance,
             chain,
             cache,
@@ -191,7 +188,7 @@ impl BlockchainExecutionClient {
 #[async_trait(?Send)]
 impl ExecutionClient for BlockchainExecutionClient {
     fn is_connected(&self) -> bool {
-        self.connected
+        self.core.is_connected()
     }
 
     fn client_id(&self) -> ClientId {
@@ -265,7 +262,7 @@ impl ExecutionClient for BlockchainExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.connected {
+        if self.core.is_connected() {
             log::warn!("Blockchain execution client already connected");
             return Ok(());
         }
@@ -277,7 +274,7 @@ impl ExecutionClient for BlockchainExecutionClient {
 
         self.refresh_wallet_balances().await?;
 
-        self.connected = true;
+        self.core.set_connected();
         log::info!(
             "Blockchain execution client connected on chain {}",
             self.chain.name
@@ -286,7 +283,7 @@ impl ExecutionClient for BlockchainExecutionClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        self.connected = false;
+        self.core.set_disconnected();
         Ok(())
     }
 

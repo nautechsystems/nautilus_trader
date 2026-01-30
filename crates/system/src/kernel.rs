@@ -189,12 +189,21 @@ impl NautilusKernel {
         instance_id: UUID4,
         config: LoggerConfig,
     ) -> anyhow::Result<LogGuard> {
+        #[cfg(feature = "tracing-bridge")]
+        let use_tracing = config.use_tracing;
+
         let log_guard = init_logging(
             trader_id,
             instance_id,
             config,
             FileWriterConfig::default(), // TODO: Properly incorporate file writer config
         )?;
+
+        // Initialize tracing subscriber if enabled (idempotent)
+        #[cfg(feature = "tracing-bridge")]
+        if use_tracing && !nautilus_common::logging::bridge::tracing_is_initialized() {
+            nautilus_common::logging::bridge::init_tracing()?;
+        }
 
         Ok(log_guard)
     }

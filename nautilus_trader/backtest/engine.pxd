@@ -261,6 +261,8 @@ cdef class SimulatedExchange:
     """If trades should be processed by the matching engine(s) (and move the market).\n\n:returns: `bool`"""
     cdef readonly bint liquidity_consumption
     """If liquidity consumption is tracked per price level.\n\n:returns: `bool`"""
+    cdef readonly bint queue_position
+    """If queue position tracking is enabled for limit orders.\n\n:returns: `bool`"""
     cdef readonly uint32_t price_protection_points
     """Defines an exchange-calculated price boundary (in points) to prevent marketable orders from executing at excessively aggressive prices.\n\n:returns: `int`"""
     cdef readonly list modules
@@ -357,6 +359,7 @@ cdef class OrderMatchingEngine:
     cdef bint _bar_adaptive_high_low_ordering
     cdef bint _trade_execution
     cdef bint _liquidity_consumption
+    cdef bint _queue_position
     cdef uint32_t _price_protection_points
     cdef dict[TraderId, AccountId] _account_ids
     cdef dict[InstrumentId, BarType] _execution_bar_types
@@ -393,6 +396,8 @@ cdef class OrderMatchingEngine:
     cdef Bar _last_ask_bar
     cdef Quantity _last_trade_size
     cdef bint _fill_at_market
+    cdef dict[ClientOrderId, tuple[PriceRaw, QuantityRaw]] _queue_ahead
+    cdef dict[ClientOrderId, QuantityRaw] _queue_excess
     cdef dict[PriceRaw, tuple[QuantityRaw, QuantityRaw]] _bid_consumption
     cdef dict[PriceRaw, tuple[QuantityRaw, QuantityRaw]] _ask_consumption
     cdef QuantityRaw _trade_consumption
@@ -473,6 +478,11 @@ cdef class OrderMatchingEngine:
     cpdef void fill_market_order(self, Order order)
     cpdef void fill_limit_order(self, Order order)
     cdef void _trail_stop_order(self, Order order)
+
+    cdef void _snapshot_queue_position(self, Order order, Price price)
+    cdef void _clear_queue_on_delete(self, PriceRaw deleted_price_raw, OrderSide deleted_side)
+    cdef void _clear_all_queue_positions(self)
+    cdef void _decrement_queue_on_trade(self, PriceRaw price_raw, QuantityRaw trade_size_raw, AggressorSide aggressor_side)
 
     cpdef void apply_fills(
         self,

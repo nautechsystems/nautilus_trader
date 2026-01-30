@@ -42,6 +42,7 @@ python = [
 live = ["tokio"]
 defi = ["nautilus-model/defi", "alloy-primitives"]
 capnp = ["nautilus-serialization/capnp"]
+tracing-bridge = ["tracing", "tracing-subscriber"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -55,6 +56,7 @@ nautilus-serialization = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+arraydeque = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
@@ -77,6 +79,8 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 rstest = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true }
 
 [dev-dependencies]
 capnp = { workspace = true }
@@ -86,6 +90,8 @@ iai = { workspace = true }
 proptest = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
 tempfile = { workspace = true }
 
 [build-dependencies]

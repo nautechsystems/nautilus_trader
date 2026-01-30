@@ -52,11 +52,10 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use dashmap::DashMap;
 use nautilus_common::live::get_runtime;
 use nautilus_model::{
     identifiers::{AccountId, InstrumentId},
-    instruments::{Instrument, InstrumentAny},
+    instruments::InstrumentAny,
 };
 use nautilus_network::{
     mode::ConnectionMode,
@@ -73,7 +72,7 @@ use super::{
     handler::{FeedHandler, HandlerCommand},
     messages::DydxSubscription,
 };
-use crate::common::credential::DydxCredential;
+use crate::common::{credential::DydxCredential, instrument_cache::InstrumentCache};
 
 /// WebSocket client for dYdX v4 market data and account streams.
 ///
@@ -118,8 +117,11 @@ pub struct DydxWebSocketClient {
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     /// Manual disconnect signal.
     signal: Arc<AtomicBool>,
-    /// Cached instruments for parsing market data (Python-accessible).
-    instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    /// Shared instrument cache for parsing market data.
+    ///
+    /// When constructed via `new_*_with_cache()`, this is shared with HTTP/execution clients.
+    /// When constructed via `new_public()` or `new_private()`, a new cache is created.
+    instrument_cache: Arc<InstrumentCache>,
     /// Optional account ID for account message parsing.
     account_id: Option<AccountId>,
     /// Optional heartbeat interval in seconds.
@@ -142,7 +144,7 @@ impl Clone for DydxWebSocketClient {
             subscriptions: self.subscriptions.clone(),
             connection_mode: self.connection_mode.clone(),
             signal: self.signal.clone(),
-            instruments_cache: self.instruments_cache.clone(),
+            instrument_cache: self.instrument_cache.clone(),
             account_id: self.account_id,
             heartbeat: self.heartbeat,
             cmd_tx: self.cmd_tx.clone(),
@@ -154,8 +156,23 @@ impl Clone for DydxWebSocketClient {
 
 impl DydxWebSocketClient {
     /// Creates a new public WebSocket client for market data.
+    ///
+    /// This creates a new independent instrument cache. To share a cache with
+    /// the HTTP client, use [`Self::new_public_with_cache`] instead.
     #[must_use]
-    pub fn new_public(url: String, _heartbeat: Option<u64>) -> Self {
+    pub fn new_public(url: String, heartbeat: Option<u64>) -> Self {
+        Self::new_public_with_cache(url, Arc::new(InstrumentCache::new()), heartbeat)
+    }
+
+    /// Creates a new public WebSocket client with a shared instrument cache.
+    ///
+    /// Use this when you want to share instrument data with the HTTP client.
+    #[must_use]
+    pub fn new_public_with_cache(
+        url: String,
+        instrument_cache: Arc<InstrumentCache>,
+        heartbeat: Option<u64>,
+    ) -> Self {
         // Create dummy command channel (will be replaced on connect)
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
 
@@ -169,9 +186,9 @@ impl DydxWebSocketClient {
                 ConnectionMode::Closed as u8,
             ))),
             signal: Arc::new(AtomicBool::new(false)),
-            instruments_cache: Arc::new(DashMap::new()),
+            instrument_cache,
             account_id: None,
-            heartbeat: _heartbeat,
+            heartbeat,
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
             handler_task: None,
@@ -179,12 +196,35 @@ impl DydxWebSocketClient {
     }
 
     /// Creates a new private WebSocket client for account updates.
+    ///
+    /// This creates a new independent instrument cache. To share a cache with
+    /// the HTTP client, use [`Self::new_private_with_cache`] instead.
     #[must_use]
     pub fn new_private(
         url: String,
         credential: DydxCredential,
         account_id: AccountId,
-        _heartbeat: Option<u64>,
+        heartbeat: Option<u64>,
+    ) -> Self {
+        Self::new_private_with_cache(
+            url,
+            credential,
+            account_id,
+            Arc::new(InstrumentCache::new()),
+            heartbeat,
+        )
+    }
+
+    /// Creates a new private WebSocket client with a shared instrument cache.
+    ///
+    /// Use this when you want to share instrument data with the HTTP client.
+    #[must_use]
+    pub fn new_private_with_cache(
+        url: String,
+        credential: DydxCredential,
+        account_id: AccountId,
+        instrument_cache: Arc<InstrumentCache>,
+        heartbeat: Option<u64>,
     ) -> Self {
         // Create dummy command channel (will be replaced on connect)
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
@@ -199,9 +239,9 @@ impl DydxWebSocketClient {
                 ConnectionMode::Closed as u8,
             ))),
             signal: Arc::new(AtomicBool::new(false)),
-            instruments_cache: Arc::new(DashMap::new()),
+            instrument_cache,
             account_id: Some(account_id),
-            heartbeat: _heartbeat,
+            heartbeat,
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
             handler_task: None,
@@ -253,9 +293,10 @@ impl DydxWebSocketClient {
     /// Caches a single instrument.
     ///
     /// Any existing instrument with the same ID will be replaced.
+    /// Uses the shared `InstrumentCache` for symbol-based lookups.
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
-        let symbol = instrument.id().symbol.inner();
-        self.instruments_cache.insert(symbol, instrument.clone());
+        self.instrument_cache
+            .insert_instrument_only(instrument.clone());
 
         // Before connect() the handler isn't running; this send will fail and that's expected
         // because connect() replays the instruments via InitializeInstruments
@@ -269,15 +310,14 @@ impl DydxWebSocketClient {
     /// Caches multiple instruments.
     ///
     /// Any existing instruments with the same IDs will be replaced.
+    /// Uses the shared `InstrumentCache` for symbol-based lookups.
     pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
         log::debug!(
             "Caching {} instruments in WebSocket client",
             instruments.len()
         );
-        for instrument in &instruments {
-            self.instruments_cache
-                .insert(instrument.id().symbol.inner(), instrument.clone());
-        }
+        self.instrument_cache
+            .insert_instruments_only(instruments.clone());
 
         // Before connect() the handler isn't running; this send will fail and that's expected
         // because connect() replays the instruments via InitializeInstruments
@@ -289,10 +329,24 @@ impl DydxWebSocketClient {
         }
     }
 
-    /// Returns a reference to the instruments cache.
+    /// Returns a reference to the shared instrument cache.
     #[must_use]
-    pub fn instruments(&self) -> &Arc<DashMap<Ustr, InstrumentAny>> {
-        &self.instruments_cache
+    pub fn instrument_cache(&self) -> &Arc<InstrumentCache> {
+        &self.instrument_cache
+    }
+
+    /// Returns all cached instruments.
+    ///
+    /// This is a snapshot of the current cache contents.
+    #[must_use]
+    pub fn all_instruments(&self) -> Vec<InstrumentAny> {
+        self.instrument_cache.all_instruments()
+    }
+
+    /// Returns the number of cached instruments.
+    #[must_use]
+    pub fn cached_instruments_count(&self) -> usize {
+        self.instrument_cache.len()
     }
 
     /// Retrieves an instrument from the cache by symbol.
@@ -300,7 +354,15 @@ impl DydxWebSocketClient {
     /// Returns `None` if the instrument is not found.
     #[must_use]
     pub fn get_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
-        self.instruments_cache.get(symbol).map(|r| r.clone())
+        self.instrument_cache.get(symbol)
+    }
+
+    /// Retrieves an instrument from the cache by market ticker (e.g., "BTC-USD").
+    ///
+    /// Returns `None` if the instrument is not found.
+    #[must_use]
+    pub fn get_instrument_by_market(&self, ticker: &str) -> Option<InstrumentAny> {
+        self.instrument_cache.get_by_market(ticker)
     }
 
     /// Takes ownership of the inbound typed message receiver.
@@ -368,14 +430,10 @@ impl DydxWebSocketClient {
         self.out_rx = Some(out_rx);
 
         // Replay cached instruments to the new handler
-        if self.instruments_cache.is_empty() {
+        if self.instrument_cache.is_empty() {
             log::warn!("No cached instruments to replay to WebSocket handler");
         } else {
-            let cached_instruments: Vec<InstrumentAny> = self
-                .instruments_cache
-                .iter()
-                .map(|entry| entry.value().clone())
-                .collect();
+            let cached_instruments = self.instrument_cache.all_instruments();
             log::debug!(
                 "Replaying {} cached instruments to WebSocket handler",
                 cached_instruments.len()

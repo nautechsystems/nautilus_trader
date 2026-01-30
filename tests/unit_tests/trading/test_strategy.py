@@ -1595,6 +1595,37 @@ class TestStrategy:
         assert order1 in self.cache.orders_closed()
         assert order2 in strategy.cache.orders_closed()
 
+    def test_cancel_all_orders_with_inflight_orders_sends_command(self) -> None:
+        # Arrange
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.stop_market(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("90.007"),
+        )
+
+        # Submit order but don't process exchange (order stays in SUBMITTED/inflight state)
+        strategy.submit_order(order)
+        assert order.status == OrderStatus.SUBMITTED
+        assert order in self.cache.orders_inflight()
+        assert order not in self.cache.orders_open()
+
+        # Act
+        strategy.cancel_all_orders(_USDJPY_SIM.id)
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.CANCELED
+
     def test_close_position_when_position_already_closed_does_nothing(self) -> None:
         # Arrange
         strategy = Strategy()

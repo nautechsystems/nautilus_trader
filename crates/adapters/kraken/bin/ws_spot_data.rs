@@ -44,7 +44,7 @@ async fn main() -> anyhow::Result<()> {
         .subscribe(KrakenWsChannel::Trade, vec![Ustr::from("BTC/USD")], None)
         .await?;
 
-    let stream = client.stream();
+    let stream = client.stream()?;
     let shutdown = signal::ctrl_c();
     pin!(stream);
     pin!(shutdown);

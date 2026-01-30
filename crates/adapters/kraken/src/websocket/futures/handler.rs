@@ -1132,9 +1132,7 @@ impl FuturesFeedHandler {
             return None;
         };
 
-        let instrument = self
-            .instruments_cache
-            .get(&Ustr::from(order.instrument.as_str()))?;
+        let instrument = self.instruments_cache.get(&order.instrument)?;
 
         let instrument_id = instrument.id();
 
@@ -1171,12 +1169,14 @@ impl FuturesFeedHandler {
 
         let client_order_id = client_order_id.expect("client_order_id should exist if cached");
 
-        let status = if is_cancel {
-            OrderStatus::Canceled
-        } else if order.filled >= order.qty {
+        // Check fill status first - a fully filled order should be Filled even if is_cancel=true
+        // (Kraken sends is_cancel=true with reason=full_fill for completed orders)
+        let status = if order.filled >= order.qty && order.qty > 0.0 {
             OrderStatus::Filled
         } else if order.filled > 0.0 {
             OrderStatus::PartiallyFilled
+        } else if is_cancel {
+            OrderStatus::Canceled
         } else {
             OrderStatus::Accepted
         };
@@ -1256,9 +1256,7 @@ impl FuturesFeedHandler {
             return None;
         };
 
-        let instrument = self
-            .instruments_cache
-            .get(&Ustr::from(order.instrument.as_str()))?;
+        let instrument = self.instruments_cache.get(&order.instrument)?;
 
         let instrument_id = instrument.id();
         let size_precision = instrument.size_precision();
@@ -1277,16 +1275,6 @@ impl FuturesFeedHandler {
             _ => OrderType::Limit,
         };
 
-        let status = if is_cancel {
-            OrderStatus::Canceled
-        } else if order.filled >= order.qty {
-            OrderStatus::Filled
-        } else if order.filled > 0.0 {
-            OrderStatus::PartiallyFilled
-        } else {
-            OrderStatus::Accepted
-        };
-
         if order.qty <= 0.0 {
             log::warn!(
                 "Skipping order with invalid quantity: order_id={}, qty={}",
@@ -1295,6 +1283,17 @@ impl FuturesFeedHandler {
             );
             return None;
         }
+
+        // Check fill status first - a fully filled order should be Filled even if is_cancel=true
+        let status = if order.filled >= order.qty {
+            OrderStatus::Filled
+        } else if order.filled > 0.0 {
+            OrderStatus::PartiallyFilled
+        } else if is_cancel {
+            OrderStatus::Canceled
+        } else {
+            OrderStatus::Accepted
+        };
 
         let ts_event = UnixNanos::from((order.last_update_time as u64) * 1_000_000);
 

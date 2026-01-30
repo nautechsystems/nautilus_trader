@@ -42,11 +42,11 @@ ignore = [
   # TODO: Monitor https://github.com/enviodev/hypersync-client-rust for migration to alternative serialization
   { id = "RUSTSEC-2025-0141", reason = "bincode unmaintained, transitive via hypersync-client (not a security vulnerability)" },
 
-  # RSA Marvin Attack: timing sidechannel in RSA PKCS#1 v1.5 decryption
-  # Transitive via sqlx-mysql, no fix available yet
-  # Low risk for our use case (MySQL connection, not exposed to untrusted input)
-  # TODO: Monitor https://github.com/launchbadge/sqlx for RSA crate update
-  { id = "RUSTSEC-2023-0071", reason = "rsa timing sidechannel (Marvin Attack), transitive via sqlx-mysql, no fix available" },
+  # capnp unsound APIs in constant::Reader and StructSchema
+  # Transitive via hypersync-client, fix requires upstream update to capnp >= 0.24.0
+  # Low risk: only affects internal schema handling, not directly exposed
+  # TODO: Monitor https://github.com/enviodev/hypersync-client-rust for capnp update
+  { id = "RUSTSEC-2025-0143", reason = "capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix" },
 
 ]
 

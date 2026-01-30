@@ -17,10 +17,10 @@
 
 use futures_util::StreamExt;
 use nautilus_common::live::get_runtime;
-use nautilus_core::python::{call_python, to_pyruntime_err};
+use nautilus_core::python::{call_python, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
-    data::{Data, OrderBookDeltas_API},
-    enums::{OrderSide, OrderType, TimeInForce},
+    data::{BarType, Data, OrderBookDeltas_API},
+    enums::{AggregationSource, BarAggregation, OrderSide, OrderType, PriceType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
     types::{Price, Quantity},
@@ -35,6 +35,31 @@ use crate::{
         messages::{BybitWebSocketError, NautilusWsMessage},
     },
 };
+
+fn validate_bar_type(bar_type: &BarType) -> anyhow::Result<()> {
+    let spec = bar_type.spec();
+
+    if spec.price_type != PriceType::Last {
+        anyhow::bail!(
+            "Invalid bar type: Bybit bars only support LAST price type, received {}",
+            spec.price_type
+        );
+    }
+    if bar_type.aggregation_source() != AggregationSource::External {
+        anyhow::bail!(
+            "Invalid bar type: Bybit bars only support EXTERNAL aggregation source, received {}",
+            bar_type.aggregation_source()
+        );
+    }
+
+    let step = spec.step.get();
+    if spec.aggregation == BarAggregation::Minute && step >= 60 {
+        let hours = step / 60;
+        anyhow::bail!("Invalid bar type: {step}-MINUTE not supported, use {hours}-HOUR instead");
+    }
+
+    Ok(())
+}
 
 #[pymethods]
 impl BybitWebSocketError {
@@ -398,36 +423,36 @@ impl BybitWebSocketClient {
         })
     }
 
-    #[pyo3(name = "subscribe_klines")]
-    fn py_subscribe_klines<'py>(
+    #[pyo3(name = "subscribe_bars")]
+    fn py_subscribe_bars<'py>(
         &self,
         py: Python<'py>,
-        instrument_id: InstrumentId,
-        interval: String,
+        bar_type: BarType,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
+        validate_bar_type(&bar_type).map_err(to_pyvalue_err)?;
 
+        let client = self.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .subscribe_klines(instrument_id, interval)
+                .subscribe_bars(bar_type)
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())
         })
     }
 
-    #[pyo3(name = "unsubscribe_klines")]
-    fn py_unsubscribe_klines<'py>(
+    #[pyo3(name = "unsubscribe_bars")]
+    fn py_unsubscribe_bars<'py>(
         &self,
         py: Python<'py>,
-        instrument_id: InstrumentId,
-        interval: String,
+        bar_type: BarType,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
+        validate_bar_type(&bar_type).map_err(to_pyvalue_err)?;
 
+        let client = self.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .unsubscribe_klines(instrument_id, interval)
+                .unsubscribe_bars(bar_type)
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())

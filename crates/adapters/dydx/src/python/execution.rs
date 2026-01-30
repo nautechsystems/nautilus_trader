@@ -19,6 +19,7 @@
 
 use std::{str::FromStr, sync::Arc};
 
+use chrono::Utc;
 use nautilus_core::python::IntoPyObjectNautilusExt;
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
@@ -28,8 +29,8 @@ use nautilus_model::{
 use pyo3::prelude::*;
 
 use crate::{
-    execution::submitter::OrderSubmitter,
-    grpc::{DydxGrpcClient, Wallet, types::ChainId},
+    execution::{block_time::BlockTimeMonitor, submitter::OrderSubmitter, wallet::Wallet},
+    grpc::{DydxGrpcClient, types::ChainId},
     http::client::DydxHttpClient,
 };
 
@@ -42,22 +43,22 @@ pub struct PyDydxWallet {
 
 #[pymethods]
 impl PyDydxWallet {
-    /// Create a wallet from a 24-word English mnemonic phrase.
+    /// Create a wallet from a hex-encoded private key.
     ///
     /// # Errors
     ///
-    /// Returns an error if the mnemonic is invalid.
+    /// Returns an error if the private key is invalid.
     #[staticmethod]
-    #[pyo3(name = "from_mnemonic")]
-    pub fn py_from_mnemonic(mnemonic: &str) -> PyResult<Self> {
-        let wallet = Wallet::from_mnemonic(mnemonic)
+    #[pyo3(name = "from_private_key")]
+    pub fn py_from_private_key(private_key: &str) -> PyResult<Self> {
+        let wallet = Wallet::from_private_key(private_key)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{e}")))?;
         Ok(Self {
             inner: Arc::new(wallet),
         })
     }
 
-    /// Get the wallet address (derives from account index 0).
+    /// Get the wallet address.
     ///
     /// # Errors
     ///
@@ -66,7 +67,7 @@ impl PyDydxWallet {
     pub fn py_address(&self) -> PyResult<String> {
         let account = self
             .inner
-            .account_offline(0)
+            .account_offline()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
         Ok(account.address)
     }
@@ -77,24 +78,61 @@ impl PyDydxWallet {
 }
 
 /// Python wrapper for OrderSubmitter.
+///
+/// # Breaking Change
+///
+/// This class now takes `private_key` in the constructor instead of requiring
+/// a wallet to be passed to each method. The wallet is owned internally.
+///
+/// ```python
+/// # Before (old API):
+/// wallet = DydxWallet.from_private_key("...")
+/// submitter = DydxOrderSubmitter(grpc, http, address, ...)
+/// submitter.submit_market_order(wallet, instrument_id, ...)
+///
+/// # After (new API):
+/// submitter = DydxOrderSubmitter(grpc, http, private_key="...", ...)
+/// submitter.submit_market_order(instrument_id, ...)  # no wallet param
+/// ```
 #[pyclass(name = "DydxOrderSubmitter")]
 #[derive(Debug)]
 pub struct PyDydxOrderSubmitter {
     pub(crate) inner: Arc<OrderSubmitter>,
+    /// Block time monitor - updated via `record_block()`.
+    block_time_monitor: Arc<BlockTimeMonitor>,
 }
 
 #[pymethods]
 impl PyDydxOrderSubmitter {
-    /// Create a new order submitter.
+    /// Create a new order submitter with wallet owned internally.
+    ///
+    /// # Arguments
+    ///
+    /// * `grpc_client` - gRPC client for chain operations
+    /// * `http_client` - HTTP client (provides market params cache)
+    /// * `private_key` - Private key (hex-encoded) for signing transactions
+    /// * `wallet_address` - Main account address (may differ from derived address for permissioned keys)
+    /// * `subaccount_number` - dYdX subaccount number (default: 0)
+    /// * `chain_id` - Chain ID string (default: "dydx-mainnet-1")
+    /// * `authenticator_ids` - Authenticator IDs for permissioned key trading
     ///
     /// # Errors
     ///
-    /// Returns an error if chain_id is invalid.
+    /// Returns an error if chain_id is invalid or wallet creation fails.
     #[new]
-    #[pyo3(signature = (grpc_client, http_client, wallet_address, subaccount_number=0, chain_id=None, authenticator_ids=None))]
+    #[pyo3(signature = (
+        grpc_client,
+        http_client,
+        private_key,
+        wallet_address,
+        subaccount_number=0,
+        chain_id=None,
+        authenticator_ids=None
+    ))]
     pub fn py_new(
         grpc_client: PyDydxGrpcClient,
         http_client: DydxHttpClient,
+        private_key: &str,
         wallet_address: String,
         subaccount_number: u32,
         chain_id: Option<&str>,
@@ -107,63 +145,122 @@ impl PyDydxOrderSubmitter {
             ChainId::Mainnet1
         };
 
+        // Create block time monitor (updated via record_block)
+        let block_time_monitor = Arc::new(BlockTimeMonitor::new());
+
         let submitter = OrderSubmitter::new(
             grpc_client.inner.as_ref().clone(),
             http_client,
+            private_key,
             wallet_address,
             subaccount_number,
             chain_id,
             authenticator_ids.unwrap_or_default(),
-        );
+            Arc::clone(&block_time_monitor),
+        )
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{e}")))?;
 
         Ok(Self {
             inner: Arc::new(submitter),
+            block_time_monitor,
         })
     }
 
+    /// Record a block height update with timestamp.
+    ///
+    /// Call this when receiving block updates from WebSocket.
+    /// The timestamp should be the block's timestamp (ISO 8601 format).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the timestamp cannot be parsed.
+    #[pyo3(name = "record_block")]
+    fn py_record_block(&self, height: u64, timestamp: Option<&str>) -> PyResult<()> {
+        let time = if let Some(ts) = timestamp {
+            chrono::DateTime::parse_from_rfc3339(ts)
+                .map(|dt| dt.with_timezone(&Utc))
+                .map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                        "Invalid timestamp: {e}"
+                    ))
+                })?
+        } else {
+            Utc::now()
+        };
+        self.block_time_monitor.record_block(height, time);
+        Ok(())
+    }
+
+    /// Set the current block height (legacy API, uses current time).
+    ///
+    /// Prefer using `record_block` with actual block timestamp for accurate
+    /// block time estimation.
+    #[pyo3(name = "set_block_height")]
+    fn py_set_block_height(&self, height: u64) {
+        self.block_time_monitor.record_block(height, Utc::now());
+    }
+
+    /// Get the current block height.
+    #[pyo3(name = "get_block_height")]
+    fn py_get_block_height(&self) -> u64 {
+        self.block_time_monitor.current_block_height()
+    }
+
+    /// Get the estimated seconds per block (based on rolling average).
+    ///
+    /// Returns None if insufficient samples have been collected.
+    #[pyo3(name = "estimated_seconds_per_block")]
+    fn py_estimated_seconds_per_block(&self) -> Option<f64> {
+        self.block_time_monitor.estimated_seconds_per_block()
+    }
+
+    /// Check if the block time monitor has enough samples for reliable estimates.
+    #[pyo3(name = "is_block_time_ready")]
+    fn py_is_block_time_ready(&self) -> bool {
+        self.block_time_monitor.is_ready()
+    }
+
+    /// Get the wallet address.
+    #[pyo3(name = "wallet_address")]
+    fn py_wallet_address(&self) -> String {
+        self.inner.wallet_address().to_string()
+    }
+
     /// Submit a market order to dYdX via gRPC.
+    ///
+    /// Block height is read from the internal state (set via `set_block_height`).
     #[pyo3(name = "submit_market_order")]
-    #[allow(clippy::too_many_arguments)]
     fn py_submit_market_order<'py>(
         &self,
         py: Python<'py>,
-        wallet: PyDydxWallet,
         instrument_id: &str,
         client_order_id: u32,
         side: i64,
         quantity: &str,
-        block_height: u32,
     ) -> PyResult<Bound<'py, PyAny>> {
         let submitter = self.inner.clone();
-        let wallet_inner = wallet.inner;
         let instrument_id = InstrumentId::from(instrument_id);
         let side = OrderSide::from_repr(side as usize)
             .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid OrderSide"))?;
         let quantity = Quantity::from(quantity);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            submitter
-                .submit_market_order(
-                    &wallet_inner,
-                    instrument_id,
-                    client_order_id,
-                    side,
-                    quantity,
-                    block_height,
-                )
+            let tx_hash = submitter
+                .submit_market_order(instrument_id, client_order_id, side, quantity)
                 .await
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
-            Ok(())
+            Ok(tx_hash)
         })
     }
 
     /// Submit a limit order to dYdX via gRPC.
+    ///
+    /// Block height is read from the internal state (set via `set_block_height`).
     #[pyo3(name = "submit_limit_order")]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_limit_order<'py>(
         &self,
         py: Python<'py>,
-        wallet: PyDydxWallet,
         instrument_id: &str,
         client_order_id: u32,
         side: i64,
@@ -172,11 +269,9 @@ impl PyDydxOrderSubmitter {
         time_in_force: i64,
         post_only: bool,
         reduce_only: bool,
-        block_height: u32,
         expire_time: Option<i64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let submitter = self.inner.clone();
-        let wallet_inner = wallet.inner;
         let instrument_id = InstrumentId::from(instrument_id);
         let side = OrderSide::from_repr(side as usize)
             .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid OrderSide"))?;
@@ -187,9 +282,8 @@ impl PyDydxOrderSubmitter {
         })?;
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            submitter
+            let tx_hash = submitter
                 .submit_limit_order(
-                    &wallet_inner,
                     instrument_id,
                     client_order_id,
                     side,
@@ -198,21 +292,20 @@ impl PyDydxOrderSubmitter {
                     time_in_force,
                     post_only,
                     reduce_only,
-                    block_height,
                     expire_time,
                 )
                 .await
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
-            Ok(())
+            Ok(tx_hash)
         })
     }
 
+    /// Submit a stop market order to dYdX via gRPC.
     #[pyo3(name = "submit_stop_market_order")]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_stop_market_order<'py>(
         &self,
         py: Python<'py>,
-        wallet: PyDydxWallet,
         instrument_id: &str,
         client_order_id: u32,
         side: i64,
@@ -222,7 +315,6 @@ impl PyDydxOrderSubmitter {
         expire_time: Option<i64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let submitter = self.inner.clone();
-        let wallet_inner = wallet.inner;
         let instrument_id = InstrumentId::from(instrument_id);
         let side = OrderSide::from_repr(side as usize)
             .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid OrderSide"))?;
@@ -230,9 +322,8 @@ impl PyDydxOrderSubmitter {
         let quantity = Quantity::from(quantity);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            submitter
+            let tx_hash = submitter
                 .submit_stop_market_order(
-                    &wallet_inner,
                     instrument_id,
                     client_order_id,
                     side,
@@ -243,16 +334,16 @@ impl PyDydxOrderSubmitter {
                 )
                 .await
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
-            Ok(())
+            Ok(tx_hash)
         })
     }
 
+    /// Submit a stop limit order to dYdX via gRPC.
     #[pyo3(name = "submit_stop_limit_order")]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_stop_limit_order<'py>(
         &self,
         py: Python<'py>,
-        wallet: PyDydxWallet,
         instrument_id: &str,
         client_order_id: u32,
         side: i64,
@@ -265,7 +356,6 @@ impl PyDydxOrderSubmitter {
         expire_time: Option<i64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let submitter = self.inner.clone();
-        let wallet_inner = wallet.inner;
         let instrument_id = InstrumentId::from(instrument_id);
         let side = OrderSide::from_repr(side as usize)
             .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid OrderSide"))?;
@@ -277,9 +367,8 @@ impl PyDydxOrderSubmitter {
         })?;
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            submitter
+            let tx_hash = submitter
                 .submit_stop_limit_order(
-                    &wallet_inner,
                     instrument_id,
                     client_order_id,
                     side,
@@ -293,16 +382,16 @@ impl PyDydxOrderSubmitter {
                 )
                 .await
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
-            Ok(())
+            Ok(tx_hash)
         })
     }
 
+    /// Submit a take profit market order to dYdX via gRPC.
     #[pyo3(name = "submit_take_profit_market_order")]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_take_profit_market_order<'py>(
         &self,
         py: Python<'py>,
-        wallet: PyDydxWallet,
         instrument_id: &str,
         client_order_id: u32,
         side: i64,
@@ -312,7 +401,6 @@ impl PyDydxOrderSubmitter {
         expire_time: Option<i64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let submitter = self.inner.clone();
-        let wallet_inner = wallet.inner;
         let instrument_id = InstrumentId::from(instrument_id);
         let side = OrderSide::from_repr(side as usize)
             .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid OrderSide"))?;
@@ -320,9 +408,8 @@ impl PyDydxOrderSubmitter {
         let quantity = Quantity::from(quantity);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            submitter
+            let tx_hash = submitter
                 .submit_take_profit_market_order(
-                    &wallet_inner,
                     instrument_id,
                     client_order_id,
                     side,
@@ -333,16 +420,16 @@ impl PyDydxOrderSubmitter {
                 )
                 .await
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
-            Ok(())
+            Ok(tx_hash)
         })
     }
 
+    /// Submit a take profit limit order to dYdX via gRPC.
     #[pyo3(name = "submit_take_profit_limit_order")]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_take_profit_limit_order<'py>(
         &self,
         py: Python<'py>,
-        wallet: PyDydxWallet,
         instrument_id: &str,
         client_order_id: u32,
         side: i64,
@@ -355,7 +442,6 @@ impl PyDydxOrderSubmitter {
         expire_time: Option<i64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let submitter = self.inner.clone();
-        let wallet_inner = wallet.inner;
         let instrument_id = InstrumentId::from(instrument_id);
         let side = OrderSide::from_repr(side as usize)
             .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid OrderSide"))?;
@@ -367,9 +453,8 @@ impl PyDydxOrderSubmitter {
         })?;
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            submitter
+            let tx_hash = submitter
                 .submit_take_profit_limit_order(
-                    &wallet_inner,
                     instrument_id,
                     client_order_id,
                     side,
@@ -383,58 +468,86 @@ impl PyDydxOrderSubmitter {
                 )
                 .await
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
-            Ok(())
+            Ok(tx_hash)
         })
     }
 
+    /// Cancel an order on dYdX.
+    ///
+    /// Block height is read from the internal state (set via `set_block_height`).
     #[pyo3(name = "cancel_order")]
+    #[pyo3(signature = (instrument_id, client_order_id, time_in_force=None, expire_time_ns=None))]
     fn py_cancel_order<'py>(
         &self,
         py: Python<'py>,
-        wallet: PyDydxWallet,
         instrument_id: &str,
         client_order_id: u32,
-        block_height: u32,
+        time_in_force: Option<i64>,
+        expire_time_ns: Option<u64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let submitter = self.inner.clone();
-        let wallet_inner = wallet.inner;
         let instrument_id = InstrumentId::from(instrument_id);
+        let time_in_force = time_in_force
+            .and_then(|tif| TimeInForce::from_repr(tif as usize))
+            .unwrap_or(TimeInForce::Gtc);
+        let expire_time_ns = expire_time_ns.map(nautilus_core::UnixNanos::from);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            submitter
-                .cancel_order(&wallet_inner, instrument_id, client_order_id, block_height)
+            let tx_hash = submitter
+                .cancel_order(
+                    instrument_id,
+                    client_order_id,
+                    time_in_force,
+                    expire_time_ns,
+                )
                 .await
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
-            Ok(())
+            Ok(tx_hash)
         })
     }
 
+    /// Cancel multiple orders in a single transaction.
+    ///
+    /// Each order is specified as (instrument_id, client_order_id, time_in_force, expire_time_ns).
+    /// For simplified usage, time_in_force and expire_time_ns can be omitted (defaults to GTC).
     #[pyo3(name = "cancel_orders_batch")]
     fn py_cancel_orders_batch<'py>(
         &self,
         py: Python<'py>,
-        wallet: PyDydxWallet,
-        orders: Vec<(String, u32)>,
-        block_height: u32,
+        orders: Vec<(String, u32, Option<i64>, Option<u64>)>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let submitter = self.inner.clone();
-        let wallet_inner = wallet.inner;
-        let orders: Vec<(InstrumentId, u32)> = orders
+        let orders: Vec<(
+            InstrumentId,
+            u32,
+            TimeInForce,
+            Option<nautilus_core::UnixNanos>,
+        )> = orders
             .into_iter()
-            .map(|(id, client_id)| (InstrumentId::from(id), client_id))
+            .map(|(id, client_id, tif, expire_ns)| {
+                let tif = tif
+                    .and_then(|t| TimeInForce::from_repr(t as usize))
+                    .unwrap_or(TimeInForce::Gtc);
+                let expire_ns = expire_ns.map(nautilus_core::UnixNanos::from);
+                (InstrumentId::from(id), client_id, tif, expire_ns)
+            })
             .collect();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            submitter
-                .cancel_orders_batch(&wallet_inner, &orders, block_height)
+            let tx_hash = submitter
+                .cancel_orders_batch(&orders)
                 .await
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
-            Ok(())
+            Ok(tx_hash)
         })
     }
 
     fn __repr__(&self) -> String {
-        "DydxOrderSubmitter()".to_string()
+        format!(
+            "DydxOrderSubmitter(address={}, block_height={})",
+            self.inner.wallet_address(),
+            self.block_time_monitor.current_block_height()
+        )
     }
 }
 

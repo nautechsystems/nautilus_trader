@@ -290,22 +290,22 @@ fn parse_order_status(
     exec_type: KrakenExecType,
     order_status: Option<KrakenWsOrderStatus>,
 ) -> OrderStatus {
-    // First check exec_type for terminal states
     match exec_type {
         KrakenExecType::Canceled => return OrderStatus::Canceled,
         KrakenExecType::Expired => return OrderStatus::Expired,
+        KrakenExecType::Filled => return OrderStatus::Filled,
+        KrakenExecType::Trade => {
+            return match order_status {
+                Some(KrakenWsOrderStatus::Filled) => OrderStatus::Filled,
+                Some(KrakenWsOrderStatus::PartiallyFilled) | None => OrderStatus::PartiallyFilled,
+                Some(status) => status.into(),
+            };
+        }
         _ => {}
     }
 
-    // Then check order_status field
     match order_status {
-        Some(KrakenWsOrderStatus::PendingNew) => OrderStatus::Submitted,
-        Some(KrakenWsOrderStatus::New) => OrderStatus::Accepted,
-        Some(KrakenWsOrderStatus::PartiallyFilled) => OrderStatus::PartiallyFilled,
-        Some(KrakenWsOrderStatus::Filled) => OrderStatus::Filled,
-        Some(KrakenWsOrderStatus::Canceled) => OrderStatus::Canceled,
-        Some(KrakenWsOrderStatus::Expired) => OrderStatus::Expired,
-        Some(KrakenWsOrderStatus::Triggered) => OrderStatus::Triggered,
+        Some(status) => status.into(),
         None => OrderStatus::Accepted,
     }
 }
@@ -351,13 +351,8 @@ fn parse_time_in_force(
     }
 }
 
-/// Parses Kraken liquidity indicator to Nautilus liquidity side.
 fn parse_liquidity_side(liquidity_ind: Option<KrakenLiquidityInd>) -> LiquiditySide {
-    match liquidity_ind {
-        Some(KrakenLiquidityInd::Maker) => LiquiditySide::Maker,
-        Some(KrakenLiquidityInd::Taker) => LiquiditySide::Taker,
-        None => LiquiditySide::NoLiquiditySide,
-    }
+    liquidity_ind.map_or(LiquiditySide::NoLiquiditySide, Into::into)
 }
 
 /// Parses a Kraken WebSocket execution message into an [`OrderStatusReport`].

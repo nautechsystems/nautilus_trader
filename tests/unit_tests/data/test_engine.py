@@ -15,6 +15,7 @@
 
 import os
 import sys
+from decimal import Decimal
 
 import pandas as pd
 import pytest
@@ -34,6 +35,7 @@ from nautilus_trader.data.messages import DataCommand
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
+from nautilus_trader.data.messages import RequestFundingRates
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestOrderBookDepth
@@ -67,6 +69,7 @@ from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
@@ -3698,6 +3701,46 @@ class TestDataEngine:
         ) == time_object_to_dt(
             pd.Timestamp("2024-3-25"),
         )
+
+    def test_request_funding_rates_reaches_client(self):
+        # Arrange
+        self.data_engine.register_client(self.mock_market_data_client)
+        funding_rate = FundingRateUpdate(
+            instrument_id=ETHUSDT_BINANCE.id,
+            rate=Decimal("0.0001"),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.mock_market_data_client.funding_rates = [funding_rate]
+
+        # Subscribe to funding rates on message bus
+        rates_received = []
+        topic = f"historical.data.funding_rates.{ETHUSDT_BINANCE.venue}.{ETHUSDT_BINANCE.id.symbol}"
+        self.msgbus.subscribe(topic=topic, handler=rates_received.append)
+
+        handler = []
+        request = RequestFundingRates(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=None,
+            end=None,
+            limit=0,
+            client_id=None,
+            venue=ETHUSDT_BINANCE.venue,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params={"update_catalog": True},
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        assert handler[0].data == []  # Response data should be empty
+        assert len(rates_received) == 1  # Rate should flow through message bus
+        assert rates_received[0] == funding_rate
 
     def test_request_order_book_depth_reaches_client(self):
         # Arrange

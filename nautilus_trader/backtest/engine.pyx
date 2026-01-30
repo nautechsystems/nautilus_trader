@@ -510,6 +510,7 @@ cdef class BacktestEngine:
         bar_adaptive_high_low_ordering: bool = False,
         trade_execution: bool = False,
         liquidity_consumption: bool = False,
+        queue_position: bool = False,
         allow_cash_borrowing: bool = False,
         frozen_account: bool = False,
         price_protection_points=None,
@@ -587,6 +588,11 @@ cdef class BacktestEngine:
             If liquidity consumption should be tracked per price level. When enabled, fills
             consume available liquidity which resets when fresh data arrives at that level.
             When disabled, each iteration can fill against the full book liquidity independently.
+        queue_position : bool, default False
+            If queue position tracking should be enabled for limit orders during trade
+            execution mode. When enabled, limit orders only fill after the quantity ahead
+            of them (at order placement time) has been traded through or the price level
+            is deleted. Requires trade_execution=True.
         allow_cash_borrowing : bool, default False
             If cash accounts should allow borrowing (negative balances).
         frozen_account : bool, default False
@@ -658,6 +664,7 @@ cdef class BacktestEngine:
             bar_adaptive_high_low_ordering=bar_adaptive_high_low_ordering,
             trade_execution=trade_execution,
             liquidity_consumption=liquidity_consumption,
+            queue_position=queue_position,
             price_protection_points=price_protection_points,
         )
 
@@ -2564,6 +2571,11 @@ cdef class SimulatedExchange:
         If liquidity consumption should be tracked per price level. When enabled, fills
         consume available liquidity which resets when fresh data arrives at that level.
         When disabled, each iteration can fill against the full book liquidity independently.
+    queue_position : bool, default False
+        If queue position tracking should be enabled for limit orders during trade
+        execution mode. When enabled, limit orders only fill after the quantity ahead
+        of them (at order placement time) has been traded through or the price level
+        is deleted. Requires trade_execution=True.
 
     Raises
     ------
@@ -2615,6 +2627,7 @@ cdef class SimulatedExchange:
         bint bar_adaptive_high_low_ordering = False,
         bint trade_execution = False,
         bint liquidity_consumption = False,
+        bint queue_position = False,
         price_protection_points=None,
     ) -> None:
         Condition.not_empty(starting_balances, "starting_balances")
@@ -2660,6 +2673,7 @@ cdef class SimulatedExchange:
         self.bar_adaptive_high_low_ordering = bar_adaptive_high_low_ordering
         self.trade_execution = trade_execution
         self.liquidity_consumption = liquidity_consumption
+        self.queue_position = queue_position
         self.price_protection_points = price_protection_points if price_protection_points is not None else 0
 
         # Execution models
@@ -2822,6 +2836,7 @@ cdef class SimulatedExchange:
             bar_adaptive_high_low_ordering=self.bar_adaptive_high_low_ordering,
             trade_execution=self.trade_execution,
             liquidity_consumption=self.liquidity_consumption,
+            queue_position=self.queue_position,
             price_protection_points=self.price_protection_points,
         )
 
@@ -3646,6 +3661,7 @@ cdef class OrderMatchingEngine:
         bint bar_adaptive_high_low_ordering = False,
         bint trade_execution = False,
         bint liquidity_consumption = False,
+        bint queue_position = False,
         price_protection_points=None,
     ) -> None:
         self._clock = clock
@@ -3675,6 +3691,7 @@ cdef class OrderMatchingEngine:
         self._bar_adaptive_high_low_ordering = bar_adaptive_high_low_ordering
         self._trade_execution = trade_execution
         self._liquidity_consumption = liquidity_consumption
+        self._queue_position = queue_position
         self._price_protection_points = price_protection_points if price_protection_points is not None else 0
 
         self._fill_model = fill_model
@@ -3708,6 +3725,8 @@ cdef class OrderMatchingEngine:
         self._last_ask_bar: Bar | None = None
         self._last_trade_size: Quantity | None = None
         self._fill_at_market = True  # Fill stop orders at market price vs trigger price
+        self._queue_ahead = {}
+        self._queue_excess = {}
         self._bid_consumption = {}
         self._ask_consumption = {}
         self._trade_consumption = 0
@@ -3740,6 +3759,8 @@ cdef class OrderMatchingEngine:
         self._last_bid_bar = None
         self._last_ask_bar = None
         self._last_trade_size = None
+        self._queue_ahead.clear()
+        self._queue_excess.clear()
         self._bid_consumption.clear()
         self._ask_consumption.clear()
         self._trade_consumption = 0
@@ -3900,6 +3921,12 @@ cdef class OrderMatchingEngine:
             self._bid_consumption.clear()
             self._ask_consumption.clear()
 
+        # Reset queue positions on snapshot/CLEAR (stale depth no longer exists)
+        if self._queue_position and (
+            (delta._mem.flags & 32) or delta._mem.action == BookAction.CLEAR
+        ):
+            self._clear_all_queue_positions()
+
         # Clear consumption tracking on UPDATE or DELETE (level changed or removed)
         if self._liquidity_consumption and (
             delta._mem.action == BookAction.UPDATE or delta._mem.action == BookAction.DELETE
@@ -3908,6 +3935,9 @@ cdef class OrderMatchingEngine:
                 self._ask_consumption.pop(delta._mem.order.price.raw, None)
             elif delta._mem.order.side == OrderSide.BUY:
                 self._bid_consumption.pop(delta._mem.order.price.raw, None)
+
+        if self._queue_position and delta._mem.action == BookAction.DELETE:
+            self._clear_queue_on_delete(delta._mem.order.price.raw, delta._mem.order.side)
 
         self._book.apply_delta(delta)
 
@@ -3962,10 +3992,17 @@ cdef class OrderMatchingEngine:
                 elif delta._mem.order.side == OrderSide.BUY:
                     self._bid_consumption.pop(delta._mem.order.price.raw, None)
 
+            if self._queue_position and delta._mem.action == BookAction.DELETE:
+                self._clear_queue_on_delete(delta._mem.order.price.raw, delta._mem.order.side)
+
         # Reset consumption tracking on snapshot (F_SNAPSHOT = 32) or CLEAR action
         if self._liquidity_consumption and has_snapshot_or_clear:
             self._bid_consumption.clear()
             self._ask_consumption.clear()
+
+        # Reset queue positions on snapshot/CLEAR (stale depth no longer exists)
+        if self._queue_position and has_snapshot_or_clear:
+            self._clear_all_queue_positions()
 
         self._book.apply_deltas(deltas)
 
@@ -4027,6 +4064,10 @@ cdef class OrderMatchingEngine:
         if self._liquidity_consumption and (depth._mem.flags & 32):
             self._bid_consumption.clear()
             self._ask_consumption.clear()
+
+        # Reset queue positions on snapshot (stale depth no longer exists)
+        if self._queue_position and (depth._mem.flags & 32):
+            self._clear_all_queue_positions()
 
         self._book.apply_depth(depth)
 
@@ -4156,9 +4197,17 @@ cdef class OrderMatchingEngine:
                 self._core.set_ask_raw(price_raw)
             elif aggressor_side == AggressorSide.BUYER and price_raw > original_bid:
                 self._core.set_bid_raw(price_raw)
+            elif aggressor_side == AggressorSide.NO_AGGRESSOR:
+                # Set both sides to trade price so both BUY and SELL orders can match
+                self._core.set_bid_raw(price_raw)
+                self._core.set_ask_raw(price_raw)
 
             self._last_trade_size = tick.size
             self._trade_consumption = 0
+
+            # Buyer trades consume ask-side (SELL orders), seller trades consume bid-side (BUY orders)
+            if self._queue_position:
+                self._decrement_queue_on_trade(price_raw, tick._mem.size.raw, aggressor_side)
 
         self.iterate(tick.ts_init, aggressor_side)
 
@@ -4170,6 +4219,9 @@ cdef class OrderMatchingEngine:
                 self._core.set_ask_raw(original_ask)
             elif aggressor_side == AggressorSide.BUYER and price_raw > original_bid:
                 self._core.set_bid_raw(original_bid)
+            elif aggressor_side == AggressorSide.NO_AGGRESSOR:
+                self._core.set_bid_raw(original_bid)
+                self._core.set_ask_raw(original_ask)
 
     cpdef void process_bar(self, Bar bar):
         """
@@ -4930,6 +4982,8 @@ cdef class OrderMatchingEngine:
         Quantity qty,
         Price price,
     ):
+        cdef Price new_price = price if price is not None else order.price
+
         if self._core.is_limit_matched(order.side, price):
             if order.is_post_only:
                 self._generate_order_modify_rejected(
@@ -4946,10 +5000,18 @@ cdef class OrderMatchingEngine:
                 )
                 return  # Cannot update order
 
+            # Modification moves order to back of queue
+            if self._queue_position and order.client_order_id in self._queue_ahead:
+                self._snapshot_queue_position(order, new_price)
+
             self._generate_order_updated(order, qty, price, None)
             order.liquidity_side = LiquiditySide.TAKER
             self.fill_limit_order(order)  # Immediate fill as TAKER
             return  # Filled
+
+        # Modification moves order to back of queue
+        if self._queue_position and order.client_order_id in self._queue_ahead:
+            self._snapshot_queue_position(order, new_price)
 
         self._generate_order_updated(order, qty, price, None)
 
@@ -5191,11 +5253,14 @@ cdef class OrderMatchingEngine:
 
         cdef Price_t bid
         cdef Price_t ask
-        if orderbook_has_bid(&self._book._mem) and aggressor_side == AggressorSide.NO_AGGRESSOR:
+
+        # Only reset bid/ask from book when not in trade execution mode
+        # (trade execution sets _last_trade_size and uses transient price override)
+        if orderbook_has_bid(&self._book._mem) and aggressor_side == AggressorSide.NO_AGGRESSOR and self._last_trade_size is None:
             bid = orderbook_best_bid_price(&self._book._mem)
             self._core.set_bid_raw(bid.raw)
 
-        if orderbook_has_ask(&self._book._mem) and aggressor_side == AggressorSide.NO_AGGRESSOR:
+        if orderbook_has_ask(&self._book._mem) and aggressor_side == AggressorSide.NO_AGGRESSOR and self._last_trade_size is None:
             ask = orderbook_best_ask_price(&self._book._mem)
             self._core.set_ask_raw(ask.raw)
 
@@ -5649,6 +5714,20 @@ cdef class OrderMatchingEngine:
 
         Returns None if there is no quantity available to fill.
         """
+        cdef:
+            tuple queue_state
+            PriceRaw tracked_price_raw
+            QuantityRaw ahead_raw
+            Price order_price
+
+        if self._queue_position:
+            queue_state = self._queue_ahead.get(order.client_order_id)
+            if queue_state is not None:
+                tracked_price_raw, ahead_raw = queue_state
+                order_price = order.price
+                if order_price._mem.raw == tracked_price_raw and ahead_raw > 0:
+                    return None
+
         cdef QuantityRaw leaves_raw = order.quantity._mem.raw - order.filled_qty._mem.raw if order.quantity._mem.raw > order.filled_qty._mem.raw else 0
 
         if leaves_raw == 0:
@@ -5657,6 +5736,7 @@ cdef class OrderMatchingEngine:
         cdef QuantityRaw fill_raw = leaves_raw
         cdef QuantityRaw available_raw
         cdef QuantityRaw trade_size_raw
+        cdef QuantityRaw queue_excess_raw
 
         if self._last_trade_size is not None:
             trade_size_raw = self._last_trade_size._mem.raw
@@ -5666,6 +5746,12 @@ cdef class OrderMatchingEngine:
                 available_raw = trade_size_raw - self._trade_consumption
             else:
                 available_raw = trade_size_raw
+
+            if self._queue_position and order.client_order_id in self._queue_excess:
+                queue_excess_raw = self._queue_excess[order.client_order_id]
+                if queue_excess_raw == 0:
+                    return None  # Queue cleared exactly, no excess
+                available_raw = min(available_raw, queue_excess_raw)
 
             if available_raw == 0:
                 return None
@@ -5741,28 +5827,20 @@ cdef class OrderMatchingEngine:
                 not fills_at_trade_price
                 and self._core.is_limit_matched(order.side, order.price)
             ):
-                # When trade price equals limit price (not crossing), use fill model
-                # to simulate queue position. Skip trade execution fill but let book
-                # fills continue through liquidity consumption and price adjustments.
-                skip_trade_fill = (
-                    trade_price == order.price
-                    and self._fill_model is not None
-                    and not self._fill_model.is_limit_filled()
-                )
+                # Fill model check for MAKER at limit is already handled in fill_limit_order,
+                # don't re-check here to avoid calling is_limit_filled() twice (p² probability).
+                fill_qty = self.determine_trade_fill_qty(order)
+                if fill_qty is not None:
+                    self._log.debug(
+                        f"Trade execution fill: {fill_qty} @ {order.price} "
+                        f"(trade_price={trade_price}, trade_size={self._last_trade_size})",
+                    )
 
-                if not skip_trade_fill:
-                    fill_qty = self.determine_trade_fill_qty(order)
-                    if fill_qty is not None:
-                        self._log.debug(
-                            f"Trade execution fill: {fill_qty} @ {order.price} "
-                            f"(trade_price={trade_price}, trade_size={self._last_trade_size})",
-                        )
-
-                        # Fill at the limit price (conservative) rather than the trade price.
-                        # Trade execution fills already account for consumption via _trade_consumption,
-                        # return early to bypass _apply_liquidity_consumption which would incorrectly
-                        # discard these fills when the trade price isn't in the order book.
-                        return [(order.price, fill_qty)]
+                    # Fill at the limit price (conservative) rather than the trade price.
+                    # Trade execution fills already account for consumption via _trade_consumption,
+                    # return early to bypass _apply_liquidity_consumption which would incorrectly
+                    # discard these fills when the trade price isn't in the order book.
+                    return [(order.price, fill_qty)]
 
         # Save original book prices BEFORE any fill price modifications for consumption tracking,
         # since the TAKER and MAKER loops below may adjust fill prices. Consumption should be
@@ -5846,6 +5924,68 @@ cdef class OrderMatchingEngine:
                 raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
 
         return self._apply_liquidity_consumption(fills, order.side, order.leaves_qty._mem.raw, book_prices)
+
+    cdef void _snapshot_queue_position(self, Order order, Price price):
+        # get_quantity_at_level uses "incoming order side" semantics: passing SELL returns
+        # bid-side depth (fillable by sells), so we pass opposite side to get same-side depth
+        cdef Quantity qty_ahead
+        if order.side == OrderSide.BUY:
+            qty_ahead = self._book.get_quantity_at_level(price, OrderSide.SELL, self._size_prec)
+        else:
+            qty_ahead = self._book.get_quantity_at_level(price, OrderSide.BUY, self._size_prec)
+        self._queue_ahead[order.client_order_id] = (price._mem.raw, qty_ahead._mem.raw)
+
+    cdef void _clear_queue_on_delete(self, PriceRaw deleted_price_raw, OrderSide deleted_side):
+        cdef:
+            ClientOrderId client_order_id
+            PriceRaw order_price_raw
+            Order order
+        for client_order_id in list(self._queue_ahead.keys()):
+            order_price_raw, _ = self._queue_ahead[client_order_id]
+            if order_price_raw == deleted_price_raw:
+                order = self._core.get_order(client_order_id)
+                if order is not None and order.side == deleted_side:
+                    self._queue_ahead[client_order_id] = (order_price_raw, 0)
+
+    cdef void _clear_all_queue_positions(self):
+        cdef:
+            ClientOrderId client_order_id
+            PriceRaw order_price_raw
+        for client_order_id in list(self._queue_ahead.keys()):
+            order_price_raw, _ = self._queue_ahead[client_order_id]
+            self._queue_ahead[client_order_id] = (order_price_raw, 0)
+
+    cdef void _decrement_queue_on_trade(self, PriceRaw price_raw, QuantityRaw trade_size_raw, AggressorSide aggressor_side):
+        self._queue_excess.clear()
+
+        cdef:
+            ClientOrderId client_order_id
+            PriceRaw order_price_raw
+            QuantityRaw ahead_raw
+            QuantityRaw new_ahead
+            Order order
+        for client_order_id in list(self._queue_ahead.keys()):
+            order_price_raw, ahead_raw = self._queue_ahead[client_order_id]
+
+            order = self._core.get_order(client_order_id)
+            if order is None or order.is_closed_c():
+                self._queue_ahead.pop(client_order_id, None)
+                continue
+
+            if order_price_raw == price_raw and ahead_raw > 0:
+                # NO_AGGRESSOR: decrement both sides (pessimistic but prevents stalling)
+                if aggressor_side == AggressorSide.NO_AGGRESSOR or \
+                   (aggressor_side == AggressorSide.BUYER and order.side == OrderSide.SELL) or \
+                   (aggressor_side == AggressorSide.SELLER and order.side == OrderSide.BUY):
+                    if ahead_raw > trade_size_raw:
+                        new_ahead = ahead_raw - trade_size_raw
+                    else:
+                        new_ahead = 0
+
+                    self._queue_ahead[client_order_id] = (order_price_raw, new_ahead)
+
+                    if new_ahead == 0:
+                        self._queue_excess[client_order_id] = trade_size_raw - ahead_raw
 
     cpdef void apply_fills(
         self,
@@ -6112,6 +6252,9 @@ cdef class OrderMatchingEngine:
         # Generate leg fills for spread orders after normal combo fill processing
         if instrument.is_spread():
             self._generate_spread_leg_fills(order, fills, liquidity_side)
+
+        if self._queue_position and order.is_closed_c():
+            self._queue_ahead.pop(order.client_order_id, None)
 
     cdef void _generate_spread_leg_fills(
         self,
@@ -6632,10 +6775,15 @@ cdef class OrderMatchingEngine:
 
         self._core.add_order(order)
 
+        # Only snapshot queue for LIMIT orders (stop/if-touched orders aren't on book yet)
+        if self._queue_position and order.order_type == OrderType.LIMIT:
+            self._snapshot_queue_position(order, order.price)
+
     cpdef void expire_order(self, Order order):
         if self._support_contingent_orders and order.contingency_type != ContingencyType.NO_CONTINGENCY:
             self._cancel_contingent_orders(order)
 
+        self._queue_ahead.pop(order.client_order_id, None)
         self._generate_order_expired(order)
 
     cpdef void cancel_order(self, Order order, bint cancel_contingencies=True):
@@ -6647,6 +6795,7 @@ cdef class OrderMatchingEngine:
 
         self._core.delete_order(order)
         self._cached_filled_qty.pop(order.client_order_id, None)
+        self._queue_ahead.pop(order.client_order_id, None)
 
         self._generate_order_canceled(order, venue_order_id=self._get_venue_order_id(order))
 

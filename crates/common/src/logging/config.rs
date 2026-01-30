@@ -28,19 +28,27 @@
 //!
 //! ## Supported Keys
 //!
-//! | Key                   | Type      | Description                                 |
-//! |-----------------------|-----------|---------------------------------------------|
-//! | `stdout`              | Log level | Maximum level for stdout output.            |
-//! | `fileout`             | Log level | Maximum level for file output.              |
-//! | `is_colored`          | Boolean   | Enable ANSI colors (default: true).         |
-//! | `print_config`        | Boolean   | Print config to stdout at startup.          |
-//! | `log_components_only` | Boolean   | Only log components with explicit filters.  |
-//! | `<component>`         | Log level | Component-specific log level (exact match). |
-//! | `<module::path>`      | Log level | Module-specific log level (prefix match).   |
+//! | Key                   | Type      | Description                                  |
+//! |-----------------------|-----------|----------------------------------------------|
+//! | `stdout`              | Log level | Maximum level for stdout output.             |
+//! | `fileout`             | Log level | Maximum level for file output.               |
+//! | `is_colored`          | Boolean   | Enable ANSI colors (default: true).          |
+//! | `print_config`        | Boolean   | Print config to stdout at startup.           |
+//! | `log_components_only` | Boolean   | Only log components with explicit filters.   |
+//! | `use_tracing`         | Boolean   | Enable tracing subscriber for external libs. |
+//! | `<component>`         | Log level | Component-specific log level (exact match).  |
+//! | `<module::path>`      | Log level | Module-specific log level (prefix match).    |
 //!
 //! ## Log Levels
 //!
-//! `Off`, `Error`, `Warn`, `Info`, `Debug`, `Trace` (case-insensitive)
+//! All log levels are case-insensitive.
+//!
+//! - `Off`
+//! - `Error`
+//! - `Warn`
+//! - `Info`
+//! - `Debug`
+//! - `Trace`
 //!
 //! ## Boolean Values
 //!
@@ -74,6 +82,8 @@ pub struct LoggerConfig {
     pub is_colored: bool,
     /// Print configuration to stdout at startup.
     pub print_config: bool,
+    /// Initialize the tracing subscriber for external Rust crate logs.
+    pub use_tracing: bool,
 }
 
 impl Default for LoggerConfig {
@@ -87,6 +97,7 @@ impl Default for LoggerConfig {
             log_components_only: false,
             is_colored: true,
             print_config: false,
+            use_tracing: false,
         }
     }
 }
@@ -94,6 +105,7 @@ impl Default for LoggerConfig {
 impl LoggerConfig {
     /// Creates a new [`LoggerConfig`] instance.
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         stdout_level: LevelFilter,
         fileout_level: LevelFilter,
@@ -102,6 +114,7 @@ impl LoggerConfig {
         log_components_only: bool,
         is_colored: bool,
         print_config: bool,
+        use_tracing: bool,
     ) -> Self {
         Self {
             stdout_level,
@@ -111,6 +124,7 @@ impl LoggerConfig {
             log_components_only,
             is_colored,
             print_config,
+            use_tracing,
         }
     }
 
@@ -143,6 +157,7 @@ impl LoggerConfig {
                     "log_components_only" => config.log_components_only = true,
                     "is_colored" => config.is_colored = true,
                     "print_config" => config.print_config = true,
+                    "use_tracing" => config.use_tracing = true,
                     _ => anyhow::bail!("Invalid spec pair: {kv}"),
                 }
                 continue;
@@ -166,6 +181,9 @@ impl LoggerConfig {
                 }
                 "print_config" => {
                     config.print_config = parse_bool_value(v);
+                }
+                "use_tracing" => {
+                    config.use_tracing = parse_bool_value(v);
                 }
                 "stdout" => {
                     config.stdout_level = parse_level(v)?;

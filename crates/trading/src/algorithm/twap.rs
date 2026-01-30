@@ -695,12 +695,7 @@ mod tests {
         assert_eq!(algo.scheduled_sizes.get(&primary_id).unwrap().len(), 2);
 
         // Simulate timer firing
-        let event = TimeEvent::new(
-            Ustr::from(primary_id.as_str()),
-            UUID4::new(),
-            0.into(),
-            0.into(),
-        );
+        let event = TimeEvent::new(primary_id.inner(), UUID4::new(), 0.into(), 0.into());
         ExecutionAlgorithm::on_time_event(&mut algo, &event).unwrap();
 
         // One slice consumed
@@ -726,12 +721,7 @@ mod tests {
         assert_eq!(algo.scheduled_sizes.get(&primary_id).unwrap().len(), 1);
 
         // Simulate timer firing for final slice
-        let event = TimeEvent::new(
-            Ustr::from(primary_id.as_str()),
-            UUID4::new(),
-            0.into(),
-            0.into(),
-        );
+        let event = TimeEvent::new(primary_id.inner(), UUID4::new(), 0.into(), 0.into());
         ExecutionAlgorithm::on_time_event(&mut algo, &event).unwrap();
 
         // Sequence completed, scheduled_sizes removed
@@ -780,12 +770,7 @@ mod tests {
         }
 
         // Timer fires but primary is closed
-        let event = TimeEvent::new(
-            Ustr::from(primary_id.as_str()),
-            UUID4::new(),
-            0.into(),
-            0.into(),
-        );
+        let event = TimeEvent::new(primary_id.inner(), UUID4::new(), 0.into(), 0.into());
         ExecutionAlgorithm::on_time_event(&mut algo, &event).unwrap();
 
         // Sequence should complete early since primary is closed

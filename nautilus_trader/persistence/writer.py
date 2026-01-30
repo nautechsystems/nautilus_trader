@@ -32,6 +32,7 @@ from nautilus_trader.common.component import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import CustomData
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
@@ -135,6 +136,7 @@ class StreamingFeatherWriter:
             "order_book_depths",
             "quote_tick",
             "trade_tick",
+            "funding_rate_update",
         }
         self.rotation_mode = rotation_mode
         self.max_file_size = max_file_size
@@ -456,7 +458,13 @@ class StreamingFeatherWriter:
 
     def _extract_obj_metadata(
         self,
-        obj: TradeTick | QuoteTick | Bar | OrderBookDelta | OrderBookDepth10 | object,
+        obj: TradeTick
+        | QuoteTick
+        | Bar
+        | OrderBookDelta
+        | OrderBookDepth10
+        | FundingRateUpdate
+        | object,
     ) -> dict[bytes, bytes]:
         if isinstance(obj, Bar):
             instrument_id = obj.bar_type.instrument_id
@@ -478,6 +486,8 @@ class StreamingFeatherWriter:
                     b"size_precision": str(instrument.size_precision).encode(),
                 },
             )
+        elif isinstance(obj, FundingRateUpdate):
+            pass
         else:
             metadata.update(
                 {

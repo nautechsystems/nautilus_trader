@@ -21,9 +21,9 @@ use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::common::enums::{
-    BinanceFuturesOrderType, BinanceIncomeType, BinanceMarginType, BinancePositionSide,
-    BinancePriceMatch, BinanceSelfTradePreventionMode, BinanceSide, BinanceTimeInForce,
-    BinanceWorkingType,
+    BinanceAlgoType, BinanceFuturesOrderType, BinanceIncomeType, BinanceMarginType,
+    BinancePositionSide, BinancePriceMatch, BinanceSelfTradePreventionMode, BinanceSide,
+    BinanceTimeInForce, BinanceWorkingType,
 };
 
 /// Query parameters for `GET /fapi/v1/depth` or `GET /dapi/v1/depth`.
@@ -671,6 +671,154 @@ impl BatchModifyItem {
 pub struct ListenKeyParams {
     /// The listen key to extend or close.
     pub listen_key: String,
+}
+
+/// Query parameters for `POST /fapi/v1/algoOrder` (new algo order).
+///
+/// # References
+///
+/// - <https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/New-Algo-Order>
+#[derive(Clone, Debug, Serialize, Builder)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct BinanceNewAlgoOrderParams {
+    /// Trading symbol (required).
+    pub symbol: String,
+    /// Order side (required).
+    pub side: BinanceSide,
+    /// Order type (required): STOP_MARKET, STOP, TAKE_PROFIT, TAKE_PROFIT_MARKET, TRAILING_STOP_MARKET.
+    #[serde(rename = "type")]
+    pub order_type: BinanceFuturesOrderType,
+    /// Algo type (required). Currently only `Conditional` is supported.
+    #[serde(rename = "algoType")]
+    pub algo_type: BinanceAlgoType,
+    /// Position side (required for hedge mode).
+    #[serde(rename = "positionSide", skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub position_side: Option<BinancePositionSide>,
+    /// Order quantity.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub quantity: Option<String>,
+    /// Limit price (for STOP/TAKE_PROFIT limit orders).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub price: Option<String>,
+    /// Trigger price for conditional order (required).
+    #[serde(rename = "triggerPrice", skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub trigger_price: Option<String>,
+    /// Time in force.
+    #[serde(rename = "timeInForce", skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub time_in_force: Option<BinanceTimeInForce>,
+    /// Working type for trigger price calculation (MARK_PRICE or CONTRACT_PRICE).
+    #[serde(rename = "workingType", skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub working_type: Option<BinanceWorkingType>,
+    /// Close all position flag.
+    #[serde(rename = "closePosition", skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub close_position: Option<bool>,
+    /// Price protection flag.
+    #[serde(rename = "priceProtect", skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub price_protect: Option<bool>,
+    /// Reduce-only flag.
+    #[serde(rename = "reduceOnly", skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub reduce_only: Option<bool>,
+    /// Activation price for TRAILING_STOP_MARKET orders.
+    #[serde(rename = "activationPrice", skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub activation_price: Option<String>,
+    /// Callback rate for TRAILING_STOP_MARKET orders (0.1 to 10, where 1 = 1%).
+    #[serde(rename = "callbackRate", skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub callback_rate: Option<String>,
+    /// Client algo order ID for idempotency.
+    #[serde(rename = "clientAlgoId", skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub client_algo_id: Option<String>,
+    /// Good till date for GTD orders (milliseconds).
+    #[serde(rename = "goodTillDate", skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub good_till_date: Option<i64>,
+    /// Recv window override (ms).
+    #[serde(rename = "recvWindow", skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub recv_window: Option<u64>,
+}
+
+/// Query parameters for `GET /fapi/v1/algoOrder` and `DELETE /fapi/v1/algoOrder`.
+#[derive(Clone, Debug, Default, Serialize, Builder)]
+#[builder(setter(into, strip_option), default)]
+#[serde(rename_all = "camelCase")]
+pub struct BinanceAlgoOrderQueryParams {
+    /// Algo order ID.
+    #[serde(rename = "algoId", skip_serializing_if = "Option::is_none")]
+    pub algo_id: Option<i64>,
+    /// Client algo order ID.
+    #[serde(rename = "clientAlgoId", skip_serializing_if = "Option::is_none")]
+    pub client_algo_id: Option<String>,
+    /// Recv window override (ms).
+    #[serde(rename = "recvWindow", skip_serializing_if = "Option::is_none")]
+    pub recv_window: Option<u64>,
+}
+
+/// Query parameters for `GET /fapi/v1/openAlgoOrders`.
+#[derive(Clone, Debug, Default, Serialize, Builder)]
+#[builder(setter(into, strip_option), default)]
+#[serde(rename_all = "camelCase")]
+pub struct BinanceOpenAlgoOrdersParams {
+    /// Filter by symbol (optional).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+    /// Recv window override (ms).
+    #[serde(rename = "recvWindow", skip_serializing_if = "Option::is_none")]
+    pub recv_window: Option<u64>,
+}
+
+/// Query parameters for `GET /fapi/v1/allAlgoOrders`.
+#[derive(Clone, Debug, Serialize, Builder)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct BinanceAllAlgoOrdersParams {
+    /// Trading symbol (required).
+    pub symbol: String,
+    /// Start time in milliseconds.
+    #[serde(rename = "startTime", skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub start_time: Option<i64>,
+    /// End time in milliseconds.
+    #[serde(rename = "endTime", skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub end_time: Option<i64>,
+    /// Page number (1-indexed).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub page: Option<u32>,
+    /// Number of results per page (default 100, max 100).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub limit: Option<u32>,
+    /// Recv window override (ms).
+    #[serde(rename = "recvWindow", skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub recv_window: Option<u64>,
+}
+
+/// Query parameters for `DELETE /fapi/v1/algoOpenOrders` (cancel all open algo orders).
+#[derive(Clone, Debug, Serialize, Builder)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct BinanceCancelAllAlgoOrdersParams {
+    /// Trading symbol (required).
+    pub symbol: String,
+    /// Recv window override (ms).
+    #[serde(rename = "recvWindow", skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub recv_window: Option<u64>,
 }
 
 #[cfg(test)]

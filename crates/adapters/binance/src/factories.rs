@@ -132,7 +132,6 @@ impl ExecutionClientFactory for BinanceExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: Rc<RefCell<Cache>>,
-        clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let binance_config = config
             .as_any()
@@ -164,7 +163,6 @@ impl ExecutionClientFactory for BinanceExecutionClientFactory {
                     binance_config.account_id,
                     account_type,
                     None, // base_currency
-                    clock,
                     cache,
                 );
 
@@ -184,7 +182,6 @@ impl ExecutionClientFactory for BinanceExecutionClientFactory {
                     binance_config.account_id,
                     account_type,
                     None, // base_currency
-                    clock,
                     cache,
                 );
 

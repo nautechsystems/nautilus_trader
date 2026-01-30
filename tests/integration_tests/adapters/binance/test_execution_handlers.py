@@ -418,6 +418,58 @@ class TestBinanceSpotExecutionHandlers:
         )  # Preserved trigger price
         assert update_kwargs["quantity"] == mock_order.quantity
 
+    def test_custom_client_order_id_without_o_prefix_preserved(self, mocker):
+        """
+        Test that custom client_order_id values not starting with 'O' are preserved.
+
+        Regression test for GitHub issue #3500.
+
+        """
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_custom_client_id.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = ETHUSDT_BINANCE
+        exec_client._enum_parser.parse_binance_order_side.return_value = OrderSide.BUY
+        exec_client._enum_parser.parse_binance_order_type.return_value = mocker.MagicMock()
+
+        # Act
+        wrapper.data.handle_execution_report(exec_client)
+
+        # Assert - client_order_id should be preserved as "INIT-BTC-1234567890"
+        exec_client.generate_order_filled.assert_called_once()
+        call_kwargs = exec_client.generate_order_filled.call_args.kwargs
+        assert call_kwargs["client_order_id"] == ClientOrderId("INIT-BTC-1234567890")
+
+    def test_empty_client_order_id_sends_order_status_report(self, mocker):
+        """
+        Test that empty client_order_id (both c and C fields) sends OrderStatusReport.
+        """
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_execution_report_empty_client_id.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceSpotOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+        exec_client = mocker.MagicMock()
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+
+        # Act
+        wrapper.data.handle_execution_report(exec_client)
+
+        # Assert - should send OrderStatusReport (treated as external order)
+        exec_client._cache.strategy_id_for_order.assert_not_called()
+        exec_client._send_order_status_report.assert_called_once()
+        report = exec_client._send_order_status_report.call_args[0][0]
+        assert report.client_order_id is None
+
 
 class TestBinanceFuturesExecutionHandlers:
     """

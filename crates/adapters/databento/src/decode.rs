@@ -57,7 +57,7 @@ use nautilus_model::{
         AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction, FromU8, FromU16,
         InstrumentClass, MarketStatusAction, OptionKind, OrderSide, PriceType,
     },
-    identifiers::{InstrumentId, TradeId},
+    identifiers::{InstrumentId, Symbol, TradeId},
     instruments::{
         Equity, FuturesContract, FuturesSpread, InstrumentAny, OptionContract, OptionSpread,
     },
@@ -174,15 +174,12 @@ fn parse_currency_or_usd_default(value: Result<&str, impl std::error::Error>) ->
 
 /// Parses a CFI (Classification of Financial Instruments) code to extract asset and instrument classes.
 ///
-/// # Errors
-///
-/// Returns an error if `value` has fewer than 3 characters.
-pub fn parse_cfi_iso10926(
-    value: &str,
-) -> anyhow::Result<(Option<AssetClass>, Option<InstrumentClass>)> {
+/// Returns `(None, None)` if `value` has fewer than 3 characters.
+#[must_use]
+pub fn parse_cfi_iso10926(value: &str) -> (Option<AssetClass>, Option<InstrumentClass>) {
     let chars: Vec<char> = value.chars().collect();
     if chars.len() < 3 {
-        anyhow::bail!("Value string is too short");
+        return (None, None);
     }
 
     // TODO: A proper CFI parser would be useful: https://en.wikipedia.org/wiki/ISO_10962
@@ -209,7 +206,20 @@ pub fn parse_cfi_iso10926(
         asset_class = Some(AssetClass::Index);
     }
 
-    Ok((asset_class, instrument_class))
+    (asset_class, instrument_class)
+}
+
+fn decode_underlying(underlying_str: &str, symbol: &Symbol) -> Ustr {
+    if underlying_str.is_empty() {
+        // Fall back to first whitespace-separated token from symbol
+        symbol
+            .as_str()
+            .split_whitespace()
+            .next()
+            .map_or_else(|| symbol.inner(), Ustr::from)
+    } else {
+        Ustr::from(underlying_str)
+    }
 }
 
 /// Parses a Databento status reason code into a human-readable string.
@@ -1209,8 +1219,8 @@ pub fn decode_futures_contract(
 ) -> anyhow::Result<FuturesContract> {
     let currency = parse_currency_or_usd_default(msg.currency());
     let exchange = Ustr::from(msg.exchange()?);
-    let underlying = Ustr::from(msg.asset()?);
-    let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?)?;
+    let underlying = decode_underlying(msg.asset()?, &instrument_id.symbol);
+    let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?);
     let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
     let multiplier = decode_multiplier(msg.unit_of_measure_qty)?;
     let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
@@ -1254,8 +1264,8 @@ pub fn decode_futures_spread(
     ts_init: Option<UnixNanos>,
 ) -> anyhow::Result<FuturesSpread> {
     let exchange = Ustr::from(msg.exchange()?);
-    let underlying = Ustr::from(msg.asset()?);
-    let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?)?;
+    let underlying = decode_underlying(msg.asset()?, &instrument_id.symbol);
+    let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?);
     let strategy_type = Ustr::from(msg.secsubtype()?);
     let currency = parse_currency_or_usd_default(msg.currency());
     let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
@@ -1304,11 +1314,11 @@ pub fn decode_option_contract(
     let currency = parse_currency_or_usd_default(msg.currency());
     let strike_price_currency = parse_currency_or_usd_default(msg.strike_price_currency());
     let exchange = Ustr::from(msg.exchange()?);
-    let underlying = Ustr::from(msg.underlying()?);
+    let underlying = decode_underlying(msg.underlying()?, &instrument_id.symbol);
     let asset_class_opt = if instrument_id.venue.as_str() == "OPRA" {
         Some(AssetClass::Equity)
     } else {
-        let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?)?;
+        let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?);
         asset_class
     };
     let option_kind = parse_option_kind(msg.instrument_class)?;
@@ -1362,11 +1372,11 @@ pub fn decode_option_spread(
     ts_init: Option<UnixNanos>,
 ) -> anyhow::Result<OptionSpread> {
     let exchange = Ustr::from(msg.exchange()?);
-    let underlying = Ustr::from(msg.underlying()?);
+    let underlying = decode_underlying(msg.underlying()?, &instrument_id.symbol);
     let asset_class_opt = if instrument_id.venue.as_str() == "OPRA" {
         Some(AssetClass::Equity)
     } else {
-        let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?)?;
+        let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?);
         asset_class
     };
     let strategy_type = Ustr::from(msg.secsubtype()?);
@@ -1560,19 +1570,18 @@ mod tests {
     }
 
     #[rstest]
-    #[case("DII", Ok((Some(AssetClass::Index), Some(InstrumentClass::Future))))]
-    #[case("EII", Ok((Some(AssetClass::Index), Some(InstrumentClass::Future))))]
-    #[case("EIA", Ok((Some(AssetClass::Equity), Some(InstrumentClass::Future))))]
-    #[case("XXX", Ok((None, None)))]
-    #[case("D", Err("Value string is too short"))]
+    #[case("DII", (Some(AssetClass::Index), Some(InstrumentClass::Future)))]
+    #[case("EII", (Some(AssetClass::Index), Some(InstrumentClass::Future)))]
+    #[case("EIA", (Some(AssetClass::Equity), Some(InstrumentClass::Future)))]
+    #[case("XXX", (None, None))]
+    #[case("D", (None, None))]
+    #[case("", (None, None))]
     fn test_parse_cfi_iso10926(
         #[case] input: &str,
-        #[case] expected: Result<(Option<AssetClass>, Option<InstrumentClass>), &'static str>,
+        #[case] expected: (Option<AssetClass>, Option<InstrumentClass>),
     ) {
-        match parse_cfi_iso10926(input) {
-            Ok(result) => assert_eq!(Ok(result), expected),
-            Err(e) => assert_eq!(Err(e.to_string().as_str()), expected),
-        }
+        let result = parse_cfi_iso10926(input);
+        assert_eq!(result, expected);
     }
 
     #[rstest]

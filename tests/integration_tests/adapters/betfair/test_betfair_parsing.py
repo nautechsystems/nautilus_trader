@@ -56,9 +56,11 @@ from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.orderbook import create_betfair_order_book
 from nautilus_trader.adapters.betfair.parsing.common import instrument_id_betfair_ids
+from nautilus_trader.adapters.betfair.parsing.common import market_id_from_instrument_id
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing.requests import determine_order_status
+from nautilus_trader.adapters.betfair.parsing.requests import hashed_trade_id
 from nautilus_trader.adapters.betfair.parsing.requests import make_customer_order_ref
 from nautilus_trader.adapters.betfair.parsing.requests import (
     nautilus_limit_on_close_to_place_instructions,
@@ -102,6 +104,7 @@ from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
@@ -1063,3 +1066,79 @@ def test_bsp_order_status_report_uses_stake_units():
     assert partial_report.quantity.as_double() == 10.0
     assert partial_report.filled_qty.as_double() == 6.0
     # This correctly shows 60% filled (6/10), not 30% (6/20)
+
+
+def test_hashed_trade_id_deterministic():
+    """
+    Test that hashed_trade_id produces consistent, deterministic output.
+
+    This locks down the hash algorithm to detect any accidental changes.
+
+    """
+    result = hashed_trade_id(
+        bet_id="12345",
+        price=2.5,
+        size=10.0,
+        side="B",
+        persistence_type="L",
+        order_type="L",
+        placed_date=1635217893000,
+        matched_date=1635217894000,
+        average_price_matched=2.5,
+        size_matched=10.0,
+    )
+
+    assert isinstance(result, TradeId)
+    assert result.value == "a5a0e11302313453e314aeb3eeba489333ee"
+
+
+@pytest.mark.parametrize(
+    ("symbol", "expected_market_id", "expected_selection_id", "expected_handicap"),
+    [
+        ("1-201070830-123456-None.BETFAIR", "1-201070830", 123456, None),
+        ("1-201070830-123456-0.0.BETFAIR", "1-201070830", 123456, 0.0),
+        ("1-201070830-123456-2.5.BETFAIR", "1-201070830", 123456, 2.5),
+        ("1-201070830-123456--2.5.BETFAIR", "1-201070830", 123456, -2.5),
+        ("1-201070830-123456--0.5.BETFAIR", "1-201070830", 123456, -0.5),
+        ("1-12345-999-1.0.BETFAIR", "1-12345", 999, 1.0),
+    ],
+)
+def test_instrument_id_betfair_ids(
+    symbol,
+    expected_market_id,
+    expected_selection_id,
+    expected_handicap,
+):
+    # Arrange
+    instrument_id = InstrumentId.from_str(symbol)
+
+    # Act
+    market_id, selection_id, handicap = instrument_id_betfair_ids(instrument_id)
+
+    # Assert
+    assert market_id == expected_market_id
+    assert selection_id == expected_selection_id
+    if expected_handicap is None:
+        assert handicap is None
+    else:
+        assert float(handicap) == expected_handicap
+
+
+@pytest.mark.parametrize(
+    ("symbol", "expected_market_id"),
+    [
+        ("1-201070830-123456-None.BETFAIR", "1.201070830"),
+        ("1-201070830-123456-2.5.BETFAIR", "1.201070830"),
+        ("1-201070830-123456--2.5.BETFAIR", "1.201070830"),
+        ("1-12345-999-1.0.BETFAIR", "1.12345"),
+    ],
+)
+def test_market_id_from_instrument_id(symbol, expected_market_id):
+    # Arrange
+    instrument_id = InstrumentId.from_str(symbol)
+
+    # Act
+    result = market_id_from_instrument_id(instrument_id)
+
+    # Assert
+    assert result == expected_market_id

@@ -37,8 +37,9 @@ use ustr::Ustr;
 
 use crate::{
     common::enums::{
-        BinanceFuturesOrderType, BinanceKlineInterval, BinanceMarginType, BinanceOrderStatus,
-        BinancePositionSide, BinanceSide, BinanceTimeInForce, BinanceWorkingType, BinanceWsMethod,
+        BinanceAlgoStatus, BinanceAlgoType, BinanceFuturesOrderType, BinanceKlineInterval,
+        BinanceMarginType, BinanceOrderStatus, BinancePositionSide, BinanceSide,
+        BinanceTimeInForce, BinanceWorkingType, BinanceWsMethod,
     },
     futures::http::BinanceFuturesInstrument,
 };
@@ -116,6 +117,8 @@ pub enum BinanceFuturesExecWsMessage {
     AccountUpdate(BinanceFuturesAccountUpdateMsg),
     /// Order/trade update.
     OrderUpdate(Box<BinanceFuturesOrderUpdateMsg>),
+    /// Algo order update (conditional orders via Algo Service).
+    AlgoUpdate(Box<BinanceFuturesAlgoUpdateMsg>),
     /// Margin call warning.
     MarginCall(BinanceFuturesMarginCallMsg),
     /// Account configuration change (leverage, etc.).
@@ -862,6 +865,111 @@ pub struct AssetIndexConfig {
     /// Symbol.
     #[serde(rename = "s")]
     pub symbol: Ustr,
+}
+
+/// Algo order update event from user data stream (Binance Futures Algo Service).
+///
+/// This event is triggered for conditional orders (STOP_MARKET, STOP_LIMIT,
+/// TAKE_PROFIT, TAKE_PROFIT_MARKET, TRAILING_STOP_MARKET) managed by the
+/// Algo Service.
+///
+/// # References
+///
+/// - <https://developers.binance.com/docs/derivatives/usds-margined-futures/user-data-streams/Event-Algo-Order-Update>
+#[derive(Debug, Clone, Deserialize)]
+pub struct BinanceFuturesAlgoUpdateMsg {
+    /// Event type ("ALGO_UPDATE").
+    #[serde(rename = "e")]
+    pub event_type: String,
+    /// Event time in milliseconds.
+    #[serde(rename = "E")]
+    pub event_time: i64,
+    /// Transaction time in milliseconds.
+    #[serde(rename = "T")]
+    pub transaction_time: i64,
+    /// Algo order data.
+    #[serde(rename = "ao")]
+    pub algo_order: AlgoOrderUpdateData,
+}
+
+/// Algo order update data payload.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AlgoOrderUpdateData {
+    /// Client algo order ID.
+    #[serde(rename = "caid")]
+    pub client_algo_id: String,
+    /// Algo order ID.
+    #[serde(rename = "aid")]
+    pub algo_id: i64,
+    /// Algo type (currently only `Conditional`).
+    #[serde(rename = "at")]
+    pub algo_type: BinanceAlgoType,
+    /// Order type (STOP_MARKET, STOP, TAKE_PROFIT, TAKE_PROFIT_MARKET, TRAILING_STOP_MARKET).
+    #[serde(rename = "o")]
+    pub order_type: BinanceFuturesOrderType,
+    /// Symbol.
+    #[serde(rename = "s")]
+    pub symbol: Ustr,
+    /// Order side.
+    #[serde(rename = "S")]
+    pub side: BinanceSide,
+    /// Position side.
+    #[serde(rename = "ps")]
+    pub position_side: BinancePositionSide,
+    /// Time in force.
+    #[serde(rename = "f")]
+    pub time_in_force: BinanceTimeInForce,
+    /// Order quantity.
+    #[serde(rename = "q")]
+    pub quantity: String,
+    /// Algo order status (NEW, TRIGGERING, TRIGGERED, FINISHED, CANCELED, EXPIRED, REJECTED).
+    #[serde(rename = "X")]
+    pub algo_status: BinanceAlgoStatus,
+    /// Trigger price.
+    #[serde(rename = "tp")]
+    pub trigger_price: String,
+    /// Limit price.
+    #[serde(rename = "p")]
+    pub price: String,
+    /// Working type for trigger price calculation.
+    #[serde(rename = "wt")]
+    pub working_type: BinanceWorkingType,
+    /// Price match mode.
+    #[serde(rename = "pm", default)]
+    pub price_match: Option<String>,
+    /// Close position flag.
+    #[serde(rename = "cp", default)]
+    pub close_position: Option<bool>,
+    /// Price protection flag.
+    #[serde(rename = "pP", default)]
+    pub price_protect: Option<bool>,
+    /// Reduce-only flag.
+    #[serde(rename = "R", default)]
+    pub reduce_only: Option<bool>,
+    /// Trigger time in milliseconds.
+    #[serde(rename = "tt", default)]
+    pub trigger_time: Option<i64>,
+    /// Good till date in milliseconds.
+    #[serde(rename = "gtd", default)]
+    pub good_till_date: Option<i64>,
+    /// Order ID in matching engine (populated when triggered).
+    #[serde(rename = "ai", default)]
+    pub actual_order_id: Option<String>,
+    /// Average fill price in matching engine (populated when triggered).
+    #[serde(rename = "ap", default)]
+    pub avg_price: Option<String>,
+    /// Executed quantity in matching engine (populated when triggered).
+    #[serde(rename = "aq", default)]
+    pub executed_qty: Option<String>,
+    /// Actual order type in matching engine (populated when triggered).
+    #[serde(rename = "act", default)]
+    pub actual_order_type: Option<String>,
+    /// Callback rate for trailing stop (0.1 to 10, where 1 = 1%).
+    #[serde(rename = "cr", default)]
+    pub callback_rate: Option<String>,
+    /// Self-trade prevention mode.
+    #[serde(rename = "V", default)]
+    pub stp_mode: Option<String>,
 }
 
 /// Listen key expired event.

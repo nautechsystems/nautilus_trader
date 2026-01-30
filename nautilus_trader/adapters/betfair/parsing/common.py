@@ -30,11 +30,9 @@ from nautilus_trader.core.nautilus_pyo3 import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BettingInstrument
-from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments.betting import make_symbol
 from nautilus_trader.model.instruments.betting import null_handicap
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders import Order
 
 
 @lru_cache
@@ -58,12 +56,39 @@ def betfair_instrument_id(
 def instrument_id_betfair_ids(
     instrument_id: InstrumentId,
 ) -> tuple[MarketId, SelectionId, Handicap | None]:
-    parts = instrument_id.symbol.value.rsplit("-", maxsplit=2)
+    """
+    Extract the Betfair market ID, selection ID, and handicap from an instrument ID.
+
+    >>> instrument_id_betfair_ids(InstrumentId.from_str("1-201070830-123456-None.BETFAIR"))
+    ('1-201070830', 123456, None)
+    >>> instrument_id_betfair_ids(InstrumentId.from_str("1-201070830-123456--2.5.BETFAIR"))
+    ('1-201070830', 123456, -2.5)
+
+    """
+    # Using maxsplit=3 handles negative handicaps (e.g., --2.5 becomes -2.5)
+    parts = instrument_id.symbol.value.split("-", maxsplit=3)
     return (
-        MarketId(parts[0]),
-        SelectionId(parts[1]),
-        Handicap(parts[2]) if parts[2] != "None" else None,
+        MarketId(f"{parts[0]}-{parts[1]}"),
+        SelectionId(parts[2]),
+        Handicap(parts[3]) if parts[3] != "None" else None,
     )
+
+
+def market_id_from_instrument_id(instrument_id: InstrumentId) -> MarketId:
+    """
+    Extract the Betfair market ID from an instrument ID.
+
+    The market ID is returned in Betfair's native format with a dot separator.
+
+    >>> market_id_from_instrument_id(InstrumentId.from_str("1-201070830-123456-None.BETFAIR"))
+    '1.201070830'
+    >>> market_id_from_instrument_id(InstrumentId.from_str("1-201070830-123456--2.5.BETFAIR"))
+    '1.201070830'
+
+    """
+    # Symbol: "{market_prefix}-{market_suffix}-..." - only need first two parts
+    parts = instrument_id.symbol.value.split("-", maxsplit=2)
+    return MarketId(f"{parts[0]}.{parts[1]}")
 
 
 def merge_instrument_fields(
@@ -125,8 +150,3 @@ def hash_market_trade(timestamp: int, price: float, volume: float) -> str:
 class FillQtyResult(NamedTuple):
     fill_qty: Quantity
     total_matched_qty: Quantity
-
-
-class FillContext(NamedTuple):
-    order: Order | None
-    instrument: Instrument | None

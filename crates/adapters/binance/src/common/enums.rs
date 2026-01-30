@@ -229,6 +229,47 @@ pub enum BinanceOrderStatus {
     Unknown,
 }
 
+/// Algo order status lifecycle values (Binance Futures Algo Service).
+///
+/// These statuses are specific to conditional orders submitted via the
+/// `/fapi/v1/algoOrder` endpoint (STOP_MARKET, STOP_LIMIT, TAKE_PROFIT,
+/// TAKE_PROFIT_MARKET, TRAILING_STOP_MARKET).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum BinanceAlgoStatus {
+    /// Algo order accepted and waiting for trigger condition.
+    New,
+    /// Algo order trigger condition met, forwarding to matching engine.
+    Triggering,
+    /// Algo order successfully placed in matching engine.
+    Triggered,
+    /// Algo order lifecycle completed (check executed qty for fill status).
+    Finished,
+    /// Algo order canceled by user.
+    Canceled,
+    /// Algo order expired (GTD expiration).
+    Expired,
+    /// Algo order rejected by exchange.
+    Rejected,
+    /// Unknown or undocumented value.
+    #[serde(other)]
+    Unknown,
+}
+
+/// Algo order type for Binance Futures Algo Service.
+///
+/// Currently only `Conditional` is supported by Binance.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum BinanceAlgoType {
+    /// Conditional algo order (stop, take-profit, trailing stop).
+    #[default]
+    Conditional,
+    /// Unknown or undocumented value.
+    #[serde(other)]
+    Unknown,
+}
+
 /// Futures order type enumeration.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -453,6 +494,9 @@ pub enum BinanceWsEventType {
     /// Order/trade update event.
     #[serde(rename = "ORDER_TRADE_UPDATE")]
     OrderTradeUpdate,
+    /// Algo order update event (Binance Futures Algo Service).
+    #[serde(rename = "ALGO_UPDATE")]
+    AlgoUpdate,
     /// Margin call warning event.
     #[serde(rename = "MARGIN_CALL")]
     MarginCall,
@@ -484,6 +528,7 @@ impl BinanceWsEventType {
             Self::MiniTicker24Hr => "24hrMiniTicker",
             Self::AccountUpdate => "ACCOUNT_UPDATE",
             Self::OrderTradeUpdate => "ORDER_TRADE_UPDATE",
+            Self::AlgoUpdate => "ALGO_UPDATE",
             Self::MarginCall => "MARGIN_CALL",
             Self::AccountConfigUpdate => "ACCOUNT_CONFIG_UPDATE",
             Self::ListenKeyExpired => "listenKeyExpired",

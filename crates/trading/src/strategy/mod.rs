@@ -622,6 +622,14 @@ pub trait Strategy: DataActor {
             order_side,
         );
 
+        let inflight_orders = cache.orders_inflight(
+            None,
+            Some(&instrument_id),
+            Some(&strategy_id),
+            None,
+            order_side,
+        );
+
         let exec_algorithm_ids = cache.exec_algorithm_ids();
         let mut algo_orders = Vec::new();
 
@@ -639,13 +647,14 @@ pub trait Strategy: DataActor {
 
         let open_count = open_orders.len();
         let emulated_count = emulated_orders.len();
+        let inflight_count = inflight_orders.len();
         let algo_count = algo_orders.len();
 
         drop(cache);
 
-        if open_count == 0 && emulated_count == 0 && algo_count == 0 {
+        if open_count == 0 && emulated_count == 0 && inflight_count == 0 && algo_count == 0 {
             let side_str = order_side.map(|s| format!(" {s}")).unwrap_or_default();
-            log::info!("No {instrument_id} open or emulated{side_str} orders to cancel");
+            log::info!("No {instrument_id} open, emulated, or inflight{side_str} orders to cancel");
             return Ok(());
         }
 
@@ -660,7 +669,23 @@ pub trait Strategy: DataActor {
                 "Canceling {open_count} open{side_str} {instrument_id} order{}",
                 if open_count == 1 { "" } else { "s" }
             );
+        }
 
+        if emulated_count > 0 {
+            log::info!(
+                "Canceling {emulated_count} emulated{side_str} {instrument_id} order{}",
+                if emulated_count == 1 { "" } else { "s" }
+            );
+        }
+
+        if inflight_count > 0 {
+            log::info!(
+                "Canceling {inflight_count} inflight{side_str} {instrument_id} order{}",
+                if inflight_count == 1 { "" } else { "s" }
+            );
+        }
+
+        if open_count > 0 || inflight_count > 0 {
             let command = CancelAllOrders::new(
                 trader_id,
                 client_id,
@@ -676,11 +701,6 @@ pub trait Strategy: DataActor {
         }
 
         if emulated_count > 0 {
-            log::info!(
-                "Canceling {emulated_count} emulated{side_str} {instrument_id} order{}",
-                if emulated_count == 1 { "" } else { "s" }
-            );
-
             let command = CancelAllOrders::new(
                 trader_id,
                 client_id,
