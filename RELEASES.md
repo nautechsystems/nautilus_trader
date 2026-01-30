@@ -92,6 +92,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed Polymarket duplicate trade_id for multi-order fills (#3450), thanks for reporting @santivazq
 - Fixed Polymarket `load_all_async` ignoring time-based filters (#3475), thanks @Coyote-Den
 - Fixed `MarketIfTouchedOrder` fill price during bar processing to use trigger price instead of bar extremes, thanks @HaakonFlaaronning
+- Fixed Avoid OOM error in backtest by setting optimize_file_loading default value to False.
 
 ### Internal Improvements
 - Added support for setting cache database adapter in cache and `LiveNode` (#3401), thanks @filipmacek
