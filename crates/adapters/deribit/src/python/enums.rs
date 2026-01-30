@@ -22,7 +22,7 @@ use pyo3::{PyTypeInfo, prelude::*, types::PyType};
 use strum::IntoEnumIterator;
 
 use crate::{
-    common::enums::{DeribitCurrency, DeribitInstrumentKind},
+    common::enums::{DeribitCurrency, DeribitProductType},
     websocket::enums::DeribitUpdateInterval,
 };
 
@@ -108,7 +108,7 @@ impl DeribitCurrency {
 }
 
 #[pymethods]
-impl DeribitInstrumentKind {
+impl DeribitProductType {
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);
@@ -122,7 +122,7 @@ impl DeribitInstrumentKind {
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
-            stringify!(DeribitInstrumentKind),
+            stringify!(DeribitProductType),
             self.name(),
             self.value(),
         )

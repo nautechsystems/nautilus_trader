@@ -393,11 +393,11 @@ impl ExecutionClient for DeribitExecutionClient {
         self.core.set_started();
 
         log::info!(
-            "Started: client_id={}, account_id={}, account_type={:?}, instrument_kinds={:?}, use_testnet={}",
+            "Started: client_id={}, account_id={}, account_type={:?}, product_types={:?}, use_testnet={}",
             self.core.client_id,
             self.core.account_id,
             self.core.account_type,
-            self.config.instrument_kinds,
+            self.config.product_types,
             self.config.use_testnet
         );
         Ok(())
@@ -430,7 +430,7 @@ impl ExecutionClient for DeribitExecutionClient {
 
         // Fetch and cache instruments in both HTTP client and WebSocket client
         if !self.core.instruments_initialized() {
-            for kind in &self.config.instrument_kinds {
+            for kind in &self.config.product_types {
                 let instruments = self
                     .http_client
                     .request_instruments(DeribitCurrency::ANY, Some(*kind))

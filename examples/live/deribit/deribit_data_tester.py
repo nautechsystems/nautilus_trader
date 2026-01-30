@@ -41,7 +41,7 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.core.nautilus_pyo3 import DeribitInstrumentKind
+from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId
@@ -57,10 +57,10 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 # Use testnet by default for safety
 USE_TESTNET = bool(os.getenv("USE_TESTNET", "true").lower() == "true")
 
-# Optional: Filter by instrument kinds
-instrument_kinds: tuple[DeribitInstrumentKind, ...] | None = (
-    DeribitInstrumentKind.FUTURE,
-    # DeribitInstrumentKind.OPTION,  # Uncomment to include options (many instruments!)
+# Optional: Filter by product types
+product_types: tuple[DeribitProductType, ...] | None = (
+    DeribitProductType.FUTURE,
+    # DeribitProductType.OPTION,  # Uncomment to include options (many instruments!)
 )
 
 # Define instruments to subscribe to
@@ -87,7 +87,7 @@ config_node = TradingNodeConfig(
         DERIBIT: DeribitDataClientConfig(
             api_key=None,  # Will use env var: DERIBIT_TESTNET_API_KEY or DERIBIT_API_KEY
             api_secret=None,  # Will use env var: DERIBIT_TESTNET_API_SECRET or DERIBIT_API_SECRET
-            instrument_kinds=instrument_kinds,
+            product_types=product_types,
             instrument_provider=InstrumentProviderConfig(
                 load_all=True,
             ),

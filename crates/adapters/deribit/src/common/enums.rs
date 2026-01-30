@@ -21,7 +21,7 @@ use nautilus_model::enums::TimeInForce;
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display as StrumDisplay, EnumIter, EnumString};
 
-/// Deribit instrument kind/type.
+/// Deribit product type.
 #[derive(
     Clone,
     Copy,
@@ -42,7 +42,7 @@ use strum::{AsRefStr, Display as StrumDisplay, EnumIter, EnumString};
     feature = "python",
     pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.deribit")
 )]
-pub enum DeribitInstrumentKind {
+pub enum DeribitProductType {
     /// Future contract
     Future,
     /// Option contract

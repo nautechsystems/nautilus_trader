@@ -27,7 +27,7 @@ use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
 use crate::http::{
     client::DeribitHttpClient,
     error::DeribitHttpError,
-    models::{DeribitCurrency, DeribitInstrumentKind},
+    models::{DeribitCurrency, DeribitProductType},
 };
 
 #[pymethods]
@@ -116,7 +116,7 @@ impl DeribitHttpClient {
         &self,
         py: Python<'py>,
         currency: DeribitCurrency,
-        kind: Option<DeribitInstrumentKind>,
+        kind: Option<DeribitProductType>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 

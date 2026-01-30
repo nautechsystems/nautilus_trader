@@ -201,13 +201,11 @@ class DeribitDataClient(LiveMarketDataClient):
 
         self._instrument_provider: DeribitInstrumentProvider = instrument_provider
 
-        instrument_kinds = (
-            [k.name for k in config.instrument_kinds] if config.instrument_kinds else None
-        )
+        product_types = [k.name for k in config.product_types] if config.product_types else None
 
         # Configuration
         self._config = config
-        self._log.info(f"config.instrument_kinds={instrument_kinds}", LogColor.BLUE)
+        self._log.info(f"config.product_types={product_types}", LogColor.BLUE)
         self._log.info(f"{config.is_testnet=}", LogColor.BLUE)
         self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
@@ -727,7 +725,7 @@ class DeribitDataClient(LiveMarketDataClient):
     async def _fetch_instruments_for_currency(
         self,
         currency: nautilus_pyo3.DeribitCurrency,
-        kind: nautilus_pyo3.DeribitInstrumentKind | None = None,
+        kind: nautilus_pyo3.DeribitProductType | None = None,
     ) -> list[Instrument]:
         try:
             pyo3_instruments = await self._http_client.request_instruments(currency, kind)
@@ -755,16 +753,16 @@ class DeribitDataClient(LiveMarketDataClient):
 
         all_instruments: list[Instrument] = []
 
-        instrument_kinds = self._config.instrument_kinds
+        product_types = self._config.product_types
 
-        if instrument_kinds:
-            for kind in instrument_kinds:
+        if product_types:
+            for kind in product_types:
                 instruments = await self._fetch_instruments_for_currency(DeribitCurrency.ANY, kind)
                 all_instruments.extend(instruments)
         else:
             instruments = await self._fetch_instruments_for_currency(
                 DeribitCurrency.ANY,
-                nautilus_pyo3.DeribitInstrumentKind.FUTURE,
+                nautilus_pyo3.DeribitProductType.FUTURE,
             )
             all_instruments.extend(instruments)
 

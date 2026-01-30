@@ -114,10 +114,10 @@ class DeribitExecutionClient(LiveExecutionClient):
 
         # Configuration
         self._config = config
-        instrument_kinds = (
-            [i.name.upper() for i in config.instrument_kinds] if config.instrument_kinds else None
+        product_types = (
+            [i.name.upper() for i in config.product_types] if config.product_types else None
         )
-        self._log.info(f"config.instrument_kinds={instrument_kinds}", LogColor.BLUE)
+        self._log.info(f"config.product_types={product_types}", LogColor.BLUE)
         self._log.info(f"{config.is_testnet=}", LogColor.BLUE)
         self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)

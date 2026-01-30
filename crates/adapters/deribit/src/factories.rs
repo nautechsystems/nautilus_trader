@@ -173,7 +173,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::http::models::DeribitInstrumentKind;
+    use crate::http::models::DeribitProductType;
 
     fn setup_test_env() {
         // Initialize data event sender for tests
@@ -197,7 +197,7 @@ mod tests {
     #[rstest]
     fn test_deribit_data_client_config_implements_client_config() {
         let config = DeribitDataClientConfig {
-            instrument_kinds: vec![DeribitInstrumentKind::Future],
+            product_types: vec![DeribitProductType::Future],
             ..Default::default()
         };
 
@@ -215,7 +215,7 @@ mod tests {
 
         let factory = DeribitDataClientFactory::new();
         let config = DeribitDataClientConfig {
-            instrument_kinds: vec![DeribitInstrumentKind::Future],
+            product_types: vec![DeribitProductType::Future],
             use_testnet: true,
             ..Default::default()
         };

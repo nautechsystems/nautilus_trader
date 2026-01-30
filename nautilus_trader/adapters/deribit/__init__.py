@@ -37,7 +37,7 @@ from nautilus_trader.adapters.deribit.factories import get_cached_deribit_instru
 from nautilus_trader.adapters.deribit.providers import DeribitInstrumentProvider
 from nautilus_trader.core.nautilus_pyo3 import DeribitCurrency
 from nautilus_trader.core.nautilus_pyo3 import DeribitHttpClient
-from nautilus_trader.core.nautilus_pyo3 import DeribitInstrumentKind
+from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
 from nautilus_trader.core.nautilus_pyo3 import DeribitUpdateInterval
 from nautilus_trader.core.nautilus_pyo3 import DeribitWebSocketClient
 
@@ -52,10 +52,10 @@ __all__ = [
     "DeribitExecClientConfig",
     "DeribitExecutionClient",
     "DeribitHttpClient",
-    "DeribitInstrumentKind",
     "DeribitInstrumentProvider",
     "DeribitLiveDataClientFactory",
     "DeribitLiveExecClientFactory",
+    "DeribitProductType",
     "DeribitUpdateInterval",
     "DeribitWebSocketClient",
     "get_cached_deribit_http_client",

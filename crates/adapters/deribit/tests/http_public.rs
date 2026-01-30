@@ -28,7 +28,7 @@ use nautilus_common::testing::wait_until_async;
 use nautilus_deribit::http::{
     client::DeribitRawHttpClient,
     error::DeribitHttpError,
-    models::{DeribitCurrency, DeribitInstrumentKind},
+    models::{DeribitCurrency, DeribitProductType},
     query::{
         GetInstrumentParams, GetInstrumentsParams, GetLastTradesByInstrumentAndTimeParams,
         GetOrderBookParams, GetTradingViewChartDataParams,
@@ -425,7 +425,7 @@ async fn test_get_instrument_success() {
     assert_eq!(instrument.tick_size, dec!(0.5));
     assert_eq!(instrument.min_trade_amount, dec!(10.0));
     assert!(instrument.is_active);
-    assert_eq!(instrument.kind, DeribitInstrumentKind::Future);
+    assert_eq!(instrument.kind, DeribitProductType::Future);
 
     assert_eq!(
         *state
@@ -538,23 +538,23 @@ async fn test_get_instruments_success() {
 
     let perpetual = &instruments[0];
     assert_eq!(perpetual.instrument_name.as_str(), "BTC-PERPETUAL");
-    assert_eq!(perpetual.kind, DeribitInstrumentKind::Future);
+    assert_eq!(perpetual.kind, DeribitProductType::Future);
     assert_eq!(perpetual.base_currency.as_str(), "BTC");
     assert!(perpetual.is_active);
 
     let future = &instruments[1];
     assert_eq!(future.instrument_name.as_str(), "BTC-27DEC24");
-    assert_eq!(future.kind, DeribitInstrumentKind::Future);
+    assert_eq!(future.kind, DeribitProductType::Future);
     assert_eq!(future.expiration_timestamp, Some(1735300800000));
 
     let option = &instruments[2];
     assert_eq!(option.instrument_name.as_str(), "BTC-27DEC24-100000-C");
-    assert_eq!(option.kind, DeribitInstrumentKind::Option);
+    assert_eq!(option.kind, DeribitProductType::Option);
     assert_eq!(option.strike, Some(dec!(100000.0)));
 
     let combo = &instruments[3];
     assert_eq!(combo.instrument_name.as_str(), "BTC-COMBO-1");
-    assert_eq!(combo.kind, DeribitInstrumentKind::FutureCombo);
+    assert_eq!(combo.kind, DeribitProductType::FutureCombo);
 
     assert_eq!(
         *state
@@ -583,8 +583,7 @@ async fn test_get_instruments_with_kind_filter() {
     )
     .unwrap();
 
-    let params =
-        GetInstrumentsParams::with_kind(DeribitCurrency::BTC, DeribitInstrumentKind::Option);
+    let params = GetInstrumentsParams::with_kind(DeribitCurrency::BTC, DeribitProductType::Option);
     let result = client.get_instruments(params).await;
 
     assert!(result.is_ok(), "Request should succeed");
@@ -595,7 +594,7 @@ async fn test_get_instruments_with_kind_filter() {
 
     let option = &instruments[0];
     assert_eq!(option.instrument_name.as_str(), "BTC-27DEC24-100000-C");
-    assert_eq!(option.kind, DeribitInstrumentKind::Option);
+    assert_eq!(option.kind, DeribitProductType::Option);
 }
 
 #[tokio::test]

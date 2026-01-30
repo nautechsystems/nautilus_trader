@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 pub use crate::common::{
-    enums::{DeribitCurrency, DeribitInstrumentKind, DeribitOptionType},
+    enums::{DeribitCurrency, DeribitOptionType, DeribitProductType},
     rpc::{DeribitJsonRpcError, DeribitJsonRpcRequest, DeribitJsonRpcResponse},
 };
 
@@ -68,8 +68,8 @@ pub struct DeribitInstrument {
     pub instrument_type: Option<String>,
     /// Indicates if the instrument can currently be traded
     pub is_active: bool,
-    /// Instrument kind: "future", "option", "spot", "future_combo", "option_combo"
-    pub kind: DeribitInstrumentKind,
+    /// Product type: "future", "option", "spot", "future_combo", "option_combo"
+    pub kind: DeribitProductType,
     /// Maker commission for instrument
     #[serde(deserialize_with = "deserialize_decimal")]
     pub maker_commission: Decimal,
@@ -590,8 +590,8 @@ pub struct DeribitPosition {
         deserialize_with = "nautilus_core::serialization::deserialize_decimal"
     )]
     pub total_profit_loss: Decimal,
-    /// Instrument kind: future, option, spot, etc.
-    pub kind: DeribitInstrumentKind,
+    /// Product type: future, option, spot, etc.
+    pub kind: DeribitProductType,
     /// Position size in currency units (for currency-quoted positions)
     #[serde(
         default,

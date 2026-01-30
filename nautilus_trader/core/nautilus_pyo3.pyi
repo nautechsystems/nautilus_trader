@@ -6885,7 +6885,7 @@ class DeribitHttpClient:
     async def request_instruments(
         self,
         currency: DeribitCurrency,
-        kind: DeribitInstrumentKind | None = None,
+        kind: DeribitProductType | None = None,
     ) -> list[Instrument]: ...
     async def request_instrument(self, instrument_id: InstrumentId) -> Instrument: ...
     async def request_trades(
@@ -7105,7 +7105,7 @@ class DeribitCurrency(Enum):
     EURR = "EURR"
     ANY = "ANY"
 
-class DeribitInstrumentKind(Enum):
+class DeribitProductType(Enum):
     FUTURE = "FUTURE"
     OPTION = "OPTION"
     SPOT = "SPOT"
