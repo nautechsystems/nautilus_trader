@@ -1651,7 +1651,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         where: str | None = None,
         session: DataBackendSession | None = None,
         files: list[str] | None = None,
-        optimize_file_loading: bool = True,
+        optimize_file_loading: bool = False,
         **kwargs: Any,
     ) -> DataBackendSession:
         """
