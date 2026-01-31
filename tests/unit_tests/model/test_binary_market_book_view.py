@@ -1,9 +1,6 @@
-
-import pytest
-from .test_orderbook_pyo3 import populate_book, fixture_book
-from decimal import Decimal
 from nautilus_trader.core import nautilus_pyo3
 
+from .test_orderbook_pyo3 import populate_book
 
 
 def test_binary_market_book_view_creation(book: nautilus_pyo3.OrderBook):
@@ -58,9 +55,9 @@ def test_binary_market_book_view_creation(book: nautilus_pyo3.OrderBook):
     )
     own_synthetic_book.add(synthetic_bid)
     book_view = nautilus_pyo3.BinaryMarketBookView(book, own_book, own_synthetic_book)
-    
+
     assert book_view.book.best_bid_size() == 80
-    
+
     # synthetic bid covers 0.60 whole level
     assert book_view.book.best_ask_size() == 200
     assert book_view.book.best_ask_price() == 0.61

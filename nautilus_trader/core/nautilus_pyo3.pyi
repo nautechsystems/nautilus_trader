@@ -4057,6 +4057,20 @@ class OrderBook:
     def simulate_fills(self, order: BookOrder) -> list[tuple[Price, Quantity]]: ...
     def pprint(self, num_levels: int = 3, group_size: Decimal | None = None) -> str: ...
 
+class BinaryMarketBookView:
+    def __init__(
+        self,
+        book: OrderBook,
+        own_book: OwnOrderBook,
+        own_synthetic_book: OwnOrderBook,
+        depth: int | None = None,
+        status: set[OrderStatus] | None = None,
+        accepted_buffer_ns: int | None = None,
+        now: int | None = None,
+    ) -> None: ...
+    @property
+    def book(self) -> OrderBook: ...
+
 def update_book_with_quote_tick(book: OrderBook, quote: QuoteTick) -> None: ...
 def update_book_with_trade_tick(book: OrderBook, trade: TradeTick) -> None: ...
 
