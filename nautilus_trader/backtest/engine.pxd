@@ -454,6 +454,8 @@ cdef class OrderMatchingEngine:
     cdef void _process_market_to_limit_order(self, MarketToLimitOrder order)
     cdef void _process_limit_order(self, LimitOrder order)
     cdef void _process_stop_market_order(self, StopMarketOrder order)
+    cdef Price _calculate_protection_price(self, OrderSide side)
+    cdef list _filter_fills_by_protection(self, list fills, OrderSide side, Price protection_price)
     cdef void _process_stop_limit_order(self, StopLimitOrder order)
     cdef void _process_market_if_touched_order(self, MarketIfTouchedOrder order)
     cdef void _process_limit_if_touched_order(self, LimitIfTouchedOrder order)
@@ -491,6 +493,7 @@ cdef class OrderMatchingEngine:
         LiquiditySide liquidity_side,
         PositionId venue_position_id=*,
         Position position=*,
+        Price protection_price=*,
     )
     cdef void _generate_spread_leg_fills(
         self,

@@ -428,6 +428,62 @@ Example - SELL `STOP_MARKET` with trigger at 100:
 
 This behavior caps potential slippage during orderly market moves while still modeling gap slippage accurately. For tick-level precision, use quote or trade tick data instead of bars.
 
+### Price protection
+
+Price protection defines an exchange-calculated price boundary that prevents marketable orders from
+executing at excessively aggressive prices. This models exchanges like Binance and CME that implement
+protection mechanisms for market and stop-market orders.
+
+**Configuration:**
+
+```python
+from nautilus_trader.backtest.config import BacktestVenueConfig
+
+venue_config = BacktestVenueConfig(
+    name="BINANCE",
+    oms_type="NETTING",
+    account_type="MARGIN",
+    starting_balances=["100_000 USDT"],
+    price_protection_points=100,  # 100 points = 1.00 offset for 2-decimal instruments
+)
+```
+
+**How it works:**
+
+The matching engine calculates the protection boundary from the current best bid/ask at fill time:
+
+- **BUY orders**: `protection_price = ask + (points × price_increment)`
+- **SELL orders**: `protection_price = bid - (points × price_increment)`
+
+The engine filters out fills beyond the protection boundary. For example, with `price_protection_points=100`
+on an instrument with `price_increment=0.01`:
+
+- Best ask is 1001.00.
+- Protection price = 1001.00 + (100 × 0.01) = 1002.00.
+- A BUY market order fills only at prices ≤ 1002.00.
+- Liquidity at 1003.00 or higher is filtered, leaving the order partially filled.
+
+**Trigger-time semantics:**
+
+The engine computes protection at fill time, not order submission time:
+
+- **Market orders**: Protection computed immediately when the order processes.
+- **Stop-market orders**: Protection computed when the stop triggers, using the bid/ask at that moment.
+
+This design allows stop orders to be submitted even when the opposite side of the book is empty,
+since the engine computes protection later when the stop triggers.
+
+**Order types affected:**
+
+- `MARKET`
+- `STOP_MARKET`
+
+Limit orders are unaffected since they already define a price boundary.
+
+:::note
+Set `price_protection_points=0` to disable price protection (default behavior).
+:::
+
 ### Slippage and spread handling
 
 When backtesting with different types of data, Nautilus implements specific handling for slippage and spread simulation:

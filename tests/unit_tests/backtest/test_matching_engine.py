@@ -7786,3 +7786,385 @@ class TestOrderMatchingEngineLiquidityConsumption:
         filled_events = [m for m in messages if isinstance(m, OrderFilled)]
         assert len(filled_events) == 1
         assert filled_events[0].last_qty == self.instrument.make_qty(10.0)
+
+
+class TestPriceProtection:
+    def setup(self):
+        self.clock = TestClock()
+        self.trader_id = TestIdStubs.trader_id()
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+        self.instrument = _ETHUSDT_PERP_BINANCE
+        self.account_id = TestIdStubs.account_id()
+        self.cache = TestComponentStubs.cache()
+        self.cache.add_instrument(self.instrument)
+
+    def test_market_order_fills_within_protection_boundary(self) -> None:
+        # Arrange
+        matching_engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L2_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            price_protection_points=100,  # 100 points = 1.00 offset
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        snapshot = TestDataStubs.order_book_snapshot(
+            instrument=self.instrument,
+            bid_price=1000.00,
+            ask_price=1001.00,
+            bid_size=100.0,
+            ask_size=10.0,
+            bid_levels=1,
+            ask_levels=3,
+        )
+        matching_engine.process_order_book_deltas(snapshot)
+
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        # Act
+        order = TestExecStubs.market_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+            quantity=self.instrument.make_qty(5.0),
+        )
+        matching_engine.process_order(order, self.account_id)
+
+        # Assert
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) >= 1
+
+    def test_market_order_filters_fills_exceeding_protection(self) -> None:
+        # Protection = 1001 + 1.00 = 1002, fills at 1003 filtered
+        matching_engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L2_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            price_protection_points=100,  # Protection = ask + 1.00
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        bid_delta = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.ADD,
+            order=BookOrder(
+                side=OrderSide.BUY,
+                price=Price.from_str("1000.00"),
+                size=Quantity.from_str("100.000"),
+                order_id=0,
+            ),
+            flags=0,
+            sequence=0,
+            ts_event=0,
+            ts_init=0,
+        )
+        matching_engine.process_order_book_delta(bid_delta)
+
+        delta1 = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.ADD,
+            order=BookOrder(
+                side=OrderSide.SELL,
+                price=Price.from_str("1001.00"),
+                size=Quantity.from_str("5.000"),
+                order_id=1,
+            ),
+            flags=0,
+            sequence=1,
+            ts_event=0,
+            ts_init=0,
+        )
+        matching_engine.process_order_book_delta(delta1)
+
+        delta2 = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.ADD,
+            order=BookOrder(
+                side=OrderSide.SELL,
+                price=Price.from_str("1003.00"),
+                size=Quantity.from_str("5.000"),
+                order_id=2,
+            ),
+            flags=0,
+            sequence=2,
+            ts_event=0,
+            ts_init=0,
+        )
+        matching_engine.process_order_book_delta(delta2)
+
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        # Act
+        order = TestExecStubs.market_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+            quantity=self.instrument.make_qty(10.0),
+        )
+        matching_engine.process_order(order, self.account_id)
+
+        # Assert
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        total_filled = sum(f.last_qty.as_double() for f in filled_events)
+        assert total_filled == 5.0, f"Expected 5.0 filled, was {total_filled}"
+
+    def test_stop_market_order_protection_computed_at_trigger_time(self) -> None:
+        # Protection computed when stop triggers, not at submission
+        matching_engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L2_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            reject_stop_orders=False,
+            price_protection_points=100,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        snapshot = TestDataStubs.order_book_snapshot(
+            instrument=self.instrument,
+            bid_price=1000.00,
+            ask_price=1010.00,
+            bid_size=100.0,
+            ask_size=100.0,
+        )
+        matching_engine.process_order_book_deltas(snapshot)
+
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        order = StopMarketOrder(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S-001"),
+            instrument_id=self.instrument.id,
+            client_order_id=TestIdStubs.client_order_id(),
+            order_side=OrderSide.BUY,
+            quantity=self.instrument.make_qty(1.0),
+            trigger_price=Price.from_str("1015.00"),
+            trigger_type=TriggerType.DEFAULT,
+            init_id=UUID4(),
+            ts_init=0,
+        )
+        matching_engine.process_order(order, self.account_id)
+
+        # Assert
+        accepted_events = [m for m in messages if isinstance(m, OrderAccepted)]
+        assert len(accepted_events) == 1
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) == 0
+
+    def test_protection_disabled_when_zero_points(self) -> None:
+        matching_engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L2_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            price_protection_points=0,  # Disabled
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        bid_delta = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.ADD,
+            order=BookOrder(
+                side=OrderSide.BUY,
+                price=Price.from_str("1000.00"),
+                size=Quantity.from_str("100.000"),
+                order_id=0,
+            ),
+            flags=0,
+            sequence=0,
+            ts_event=0,
+            ts_init=0,
+        )
+        matching_engine.process_order_book_delta(bid_delta)
+
+        delta1 = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.ADD,
+            order=BookOrder(
+                side=OrderSide.SELL,
+                price=Price.from_str("1001.00"),
+                size=Quantity.from_str("5.000"),
+                order_id=1,
+            ),
+            flags=0,
+            sequence=1,
+            ts_event=0,
+            ts_init=0,
+        )
+        matching_engine.process_order_book_delta(delta1)
+
+        delta2 = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.ADD,
+            order=BookOrder(
+                side=OrderSide.SELL,
+                price=Price.from_str("1100.00"),  # Far away price
+                size=Quantity.from_str("5.000"),
+                order_id=2,
+            ),
+            flags=0,
+            sequence=2,
+            ts_event=0,
+            ts_init=0,
+        )
+        matching_engine.process_order_book_delta(delta2)
+
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        # Act
+        order = TestExecStubs.market_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+            quantity=self.instrument.make_qty(10.0),
+        )
+        matching_engine.process_order(order, self.account_id)
+
+        # Assert
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        total_filled = sum(f.last_qty.as_double() for f in filled_events)
+        assert total_filled == 10.0, f"Expected 10.0 filled, was {total_filled}"
+
+    def test_stop_order_accepted_without_opposite_quote(self) -> None:
+        # Stop orders accept without bid/ask - protection computed at trigger
+        matching_engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L2_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            reject_stop_orders=False,
+            price_protection_points=100,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        order = StopMarketOrder(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S-001"),
+            instrument_id=self.instrument.id,
+            client_order_id=TestIdStubs.client_order_id(),
+            order_side=OrderSide.BUY,
+            quantity=self.instrument.make_qty(1.0),
+            trigger_price=Price.from_str("1015.00"),
+            trigger_type=TriggerType.DEFAULT,
+            init_id=UUID4(),
+            ts_init=0,
+        )
+        matching_engine.process_order(order, self.account_id)
+
+        # Assert
+        accepted_events = [m for m in messages if isinstance(m, OrderAccepted)]
+        assert len(accepted_events) == 1
+
+    def test_sell_order_protection_filters_below_boundary(self) -> None:
+        # Protection = 999 - 1.00 = 998, fills at 997 filtered
+        matching_engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L2_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            price_protection_points=100,  # Protection = bid - 1.00
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        ask_delta = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.ADD,
+            order=BookOrder(
+                side=OrderSide.SELL,
+                price=Price.from_str("1000.00"),
+                size=Quantity.from_str("100.000"),
+                order_id=0,
+            ),
+            flags=0,
+            sequence=0,
+            ts_event=0,
+            ts_init=0,
+        )
+        matching_engine.process_order_book_delta(ask_delta)
+
+        delta1 = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.ADD,
+            order=BookOrder(
+                side=OrderSide.BUY,
+                price=Price.from_str("999.00"),
+                size=Quantity.from_str("5.000"),
+                order_id=1,
+            ),
+            flags=0,
+            sequence=1,
+            ts_event=0,
+            ts_init=0,
+        )
+        matching_engine.process_order_book_delta(delta1)
+
+        delta2 = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.ADD,
+            order=BookOrder(
+                side=OrderSide.BUY,
+                price=Price.from_str("997.00"),
+                size=Quantity.from_str("5.000"),
+                order_id=2,
+            ),
+            flags=0,
+            sequence=2,
+            ts_event=0,
+            ts_init=0,
+        )
+        matching_engine.process_order_book_delta(delta2)
+
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        # Act
+        order = TestExecStubs.market_order(
+            instrument=self.instrument,
+            order_side=OrderSide.SELL,
+            quantity=self.instrument.make_qty(10.0),
+        )
+        matching_engine.process_order(order, self.account_id)
+
+        # Assert
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        total_filled = sum(f.last_qty.as_double() for f in filled_events)
+        assert total_filled == 5.0, f"Expected 5.0 filled, was {total_filled}"

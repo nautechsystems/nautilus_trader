@@ -4787,6 +4787,47 @@ cdef class OrderMatchingEngine:
         # Immediately fill marketable order
         self.fill_market_order(order)
 
+    cdef Price _calculate_protection_price(self, OrderSide side):
+        cdef double offset = self._price_protection_points * self.instrument.price_increment.as_double()
+        cdef double protection_value
+
+        if side == OrderSide.BUY:
+            if not self._core.is_ask_initialized:
+                return None
+            protection_value = self._core.ask.as_double() + offset
+        elif side == OrderSide.SELL:
+            if not self._core.is_bid_initialized:
+                return None
+            protection_value = self._core.bid.as_double() - offset
+        else:
+            return None
+
+        return Price(protection_value, precision=self._price_prec)
+
+    cdef list _filter_fills_by_protection(
+        self,
+        list fills,
+        OrderSide side,
+        Price protection_price,
+    ):
+        cdef list filtered = []
+        cdef Price fill_price
+        cdef PriceRaw protection_raw = protection_price._mem.raw
+
+        for fill in fills:
+            fill_price = fill[0]
+
+            # BUY: only fill at prices <= protection_price
+            # SELL: only fill at prices >= protection_price
+            if side == OrderSide.BUY:
+                if fill_price._mem.raw <= protection_raw:
+                    filtered.append(fill)
+            elif side == OrderSide.SELL:
+                if fill_price._mem.raw >= protection_raw:
+                    filtered.append(fill)
+
+        return filtered
+
     cdef void _process_market_to_limit_order(self, MarketToLimitOrder order):
         # Check market exists
         if order.side == OrderSide.BUY and not self._core.is_ask_initialized:
@@ -5357,12 +5398,39 @@ cdef class OrderMatchingEngine:
         order.liquidity_side = LiquiditySide.TAKER
         cdef list[tuple[Price, Quantity]] fills = self.determine_market_fills_with_simulation(order)
 
+        # Compute protection price at fill time (trigger-time semantics for stops)
+        cdef Price protection_price = None
+        if (
+            self._price_protection_points > 0
+            and (order.order_type == OrderType.MARKET or order.order_type == OrderType.STOP_MARKET)
+        ):
+            protection_price = self._calculate_protection_price(order.side)
+            if protection_price is not None:
+                fills = self._filter_fills_by_protection(fills, order.side, protection_price)
+
+        # Apply liquidity consumption after protection filtering
+        # Skip for trigger price fills (gap price may not exist in book)
+        cdef bint is_trigger_price_fill = (
+            not self._fill_at_market
+            and self._book.book_type == BookType.L1_MBP
+            and (
+                order.order_type == OrderType.STOP_MARKET
+                or order.order_type == OrderType.TRAILING_STOP_MARKET
+                or order.order_type == OrderType.MARKET_IF_TOUCHED
+            )
+            and order.has_trigger_price_c()
+        )
+
+        if not is_trigger_price_fill:
+            fills = self._apply_liquidity_consumption(fills, order.side, order.leaves_qty._mem.raw)
+
         self.apply_fills(
             order=order,
             fills=fills,
             liquidity_side=order.liquidity_side,
             venue_position_id=venue_position_id,
             position=position,
+            protection_price=protection_price,
         )
 
     cdef list[tuple[Price, Quantity]] determine_market_fills_with_simulation(self, Order order):
@@ -5585,10 +5653,8 @@ cdef class OrderMatchingEngine:
             triggered_price = order.get_triggered_price_c()
             if triggered_price is not None:
                 fills[0] = (triggered_price, fills[0][1])
-                # Skip liquidity consumption for trigger price fills (may be at gap price with no book liquidity)
-                return fills
 
-        return self._apply_liquidity_consumption(fills, order.side, order.leaves_qty._mem.raw)
+        return fills
 
     cpdef void fill_limit_order(self, Order order):
         """
@@ -5994,6 +6060,7 @@ cdef class OrderMatchingEngine:
         LiquiditySide liquidity_side,
         PositionId venue_position_id: PositionId | None = None,
         Position position: Position | None = None,
+        Price protection_price: Price | None = None,
     ):
         """
         Apply the given list of fills to the given order. Optionally provide
@@ -6014,6 +6081,8 @@ cdef class OrderMatchingEngine:
             The current venue position ID related to the order (if assigned).
         position : Position, optional
             The current position related to the order (if any).
+        protection_price : Price, optional
+            The protection price boundary for market/stop-market orders.
 
         Raises
         ------
@@ -6195,6 +6264,13 @@ cdef class OrderMatchingEngine:
                 raise ValueError(  # pragma: no cover (design-time error)
                     f"invalid `OrderSide`, was {order.side}",  # pragma: no cover (design-time error)
                 )
+
+            # Check protection price boundary for slip fills
+            if protection_price is not None:
+                if order.side == OrderSide.BUY and fill_px._mem.raw > protection_price._mem.raw:
+                    return  # Slip fill would exceed protection boundary
+                elif order.side == OrderSide.SELL and fill_px._mem.raw < protection_price._mem.raw:
+                    return  # Slip fill would exceed protection boundary
 
             self.fill_order(
                 order=order,

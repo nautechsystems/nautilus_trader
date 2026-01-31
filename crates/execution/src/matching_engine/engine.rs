@@ -1078,15 +1078,9 @@ impl OrderMatchingEngine {
         }
 
         match order.order_type() {
-            OrderType::Market if self.config.price_protection_points.is_some() => {
-                self.process_market_order_with_protection(order);
-            }
             OrderType::Market => self.process_market_order(order),
             OrderType::Limit => self.process_limit_order(order),
             OrderType::MarketToLimit => self.process_market_to_limit_order(order),
-            OrderType::StopMarket if self.config.price_protection_points.is_some() => {
-                self.process_stop_market_order_with_protection(order);
-            }
             OrderType::StopMarket => self.process_stop_market_order(order),
             OrderType::StopLimit => self.process_stop_limit_order(order),
             OrderType::MarketIfTouched => self.process_market_if_touched_order(order),
@@ -1244,68 +1238,6 @@ impl OrderMatchingEngine {
         self.fill_market_order(order.client_order_id());
     }
 
-    fn process_market_order_with_protection(&mut self, order: &mut OrderAny) {
-        if order.time_in_force() == TimeInForce::AtTheOpen
-            || order.time_in_force() == TimeInForce::AtTheClose
-        {
-            log::error!(
-                "Market auction for the time in force {} is currently not supported",
-                order.time_in_force()
-            );
-            return;
-        }
-
-        // Check if market exists
-        if (order.order_side() == OrderSide::Buy && !self.core.is_ask_initialized)
-            || (order.order_side() == OrderSide::Sell && !self.core.is_bid_initialized)
-        {
-            self.generate_order_rejected(
-                order,
-                format!("No market for {}", order.instrument_id()).into(),
-            );
-            return;
-        }
-
-        self.update_protection_price(order);
-
-        let protection_price = order
-            .price()
-            .expect("Market order with protection must have a protection price");
-
-        // Check for immediate fill
-        if self
-            .core
-            .is_limit_matched(order.order_side_specified(), protection_price)
-        {
-            if self.config.use_market_order_acks {
-                let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
-                self.generate_order_accepted(order, venue_order_id);
-            }
-
-            // Filling as liquidity taker
-            if order.liquidity_side().is_some()
-                && order.liquidity_side().unwrap() == LiquiditySide::NoLiquiditySide
-            {
-                order.set_liquidity_side(LiquiditySide::Taker);
-            }
-            if let Err(e) = self
-                .cache
-                .borrow_mut()
-                .add_order(order.clone(), None, None, false)
-            {
-                log::debug!("Order already in cache: {e}");
-            }
-            self.fill_limit_order(order.client_order_id());
-        } else {
-            // Order won't fill immediately, must accept into order book
-            self.accept_order(order);
-
-            if matches!(order.time_in_force(), TimeInForce::Fok | TimeInForce::Ioc) {
-                self.cancel_order(order, None);
-            }
-        }
-    }
-
     fn process_limit_order(&mut self, order: &mut OrderAny) {
         let limit_px = order.price().expect("Limit order must have a price");
         if order.is_post_only()
@@ -1450,84 +1382,6 @@ impl OrderMatchingEngine {
         }
 
         // order is not matched but is valid and we accept it
-        self.accept_order(order);
-
-        // Add passive order to cache for later modify/cancel operations
-        order.set_liquidity_side(LiquiditySide::Maker);
-        if let Err(e) = self
-            .cache
-            .borrow_mut()
-            .add_order(order.clone(), None, None, false)
-        {
-            log::debug!("Order already in cache: {e}");
-        }
-    }
-
-    fn process_stop_market_order_with_protection(&mut self, order: &mut OrderAny) {
-        let stop_px = order
-            .trigger_price()
-            .expect("Stop order must have a trigger price");
-
-        let order_side = order.order_side();
-        let is_ask_initialized = self.core.is_ask_initialized;
-        let is_bid_initialized = self.core.is_bid_initialized;
-        if (order_side == OrderSide::Buy && !self.core.is_ask_initialized)
-            || (order_side == OrderSide::Sell && !self.core.is_bid_initialized)
-        {
-            self.generate_order_rejected(
-                order,
-                format!("No market for {}", order.instrument_id()).into(),
-            );
-            return;
-        }
-
-        self.update_protection_price(order);
-        let protection_price = order
-            .price()
-            .expect("Market order with protection must have a protection price");
-
-        if self
-            .core
-            .is_stop_matched(order.order_side_specified(), stop_px)
-        {
-            if self.config.reject_stop_orders {
-                self.generate_order_rejected(
-                    order,
-                    format!(
-                        "{} {} order stop px of {} was in the market: bid={}, ask={}, but rejected because of configuration",
-                        order.order_type(),
-                        order.order_side(),
-                        order.trigger_price().unwrap(),
-                        self.core
-                            .bid
-                            .map_or_else(|| "None".to_string(), |p| p.to_string()),
-                        self.core
-                            .ask
-                            .map_or_else(|| "None".to_string(), |p| p.to_string())
-                    ).into(),
-                );
-                return;
-            } else {
-                // Order is valid and accepted
-                self.accept_order(order);
-            }
-
-            if self
-                .core
-                .is_limit_matched(order.order_side_specified(), protection_price)
-            {
-                if let Err(e) = self
-                    .cache
-                    .borrow_mut()
-                    .add_order(order.clone(), None, None, false)
-                {
-                    log::debug!("Order already in cache: {e}");
-                }
-                self.fill_limit_order(order.client_order_id());
-            }
-            return;
-        }
-        // Order is valid and accepted
         self.accept_order(order);
 
         // Add passive order to cache for later modify/cancel operations
@@ -2189,7 +2043,7 @@ impl OrderMatchingEngine {
             return capped_fills;
         }
 
-        self.apply_liquidity_consumption(fills, order.order_side(), order.leaves_qty(), None)
+        fills
     }
 
     /// Fills a market order against the current order book.
@@ -2234,10 +2088,68 @@ impl OrderMatchingEngine {
             self.cancel_order(&order, None);
             return;
         }
-        // set order side as taker
+
         order.set_liquidity_side(LiquiditySide::Taker);
-        let fills = self.determine_market_price_and_volume(&order);
+        let mut fills = self.determine_market_price_and_volume(&order);
+
+        // Apply protection price filtering at fill time (trigger-time semantics for stops)
+        if let Some(protection_points) = self.config.price_protection_points
+            && matches!(
+                order.order_type(),
+                OrderType::Market | OrderType::StopMarket
+            )
+            && let Ok(protection_price) = protection_price_calculate(
+                self.instrument.price_increment(),
+                &order,
+                protection_points,
+                self.core.bid,
+                self.core.ask,
+            )
+        {
+            fills = self.filter_fills_by_protection(fills, &order, protection_price);
+        }
+
+        // Apply liquidity consumption after protection filtering
+        // Skip for trigger price fills (gap price may not exist in book)
+        let is_trigger_price_fill = !self.fill_at_market
+            && self.book_type == BookType::L1_MBP
+            && matches!(
+                order.order_type(),
+                OrderType::StopMarket | OrderType::TrailingStopMarket | OrderType::MarketIfTouched
+            )
+            && order.trigger_price().is_some();
+
+        if !is_trigger_price_fill {
+            fills = self.apply_liquidity_consumption(
+                fills,
+                order.order_side(),
+                order.leaves_qty(),
+                None,
+            );
+        }
+
         self.apply_fills(&mut order, fills, LiquiditySide::Taker, None, position);
+    }
+
+    fn filter_fills_by_protection(
+        &self,
+        fills: Vec<(Price, Quantity)>,
+        order: &OrderAny,
+        protection_price: Price,
+    ) -> Vec<(Price, Quantity)> {
+        let protection_raw = protection_price.raw;
+        fills
+            .into_iter()
+            .filter(|(fill_price, _)| {
+                match order.order_side() {
+                    // BUY: only fill at prices <= protection_price
+                    OrderSide::Buy => fill_price.raw <= protection_raw,
+                    // SELL: only fill at prices >= protection_price
+                    OrderSide::Sell => fill_price.raw >= protection_raw,
+                    OrderSide::NoOrderSide => false,
+                }
+            })
+            .collect()
     }
 
     /// Attempts to fill a limit order against the current order book.
@@ -2959,26 +2871,6 @@ impl OrderMatchingEngine {
         }
 
         self.generate_order_updated(order, order.quantity(), new_price, new_trigger_price, None);
-    }
-
-    fn update_protection_price(&mut self, order: &mut OrderAny) {
-        let protection_price = protection_price_calculate(
-            self.instrument.price_increment(),
-            order,
-            self.config.price_protection_points,
-            self.core.bid,
-            self.core.ask,
-        );
-
-        if let Ok(protection_price) = protection_price {
-            self.generate_order_updated(
-                order,
-                order.quantity(),
-                None,
-                None,
-                Some(protection_price),
-            );
-        }
     }
 
     // -- EVENT HANDLING -----------------------------------------------------
