@@ -98,14 +98,13 @@ pub fn parse_ws_order_report(
     // Clean up order context when order reaches terminal state (filled, cancelled, expired, rejected)
     if let Some(client_id) = dydx_client_id
         && !report.order_status.is_open()
+        && order_contexts.remove(&client_id).is_some()
     {
-        if order_contexts.remove(&client_id).is_some() {
-            log::debug!(
-                "Cleaned up order context for dYdX client_id={} (status={:?})",
-                client_id,
-                report.order_status
-            );
-        }
+        log::debug!(
+            "Cleaned up order context for dYdX client_id={} (status={:?})",
+            client_id,
+            report.order_status
+        );
     }
 
     Ok(report)
