@@ -99,7 +99,25 @@ class TestBacktestConfig:
             "start": 1580398089820000000,
             "end": 1580504394501000000,
             "metadata": None,
+            "optimize_file_loading": False,
         }
+
+    def test_backtest_data_config_query_includes_optimize_file_loading_false(self):
+        # Arrange
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        config = BacktestDataConfig(
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
+            data_cls=QuoteTick,
+            instrument_id=instrument.id,
+            optimize_file_loading=True,
+        )
+
+        # Act
+        result = config.query
+
+        # Assert
+        assert result["optimize_file_loading"] is True
 
     def test_backtest_data_config_query_bar_with_bar_types(self):
         # Arrange

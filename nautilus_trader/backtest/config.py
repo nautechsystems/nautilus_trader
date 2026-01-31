@@ -205,6 +205,9 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
     bar_types : list[BarType | str], optional
         The bar types for the data catalog query.
         Can be used if instrument_id is not specified.
+    optimize_file_loading : bool, default False
+        If True, registers entire directories with the query backend for efficient
+        loading. If False, registers each file individually (e.g. for precise file control).
 
     """
 
@@ -222,6 +225,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
     bar_spec: str | None = None
     instrument_ids: list[str] | None = None
     bar_types: list[str] | None = None
+    optimize_file_loading: bool = False
 
     @property
     def data_type(self) -> type:
@@ -274,6 +278,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
             "end": self.end_time,
             "filter_expr": parse_filters_expr(self.filter_expr),
             "metadata": self.metadata,
+            "optimize_file_loading": self.optimize_file_loading,
         }
 
     @property

@@ -589,6 +589,7 @@ class BacktestNode:
                 end=used_end,
                 session=session,
                 files=filter_files,
+                optimize_file_loading=config.optimize_file_loading,
             )
 
         # Stream data
