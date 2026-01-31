@@ -3,7 +3,10 @@ from nautilus_trader.core import nautilus_pyo3
 from .test_orderbook_pyo3 import populate_book
 
 
-def test_binary_market_book_view_creation(book: nautilus_pyo3.OrderBook):
+def test_binary_market_book_view_creation() -> None:
+    book_type = nautilus_pyo3.BookType.L2_MBP
+    instrument_id = nautilus_pyo3.InstrumentId.from_str("YES.XNAS")
+    book = nautilus_pyo3.OrderBook(instrument_id, book_type)
     populate_book(
         book,
         bids=[
@@ -16,7 +19,6 @@ def test_binary_market_book_view_creation(book: nautilus_pyo3.OrderBook):
         ],
     )
 
-    instrument_id = nautilus_pyo3.InstrumentId.from_str("YES.XNAS")
     own_book = nautilus_pyo3.OwnOrderBook(instrument_id)
 
     order = nautilus_pyo3.OwnBookOrder(
