@@ -12,6 +12,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Added `use_market_order_acks` venue config option to generate `OrderAccepted` events for market orders before filling (mimics behavior of venues like Binance)
 - Added `oto_trigger_mode` venue config option to control whether OTO child orders activate on partial fills (PARTIAL) or only after full fill (FULL) (default PARTIAL) (#3454), thanks @godnight10061
 - Added `request_funding_rates` and `FundingRateUpdate` Arrow serialization (#3467), thanks @dxwil
+- Added `optimize_file_loading` as BacktestDataConfig parameter (#3518), thanks @faysou
 - Added Polymarket data loader event-level API support (#3484), thanks @jsemldonado
 - Improved tearsheet with dynamic Nautilus version and refined run info table (#3396), thanks @KaulSe
 
@@ -74,6 +75,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed Deribit auth token refresh race condition (#3402), thanks @filipmacek
 - Fixed Deribit race condition between response and subscription (#3436), thanks @filipmacek
 - Fixed Deribit grouped book channel parsing (#3473), thanks @filipmacek
+- Fixed Deribit trades parsing for combo_trade_id field (#3520), thanks @davidsblom
 - Fixed Interactive Brokers `fetch_all_open_orders` in client cache key preventing connection sharing (#3441), thanks @shzhng
 - Fixed Interactive Brokers synthetic position order reconciliation causing filled_qty mismatch errors during periodic consistency checks (#3443), thanks @shzhng
 - Fixed Interactive Brokers reconciliation error when account has no positions (#3459), thanks @shzhng
@@ -774,7 +776,7 @@ Released on 9th September 2025 (UTC).
 - Improved DeFi pool event parsing and integrate Arbitrum Camelotv3 new pools signature (#2889), thanks @filipmacek
 - Improved Databento multiplier decoding to prevent precision loss (#2895), thanks @nicolad
 - Improved Bybit balance precision by avoiding float conversion (#2903), thanks @scoriiu
-- Improved dYdX message parsing robustness to allow unknown fields (#2911), thanks @davidblom
+- Improved dYdX message parsing robustness to allow unknown fields (#2911), thanks @davidsblom
 - Improved Polymarket instrument provider bulk loading (#2913), thanks @DeirhX
 - Improved Polymarket binary options parsing with no `endDate` (#2919), thanks @DeirhX
 - Refined Rust catalog path handling (#2743), thanks @faysou
@@ -825,7 +827,7 @@ Released on 9th September 2025 (UTC).
 - Fixed dYdX Take Profit order type mapping error (#2758), thanks @nicolad
 - Fixed dYdX logging typo (#2790), thanks @DeirhX
 - Fixed dYdX order and fill message schemas (#2824), thanks @davidsblom
-- Fixed dYdX message schemas (#2910), thanks @davidblom
+- Fixed dYdX message schemas (#2910), thanks @davidsblom
 - Fixed Binance Spot testnet streaming URL, thanks for reporting @Frzgunr1
 - Fixed Binance US trading fee endpoint URL (#2914), thanks for reporting @bmlquant
 - Fixed Binance Ed25519 key handling

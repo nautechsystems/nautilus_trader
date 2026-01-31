@@ -290,10 +290,6 @@ criteria = "safe-to-deploy"
 version = "3.0.11"
 criteria = "safe-to-deploy"
 
-[[exemptions.anyhow]]
-version = "1.0.100"
-criteria = "safe-to-deploy"
-
 [[exemptions.arc-swap]]
 version = "1.8.0"
 criteria = "safe-to-deploy"
@@ -1731,11 +1727,11 @@ version = "0.10.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.portable-atomic]]
-version = "1.13.0"
+version = "1.13.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.portable-atomic-util]]
-version = "0.2.4"
+version = "0.2.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.ppv-lite86]]
@@ -2055,10 +2051,6 @@ version = "0.1.28"
 criteria = "safe-to-deploy"
 
 [[exemptions.schemars]]
-version = "0.9.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.schemars]]
 version = "1.2.0"
 criteria = "safe-to-deploy"
 
@@ -2187,7 +2179,7 @@ version = "1.0.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.slab]]
-version = "0.4.11"
+version = "0.4.12"
 criteria = "safe-to-deploy"
 
 [[exemptions.snap]]
