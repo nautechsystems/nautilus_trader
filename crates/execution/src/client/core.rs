@@ -34,9 +34,9 @@ use nautilus_model::{
 /// client identity, connection state, and read-only cache access. Execution
 /// clients use this as a base and extend it with venue-specific implementations.
 ///
-/// For event generation, use [`OrderEventFactory`] from `nautilus_common::factories`.
-/// For live adapters, use [`ExecutionEventEmitter`] which combines event generation
-/// with async dispatch. For backtest/sandbox, use [`OrderEventFactory`] directly
+/// For event generation, use `OrderEventFactory` from `nautilus_common::factories`.
+/// For live adapters, use `ExecutionEventEmitter` which combines event generation
+/// with async dispatch. For backtest/sandbox, use `OrderEventFactory` directly
 /// and dispatch via `msgbus::send_order_event()`.
 #[derive(Debug)]
 pub struct ExecutionClientCore {

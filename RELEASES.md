@@ -142,6 +142,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Upgraded `capnp` and `capnpc` crates to v0.25.0
 - Upgraded `databento` crate to v0.39.0
 - Upgraded `datafusion` crate to v52.1.0
+- Upgraded `redis` crate to v1.0.3
 - Upgraded `tokio` crate to v1.49.0
 
 ### Documentation Updates
