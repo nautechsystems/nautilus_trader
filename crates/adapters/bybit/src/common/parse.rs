@@ -28,16 +28,15 @@ use nautilus_model::{
         Bar, BarType, BookOrder, FundingRateUpdate, OrderBookDelta, OrderBookDeltas, TradeTick,
     },
     enums::{
-        AccountType, AggressorSide, AssetClass, BarAggregation, BookAction, LiquiditySide,
-        OptionKind, OrderSide, OrderStatus, OrderType, PositionSideSpecified, RecordFlag,
-        TimeInForce, TriggerType,
+        AccountType, AggressorSide, BarAggregation, BookAction, LiquiditySide, OptionKind,
+        OrderSide, OrderStatus, OrderType, PositionSideSpecified, RecordFlag, TimeInForce,
+        TriggerType,
     },
     events::account::state::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, Venue, VenueOrderId},
     instruments::{
-        Instrument, any::InstrumentAny, crypto_future::CryptoFuture,
+        Instrument, any::InstrumentAny, crypto_future::CryptoFuture, crypto_option::CryptoOption,
         crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
-        option_contract::OptionContract,
     },
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
@@ -480,17 +479,20 @@ pub fn parse_inverse_instrument(
     }
 }
 
-/// Parses a Bybit option contract definition into a Nautilus option instrument.
+/// Parses a Bybit option contract definition into a Nautilus [`CryptoOption`].
 pub fn parse_option_instrument(
     definition: &BybitInstrumentOption,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    let quote_currency = get_currency(definition.quote_coin.as_str());
-
     let symbol = BybitSymbol::new(format!("{}-OPTION", definition.symbol))?;
     let instrument_id = symbol.to_instrument_id();
     let raw_symbol = Symbol::new(symbol.raw_symbol());
+    let underlying = get_currency(definition.base_coin.as_str());
+    let quote_currency = get_currency(definition.quote_coin.as_str());
+    let settlement_currency = get_currency(definition.settle_coin.as_str());
+    // Bybit Options are linear contracts — they are margined and settled in stablecoins
+    let is_inverse = false;
 
     let price_increment = parse_price(&definition.price_filter.tick_size, "priceFilter.tickSize")?;
     let max_price = Some(parse_price(
@@ -523,23 +525,27 @@ pub fn parse_option_instrument(
     let activation_ns = parse_millis_timestamp(&definition.launch_time, "launchTime")?;
     let expiration_ns = parse_millis_timestamp(&definition.delivery_time, "deliveryTime")?;
 
-    let instrument = OptionContract::new(
+    let instrument = CryptoOption::new(
         instrument_id,
         raw_symbol,
-        AssetClass::Cryptocurrency,
-        None,
-        definition.base_coin,
+        underlying,
+        quote_currency,
+        settlement_currency,
+        is_inverse,
         option_kind,
         strike_price,
-        quote_currency,
         activation_ns,
         expiration_ns,
         price_increment.precision,
+        lot_size.precision,
         price_increment,
-        Quantity::from(1_u32),
-        lot_size,
+        lot_size,                    // Lot size represents size increment.
+        Some(Quantity::from(1_u32)), // multiplier
+        Some(lot_size),
         max_quantity,
         min_quantity,
+        None,
+        None,
         max_price,
         min_price,
         Some(Decimal::ZERO),
@@ -550,7 +556,7 @@ pub fn parse_option_instrument(
         ts_init,
     );
 
-    Ok(InstrumentAny::OptionContract(instrument))
+    Ok(InstrumentAny::CryptoOption(instrument))
 }
 
 /// Parses a REST trade payload into a [`TradeTick`].
@@ -1308,17 +1314,24 @@ mod tests {
     }
 
     #[rstest]
-    fn parse_option_instrument_builds_option_contract() {
+    fn parse_option_instrument_builds_crypto_option() {
         let json = load_test_json("http_get_instruments_option.json");
         let response: BybitInstrumentOptionResponse = serde_json::from_str(&json).unwrap();
         let instrument = &response.result.list[0];
 
         let parsed = parse_option_instrument(instrument, TS, TS).unwrap();
         match parsed {
-            InstrumentAny::OptionContract(option) => {
+            InstrumentAny::CryptoOption(option) => {
                 assert_eq!(option.id.to_string(), "ETH-26JUN26-16000-P-OPTION.BYBIT");
+                assert_eq!(option.underlying.code.as_str(), "ETH");
+                assert_eq!(option.quote_currency.code.as_str(), "USDC");
+                assert_eq!(option.settlement_currency.code.as_str(), "USDC");
+                assert!(!option.is_inverse);
                 assert_eq!(option.option_kind, OptionKind::Put);
+                assert_eq!(option.price_precision, 1);
                 assert_eq!(option.price_increment, Price::from_str("0.1").unwrap());
+                assert_eq!(option.size_precision, 0);
+                assert_eq!(option.size_increment, Quantity::from_str("1").unwrap());
                 assert_eq!(option.lot_size, Quantity::from_str("1").unwrap());
             }
             other => panic!("unexpected instrument variant: {other:?}"),
