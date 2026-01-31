@@ -114,7 +114,6 @@ impl PyDydxOrderSubmitter {
     /// * `wallet_address` - Main account address (may differ from derived address for permissioned keys)
     /// * `subaccount_number` - dYdX subaccount number (default: 0)
     /// * `chain_id` - Chain ID string (default: "dydx-mainnet-1")
-    /// * `authenticator_ids` - Authenticator IDs for permissioned key trading
     ///
     /// # Errors
     ///
@@ -126,8 +125,7 @@ impl PyDydxOrderSubmitter {
         private_key,
         wallet_address,
         subaccount_number=0,
-        chain_id=None,
-        authenticator_ids=None
+        chain_id=None
     ))]
     pub fn py_new(
         grpc_client: PyDydxGrpcClient,
@@ -136,7 +134,6 @@ impl PyDydxOrderSubmitter {
         wallet_address: String,
         subaccount_number: u32,
         chain_id: Option<&str>,
-        authenticator_ids: Option<Vec<u64>>,
     ) -> PyResult<Self> {
         let chain_id = if let Some(chain_str) = chain_id {
             ChainId::from_str(chain_str)
@@ -155,7 +152,6 @@ impl PyDydxOrderSubmitter {
             wallet_address,
             subaccount_number,
             chain_id,
-            authenticator_ids.unwrap_or_default(),
             Arc::clone(&block_time_monitor),
         )
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{e}")))?;

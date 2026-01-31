@@ -93,7 +93,6 @@ use crate::{
         order_builder::OrderMessageBuilder,
         tx_manager::TransactionManager,
         types::{LimitOrderParams, OrderContext},
-        wallet::Wallet,
     },
     grpc::{DydxGrpcClient, SHORT_TERM_ORDER_MAXIMUM_LIFETIME, types::ChainId},
     http::{
@@ -150,7 +149,6 @@ pub struct DydxExecutionClient {
     http_client: DydxHttpClient,
     ws_client: DydxWebSocketClient,
     grpc_client: Arc<tokio::sync::RwLock<Option<DydxGrpcClient>>>,
-    wallet: Arc<tokio::sync::RwLock<Option<Wallet>>>,
     instrument_cache: Arc<InstrumentCache>,
     /// Block time monitor for tracking rolling average block times and expiration estimation.
     block_time_monitor: Arc<BlockTimeMonitor>,
@@ -160,11 +158,6 @@ pub struct DydxExecutionClient {
     next_client_order_id: AtomicU32,
     wallet_address: String,
     subaccount_number: u32,
-    /// Resolved authenticator IDs for permissioned key trading.
-    /// Populated during connect if using an API wallet.
-    authenticator_ids: Vec<u64>,
-    /// Transaction manager for sequence tracking and tx building.
-    /// Wrapped in Arc for sharing with async order tasks.
     tx_manager: Option<Arc<TransactionManager>>,
     /// Transaction broadcaster with retry logic.
     /// Wrapped in Arc for sharing with async order tasks.
@@ -193,10 +186,6 @@ impl DydxExecutionClient {
         let clock = get_atomic_clock_realtime();
         let emitter =
             ExecutionEventEmitter::new(clock, trader_id, account_id, AccountType::Margin, None);
-
-        // Resolve wallet credentials (required for execution client)
-        // Priority: 1. config private_key, 2. env DYDX_PRIVATE_KEY
-        let wallet = Self::resolve_wallet(&config)?;
 
         let retry_config = RetryConfig {
             max_retries: config.max_retries,
@@ -242,7 +231,6 @@ impl DydxExecutionClient {
             http_client,
             ws_client,
             grpc_client,
-            wallet: Arc::new(tokio::sync::RwLock::new(Some(wallet))),
             instrument_cache,
             block_time_monitor: Arc::new(BlockTimeMonitor::new()),
             oracle_prices: Arc::new(DashMap::new()),
@@ -251,7 +239,6 @@ impl DydxExecutionClient {
             next_client_order_id: AtomicU32::new(1),
             wallet_address,
             subaccount_number,
-            authenticator_ids: Vec::new(), // Resolved during connect() if using permissioned keys
             tx_manager: None,
             broadcaster: None,
             order_builder: None,
@@ -260,10 +247,10 @@ impl DydxExecutionClient {
         })
     }
 
-    /// Resolves wallet credentials from config or environment.
+    /// Resolves private key from config or environment.
     ///
     /// Priority: 1. config private_key, 2. env DYDX_PRIVATE_KEY
-    fn resolve_wallet(config: &DydxAdapterConfig) -> anyhow::Result<Wallet> {
+    fn resolve_private_key(config: &DydxAdapterConfig) -> anyhow::Result<String> {
         let private_key_env = if config.is_testnet {
             "DYDX_TESTNET_PRIVATE_KEY"
         } else {
@@ -274,7 +261,7 @@ impl DydxExecutionClient {
         if let Some(ref pk) = config.private_key
             && !pk.trim().is_empty()
         {
-            return Wallet::from_private_key(pk);
+            return Ok(pk.clone());
         }
 
         // 2. Try private key from env var
@@ -282,171 +269,10 @@ impl DydxExecutionClient {
             .ok()
             .filter(|s| !s.trim().is_empty())
         {
-            return Wallet::from_private_key(&pk);
+            return Ok(pk);
         }
 
         anyhow::bail!("{private_key_env} not found in config or environment")
-    }
-
-    /// Auto-fetches authenticator IDs for permissioned key trading.
-    ///
-    /// When using an API wallet (signing key different from main account), this method:
-    /// 1. Gets the API wallet's public key
-    /// 2. Queries the chain for authenticators registered to the main account
-    /// 3. Finds authenticators that match the API wallet's public key
-    /// 4. Updates `self.authenticator_ids` with the matching IDs
-    ///
-    /// If authenticator_ids are already configured, this is a no-op.
-    async fn resolve_authenticators(
-        &mut self,
-        grpc_client: &mut DydxGrpcClient,
-    ) -> anyhow::Result<()> {
-        // Check if we already have authenticator IDs configured
-        if !self.authenticator_ids.is_empty() {
-            log::debug!(
-                "Using pre-configured authenticator IDs: {:?}",
-                self.authenticator_ids
-            );
-            return Ok(());
-        }
-
-        // Get the wallet's address (derived from private key)
-        let wallet_guard = self.wallet.read().await;
-        let wallet = wallet_guard
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Wallet not initialized"))?;
-        let account = wallet.account_offline()?;
-        let signing_address = account.address.clone();
-        let signing_pubkey = account.public_key();
-        drop(wallet_guard);
-
-        // Check if we're using an API wallet (signing address != main account)
-        if signing_address == self.wallet_address {
-            log::debug!(
-                "Signing wallet matches main account {}, no authenticator needed",
-                self.wallet_address
-            );
-            return Ok(());
-        }
-
-        log::info!(
-            "Detected permissioned key setup: signing with {} for main account {}",
-            signing_address,
-            self.wallet_address
-        );
-
-        // Fetch authenticators for the main account
-        let authenticators = grpc_client
-            .get_authenticators(&self.wallet_address)
-            .await
-            .context("Failed to fetch authenticators from chain")?;
-
-        if authenticators.is_empty() {
-            anyhow::bail!(
-                "No authenticators found for {}. \
-                 Please create an API Trading Key in the dYdX UI first.",
-                self.wallet_address
-            );
-        }
-
-        log::debug!(
-            "Found {} authenticator(s) for {}",
-            authenticators.len(),
-            self.wallet_address
-        );
-
-        // Find authenticators matching the API wallet's public key
-        let signing_pubkey_bytes = signing_pubkey.to_bytes();
-        let signing_pubkey_b64 = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            &signing_pubkey_bytes,
-        );
-
-        let mut matching_ids = Vec::new();
-        for auth in &authenticators {
-            if self.authenticator_matches_pubkey(auth, &signing_pubkey_b64) {
-                matching_ids.push(auth.id);
-                log::info!("Found matching authenticator: id={}", auth.id);
-            }
-        }
-
-        if matching_ids.is_empty() {
-            anyhow::bail!(
-                "No authenticator matches the API wallet's public key. \
-                 Ensure the API Trading Key was created for wallet {}. \
-                 Available authenticators: {:?}",
-                signing_address,
-                authenticators.iter().map(|a| a.id).collect::<Vec<_>>()
-            );
-        }
-
-        // Store the resolved authenticator IDs
-        self.authenticator_ids = matching_ids.clone();
-        log::info!("Resolved authenticator IDs: {matching_ids:?}");
-
-        Ok(())
-    }
-
-    /// Checks if an authenticator contains a SignatureVerification matching the public key.
-    fn authenticator_matches_pubkey(
-        &self,
-        auth: &crate::proto::AccountAuthenticator,
-        pubkey_b64: &str,
-    ) -> bool {
-        // Parse as JSON array of sub-authenticators
-        #[derive(serde::Deserialize)]
-        struct SubAuth {
-            #[serde(rename = "type")]
-            auth_type: String,
-            config: String,
-        }
-
-        // auth.config is raw bytes (Vec<u8>) containing JSON, not base64-encoded
-        let config_str = match String::from_utf8(auth.config.clone()) {
-            Ok(s) => s,
-            Err(e) => {
-                log::warn!(
-                    "Authenticator id={} has invalid UTF-8 config (len={}): {}",
-                    auth.id,
-                    auth.config.len(),
-                    e
-                );
-                return false;
-            }
-        };
-
-        log::debug!(
-            "Checking authenticator id={}, type={}, config={}",
-            auth.id,
-            auth.r#type,
-            config_str
-        );
-
-        match serde_json::from_str::<Vec<SubAuth>>(&config_str) {
-            Ok(sub_auths) => {
-                for sub in sub_auths {
-                    log::debug!(
-                        "  Sub-authenticator: type={}, config={}",
-                        sub.auth_type,
-                        sub.config
-                    );
-                    if sub.auth_type == "SignatureVerification" && sub.config == pubkey_b64 {
-                        log::debug!("  -> MATCH! pubkey_b64={pubkey_b64}");
-                        return true;
-                    }
-                }
-            }
-            Err(e) => {
-                log::warn!(
-                    "Authenticator id={} config is not in expected JSON array format: {} (config={})",
-                    auth.id,
-                    e,
-                    config_str
-                );
-            }
-        }
-
-        false
     }
 
     /// Generate a unique client order ID integer and store the mapping.
@@ -2347,16 +2173,12 @@ impl ExecutionClient for DydxExecutionClient {
 
         log::info!("Connecting to dYdX");
 
-        // Load instruments BEFORE WebSocket connection
-        // Per Python implementation: "instruments are used in the first account channel message"
         log::debug!("Loading instruments from HTTP API");
         self.http_client.fetch_and_cache_instruments().await?;
         log::debug!(
             "Loaded {} instruments from HTTP into shared cache",
             self.http_client.cached_instruments_count()
         );
-
-        // Mark instruments as initialized (shared cache is already populated)
         self.mark_instruments_initialized();
 
         // Initialize gRPC client (deferred from constructor to avoid blocking)
@@ -2365,9 +2187,6 @@ impl ExecutionClient for DydxExecutionClient {
             .await
             .context("failed to construct dYdX gRPC client")?;
         log::debug!("gRPC client initialized");
-
-        // Auto-fetch authenticator IDs if using permissioned keys (API wallet)
-        self.resolve_authenticators(&mut grpc_client).await?;
 
         // Fetch initial block height synchronously so orders can be submitted immediately after connect()
         let initial_height = grpc_client
@@ -2381,21 +2200,23 @@ impl ExecutionClient for DydxExecutionClient {
 
         *self.grpc_client.write().await = Some(grpc_client.clone());
 
-        // Initialize execution components
-        let wallet_guard = self.wallet.read().await;
-        let wallet_clone = wallet_guard
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Wallet not initialized"))?
-            .clone();
-        drop(wallet_guard);
+        // Resolve private key and create TransactionManager (owns wallet and sequence management)
+        let private_key =
+            Self::resolve_private_key(&self.config).context("failed to resolve private key")?;
+        let tx_manager = Arc::new(
+            TransactionManager::new(
+                grpc_client.clone(),
+                &private_key,
+                self.wallet_address.clone(),
+                self.get_chain_id(),
+            )
+            .context("failed to create TransactionManager")?,
+        );
 
-        let tx_manager = Arc::new(TransactionManager::new(
-            grpc_client.clone(),
-            wallet_clone,
-            self.wallet_address.clone(),
-            self.get_chain_id(),
-            self.authenticator_ids.clone(),
-        ));
+        tx_manager
+            .resolve_authenticators()
+            .await
+            .context("failed to resolve authenticators")?;
 
         // Proactively initialize sequence from chain so orders can be submitted
         // immediately after connect() without first-transaction latency penalty.

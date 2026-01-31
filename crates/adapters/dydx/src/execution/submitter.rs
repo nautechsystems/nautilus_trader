@@ -41,7 +41,6 @@ use crate::{
         order_builder::OrderMessageBuilder,
         tx_manager::TransactionManager,
         types::{ConditionalOrderType, LimitOrderParams},
-        wallet::Wallet,
     },
     grpc::{DydxGrpcClient, types::ChainId},
     http::client::DydxHttpClient,
@@ -90,13 +89,11 @@ impl OrderSubmitter {
     /// * `wallet_address` - Main account address (may differ from derived address for permissioned keys)
     /// * `subaccount_number` - dYdX subaccount number (typically 0)
     /// * `chain_id` - dYdX chain ID
-    /// * `authenticator_ids` - Authenticator IDs for permissioned key trading
     /// * `block_time_monitor` - Block time monitor (provides current height and dynamic block time)
     ///
     /// # Errors
     ///
     /// Returns error if wallet creation from private key fails.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         grpc_client: DydxGrpcClient,
         http_client: DydxHttpClient,
@@ -104,21 +101,15 @@ impl OrderSubmitter {
         wallet_address: String,
         subaccount_number: u32,
         chain_id: ChainId,
-        authenticator_ids: Vec<u64>,
         block_time_monitor: Arc<BlockTimeMonitor>,
     ) -> Result<Self, DydxError> {
-        // Create wallet from private key
-        let wallet = Wallet::from_private_key(private_key)
-            .map_err(|e| DydxError::Wallet(format!("Failed to create wallet: {e}")))?;
-
         // Create transaction manager (owns wallet and sequence management)
         let tx_manager = Arc::new(TransactionManager::new(
             grpc_client.clone(),
-            wallet,
+            private_key,
             wallet_address.clone(),
             chain_id,
-            authenticator_ids,
-        ));
+        )?);
 
         let broadcaster = Arc::new(TxBroadcaster::new(grpc_client));
 
