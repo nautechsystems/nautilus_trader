@@ -663,9 +663,9 @@ impl ExecutionClient for DydxExecutionClient {
 
         let block_height = self.block_time_monitor.current_block_height() as u32;
 
-        // Generate client_order_id as u32 before async block (dYdX requires u32 client IDs)
-        let client_id_u32 = match self.encoder.encode(client_order_id) {
-            Ok(id) => id,
+        // Generate client_order_id as (u32, u32) pair before async block (dYdX requires u32 client IDs)
+        let encoded = match self.encoder.encode(client_order_id) {
+            Ok(enc) => enc,
             Err(e) => {
                 log::error!("Failed to generate client order ID: {e}");
                 let ts_event = self.clock.get_time_ns();
@@ -680,11 +680,14 @@ impl ExecutionClient for DydxExecutionClient {
                 return Ok(());
             }
         };
+        let client_id_u32 = encoded.client_id;
+        let client_metadata = encoded.client_metadata;
 
         log::info!(
-            "[SUBMIT_ORDER] Nautilus '{}' -> dYdX u32={} | instrument={} side={:?} qty={} type={:?}",
+            "[SUBMIT_ORDER] Nautilus '{}' -> dYdX u32={} meta={:#x} | instrument={} side={:?} qty={} type={:?}",
             client_order_id,
             client_id_u32,
+            client_metadata,
             instrument_id,
             order.order_side(),
             order.quantity(),
@@ -744,6 +747,7 @@ impl ExecutionClient for DydxExecutionClient {
                         let msg = order_builder.build_market_order(
                             instrument_id,
                             client_id_u32,
+                            client_metadata,
                             order.order_side(),
                             order.quantity(),
                             block_height,
@@ -755,6 +759,7 @@ impl ExecutionClient for DydxExecutionClient {
                         let msg = order_builder.build_limit_order(
                             instrument_id,
                             client_id_u32,
+                            client_metadata,
                             order.order_side(),
                             order
                                 .price()
@@ -778,6 +783,7 @@ impl ExecutionClient for DydxExecutionClient {
                         let msg = order_builder.build_stop_market_order(
                             instrument_id,
                             client_id_u32,
+                            client_metadata,
                             order.order_side(),
                             trigger_price,
                             order.quantity(),
@@ -797,6 +803,7 @@ impl ExecutionClient for DydxExecutionClient {
                         let msg = order_builder.build_stop_limit_order(
                             instrument_id,
                             client_id_u32,
+                            client_metadata,
                             order.order_side(),
                             trigger_price,
                             limit_price,
@@ -817,6 +824,7 @@ impl ExecutionClient for DydxExecutionClient {
                         let msg = order_builder.build_take_profit_market_order(
                             instrument_id,
                             client_id_u32,
+                            client_metadata,
                             order.order_side(),
                             trigger_price,
                             order.quantity(),
@@ -837,6 +845,7 @@ impl ExecutionClient for DydxExecutionClient {
                         let msg = order_builder.build_take_profit_limit_order(
                             instrument_id,
                             client_id_u32,
+                            client_metadata,
                             order.order_side(),
                             trigger_price,
                             limit_price,
@@ -966,9 +975,9 @@ impl ExecutionClient for DydxExecutionClient {
                 continue;
             };
 
-            // Generate client order ID as u32
-            let client_id_u32 = match self.encoder.encode(order.client_order_id()) {
-                Ok(id) => id,
+            // Generate client order ID as (u32, u32) pair
+            let encoded = match self.encoder.encode(order.client_order_id()) {
+                Ok(enc) => enc,
                 Err(e) => {
                     log::error!("Failed to generate client order ID: {e}");
                     let ts_event = self.clock.get_time_ns();
@@ -983,6 +992,8 @@ impl ExecutionClient for DydxExecutionClient {
                     continue;
                 }
             };
+            let client_id_u32 = encoded.client_id;
+            let client_metadata = encoded.client_metadata;
 
             // Send OrderSubmitted event
             self.emitter.emit_order_submitted(order);
@@ -1014,6 +1025,7 @@ impl ExecutionClient for DydxExecutionClient {
             order_params.push(LimitOrderParams {
                 instrument_id: order.instrument_id(),
                 client_order_id: client_id_u32,
+                client_metadata,
                 side: order.order_side(),
                 price,
                 quantity: order.quantity(),
@@ -1302,9 +1314,9 @@ impl ExecutionClient for DydxExecutionClient {
             log::warn!("Failed to send OrderPendingUpdate event: {e}");
         }
 
-        // Get the OLD client_id for cancellation
-        let old_client_id_u32 = match self.encoder.get(&client_order_id) {
-            Some(id) => id,
+        // Get the OLD encoded pair for cancellation
+        let old_encoded = match self.encoder.get(&client_order_id) {
+            Some(enc) => enc,
             None => {
                 log::error!("Client order ID {client_order_id} not found in cache");
                 self.send_modify_rejected(
@@ -1317,6 +1329,8 @@ impl ExecutionClient for DydxExecutionClient {
                 return Ok(());
             }
         };
+        let old_client_id_u32 = old_encoded.client_id;
+        let old_client_metadata = old_encoded.client_metadata;
 
         // Get old order context (needed for order_flags during cancellation)
         let old_order_context = self.get_order_context(old_client_id_u32);
@@ -1324,9 +1338,11 @@ impl ExecutionClient for DydxExecutionClient {
 
         // Generate NEW client_id for replacement order using encoder
         // dYdX doesn't allow reusing client_id even after cancellation
-        let new_client_id_u32 = match self.encoder.update_mapping(client_order_id, old_client_id_u32)
+        let new_encoded = match self
+            .encoder
+            .update_mapping(client_order_id, old_client_id_u32, old_client_metadata)
         {
-            Ok(id) => id,
+            Ok(enc) => enc,
             Err(e) => {
                 log::error!("Failed to generate new client order ID: {e}");
                 self.send_modify_rejected(
@@ -1339,15 +1355,19 @@ impl ExecutionClient for DydxExecutionClient {
                 return Ok(());
             }
         };
+        let new_client_id_u32 = new_encoded.client_id;
+        let new_client_metadata = new_encoded.client_metadata;
 
         // Remove old context
         self.order_contexts.remove(&old_client_id_u32);
 
         log::info!(
-            "[MODIFY_ORDER] Nautilus '{}' | old dYdX u32={} -> new dYdX u32={} | instrument={} new_qty={} new_price={}",
+            "[MODIFY_ORDER] Nautilus '{}' | old dYdX u32={} meta={:#x} -> new dYdX u32={} meta={:#x} | instrument={} new_qty={} new_price={}",
             client_order_id,
             old_client_id_u32,
+            old_client_metadata,
             new_client_id_u32,
+            new_client_metadata,
             instrument_id,
             new_quantity,
             new_price
@@ -1385,6 +1405,7 @@ impl ExecutionClient for DydxExecutionClient {
         let new_params = LimitOrderParams {
             instrument_id,
             client_order_id: new_client_id_u32,
+            client_metadata: new_client_metadata,
             side: order_side,
             price: new_price,
             quantity: new_quantity,
@@ -1707,14 +1728,15 @@ impl ExecutionClient for DydxExecutionClient {
 
         let block_height = self.block_time_monitor.current_block_height() as u32;
 
-        // Convert client_order_id to u32 before async block
-        let client_id_u32 = match self.encoder.get(&client_order_id) {
-            Some(id) => id,
+        // Convert client_order_id to (u32, u32) pair before async block
+        let encoded = match self.encoder.get(&client_order_id) {
+            Some(enc) => enc,
             None => {
                 log::error!("Client order ID {client_order_id} not found in cache");
                 anyhow::bail!("Client order ID not found in cache")
             }
         };
+        let client_id_u32 = encoded.client_id;
 
         // Check if cancel is already in-flight for this order
         if !self.pending_cancels.insert(client_id_u32) {
@@ -1881,7 +1903,8 @@ impl ExecutionClient for DydxExecutionClient {
         // Use stored order_flags from order context to ensure correct cancellation
         let mut orders_to_cancel = Vec::new();
         for (client_order_id, time_in_force, expire_time) in &order_data {
-            if let Some(client_id_u32) = self.encoder.get(client_order_id) {
+            if let Some(encoded) = self.encoder.get(client_order_id) {
+                let client_id_u32 = encoded.client_id;
                 // Get stored order_flags from order context
                 let order_flags = self.get_order_context(client_id_u32).map_or_else(
                     || {
@@ -2054,8 +2077,8 @@ impl ExecutionClient for DydxExecutionClient {
         let mut orders_to_cancel = Vec::with_capacity(cmd.cancels.len());
         for cancel in &cmd.cancels {
             let client_order_id = cancel.client_order_id;
-            let client_id_u32 = match self.encoder.get(&client_order_id) {
-                Some(id) => id,
+            let encoded = match self.encoder.get(&client_order_id) {
+                Some(enc) => enc,
                 None => {
                     log::warn!(
                         "No u32 mapping found for client_order_id={client_order_id}, skipping cancel"
@@ -2063,6 +2086,7 @@ impl ExecutionClient for DydxExecutionClient {
                     continue;
                 }
             };
+            let client_id_u32 = encoded.client_id;
 
             // Get stored order_flags from order context
             let order_flags = self.get_order_context(client_id_u32).map_or_else(

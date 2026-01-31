@@ -93,10 +93,16 @@ pub fn parse_ws_order_report(
     let mut report = parse_order_status_report(&http_order, &instrument, account_id, ts_init)?;
 
     let dydx_client_id = ws_order.client_id.parse::<u32>().ok();
+    let dydx_client_metadata = ws_order
+        .client_metadata
+        .as_ref()
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(crate::grpc::DEFAULT_RUST_CLIENT_METADATA);
 
     log::info!(
-        "[WS_ORDER_RECV] dYdX client_id='{}' (parsed u32={:?}) | status={:?} | clob_pair={} | side={:?} | size={} | filled={}",
+        "[WS_ORDER_RECV] dYdX client_id='{}' meta={:#x} (parsed u32={:?}) | status={:?} | clob_pair={} | side={:?} | size={} | filled={}",
         ws_order.client_id,
+        dydx_client_metadata,
         dydx_client_id,
         ws_order.status,
         ws_order.clob_pair_id,
@@ -115,18 +121,20 @@ pub fn parse_ws_order_report(
                 ctx.client_order_id
             );
             report.client_order_id = Some(ctx.client_order_id);
-        } else if let Some(client_order_id) = encoder.decode(client_id) {
-            // Fallback: use encoder's reverse lookup
+        } else if let Some(client_order_id) = encoder.decode(client_id, dydx_client_metadata) {
+            // Fallback: use encoder's bidirectional decode with both client_id and client_metadata
             log::info!(
-                "[WS_ORDER_RECV] DECODE via encoder fallback: dYdX u32={} -> Nautilus '{}'",
+                "[WS_ORDER_RECV] DECODE via encoder fallback: dYdX u32={} meta={:#x} -> Nautilus '{}'",
                 client_id,
+                dydx_client_metadata,
                 client_order_id
             );
             report.client_order_id = Some(client_order_id);
         } else {
             log::warn!(
-                "[WS_ORDER_RECV] DECODE FAILED: dYdX u32={} not found in order_contexts or encoder!",
-                client_id
+                "[WS_ORDER_RECV] DECODE FAILED: dYdX u32={} meta={:#x} not found in order_contexts or encoder!",
+                client_id,
+                dydx_client_metadata
             );
         }
     } else {
@@ -148,8 +156,9 @@ pub fn parse_ws_order_report(
         && !report.order_status.is_open()
     {
         log::info!(
-            "[WS_ORDER_RECV] TERMINAL STATE: dYdX u32={} status={:?} -> cleaning up mappings",
+            "[WS_ORDER_RECV] TERMINAL STATE: dYdX u32={} meta={:#x} status={:?} -> cleaning up mappings",
             client_id,
+            dydx_client_metadata,
             report.order_status
         );
         if order_contexts.remove(&client_id).is_some() {
@@ -158,8 +167,8 @@ pub fn parse_ws_order_report(
                 client_id
             );
         }
-        // Also clean up encoder mapping (encoder.remove() has its own logging)
-        encoder.remove(client_id);
+        // Also clean up encoder mapping using both client_id and client_metadata
+        encoder.remove(client_id, dydx_client_metadata);
         // Clean up pending_cancels (if cancel was in-flight)
         if pending_cancels.remove(&client_id).is_some() {
             log::info!(

@@ -30,7 +30,7 @@ use pyo3::prelude::*;
 
 use crate::{
     execution::{block_time::BlockTimeMonitor, submitter::OrderSubmitter, wallet::Wallet},
-    grpc::{DydxGrpcClient, types::ChainId},
+    grpc::{DEFAULT_RUST_CLIENT_METADATA, DydxGrpcClient, types::ChainId},
     http::client::DydxHttpClient,
 };
 
@@ -226,6 +226,7 @@ impl PyDydxOrderSubmitter {
     ///
     /// Block height is read from the internal state (set via `set_block_height`).
     #[pyo3(name = "submit_market_order")]
+    #[pyo3(signature = (instrument_id, client_order_id, side, quantity, client_metadata=None))]
     fn py_submit_market_order<'py>(
         &self,
         py: Python<'py>,
@@ -233,16 +234,18 @@ impl PyDydxOrderSubmitter {
         client_order_id: u32,
         side: i64,
         quantity: &str,
+        client_metadata: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let submitter = self.inner.clone();
         let instrument_id = InstrumentId::from(instrument_id);
         let side = OrderSide::from_repr(side as usize)
             .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid OrderSide"))?;
         let quantity = Quantity::from(quantity);
+        let client_metadata = client_metadata.unwrap_or(DEFAULT_RUST_CLIENT_METADATA);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let tx_hash = submitter
-                .submit_market_order(instrument_id, client_order_id, side, quantity)
+                .submit_market_order(instrument_id, client_order_id, client_metadata, side, quantity)
                 .await
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
             Ok(tx_hash)
@@ -253,6 +256,7 @@ impl PyDydxOrderSubmitter {
     ///
     /// Block height is read from the internal state (set via `set_block_height`).
     #[pyo3(name = "submit_limit_order")]
+    #[pyo3(signature = (instrument_id, client_order_id, side, price, quantity, time_in_force, post_only, reduce_only, expire_time=None, client_metadata=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_limit_order<'py>(
         &self,
@@ -266,6 +270,7 @@ impl PyDydxOrderSubmitter {
         post_only: bool,
         reduce_only: bool,
         expire_time: Option<i64>,
+        client_metadata: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let submitter = self.inner.clone();
         let instrument_id = InstrumentId::from(instrument_id);
@@ -276,12 +281,14 @@ impl PyDydxOrderSubmitter {
         let time_in_force = TimeInForce::from_repr(time_in_force as usize).ok_or_else(|| {
             PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid TimeInForce")
         })?;
+        let client_metadata = client_metadata.unwrap_or(DEFAULT_RUST_CLIENT_METADATA);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let tx_hash = submitter
                 .submit_limit_order(
                     instrument_id,
                     client_order_id,
+                    client_metadata,
                     side,
                     price,
                     quantity,
@@ -298,6 +305,7 @@ impl PyDydxOrderSubmitter {
 
     /// Submit a stop market order to dYdX via gRPC.
     #[pyo3(name = "submit_stop_market_order")]
+    #[pyo3(signature = (instrument_id, client_order_id, side, trigger_price, quantity, reduce_only, expire_time=None, client_metadata=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_stop_market_order<'py>(
         &self,
@@ -309,6 +317,7 @@ impl PyDydxOrderSubmitter {
         quantity: &str,
         reduce_only: bool,
         expire_time: Option<i64>,
+        client_metadata: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let submitter = self.inner.clone();
         let instrument_id = InstrumentId::from(instrument_id);
@@ -316,12 +325,14 @@ impl PyDydxOrderSubmitter {
             .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid OrderSide"))?;
         let trigger_price = Price::from(trigger_price);
         let quantity = Quantity::from(quantity);
+        let client_metadata = client_metadata.unwrap_or(DEFAULT_RUST_CLIENT_METADATA);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let tx_hash = submitter
                 .submit_stop_market_order(
                     instrument_id,
                     client_order_id,
+                    client_metadata,
                     side,
                     trigger_price,
                     quantity,
@@ -336,6 +347,7 @@ impl PyDydxOrderSubmitter {
 
     /// Submit a stop limit order to dYdX via gRPC.
     #[pyo3(name = "submit_stop_limit_order")]
+    #[pyo3(signature = (instrument_id, client_order_id, side, trigger_price, limit_price, quantity, time_in_force, post_only, reduce_only, expire_time=None, client_metadata=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_stop_limit_order<'py>(
         &self,
@@ -350,6 +362,7 @@ impl PyDydxOrderSubmitter {
         post_only: bool,
         reduce_only: bool,
         expire_time: Option<i64>,
+        client_metadata: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let submitter = self.inner.clone();
         let instrument_id = InstrumentId::from(instrument_id);
@@ -361,12 +374,14 @@ impl PyDydxOrderSubmitter {
         let time_in_force = TimeInForce::from_repr(time_in_force as usize).ok_or_else(|| {
             PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid TimeInForce")
         })?;
+        let client_metadata = client_metadata.unwrap_or(DEFAULT_RUST_CLIENT_METADATA);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let tx_hash = submitter
                 .submit_stop_limit_order(
                     instrument_id,
                     client_order_id,
+                    client_metadata,
                     side,
                     trigger_price,
                     limit_price,
@@ -384,6 +399,7 @@ impl PyDydxOrderSubmitter {
 
     /// Submit a take profit market order to dYdX via gRPC.
     #[pyo3(name = "submit_take_profit_market_order")]
+    #[pyo3(signature = (instrument_id, client_order_id, side, trigger_price, quantity, reduce_only, expire_time=None, client_metadata=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_take_profit_market_order<'py>(
         &self,
@@ -395,6 +411,7 @@ impl PyDydxOrderSubmitter {
         quantity: &str,
         reduce_only: bool,
         expire_time: Option<i64>,
+        client_metadata: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let submitter = self.inner.clone();
         let instrument_id = InstrumentId::from(instrument_id);
@@ -402,12 +419,14 @@ impl PyDydxOrderSubmitter {
             .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid OrderSide"))?;
         let trigger_price = Price::from(trigger_price);
         let quantity = Quantity::from(quantity);
+        let client_metadata = client_metadata.unwrap_or(DEFAULT_RUST_CLIENT_METADATA);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let tx_hash = submitter
                 .submit_take_profit_market_order(
                     instrument_id,
                     client_order_id,
+                    client_metadata,
                     side,
                     trigger_price,
                     quantity,
@@ -422,6 +441,7 @@ impl PyDydxOrderSubmitter {
 
     /// Submit a take profit limit order to dYdX via gRPC.
     #[pyo3(name = "submit_take_profit_limit_order")]
+    #[pyo3(signature = (instrument_id, client_order_id, side, trigger_price, limit_price, quantity, time_in_force, post_only, reduce_only, expire_time=None, client_metadata=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_take_profit_limit_order<'py>(
         &self,
@@ -436,6 +456,7 @@ impl PyDydxOrderSubmitter {
         post_only: bool,
         reduce_only: bool,
         expire_time: Option<i64>,
+        client_metadata: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let submitter = self.inner.clone();
         let instrument_id = InstrumentId::from(instrument_id);
@@ -447,12 +468,14 @@ impl PyDydxOrderSubmitter {
         let time_in_force = TimeInForce::from_repr(time_in_force as usize).ok_or_else(|| {
             PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid TimeInForce")
         })?;
+        let client_metadata = client_metadata.unwrap_or(DEFAULT_RUST_CLIENT_METADATA);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let tx_hash = submitter
                 .submit_take_profit_limit_order(
                     instrument_id,
                     client_order_id,
+                    client_metadata,
                     side,
                     trigger_price,
                     limit_price,

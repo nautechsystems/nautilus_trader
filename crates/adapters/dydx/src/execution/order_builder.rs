@@ -48,7 +48,9 @@ use crate::{
         nanos_to_secs_i64, order_side_to_proto, time_in_force_to_proto_with_post_only,
     },
     error::DydxError,
-    grpc::{OrderBuilder, OrderGoodUntil, OrderMarketParams, SHORT_TERM_ORDER_MAXIMUM_LIFETIME},
+    grpc::{
+        OrderBuilder, OrderGoodUntil, OrderMarketParams, SHORT_TERM_ORDER_MAXIMUM_LIFETIME,
+    },
     http::client::DydxHttpClient,
     proto::{
         ToAny,
@@ -185,6 +187,7 @@ impl OrderMessageBuilder {
         &self,
         instrument_id: InstrumentId,
         client_order_id: u32,
+        client_metadata: u32,
         side: OrderSide,
         quantity: Quantity,
         block_height: u32,
@@ -196,6 +199,7 @@ impl OrderMessageBuilder {
             self.wallet_address.clone(),
             self.subaccount_number,
             client_order_id,
+            client_metadata,
         )
         .market(order_side_to_proto(side), quantity.as_decimal())
         .short_term()
@@ -222,6 +226,7 @@ impl OrderMessageBuilder {
         &self,
         instrument_id: InstrumentId,
         client_order_id: u32,
+        client_metadata: u32,
         side: OrderSide,
         price: Price,
         quantity: Quantity,
@@ -244,6 +249,7 @@ impl OrderMessageBuilder {
             self.wallet_address.clone(),
             self.subaccount_number,
             client_order_id,
+            client_metadata,
         )
         .limit(
             order_side_to_proto(side),
@@ -284,6 +290,7 @@ impl OrderMessageBuilder {
         self.build_limit_order(
             params.instrument_id,
             params.client_order_id,
+            params.client_metadata,
             params.side,
             params.price,
             params.quantity,
@@ -558,6 +565,7 @@ impl OrderMessageBuilder {
         &self,
         instrument_id: InstrumentId,
         client_order_id: u32,
+        client_metadata: u32,
         order_type: ConditionalOrderType,
         side: OrderSide,
         trigger_price: Price,
@@ -575,6 +583,7 @@ impl OrderMessageBuilder {
             self.wallet_address.clone(),
             self.subaccount_number,
             client_order_id,
+            client_metadata,
         );
 
         let proto_side = order_side_to_proto(side);
@@ -648,6 +657,7 @@ impl OrderMessageBuilder {
         &self,
         instrument_id: InstrumentId,
         client_order_id: u32,
+        client_metadata: u32,
         side: OrderSide,
         trigger_price: Price,
         quantity: Quantity,
@@ -657,6 +667,7 @@ impl OrderMessageBuilder {
         self.build_conditional_order(
             instrument_id,
             client_order_id,
+            client_metadata,
             ConditionalOrderType::StopMarket,
             side,
             trigger_price,
@@ -679,6 +690,7 @@ impl OrderMessageBuilder {
         &self,
         instrument_id: InstrumentId,
         client_order_id: u32,
+        client_metadata: u32,
         side: OrderSide,
         trigger_price: Price,
         limit_price: Price,
@@ -691,6 +703,7 @@ impl OrderMessageBuilder {
         self.build_conditional_order(
             instrument_id,
             client_order_id,
+            client_metadata,
             ConditionalOrderType::StopLimit,
             side,
             trigger_price,
@@ -713,6 +726,7 @@ impl OrderMessageBuilder {
         &self,
         instrument_id: InstrumentId,
         client_order_id: u32,
+        client_metadata: u32,
         side: OrderSide,
         trigger_price: Price,
         quantity: Quantity,
@@ -722,6 +736,7 @@ impl OrderMessageBuilder {
         self.build_conditional_order(
             instrument_id,
             client_order_id,
+            client_metadata,
             ConditionalOrderType::TakeProfitMarket,
             side,
             trigger_price,
@@ -744,6 +759,7 @@ impl OrderMessageBuilder {
         &self,
         instrument_id: InstrumentId,
         client_order_id: u32,
+        client_metadata: u32,
         side: OrderSide,
         trigger_price: Price,
         limit_price: Price,
@@ -756,6 +772,7 @@ impl OrderMessageBuilder {
         self.build_conditional_order(
             instrument_id,
             client_order_id,
+            client_metadata,
             ConditionalOrderType::TakeProfitLimit,
             side,
             trigger_price,

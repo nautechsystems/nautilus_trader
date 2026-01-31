@@ -191,11 +191,12 @@ impl OrderSubmitter {
         &self,
         instrument_id: InstrumentId,
         client_order_id: u32,
+        client_metadata: u32,
         side: OrderSide,
         quantity: Quantity,
     ) -> Result<String, DydxError> {
         log::info!(
-            "Submitting market order: client_id={client_order_id}, side={side:?}, quantity={quantity}"
+            "Submitting market order: client_id={client_order_id}, meta={client_metadata:#x}, side={side:?}, quantity={quantity}"
         );
 
         let block_height = self.current_block_height();
@@ -204,6 +205,7 @@ impl OrderSubmitter {
         let msg = self.order_builder.build_market_order(
             instrument_id,
             client_order_id,
+            client_metadata,
             side,
             quantity,
             block_height,
@@ -236,6 +238,7 @@ impl OrderSubmitter {
         &self,
         instrument_id: InstrumentId,
         client_order_id: u32,
+        client_metadata: u32,
         side: OrderSide,
         price: Price,
         quantity: Quantity,
@@ -245,7 +248,7 @@ impl OrderSubmitter {
         expire_time: Option<i64>,
     ) -> Result<String, DydxError> {
         log::info!(
-            "Submitting limit order: client_id={client_order_id}, side={side:?}, price={price}, \
+            "Submitting limit order: client_id={client_order_id}, meta={client_metadata:#x}, side={side:?}, price={price}, \
              quantity={quantity}, tif={time_in_force:?}, post_only={post_only}, reduce_only={reduce_only}"
         );
 
@@ -255,6 +258,7 @@ impl OrderSubmitter {
         let msg = self.order_builder.build_limit_order(
             instrument_id,
             client_order_id,
+            client_metadata,
             side,
             price,
             quantity,
@@ -531,6 +535,7 @@ impl OrderSubmitter {
         &self,
         instrument_id: InstrumentId,
         client_order_id: u32,
+        client_metadata: u32,
         side: OrderSide,
         trigger_price: Price,
         quantity: Quantity,
@@ -538,7 +543,7 @@ impl OrderSubmitter {
         expire_time: Option<i64>,
     ) -> Result<String, DydxError> {
         log::info!(
-            "Submitting stop market order: client_id={client_order_id}, side={side:?}, \
+            "Submitting stop market order: client_id={client_order_id}, meta={client_metadata:#x}, side={side:?}, \
              trigger={trigger_price}, qty={quantity}"
         );
 
@@ -546,6 +551,7 @@ impl OrderSubmitter {
         let msg = self.order_builder.build_stop_market_order(
             instrument_id,
             client_order_id,
+            client_metadata,
             side,
             trigger_price,
             quantity,
@@ -580,6 +586,7 @@ impl OrderSubmitter {
         &self,
         instrument_id: InstrumentId,
         client_order_id: u32,
+        client_metadata: u32,
         side: OrderSide,
         trigger_price: Price,
         limit_price: Price,
@@ -590,7 +597,7 @@ impl OrderSubmitter {
         expire_time: Option<i64>,
     ) -> Result<String, DydxError> {
         log::info!(
-            "Submitting stop limit order: client_id={client_order_id}, side={side:?}, \
+            "Submitting stop limit order: client_id={client_order_id}, meta={client_metadata:#x}, side={side:?}, \
              trigger={trigger_price}, limit={limit_price}, qty={quantity}"
         );
 
@@ -598,6 +605,7 @@ impl OrderSubmitter {
         let msg = self.order_builder.build_stop_limit_order(
             instrument_id,
             client_order_id,
+            client_metadata,
             side,
             trigger_price,
             limit_price,
@@ -635,6 +643,7 @@ impl OrderSubmitter {
         &self,
         instrument_id: InstrumentId,
         client_order_id: u32,
+        client_metadata: u32,
         side: OrderSide,
         trigger_price: Price,
         quantity: Quantity,
@@ -642,7 +651,7 @@ impl OrderSubmitter {
         expire_time: Option<i64>,
     ) -> Result<String, DydxError> {
         log::info!(
-            "Submitting take profit market order: client_id={client_order_id}, side={side:?}, \
+            "Submitting take profit market order: client_id={client_order_id}, meta={client_metadata:#x}, side={side:?}, \
              trigger={trigger_price}, qty={quantity}"
         );
 
@@ -650,6 +659,7 @@ impl OrderSubmitter {
         let msg = self.order_builder.build_take_profit_market_order(
             instrument_id,
             client_order_id,
+            client_metadata,
             side,
             trigger_price,
             quantity,
@@ -684,6 +694,7 @@ impl OrderSubmitter {
         &self,
         instrument_id: InstrumentId,
         client_order_id: u32,
+        client_metadata: u32,
         side: OrderSide,
         trigger_price: Price,
         limit_price: Price,
@@ -694,7 +705,7 @@ impl OrderSubmitter {
         expire_time: Option<i64>,
     ) -> Result<String, DydxError> {
         log::info!(
-            "Submitting take profit limit order: client_id={client_order_id}, side={side:?}, \
+            "Submitting take profit limit order: client_id={client_order_id}, meta={client_metadata:#x}, side={side:?}, \
              trigger={trigger_price}, limit={limit_price}, qty={quantity}"
         );
 
@@ -702,6 +713,7 @@ impl OrderSubmitter {
         let msg = self.order_builder.build_take_profit_limit_order(
             instrument_id,
             client_order_id,
+            client_metadata,
             side,
             trigger_price,
             limit_price,
@@ -739,6 +751,7 @@ impl OrderSubmitter {
         &self,
         instrument_id: InstrumentId,
         client_order_id: u32,
+        client_metadata: u32,
         order_type: ConditionalOrderType,
         side: OrderSide,
         trigger_price: Price,
@@ -753,6 +766,7 @@ impl OrderSubmitter {
         let msg = self.order_builder.build_conditional_order(
             instrument_id,
             client_order_id,
+            client_metadata,
             order_type,
             side,
             trigger_price,
