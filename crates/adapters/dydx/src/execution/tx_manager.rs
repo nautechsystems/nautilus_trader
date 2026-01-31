@@ -37,6 +37,9 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
+/// Sentinel value indicating sequence is uninitialized.
+pub const SEQUENCE_UNINITIALIZED: u64 = u64::MAX;
+
 // Note: Arc is still used for sequence_number (shared across components)
 use cosmrs::Any;
 
@@ -71,7 +74,7 @@ pub struct TransactionManager {
     chain_id: ChainId,
     /// Authenticator IDs for permissioned key trading.
     authenticator_ids: Vec<u64>,
-    /// Atomic sequence counter. Value 0 means uninitialized.
+    /// Atomic sequence counter. Value `SEQUENCE_UNINITIALIZED` means uninitialized.
     sequence_number: Arc<AtomicU64>,
     /// Cached account number (never changes for a given address).
     /// Value 0 means uninitialized.
@@ -81,6 +84,10 @@ pub struct TransactionManager {
 impl TransactionManager {
     /// Creates a new transaction manager.
     ///
+    /// The sequence number is initialized to `SEQUENCE_UNINITIALIZED` and will be
+    /// fetched from chain on first use, or can be proactively initialized by calling
+    /// [`initialize_sequence`].
+    ///
     /// # Arguments
     ///
     /// * `grpc_client` - gRPC client for chain queries
@@ -88,7 +95,6 @@ impl TransactionManager {
     /// * `wallet_address` - Main account address (may differ from wallet address for permissioned keys)
     /// * `chain_id` - dYdX chain ID
     /// * `authenticator_ids` - Authenticator IDs for permissioned trading (empty for direct signing)
-    /// * `sequence_number` - Shared atomic sequence counter
     #[must_use]
     pub fn new(
         grpc_client: DydxGrpcClient,
@@ -96,7 +102,6 @@ impl TransactionManager {
         wallet_address: String,
         chain_id: ChainId,
         authenticator_ids: Vec<u64>,
-        sequence_number: Arc<AtomicU64>,
     ) -> Self {
         Self {
             grpc_client,
@@ -104,9 +109,33 @@ impl TransactionManager {
             wallet_address,
             chain_id,
             authenticator_ids,
-            sequence_number,
+            sequence_number: Arc::new(AtomicU64::new(SEQUENCE_UNINITIALIZED)),
             account_number: AtomicU64::new(0),
         }
+    }
+
+    /// Proactively initializes the sequence number from chain.
+    ///
+    /// Call this during connect() to ensure orders can be submitted immediately
+    /// without first-transaction latency penalty. Also catches auth errors early.
+    ///
+    /// Returns the initialized sequence number.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if chain query fails.
+    pub async fn initialize_sequence(&self) -> Result<u64, DydxError> {
+        let mut grpc = self.grpc_client.clone();
+        let base_account = grpc.get_account(&self.wallet_address).await.map_err(|e| {
+            DydxError::Grpc(Box::new(tonic::Status::internal(format!(
+                "Failed to fetch account for sequence init: {e}"
+            ))))
+        })?;
+
+        let chain_seq = base_account.sequence;
+        self.sequence_number.store(chain_seq, Ordering::SeqCst);
+        log::info!("Initialized sequence from chain: {chain_seq}");
+        Ok(chain_seq)
     }
 
     /// Allocates the next sequence number atomically.
@@ -120,7 +149,7 @@ impl TransactionManager {
     pub async fn allocate_sequence(&self) -> Result<u64, DydxError> {
         loop {
             let current = self.sequence_number.load(Ordering::SeqCst);
-            if current == 0 {
+            if current == SEQUENCE_UNINITIALIZED {
                 // Initialize from chain
                 self.initialize_sequence_from_chain().await?;
                 continue;
@@ -163,7 +192,7 @@ impl TransactionManager {
 
         loop {
             let current = self.sequence_number.load(Ordering::SeqCst);
-            if current == 0 {
+            if current == SEQUENCE_UNINITIALIZED {
                 self.initialize_sequence_from_chain().await?;
                 continue;
             }
@@ -191,10 +220,15 @@ impl TransactionManager {
         })?;
 
         let chain_seq = base_account.sequence;
-        // Only set if still 0 (another thread might have set it)
+        // Only set if still uninitialized (another thread might have set it)
         if self
             .sequence_number
-            .compare_exchange(0, chain_seq, Ordering::SeqCst, Ordering::SeqCst)
+            .compare_exchange(
+                SEQUENCE_UNINITIALIZED,
+                chain_seq,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
             .is_ok()
         {
             log::info!("Initialized sequence from chain: {chain_seq}");
@@ -226,7 +260,7 @@ impl TransactionManager {
 
     /// Returns the current sequence value without allocation.
     ///
-    /// Useful for logging and debugging. Returns 0 if uninitialized.
+    /// Useful for logging and debugging. Returns `SEQUENCE_UNINITIALIZED` if not yet initialized.
     #[must_use]
     pub fn current_sequence(&self) -> u64 {
         self.sequence_number.load(Ordering::SeqCst)
@@ -373,14 +407,6 @@ impl TransactionManager {
     ) -> Result<PreparedTransaction, DydxError> {
         let sequence = self.allocate_sequence().await?;
         self.build_transaction(msgs, sequence, operation).await
-    }
-
-    /// Returns a reference to the shared sequence counter.
-    ///
-    /// Useful for sharing with other components that need sequence access.
-    #[must_use]
-    pub fn sequence_number(&self) -> Arc<AtomicU64> {
-        Arc::clone(&self.sequence_number)
     }
 
     /// Returns the wallet address.

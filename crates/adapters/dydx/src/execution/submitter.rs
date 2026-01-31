@@ -111,17 +111,13 @@ impl OrderSubmitter {
         let wallet = Wallet::from_private_key(private_key)
             .map_err(|e| DydxError::Wallet(format!("Failed to create wallet: {e}")))?;
 
-        // Create shared sequence counter (initialized from chain on first use)
-        let sequence_number = Arc::new(std::sync::atomic::AtomicU64::new(0));
-
-        // Create components
+        // Create transaction manager (owns wallet and sequence management)
         let tx_manager = Arc::new(TransactionManager::new(
             grpc_client.clone(),
             wallet,
             wallet_address.clone(),
             chain_id,
             authenticator_ids,
-            sequence_number,
         ));
 
         let broadcaster = Arc::new(TxBroadcaster::new(grpc_client));

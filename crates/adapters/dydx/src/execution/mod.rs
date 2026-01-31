@@ -41,7 +41,7 @@
 use std::{
     sync::{
         Arc, Mutex,
-        atomic::{AtomicU32, AtomicU64, Ordering},
+        atomic::{AtomicU32, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -163,10 +163,6 @@ pub struct DydxExecutionClient {
     /// Resolved authenticator IDs for permissioned key trading.
     /// Populated during connect if using an API wallet.
     authenticator_ids: Vec<u64>,
-    /// Atomic sequence number for transaction ordering.
-    /// Initialized from chain on connect, incremented atomically for each tx.
-    /// Value 0 means uninitialized (fetch from chain on first use).
-    sequence_number: Arc<AtomicU64>,
     /// Transaction manager for sequence tracking and tx building.
     /// Wrapped in Arc for sharing with async order tasks.
     tx_manager: Option<Arc<TransactionManager>>,
@@ -256,7 +252,6 @@ impl DydxExecutionClient {
             wallet_address,
             subaccount_number,
             authenticator_ids: Vec::new(), // Resolved during connect() if using permissioned keys
-            sequence_number: Arc::new(AtomicU64::new(0)), // 0 = uninitialized
             tx_manager: None,
             broadcaster: None,
             order_builder: None,
@@ -2384,20 +2379,9 @@ impl ExecutionClient for DydxExecutionClient {
             .record_block(initial_height.0 as u64, chrono::Utc::now());
         log::info!("Initial block height: {}", initial_height.0);
 
-        // Initialize sequence number from chain (proactive initialization).
-        // This ensures orders can be submitted immediately after connect() without
-        // first-transaction latency penalty, and catches auth errors early.
-        let base_account = grpc_client
-            .get_account(&self.wallet_address)
-            .await
-            .context("failed to fetch account for sequence initialization")?;
-        self.sequence_number
-            .store(base_account.sequence, Ordering::SeqCst);
-        log::info!("Initial sequence: {}", base_account.sequence);
-
         *self.grpc_client.write().await = Some(grpc_client.clone());
 
-        // Initialize new execution components
+        // Initialize execution components
         let wallet_guard = self.wallet.read().await;
         let wallet_clone = wallet_guard
             .as_ref()
@@ -2405,14 +2389,22 @@ impl ExecutionClient for DydxExecutionClient {
             .clone();
         drop(wallet_guard);
 
-        self.tx_manager = Some(Arc::new(TransactionManager::new(
+        let tx_manager = Arc::new(TransactionManager::new(
             grpc_client.clone(),
             wallet_clone,
             self.wallet_address.clone(),
             self.get_chain_id(),
             self.authenticator_ids.clone(),
-            self.sequence_number.clone(),
-        )));
+        ));
+
+        // Proactively initialize sequence from chain so orders can be submitted
+        // immediately after connect() without first-transaction latency penalty.
+        tx_manager
+            .initialize_sequence()
+            .await
+            .context("failed to initialize sequence")?;
+
+        self.tx_manager = Some(tx_manager);
         log::debug!("TransactionManager initialized");
 
         self.broadcaster = Some(Arc::new(TxBroadcaster::new(grpc_client)));
