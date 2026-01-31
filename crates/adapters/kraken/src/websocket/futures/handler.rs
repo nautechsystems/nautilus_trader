@@ -545,6 +545,20 @@ impl FuturesFeedHandler {
             KrakenFuturesMessageType::Heartbeat => {
                 log::trace!("Heartbeat received");
             }
+            KrakenFuturesMessageType::Error => {
+                let message = value
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown error");
+                log::error!("Kraken Futures WebSocket error: {message}");
+            }
+            KrakenFuturesMessageType::Alert => {
+                let message = value
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown alert");
+                log::warn!("Kraken Futures WebSocket alert: {message}");
+            }
             KrakenFuturesMessageType::Unknown => {
                 log::debug!("Unhandled message: {text}");
             }

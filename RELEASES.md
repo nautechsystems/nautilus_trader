@@ -87,6 +87,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed Interactive Brokers future chain building for index instruments (#3483), thanks @davidsblom
 - Fixed reconciliation race condition where inferred fills were generated before real fills arrived, causing double-counting and overfill errors
 - Fixed Kraken spot instrument fee/margin parsing where parameters were incorrectly swapped
+- Fixed Kraken spot XBT to BTC symbol normalization (#3509), thanks for reporting @chester0
 - Fixed Polymarket order state race condition where `PLACEMENT` events could arrive late
 - Fixed Polymarket duplicate WebSocket subscriptions (#3403), thanks for reporting @santivazq
 - Fixed Polymarket duplicate trade_id for multi-order fills (#3450), thanks for reporting @santivazq

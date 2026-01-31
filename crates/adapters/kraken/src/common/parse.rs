@@ -80,6 +80,27 @@ pub fn normalize_currency_code(code: &str) -> &str {
         .unwrap_or(code)
 }
 
+/// Normalizes a Kraken spot symbol to use BTC instead of XBT.
+///
+/// Kraken's REST API returns `XBT` for Bitcoin (following ISO 4217 conventions), but their
+/// WebSocket v2 API uses the more common `BTC` format. This function normalizes symbols
+/// so that instruments and subscriptions use consistent, industry-standard symbols.
+/// Handles XBT in both base position (XBT/USD -> BTC/USD) and quote position (ETH/XBT -> ETH/BTC).
+#[inline]
+pub fn normalize_spot_symbol(symbol: &str) -> String {
+    let normalized = if symbol.starts_with("XBT/") {
+        symbol.replacen("XBT/", "BTC/", 1)
+    } else {
+        symbol.to_string()
+    };
+
+    if normalized.ends_with("/XBT") {
+        normalized.replacen("/XBT", "/BTC", 1)
+    } else {
+        normalized
+    }
+}
+
 /// Parse an optional decimal string.
 pub fn parse_decimal_opt(value: Option<&str>) -> anyhow::Result<Option<Decimal>> {
     match value {
@@ -152,7 +173,8 @@ pub fn parse_spot_instrument(
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let symbol_str = definition.wsname.as_ref().unwrap_or(&definition.altname);
-    let instrument_id = InstrumentId::new(Symbol::new(symbol_str.as_str()), *KRAKEN_VENUE);
+    let normalized_symbol = normalize_spot_symbol(symbol_str);
+    let instrument_id = InstrumentId::new(Symbol::new(&normalized_symbol), *KRAKEN_VENUE);
     let raw_symbol = Symbol::new(pair_name);
 
     let base_currency = get_currency(definition.base.as_str());
@@ -1495,5 +1517,19 @@ mod tests {
     #[case("SOL", "SOL")]
     fn test_normalize_currency_code(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(normalize_currency_code(input), expected);
+    }
+
+    #[rstest]
+    #[case("XBT/EUR", "BTC/EUR")]
+    #[case("XBT/USD", "BTC/USD")]
+    #[case("XBT/USDT", "BTC/USDT")]
+    #[case("ETH/USD", "ETH/USD")]
+    #[case("ETH/XBT", "ETH/BTC")]
+    #[case("SOL/XBT", "SOL/BTC")]
+    #[case("SOL/USD", "SOL/USD")]
+    #[case("BTC/USD", "BTC/USD")]
+    #[case("ETH/BTC", "ETH/BTC")]
+    fn test_normalize_spot_symbol(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(normalize_spot_symbol(input), expected);
     }
 }

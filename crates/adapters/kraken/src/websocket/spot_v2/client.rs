@@ -48,7 +48,8 @@ use super::{
     messages::{KrakenWsParams, KrakenWsRequest, NautilusWsMessage},
 };
 use crate::{
-    config::KrakenDataClientConfig, http::KrakenSpotHttpClient, websocket::error::KrakenWsError,
+    common::parse::normalize_spot_symbol, config::KrakenDataClientConfig,
+    http::KrakenSpotHttpClient, websocket::error::KrakenWsError,
 };
 
 const WS_PING_MSG: &str = r#"{"method":"ping"}"#;
@@ -318,12 +319,19 @@ impl KrakenSpotWebSocketClient {
                                     None
                                 };
 
+                                // Disable snapshots for OHLC to avoid historical bar flood
+                                let snapshot = if channel == KrakenWsChannel::Ohlc {
+                                    Some(false)
+                                } else {
+                                    None
+                                };
+
                                 let request = KrakenWsRequest {
                                     method: KrakenWsMethod::Subscribe,
                                     params: Some(KrakenWsParams {
                                         channel,
                                         symbol: Some(vec![Ustr::from(symbol_str)]),
-                                        snapshot: None,
+                                        snapshot,
                                         depth: None,
                                         interval,
                                         event_trigger,
@@ -658,7 +666,7 @@ impl KrakenSpotWebSocketClient {
             params: Some(KrakenWsParams {
                 channel,
                 symbol: Some(symbols_to_subscribe.clone()),
-                snapshot: None,
+                snapshot: Some(false),
                 depth: None,
                 interval: Some(interval),
                 event_trigger: None,
@@ -885,7 +893,7 @@ impl KrakenSpotWebSocketClient {
         instrument_id: InstrumentId,
         depth: Option<u32>,
     ) -> Result<(), KrakenWsError> {
-        let symbol = instrument_id.symbol.inner();
+        let symbol = to_ws_v2_symbol(instrument_id.symbol.inner());
         self.subscribe(KrakenWsChannel::Book, vec![symbol], depth)
             .await
     }
@@ -895,7 +903,7 @@ impl KrakenSpotWebSocketClient {
     /// Uses the Ticker channel with `event_trigger: "bbo"` for updates only on
     /// best bid/offer changes.
     pub async fn subscribe_quotes(&self, instrument_id: InstrumentId) -> Result<(), KrakenWsError> {
-        let symbol = instrument_id.symbol.inner();
+        let symbol = to_ws_v2_symbol(instrument_id.symbol.inner());
         let key = format!("quotes:{symbol}");
 
         if !self.subscriptions.add_reference(&key) {
@@ -928,7 +936,7 @@ impl KrakenSpotWebSocketClient {
 
     /// Subscribes to trade updates for the given instrument.
     pub async fn subscribe_trades(&self, instrument_id: InstrumentId) -> Result<(), KrakenWsError> {
-        let symbol = instrument_id.symbol.inner();
+        let symbol = to_ws_v2_symbol(instrument_id.symbol.inner());
         self.subscribe(KrakenWsChannel::Trade, vec![symbol], None)
             .await
     }
@@ -939,7 +947,7 @@ impl KrakenSpotWebSocketClient {
     ///
     /// Returns an error if the bar aggregation is not supported by Kraken.
     pub async fn subscribe_bars(&self, bar_type: BarType) -> Result<(), KrakenWsError> {
-        let symbol = bar_type.instrument_id().symbol.inner();
+        let symbol = to_ws_v2_symbol(bar_type.instrument_id().symbol.inner());
         let interval = bar_type_to_ws_interval(bar_type)?;
         self.subscribe_with_interval(KrakenWsChannel::Ohlc, vec![symbol], interval)
             .await
@@ -991,7 +999,7 @@ impl KrakenSpotWebSocketClient {
 
     /// Unsubscribes from order book updates for the given instrument.
     pub async fn unsubscribe_book(&self, instrument_id: InstrumentId) -> Result<(), KrakenWsError> {
-        let symbol = instrument_id.symbol.inner();
+        let symbol = to_ws_v2_symbol(instrument_id.symbol.inner());
         self.unsubscribe(KrakenWsChannel::Book, vec![symbol]).await
     }
 
@@ -1000,7 +1008,7 @@ impl KrakenSpotWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), KrakenWsError> {
-        let symbol = instrument_id.symbol.inner();
+        let symbol = to_ws_v2_symbol(instrument_id.symbol.inner());
         let key = format!("quotes:{symbol}");
 
         if !self.subscriptions.remove_reference(&key) {
@@ -1036,7 +1044,7 @@ impl KrakenSpotWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), KrakenWsError> {
-        let symbol = instrument_id.symbol.inner();
+        let symbol = to_ws_v2_symbol(instrument_id.symbol.inner());
         self.unsubscribe(KrakenWsChannel::Trade, vec![symbol]).await
     }
 
@@ -1046,7 +1054,7 @@ impl KrakenSpotWebSocketClient {
     ///
     /// Returns an error if the bar aggregation is not supported by Kraken.
     pub async fn unsubscribe_bars(&self, bar_type: BarType) -> Result<(), KrakenWsError> {
-        let symbol = bar_type.instrument_id().symbol.inner();
+        let symbol = to_ws_v2_symbol(bar_type.instrument_id().symbol.inner());
         let interval = bar_type_to_ws_interval(bar_type)?;
         self.unsubscribe_with_interval(KrakenWsChannel::Ohlc, vec![symbol], interval)
             .await
@@ -1093,10 +1101,11 @@ async fn refresh_auth_token(config: &KrakenDataClientConfig) -> Result<String, K
     Ok(ws_token.token)
 }
 
-/// Converts a Nautilus BarType to Kraken WebSocket OHLC interval (in minutes).
-///
-/// Supported intervals: 1, 5, 15, 30, 60, 240, 1440, 10080, 21600
-/// (1m, 5m, 15m, 30m, 1h, 4h, 1d, 1w, 2w).
+#[inline]
+fn to_ws_v2_symbol(symbol: Ustr) -> Ustr {
+    Ustr::from(&normalize_spot_symbol(symbol.as_str()))
+}
+
 fn bar_type_to_ws_interval(bar_type: BarType) -> Result<u32, KrakenWsError> {
     const VALID_INTERVALS: [u32; 9] = [1, 5, 15, 30, 60, 240, 1440, 10080, 21600];
 
@@ -1125,4 +1134,27 @@ fn bar_type_to_ws_interval(bar_type: BarType) -> Result<u32, KrakenWsError> {
     }
 
     Ok(interval)
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case("XBT/EUR", "BTC/EUR")]
+    #[case("XBT/USD", "BTC/USD")]
+    #[case("XBT/USDT", "BTC/USDT")]
+    #[case("ETH/USD", "ETH/USD")]
+    #[case("ETH/XBT", "ETH/BTC")]
+    #[case("SOL/XBT", "SOL/BTC")]
+    #[case("SOL/USD", "SOL/USD")]
+    #[case("BTC/USD", "BTC/USD")]
+    #[case("ETH/BTC", "ETH/BTC")]
+    fn test_to_kraken_ws_v2_symbol(#[case] input: &str, #[case] expected: &str) {
+        let symbol = Ustr::from(input);
+        let result = to_ws_v2_symbol(symbol);
+        assert_eq!(result.as_str(), expected);
+    }
 }
