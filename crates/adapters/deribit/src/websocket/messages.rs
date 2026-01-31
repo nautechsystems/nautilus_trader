@@ -164,7 +164,7 @@ pub struct DeribitTradeMsg {
     /// Liquidation indicator.
     pub liquidation: Option<String>,
     /// Combo trade ID (if part of combo).
-    pub combo_trade_id: Option<i64>,
+    pub combo_trade_id: Option<String>,
     /// Block trade ID.
     pub block_trade_id: Option<String>,
     /// Combo ID.
