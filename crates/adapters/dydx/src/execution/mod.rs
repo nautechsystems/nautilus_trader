@@ -409,7 +409,15 @@ impl DydxExecutionClient {
         // auth.config is raw bytes (Vec<u8>) containing JSON, not base64-encoded
         let config_str = match String::from_utf8(auth.config.clone()) {
             Ok(s) => s,
-            Err(_) => return false,
+            Err(e) => {
+                log::warn!(
+                    "Authenticator id={} has invalid UTF-8 config (len={}): {}",
+                    auth.id,
+                    auth.config.len(),
+                    e
+                );
+                return false;
+            }
         };
 
         log::debug!(
@@ -419,17 +427,27 @@ impl DydxExecutionClient {
             config_str
         );
 
-        if let Ok(sub_auths) = serde_json::from_str::<Vec<SubAuth>>(&config_str) {
-            for sub in sub_auths {
-                log::debug!(
-                    "  Sub-authenticator: type={}, config={}",
-                    sub.auth_type,
-                    sub.config
-                );
-                if sub.auth_type == "SignatureVerification" && sub.config == pubkey_b64 {
-                    log::debug!("  -> MATCH! pubkey_b64={pubkey_b64}");
-                    return true;
+        match serde_json::from_str::<Vec<SubAuth>>(&config_str) {
+            Ok(sub_auths) => {
+                for sub in sub_auths {
+                    log::debug!(
+                        "  Sub-authenticator: type={}, config={}",
+                        sub.auth_type,
+                        sub.config
+                    );
+                    if sub.auth_type == "SignatureVerification" && sub.config == pubkey_b64 {
+                        log::debug!("  -> MATCH! pubkey_b64={pubkey_b64}");
+                        return true;
+                    }
                 }
+            }
+            Err(e) => {
+                log::warn!(
+                    "Authenticator id={} config is not in expected JSON array format: {} (config={})",
+                    auth.id,
+                    e,
+                    config_str
+                );
             }
         }
 
