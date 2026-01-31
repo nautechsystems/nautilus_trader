@@ -207,7 +207,7 @@ impl Display for OwnBookOrder {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -573,6 +573,7 @@ where
 }
 
 /// Represents a ladder of price levels for one side of an order book.
+#[derive(Clone)]
 pub(crate) struct OwnBookLadder {
     pub side: OrderSideSpecified,
     pub levels: BTreeMap<BookPrice, OwnBookLevel>,
