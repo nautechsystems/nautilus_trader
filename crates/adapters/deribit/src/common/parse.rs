@@ -161,9 +161,9 @@ fn parse_spot_instrument(
     let base_currency = Currency::get_or_create_crypto(instrument.base_currency);
     let quote_currency = Currency::get_or_create_crypto(instrument.quote_currency);
 
-    let price_increment = Price::from(instrument.tick_size.to_string().as_str());
-    let size_increment = Quantity::from(instrument.min_trade_amount.to_string().as_str());
-    let min_quantity = Quantity::from(instrument.min_trade_amount.to_string().as_str());
+    let price_increment = Price::from_decimal(instrument.tick_size)?;
+    let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
+    let min_quantity = Quantity::from_decimal(instrument.min_trade_amount)?;
 
     let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
         .context("Failed to parse maker_commission")?;
@@ -217,14 +217,12 @@ fn parse_perpetual_instrument(
         .as_ref()
         .is_some_and(|t| t == "reversed");
 
-    let price_increment = Price::from(instrument.tick_size.to_string().as_str());
-    let size_increment = Quantity::from(instrument.min_trade_amount.to_string().as_str());
-    let min_quantity = Quantity::from(instrument.min_trade_amount.to_string().as_str());
+    let price_increment = Price::from_decimal(instrument.tick_size)?;
+    let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
+    let min_quantity = Quantity::from_decimal(instrument.min_trade_amount)?;
 
     // Contract size represents the multiplier (e.g., 10 USD per contract for BTC-PERPETUAL)
-    let multiplier = Some(Quantity::from(
-        instrument.contract_size.to_string().as_str(),
-    ));
+    let multiplier = Some(Quantity::from_decimal(instrument.contract_size)?);
     let lot_size = Some(size_increment);
 
     let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
@@ -288,14 +286,12 @@ fn parse_future_instrument(
         .context("Missing expiration_timestamp for future")? as u64
         * 1_000_000; // milliseconds to nanoseconds
 
-    let price_increment = Price::from(instrument.tick_size.to_string().as_str());
-    let size_increment = Quantity::from(instrument.min_trade_amount.to_string().as_str());
-    let min_quantity = Quantity::from(instrument.min_trade_amount.to_string().as_str());
+    let price_increment = Price::from_decimal(instrument.tick_size)?;
+    let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
+    let min_quantity = Quantity::from_decimal(instrument.min_trade_amount)?;
 
     // Contract size represents the multiplier
-    let multiplier = Some(Quantity::from(
-        instrument.contract_size.to_string().as_str(),
-    ));
+    let multiplier = Some(Quantity::from_decimal(instrument.contract_size)?);
     let lot_size = Some(size_increment); // Use min_trade_amount as lot size
 
     let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
@@ -364,7 +360,7 @@ fn parse_option_instrument(
 
     // Parse strike price
     let strike = instrument.strike.context("Missing strike for option")?;
-    let strike_price = Price::from(strike.to_string().as_str());
+    let strike_price = Price::from_decimal(strike)?;
 
     // Convert timestamps from milliseconds to nanoseconds
     let activation_ns = (instrument.creation_timestamp as u64) * 1_000_000;
