@@ -102,7 +102,7 @@ class TestBacktestConfig:
             "optimize_file_loading": False,
         }
 
-    def test_backtest_data_config_query_includes_optimize_file_loading_false(self):
+    def test_backtest_data_config_query_includes_optimize_file_loading_true(self):
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
         config = BacktestDataConfig(
