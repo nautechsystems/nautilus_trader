@@ -80,9 +80,10 @@ pub fn parse_ws_order_report(
     let http_order = convert_ws_order_to_http(ws_order)?;
     let mut report = parse_order_status_report(&http_order, &instrument, account_id, ts_init)?;
 
+    let dydx_client_id = ws_order.client_id.parse::<u32>().ok();
     // Look up the original Nautilus client_order_id from the order context
-    if let Ok(dydx_client_id) = ws_order.client_id.parse::<u32>()
-        && let Some(ctx) = order_contexts.get(&dydx_client_id)
+    if let Some(client_id) = dydx_client_id
+        && let Some(ctx) = order_contexts.get(&client_id)
     {
         report.client_order_id = Some(ctx.client_order_id);
     }
@@ -92,6 +93,19 @@ pub fn parse_ws_order_report(
     // enum mapping.
     if matches!(ws_order.status, DydxOrderStatus::Untriggered) && ws_order.trigger_price.is_some() {
         report.order_status = OrderStatus::PendingUpdate;
+    }
+
+    // Clean up order context when order reaches terminal state (filled, cancelled, expired, rejected)
+    if let Some(client_id) = dydx_client_id
+        && !report.order_status.is_open()
+    {
+        if order_contexts.remove(&client_id).is_some() {
+            log::debug!(
+                "Cleaned up order context for dYdX client_id={} (status={:?})",
+                client_id,
+                report.order_status
+            );
+        }
     }
 
     Ok(report)
