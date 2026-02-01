@@ -29,6 +29,7 @@ from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyFactory
 from nautilus_trader.trading.messages import CreateActor
 from nautilus_trader.trading.messages import CreateStrategy
+from nautilus_trader.trading.messages import MarketExitStrategy
 from nautilus_trader.trading.messages import RemoveActor
 from nautilus_trader.trading.messages import RemoveStrategy
 from nautilus_trader.trading.messages import StartActor
@@ -93,6 +94,8 @@ class Controller(Actor):
             self.start_strategy_from_id(command.strategy_id)
         elif isinstance(command, StopStrategy):
             self.stop_strategy_from_id(command.strategy_id)
+        elif isinstance(command, MarketExitStrategy):
+            self.market_exit_strategy_from_id(command.strategy_id)
         elif isinstance(command, RemoveStrategy):
             self.remove_strategy_from_id(command.strategy_id)
 
@@ -209,6 +212,25 @@ class Controller(Actor):
 
         """
         self._trader.stop_strategy(strategy.id)
+
+    def market_exit_strategy(self, strategy: Strategy) -> None:
+        """
+        Market exit the given `strategy`.
+
+        Will log a warning if the strategy is not ``RUNNING``.
+
+        Parameters
+        ----------
+        strategy : Strategy
+            The strategy to market exit.
+
+        Raises
+        ------
+        ValueError
+            If `strategy` is not already registered with the trader.
+
+        """
+        self._trader.market_exit_strategy(strategy.id)
 
     def remove_actor(self, actor: Actor) -> None:
         """
@@ -382,6 +404,25 @@ class Controller(Actor):
 
         """
         self._trader.stop_strategy(strategy_id)
+
+    def market_exit_strategy_from_id(self, strategy_id: StrategyId) -> None:
+        """
+        Market exit the strategy corresponding to `strategy_id`.
+
+        Will log a warning if the strategy is not ``RUNNING``.
+
+        Parameters
+        ----------
+        strategy_id : StrategyId
+            The ID of the strategy to market exit.
+
+        Raises
+        ------
+        ValueError
+            If `strategy` is not already registered with the trader.
+
+        """
+        self._trader.market_exit_strategy(strategy_id)
 
     def remove_actor_from_id(self, actor_id: ComponentId) -> None:
         """
