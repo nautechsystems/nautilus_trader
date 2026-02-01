@@ -203,11 +203,11 @@ version = "1.5.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-rlp]]
-version = "0.3.12"
+version = "0.3.13"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-rlp-derive]]
-version = "0.3.12"
+version = "0.3.13"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-rpc-client]]
@@ -493,11 +493,6 @@ criteria = "safe-to-deploy"
 [[exemptions.bitvec]]
 version = "1.0.1"
 criteria = "safe-to-deploy"
-
-[[exemptions.block2]]
-version = "0.6.2"
-criteria = "safe-to-deploy"
-notes = "macOS/iOS Objective-C block support"
 
 [[exemptions.blst]]
 version = "0.3.16"
@@ -1622,16 +1617,6 @@ criteria = "safe-to-deploy"
 version = "0.4.7"
 criteria = "safe-to-deploy"
 
-[[exemptions.objc2]]
-version = "0.6.3"
-criteria = "safe-to-deploy"
-notes = "Objective-C runtime bindings"
-
-[[exemptions.objc2-encode]]
-version = "4.1.0"
-criteria = "safe-to-deploy"
-notes = "Objective-C type encoding"
-
 [[exemptions.objc2-io-kit]]
 version = "0.3.2"
 criteria = "safe-to-deploy"
@@ -1845,11 +1830,11 @@ version = "0.27.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.pyo3-stub-gen]]
-version = "0.16.2"
+version = "0.18.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.pyo3-stub-gen-derive]]
-version = "0.16.2"
+version = "0.18.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.quick-error]]
@@ -2081,11 +2066,11 @@ version = "0.1.28"
 criteria = "safe-to-deploy"
 
 [[exemptions.schemars]]
-version = "1.2.0"
+version = "1.2.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.schemars_derive]]
-version = "1.2.0"
+version = "1.2.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.scoped-tls]]
@@ -2877,7 +2862,7 @@ version = "0.5.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.zmij]]
-version = "1.0.18"
+version = "1.0.19"
 criteria = "safe-to-deploy"
 
 [[exemptions.zstd]]

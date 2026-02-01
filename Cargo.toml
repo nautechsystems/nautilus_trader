@@ -132,7 +132,7 @@ chrono = { version = "0.4.43", default-features = false, features = [
 ] }
 chrono-tz = "0.10.4"
 clap = { version = "4.5.56", features = ["derive", "env"] }
-ctrlc = "3.4"
+ctrlc = "3.5.1"
 dashmap = "6.1.0"
 datafusion = { version = "52.1.0", default-features = false, features = [
   "parquet",
@@ -190,7 +190,7 @@ pyo3-async-runtimes = { version = "0.27.0", default-features = false, features =
   "tokio",
   "tokio-runtime",
 ] }
-pyo3-stub-gen = "0.16.2"
+pyo3-stub-gen = "0.18.0"
 rand = { version = "0.9.2", default-features = false, features = [
   "std",
   "thread_rng",
