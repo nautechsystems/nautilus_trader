@@ -221,6 +221,20 @@ impl BybitWebSocketClient {
                                 });
                             }
                         }
+                        NautilusWsMessage::MarkPrices(prices) => {
+                            for price in prices {
+                                call_python_with_data(&callback, move |py| {
+                                    price.into_py_any(py).map(|obj| obj.into_bound(py))
+                                });
+                            }
+                        }
+                        NautilusWsMessage::IndexPrices(prices) => {
+                            for price in prices {
+                                call_python_with_data(&callback, move |py| {
+                                    price.into_py_any(py).map(|obj| obj.into_bound(py))
+                                });
+                            }
+                        }
                         NautilusWsMessage::OrderStatusReports(reports) => {
                             for report in reports {
                                 call_python_with_data(&callback, move |py| {

@@ -487,6 +487,18 @@ impl From<BybitOrderSide> for OrderSide {
     }
 }
 
+impl TryFrom<OrderSide> for BybitOrderSide {
+    type Error = anyhow::Error;
+
+    fn try_from(value: OrderSide) -> Result<Self, Self::Error> {
+        match value {
+            OrderSide::Buy => Ok(Self::Buy),
+            OrderSide::Sell => Ok(Self::Sell),
+            _ => anyhow::bail!("unsupported OrderSide for Bybit: {value:?}"),
+        }
+    }
+}
+
 impl From<BybitTriggerType> for TriggerType {
     fn from(value: BybitTriggerType) -> Self {
         match value {

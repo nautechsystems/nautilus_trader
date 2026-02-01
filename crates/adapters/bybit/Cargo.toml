@@ -47,17 +47,22 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
+nautilus-execution = { workspace = true }
+nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
+nautilus-system = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
 async-stream = { workspace = true }
+async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }
 chrono = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
+dotenvy = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }
 log = { workspace = true }
@@ -101,4 +106,18 @@ doc = false
 [[bin]]
 name = "bybit-ws-data"
 path = "bin/ws_data.rs"
+doc = false
+
+# Run with `cargo run --example bybit-data-tester --package nautilus-bybit`.
+[[example]]
+name = "bybit-data-tester"
+path = "examples/node_data_tester.rs"
+required-features = []
+doc = false
+
+# Run with `cargo run --example bybit-exec-tester --package nautilus-bybit`.
+[[example]]
+name = "bybit-exec-tester"
+path = "examples/node_exec_tester.rs"
+required-features = []
 doc = false

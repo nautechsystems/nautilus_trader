@@ -15,7 +15,7 @@
 //! WebSocket message types for Bybit public and private channels.
 
 use nautilus_model::{
-    data::{Data, FundingRateUpdate, OrderBookDeltas},
+    data::{Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas},
     events::{AccountState, OrderCancelRejected, OrderModifyRejected, OrderRejected},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
@@ -102,6 +102,10 @@ pub enum NautilusWsMessage {
     Data(Vec<Data>),
     /// Order book deltas.
     Deltas(OrderBookDeltas),
+    /// Mark price updates from ticker stream.
+    MarkPrices(Vec<MarkPriceUpdate>),
+    /// Index price updates from ticker stream.
+    IndexPrices(Vec<IndexPriceUpdate>),
     /// Funding rate updates from ticker stream.
     FundingRates(Vec<FundingRateUpdate>),
     /// Order status reports from account stream or operation responses.
