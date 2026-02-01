@@ -36,6 +36,7 @@ use nautilus_core::{
     consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
+    data::BarType,
     enums::OrderSide,
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     instruments::{Instrument, InstrumentAny},
@@ -64,10 +65,12 @@ use super::{
 };
 use crate::common::{
     consts::{
-        DERIBIT_TESTNET_WS_URL, DERIBIT_WS_ORDER_KEY, DERIBIT_WS_ORDER_QUOTA,
-        DERIBIT_WS_SUBSCRIPTION_KEY, DERIBIT_WS_SUBSCRIPTION_QUOTA, DERIBIT_WS_URL,
+        DERIBIT_TESTNET_WS_URL, DERIBIT_WS_HEARTBEAT_SECS, DERIBIT_WS_ORDER_KEY,
+        DERIBIT_WS_ORDER_QUOTA, DERIBIT_WS_SUBSCRIPTION_KEY, DERIBIT_WS_SUBSCRIPTION_QUOTA,
+        DERIBIT_WS_URL,
     },
     credential::Credential,
+    parse::bar_spec_to_resolution,
 };
 
 /// Authentication timeout in seconds.
@@ -201,7 +204,7 @@ impl DeribitWebSocketClient {
     ///
     /// Returns an error if initialization fails.
     pub fn new_public(is_testnet: bool) -> anyhow::Result<Self> {
-        let heartbeat_interval = 10;
+        let heartbeat_interval = DERIBIT_WS_HEARTBEAT_SECS;
         Self::new_inner(
             None,
             None,
@@ -249,7 +252,7 @@ impl DeribitWebSocketClient {
         let api_secret = get_or_env_var_opt(None, secret_env)
             .ok_or_else(|| anyhow::anyhow!("Missing environment variable: {secret_env}"))?;
 
-        let heartbeat_interval = 10;
+        let heartbeat_interval = DERIBIT_WS_HEARTBEAT_SECS;
         Self::new(
             None,
             Some(api_key),
@@ -1075,6 +1078,31 @@ impl DeribitWebSocketClient {
     ) -> DeribitWsResult<()> {
         let channel = format!("chart.trades.{}.{}", instrument_id.symbol, resolution);
         self.send_unsubscribe(vec![channel]).await
+    }
+
+    /// Subscribes to bar updates for an instrument using a BarType specification.
+    ///
+    /// Converts the BarType to the nearest supported Deribit resolution and subscribes
+    /// to the chart channel.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    pub async fn subscribe_bars(&self, bar_type: BarType) -> DeribitWsResult<()> {
+        let resolution = bar_spec_to_resolution(&bar_type);
+        self.subscribe_chart(bar_type.instrument_id(), &resolution)
+            .await
+    }
+
+    /// Unsubscribes from bar updates for an instrument using a BarType specification.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription request fails.
+    pub async fn unsubscribe_bars(&self, bar_type: BarType) -> DeribitWsResult<()> {
+        let resolution = bar_spec_to_resolution(&bar_type);
+        self.unsubscribe_chart(bar_type.instrument_id(), &resolution)
+            .await
     }
 
     /// Checks if authentication is required for the given interval.

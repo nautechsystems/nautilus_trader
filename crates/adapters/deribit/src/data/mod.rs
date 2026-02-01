@@ -365,12 +365,12 @@ impl DataClient for DeribitDataClient {
         };
 
         let mut all_instruments = Vec::new();
-        for kind in &product_types {
+        for product_type in &product_types {
             let fetched = self
                 .http_client
-                .request_instruments(DeribitCurrency::ANY, Some(*kind))
+                .request_instruments(DeribitCurrency::ANY, Some(*product_type))
                 .await
-                .with_context(|| format!("failed to request instruments for {kind:?}"))?;
+                .with_context(|| format!("failed to request instruments for {product_type:?}"))?;
 
             // Cache in http client
             self.http_client.cache_instruments(fetched.clone());
@@ -1181,18 +1181,18 @@ impl DataClient for DeribitDataClient {
 
         get_runtime().spawn(async move {
             let mut all_instruments = Vec::new();
-            for kind in &product_types {
-                log::debug!("Requesting instruments for currency=ANY, kind={kind:?}");
+            for product_type in &product_types {
+                log::debug!("Requesting instruments for currency=ANY, product_type={product_type:?}");
 
                 match http_client
-                    .request_instruments(DeribitCurrency::ANY, Some(*kind))
+                    .request_instruments(DeribitCurrency::ANY, Some(*product_type))
                     .await
                 {
                     Ok(instruments) => {
                         log::info!(
                             "Fetched {} instruments for ANY/{:?}",
                             instruments.len(),
-                            kind
+                            product_type
                         );
 
                         for instrument in instruments {
@@ -1214,7 +1214,7 @@ impl DataClient for DeribitDataClient {
                         }
                     }
                     Err(e) => {
-                        log::error!("Failed to fetch instruments for ANY/{kind:?}: {e:?}");
+                        log::error!("Failed to fetch instruments for ANY/{product_type:?}: {e:?}");
                     }
                 }
             }

@@ -49,7 +49,7 @@ use nautilus_model::{
 use tokio::task::JoinHandle;
 
 use crate::{
-    common::consts::DERIBIT_VENUE,
+    common::consts::{DERIBIT_VENUE, DERIBIT_WS_HEARTBEAT_SECS},
     config::DeribitExecClientConfig,
     http::{client::DeribitHttpClient, models::DeribitCurrency, query::GetOrderStateParams},
     websocket::{
@@ -107,7 +107,7 @@ impl DeribitExecutionClient {
             config.base_url_ws.clone(),
             config.api_key.clone(),
             config.api_secret.clone(),
-            Some(20),
+            Some(DERIBIT_WS_HEARTBEAT_SECS),
             config.use_testnet,
         )
         .context("failed to create WebSocket client for execution")?;
@@ -430,19 +430,21 @@ impl ExecutionClient for DeribitExecutionClient {
 
         // Fetch and cache instruments in both HTTP client and WebSocket client
         if !self.core.instruments_initialized() {
-            for kind in &self.config.product_types {
+            for product_type in &self.config.product_types {
                 let instruments = self
                     .http_client
-                    .request_instruments(DeribitCurrency::ANY, Some(*kind))
+                    .request_instruments(DeribitCurrency::ANY, Some(*product_type))
                     .await
-                    .with_context(|| format!("failed to request instruments for {kind:?}"))?;
+                    .with_context(|| {
+                        format!("failed to request instruments for {product_type:?}")
+                    })?;
 
                 if instruments.is_empty() {
-                    log::warn!("No instruments returned for {kind:?}");
+                    log::warn!("No instruments returned for {product_type:?}");
                     continue;
                 }
 
-                log::info!("Fetched {} {kind:?} instruments", instruments.len());
+                log::info!("Fetched {} {product_type:?} instruments", instruments.len());
                 self.ws_client.cache_instruments(instruments.clone());
                 self.http_client.cache_instruments(instruments);
             }

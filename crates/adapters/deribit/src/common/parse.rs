@@ -1377,4 +1377,47 @@ mod tests {
             InstrumentId::from("ACCOUNT-USDT.DERIBIT")
         );
     }
+
+    #[rstest]
+    #[case::minute_1(1, "MINUTE", "1")]
+    #[case::minute_2(2, "MINUTE", "3")]
+    #[case::minute_3(3, "MINUTE", "3")]
+    #[case::minute_4(4, "MINUTE", "5")]
+    #[case::minute_5(5, "MINUTE", "5")]
+    #[case::minute_6(6, "MINUTE", "10")]
+    #[case::minute_10(10, "MINUTE", "10")]
+    #[case::minute_11(11, "MINUTE", "15")]
+    #[case::minute_15(15, "MINUTE", "15")]
+    #[case::minute_16(16, "MINUTE", "30")]
+    #[case::minute_30(30, "MINUTE", "30")]
+    #[case::minute_31(31, "MINUTE", "60")]
+    #[case::minute_60(60, "MINUTE", "60")]
+    #[case::minute_61(61, "MINUTE", "120")]
+    #[case::minute_120(120, "MINUTE", "120")]
+    #[case::minute_121(121, "MINUTE", "180")]
+    #[case::minute_180(180, "MINUTE", "180")]
+    #[case::minute_181(181, "MINUTE", "360")]
+    #[case::minute_360(360, "MINUTE", "360")]
+    #[case::minute_361(361, "MINUTE", "720")]
+    #[case::minute_720(720, "MINUTE", "720")]
+    #[case::minute_721(721, "MINUTE", "1D")]
+    #[case::hour_1(1, "HOUR", "60")]
+    #[case::hour_2(2, "HOUR", "120")]
+    #[case::hour_3(3, "HOUR", "180")]
+    #[case::hour_4(4, "HOUR", "360")]
+    #[case::hour_6(6, "HOUR", "360")]
+    #[case::hour_7(7, "HOUR", "720")]
+    #[case::hour_12(12, "HOUR", "720")]
+    #[case::hour_13(13, "HOUR", "1D")]
+    #[case::day_1(1, "DAY", "1D")]
+    fn test_bar_spec_to_resolution(
+        #[case] step: u64,
+        #[case] aggregation: &str,
+        #[case] expected: &str,
+    ) {
+        let bar_type_str = format!("BTC-PERPETUAL.DERIBIT-{step}-{aggregation}-LAST-EXTERNAL");
+        let bar_type = BarType::from(bar_type_str.as_str());
+        let resolution = bar_spec_to_resolution(&bar_type);
+        assert_eq!(resolution, expected);
+    }
 }

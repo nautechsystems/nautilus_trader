@@ -202,3 +202,13 @@ pub const DERIBIT_BOOK_DEFAULT_DEPTH: u32 = 10;
 
 /// Supported aggregated order book depths for Deribit.
 pub const DERIBIT_BOOK_VALID_DEPTHS: [u32; 3] = [1, 10, 20];
+
+/// Default WebSocket heartbeat interval in seconds.
+///
+/// Deribit recommends heartbeats every 30-60 seconds. More frequent heartbeats
+/// may trigger stricter rate limits.
+///
+/// # References
+///
+/// <https://support.deribit.com/hc/en-us/articles/25944603459613>
+pub const DERIBIT_WS_HEARTBEAT_SECS: u64 = 30;

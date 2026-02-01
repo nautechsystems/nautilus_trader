@@ -83,15 +83,13 @@ class DeribitInstrumentProvider(InstrumentProvider):
 
         all_pyo3_instruments = []
         if self._product_types:
-            # Load each instrument kind separately
-            for kind in self._product_types:
+            for product_type in self._product_types:
                 pyo3_instruments = await self._client.request_instruments(
                     DeribitCurrency.ANY,
-                    kind,
+                    product_type,
                 )
                 all_pyo3_instruments.extend(pyo3_instruments)
         else:
-            # Load all instrument kinds for all currencies
             pyo3_instruments = await self._client.request_instruments(DeribitCurrency.ANY, None)
             all_pyo3_instruments.extend(pyo3_instruments)
 
@@ -124,10 +122,10 @@ class DeribitInstrumentProvider(InstrumentProvider):
 
         all_pyo3_instruments = []
         if self._product_types:
-            for kind in self._product_types:
+            for product_type in self._product_types:
                 pyo3_instruments = await self._client.request_instruments(
                     DeribitCurrency.ANY,
-                    kind,
+                    product_type,
                 )
                 all_pyo3_instruments.extend(pyo3_instruments)
         else:

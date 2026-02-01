@@ -35,7 +35,7 @@ class DeribitDataClientConfig(LiveDataClientConfig, frozen=True):
         environment variable based on `is_testnet`.
     product_types : tuple[DeribitProductType, ...], optional
         The Deribit product types to load.
-        If None, all instrument kinds are loaded for all currencies.
+        If None, defaults to Future.
     base_url_http : str, optional
         The base URL for Deribit's HTTP API.
         If ``None`` then will use default based on `is_testnet`.

@@ -9,10 +9,10 @@ This integration supports live market data ingest and order execution with Derib
 ## Overview
 
 This adapter is implemented in Rust, with optional Python bindings for use in Python-based workflows.
-Deribit uses JSON-RPC 2.0 over both HTTP and WebSocket transports (rather than REST).
+Deribit uses JSON-RPC 2.0 over both HTTP and WebSocket transports.
 WebSocket is preferred for subscriptions and real-time data.
 
-The official Deribit API reference can be found at <https://docs.deribit.com/v2/>.
+The official Deribit API reference can be found at [docs.deribit.com](https://docs.deribit.com/).
 
 The Deribit adapter includes multiple components, which can be used together or separately depending
 on your use case:
@@ -35,7 +35,7 @@ and won't need to work directly with these lower-level components.
 | Product Type     | Data Feed | Trading | Notes                                         |
 |------------------|-----------|---------|-----------------------------------------------|
 | Perpetual Futures| ✓         | ✓       | BTC-PERPETUAL, ETH-PERPETUAL                  |
-| Dated Futures    | ✓         | ✓       | Quarterly expiration contracts                |
+| Dated Futures    | ✓         | ✓       | Futures with fixed expiry dates.              |
 | Options          | ✓         | ✓       | BTC and ETH options                           |
 | Spot             | ✓         | ✓       | BTC_USDC, ETH_USDC pairs                      |
 | Future Combos    | ✓         | ✓       | Calendar spreads for futures                  |
@@ -134,8 +134,8 @@ The Nautilus adapter supports both feed types via subscription parameters:
 
 | Parameter | Values | Notes |
 |-----------|--------|-------|
-| `interval` | `raw`, `100ms`, `agg2` | Default: `100ms`. Use `raw` for tick-by-tick (requires auth) |
-| `depth` | `1`, `10`, `20` | Default: `10`. Number of price levels per side |
+| `interval` | `raw`, `100ms`, `agg2` | Default: `100ms`. `agg2` batches at ~1 second intervals. `raw` requires auth. |
+| `depth` | `1`, `10`, `20` | Default: `10`. Number of price levels per side. |
 
 ```python
 from nautilus_trader.model.identifiers import InstrumentId
@@ -145,7 +145,7 @@ instrument_id = InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
 # Default: 100ms aggregated feed (no authentication required)
 strategy.subscribe_order_book_deltas(instrument_id)
 
-# Raw feed: Pass interval parameter (requires API credentials)
+# Raw feed (requires API credentials)
 strategy.subscribe_order_book_deltas(
     instrument_id,
     params={"interval": "raw"},
@@ -389,14 +389,19 @@ The adapter follows Deribit's [recommended connection practices](https://support
    lower latency, and reduced rate limit consumption
 2. **Authenticates all connections** when credentials are provided. Authenticated users benefit
    from higher rate limits and are less likely to be IP rate-limited
-3. **Implements heartbeats** (default 10 second interval) to maintain connection health and
-   detect disconnections early
+3. **Implements heartbeats** (30 second interval) to maintain connection health and detect
+   disconnections early
 4. **Handles reconnection** automatically with re-authentication and subscription recovery
 
 :::tip
 Always provide API credentials even for public data access. Authenticated connections have higher
 rate limits, and Deribit contacts authenticated clients before applying restrictions during
 high-load periods.
+:::
+
+:::note
+The adapter uses a 30 second heartbeat interval, which is the lower bound of Deribit's recommended
+30-60 second range. More frequent heartbeats may trigger stricter rate limits.
 :::
 
 ## Authentication
@@ -476,7 +481,7 @@ Testnet API keys are separate from production keys. You must create API keys spe
 |------------------------------------|------------|-------------|
 | `api_key`                          | `None`     | Deribit API key; loads from environment variables when omitted. |
 | `api_secret`                       | `None`     | Deribit API secret; loads from environment variables when omitted. |
-| `product_types`                    | `None`     | Product types to load (Future, Option, Spot, etc.). If `None`, loads all types. |
+| `product_types`                    | `None`     | Product types to load (Future, Option, Spot, etc.). If `None`, defaults to Future. |
 | `base_url_http`                    | `None`     | Override for the HTTP REST base URL. |
 | `base_url_ws`                      | `None`     | Override for the WebSocket base URL. |
 | `is_testnet`                       | `False`    | Use Deribit testnet endpoints when `True`. |

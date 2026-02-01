@@ -851,11 +851,11 @@ impl DeribitHttpClient {
     pub async fn request_instruments(
         &self,
         currency: DeribitCurrency,
-        kind: Option<DeribitProductType>,
+        product_type: Option<DeribitProductType>,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
         // Build parameters
-        let params = if let Some(k) = kind {
-            GetInstrumentsParams::with_kind(currency, k)
+        let params = if let Some(pt) = product_type {
+            GetInstrumentsParams::with_kind(currency, pt)
         } else {
             GetInstrumentsParams::new(currency)
         };
