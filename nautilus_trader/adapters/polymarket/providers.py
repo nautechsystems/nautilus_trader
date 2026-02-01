@@ -125,7 +125,10 @@ class PolymarketInstrumentProvider(InstrumentProvider):
 
     async def load_all_async(self, filters: dict | None = None) -> None:
         # Check for event_slug_builder first (most efficient for niche markets)
-        if isinstance(self._config, PolymarketInstrumentProviderConfig) and self._config.event_slug_builder:
+        if (
+            isinstance(self._config, PolymarketInstrumentProviderConfig)
+            and self._config.event_slug_builder
+        ):
             await self._load_from_event_slugs()
         elif self._config.use_gamma_markets:
             await self._load_all_using_gamma_markets(filters)
@@ -141,7 +144,10 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         from the Gamma API and loads all instruments from their markets.
 
         """
-        if not isinstance(self._config, PolymarketInstrumentProviderConfig) or not self._config.event_slug_builder:
+        if (
+            not isinstance(self._config, PolymarketInstrumentProviderConfig)
+            or not self._config.event_slug_builder
+        ):
             return
         slug_builder = resolve_path(self._config.event_slug_builder)
         event_slugs: list[str] = slug_builder()
@@ -158,24 +164,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                     http_client=self._http_client,
                 )
                 events_loaded += 1
-
-                for market in event.get("markets", []):
-                    condition_id = market.get("conditionId")
-                    if not condition_id:
-                        continue
-
-                    normalized_market = normalize_gamma_market_to_clob_format(market)
-
-                    for token_info in normalized_market.get("tokens", []):
-                        token_id = token_info["token_id"]
-                        if not token_id:
-                            if self._log_warnings:
-                                self._log.warning(f"Market {condition_id} had an empty token")
-                            continue
-
-                        outcome = token_info["outcome"]
-                        self._load_instrument(normalized_market, token_id, outcome)
-                        instruments_loaded += 1
+                instruments_loaded += self._load_instruments_from_event(event)
 
             except ValueError as e:
                 # Event not found - log and continue
@@ -189,6 +178,27 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         self._log.info(
             f"Loaded {instruments_loaded} instruments from {events_loaded} events",
         )
+
+    def _load_instruments_from_event(self, event: dict[str, Any]) -> int:
+        count = 0
+        for market in event.get("markets", []):
+            condition_id = market.get("conditionId")
+            if not condition_id:
+                continue
+
+            normalized_market = normalize_gamma_market_to_clob_format(market)
+
+            for token_info in normalized_market.get("tokens", []):
+                token_id = token_info["token_id"]
+                if not token_id:
+                    if self._log_warnings:
+                        self._log.warning(f"Market {condition_id} had an empty token")
+                    continue
+
+                outcome = token_info["outcome"]
+                self._load_instrument(normalized_market, token_id, outcome)
+                count += 1
+        return count
 
     async def _load_all_using_gamma_markets(self, filters: dict | None = None) -> None:
         filters = filters.copy() if filters is not None else {}

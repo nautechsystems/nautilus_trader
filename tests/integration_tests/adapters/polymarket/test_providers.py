@@ -806,8 +806,8 @@ async def test_event_slug_builder_invalid_module_path_raises(
     """
     Test that an invalid module path in event_slug_builder raises ModuleNotFoundError.
 
-    If a user misconfigures the path with a typo in the module name,
-    the error should propagate immediately (fail fast).
+    If a user misconfigures the path with a typo in the module name, the error should
+    propagate immediately (fail fast).
 
     """
     # Arrange
@@ -833,8 +833,8 @@ async def test_event_slug_builder_invalid_function_path_raises(
     """
     Test that an invalid function name in event_slug_builder raises AttributeError.
 
-    If a user misconfigures the path with a typo in the function name,
-    the error should propagate immediately (fail fast).
+    If a user misconfigures the path with a typo in the function name, the error should
+    propagate immediately (fail fast).
 
     """
     # Arrange
@@ -860,8 +860,8 @@ async def test_event_slug_builder_callable_raises_exception(
     """
     Test that an exception raised by the slug builder callable propagates up.
 
-    If the slug builder itself fails (e.g., network error fetching slug data),
-    the error should propagate immediately rather than being silently swallowed.
+    If the slug builder itself fails (e.g., network error fetching slug data), the error
+    should propagate immediately rather than being silently swallowed.
 
     """
     # Arrange
@@ -890,11 +890,11 @@ async def test_event_slug_builder_handles_generic_exception_during_fetch(
     live_clock,
 ):
     """
-    Test that a generic (non-ValueError) exception during event fetch is logged and skipped.
+    Test that a generic (non-ValueError) exception during event fetch is logged and
+    skipped.
 
-    Unlike ValueError (event not found), other exceptions like ConnectionError
-    should be logged at error level with traceback but still allow processing
-    of remaining slugs.
+    Unlike ValueError (event not found), other exceptions like ConnectionError should be
+    logged at error level with traceback but still allow processing of remaining slugs.
 
     """
     # Arrange
