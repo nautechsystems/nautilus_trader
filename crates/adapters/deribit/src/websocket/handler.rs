@@ -31,7 +31,7 @@ use ahash::AHashMap;
 use nautilus_common::cache::fifo::FifoCache;
 use nautilus_core::{AtomicTime, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
-    data::{Bar, Data},
+    data::{Bar, Data, QuoteTick},
     events::{AccountState, OrderCancelRejected, OrderModifyRejected, OrderRejected},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
@@ -227,6 +227,7 @@ pub struct DeribitWsFeedHandler {
     last_account_states: AHashMap<String, AccountState>,
     book_sequence: AHashMap<Ustr, u64>,
     pending_outgoing: VecDeque<NautilusWsMessage>,
+    last_quotes: AHashMap<InstrumentId, QuoteTick>,
 }
 
 impl DeribitWsFeedHandler {
@@ -265,6 +266,7 @@ impl DeribitWsFeedHandler {
             last_account_states: AHashMap::new(),
             book_sequence: AHashMap::new(),
             pending_outgoing: VecDeque::new(),
+            last_quotes: AHashMap::new(),
         }
     }
 
@@ -293,6 +295,7 @@ impl DeribitWsFeedHandler {
         self.last_account_states.clear();
         self.book_sequence.clear();
         self.pending_outgoing.clear();
+        self.last_quotes.clear();
 
         log::debug!(
             "Reset state: pending_requests={pending_count}, emitted_accepted={emitted_count}, \
@@ -1546,8 +1549,10 @@ impl DeribitWsFeedHandler {
                                 && let Some(instrument) =
                                     self.instruments_cache.get(&quote_msg.instrument_name)
                             {
-                                match parse_quote_msg(&quote_msg, instrument, ts_init) {
+                                let last_quote = self.last_quotes.get(&instrument.id());
+                                match parse_quote_msg(&quote_msg, instrument, ts_init, last_quote) {
                                     Ok(quote) => {
+                                        self.last_quotes.insert(instrument.id(), quote.clone());
                                         return Some(NautilusWsMessage::Data(vec![Data::Quote(
                                             quote,
                                         )]));

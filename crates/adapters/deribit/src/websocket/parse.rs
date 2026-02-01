@@ -397,16 +397,28 @@ pub fn parse_quote_msg(
     msg: &DeribitQuoteMsg,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
+    last_quote: Option<&QuoteTick>,
 ) -> anyhow::Result<QuoteTick> {
     let instrument_id = instrument.id();
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let bid_price = Price::from_decimal_dp(msg.best_bid_price, price_precision)?;
-    let ask_price = Price::from_decimal_dp(msg.best_ask_price, price_precision)?;
-    let bid_size = Quantity::from_decimal_dp(msg.best_bid_amount, size_precision)?;
-    let ask_size = Quantity::from_decimal_dp(msg.best_ask_amount, size_precision)?;
+    let mut bid_price = Price::from_decimal_dp(msg.best_bid_price, price_precision)?;
+    let mut ask_price = Price::from_decimal_dp(msg.best_ask_price, price_precision)?;
+    let mut bid_size = Quantity::from_decimal_dp(msg.best_bid_amount, size_precision)?;
+    let mut ask_size = Quantity::from_decimal_dp(msg.best_ask_amount, size_precision)?;
     let ts_event = UnixNanos::new(msg.timestamp * NANOSECONDS_IN_MILLISECOND);
+
+    if let Some(last_quote) = last_quote {
+        if bid_price.raw == 0 {
+            bid_price = last_quote.bid_price;
+            bid_size = last_quote.bid_size;
+        }
+        if ask_price.raw == 0 {
+            ask_price = last_quote.ask_price;
+            ask_size = last_quote.ask_size;
+        }
+    }
 
     QuoteTick::new_checked(
         instrument_id,
@@ -1265,7 +1277,7 @@ mod tests {
         assert_eq!(msg.best_bid_amount, dec!(133440.0));
         assert_eq!(msg.best_ask_amount, dec!(99470.0));
 
-        let quote = parse_quote_msg(&msg, &instrument, UnixNanos::default()).unwrap();
+        let quote = parse_quote_msg(&msg, &instrument, UnixNanos::default(), None).unwrap();
 
         assert_eq!(quote.instrument_id, instrument.id());
         assert_eq!(quote.bid_price, instrument.make_price(92288.0));
@@ -1273,6 +1285,58 @@ mod tests {
         assert_eq!(quote.bid_size, instrument.make_qty(133440.0, None));
         assert_eq!(quote.ask_size, instrument.make_qty(99470.0, None));
         assert_eq!(quote.ts_event, UnixNanos::new(1_765_541_767_174_000_000));
+    }
+
+    #[rstest]
+    fn test_parse_quote_msg_with_previous_quote_zero_bid() {
+        let instrument = test_perpetual_instrument();
+        let json = load_test_json("ws_quote.json");
+        let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let mut msg: DeribitQuoteMsg =
+            serde_json::from_value(response["params"]["data"].clone()).unwrap();
+
+        let quote = parse_quote_msg(&msg, &instrument, UnixNanos::default(), None).unwrap();
+
+        msg.best_bid_price = rust_decimal::Decimal::ZERO;
+
+        let second_quote =
+            parse_quote_msg(&msg, &instrument, UnixNanos::default(), Some(&quote)).unwrap();
+
+        assert_eq!(second_quote.instrument_id, instrument.id());
+        assert_eq!(second_quote.bid_price, instrument.make_price(92288.0));
+        assert_eq!(second_quote.ask_price, instrument.make_price(92288.5));
+        assert_eq!(second_quote.bid_size, instrument.make_qty(133440.0, None));
+        assert_eq!(second_quote.ask_size, instrument.make_qty(99470.0, None));
+        assert_eq!(
+            second_quote.ts_event,
+            UnixNanos::new(1_765_541_767_174_000_000)
+        );
+    }
+
+    #[rstest]
+    fn test_parse_quote_msg_with_previous_quote_zero_ask() {
+        let instrument = test_perpetual_instrument();
+        let json = load_test_json("ws_quote.json");
+        let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let mut msg: DeribitQuoteMsg =
+            serde_json::from_value(response["params"]["data"].clone()).unwrap();
+
+        let quote = parse_quote_msg(&msg, &instrument, UnixNanos::default(), None).unwrap();
+
+        msg.best_ask_price = rust_decimal::Decimal::ZERO;
+
+        let second_quote =
+            parse_quote_msg(&msg, &instrument, UnixNanos::default(), Some(&quote)).unwrap();
+
+        assert_eq!(second_quote.instrument_id, instrument.id());
+        assert_eq!(second_quote.bid_price, instrument.make_price(92288.0));
+        assert_eq!(second_quote.ask_price, instrument.make_price(92288.5));
+        assert_eq!(second_quote.bid_size, instrument.make_qty(133440.0, None));
+        assert_eq!(second_quote.ask_size, instrument.make_qty(99470.0, None));
+        assert_eq!(
+            second_quote.ts_event,
+            UnixNanos::new(1_765_541_767_174_000_000)
+        );
     }
 
     #[rstest]
