@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import traceback
 from typing import Any
 
 import msgspec
@@ -76,8 +77,11 @@ class PolymarketInstrumentProviderConfig(InstrumentProviderConfig, frozen=True, 
 
         When set, the provider will call this function on each initialization/refresh cycle
         to dynamically generate event slugs, then fetch only those specific events from
-        the Gamma API. This is much more efficient than `load_all=True` for niche markets
-        with predictable slug patterns (e.g., temperature markets, UpDown crypto markets).
+        the Gamma API. This is much more efficient for niche markets with predictable
+        slug patterns (e.g., temperature markets, UpDown crypto markets).
+
+        Note: Requires ``load_all=True`` to be set in the configuration for the builder
+        to be triggered on startup.
 
         Example: "myproject.slugs:build_temperature_slugs"
 
@@ -111,7 +115,6 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         http_client: HttpClient | None = None,
     ) -> None:
         super().__init__(config=config)
-        self.config: PolymarketInstrumentProviderConfig | None = config
         self._clock = clock
         self._client = client
         self._http_client = http_client or HttpClient(timeout_secs=30)
@@ -122,14 +125,14 @@ class PolymarketInstrumentProvider(InstrumentProvider):
 
     async def load_all_async(self, filters: dict | None = None) -> None:
         # Check for event_slug_builder first (most efficient for niche markets)
-        if self.config and self.config.event_slug_builder:
-            await self._load_from_event_slugs(filters)
+        if isinstance(self._config, PolymarketInstrumentProviderConfig) and self._config.event_slug_builder:
+            await self._load_from_event_slugs()
         elif self._config.use_gamma_markets:
             await self._load_all_using_gamma_markets(filters)
         else:
             await self._load_markets([], filters)
 
-    async def _load_from_event_slugs(self, filters: dict | None = None) -> None:
+    async def _load_from_event_slugs(self) -> None:
         """
         Load instruments by fetching specific events via their slugs.
 
@@ -138,10 +141,9 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         from the Gamma API and loads all instruments from their markets.
 
         """
-        # Resolve and call the slug builder (config and event_slug_builder checked in load_all_async)
-        assert self.config is not None
-        assert self.config.event_slug_builder is not None
-        slug_builder = resolve_path(self.config.event_slug_builder)
+        if not isinstance(self._config, PolymarketInstrumentProviderConfig) or not self._config.event_slug_builder:
+            return
+        slug_builder = resolve_path(self._config.event_slug_builder)
         event_slugs: list[str] = slug_builder()
 
         self._log.info(f"Loading instruments from {len(event_slugs)} event slugs")
@@ -179,8 +181,10 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                 # Event not found - log and continue
                 if self._log_warnings:
                     self._log.warning(f"Event slug '{slug}' not found: {e}")
-            except Exception as e:
-                self._log.error(f"Failed to load event slug '{slug}': {e}")
+            except Exception:
+                self._log.error(
+                    f"Failed to load event slug '{slug}':\n{traceback.format_exc()}",
+                )
 
         self._log.info(
             f"Loaded {instruments_loaded} instruments from {events_loaded} events",
