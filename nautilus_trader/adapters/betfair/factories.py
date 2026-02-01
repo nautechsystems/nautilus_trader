@@ -28,6 +28,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.core.nautilus_pyo3 import Quota
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
@@ -70,11 +71,15 @@ def get_cached_betfair_client(
 
     Logger("BetfairFactory").debug("Creating new instance of `BetfairHttpClient`")
 
+    # Betfair rate limits: ~5 requests/second for most endpoints
+    ratelimiter_default_quota = Quota.rate_per_second(5)
+
     return BetfairHttpClient(
         username=username,
         password=password,
         app_key=app_key,
         proxy_url=proxy_url,
+        ratelimiter_default_quota=ratelimiter_default_quota,
     )
 
 

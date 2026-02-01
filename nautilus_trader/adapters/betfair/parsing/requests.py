@@ -562,18 +562,26 @@ def hashed_trade_id(
     average_price_matched: float | None = None,
     size_matched: float | None = None,
 ) -> TradeId:
+    # Normalize floats to fixed precision to ensure consistent hashes
+    price_str = f"{price:.{BETFAIR_PRICE_PRECISION}f}"
+    size_str = f"{size:.{BETFAIR_QUANTITY_PRECISION}f}"
+    avp_str = (
+        f"{average_price_matched:.{BETFAIR_PRICE_PRECISION}f}" if average_price_matched else None
+    )
+    sm_str = f"{size_matched:.{BETFAIR_QUANTITY_PRECISION}f}" if size_matched else None
+
     data: bytes = msgspec.json.encode(
         (
             bet_id,
-            price,
-            size,
+            price_str,
+            size_str,
             side,
             persistence_type,
             order_type,
             placed_date,
             matched_date,
-            average_price_matched,
-            size_matched,
+            avp_str,
+            sm_str,
         ),
     )
     return TradeId(hashlib.shake_256(data).hexdigest(18))

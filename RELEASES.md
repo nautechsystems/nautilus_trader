@@ -128,6 +128,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Improved `OptionExerciseModule` logging and fix cache reference (#3388), thanks @davidsblom
 - Improved execution reports builder pattern in Rust (#3417), thanks @filipmacek
 - Improved visualization to use fill report for create_bars_with_fills (#3466), thanks @faysou
+- Improved Betfair adapter rate limiting and fill deduplication
 - Improved Deribit with high-performance `Decimal` deserialization (#3510), thanks @filipmacek
 - Improved precision-mode validation for Arrow data (#3511), thanks for reporting @2-5
 - Refined closing of streaming writer (#3394), thanks @faysou

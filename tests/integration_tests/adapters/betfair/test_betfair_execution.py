@@ -731,9 +731,9 @@ async def test_duplicate_trade_id(exec_client, setup_order_state, fill_events, c
     assert isinstance(cancel, OrderCanceled)
     # Second order example, partial fill followed by remainder filled
     assert isinstance(fill2, OrderFilled)
-    assert fill2.trade_id.value == "dbd3743a0ce238c62acc5d400314659e7d74"
+    assert fill2.trade_id.value == "f28dd583d04ad052ead605465599c87863a3"
     assert isinstance(fill3, OrderFilled)
-    assert fill3.trade_id.value == "353ebd92c374d78b17d5f4a4b4897e9e5ea8"
+    assert fill3.trade_id.value == "fb9d0402fe285ad1bb0c619ffde778d673dc"
 
 
 @pytest.mark.asyncio
@@ -1813,7 +1813,7 @@ async def test_sync_fill_caches_from_orders_populates_caches(
         5.0,
         BETFAIR_QUANTITY_PRECISION,
     )
-    assert TradeId("TRADE-001") in exec_client._published_executions[order.client_order_id]
+    assert "TRADE-001" in exec_client._published_executions
 
 
 @pytest.mark.asyncio
@@ -2235,9 +2235,9 @@ def test_sync_fill_caches_with_multiple_orders(
         12.0,
         BETFAIR_QUANTITY_PRECISION,
     )
-    assert TradeId("TRADE-A") in exec_client._published_executions[order1.client_order_id]
-    assert TradeId("TRADE-B1") in exec_client._published_executions[order2.client_order_id]
-    assert TradeId("TRADE-B2") in exec_client._published_executions[order2.client_order_id]
+    assert "TRADE-A" in exec_client._published_executions
+    assert "TRADE-B1" in exec_client._published_executions
+    assert "TRADE-B2" in exec_client._published_executions
 
 
 def test_sync_fill_caches_ignores_orders_without_fills(
@@ -2290,10 +2290,7 @@ def test_sync_fill_caches_ignores_orders_without_fills(
     # Assert
     assert order_with_fill.client_order_id in exec_client._cache_filled_qty
     assert order_no_fill.client_order_id not in exec_client._cache_filled_qty
-    assert (
-        TradeId("TRADE-001") in exec_client._published_executions[order_with_fill.client_order_id]
-    )
-    assert len(exec_client._published_executions[order_no_fill.client_order_id]) == 0
+    assert "TRADE-001" in exec_client._published_executions
 
 
 @pytest.mark.asyncio
@@ -2324,14 +2321,13 @@ async def test_sync_fill_caches_does_not_duplicate_existing_trade_ids(
 
     # Pre-populate cache with the same trade ID
     exec_client._cache_filled_qty[order.client_order_id] = Quantity(5.0, BETFAIR_QUANTITY_PRECISION)
-    exec_client._published_executions[order.client_order_id].append(TradeId("TRADE-001"))
+    exec_client._published_executions.add("TRADE-001")
 
     # Act
     exec_client._sync_fill_caches_from_orders()
 
-    # Assert - trade ID should not be duplicated
-    trade_ids = exec_client._published_executions[order.client_order_id]
-    assert trade_ids.count(TradeId("TRADE-001")) == 1
+    # Assert - trade ID should still be present (FifoCache dedupes automatically)
+    assert "TRADE-001" in exec_client._published_executions
 
 
 @pytest.mark.parametrize(
@@ -2423,7 +2419,7 @@ def test_duplicate_trade_id_skips_fill(
         lambda _uo: trade_id,
     )
 
-    exec_client._published_executions[order.client_order_id].append(trade_id)
+    exec_client._published_executions.add(trade_id.value)
 
     unmatched_order = _StubUnmatchedOrder(
         id=bet_id,  # Must match venue_order_id for proper order resolution

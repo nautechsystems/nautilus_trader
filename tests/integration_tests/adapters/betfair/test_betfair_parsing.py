@@ -1089,7 +1089,7 @@ def test_hashed_trade_id_deterministic():
     )
 
     assert isinstance(result, TradeId)
-    assert result.value == "a5a0e11302313453e314aeb3eeba489333ee"
+    assert result.value == "dbbcfdd8301db15100f11a07ee2dcfcdfc0a"
 
 
 @pytest.mark.parametrize(

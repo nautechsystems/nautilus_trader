@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from collections import defaultdict
 from datetime import datetime
 
 import pandas as pd
@@ -42,11 +41,13 @@ from betfair_parser.spec.streaming import stream_decode
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.common import OrderSideParser
+from nautilus_trader.adapters.betfair.common import is_rate_limit_error
 from nautilus_trader.adapters.betfair.common import is_session_error
 from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
 from nautilus_trader.adapters.betfair.constants import BETFAIR_ORDER_STATUS_EXECUTABLE
 from nautilus_trader.adapters.betfair.constants import BETFAIR_ORDER_STATUS_EXECUTION_COMPLETE
 from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
+from nautilus_trader.adapters.betfair.constants import BETFAIR_RATE_LIMIT_RETRY_DELAY_SECS
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
@@ -99,7 +100,6 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.objects import Currency
@@ -194,8 +194,8 @@ class BetfairExecutionClient(LiveExecutionClient):
         # Tracks orders with pending updates to ensure state consistency during asynchronous processing
         self._pending_update_keys: set[tuple[ClientOrderId, VenueOrderId]] = set()
 
-        # Stores published executions per order to avoid duplicates and support reconciliation
-        self._published_executions: dict[ClientOrderId, list[TradeId]] = defaultdict(list)
+        # Tracks published trade IDs to avoid duplicate fills (bounded FIFO cache)
+        self._published_executions: FifoCache = FifoCache()
 
         # Hot caches:
         # Track fill state separately from order state since Betfair only provides
@@ -278,6 +278,12 @@ class BetfairExecutionClient(LiveExecutionClient):
         await self._client.disconnect()
 
     async def on_api_exception(self, error: BetfairError) -> None:
+        if is_rate_limit_error(error):
+            # Rate limit hit, log warning but don't reconnect since the client's
+            # rate limiter will prevent further bursts.
+            self._log.warning(f"Betfair rate limit hit: {error}")
+            return
+
         if is_session_error(error):
             if self._is_reconnecting:
                 # Avoid multiple reconnection attempts when multiple INVALID_SESSION_INFORMATION errors
@@ -312,11 +318,9 @@ class BetfairExecutionClient(LiveExecutionClient):
                 self._cache_filled_qty[order.client_order_id] = order.filled_qty
                 self._cache_avg_px[order.client_order_id] = order.avg_px
 
-                existing_trade_ids = set(self._published_executions[order.client_order_id])
-
                 for trade_id in order.trade_ids:
-                    if trade_id not in existing_trade_ids:
-                        self._published_executions[order.client_order_id].append(trade_id)
+                    if trade_id.value not in self._published_executions:
+                        self._published_executions.add(trade_id.value)
 
                 synced_count += 1
 
@@ -482,9 +486,15 @@ class BetfairExecutionClient(LiveExecutionClient):
                         )
         except BetfairError as e:
             await self.on_api_exception(error=e)
+
+            if retry and is_rate_limit_error(e):
+                await asyncio.sleep(BETFAIR_RATE_LIMIT_RETRY_DELAY_SECS)
+                return await self._generate_order_status_report_impl(command, retry=False)
+
             # Retry once after session reconnection
             if retry and is_session_error(e):
                 return await self._generate_order_status_report_impl(command, retry=False)
+
             # Non-session errors or retry exhausted - re-raise
             raise
 
@@ -538,9 +548,15 @@ class BetfairExecutionClient(LiveExecutionClient):
             )
         except BetfairError as e:
             await self.on_api_exception(error=e)
+
+            if retry and is_rate_limit_error(e):
+                await asyncio.sleep(BETFAIR_RATE_LIMIT_RETRY_DELAY_SECS)
+                return await self._generate_order_status_reports_impl(command, retry=False)
+
             # Retry once after session reconnection
             if retry and is_session_error(e):
                 return await self._generate_order_status_reports_impl(command, retry=False)
+
             # Non-session errors or retry exhausted - re-raise
             raise
 
@@ -591,9 +607,15 @@ class BetfairExecutionClient(LiveExecutionClient):
             )
         except BetfairError as e:
             await self.on_api_exception(error=e)
+
+            if retry and is_rate_limit_error(e):
+                await asyncio.sleep(BETFAIR_RATE_LIMIT_RETRY_DELAY_SECS)
+                return await self._generate_fill_reports_impl(command, retry=False)
+
             # Retry once after session reconnection
             if retry and is_session_error(e):
                 return await self._generate_fill_reports_impl(command, retry=False)
+
             # Non-session errors or retry exhausted - re-raise
             raise
 
@@ -1331,15 +1353,15 @@ class BetfairExecutionClient(LiveExecutionClient):
         )
 
         if sm_qty <= baseline_qty:
-            self._log.warning(
+            self._log.debug(
                 f"Fill skipped: sm_qty={sm_qty} <= baseline_qty={baseline_qty} "
                 f"for {client_order_id!r}, bet_id={unmatched_order.id}",
             )
             return order
 
         trade_id = order_to_trade_id(unmatched_order)
-        if trade_id in self._published_executions[client_order_id]:
-            self._log.warning(
+        if trade_id.value in self._published_executions:
+            self._log.debug(
                 f"Fill skipped: duplicate trade_id={trade_id!r} for {client_order_id!r}",
             )
             return order
@@ -1402,7 +1424,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             order.client_order_id,
         )
         self._update_fill_cache(result.total_matched_qty, avg_px, order)
-        self._published_executions[client_order_id].append(trade_id)
+        self._published_executions.add(trade_id.value)
 
         return order
 
