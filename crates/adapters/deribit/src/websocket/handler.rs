@@ -1552,7 +1552,7 @@ impl DeribitWsFeedHandler {
                                 let last_quote = self.last_quotes.get(&instrument.id());
                                 match parse_quote_msg(&quote_msg, instrument, ts_init, last_quote) {
                                     Ok(quote) => {
-                                        self.last_quotes.insert(instrument.id(), quote.clone());
+                                        self.last_quotes.insert(instrument.id(), quote);
                                         return Some(NautilusWsMessage::Data(vec![Data::Quote(
                                             quote,
                                         )]));
