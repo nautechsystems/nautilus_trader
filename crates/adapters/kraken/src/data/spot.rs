@@ -299,7 +299,13 @@ impl DataClient for KrakenSpotDataClient {
             .context("Spot WebSocket failed to become active")?;
 
         self.spawn_message_handler()?;
-        self.ws.cache_instruments(instruments);
+        self.ws.cache_instruments(instruments.clone());
+
+        for instrument in instruments {
+            if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
+                log::error!("Failed to send instrument: {e}");
+            }
+        }
 
         self.is_connected.store(true, Ordering::Release);
         log::info!("Connected: client_id={}, product_type=Spot", self.client_id);

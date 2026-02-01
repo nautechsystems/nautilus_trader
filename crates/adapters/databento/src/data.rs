@@ -313,7 +313,7 @@ impl DatabentoDataClient {
                             Some(LiveMessage::Instrument(instrument)) => {
                                 log::info!("Received instrument definition: {}", instrument.id());
                                 if let Err(e) = data_sender.send(DataEvent::Instrument(instrument)) {
-                                    log::error!("Failed to send instrument event: {e}");
+                                    log::error!("Failed to send instrument: {e}");
                                 }
                             }
                             Some(LiveMessage::Status(status)) => {
@@ -752,7 +752,7 @@ impl DataClient for DatabentoDataClient {
                     log::info!("Retrieved {} instruments", instruments.len());
                     for instrument in instruments {
                         if let Err(e) = data_sender.send(DataEvent::Instrument(instrument)) {
-                            log::error!("Failed to send instrument event: {e}");
+                            log::error!("Failed to send instrument: {e}");
                         }
                     }
                 }
