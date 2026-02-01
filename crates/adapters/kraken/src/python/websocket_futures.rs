@@ -160,6 +160,20 @@ impl KrakenFuturesWebSocketClient {
                                     log::error!("Error calling Python callback: {e}");
                                 }
                             }
+                            KrakenFuturesWsMessage::FundingRate(update) => {
+                                match update.into_py_any(py) {
+                                    Ok(py_obj) => {
+                                        if let Err(e) = callback.call1(py, (py_obj,)) {
+                                            log::error!("Error calling Python callback: {e}");
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::error!(
+                                            "Failed to convert FundingRateUpdate to Python: {e}"
+                                        );
+                                    }
+                                }
+                            }
                             KrakenFuturesWsMessage::Quote(quote) => {
                                 let py_obj = data_to_pycapsule(py, Data::from(quote));
                                 if let Err(e) = callback.call1(py, (py_obj,)) {
@@ -382,6 +396,23 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    #[pyo3(name = "subscribe_funding_rate")]
+    fn py_subscribe_funding_rate<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_funding_rate(instrument_id)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
     #[pyo3(name = "unsubscribe_book")]
     fn py_unsubscribe_book<'py>(
         &self,
@@ -461,6 +492,23 @@ impl KrakenFuturesWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
                 .unsubscribe_index_price(instrument_id)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_funding_rate")]
+    fn py_unsubscribe_funding_rate<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_funding_rate(instrument_id)
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())

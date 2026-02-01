@@ -20,11 +20,11 @@
 //!
 //! # Features
 //!
-//! - REST API v2 client for market data and account operations
-//! - WebSocket v2 client for real-time data feeds
-//! - Support for Spot and Futures markets
-//! - Comprehensive instrument, ticker, trade, orderbook, and OHLC data
-//! - Prepared for execution support (orders, positions, balances)
+//! - REST API v2 client for market data and account operations.
+//! - WebSocket v2 client for real-time data feeds.
+//! - Support for Spot and Futures markets.
+//! - Comprehensive instrument, ticker, trade, orderbook, and OHLC data.
+//! - Prepared for execution support (orders, positions, balances).
 //!
 //! # API Documentation
 //!
@@ -36,13 +36,14 @@
 //! Enable the `python` feature to use this adapter from Python:
 //!
 //! ```toml
-//! nautilus-kraken = { version = "0.52.0", features = ["python"] }
+//! nautilus-kraken = { version = "*", features = ["python"] }
 //! ```
 
 pub mod common;
 pub mod config;
 pub mod data;
 pub mod execution;
+pub mod factories;
 pub mod http;
 pub mod websocket;
 
@@ -50,11 +51,12 @@ pub mod websocket;
 pub mod python;
 
 pub use config::{KrakenDataClientConfig, KrakenExecClientConfig};
-// HTTP clients
+pub use data::{KrakenFuturesDataClient, KrakenSpotDataClient};
+pub use execution::{KrakenFuturesExecutionClient, KrakenSpotExecutionClient};
 pub use http::{
     KrakenFuturesHttpClient, KrakenFuturesRawHttpClient, KrakenHttpError, KrakenSpotHttpClient,
     KrakenSpotRawHttpClient,
 };
-// WebSocket clients
-pub use websocket::futures::client::KrakenFuturesWebSocketClient;
-pub use websocket::spot_v2::client::KrakenSpotWebSocketClient;
+pub use websocket::{
+    futures::client::KrakenFuturesWebSocketClient, spot_v2::client::KrakenSpotWebSocketClient,
+};

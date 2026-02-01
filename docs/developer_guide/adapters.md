@@ -12,12 +12,6 @@ NautilusTrader adapters follow a layered architecture pattern with:
 - **Rust core** for networking clients and performance-critical operations.
 - **Python layer** for integrating Rust clients into the platform's data and execution engines.
 
-Good references for standardized patterns are currently:
-
-- OKX
-- BitMEX
-- Bybit
-
 ### Rust core (`crates/adapters/your_adapter/`)
 
 The Rust layer handles:
@@ -40,10 +34,6 @@ crates/adapters/your_adapter/
 │   │   ├── parse.rs         # Shared parsing helpers
 │   │   ├── urls.rs          # Environment & product aware base-url resolvers
 │   │   └── testing.rs       # Fixtures reused across unit tests
-│   ├── data/                # Data client (Rust-native, optional)
-│   │   └── mod.rs           # Data client implementation
-│   ├── execution/           # Execution client (Rust-native, optional)
-│   │   └── mod.rs           # Execution client implementation
 │   ├── http/                # HTTP client implementation
 │   │   ├── client.rs        # HTTP client with authentication
 │   │   ├── error.rs         # HTTP-specific error types
@@ -64,12 +54,13 @@ crates/adapters/your_adapter/
 │   │   ├── websocket.rs     # Python WebSocket client bindings
 │   │   └── mod.rs           # Module exports
 │   ├── config.rs            # Configuration structures
-│   ├── error.rs             # Adapter-level error types
-│   ├── factories.rs         # Factory functions (optional)
+│   ├── data.rs              # Data client implementation
+│   ├── execution.rs         # Execution client implementation
+│   ├── factories.rs         # Factory functions
 │   └── lib.rs               # Library entry point
 ├── tests/                   # Integration tests with mock servers
-│   ├── data.rs              # Data client integration tests
-│   ├── execution.rs         # Execution client integration tests
+│   ├── data_client.rs       # Data client integration tests
+│   ├── exec_client.rs       # Execution client integration tests
 │   ├── http.rs              # HTTP client integration tests
 │   └── websocket.rs         # WebSocket client integration tests
 └── test_data/               # Canonical venue payloads

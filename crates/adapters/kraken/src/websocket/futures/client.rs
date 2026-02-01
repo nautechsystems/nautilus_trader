@@ -573,6 +573,40 @@ impl KrakenFuturesWebSocketClient {
         self.maybe_unsubscribe_ticker(symbol).await
     }
 
+    /// Subscribes to funding rate updates for the given instrument.
+    pub async fn subscribe_funding_rate(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), KrakenWsError> {
+        let symbol = instrument_id.symbol;
+        let key = format!("funding:{symbol}");
+
+        if !self.subscriptions.add_reference(&key) {
+            return Ok(());
+        }
+
+        self.subscriptions.mark_subscribe(&key);
+        self.subscriptions.confirm_subscribe(&key);
+        self.ensure_ticker_subscribed(symbol).await
+    }
+
+    /// Unsubscribes from funding rate updates for the given instrument.
+    pub async fn unsubscribe_funding_rate(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Result<(), KrakenWsError> {
+        let symbol = instrument_id.symbol;
+        let key = format!("funding:{symbol}");
+
+        if !self.subscriptions.remove_reference(&key) {
+            return Ok(());
+        }
+
+        self.subscriptions.mark_unsubscribe(&key);
+        self.subscriptions.confirm_unsubscribe(&key);
+        self.maybe_unsubscribe_ticker(symbol).await
+    }
+
     /// Subscribes to quote updates for the given instrument.
     ///
     /// Uses the order book channel for low-latency top-of-book quotes.

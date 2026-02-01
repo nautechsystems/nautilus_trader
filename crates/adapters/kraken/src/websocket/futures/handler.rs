@@ -29,7 +29,8 @@ use nautilus_common::cache::quote::QuoteCache;
 use nautilus_core::{AtomicTime, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::{
-        BookOrder, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, TradeTick,
+        BookOrder, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta,
+        OrderBookDeltas, TradeTick,
     },
     enums::{
         AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
@@ -46,6 +47,7 @@ use nautilus_network::{
     RECONNECTED,
     websocket::{SubscriptionState, WebSocketClient},
 };
+use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::Value;
 use tokio_tungstenite::tungstenite::Message;
@@ -664,6 +666,25 @@ impl FuturesFeedHandler {
             );
             self.pending_messages
                 .push_back(KrakenFuturesWsMessage::IndexPrice(update));
+        }
+
+        let has_funding = self.is_subscribed(KrakenFuturesChannel::Funding, &ticker.product_id);
+
+        if let Some(funding_rate) = ticker.funding_rate
+            && has_funding
+        {
+            let next_funding_ns = ticker
+                .next_funding_rate_time
+                .map(|t| UnixNanos::from((t as u64) * 1_000_000));
+            let update = FundingRateUpdate::new(
+                instrument_id,
+                Decimal::from_f64_retain(funding_rate).unwrap_or_default(),
+                next_funding_ns,
+                ts_event,
+                ts_init,
+            );
+            self.pending_messages
+                .push_back(KrakenFuturesWsMessage::FundingRate(update));
         }
     }
 
