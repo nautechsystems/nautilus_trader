@@ -61,6 +61,7 @@ anyhow = { workspace = true }
 arc-swap = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
+ctrlc = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
 futures-util = { workspace = true }
@@ -91,6 +92,21 @@ axum = { workspace = true }
 criterion = { workspace = true }
 futures-util = { workspace = true }
 rstest = { workspace = true }
+
+[[bin]]
+name = "hyperliquid-builder-fee-verify"
+path = "bin/builder_fee_verify.rs"
+doc = false
+
+[[bin]]
+name = "hyperliquid-builder-fee-approve"
+path = "bin/builder_fee_approve.rs"
+doc = false
+
+[[bin]]
+name = "hyperliquid-builder-fee-revoke"
+path = "bin/builder_fee_revoke.rs"
+doc = false
 
 [[bin]]
 name = "hyperliquid-http-public"

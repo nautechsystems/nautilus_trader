@@ -16,9 +16,15 @@
 from __future__ import annotations
 
 import asyncio
+import math
+from decimal import ROUND_CEILING
+from decimal import ROUND_FLOOR
+from decimal import Decimal
 from typing import Any
 
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidExecClientConfig
+from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_BUILDER_FEE_NOT_APPROVED
+from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_POST_ONLY_WOULD_MATCH
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
 from nautilus_trader.adapters.hyperliquid.providers import HyperliquidInstrumentProvider
 from nautilus_trader.cache.cache import Cache
@@ -26,6 +32,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
@@ -45,9 +52,24 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import order_side_to_str
+from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderCancelRejected
+from nautilus_trader.model.events import OrderExpired
+from nautilus_trader.model.events import OrderModifyRejected
+from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.functions import order_side_to_pyo3
+from nautilus_trader.model.functions import order_type_to_pyo3
+from nautilus_trader.model.functions import time_in_force_to_pyo3
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import VenueOrderId
 
 
 class HyperliquidExecutionClient(LiveExecutionClient):
@@ -58,7 +80,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
     ----------
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
-    client : Any
+    client : nautilus_pyo3.HyperliquidHttpClient
         The Hyperliquid HTTP client.
     msgbus : MessageBus
         The message bus for the client.
@@ -78,7 +100,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
-        client: Any,  # TODO: Replace with actual HyperliquidHttpClient when available
+        client: nautilus_pyo3.HyperliquidHttpClient,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -113,10 +135,25 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         account_id = AccountId(f"{name or HYPERLIQUID_VENUE.value}-master")
         self._set_account_id(account_id)
 
-        # TODO: Placeholder for WebSocket connections
-        self._ws_connection = None
+        # WebSocket client for order/execution updates (user-level, not product-specific)
+        self._ws_client = nautilus_pyo3.HyperliquidWebSocketClient(
+            url=config.base_url_ws,
+            testnet=config.testnet,
+            account_id=str(account_id),
+        )
 
-        self._log.info("Hyperliquid execution client initialized")
+        # Caches to handle race conditions and duplicate messages
+        self._processed_trade_ids: nautilus_pyo3.FifoCache = nautilus_pyo3.FifoCache()
+        self._accepted_orders: nautilus_pyo3.FifoCache = nautilus_pyo3.FifoCache()
+        self._terminal_orders: nautilus_pyo3.FifoCache = nautilus_pyo3.FifoCache()
+
+        # Get user address from HTTP client for WebSocket subscriptions
+        self._user_address: str | None = None
+        try:
+            self._user_address = self._client.get_user_address()
+            self._log.info(f"User address: {self._user_address}", LogColor.BLUE)
+        except Exception as e:
+            self._log.warning(f"Could not get user address: {e}")
 
     @property
     def hyperliquid_instrument_provider(self) -> HyperliquidInstrumentProvider:
@@ -129,16 +166,16 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         for inst in instruments_pyo3:
             self._client.cache_instrument(inst)
 
-        self._log.debug("Cached instruments", LogColor.MAGENTA)
+        # Cache spot fill coin mappings for WebSocket fill processing
+        spot_fill_coins = self._client.get_spot_fill_coin_mapping()
+        self._ws_client.cache_spot_fill_coins(spot_fill_coins)
 
-    # -- CONNECTION HANDLERS -----------------------------------------------------------------------
+        self._log.debug("Cached instruments", LogColor.MAGENTA)
 
     async def _connect(self) -> None:
         self._log.info("Loading instruments...", LogColor.BLUE)
         await self._instrument_provider.initialize()
         self._cache_instruments()
-
-        # Set account ID on HTTP client for report generation
         self._client.set_account_id(str(self.account_id))
 
         self._log.info(
@@ -146,31 +183,330 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             LogColor.GREEN,
         )
 
-        # TODO: Implement account state updates when API is available
-        # await self._update_account_state()
+        await self._update_account_state()
+        await self._await_account_registered()
 
-        # TODO: Implement WebSocket connection when available
-        # Placeholder for WebSocket connection setup
-        # self._ws_client.set_account_id(self.pyo3_account_id)
-        # await self._ws_client.connect(instruments, self._handle_msg)
-        # await self._ws_client.wait_until_active(timeout_secs=10.0)
-        # await self._ws_client.subscribe_orders()
-        # await self._ws_client.subscribe_executions()
-        # await self._ws_client.subscribe_positions()
-        # await self._ws_client.subscribe_wallet()
+        self._cache_cloid_mappings_for_existing_orders()
 
-        self._log.info("Hyperliquid execution client connected", LogColor.GREEN)
+        instruments = self._instrument_provider.instruments_pyo3()
+
+        await self._ws_client.connect(instruments, self._handle_msg)
+        self._log.info(f"Connected to WebSocket {self._ws_client.url}", LogColor.BLUE)
+
+        if self._user_address:
+            await self._ws_client.subscribe_order_updates(self._user_address)
+            self._log.info(
+                f"Subscribed to order updates for {self._user_address}",
+                LogColor.BLUE,
+            )
+
+            await self._ws_client.subscribe_user_events(self._user_address)
+            self._log.info(
+                f"Subscribed to user events (includes fills) for {self._user_address}",
+                LogColor.BLUE,
+            )
+
+    def _cache_cloid_mappings_for_existing_orders(self) -> None:
+        orders = self._cache.orders(venue=self.venue)
+        if not orders:
+            return
+
+        count = 0
+        for order in orders:
+            if order.is_closed:
+                continue
+
+            pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
+            cloid = nautilus_pyo3.hyperliquid_cloid_from_client_order_id(pyo3_client_order_id)
+            self._ws_client.cache_cloid_mapping(cloid, pyo3_client_order_id)
+            count += 1
+
+        if count > 0:
+            self._log.info(f"Cached cloid mappings for {count} existing order(s)", LogColor.BLUE)
+
+    async def _update_account_state(self) -> None:
+        pyo3_account_state = await self._client.request_account_state()
+        account_state = AccountState.from_dict(pyo3_account_state.to_dict())
+
+        self.generate_account_state(
+            balances=account_state.balances,
+            margins=account_state.margins,
+            reported=True,
+            ts_event=self._clock.timestamp_ns(),
+        )
+
+        if account_state.balances:
+            self._log.info(
+                f"Generated account state with {len(account_state.balances)} balance(s)",
+            )
 
     async def _disconnect(self) -> None:
-        # TODO: Implement actual disconnection logic
-        if self._ws_connection:
-            # Close WebSocket connections
-            pass
+        # Delay to allow websocket to send any unsubscribe messages
+        await asyncio.sleep(1.0)
 
-        await asyncio.sleep(0.1)  # Placeholder
-        self._log.info("Hyperliquid execution disconnection completed", LogColor.GREEN)
+        if not self._ws_client.is_closed():
+            self._log.info("Disconnecting WebSocket")
+            await self._ws_client.close()
+            self._log.info(
+                f"Disconnected from WebSocket {self._ws_client.url}",
+                LogColor.BLUE,
+            )
 
-    # -- COMMANDS ---------------------------------------------------------------------------------
+    async def generate_order_status_report(
+        self,
+        command: GenerateOrderStatusReport,
+    ) -> OrderStatusReport | None:
+        try:
+            instrument_id = command.instrument_id.value if command.instrument_id else None
+            pyo3_reports = await self._client.request_order_status_reports(
+                instrument_id=instrument_id,
+            )
+
+            for pyo3_report in pyo3_reports:
+                report = OrderStatusReport.from_pyo3(pyo3_report)
+
+                if self._is_external_order(report.client_order_id) and report.venue_order_id:
+                    resolved_id = self._cache.client_order_id(report.venue_order_id)
+                    if resolved_id:
+                        report.client_order_id = resolved_id
+
+                if (
+                    command.client_order_id
+                    and report.client_order_id
+                    and report.client_order_id.value == command.client_order_id.value
+                ):
+                    self._log.debug(f"Found order status report: {report}")
+                    return report
+
+                if (
+                    command.venue_order_id
+                    and report.venue_order_id.value == command.venue_order_id.value
+                ):
+                    self._log.debug(f"Found order status report: {report}")
+                    return report
+
+            self._log.warning(
+                f"No order status report found for client_order_id={command.client_order_id}, "
+                f"venue_order_id={command.venue_order_id}",
+            )
+            return None
+        except Exception as e:
+            self._log.error(f"Failed to generate order status report: {e}")
+            return None
+
+    async def generate_order_status_reports(
+        self,
+        command: GenerateOrderStatusReports,
+    ) -> list[OrderStatusReport]:
+        try:
+            instrument_id = command.instrument_id.value if command.instrument_id else None
+            pyo3_reports = await self._client.request_order_status_reports(
+                instrument_id=instrument_id,
+            )
+
+            reports = []
+            for pyo3_report in pyo3_reports:
+                report = OrderStatusReport.from_pyo3(pyo3_report)
+
+                if self._is_external_order(report.client_order_id) and report.venue_order_id:
+                    resolved_id = self._cache.client_order_id(report.venue_order_id)
+                    if resolved_id:
+                        report.client_order_id = resolved_id
+
+                reports.append(report)
+
+            self._log_report_receipt(
+                len(reports),
+                "OrderStatusReport",
+                command.log_receipt_level,
+                "Generated",
+            )
+            return reports
+        except Exception as e:
+            self._log.error(f"Failed to generate order status reports: {e}")
+            return []
+
+    async def generate_fill_reports(
+        self,
+        command: GenerateFillReports,
+    ) -> list[FillReport]:
+        try:
+            instrument_id = command.instrument_id.value if command.instrument_id else None
+            pyo3_reports = await self._client.request_fill_reports(instrument_id=instrument_id)
+
+            reports = []
+            for pyo3_report in pyo3_reports:
+                report = FillReport.from_pyo3(pyo3_report)
+
+                if self._is_external_order(report.client_order_id) and report.venue_order_id:
+                    resolved_id = self._cache.client_order_id(report.venue_order_id)
+                    if resolved_id:
+                        report.client_order_id = resolved_id
+
+                reports.append(report)
+
+            self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO, "Generated")
+            return reports
+        except Exception as e:
+            self._log.error(f"Failed to generate fill reports: {e}")
+            return []
+
+    async def generate_position_status_reports(
+        self,
+        command: GeneratePositionStatusReports,
+    ) -> list[PositionStatusReport]:
+        try:
+            instrument_id = command.instrument_id.value if command.instrument_id else None
+            pyo3_reports = await self._client.request_position_status_reports(
+                instrument_id=instrument_id,
+            )
+
+            reports = [PositionStatusReport.from_pyo3(r) for r in pyo3_reports]
+
+            self._log_report_receipt(
+                len(reports),
+                "PositionStatusReport",
+                command.log_receipt_level,
+            )
+
+            return reports
+        except Exception as e:
+            self._log.error(f"Failed to generate position status reports: {e}")
+            return []
+
+    async def _request_and_process_fills_for_order(
+        self,
+        order: Any,
+        venue_order_id: VenueOrderId,
+    ) -> None:
+        try:
+            pyo3_reports = await self._client.request_fill_reports(
+                instrument_id=order.instrument_id.value,
+            )
+
+            instrument = self._cache.instrument(order.instrument_id)
+            if instrument is None:
+                self._log.error(
+                    f"Cannot process fills - instrument {order.instrument_id} not found",
+                )
+                return
+
+            for pyo3_report in pyo3_reports:
+                report = FillReport.from_pyo3(pyo3_report)
+                if report.venue_order_id != venue_order_id:
+                    continue
+
+                self._log.debug(f"Processing fill for order {order.client_order_id}: {report}")
+
+                self.generate_order_filled(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=venue_order_id,
+                    venue_position_id=report.venue_position_id,
+                    trade_id=report.trade_id,
+                    order_side=order.side,
+                    order_type=order.order_type,
+                    last_qty=report.last_qty,
+                    last_px=report.last_px,
+                    quote_currency=instrument.quote_currency,
+                    commission=report.commission,
+                    liquidity_side=report.liquidity_side,
+                    ts_event=report.ts_event,
+                )
+        except Exception as e:
+            self._log.error(f"Failed to request fill reports for {order.client_order_id}: {e}")
+
+    async def _query_order(self, command: QueryOrder) -> None:
+        self._log.info(
+            f"Direct order query not implemented for {command.client_order_id}, "
+            f"order state is maintained through WebSocket updates and reconciliation",
+        )
+
+    async def _query_account(self, command: QueryAccount) -> None:
+        self._log.info(
+            "Direct account query not implemented, "
+            "account state is maintained through WebSocket updates and reconciliation",
+        )
+
+    async def _wait_for_quote(
+        self,
+        instrument_id: Any,
+        timeout_secs: float = 5.0,
+        poll_interval_secs: float = 0.1,
+    ) -> Any | None:
+        elapsed = 0.0
+        while elapsed < timeout_secs:
+            quote = self._cache.quote_tick(instrument_id)
+            if quote is not None:
+                return quote
+            await asyncio.sleep(poll_interval_secs)
+            elapsed += poll_interval_secs
+        return None
+
+    def _round_to_significant_figures(self, value: Decimal, sig_figs: int = 5) -> Decimal:
+        # Hyperliquid requires max 5 significant figures for prices
+        if value == 0:
+            return Decimal(0)
+
+        abs_val = abs(float(value))
+        # Find order of magnitude (position of first significant digit)
+        magnitude = math.floor(math.log10(abs_val))
+        # Calculate the shift needed to round to sig_figs
+        shift = sig_figs - 1 - magnitude
+        factor = Decimal(10) ** shift
+        rounded = (value * factor).quantize(Decimal(1)) / factor
+        return rounded
+
+    async def _calculate_market_order_price(self, order: Any) -> Any:
+        # Default slippage: 0.5% for market orders
+        slippage_pct = Decimal("0.005")
+
+        # Get the quote from cache, waiting briefly if not available
+        quote = self._cache.quote_tick(order.instrument_id)
+        if quote is None:
+            self._log.info(
+                f"No cached quote for {order.instrument_id}, waiting for quote data...",
+            )
+            quote = await self._wait_for_quote(order.instrument_id)
+
+        instrument = self._cache.instrument(order.instrument_id)
+
+        if quote is None or instrument is None:
+            self._log.error(
+                f"Cannot calculate market order price: no cached quote for {order.instrument_id}. "
+                "Ensure quote data is subscribed before submitting market orders.",
+            )
+            raise ValueError(
+                f"No cached quote available for {order.instrument_id} to calculate market order price",
+            )
+
+        # Calculate price with slippage
+        if order.side == OrderSide.BUY:
+            # For buys, add slippage to the ask price
+            base_price = Decimal(str(quote.ask_price))
+            price = base_price * (Decimal(1) + slippage_pct)
+        else:
+            # For sells, subtract slippage from the bid price
+            base_price = Decimal(str(quote.bid_price))
+            price = base_price * (Decimal(1) - slippage_pct)
+
+        # Hyperliquid requires max 5 significant figures AND max decimal places
+        price = self._round_to_significant_figures(price, sig_figs=5)
+
+        # TODO: Extract this to Rust
+        # Round in the direction that preserves slippage buffer
+        quantizer = Decimal(10) ** -instrument.price_precision
+        if order.side == OrderSide.BUY:
+            price = price.quantize(quantizer, rounding=ROUND_CEILING)
+        else:
+            price = price.quantize(quantizer, rounding=ROUND_FLOOR)
+
+        self._log.debug(
+            f"Calculated market order price: {price} (base: {base_price}, slippage: {slippage_pct})",
+        )
+
+        return nautilus_pyo3.Price.from_str(str(price))
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
@@ -187,43 +523,67 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         )
 
         try:
-            self._log.info(f"Submitting order to Hyperliquid: {order}")
+            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
+            pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
+            pyo3_order_side = order_side_to_pyo3(order.side)
+            pyo3_order_type = order_type_to_pyo3(order.order_type)
+            pyo3_quantity = nautilus_pyo3.Quantity.from_str(str(order.quantity))
+            pyo3_time_in_force = time_in_force_to_pyo3(order.time_in_force)
 
-            report = await self._client.submit_order(
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                order_side=order.side,
-                order_type=order.order_type,
-                quantity=order.quantity,
-                time_in_force=order.time_in_force,
-                price=order.price if order.has_price else None,
-                trigger_price=order.trigger_price if order.has_trigger_price else None,
+            # For market orders, calculate a slippage price from the cached quote
+            if order.has_price:
+                pyo3_price = nautilus_pyo3.Price.from_str(str(order.price))
+            elif order.order_type in (
+                OrderType.MARKET,
+                OrderType.STOP_MARKET,
+                OrderType.MARKET_IF_TOUCHED,
+            ):
+                pyo3_price = await self._calculate_market_order_price(order)
+            else:
+                pyo3_price = None
+
+            pyo3_trigger_price = (
+                nautilus_pyo3.Price.from_str(str(order.trigger_price))
+                if order.has_trigger_price
+                else None
+            )
+
+            # TODO: Refactor to use WebSocket trading API
+            # Cache cloid mapping for WebSocket order/fill resolution
+            cloid = nautilus_pyo3.hyperliquid_cloid_from_client_order_id(pyo3_client_order_id)
+            self._ws_client.cache_cloid_mapping(cloid, pyo3_client_order_id)
+
+            await self._client.submit_order(
+                instrument_id=pyo3_instrument_id,
+                client_order_id=pyo3_client_order_id,
+                order_side=pyo3_order_side,
+                order_type=pyo3_order_type,
+                quantity=pyo3_quantity,
+                time_in_force=pyo3_time_in_force,
+                price=pyo3_price,
+                trigger_price=pyo3_trigger_price,
                 post_only=order.is_post_only,
                 reduce_only=order.is_reduce_only,
             )
-
-            self._log.debug(f"Received order status report: {report}")
-
-            self.generate_order_accepted(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                venue_order_id=report.venue_order_id,
-                ts_event=self._clock.timestamp_ns(),
-            )
-
-            self._log.info(
-                f"Order {order.client_order_id} accepted, venue_order_id={report.venue_order_id}",
-            )
-
         except Exception as e:
-            self._log.error(f"Error submitting order {order.client_order_id}: {e}")
+            error_str = str(e)
+            due_post_only = HYPERLIQUID_POST_ONLY_WOULD_MATCH in error_str
+
+            if HYPERLIQUID_BUILDER_FEE_NOT_APPROVED in error_str:
+                self._log.warning(
+                    "Builder fee not approved. See: "
+                    "https://nautilustrader.io/docs/nightly/integrations/hyperliquid#builder-fee-approval",
+                )
+
+            self._terminal_orders.add(order.client_order_id.value)
+
             self.generate_order_rejected(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
-                reason=str(e),
+                reason=error_str,
                 ts_event=self._clock.timestamp_ns(),
+                due_post_only=due_post_only,
             )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
@@ -253,135 +613,454 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 ts_event=now_ns,
             )
 
+            # Cache cloid mapping for WebSocket order/fill resolution
+            pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
+            cloid = nautilus_pyo3.hyperliquid_cloid_from_client_order_id(pyo3_client_order_id)
+            self._ws_client.cache_cloid_mapping(cloid, pyo3_client_order_id)
+
         try:
-            self._log.info(f"Submitting {len(orders)} orders to Hyperliquid as batch")
-
-            reports = await self._client.submit_orders(orders)
-
-            self._log.debug(f"Received {len(reports)} order status reports")
-
-            # Generate acceptance events for all successfully submitted orders
-            for report in reports:
-                order = next(
-                    (o for o in orders if o.client_order_id == report.client_order_id),
-                    None,
-                )
-                if order:
-                    self.generate_order_accepted(
-                        strategy_id=order.strategy_id,
-                        instrument_id=order.instrument_id,
-                        client_order_id=order.client_order_id,
-                        venue_order_id=report.venue_order_id,
-                        ts_event=self._clock.timestamp_ns(),
-                    )
-                    self._log.info(
-                        f"Order {order.client_order_id} accepted, venue_order_id={report.venue_order_id}",
-                    )
-
+            await self._client.submit_orders(orders)
         except Exception as e:
-            self._log.error(f"Error submitting order batch: {e}")
-            # Generate rejection events for all orders
+            error_str = str(e)
+            due_post_only = HYPERLIQUID_POST_ONLY_WOULD_MATCH in error_str
+
             for order in orders:
+                self._terminal_orders.add(order.client_order_id.value)
+
                 self.generate_order_rejected(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
+                    reason=error_str,
+                    ts_event=self._clock.timestamp_ns(),
+                    due_post_only=due_post_only,
+                )
+
+    async def _modify_order(self, command: ModifyOrder) -> None:
+        # The modify functionality exists in Rust but requires exposing post_action() to Python
+        self._log.warning(
+            f"Order modification requires venue_order_id and is not yet exposed via Python bindings for {command.client_order_id}",
+        )
+
+    async def _cancel_order(self, command: CancelOrder) -> None:
+        # Try to get venue_order_id from cache first, fall back to command
+        order = self._cache.order(command.client_order_id)
+        venue_order_id = None
+        if order and order.venue_order_id:
+            venue_order_id = order.venue_order_id
+        elif command.venue_order_id:
+            venue_order_id = command.venue_order_id
+
+        try:
+            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+                command.instrument_id.value,
+            )
+            pyo3_client_order_id = nautilus_pyo3.ClientOrderId(command.client_order_id.value)
+            pyo3_venue_order_id = (
+                nautilus_pyo3.VenueOrderId(venue_order_id.value) if venue_order_id else None
+            )
+
+            await self._client.cancel_order(
+                instrument_id=pyo3_instrument_id,
+                client_order_id=pyo3_client_order_id,
+                venue_order_id=pyo3_venue_order_id,
+            )
+            self._log.info(f"Order cancellation requested for {command.client_order_id}")
+        except Exception as e:
+            self.generate_order_cancel_rejected(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=venue_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
+
+    async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        open_orders = self._cache.orders_open(
+            venue=self.venue,
+            instrument_id=command.instrument_id,
+            side=command.order_side,
+        )
+
+        if not open_orders:
+            instrument_str = (
+                f" for {command.instrument_id}" if command.instrument_id is not None else ""
+            )
+            self._log.info(f"No open orders to cancel{instrument_str}")
+            return
+
+        if command.order_side != OrderSide.NO_ORDER_SIDE:
+            self._log.info(
+                f"Filtering orders by side: {order_side_to_str(command.order_side)}",
+            )
+
+        self._log.info(f"Cancelling {len(open_orders)} open order(s)")
+
+        for order in open_orders:
+            try:
+                pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+                    order.instrument_id.value,
+                )
+                pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
+                pyo3_venue_order_id = (
+                    nautilus_pyo3.VenueOrderId(order.venue_order_id.value)
+                    if order.venue_order_id
+                    else None
+                )
+
+                await self._client.cancel_order(
+                    instrument_id=pyo3_instrument_id,
+                    client_order_id=pyo3_client_order_id,
+                    venue_order_id=pyo3_venue_order_id,
+                )
+            except Exception as e:
+                self.generate_order_cancel_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
                     reason=str(e),
                     ts_event=self._clock.timestamp_ns(),
                 )
 
-    async def _modify_order(self, command: ModifyOrder) -> None:
-        self._log.warning(f"Order modification not yet implemented for {command.client_order_id}")
-
-    async def _cancel_order(self, command: CancelOrder) -> None:
-        self._log.warning(f"Order cancellation not yet implemented for {command.client_order_id}")
-
-    async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        if command.order_side != OrderSide.NO_ORDER_SIDE:
-            self._log.warning(
-                f"Hyperliquid does not support order_side filtering for cancel all orders; "
-                f"ignoring order_side={order_side_to_str(command.order_side)} and canceling all orders",
-            )
-
-        instrument_str = (
-            f" for {command.instrument_id}" if command.instrument_id is not None else ""
-        )
-        self._log.warning(f"Cancel all orders not yet implemented{instrument_str}")
-
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
-        self._log.warning(
-            f"Batch cancel orders not yet implemented for {len(command.cancels)} orders",
+        if not command.cancels:
+            self._log.info("No orders to cancel in batch")
+            return
+
+        for cancel_cmd in command.cancels:
+            order = self._cache.order(cancel_cmd.client_order_id)
+            if not order:
+                self._log.warning(
+                    f"Cannot cancel order {cancel_cmd.client_order_id}: not found in cache",
+                )
+                continue
+
+            try:
+                pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+                    cancel_cmd.instrument_id.value,
+                )
+                pyo3_client_order_id = nautilus_pyo3.ClientOrderId(cancel_cmd.client_order_id.value)
+                pyo3_venue_order_id = (
+                    nautilus_pyo3.VenueOrderId(order.venue_order_id.value)
+                    if order.venue_order_id
+                    else None
+                )
+
+                await self._client.cancel_order(
+                    instrument_id=pyo3_instrument_id,
+                    client_order_id=pyo3_client_order_id,
+                    venue_order_id=pyo3_venue_order_id,
+                )
+            except Exception as e:
+                self.generate_order_cancel_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    reason=str(e),
+                    ts_event=self._clock.timestamp_ns(),
+                )
+
+    def _handle_msg(self, msg: Any) -> None:  # noqa: C901 (too complex)
+        try:
+            if isinstance(msg, nautilus_pyo3.AccountState):
+                self._handle_account_state(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderAccepted):
+                self._handle_order_accepted_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderCanceled):
+                self._handle_order_canceled_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderExpired):
+                self._handle_order_expired_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderUpdated):
+                self._handle_order_updated_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderRejected):
+                self._handle_order_rejected_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderCancelRejected):
+                self._handle_order_cancel_rejected_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderModifyRejected):
+                self._handle_order_modify_rejected_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderStatusReport):
+                self._handle_order_status_report_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.FillReport):
+                self._handle_fill_report_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.PositionStatusReport):
+                self._handle_position_status_report_pyo3(msg)
+            else:
+                self._log.debug(f"Received unhandled message type: {type(msg)}")
+        except Exception as e:
+            self._log.exception("Error handling websocket message", e)
+
+    def _handle_account_state(self, msg: nautilus_pyo3.AccountState) -> None:
+        account_state = AccountState.from_dict(msg.to_dict())
+        self.generate_account_state(
+            balances=account_state.balances,
+            margins=account_state.margins,
+            reported=account_state.is_reported,
+            ts_event=account_state.ts_event,
         )
 
-    # -- REPORTS ----------------------------------------------------------------------------------
+    def _handle_order_accepted_pyo3(self, msg: nautilus_pyo3.OrderAccepted) -> None:
+        event = OrderAccepted.from_dict(msg.to_dict())
+        key = event.client_order_id.value
 
-    async def generate_order_status_report(
+        # Check caches to handle race conditions
+        if key in self._accepted_orders or key in self._terminal_orders:
+            self._log.debug(f"Ignoring duplicate OrderAccepted for {event.client_order_id!r}")
+            return
+
+        self._accepted_orders.add(key)
+        self._send_order_event(event)
+
+    def _handle_order_canceled_pyo3(self, msg: nautilus_pyo3.OrderCanceled) -> None:
+        event = OrderCanceled.from_dict(msg.to_dict())
+        key = event.client_order_id.value
+
+        if key in self._terminal_orders:
+            self._log.debug(f"Ignoring duplicate OrderCanceled for {event.client_order_id!r}")
+            return
+
+        self._terminal_orders.add(key)
+        self._send_order_event(event)
+
+    def _handle_order_expired_pyo3(self, msg: nautilus_pyo3.OrderExpired) -> None:
+        event = OrderExpired.from_dict(msg.to_dict())
+        key = event.client_order_id.value
+
+        if key in self._terminal_orders:
+            self._log.debug(f"Ignoring duplicate OrderExpired for {event.client_order_id!r}")
+            return
+
+        self._terminal_orders.add(key)
+        self._send_order_event(event)
+
+    def _handle_order_updated_pyo3(self, msg: nautilus_pyo3.OrderUpdated) -> None:
+        event = OrderUpdated.from_dict(msg.to_dict())
+        self._send_order_event(event)
+
+    def _handle_order_rejected_pyo3(self, msg: nautilus_pyo3.OrderRejected) -> None:
+        event = OrderRejected.from_dict(msg.to_dict())
+        key = event.client_order_id.value
+
+        if key in self._terminal_orders:
+            self._log.debug(f"Ignoring duplicate OrderRejected for {event.client_order_id!r}")
+            return
+
+        self._terminal_orders.add(key)
+        self._send_order_event(event)
+
+    def _handle_order_cancel_rejected_pyo3(self, msg: nautilus_pyo3.OrderCancelRejected) -> None:
+        event = OrderCancelRejected.from_dict(msg.to_dict())
+        self._send_order_event(event)
+
+    def _handle_order_modify_rejected_pyo3(self, msg: nautilus_pyo3.OrderModifyRejected) -> None:
+        event = OrderModifyRejected.from_dict(msg.to_dict())
+        self._send_order_event(event)
+
+    def _handle_order_status_report_pyo3(  # noqa: C901 (complexity unavoidable)
         self,
-        command: GenerateOrderStatusReport,
-    ) -> OrderStatusReport | None:
-        self._log.warning(
-            f"Order status report generation not yet implemented for {command.client_order_id}",
+        pyo3_report: nautilus_pyo3.OrderStatusReport,
+    ) -> None:
+        report = OrderStatusReport.from_pyo3(pyo3_report)
+
+        # Try to resolve client_order_id from venue_order_id if cloid resolution failed
+        client_order_id = report.client_order_id
+        if self._is_external_order(client_order_id) and report.venue_order_id:
+            resolved_id = self._cache.client_order_id(report.venue_order_id)
+            if resolved_id:
+                client_order_id = resolved_id
+                report.client_order_id = client_order_id
+
+        if self._is_external_order(client_order_id):
+            self._send_order_status_report(report)
+            return
+
+        order = self._cache.order(client_order_id)
+        if order is None:
+            self._log.error(
+                f"Cannot process order status report - order for {client_order_id!r} not found",
+            )
+            return
+
+        # At this point client_order_id is guaranteed to be set (external orders return early above)
+        assert report.client_order_id is not None
+
+        if order.linked_order_ids is not None:
+            report.linked_order_ids = list(order.linked_order_ids)
+
+        if report.order_status == OrderStatus.REJECTED:
+            key = report.client_order_id.value
+            if key in self._terminal_orders:
+                return
+
+            self._terminal_orders.add(key)
+            self.generate_order_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=report.instrument_id,
+                client_order_id=report.client_order_id,
+                reason=report.cancel_reason or "Order rejected by exchange",
+                ts_event=report.ts_last,
+            )
+        elif report.order_status == OrderStatus.ACCEPTED:
+            key = report.client_order_id.value
+            if key in self._accepted_orders or key in self._terminal_orders:
+                return
+            self._accepted_orders.add(key)
+            self.generate_order_accepted(
+                strategy_id=order.strategy_id,
+                instrument_id=report.instrument_id,
+                client_order_id=report.client_order_id,
+                venue_order_id=report.venue_order_id,
+                ts_event=report.ts_last,
+            )
+        elif report.order_status == OrderStatus.PENDING_CANCEL:
+            if order.status == OrderStatus.PENDING_CANCEL:
+                self._log.debug(
+                    f"Received PENDING_CANCEL status for {report.client_order_id!r} - "
+                    "order already in pending cancel state locally",
+                )
+            else:
+                self._log.warning(
+                    f"Received PENDING_CANCEL status for {report.client_order_id!r} - "
+                    f"order status {order.status_string()}",
+                )
+        elif report.order_status == OrderStatus.CANCELED:
+            key = report.client_order_id.value
+            if key in self._terminal_orders:
+                return
+
+            self._terminal_orders.add(key)
+            self.generate_order_canceled(
+                strategy_id=order.strategy_id,
+                instrument_id=report.instrument_id,
+                client_order_id=report.client_order_id,
+                venue_order_id=report.venue_order_id,
+                ts_event=report.ts_last,
+            )
+        elif report.order_status == OrderStatus.EXPIRED:
+            key = report.client_order_id.value
+            if key in self._terminal_orders:
+                return
+
+            self._terminal_orders.add(key)
+            self.generate_order_expired(
+                strategy_id=order.strategy_id,
+                instrument_id=report.instrument_id,
+                client_order_id=report.client_order_id,
+                venue_order_id=report.venue_order_id,
+                ts_event=report.ts_last,
+            )
+        elif report.order_status == OrderStatus.FILLED:
+            key = report.client_order_id.value
+            if key in self._terminal_orders:
+                return
+
+            # FILLED status often arrives before the fill event - just log at debug level
+            self._log.debug(
+                f"Received FILLED status for {report.client_order_id!r} "
+                f"(order is {order.status_string()}) - fill event expected shortly",
+            )
+        elif report.order_status == OrderStatus.TRIGGERED:
+            # Only STOP_LIMIT, TRAILING_STOP_LIMIT, LIMIT_IF_TOUCHED can be triggered
+            if order.order_type not in (
+                OrderType.STOP_LIMIT,
+                OrderType.TRAILING_STOP_LIMIT,
+                OrderType.LIMIT_IF_TOUCHED,
+            ):
+                self._log.debug(
+                    f"Ignoring TRIGGERED status for {order.order_type} order "
+                    f"{report.client_order_id!r}",
+                )
+                return
+            self.generate_order_triggered(
+                strategy_id=order.strategy_id,
+                instrument_id=report.instrument_id,
+                client_order_id=report.client_order_id,
+                venue_order_id=report.venue_order_id,
+                ts_event=report.ts_last,
+            )
+        else:
+            self._log.warning(f"Received unhandled OrderStatusReport: {report}")
+
+    def _handle_fill_report_pyo3(self, pyo3_report: nautilus_pyo3.FillReport) -> None:
+        report = FillReport.from_pyo3(pyo3_report)
+
+        self._log.debug(
+            f"Received fill from WebSocket: venue_order_id={report.venue_order_id}, "
+            f"trade_id={report.trade_id}, qty={report.last_qty}, px={report.last_px}",
         )
-        return None
 
-    async def generate_order_status_reports(
-        self,
-        command: GenerateOrderStatusReports,
-    ) -> list[OrderStatusReport]:
-        try:
-            instrument_id = command.instrument_id.value if command.instrument_id else None
-            reports = await self._client.request_order_status_reports(instrument_id=instrument_id)
+        # Skip duplicate fills (Hyperliquid sometimes sends duplicate userEvents)
+        trade_id_str = report.trade_id.value
+        if trade_id_str in self._processed_trade_ids:
+            self._log.debug(f"Skipping duplicate fill: trade_id={report.trade_id}")
+            return
 
-            self._log_report_receipt(
-                len(reports),
-                "OrderStatusReport",
-                command.log_receipt_level,
-                "Generated",
+        self._processed_trade_ids.add(trade_id_str)
+
+        # Try to resolve client_order_id from venue_order_id if cloid resolution failed
+        client_order_id = report.client_order_id
+        if self._is_external_order(client_order_id) and report.venue_order_id:
+            resolved_id = self._cache.client_order_id(report.venue_order_id)
+            if resolved_id:
+                client_order_id = resolved_id
+                report.client_order_id = client_order_id
+
+        if self._is_external_order(client_order_id):
+            self._send_fill_report(report)
+            return
+
+        order = self._cache.order(client_order_id)
+        if order is None:
+            self._log.error(
+                f"Cannot process fill report - order for {client_order_id!r} not found",
             )
-            return reports
-        except Exception as e:
-            self._log.error(f"Failed to generate order status reports: {e}")
-            return []
+            return
 
-    async def generate_fill_reports(
-        self,
-        command: GenerateFillReports,
-    ) -> list[FillReport]:
-        try:
-            instrument_id = command.instrument_id.value if command.instrument_id else None
-            reports = await self._client.request_fill_reports(instrument_id=instrument_id)
-
-            self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO, "Generated")
-            return reports
-        except Exception as e:
-            self._log.error(f"Failed to generate fill reports: {e}")
-            return []
-
-    async def generate_position_status_reports(
-        self,
-        command: GeneratePositionStatusReports,
-    ) -> list[PositionStatusReport]:
-        try:
-            instrument_id = command.instrument_id.value if command.instrument_id else None
-            reports = await self._client.request_position_status_reports(
-                instrument_id=instrument_id,
+        instrument = self._cache.instrument(order.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot process fill report - instrument {order.instrument_id} not found",
             )
+            return
 
-            self._log_report_receipt(
-                len(reports),
-                "PositionStatusReport",
-                command.log_receipt_level,
+        key = order.client_order_id.value
+
+        # If order not yet accepted, generate OrderAccepted first to avoid state transition error
+        if key not in self._accepted_orders:
+            self._accepted_orders.add(key)
+            self.generate_order_accepted(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=report.venue_order_id,
+                ts_event=report.ts_event,
             )
 
-            return reports
-        except Exception as e:
-            self._log.error(f"Failed to generate position status reports: {e}")
-            return []
+        self.generate_order_filled(
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=report.venue_order_id,
+            venue_position_id=report.venue_position_id,
+            trade_id=report.trade_id,
+            order_side=order.side,
+            order_type=order.order_type,
+            last_qty=report.last_qty,
+            last_px=report.last_px,
+            quote_currency=instrument.quote_currency,
+            commission=report.commission,
+            liquidity_side=report.liquidity_side,
+            ts_event=report.ts_event,
+        )
 
-    # -- QUERIES ----------------------------------------------------------------------------------
+    def _handle_position_status_report_pyo3(
+        self,
+        msg: nautilus_pyo3.PositionStatusReport,
+    ) -> None:
+        report = PositionStatusReport.from_pyo3(msg)
+        self._log.debug(f"Received {report}", LogColor.MAGENTA)
 
-    async def _query_order(self, command: QueryOrder) -> None:
-        self._log.warning(f"Order query not yet implemented for {command.client_order_id}")
-
-    async def _query_account(self, command: QueryAccount) -> None:
-        self._log.warning("Account query not yet implemented")
+    def _is_external_order(self, client_order_id: ClientOrderId) -> bool:
+        return not client_order_id or not self._cache.strategy_id_for_order(client_order_id)

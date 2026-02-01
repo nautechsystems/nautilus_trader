@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
+use ahash::AHashMap;
 use derive_builder::Builder;
 use nautilus_model::{
     data::{
@@ -330,6 +329,9 @@ pub enum HyperliquidWsMessage {
     OrderUpdates { data: Vec<WsOrderData> },
     /// User events.
     UserEvents { data: WsUserEventData },
+    /// Generic user channel (Hyperliquid sends fills/events on this channel).
+    #[serde(rename = "user")]
+    User { data: WsUserEventData },
     /// User fills.
     UserFills { data: WsUserFillsData },
     /// User funding payments.
@@ -374,7 +376,7 @@ pub enum PostResponsePayload {
 /// All mid prices data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AllMidsData {
-    pub mids: HashMap<String, String>,
+    pub mids: AHashMap<String, String>,
 }
 
 /// Notification data.
@@ -562,11 +564,17 @@ pub struct WsFillData {
     pub crossed: bool,
     pub fee: String,
     pub tid: u64,
+    #[serde(default)]
     pub liquidation: Option<FillLiquidationData>,
     #[serde(rename = "feeToken")]
     pub fee_token: String,
     #[serde(rename = "builderFee")]
     pub builder_fee: Option<String>,
+    /// Client order ID (hex string with 0x prefix).
+    pub cloid: Option<String>,
+    /// TWAP order ID if this fill is part of a TWAP order.
+    #[serde(rename = "twapId")]
+    pub twap_id: Option<serde_json::Value>,
 }
 
 /// Fill liquidation data.
@@ -926,6 +934,91 @@ mod tests {
         assert_eq!(data.market_px, "3001.0");
         assert_eq!(data.tpsl, HyperliquidTpSl::Tp);
         assert_eq!(data.resulting_oid, Some(99999));
+    }
+
+    #[rstest]
+    fn test_ws_fill_data_deserialization_with_cloid_and_twap() {
+        let json = r#"{
+            "coin": "@107",
+            "px": "31.737",
+            "sz": "0.31",
+            "side": "B",
+            "time": 1769920606068,
+            "startPosition": "0.0",
+            "dir": "Buy",
+            "closedPnl": "0.0",
+            "hash": "0xc731e7561e5334a0c8ab043472ce7d01d400ff3bb95653726afa92a8dd570e8b",
+            "oid": 308086083674,
+            "crossed": true,
+            "fee": "0.00021699",
+            "tid": 812806034449156,
+            "cloid": "0xd211f1c27288259290850338d22132a0",
+            "feeToken": "HYPE",
+            "twapId": null
+        }"#;
+
+        let fill: WsFillData = serde_json::from_str(json).unwrap();
+        assert_eq!(fill.coin, "@107");
+        assert_eq!(fill.px, "31.737");
+        assert_eq!(fill.sz, "0.31");
+        assert_eq!(fill.side, HyperliquidSide::Buy);
+        assert_eq!(fill.oid, 308086083674);
+        assert!(fill.crossed);
+        assert_eq!(fill.fee, "0.00021699");
+        assert_eq!(fill.fee_token, "HYPE");
+        assert_eq!(
+            fill.cloid,
+            Some("0xd211f1c27288259290850338d22132a0".to_string())
+        );
+        assert!(fill.twap_id.is_none() || fill.twap_id == Some(serde_json::Value::Null));
+    }
+
+    #[rstest]
+    fn test_ws_user_fills_message_deserialization() {
+        let json = r#"{"channel":"user","data":{"fills":[{"coin":"@107","px":"31.737","sz":"0.31","side":"B","time":1769920606068,"startPosition":"0.0","dir":"Buy","closedPnl":"0.0","hash":"0xc731e7561e5334a0c8ab043472ce7d01d400ff3bb95653726afa92a8dd570e8b","oid":308086083674,"crossed":true,"fee":"0.00021699","tid":812806034449156,"cloid":"0xd211f1c27288259290850338d22132a0","feeToken":"HYPE","twapId":null}]}}"#;
+
+        let msg: HyperliquidWsMessage = serde_json::from_str(json).unwrap();
+
+        match msg {
+            HyperliquidWsMessage::User { data } => match data {
+                WsUserEventData::Fills { fills } => {
+                    assert_eq!(fills.len(), 1);
+                    let fill = &fills[0];
+                    assert_eq!(fill.coin, "@107");
+                    assert_eq!(fill.px, "31.737");
+                    assert_eq!(
+                        fill.cloid,
+                        Some("0xd211f1c27288259290850338d22132a0".to_string())
+                    );
+                }
+                _ => panic!("Expected Fills variant"),
+            },
+            _ => panic!("Expected User channel message"),
+        }
+    }
+
+    #[rstest]
+    fn test_ws_user_fills_message_with_builder_fee() {
+        // Real message from production that was failing
+        let json = r#"{"channel":"user","data":{"fills":[{"coin":"BTC","px":"79146.0","sz":"0.001","side":"A","time":1769940855551,"startPosition":"0.00093","dir":"Long > Short","closedPnl":"0.046128","hash":"0x5f8b9c337a197c4061050434769793020e020019151c9b1203544786391d562b","oid":308254271324,"crossed":false,"fee":"0.019785","builderFee":"0.007914","tid":404237815023429,"cloid":"0x50663504b0f4fedea00080176229d94f","feeToken":"USDC","twapId":null}]}}"#;
+
+        let msg: HyperliquidWsMessage = serde_json::from_str(json).unwrap();
+
+        match msg {
+            HyperliquidWsMessage::User { data } => match data {
+                WsUserEventData::Fills { fills } => {
+                    assert_eq!(fills.len(), 1);
+                    let fill = &fills[0];
+                    assert_eq!(fill.coin, "BTC");
+                    assert_eq!(fill.px, "79146.0");
+                    assert_eq!(fill.side, HyperliquidSide::Sell);
+                    assert_eq!(fill.builder_fee, Some("0.007914".to_string()));
+                    assert_eq!(fill.fee_token, "USDC");
+                }
+                _ => panic!("Expected Fills variant"),
+            },
+            _ => panic!("Expected User channel message"),
+        }
     }
 }
 

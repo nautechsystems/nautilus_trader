@@ -15,19 +15,18 @@
 
 //! WebSocket message handler for Hyperliquid.
 
-use std::{
-    collections::HashSet,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
+use dashmap::DashMap;
+use nautilus_common::cache::fifo::FifoCache;
 use nautilus_core::{AtomicTime, nanos::UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::BarType,
-    identifiers::AccountId,
+    identifiers::{AccountId, ClientOrderId},
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
@@ -82,8 +81,10 @@ pub enum HandlerCommand {
     /// Update asset context subscriptions for a coin.
     UpdateAssetContextSubs {
         coin: Ustr,
-        data_types: HashSet<AssetContextDataType>,
+        data_types: AHashSet<AssetContextDataType>,
     },
+    /// Cache spot fill coin mappings for instrument lookup.
+    CacheSpotFillCoins(AHashMap<Ustr, Ustr>),
 }
 
 pub(super) struct FeedHandler {
@@ -97,10 +98,12 @@ pub(super) struct FeedHandler {
     subscriptions: SubscriptionState,
     retry_manager: RetryManager<HyperliquidWsError>,
     message_buffer: Vec<NautilusWsMessage>,
-    instruments_cache: AHashMap<Ustr, InstrumentAny>,
+    instruments: AHashMap<Ustr, InstrumentAny>,
+    cloid_cache: Arc<DashMap<Ustr, ClientOrderId>>,
     bar_types_cache: AHashMap<String, BarType>,
     bar_cache: AHashMap<String, CandleData>,
-    asset_context_subs: AHashMap<Ustr, HashSet<AssetContextDataType>>,
+    asset_context_subs: AHashMap<Ustr, AHashSet<AssetContextDataType>>,
+    processed_trade_ids: FifoCache<u64, 10_000>,
     mark_price_cache: AHashMap<Ustr, String>,
     index_price_cache: AHashMap<Ustr, String>,
     funding_rate_cache: AHashMap<Ustr, String>,
@@ -115,6 +118,7 @@ impl FeedHandler {
         out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
         account_id: Option<AccountId>,
         subscriptions: SubscriptionState,
+        cloid_cache: Arc<DashMap<Ustr, ClientOrderId>>,
     ) -> Self {
         Self {
             clock: get_atomic_clock_realtime(),
@@ -127,10 +131,12 @@ impl FeedHandler {
             subscriptions,
             retry_manager: create_websocket_retry_manager(),
             message_buffer: Vec::new(),
-            instruments_cache: AHashMap::new(),
+            instruments: AHashMap::new(),
+            cloid_cache,
             bar_types_cache: AHashMap::new(),
             bar_cache: AHashMap::new(),
             asset_context_subs: AHashMap::new(),
+            processed_trade_ids: FifoCache::new(),
             mark_price_cache: AHashMap::new(),
             index_price_cache: AHashMap::new(),
             funding_rate_cache: AHashMap::new(),
@@ -236,19 +242,13 @@ impl FeedHandler {
                         }
                         HandlerCommand::InitializeInstruments(instruments) => {
                             for inst in instruments {
-                                let full_symbol = inst.symbol().inner();
                                 let coin = inst.raw_symbol().inner();
-
-                                self.instruments_cache.insert(full_symbol, inst.clone());
-                                self.instruments_cache.insert(coin, inst);
+                                self.instruments.insert(coin, inst);
                             }
                         }
                         HandlerCommand::UpdateInstrument(inst) => {
-                            let full_symbol = inst.symbol().inner();
                             let coin = inst.raw_symbol().inner();
-
-                            self.instruments_cache.insert(full_symbol, inst.clone());
-                            self.instruments_cache.insert(coin, inst);
+                            self.instruments.insert(coin, inst);
                         }
                         HandlerCommand::AddBarType { key, bar_type } => {
                             self.bar_types_cache.insert(key, bar_type);
@@ -263,6 +263,9 @@ impl FeedHandler {
                             } else {
                                 self.asset_context_subs.insert(coin, data_types);
                             }
+                        }
+                        HandlerCommand::CacheSpotFillCoins(_) => {
+                            // No longer needed - raw_symbol now contains the proper format
                         }
                     }
                     continue;
@@ -282,11 +285,13 @@ impl FeedHandler {
 
                                     let nautilus_msgs = Self::parse_to_nautilus_messages(
                                         msg,
-                                        &self.instruments_cache,
+                                        &self.instruments,
+                                        &self.cloid_cache,
                                         &self.bar_types_cache,
                                         self.account_id,
                                         ts_init,
                                         &self.asset_context_subs,
+                                        &mut self.processed_trade_ids,
                                         &mut self.mark_price_cache,
                                         &mut self.index_price_cache,
                                         &mut self.funding_rate_cache,
@@ -331,10 +336,12 @@ impl FeedHandler {
     fn parse_to_nautilus_messages(
         msg: HyperliquidWsMessage,
         instruments: &AHashMap<Ustr, InstrumentAny>,
+        cloid_cache: &DashMap<Ustr, ClientOrderId>,
         bar_types: &AHashMap<String, BarType>,
         account_id: Option<AccountId>,
         ts_init: UnixNanos,
-        asset_context_subs: &AHashMap<Ustr, HashSet<AssetContextDataType>>,
+        asset_context_subs: &AHashMap<Ustr, AHashSet<AssetContextDataType>>,
+        processed_trade_ids: &mut FifoCache<u64, 10_000>,
         mark_price_cache: &mut AHashMap<Ustr, String>,
         index_price_cache: &mut AHashMap<Ustr, String>,
         funding_rate_cache: &mut AHashMap<Ustr, String>,
@@ -345,17 +352,68 @@ impl FeedHandler {
         match msg {
             HyperliquidWsMessage::OrderUpdates { data } => {
                 if let Some(account_id) = account_id
-                    && let Some(msg) =
-                        Self::handle_order_updates(&data, instruments, account_id, ts_init)
+                    && let Some(msg) = Self::handle_order_updates(
+                        &data,
+                        instruments,
+                        cloid_cache,
+                        account_id,
+                        ts_init,
+                    )
                 {
                     result.push(msg);
                 }
             }
-            HyperliquidWsMessage::UserEvents { data } => {
+            HyperliquidWsMessage::UserEvents { data } | HyperliquidWsMessage::User { data } => {
+                // Process fills from userEvents channel (userFills channel is redundant)
+                match data {
+                    WsUserEventData::Fills { fills } => {
+                        log::debug!("Received {} fill(s) from userEvents channel", fills.len());
+                        for fill in &fills {
+                            log::debug!(
+                                "Fill: oid={}, coin={}, side={:?}, sz={}, px={}",
+                                fill.oid,
+                                fill.coin,
+                                fill.side,
+                                fill.sz,
+                                fill.px
+                            );
+                        }
+                        if let Some(account_id) = account_id {
+                            log::debug!("Processing fills with account_id={account_id}");
+                            if let Some(msg) = Self::handle_user_fills(
+                                &fills,
+                                instruments,
+                                cloid_cache,
+                                account_id,
+                                ts_init,
+                                processed_trade_ids,
+                            ) {
+                                log::debug!("Successfully created fill message");
+                                result.push(msg);
+                            } else {
+                                log::debug!("handle_user_fills returned None (no new fills)");
+                            }
+                        } else {
+                            log::warn!("Cannot process fills: account_id is None");
+                        }
+                    }
+                    _ => {
+                        log::debug!("Received non-fill user event: {data:?}");
+                    }
+                }
+            }
+            HyperliquidWsMessage::UserFills { data } => {
+                // UserFills channel is redundant with userEvents, but handle it for
+                // backwards compatibility if explicitly subscribed
                 if let Some(account_id) = account_id
-                    && let WsUserEventData::Fills { fills } = data
-                    && let Some(msg) =
-                        Self::handle_user_fills(&fills, instruments, account_id, ts_init)
+                    && let Some(msg) = Self::handle_user_fills(
+                        &data.fills,
+                        instruments,
+                        cloid_cache,
+                        account_id,
+                        ts_init,
+                        processed_trade_ids,
+                    )
                 {
                     result.push(msg);
                 }
@@ -407,15 +465,27 @@ impl FeedHandler {
     fn handle_order_updates(
         data: &[super::messages::WsOrderData],
         instruments: &AHashMap<Ustr, InstrumentAny>,
+        cloid_cache: &DashMap<Ustr, ClientOrderId>,
         account_id: AccountId,
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
         let mut exec_reports = Vec::new();
 
         for order_update in data {
-            if let Some(instrument) = instruments.get(&order_update.order.coin) {
+            let instrument = instruments.get(&order_update.order.coin);
+
+            if let Some(instrument) = instrument {
                 match parse_ws_order_status_report(order_update, instrument, account_id, ts_init) {
-                    Ok(report) => {
+                    Ok(mut report) => {
+                        // Resolve cloid to real client_order_id if cached
+                        if let Some(cloid) = &order_update.order.cloid {
+                            let cloid_ustr = Ustr::from(cloid.as_str());
+                            if let Some(entry) = cloid_cache.get(&cloid_ustr) {
+                                let real_client_order_id = *entry.value();
+                                log::debug!("Resolved cloid {cloid} -> {real_client_order_id}");
+                                report.client_order_id = Some(real_client_order_id);
+                            }
+                        }
                         exec_reports.push(ExecutionReport::Order(report));
                     }
                     Err(e) => {
@@ -437,15 +507,43 @@ impl FeedHandler {
     fn handle_user_fills(
         fills: &[super::messages::WsFillData],
         instruments: &AHashMap<Ustr, InstrumentAny>,
+        cloid_cache: &DashMap<Ustr, ClientOrderId>,
         account_id: AccountId,
         ts_init: UnixNanos,
+        processed_trade_ids: &mut FifoCache<u64, 10_000>,
     ) -> Option<NautilusWsMessage> {
         let mut exec_reports = Vec::new();
 
         for fill in fills {
-            if let Some(instrument) = instruments.get(&fill.coin) {
+            // Skip duplicate fills (Hyperliquid sometimes sends duplicate userEvents)
+            if processed_trade_ids.contains(&fill.tid) {
+                log::debug!("Skipping duplicate fill: tid={}", fill.tid);
+                continue;
+            }
+            processed_trade_ids.add(fill.tid);
+
+            let instrument = instruments.get(&fill.coin);
+
+            if let Some(instrument) = instrument {
+                log::debug!("Found instrument for fill coin={}", fill.coin);
                 match parse_ws_fill_report(fill, instrument, account_id, ts_init) {
-                    Ok(report) => {
+                    Ok(mut report) => {
+                        // Resolve cloid to real client_order_id if cached
+                        if let Some(cloid) = &fill.cloid {
+                            let cloid_ustr = Ustr::from(cloid.as_str());
+                            if let Some(entry) = cloid_cache.get(&cloid_ustr) {
+                                let real_client_order_id = *entry.value();
+                                log::debug!(
+                                    "Resolved fill cloid {cloid} -> {real_client_order_id}"
+                                );
+                                report.client_order_id = Some(real_client_order_id);
+                            }
+                        }
+                        log::debug!(
+                            "Parsed fill report: venue_order_id={:?}, trade_id={:?}",
+                            report.venue_order_id,
+                            report.trade_id
+                        );
                         exec_reports.push(ExecutionReport::Fill(report));
                     }
                     Err(e) => {
@@ -453,7 +551,11 @@ impl FeedHandler {
                     }
                 }
             } else {
-                log::debug!("No instrument found for coin: {}", fill.coin);
+                log::warn!(
+                    "No instrument found for fill coin={}. Keys: {:?}",
+                    fill.coin,
+                    instruments.keys().collect::<Vec<_>>()
+                );
             }
         }
 
@@ -577,7 +679,7 @@ impl FeedHandler {
     fn handle_asset_context(
         data: &WsActiveAssetCtxData,
         instruments: &AHashMap<Ustr, InstrumentAny>,
-        asset_context_subs: &AHashMap<Ustr, HashSet<AssetContextDataType>>,
+        asset_context_subs: &AHashMap<Ustr, AHashSet<AssetContextDataType>>,
         mark_price_cache: &mut AHashMap<Ustr, String>,
         index_price_cache: &mut AHashMap<Ustr, String>,
         funding_rate_cache: &mut AHashMap<Ustr, String>,

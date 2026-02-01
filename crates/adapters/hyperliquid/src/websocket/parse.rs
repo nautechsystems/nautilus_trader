@@ -33,17 +33,12 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
-use rust_decimal::{
-    Decimal,
-    prelude::{FromPrimitive, ToPrimitive},
-};
+use rust_decimal::{Decimal, prelude::FromPrimitive};
 
 use super::messages::{
     CandleData, WsActiveAssetCtxData, WsBboData, WsBookData, WsFillData, WsOrderData, WsTradeData,
 };
-use crate::common::parse::{
-    is_conditional_order_data, parse_millis_to_nanos, parse_trigger_order_type,
-};
+use crate::common::parse::{is_conditional_order_data, millis_to_nanos, parse_trigger_order_type};
 
 /// Helper to parse a price string with instrument precision.
 fn parse_price(
@@ -54,13 +49,8 @@ fn parse_price(
     let decimal = Decimal::from_str(price_str)
         .with_context(|| format!("Failed to parse price from '{price_str}' for {field_name}"))?;
 
-    let value = decimal.to_f64().ok_or_else(|| {
-        anyhow::anyhow!(
-            "Failed to convert price '{price_str}' to f64 for {field_name} (out of range or too much precision)"
-        )
-    })?;
-
-    Ok(Price::new(value, instrument.price_precision()))
+    Price::from_decimal_dp(decimal, instrument.price_precision())
+        .with_context(|| format!("Failed to create price from '{price_str}' for {field_name}"))
 }
 
 /// Helper to parse a quantity string with instrument precision.
@@ -73,13 +63,9 @@ fn parse_quantity(
         format!("Failed to parse quantity from '{quantity_str}' for {field_name}")
     })?;
 
-    let value = decimal.abs().to_f64().ok_or_else(|| {
-        anyhow::anyhow!(
-            "Failed to convert quantity '{quantity_str}' to f64 for {field_name} (out of range or too much precision)"
-        )
-    })?;
-
-    Ok(Quantity::new(value, instrument.size_precision()))
+    Quantity::from_decimal_dp(decimal.abs(), instrument.size_precision()).with_context(|| {
+        format!("Failed to create quantity from '{quantity_str}' for {field_name}")
+    })
 }
 
 /// Parses a WebSocket trade frame into a [`TradeTick`].
@@ -93,7 +79,7 @@ pub fn parse_ws_trade_tick(
     let aggressor = AggressorSide::from(trade.side);
     let trade_id = TradeId::new_checked(trade.tid.to_string())
         .context("invalid trade identifier in Hyperliquid trade message")?;
-    let ts_event = parse_millis_to_nanos(trade.time);
+    let ts_event = millis_to_nanos(trade.time)?;
 
     TradeTick::new_checked(
         instrument.id(),
@@ -113,7 +99,7 @@ pub fn parse_ws_order_book_deltas(
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderBookDeltas> {
-    let ts_event = parse_millis_to_nanos(book.time);
+    let ts_event = millis_to_nanos(book.time)?;
     let mut deltas = Vec::new();
 
     // Treat every book payload as a snapshot: clear existing depth and rebuild it
@@ -188,7 +174,7 @@ pub fn parse_ws_quote_tick(
     let bid_size = parse_quantity(&bid_level.sz, instrument, "bbo.bid.sz")?;
     let ask_size = parse_quantity(&ask_level.sz, instrument, "bbo.ask.sz")?;
 
-    let ts_event = parse_millis_to_nanos(bbo.time);
+    let ts_event = millis_to_nanos(bbo.time)?;
 
     QuoteTick::new_checked(
         instrument.id(),
@@ -215,7 +201,7 @@ pub fn parse_ws_candle(
     let close = parse_price(&candle.c, instrument, "candle.c")?;
     let volume = parse_quantity(&candle.v, instrument, "candle.v")?;
 
-    let ts_event = parse_millis_to_nanos(candle.t);
+    let ts_event = millis_to_nanos(candle.t)?;
 
     Ok(Bar::new(
         *bar_type, open, high, low, close, volume, ts_event, ts_init,
@@ -252,19 +238,19 @@ pub fn parse_ws_order_status_report(
 
     let time_in_force = TimeInForce::Gtc;
     let order_status = OrderStatus::from(order.status);
-    let quantity = parse_quantity(&order.order.sz, instrument, "order.sz")?;
 
-    // Calculate filled quantity (orig_sz - sz)
+    // orig_sz is the original order quantity, sz is the remaining quantity
     let orig_qty = parse_quantity(&order.order.orig_sz, instrument, "order.orig_sz")?;
+    let remaining_qty = parse_quantity(&order.order.sz, instrument, "order.sz")?;
     let filled_qty = Quantity::from_raw(
-        orig_qty.raw.saturating_sub(quantity.raw),
+        orig_qty.raw.saturating_sub(remaining_qty.raw),
         instrument.size_precision(),
     );
 
     let price = parse_price(&order.order.limit_px, instrument, "order.limitPx")?;
 
-    let ts_accepted = parse_millis_to_nanos(order.order.timestamp);
-    let ts_last = parse_millis_to_nanos(order.status_timestamp);
+    let ts_accepted = millis_to_nanos(order.order.timestamp)?;
+    let ts_last = millis_to_nanos(order.status_timestamp)?;
 
     let mut report = OrderStatusReport::new(
         account_id,
@@ -275,7 +261,7 @@ pub fn parse_ws_order_status_report(
         order_type,
         time_in_force,
         order_status,
-        quantity,
+        orig_qty, // Use original quantity, not remaining
         filled_qty,
         ts_accepted,
         ts_last,
@@ -335,7 +321,7 @@ pub fn parse_ws_fill_report(
     };
 
     let commission = Money::new(commission_amount, commission_currency);
-    let ts_event = parse_millis_to_nanos(fill.time);
+    let ts_event = millis_to_nanos(fill.time)?;
 
     // No client order ID available in fill data directly
     let client_order_id = None;
@@ -550,6 +536,8 @@ mod tests {
             liquidation: None,
             fee_token: "USDC".to_string(),
             builder_fee: None,
+            cloid: Some("0xd211f1c27288259290850338d22132a0".to_string()),
+            twap_id: None,
         };
 
         let result = parse_ws_fill_report(&fill_data, &instrument, account_id, ts_init);

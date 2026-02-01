@@ -132,6 +132,7 @@ chrono = { version = "0.4.43", default-features = false, features = [
 ] }
 chrono-tz = "0.10.4"
 clap = { version = "4.5.56", features = ["derive", "env"] }
+ctrlc = "3.4"
 dashmap = "6.1.0"
 datafusion = { version = "52.1.0", default-features = false, features = [
   "parquet",

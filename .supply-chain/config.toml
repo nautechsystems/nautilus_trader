@@ -494,6 +494,11 @@ criteria = "safe-to-deploy"
 version = "1.0.1"
 criteria = "safe-to-deploy"
 
+[[exemptions.block2]]
+version = "0.6.2"
+criteria = "safe-to-deploy"
+notes = "macOS/iOS Objective-C block support"
+
 [[exemptions.blst]]
 version = "0.3.16"
 criteria = "safe-to-deploy"
@@ -742,6 +747,11 @@ criteria = "safe-to-deploy"
 version = "0.1.13"
 criteria = "safe-to-deploy"
 
+[[exemptions.ctrlc]]
+version = "3.5.1"
+criteria = "safe-to-deploy"
+notes = "Cross-platform Ctrl-C handling"
+
 [[exemptions.curve25519-dalek]]
 version = "4.1.3"
 criteria = "safe-to-deploy"
@@ -973,6 +983,11 @@ criteria = "safe-to-run"
 [[exemptions.digest]]
 version = "0.9.0"
 criteria = "safe-to-deploy"
+
+[[exemptions.dispatch2]]
+version = "0.3.0"
+criteria = "safe-to-deploy"
+notes = "macOS Grand Central Dispatch bindings"
 
 [[exemptions.dotenvy]]
 version = "0.15.7"
@@ -1562,6 +1577,11 @@ criteria = "safe-to-deploy"
 version = "0.17.2"
 criteria = "safe-to-deploy"
 
+[[exemptions.nix]]
+version = "0.30.1"
+criteria = "safe-to-deploy"
+notes = "Unix system call wrappers"
+
 [[exemptions.ntapi]]
 version = "0.4.2"
 criteria = "safe-to-deploy"
@@ -1601,6 +1621,16 @@ criteria = "safe-to-deploy"
 [[exemptions.nybbles]]
 version = "0.4.7"
 criteria = "safe-to-deploy"
+
+[[exemptions.objc2]]
+version = "0.6.3"
+criteria = "safe-to-deploy"
+notes = "Objective-C runtime bindings"
+
+[[exemptions.objc2-encode]]
+version = "4.1.0"
+criteria = "safe-to-deploy"
+notes = "Objective-C type encoding"
 
 [[exemptions.objc2-io-kit]]
 version = "0.3.2"

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 from functools import lru_cache
-from typing import TYPE_CHECKING
 
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidExecClientConfig
@@ -33,13 +32,6 @@ from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
 
-if TYPE_CHECKING:
-    from typing import Any
-
-    # PyO3 types from Rust (temporary namespace qualification)
-    HyperliquidHttpClient = Any  # nautilus_pyo3.HyperliquidHttpClient (stub not yet available)
-
-
 @lru_cache(1)
 def get_cached_hyperliquid_http_client(
     private_key: str | None = None,
@@ -48,7 +40,7 @@ def get_cached_hyperliquid_http_client(
     timeout_secs: int = 10,
     testnet: bool = False,
     proxy_url: str | None = None,
-) -> HyperliquidHttpClient:
+) -> nautilus_pyo3.HyperliquidHttpClient:
     """
     Cache and return a Hyperliquid HTTP client with the given parameters.
 
@@ -95,7 +87,7 @@ def get_cached_hyperliquid_http_client(
 
 @lru_cache(1)
 def get_cached_hyperliquid_instrument_provider(
-    client: HyperliquidHttpClient,
+    client: nautilus_pyo3.HyperliquidHttpClient,
     config: InstrumentProviderConfig | None = None,
 ) -> HyperliquidInstrumentProvider:
     """
@@ -105,7 +97,7 @@ def get_cached_hyperliquid_instrument_provider(
 
     Parameters
     ----------
-    client : HyperliquidHttpClient
+    client : nautilus_pyo3.HyperliquidHttpClient
         The Hyperliquid HTTP client.
     config : InstrumentProviderConfig, optional
         The instrument provider configuration, by default None.

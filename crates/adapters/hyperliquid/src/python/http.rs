@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
+
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use nautilus_model::{
     data::BarType,
@@ -33,6 +35,14 @@ use crate::http::client::HyperliquidHttpClient;
 
 #[pymethods]
 impl HyperliquidHttpClient {
+    /// Creates a new [`HyperliquidHttpClient`].
+    ///
+    /// If credentials are not provided, falls back to environment variables:
+    /// - Testnet: `HYPERLIQUID_TESTNET_PK`, `HYPERLIQUID_TESTNET_VAULT`
+    /// - Mainnet: `HYPERLIQUID_PK`, `HYPERLIQUID_VAULT`
+    ///
+    /// If no credentials are provided and no environment variables are set,
+    /// creates an unauthenticated client for public endpoints only.
     #[new]
     #[pyo3(signature = (private_key=None, vault_address=None, is_testnet=false, timeout_secs=None, proxy_url=None))]
     fn py_new(
@@ -42,35 +52,20 @@ impl HyperliquidHttpClient {
         timeout_secs: Option<u64>,
         proxy_url: Option<String>,
     ) -> PyResult<Self> {
-        // Try to get credentials from parameters or environment variables
-        let pk = private_key.or_else(|| {
-            if is_testnet {
-                std::env::var("HYPERLIQUID_TESTNET_PK").ok()
-            } else {
-                std::env::var("HYPERLIQUID_PK").ok()
-            }
-        });
-
-        let vault = vault_address.or_else(|| {
-            if is_testnet {
-                std::env::var("HYPERLIQUID_TESTNET_VAULT").ok()
-            } else {
-                std::env::var("HYPERLIQUID_VAULT").ok()
-            }
-        });
-
-        if let Some(key) = pk {
-            Self::from_credentials(&key, vault.as_deref(), is_testnet, timeout_secs, proxy_url)
-                .map_err(to_pyvalue_err)
-        } else {
-            Self::new(is_testnet, timeout_secs, proxy_url).map_err(to_pyvalue_err)
-        }
+        Self::with_credentials(
+            private_key,
+            vault_address,
+            is_testnet,
+            timeout_secs,
+            proxy_url,
+        )
+        .map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
-    #[pyo3(name = "from_env")]
-    fn py_from_env() -> PyResult<Self> {
-        Self::from_env().map_err(to_pyvalue_err)
+    #[pyo3(name = "from_env", signature = (is_testnet=false))]
+    fn py_from_env(is_testnet: bool) -> PyResult<Self> {
+        Self::from_env(is_testnet).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
@@ -110,13 +105,12 @@ impl HyperliquidHttpClient {
         self.get_user_address().map_err(to_pyvalue_err)
     }
 
-    #[pyo3(name = "get_perp_meta")]
-    fn py_get_perp_meta<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let meta = client.load_perp_meta().await.map_err(to_pyvalue_err)?;
-            to_string(&meta).map_err(to_pyvalue_err)
-        })
+    #[pyo3(name = "get_spot_fill_coin_mapping")]
+    fn py_get_spot_fill_coin_mapping(&self) -> HashMap<String, String> {
+        self.get_spot_fill_coin_mapping()
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     }
 
     #[pyo3(name = "get_spot_meta")]
@@ -128,13 +122,12 @@ impl HyperliquidHttpClient {
         })
     }
 
-    #[pyo3(name = "get_l2_book")]
-    fn py_get_l2_book<'py>(&self, py: Python<'py>, coin: &str) -> PyResult<Bound<'py, PyAny>> {
+    #[pyo3(name = "get_perp_meta")]
+    fn py_get_perp_meta<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
-        let coin = coin.to_string();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let book = client.info_l2_book(&coin).await.map_err(to_pyvalue_err)?;
-            to_string(&book).map_err(to_pyvalue_err)
+            let meta = client.load_perp_meta().await.map_err(to_pyvalue_err)?;
+            to_string(&meta).map_err(to_pyvalue_err)
         })
     }
 
@@ -335,34 +328,6 @@ impl HyperliquidHttpClient {
         })
     }
 
-    #[pyo3(name = "get_open_orders")]
-    fn py_get_open_orders<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let user_address = client.get_user_address().map_err(to_pyvalue_err)?;
-            let response = client
-                .info_open_orders(&user_address)
-                .await
-                .map_err(to_pyvalue_err)?;
-            to_string(&response).map_err(to_pyvalue_err)
-        })
-    }
-
-    #[pyo3(name = "get_clearinghouse_state")]
-    fn py_get_clearinghouse_state<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let user_address = client.get_user_address().map_err(to_pyvalue_err)?;
-            let response = client
-                .info_clearinghouse_state(&user_address)
-                .await
-                .map_err(to_pyvalue_err)?;
-            to_string(&response).map_err(to_pyvalue_err)
-        })
-    }
-
     #[pyo3(name = "request_order_status_reports")]
     fn py_request_order_status_reports<'py>(
         &self,
@@ -432,6 +397,21 @@ impl HyperliquidHttpClient {
                     PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
+        })
+    }
+
+    #[pyo3(name = "request_account_state")]
+    fn py_request_account_state<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let user_address = client.get_user_address().map_err(to_pyvalue_err)?;
+            let account_state = client
+                .request_account_state(&user_address)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| Ok(account_state.into_py_any_unwrap(py)))
         })
     }
 }

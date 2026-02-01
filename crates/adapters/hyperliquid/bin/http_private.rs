@@ -46,14 +46,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Try to create authenticated client from environment
-    let client = match HyperliquidHttpClient::from_env() {
+    let client = match HyperliquidHttpClient::from_env(testnet) {
         Ok(client) => {
             log::info!("Testnet mode: {}", client.is_testnet());
             client
         }
-        Err(_) => {
+        Err(e) => {
+            let env_var = if testnet {
+                "HYPERLIQUID_TESTNET_PK"
+            } else {
+                "HYPERLIQUID_PK"
+            };
             log::warn!(
-                "No credentials found in environment (HYPERLIQUID_PK). Skipping authenticated examples."
+                "No credentials found in environment ({env_var}): {e}, skipping authenticated examples"
             );
             return Ok(());
         }

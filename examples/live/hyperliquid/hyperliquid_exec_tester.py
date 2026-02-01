@@ -15,6 +15,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from enum import Enum
 
 from nautilus_trader.adapters.hyperliquid import HYPERLIQUID
 from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientConfig
@@ -26,6 +27,7 @@ from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.test_kit.strategies.tester_exec import ExecTester
@@ -35,22 +37,40 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
-# *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
-# *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
-# *** HYPERLIQUID TESTNET SETUP ***
-# To use Hyperliquid testnet, you need to:
-# 1. Get testnet credentials from https://app.hyperliquid-testnet.xyz/
-# 2. Set environment variables:
-#    - HYPERLIQUID_TESTNET_PK: Your testnet private key (required)
-#    - HYPERLIQUID_TESTNET_VAULT: Your testnet vault address (optional)
-# 3. Ensure 'testnet=True' is set in both data and exec client configs below
-# 4. Run the script: python hyperliquid_exec_tester.py
+# Environment variables required:
+# Mainnet: HYPERLIQUID_PK (and optionally HYPERLIQUID_VAULT)
+# Testnet: HYPERLIQUID_TESTNET_PK (and optionally HYPERLIQUID_TESTNET_VAULT)
+#
+# Before trading, approve builder fees (one-time per wallet per network):
+#   python nautilus_trader/adapters/hyperliquid/scripts/builder_fee_approve.py
 
-# Strategy config params
-symbol = "BTC-USD-PERP"
+
+class HyperliquidProductType(Enum):
+    SPOT = "SPOT"
+    PERP = "PERP"
+
+
+# Configuration - Change product_type to switch between trading modes
+product_type = HyperliquidProductType.PERP  # SPOT or PERP
+testnet = False  # Set to True for testnet, False for mainnet
+
+# Symbol and settings based on product type
+if product_type == HyperliquidProductType.SPOT:
+    symbol = "HYPE-USDC-SPOT"
+    order_qty = Decimal("0.5")  # 1 HYPE (minimum size)
+    enable_sells = False  # May not own HYPE when starting fresh
+    reduce_only_on_stop = False  # Not applicable on spot
+elif product_type == HyperliquidProductType.PERP:
+    symbol = "BTC-USD-PERP"
+    order_qty = Decimal("0.001")  # 0.001 BTC (minimum size)
+    enable_sells = True
+    reduce_only_on_stop = True
+else:
+    raise ValueError(f"Unsupported product type: {product_type}")
+
 instrument_id = InstrumentId.from_str(f"{symbol}.{HYPERLIQUID}")
-order_qty = Decimal("0.001")  # Small test order for BTC
+
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -63,38 +83,46 @@ config_node = TradingNodeConfig(
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
-        open_check_interval_secs=5.0,
+        open_check_interval_secs=15.0,
+        open_check_threshold_ms=10_000,
         open_check_open_only=False,
+        open_check_lookback_mins=60,
         # snapshot_orders=True,
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,
-        purge_closed_orders_interval_mins=15,  # Example of purging closed orders for HFT
-        purge_closed_orders_buffer_mins=60,  # Purged orders closed for at least an hour
-        purge_closed_positions_interval_mins=15,  # Example of purging closed positions for HFT
-        purge_closed_positions_buffer_mins=60,  # Purge positions closed for at least an hour
-        purge_account_events_interval_mins=15,  # Example of purging account events for HFT
-        purge_account_events_lookback_mins=60,  # Purge account events occurring more than an hour ago
+        purge_closed_orders_interval_mins=15,
+        purge_closed_orders_buffer_mins=60,
+        purge_closed_positions_interval_mins=15,
+        purge_closed_positions_buffer_mins=60,
+        purge_account_events_interval_mins=15,
+        purge_account_events_lookback_mins=60,
         graceful_shutdown_on_exception=True,
     ),
+    # cache=CacheConfig(
+    #     database=DatabaseConfig(),
+    #     timestamps_as_iso8601=True,
+    #     persist_account_events=False,  # Useful for HFT ops where this can quickly accumulate
+    #     buffer_interval_ms=100,
+    # ),
     data_clients={
         HYPERLIQUID: HyperliquidDataClientConfig(
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            testnet=True,  # If client uses the testnet
+            testnet=testnet,
         ),
     },
     exec_clients={
         HYPERLIQUID: HyperliquidExecClientConfig(
-            private_key=None,  # 'HYPERLIQUID_TESTNET_PK' env var for testnet
-            vault_address=None,  # 'HYPERLIQUID_TESTNET_VAULT' env var (optional)
+            private_key=None,  # Loaded from env var based on testnet setting
+            vault_address=None,  # Optional, loaded from env var
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            testnet=True,  # If client uses the testnet
+            testnet=testnet,
         ),
     },
     timeout_connection=30.0,
     timeout_reconciliation=10.0,
     timeout_portfolio=10.0,
     timeout_disconnection=10.0,
-    timeout_post_stop=5.0,
+    timeout_post_stop=10.0,
 )
 
 # Instantiate the node with a configuration
@@ -106,17 +134,21 @@ strat_config = ExecTesterConfig(
     external_order_claims=[instrument_id],
     # subscribe_quotes=True,
     # subscribe_trades=True,
-    # subscribe_book=False,
-    # enable_limit_buys=True,
-    # enable_limit_sells=True,
+    # subscribe_book=True,
     order_qty=order_qty,
-    # open_position_on_start_qty=order_qty,
+    open_position_on_start_qty=order_qty,
+    open_position_time_in_force=TimeInForce.IOC,
+    enable_limit_buys=True,
+    enable_limit_sells=enable_sells,
+    # enable_limit_buys=False,
+    # enable_limit_sells=False,
+    # enable_stop_buys=True,
+    # enable_stop_sells=True,
     # tob_offset_ticks=0,  # Ticks away from top of book (0 = at market)
     use_post_only=True,  # Use post-only orders to get maker fees
-    # manage_gtd_expiry=False,
-    # cancel_orders_on_stop=True,
-    # close_positions_on_stop=True,  # Close all positions when stopping
-    # reduce_only_on_stop=True,
+    # cancel_orders_on_stop=False,
+    # close_positions_on_stop=False,
+    reduce_only_on_stop=reduce_only_on_stop,
     log_data=False,  # Set to True for verbose data logging
 )
 

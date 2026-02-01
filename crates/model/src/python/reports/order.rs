@@ -390,6 +390,19 @@ impl OrderStatusReport {
         self.ts_triggered.map(|t| t.as_u64())
     }
 
+    #[getter]
+    #[pyo3(name = "is_open")]
+    fn py_is_open(&self) -> bool {
+        matches!(
+            self.order_status,
+            OrderStatus::Accepted
+                | OrderStatus::Triggered
+                | OrderStatus::PendingCancel
+                | OrderStatus::PendingUpdate
+                | OrderStatus::PartiallyFilled
+        )
+    }
+
     /// Creates an `OrderStatusReport` from a Python dictionary.
     ///
     /// # Errors

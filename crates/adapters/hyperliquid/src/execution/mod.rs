@@ -15,7 +15,11 @@
 
 //! Live execution client implementation for the Hyperliquid adapter.
 
-use std::{str::FromStr, sync::Mutex};
+use std::{
+    str::FromStr,
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -49,8 +53,7 @@ use tokio::task::JoinHandle;
 
 use crate::{
     common::{
-        HyperliquidProductType,
-        consts::HYPERLIQUID_VENUE,
+        consts::{HYPERLIQUID_VENUE, NAUTILUS_BUILDER_FEE_ADDRESS, NAUTILUS_BUILDER_FEE_TENTHS_BP},
         credential::Secrets,
         parse::{
             client_order_id_to_cancel_request, extract_error_message, is_response_successful,
@@ -58,7 +61,11 @@ use crate::{
         },
     },
     config::HyperliquidExecClientConfig,
-    http::{client::HyperliquidHttpClient, models::ClearinghouseState, query::ExchangeAction},
+    http::{
+        client::HyperliquidHttpClient,
+        models::{ClearinghouseState, HyperliquidExecBuilderFee},
+        query::ExchangeAction,
+    },
     websocket::{ExecutionReport, NautilusWsMessage, client::HyperliquidWebSocketClient},
 };
 
@@ -168,22 +175,16 @@ impl HyperliquidExecutionClient {
         ))
         .context("failed to create secrets from private key")?;
 
-        let http_client = HyperliquidHttpClient::with_credentials(
+        let http_client = HyperliquidHttpClient::with_secrets(
             &secrets,
             Some(config.http_timeout_secs),
             config.http_proxy_url.clone(),
         )
         .context("failed to create Hyperliquid HTTP client")?;
 
-        // Create WebSocket client (will connect when needed)
-        // Note: For execution WebSocket (private account messages), product type is less critical
-        // since messages are account-scoped. Defaulting to Perp.
-        let ws_client = HyperliquidWebSocketClient::new(
-            None,
-            config.is_testnet,
-            HyperliquidProductType::Perp,
-            Some(core.account_id),
-        );
+        // Create WebSocket client for order/execution updates
+        let ws_client =
+            HyperliquidWebSocketClient::new(None, config.is_testnet, Some(core.account_id));
 
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
@@ -284,6 +285,38 @@ impl HyperliquidExecutionClient {
         }
 
         Ok(())
+    }
+
+    /// Waits for the account to be registered in the cache.
+    ///
+    /// Polls the cache until the account is registered, ensuring that
+    /// position and fill processing can access the account correctly.
+    async fn await_account_registered(&self, timeout_secs: f64) -> anyhow::Result<()> {
+        let account_id = self.core.account_id;
+
+        if self.core.cache().account(&account_id).is_some() {
+            log::info!("Account {account_id} registered");
+            return Ok(());
+        }
+
+        let start = Instant::now();
+        let timeout = Duration::from_secs_f64(timeout_secs);
+        let interval = Duration::from_millis(10);
+
+        loop {
+            tokio::time::sleep(interval).await;
+
+            if self.core.cache().account(&account_id).is_some() {
+                log::info!("Account {account_id} registered");
+                return Ok(());
+            }
+
+            if start.elapsed() >= timeout {
+                anyhow::bail!(
+                    "Timeout waiting for account {account_id} to be registered after {timeout_secs}s"
+                );
+            }
+        }
     }
 
     fn get_user_address(&self) -> anyhow::Result<String> {
@@ -462,11 +495,15 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
         let http_client = self.http_client.clone();
 
+        let builder_fee = HyperliquidExecBuilderFee {
+            address: NAUTILUS_BUILDER_FEE_ADDRESS.to_string(),
+            fee_tenths_bp: NAUTILUS_BUILDER_FEE_TENTHS_BP,
+        };
+
         self.spawn_task("submit_order", async move {
             match order_any_to_hyperliquid_request(&order) {
                 Ok(hyperliquid_order) => {
-                    // Create exchange action for order placement with typed struct
-                    let action = ExchangeAction::order(vec![hyperliquid_order]);
+                    let action = ExchangeAction::order(vec![hyperliquid_order], Some(builder_fee));
 
                     match http_client.post_action(&action).await {
                         Ok(response) => {
@@ -507,18 +544,21 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let http_client = self.http_client.clone();
         let orders: Vec<OrderAny> = command.order_list.orders.clone();
 
-        // Generate submitted events for all orders
         for order in &orders {
             self.emitter.emit_order_submitted(order);
         }
+
+        let builder_fee = HyperliquidExecBuilderFee {
+            address: NAUTILUS_BUILDER_FEE_ADDRESS.to_string(),
+            fee_tenths_bp: NAUTILUS_BUILDER_FEE_TENTHS_BP,
+        };
 
         self.spawn_task("submit_order_list", async move {
             // Convert all orders to Hyperliquid format
             let order_refs: Vec<&OrderAny> = orders.iter().collect();
             match orders_to_hyperliquid_requests(&order_refs) {
                 Ok(hyperliquid_orders) => {
-                    // Create exchange action for order placement with typed struct
-                    let action = ExchangeAction::order(hyperliquid_orders);
+                    let action = ExchangeAction::order(hyperliquid_orders, Some(builder_fee));
                     match http_client.post_action(&action).await {
                         Ok(response) => {
                             if is_response_successful(&response) {
@@ -845,8 +885,9 @@ impl ExecutionClient for HyperliquidExecutionClient {
             .subscribe_all_user_channels(&user_address)
             .await?;
 
-        // Initialize account state
+        // Initialize account state and wait for it to be registered in cache
         self.refresh_account_state().await?;
+        self.await_account_registered(30.0).await?;
 
         self.core.set_connected();
 
@@ -1044,8 +1085,23 @@ impl HyperliquidExecutionClient {
                                 }
                             }
                             NautilusWsMessage::Reconnected => {
-                                log::info!("WebSocket reconnected");
-                                // TODO: Resubscribe to user channels if needed
+                                log::info!("WebSocket reconnected, resubscribing to user channels");
+
+                                if let Err(e) = ws_client.subscribe_order_updates(&user_address).await
+                                {
+                                    log::error!(
+                                        "Failed to resubscribe to order updates after reconnect: {e}"
+                                    );
+                                }
+
+                                if let Err(e) = ws_client.subscribe_user_events(&user_address).await
+                                {
+                                    log::error!(
+                                        "Failed to resubscribe to user events after reconnect: {e}"
+                                    );
+                                }
+
+                                log::info!("Resubscribed to execution channels");
                             }
                             NautilusWsMessage::Error(e) => {
                                 log::error!("WebSocket error: {e}");

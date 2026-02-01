@@ -20,14 +20,12 @@ use nautilus_model::{
         CurrencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified,
         TimeInForce, TriggerType,
     },
-    identifiers::{
-        AccountId, ClientOrderId, InstrumentId, PositionId, Symbol, TradeId, VenueOrderId,
-    },
+    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
     instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Currency, Price, Quantity},
 };
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -59,12 +57,20 @@ pub enum HyperliquidMarketType {
 pub struct HyperliquidInstrumentDef {
     /// Human-readable symbol (e.g., "BTC-USD-PERP", "PURR-USDC-SPOT").
     pub symbol: Ustr,
+    /// Raw symbol used in Hyperliquid WebSocket subscriptions/messages.
+    /// For perps: base currency (e.g., "BTC").
+    /// For spot: `@{pair_index}` format (e.g., "@107" for HYPE-USDC).
+    pub raw_symbol: Ustr,
     /// Base currency/asset (e.g., "BTC", "PURR").
     pub base: Ustr,
     /// Quote currency (e.g., "USD" for perps, "USDC" for spot).
     pub quote: Ustr,
     /// Market type (perpetual or spot).
     pub market_type: HyperliquidMarketType,
+    /// Asset index used for order submission.
+    /// For perps: index in meta.universe (0, 1, 2, ...).
+    /// For spot: 10000 + index in spotMeta.universe.
+    pub asset_index: u32,
     /// Number of decimal places for price precision.
     pub price_decimals: u32,
     /// Number of decimal places for size precision.
@@ -98,7 +104,7 @@ pub fn parse_perp_instruments(meta: &PerpMeta) -> Result<Vec<HyperliquidInstrume
 
     let mut defs = Vec::new();
 
-    for asset in &meta.universe {
+    for (index, asset) in meta.universe.iter().enumerate() {
         // Include delisted assets but mark them as inactive
         // This allows parsing of historical data for delisted instruments
         let is_delisted = asset.is_delisted.unwrap_or(false);
@@ -109,18 +115,23 @@ pub fn parse_perp_instruments(meta: &PerpMeta) -> Result<Vec<HyperliquidInstrume
 
         let symbol = format!("{}-USD-PERP", asset.name);
 
+        // Perps use base currency as raw_symbol (e.g., "BTC")
+        let raw_symbol: Ustr = asset.name.as_str().into();
+
         let def = HyperliquidInstrumentDef {
             symbol: symbol.into(),
+            raw_symbol,
             base: asset.name.clone().into(),
             quote: "USD".into(), // Hyperliquid perps are USD-quoted (USDC settled)
             market_type: HyperliquidMarketType::Perp,
+            asset_index: index as u32,
             price_decimals,
             size_decimals: asset.sz_decimals,
             tick_size,
             lot_size,
             max_leverage: asset.max_leverage,
             only_isolated: asset.only_isolated.unwrap_or(false),
-            active: !is_delisted, // Mark delisted instruments as inactive
+            active: !is_delisted,
             raw_data: serde_json::to_string(asset).unwrap_or_default(),
         };
 
@@ -139,11 +150,12 @@ pub fn parse_perp_instruments(meta: &PerpMeta) -> Result<Vec<HyperliquidInstrume
 ///   for instruments that may have been traded
 pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrumentDef>, String> {
     const SPOT_MAX_DECIMALS: i32 = 8; // Hyperliquid spot price decimal limit
+    const SPOT_INDEX_OFFSET: u32 = 10000; // Spot assets use 10000 + index
 
     let mut defs = Vec::new();
 
     // Build index -> token lookup
-    let mut tokens_by_index = std::collections::HashMap::new();
+    let mut tokens_by_index = ahash::AHashMap::new();
     for token in &meta.tokens {
         tokens_by_index.insert(token.index, token);
     }
@@ -152,7 +164,6 @@ pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrume
         // Load all pairs (including non-canonical) to support parsing fills/positions
         // for instruments that may have been traded but are not currently canonical
 
-        // Resolve base and quote tokens
         let base_token = tokens_by_index
             .get(&pair.tokens[0])
             .ok_or_else(|| format!("Base token index {} not found", pair.tokens[0]))?;
@@ -166,11 +177,22 @@ pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrume
 
         let symbol = format!("{}-{}-SPOT", base_token.name, quote_token.name);
 
+        // Hyperliquid spot raw_symbol formats (per API docs):
+        // - PURR uses slash format from pair.name (e.g., "PURR/USDC")
+        // - All others use "@{pair_index}" format (e.g., "@107" for HYPE)
+        let raw_symbol: Ustr = if base_token.name == "PURR" {
+            pair.name.as_str().into()
+        } else {
+            format!("@{}", pair.index).into()
+        };
+
         let def = HyperliquidInstrumentDef {
             symbol: symbol.into(),
+            raw_symbol,
             base: base_token.name.clone().into(),
             quote: quote_token.name.clone().into(),
             market_type: HyperliquidMarketType::Spot,
+            asset_index: SPOT_INDEX_OFFSET + pair.index,
             price_decimals,
             size_decimals: base_token.sz_decimals,
             tick_size,
@@ -221,9 +243,11 @@ pub fn create_instrument_from_def(
     let venue = *HYPERLIQUID_VENUE;
     let instrument_id = InstrumentId::new(symbol, venue);
 
-    // Use base currency as raw_symbol (e.g., "BTC" not "BTC-USD-PERP")
-    // This is what Hyperliquid expects in WebSocket subscriptions
-    let raw_symbol = Symbol::new(def.base);
+    // Use the raw_symbol from the definition which is format-specific:
+    // - Perps: base currency (e.g., "BTC")
+    // - Spot PURR: slash format (e.g., "PURR/USDC")
+    // - Spot others: @{index} format (e.g., "@107")
+    let raw_symbol = Symbol::new(def.raw_symbol);
     let base_currency = get_currency(&def.base);
     let quote_currency = get_currency(&def.quote);
     let price_increment = Price::from(def.tick_size.to_string());
@@ -377,10 +401,9 @@ pub fn parse_order_status_report_from_basic(
         OrderType::Limit
     };
 
-    let time_in_force = TimeInForce::Gtc; // Hyperliquid uses GTC by default
+    let time_in_force = TimeInForce::Gtc;
     let order_status = OrderStatus::from(*status);
 
-    // Parse quantities
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
@@ -393,14 +416,14 @@ pub fn parse_order_status_report_from_basic(
         .parse()
         .map_err(|e| anyhow::anyhow!("Failed to parse sz: {e}"))?;
 
-    let quantity = Quantity::new(orig_sz.abs().to_f64().unwrap_or(0.0), size_precision);
+    let quantity = Quantity::from_decimal_dp(orig_sz.abs(), size_precision)
+        .map_err(|e| anyhow::anyhow!("Failed to create quantity from orig_sz: {e}"))?;
     let filled_sz = orig_sz.abs() - current_sz.abs();
-    let filled_qty = Quantity::new(filled_sz.to_f64().unwrap_or(0.0), size_precision);
+    let filled_qty = Quantity::from_decimal_dp(filled_sz, size_precision)
+        .map_err(|e| anyhow::anyhow!("Failed to create quantity from filled_sz: {e}"))?;
 
-    // Timestamps
-    let ts_accepted = UnixNanos::from(order.timestamp * 1_000_000); // Convert ms to ns
+    let ts_accepted = UnixNanos::from(order.timestamp * 1_000_000);
     let ts_last = ts_accepted;
-
     let report_id = UUID4::new();
 
     let mut report = OrderStatusReport::new(
@@ -425,23 +448,31 @@ pub fn parse_order_status_report_from_basic(
         report = report.with_client_order_id(ClientOrderId::new(cloid.as_str()));
     }
 
-    // Add price
-    let limit_px: Decimal = order
-        .limit_px
-        .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse limit_px: {e}"))?;
-    report = report.with_price(Price::new(
-        limit_px.to_f64().unwrap_or(0.0),
-        price_precision,
-    ));
+    // Only set price for non-filled orders. For filled orders, the limit price is not
+    // the execution price, and setting it would cause bogus inferred fills to be created
+    // during reconciliation. Real fills arrive via the userEvents WebSocket channel.
+    if !matches!(
+        order_status,
+        OrderStatus::Filled | OrderStatus::PartiallyFilled
+    ) {
+        let limit_px: Decimal = order
+            .limit_px
+            .parse()
+            .map_err(|e| anyhow::anyhow!("Failed to parse limit_px: {e}"))?;
+        let price = Price::from_decimal_dp(limit_px, price_precision)
+            .map_err(|e| anyhow::anyhow!("Failed to create price from limit_px: {e}"))?;
+        report = report.with_price(price);
+    }
 
     // Add trigger price if present
     if let Some(trigger_px) = &order.trigger_px {
         let trig_px: Decimal = trigger_px
             .parse()
             .map_err(|e| anyhow::anyhow!("Failed to parse trigger_px: {e}"))?;
+        let trigger_price = Price::from_decimal_dp(trig_px, price_precision)
+            .map_err(|e| anyhow::anyhow!("Failed to create trigger price: {e}"))?;
         report = report
-            .with_trigger_price(Price::new(trig_px.to_f64().unwrap_or(0.0), price_precision))
+            .with_trigger_price(trigger_price)
             .with_trigger_type(TriggerType::Default);
     }
 
@@ -465,20 +496,15 @@ pub fn parse_fill_report(
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(fill.oid.to_string());
 
-    // Construct trade_id from hash and time
-    let trade_id_str = format!("{}-{}", fill.hash, fill.time);
-    log::debug!(
-        "Parsing fill: hash={}, time={}, trade_id_str='{}', len={}",
-        fill.hash,
-        fill.time,
-        trade_id_str,
-        trade_id_str.len()
-    );
-
+    // Use last 36 chars of hash for TradeId (max length constraint)
+    let trade_id_str = if fill.hash.len() > 36 {
+        &fill.hash[fill.hash.len() - 36..]
+    } else {
+        &fill.hash
+    };
     let trade_id = TradeId::new(trade_id_str);
     let order_side = parse_fill_side(&fill.side);
 
-    // Parse price and quantity
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
@@ -491,8 +517,10 @@ pub fn parse_fill_report(
         .parse()
         .map_err(|e| anyhow::anyhow!("Failed to parse fill size: {e}"))?;
 
-    let last_px = Price::new(px.to_f64().unwrap_or(0.0), price_precision);
-    let last_qty = Quantity::new(sz.abs().to_f64().unwrap_or(0.0), size_precision);
+    let last_px = Price::from_decimal_dp(px, price_precision)
+        .map_err(|e| anyhow::anyhow!("Failed to create price from fill px: {e}"))?;
+    let last_qty = Quantity::from_decimal_dp(sz.abs(), size_precision)
+        .map_err(|e| anyhow::anyhow!("Failed to create quantity from fill sz: {e}"))?;
 
     // Parse fee - Hyperliquid fees are typically in USDC for perps
     let fee_amount: Decimal = fill
@@ -502,7 +530,8 @@ pub fn parse_fill_report(
 
     // Determine fee currency - Hyperliquid perp fees are in USDC
     let fee_currency = Currency::from("USDC");
-    let commission = Money::new(fee_amount.abs().to_f64().unwrap_or(0.0), fee_currency);
+    let commission = Money::from_decimal(fee_amount.abs(), fee_currency)
+        .map_err(|e| anyhow::anyhow!("Failed to create commission from fee: {e}"))?;
 
     // Determine liquidity side based on 'crossed' flag
     let liquidity_side = if fill.crossed {
@@ -511,9 +540,7 @@ pub fn parse_fill_report(
         LiquiditySide::Maker
     };
 
-    // Timestamp
-    let ts_event = UnixNanos::from(fill.time * 1_000_000); // Convert ms to ns
-
+    let ts_event = UnixNanos::from(fill.time * 1_000_000);
     let report_id = UUID4::new();
 
     let report = FillReport::new(
@@ -567,26 +594,13 @@ pub fn parse_position_status_report(
         (PositionSideSpecified::Short, position.szi.abs())
     };
 
-    // Create quantity
-    let quantity = Quantity::new(
-        quantity_value
-            .to_f64()
-            .context("failed to convert quantity to f64")?,
-        instrument.size_precision(),
-    );
-
-    // Generate report ID
+    let quantity = Quantity::from_decimal_dp(quantity_value, instrument.size_precision())
+        .context("failed to create quantity from decimal")?;
     let report_id = UUID4::new();
-
-    // Use current time as ts_last (could be enhanced with actual last update time if available)
     let ts_last = ts_init;
-
-    // Create position ID from coin symbol
-    let venue_position_id = Some(PositionId::new(format!("{}_{}", account_id, position.coin)));
-
-    // Entry price (if available)
     let avg_px_open = position.entry_px;
 
+    // Hyperliquid uses netting (one position per instrument), not hedging
     Ok(PositionStatusReport::new(
         account_id,
         instrument_id,
@@ -595,7 +609,7 @@ pub fn parse_position_status_report(
         ts_last,
         ts_init,
         Some(report_id),
-        venue_position_id,
+        None, // No venue_position_id for netting positions
         avg_px_open,
     ))
 }

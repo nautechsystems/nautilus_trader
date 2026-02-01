@@ -55,6 +55,9 @@ pub enum HyperliquidWsChannel {
     UserFundings,
     #[serde(rename = "userNonFundingLedgerUpdates")]
     UserNonFundingLedgerUpdates,
+    /// Generic user channel - Hyperliquid sends fills/events on this channel.
+    #[serde(rename = "user")]
+    User,
     #[serde(rename = "post")]
     Post,
     #[serde(rename = "pong")]
@@ -79,6 +82,7 @@ impl HyperliquidWsChannel {
             Self::UserFills => "userFills",
             Self::UserFundings => "userFundings",
             Self::UserNonFundingLedgerUpdates => "userNonFundingLedgerUpdates",
+            Self::User => "user",
             Self::Post => "post",
             Self::Pong => "pong",
             Self::Error => "error",
@@ -195,7 +199,7 @@ mod tests {
         use strum::IntoEnumIterator;
 
         let channels: Vec<HyperliquidWsChannel> = HyperliquidWsChannel::iter().collect();
-        assert_eq!(channels.len(), 15);
+        assert_eq!(channels.len(), 16);
         assert!(channels.contains(&HyperliquidWsChannel::Trades));
         assert!(channels.contains(&HyperliquidWsChannel::L2Book));
         assert!(channels.contains(&HyperliquidWsChannel::UserFills));

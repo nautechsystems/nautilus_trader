@@ -18,7 +18,7 @@ use serde::Serialize;
 use crate::{
     common::enums::{HyperliquidBarInterval, HyperliquidInfoRequestType},
     http::models::{
-        HyperliquidExecCancelByCloidRequest, HyperliquidExecGrouping,
+        HyperliquidExecBuilderFee, HyperliquidExecCancelByCloidRequest, HyperliquidExecGrouping,
         HyperliquidExecModifyOrderRequest, HyperliquidExecPlaceOrderRequest,
     },
 };
@@ -59,6 +59,8 @@ impl AsRef<str> for ExchangeActionType {
 pub struct OrderParams {
     pub orders: Vec<HyperliquidExecPlaceOrderRequest>,
     pub grouping: HyperliquidExecGrouping,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub builder: Option<HyperliquidExecBuilderFee>,
 }
 
 /// Parameters for canceling orders.
@@ -307,13 +309,17 @@ where
 }
 
 impl ExchangeAction {
-    /// Creates an action to place orders.
-    pub fn order(orders: Vec<HyperliquidExecPlaceOrderRequest>) -> Self {
+    /// Creates an action to place orders with builder fee.
+    pub fn order(
+        orders: Vec<HyperliquidExecPlaceOrderRequest>,
+        builder: Option<HyperliquidExecBuilderFee>,
+    ) -> Self {
         Self {
             action_type: ExchangeActionType::Order,
             params: ExchangeActionParams::Order(OrderParams {
                 orders,
                 grouping: HyperliquidExecGrouping::Na,
+                builder,
             }),
         }
     }
@@ -413,7 +419,7 @@ mod tests {
             cloid: None,
         };
 
-        let action = ExchangeAction::order(vec![order]);
+        let action = ExchangeAction::order(vec![order], None);
 
         assert_eq!(action.action_type, ExchangeActionType::Order);
         let json = serde_json::to_string(&action).unwrap();
@@ -457,7 +463,7 @@ mod tests {
             cloid: None,
         };
 
-        let action = ExchangeAction::order(vec![order]);
+        let action = ExchangeAction::order(vec![order], None);
 
         let json = serde_json::to_string(&action).unwrap();
         // Verify that action_type is serialized as "type" with the correct string value

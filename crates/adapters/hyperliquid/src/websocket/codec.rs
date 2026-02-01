@@ -125,12 +125,10 @@ pub enum WsInbound {
     UserFills(Vec<WsFill>),
     UserFundings(Vec<WsFunding>),
     UserEvents(Vec<WsUserEvent>),
-
     SubscriptionResponse(SubResp),
     Pong(Option<i64>),
     Notification(Notice),
     Post(PostAck),
-
     #[serde(other)]
     Unknown,
 }

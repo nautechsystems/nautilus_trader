@@ -232,6 +232,7 @@ mod tests {
             params: ExchangeActionParams::Order(OrderParams {
                 orders,
                 grouping: HyperliquidExecGrouping::Na,
+                builder: None,
             }),
         };
         assert_eq!(exchange_weight(&action), expected_weight);

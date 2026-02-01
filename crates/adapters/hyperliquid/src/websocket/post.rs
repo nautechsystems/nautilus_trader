@@ -42,11 +42,6 @@ use crate::{
     },
 };
 
-// -------------------------------------------------------------------------------------------------
-// Correlation router for "channel":"post" → correlate by id
-//  - Enforces inflight cap using OwnedSemaphorePermit stored per waiter
-// -------------------------------------------------------------------------------------------------
-
 #[derive(Debug)]
 struct Waiter {
     tx: oneshot::Sender<PostResponse>,
@@ -146,10 +141,6 @@ impl PostRouter {
     }
 }
 
-// -------------------------------------------------------------------------------------------------
-// ID generation
-// -------------------------------------------------------------------------------------------------
-
 #[derive(Debug)]
 pub struct PostIds(AtomicU64);
 
@@ -161,10 +152,6 @@ impl PostIds {
         self.0.fetch_add(1, Ordering::Relaxed)
     }
 }
-
-// -------------------------------------------------------------------------------------------------
-// Lanes & batcher (scaffold). You can expand policy later.
-// -------------------------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PostLane {
@@ -288,10 +275,6 @@ pub fn lane_for_action(action: &ActionRequest) -> PostLane {
         _ => PostLane::Normal,
     }
 }
-
-// -------------------------------------------------------------------------------------------------
-// Typed builders (produce ActionRequest), plus Info request helpers.
-// -------------------------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, Default)]
 pub enum Grouping {
@@ -557,10 +540,6 @@ pub fn info_candle(coin: &str, interval: &str) -> PostRequest {
     }
 }
 
-// -------------------------------------------------------------------------------------------------
-// Minimal response helpers
-// -------------------------------------------------------------------------------------------------
-
 pub fn parse_l2_book(payload: &serde_json::Value) -> Result<HyperliquidL2Book> {
     serde_json::from_value(payload.clone()).map_err(Error::Serde)
 }
@@ -620,10 +599,6 @@ pub fn classify_action_payload(payload: &serde_json::Value) -> ActionOutcome<'_>
     }
     ActionOutcome::Unknown(payload)
 }
-
-// -------------------------------------------------------------------------------------------------
-// Glue helpers used by the client (wired in client.rs)
-// -------------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug)]
 pub struct WsSender {
