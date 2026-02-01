@@ -25,14 +25,10 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, TradeTick},
-    enums::{
-        AccountType, AggressorSide, AssetClass, BookType, CurrencyType, OptionKind, OrderSide,
-    },
+    enums::{AccountType, AggressorSide, BookType, OptionKind, OrderSide},
     events::AccountState,
     identifiers::{AccountId, InstrumentId, Symbol, TradeId, Venue},
-    instruments::{
-        CryptoFuture, CryptoPerpetual, CurrencyPair, OptionContract, any::InstrumentAny,
-    },
+    instruments::{CryptoFuture, CryptoOption, CryptoPerpetual, CurrencyPair, any::InstrumentAny},
     orderbook::OrderBook,
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
@@ -162,24 +158,12 @@ fn parse_spot_instrument(
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = InstrumentId::new(Symbol::new(instrument.instrument_name), *DERIBIT_VENUE);
 
-    let base_currency = Currency::new(
-        instrument.base_currency,
-        8,
-        0,
-        instrument.base_currency,
-        CurrencyType::Crypto,
-    );
-    let quote_currency = Currency::new(
-        instrument.quote_currency,
-        8,
-        0,
-        instrument.quote_currency,
-        CurrencyType::Crypto,
-    );
+    let base_currency = Currency::get_or_create_crypto(instrument.base_currency);
+    let quote_currency = Currency::get_or_create_crypto(instrument.quote_currency);
 
-    let price_increment = Price::from(instrument.tick_size.to_string().as_str());
-    let size_increment = Quantity::from(instrument.min_trade_amount.to_string().as_str());
-    let min_quantity = Quantity::from(instrument.min_trade_amount.to_string().as_str());
+    let price_increment = Price::from_decimal(instrument.tick_size)?;
+    let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
+    let min_quantity = Quantity::from_decimal(instrument.min_trade_amount)?;
 
     let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
         .context("Failed to parse maker_commission")?;
@@ -222,37 +206,23 @@ fn parse_perpetual_instrument(
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = InstrumentId::new(Symbol::new(instrument.instrument_name), *DERIBIT_VENUE);
 
-    let base_currency = Currency::new(
-        instrument.base_currency,
-        8,
-        0,
-        instrument.base_currency,
-        CurrencyType::Crypto,
-    );
-    let quote_currency = Currency::new(
-        instrument.quote_currency,
-        8,
-        0,
-        instrument.quote_currency,
-        CurrencyType::Crypto,
-    );
-    let settlement_currency = instrument.settlement_currency.map_or(base_currency, |c| {
-        Currency::new(c, 8, 0, c, CurrencyType::Crypto)
-    });
+    let base_currency = Currency::get_or_create_crypto(instrument.base_currency);
+    let quote_currency = Currency::get_or_create_crypto(instrument.quote_currency);
+    let settlement_currency = instrument
+        .settlement_currency
+        .map_or(base_currency, Currency::get_or_create_crypto);
 
     let is_inverse = instrument
         .instrument_type
         .as_ref()
         .is_some_and(|t| t == "reversed");
 
-    let price_increment = Price::from(instrument.tick_size.to_string().as_str());
-    let size_increment = Quantity::from(instrument.min_trade_amount.to_string().as_str());
-    let min_quantity = Quantity::from(instrument.min_trade_amount.to_string().as_str());
+    let price_increment = Price::from_decimal(instrument.tick_size)?;
+    let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
+    let min_quantity = Quantity::from_decimal(instrument.min_trade_amount)?;
 
     // Contract size represents the multiplier (e.g., 10 USD per contract for BTC-PERPETUAL)
-    let multiplier = Some(Quantity::from(
-        instrument.contract_size.to_string().as_str(),
-    ));
+    let multiplier = Some(Quantity::from_decimal(instrument.contract_size)?);
     let lot_size = Some(size_increment);
 
     let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
@@ -298,23 +268,11 @@ fn parse_future_instrument(
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = InstrumentId::new(Symbol::new(instrument.instrument_name), *DERIBIT_VENUE);
 
-    let underlying = Currency::new(
-        instrument.base_currency,
-        8,
-        0,
-        instrument.base_currency,
-        CurrencyType::Crypto,
-    );
-    let quote_currency = Currency::new(
-        instrument.quote_currency,
-        8,
-        0,
-        instrument.quote_currency,
-        CurrencyType::Crypto,
-    );
-    let settlement_currency = instrument.settlement_currency.map_or(underlying, |c| {
-        Currency::new(c, 8, 0, c, CurrencyType::Crypto)
-    });
+    let underlying = Currency::get_or_create_crypto(instrument.base_currency);
+    let quote_currency = Currency::get_or_create_crypto(instrument.quote_currency);
+    let settlement_currency = instrument
+        .settlement_currency
+        .map_or(underlying, Currency::get_or_create_crypto);
 
     let is_inverse = instrument
         .instrument_type
@@ -328,14 +286,12 @@ fn parse_future_instrument(
         .context("Missing expiration_timestamp for future")? as u64
         * 1_000_000; // milliseconds to nanoseconds
 
-    let price_increment = Price::from(instrument.tick_size.to_string().as_str());
-    let size_increment = Quantity::from(instrument.min_trade_amount.to_string().as_str());
-    let min_quantity = Quantity::from(instrument.min_trade_amount.to_string().as_str());
+    let price_increment = Price::from_decimal(instrument.tick_size)?;
+    let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
+    let min_quantity = Quantity::from_decimal(instrument.min_trade_amount)?;
 
     // Contract size represents the multiplier
-    let multiplier = Some(Quantity::from(
-        instrument.contract_size.to_string().as_str(),
-    ));
+    let multiplier = Some(Quantity::from_decimal(instrument.contract_size)?);
     let lot_size = Some(size_increment); // Use min_trade_amount as lot size
 
     let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
@@ -375,22 +331,25 @@ fn parse_future_instrument(
     Ok(InstrumentAny::CryptoFuture(future))
 }
 
-/// Parses an options instrument into an [`OptionContract`].
+/// Parses an options instrument into a [`CryptoOption`].
 fn parse_option_instrument(
     instrument: &DeribitInstrument,
     ts_init: UnixNanos,
     ts_event: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = InstrumentId::new(Symbol::new(instrument.instrument_name), *DERIBIT_VENUE);
-
-    // Underlying is the base currency symbol (e.g., "BTC")
-    let underlying = instrument.base_currency;
-
-    // Settlement currency for Deribit options
+    let underlying = Currency::get_or_create_crypto(instrument.base_currency);
+    let quote_currency = Currency::get_or_create_crypto(instrument.quote_currency);
     let settlement = instrument
         .settlement_currency
         .unwrap_or(instrument.base_currency);
-    let currency = Currency::new(settlement, 8, 0, settlement, CurrencyType::Crypto);
+    let settlement_currency = Currency::get_or_create_crypto(settlement);
+
+    // Determine if inverse (settled in base currency) or linear (settled in quote/USDC)
+    let is_inverse = instrument
+        .instrument_type
+        .as_ref()
+        .is_some_and(|t| t == "reversed");
 
     // Determine option kind
     let option_kind = match instrument.option_type {
@@ -401,7 +360,7 @@ fn parse_option_instrument(
 
     // Parse strike price
     let strike = instrument.strike.context("Missing strike for option")?;
-    let strike_price = Price::from(strike.to_string().as_str());
+    let strike_price = Price::from_decimal(strike)?;
 
     // Convert timestamps from milliseconds to nanoseconds
     let activation_ns = (instrument.creation_timestamp as u64) * 1_000_000;
@@ -410,46 +369,50 @@ fn parse_option_instrument(
         .context("Missing expiration_timestamp for option")? as u64
         * 1_000_000;
 
-    let price_increment = Price::from(instrument.tick_size.to_string().as_str());
+    let price_increment = Price::from_decimal(instrument.tick_size)?;
 
     // Contract size is the multiplier (e.g., 1.0 for BTC options)
-    let multiplier = Quantity::from(instrument.contract_size.to_string().as_str());
-    let lot_size = Quantity::from(instrument.min_trade_amount.to_string().as_str());
-    let min_quantity = Quantity::from(instrument.min_trade_amount.to_string().as_str());
+    let multiplier = Quantity::from_decimal(instrument.contract_size)?;
+    let lot_size = Quantity::from_decimal(instrument.min_trade_amount)?;
+    let min_trade_amount = Quantity::from_decimal(instrument.min_trade_amount)?;
 
     let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
         .context("Failed to parse maker_commission")?;
     let taker_fee = Decimal::from_str(&instrument.taker_commission.to_string())
         .context("Failed to parse taker_commission")?;
 
-    let option = OptionContract::new(
+    let option = CryptoOption::new(
         instrument_id,
         instrument.instrument_name.into(),
-        AssetClass::Cryptocurrency,
-        None, // exchange - Deribit doesn't provide separate exchange field
         underlying,
+        quote_currency,
+        settlement_currency,
+        is_inverse,
         option_kind,
         strike_price,
-        currency,
         UnixNanos::from(activation_ns),
         UnixNanos::from(expiration_ns),
         price_increment.precision,
+        lot_size.precision,
         price_increment,
-        multiplier,
         lot_size,
-        None, // max_quantity
-        Some(min_quantity),
-        None, // max_price
-        None, // min_price
-        None, // margin_init
-        None, // margin_maint
+        Some(multiplier),
+        Some(lot_size),
+        None,
+        Some(min_trade_amount),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
         Some(maker_fee),
         Some(taker_fee),
         ts_event,
         ts_init,
     );
 
-    Ok(InstrumentAny::OptionContract(option))
+    Ok(InstrumentAny::CryptoOption(option))
 }
 
 /// Parses Deribit account summaries into a Nautilus [`AccountState`].
@@ -936,9 +899,9 @@ mod tests {
                 .unwrap();
         let instrument = instrument_any.expect("Should parse option instrument");
 
-        // Verify it's an OptionContract
-        let InstrumentAny::OptionContract(option) = instrument else {
-            panic!("Expected OptionContract, was {instrument:?}");
+        // Verify it's a CryptoOption
+        let InstrumentAny::CryptoOption(option) = instrument else {
+            panic!("Expected CryptoOption, was {instrument:?}");
         };
 
         assert_eq!(
@@ -946,23 +909,26 @@ mod tests {
             InstrumentId::from("BTC-27DEC24-100000-C.DERIBIT")
         );
         assert_eq!(option.raw_symbol(), Symbol::from("BTC-27DEC24-100000-C"));
-        assert_eq!(option.underlying(), Some("BTC".into()));
-        assert_eq!(option.asset_class(), AssetClass::Cryptocurrency);
-        assert_eq!(option.option_kind(), Some(OptionKind::Call));
-        assert_eq!(option.strike_price(), Some(Price::from("100000")));
-        assert_eq!(option.currency.code, "BTC");
+        assert_eq!(option.underlying.code.as_str(), "BTC");
+        assert_eq!(option.quote_currency.code.as_str(), "BTC");
+        assert_eq!(option.settlement_currency.code.as_str(), "BTC");
+        assert!(option.is_inverse);
+        assert_eq!(option.option_kind, OptionKind::Call);
+        assert_eq!(option.strike_price, Price::from("100000"));
         assert_eq!(
-            option.activation_ns(),
-            Some(UnixNanos::from(1719561600000_u64 * 1_000_000))
+            option.activation_ns,
+            UnixNanos::from(1719561600000_u64 * 1_000_000)
         );
         assert_eq!(
-            option.expiration_ns(),
-            Some(UnixNanos::from(1735300800000_u64 * 1_000_000))
+            option.expiration_ns,
+            UnixNanos::from(1735300800000_u64 * 1_000_000)
         );
-        assert_eq!(option.price_precision(), 4);
-        assert_eq!(option.price_increment(), Price::from("0.0005"));
-        assert_eq!(option.multiplier(), Quantity::from("1"));
-        assert_eq!(option.lot_size(), Some(Quantity::from("0.1")));
+        assert_eq!(option.price_precision, 4);
+        assert_eq!(option.price_increment, Price::from("0.0005"));
+        assert_eq!(option.size_precision, 1);
+        assert_eq!(option.size_increment, Quantity::from("0.1"));
+        assert_eq!(option.multiplier, Quantity::from("1"));
+        assert_eq!(option.lot_size, Quantity::from("0.1"));
         assert_eq!(option.maker_fee, dec!(0.0003));
         assert_eq!(option.taker_fee, dec!(0.0003));
     }
