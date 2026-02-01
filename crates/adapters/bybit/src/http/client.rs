@@ -329,7 +329,10 @@ impl BybitRawHttpClient {
     fn default_headers() -> HashMap<String, String> {
         HashMap::from([
             (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
-            ("Referer".to_string(), BYBIT_NAUTILUS_BROKER_ID.to_string()),
+            (
+                "X-Referer".to_string(),
+                BYBIT_NAUTILUS_BROKER_ID.to_string(),
+            ),
         ])
     }
 
