@@ -16,6 +16,7 @@
 import msgspec
 import pyarrow as pa
 
+from nautilus_trader.common.config import msgspec_encoding_hook
 from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.instruments import Cfd
@@ -406,7 +407,7 @@ SCHEMAS = {
 def serialize(obj: Instrument) -> pa.RecordBatch:
     data = obj.to_dict(obj)
     if "info" in data:
-        data["info"] = msgspec.json.encode(data["info"])
+        data["info"] = msgspec.json.encode(data["info"], enc_hook=msgspec_encoding_hook)
     schema = SCHEMAS[obj.__class__].with_metadata({"class": obj.__class__.__name__})
     return pa.RecordBatch.from_pylist([data], schema)
 

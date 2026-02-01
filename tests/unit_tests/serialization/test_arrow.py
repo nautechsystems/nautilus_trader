@@ -1072,6 +1072,38 @@ class TestArrowSerializer:
         # Assert
         assert deserialized == [event]
 
+    def test_serialize_and_deserialize_order_filled_with_price_in_info(self):
+        # Arrange (Issue #3515)
+        event = OrderFilled(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            VenueOrderId("1"),
+            self.account_id,
+            TradeId("E123456"),
+            PositionId("T123456"),
+            OrderSide.SELL,
+            OrderType.MARKET,
+            Quantity(100_000, precision=0),
+            Price(1.00000, precision=5),
+            AUDUSD_SIM.quote_currency,
+            Money(0, USD),
+            LiquiditySide.TAKER,
+            UUID4(),
+            0,
+            0,
+            info={"avg_px": Price.from_str("1.00050")},
+        )
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(OrderFilled, batch=serialized)
+
+        # Assert
+        assert len(deserialized) == 1
+        assert deserialized[0].info == {"avg_px": "1.00050"}
+
     @pytest.mark.parametrize(
         "position_func",
         [

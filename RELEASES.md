@@ -58,6 +58,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed quickstart MACD strategy logic (#3377), thanks for reporting @SisyphusCoin
 - Fixed reconciliation timing (for v2 Rust) - process instruments before reconciliation (#3415), thanks @filipmacek
 - Fixed `request_order_book_snapshot` and add Bybit support (#3416), thanks @dxwil
+- Fixed Arrow serialization encoding for custom Nautilus types (#3515), thanks @dennisnissle
 - Fixed Redis cache buffer flushing during idle periods (#3426), thanks for reporting @santivazq
 - Fixed Betfair dropped fills from premature cache update
 - Fixed Betfair duplicate cancel event race condition
