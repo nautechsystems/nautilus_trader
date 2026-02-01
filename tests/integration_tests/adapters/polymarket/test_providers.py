@@ -796,3 +796,170 @@ async def test_event_slug_builder_skips_markets_without_condition_id(
         # Assert
         instruments = provider.list_all()
         assert len(instruments) == 2  # Only 1 valid market x 2 tokens
+
+
+@pytest.mark.asyncio
+async def test_event_slug_builder_invalid_module_path_raises(
+    mock_clob_client,
+    live_clock,
+):
+    """
+    Test that an invalid module path in event_slug_builder raises ModuleNotFoundError.
+
+    If a user misconfigures the path with a typo in the module name,
+    the error should propagate immediately (fail fast).
+
+    """
+    # Arrange
+    config = PolymarketInstrumentProviderConfig(
+        event_slug_builder="nonexistent.module:build_slugs",
+    )
+    provider = PolymarketInstrumentProvider(
+        client=mock_clob_client,
+        clock=live_clock,
+        config=config,
+    )
+
+    # Act & Assert
+    with pytest.raises(ModuleNotFoundError):
+        await provider.load_all_async()
+
+
+@pytest.mark.asyncio
+async def test_event_slug_builder_invalid_function_path_raises(
+    mock_clob_client,
+    live_clock,
+):
+    """
+    Test that an invalid function name in event_slug_builder raises AttributeError.
+
+    If a user misconfigures the path with a typo in the function name,
+    the error should propagate immediately (fail fast).
+
+    """
+    # Arrange
+    config = PolymarketInstrumentProviderConfig(
+        event_slug_builder="tests.integration_tests.adapters.polymarket.test_providers:nonexistent_function",
+    )
+    provider = PolymarketInstrumentProvider(
+        client=mock_clob_client,
+        clock=live_clock,
+        config=config,
+    )
+
+    # Act & Assert
+    with pytest.raises(AttributeError):
+        await provider.load_all_async()
+
+
+@pytest.mark.asyncio
+async def test_event_slug_builder_callable_raises_exception(
+    mock_clob_client,
+    live_clock,
+):
+    """
+    Test that an exception raised by the slug builder callable propagates up.
+
+    If the slug builder itself fails (e.g., network error fetching slug data),
+    the error should propagate immediately rather than being silently swallowed.
+
+    """
+    # Arrange
+    config = PolymarketInstrumentProviderConfig(
+        event_slug_builder="tests.integration_tests.adapters.polymarket.test_providers:sample_slug_builder",
+    )
+    provider = PolymarketInstrumentProvider(
+        client=mock_clob_client,
+        clock=live_clock,
+        config=config,
+    )
+
+    with patch(
+        "nautilus_trader.adapters.polymarket.providers.resolve_path",
+    ) as mock_resolve:
+        mock_resolve.return_value = MagicMock(side_effect=RuntimeError("Builder failed"))
+
+        # Act & Assert
+        with pytest.raises(RuntimeError, match="Builder failed"):
+            await provider.load_all_async()
+
+
+@pytest.mark.asyncio
+async def test_event_slug_builder_handles_generic_exception_during_fetch(
+    mock_clob_client,
+    live_clock,
+):
+    """
+    Test that a generic (non-ValueError) exception during event fetch is logged and skipped.
+
+    Unlike ValueError (event not found), other exceptions like ConnectionError
+    should be logged at error level with traceback but still allow processing
+    of remaining slugs.
+
+    """
+    # Arrange
+    config = PolymarketInstrumentProviderConfig(
+        event_slug_builder="tests.integration_tests.adapters.polymarket.test_providers:multi_slug_builder",
+    )
+    provider = PolymarketInstrumentProvider(
+        client=mock_clob_client,
+        clock=live_clock,
+        config=config,
+    )
+
+    with patch(
+        "nautilus_trader.adapters.polymarket.providers.PolymarketDataLoader._fetch_event_by_slug",
+    ) as mock_fetch_event:
+        mock_fetch_event.side_effect = [
+            ConnectionError("Network timeout"),
+            SAMPLE_EVENT,
+        ]
+
+        # Act
+        await provider.load_all_async()
+
+        # Assert: Second slug still processed despite first failing
+        assert mock_fetch_event.call_count == 2
+        instruments = provider.list_all()
+        assert len(instruments) == 4  # Only from successful event
+
+
+@pytest.mark.asyncio
+async def test_event_slug_builder_skips_empty_token_id(
+    mock_clob_client,
+    live_clock,
+):
+    """
+    Test that tokens with empty token_id are skipped with a warning.
+    """
+    # Arrange
+    config = PolymarketInstrumentProviderConfig(
+        event_slug_builder="tests.integration_tests.adapters.polymarket.test_providers:sample_slug_builder",
+    )
+    provider = PolymarketInstrumentProvider(
+        client=mock_clob_client,
+        clock=live_clock,
+        config=config,
+    )
+
+    event_with_empty_token = {
+        **SAMPLE_EVENT,
+        "markets": [
+            {
+                **SAMPLE_EVENT["markets"][0],
+                "clobTokenIds": '["", "222222222222222222222222222222222222222222222222222222222222222222"]',
+            },
+        ],
+    }
+
+    with patch(
+        "nautilus_trader.adapters.polymarket.providers.PolymarketDataLoader._fetch_event_by_slug",
+    ) as mock_fetch_event:
+        mock_fetch_event.return_value = event_with_empty_token
+
+        # Act
+        await provider.load_all_async()
+
+        # Assert: Only 1 valid token loaded (the one with non-empty token_id)
+        instruments = provider.list_all()
+        assert len(instruments) == 1
