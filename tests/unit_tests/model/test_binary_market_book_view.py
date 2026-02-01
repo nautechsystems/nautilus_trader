@@ -1,3 +1,5 @@
+import pytest
+
 from nautilus_trader.core import nautilus_pyo3
 
 from .test_orderbook_pyo3 import populate_book
@@ -63,3 +65,34 @@ def test_binary_market_book_view_creation() -> None:
     # synthetic bid covers 0.60 whole level
     assert book_view.book.best_ask_size() == 200
     assert book_view.book.best_ask_price() == 0.61
+
+
+def test_binary_market_book_view_book_and_own_book_instrument_mismatch() -> None:
+    book_type = nautilus_pyo3.BookType.L2_MBP
+    instrument_yes_id = nautilus_pyo3.InstrumentId.from_str("YES.XNAS")
+    instrument_no_id = nautilus_pyo3.InstrumentId.from_str("NO.XNAS")
+
+    book = nautilus_pyo3.OrderBook(instrument_yes_id, book_type)
+    own_book = nautilus_pyo3.OwnOrderBook(instrument_no_id)
+    own_synthetic_book = nautilus_pyo3.OwnOrderBook(instrument_no_id)
+
+    with pytest.raises(
+        ValueError,
+        match=r"The instrument IDs of `book` and `own_book` must match: book=YES.XNAS, own_book=NO.XNAS",
+    ):
+        nautilus_pyo3.BinaryMarketBookView(book, own_book, own_synthetic_book)
+
+
+def test_binary_market_book_view_book_and_own_synthetic_book_instrument_must_differ() -> None:
+    book_type = nautilus_pyo3.BookType.L2_MBP
+    instrument_yes_id = nautilus_pyo3.InstrumentId.from_str("YES.XNAS")
+
+    book = nautilus_pyo3.OrderBook(instrument_yes_id, book_type)
+    own_book = nautilus_pyo3.OwnOrderBook(instrument_yes_id)
+    own_synthetic_book = nautilus_pyo3.OwnOrderBook(instrument_yes_id)
+
+    with pytest.raises(
+        ValueError,
+        match=r"The instrument IDs of `book` and `own_synthetic_book` must differ: book=YES.XNAS, own_synthetic_book=YES.XNAS",
+    ):
+        nautilus_pyo3.BinaryMarketBookView(book, own_book, own_synthetic_book)

@@ -29,7 +29,7 @@ use crate::{
     },
     identifiers::{ClientOrderId, InstrumentId, TradeId, TraderId, VenueOrderId},
     orderbook::{
-        BookIntegrityError, BookPrice, OrderBook, OwnBookOrder,
+        BinaryMarketBookViewError, BookIntegrityError, BookPrice, OrderBook, OwnBookOrder,
         analysis::book_check_integrity,
         binary_book_view::BinaryMarketBookView,
         own::{OwnBookLadder, OwnBookLevel, OwnOrderBook},
@@ -1682,10 +1682,11 @@ fn test_book_filtered_with_synthetic_orders() {
 
 #[rstest]
 fn test_book_filtered_with_own_and_synthetic_orders() {
-    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let instrument_id = InstrumentId::from("YES.XNAS");
+    let instrument_no_id = InstrumentId::from("NO.XNAS");
     let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
     let mut own_book = OwnOrderBook::new(instrument_id);
-    let mut synthetic_book = OwnOrderBook::new(instrument_id);
+    let mut synthetic_book = OwnOrderBook::new(instrument_no_id);
 
     // Public book levels
     let bid_order = BookOrder::new(OrderSide::Buy, Price::from("0.40"), Quantity::from(100), 1);
@@ -1773,6 +1774,68 @@ fn test_book_filtered_with_own_and_synthetic_orders() {
 
     assert_eq!(bids_filtered.get(&dec!(0.40)), Some(&dec!(60))); // 100 - 10 - 30
     assert_eq!(asks_filtered.get(&dec!(0.60)), Some(&dec!(75))); // 100 - 5 - 20
+}
+
+#[rstest]
+fn test_binary_market_book_view_book_and_own_book_instrument_mismatch() {
+    let instrument_yes_id = InstrumentId::from("YES.XNAS");
+    let instrument_no_id = InstrumentId::from("NO.XNAS");
+    let book = OrderBook::new(instrument_yes_id, BookType::L2_MBP);
+    let own_book = OwnOrderBook::new(instrument_no_id);
+    let synthetic_book = OwnOrderBook::new(instrument_no_id);
+
+    let result = BinaryMarketBookView::new_checked(
+        book,
+        own_book,
+        synthetic_book,
+        Some(10),
+        None,
+        None,
+        None,
+    );
+
+    assert!(result.is_err());
+
+    match result.unwrap_err() {
+        BinaryMarketBookViewError::BookAndOwnBookMustBeSameInstrumentId(book_id, own_book_id) => {
+            assert_eq!(book_id.to_string(), "YES.XNAS");
+            assert_eq!(own_book_id.to_string(), "NO.XNAS");
+        }
+        other => panic!("Expected BookAndOwnBookMustBeSameInstrumentId error, was {other:?}"),
+    }
+}
+
+#[rstest]
+fn test_binary_market_book_view_book_and_own_synthetic_book_instrument_must_differ() {
+    let instrument_yes_id = InstrumentId::from("YES.XNAS");
+    let book = OrderBook::new(instrument_yes_id, BookType::L2_MBP);
+    let own_book = OwnOrderBook::new(instrument_yes_id);
+    let synthetic_book = OwnOrderBook::new(instrument_yes_id);
+
+    let result = BinaryMarketBookView::new_checked(
+        book,
+        own_book,
+        synthetic_book,
+        Some(10),
+        None,
+        None,
+        None,
+    );
+
+    assert!(result.is_err());
+
+    match result.unwrap_err() {
+        BinaryMarketBookViewError::BookAndOwnSyntheticBookMustBeDifferentInstrumentId(
+            book_id,
+            own_synthetic_book_id,
+        ) => {
+            assert_eq!(book_id.to_string(), "YES.XNAS");
+            assert_eq!(own_synthetic_book_id.to_string(), "YES.XNAS");
+        }
+        other => panic!(
+            "Expected BookAndOwnSyntheticBookMustBeDifferentInstrumentId error, was {other:?}"
+        ),
+    }
 }
 
 #[rstest]

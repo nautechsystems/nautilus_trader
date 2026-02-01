@@ -15,12 +15,12 @@
 
 //! Python bindings for [`BinaryMarketBookView`].
 
-use pyo3::prelude::*;
-
 use crate::{
     enums::OrderStatus,
     orderbook::{BinaryMarketBookView, OrderBook, own::OwnOrderBook},
 };
+use nautilus_core::python::to_pyvalue_err;
+use pyo3::prelude::*;
 
 #[pymethods]
 impl BinaryMarketBookView {
@@ -34,8 +34,8 @@ impl BinaryMarketBookView {
         status: Option<std::collections::HashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
-    ) -> Self {
-        Self::new(
+    ) -> PyResult<Self> {
+        Self::new_checked(
             book,
             own_book,
             own_synthetic_book,
@@ -44,6 +44,7 @@ impl BinaryMarketBookView {
             accepted_buffer_ns,
             now,
         )
+        .map_err(to_pyvalue_err)
     }
 
     #[getter]

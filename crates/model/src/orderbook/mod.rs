@@ -32,7 +32,7 @@ mod tests;
 pub use crate::orderbook::{
     binary_book_view::BinaryMarketBookView,
     book::OrderBook,
-    error::{BookIntegrityError, InvalidBookOperation},
+    error::{BinaryMarketBookViewError, BookIntegrityError, InvalidBookOperation},
     ladder::BookPrice,
     level::BookLevel,
     own::OwnBookOrder,

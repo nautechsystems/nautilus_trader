@@ -19,12 +19,13 @@ use ahash::AHashSet;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
-use super::{book::OrderBook, own::OwnOrderBook};
+use super::{BinaryMarketBookViewError, book::OrderBook, own::OwnOrderBook};
 use crate::{
     data::BookOrder,
     enums::{OrderSide, OrderStatus},
     types::{Price, Quantity},
 };
+use nautilus_core::correctness::FAILED;
 
 /// A filtered book view for binary markets, including synthetic orders.
 #[derive(Clone, Debug)]
@@ -41,6 +42,12 @@ impl BinaryMarketBookView {
     /// # Panics
     ///
     /// Panics if Price::from_decimal or Quantity::from_decimal fails when reconstructing orders.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `book` and `own_book` have different instrument IDs.
+    /// Panics if `book` and `own_synthetic_book` have the same instrument ID.
+    /// [`Self::new_checked`] for fallible construction.
     #[must_use]
     pub fn new(
         book: OrderBook,
@@ -51,6 +58,57 @@ impl BinaryMarketBookView {
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
     ) -> Self {
+        Self::new_checked(
+            book,
+            own_book,
+            own_synthetic_book,
+            depth,
+            status,
+            accepted_buffer_ns,
+            now,
+        )
+        .expect(FAILED)
+    }
+
+    /// Fallible constructor for [`BinaryMarketBookView`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BinaryMarketBookViewError::BookAndOwnBookMustBeSameInstrumentId`] if `book` and `own_book`
+    /// have different instrument IDs.
+    /// Returns [`BinaryMarketBookViewError::BookAndOwnSyntheticBookMustBeDifferentInstrumentId`] if `book` and
+    /// `own_synthetic_book` have the same instrument ID.
+    ///
+    /// # Panics
+    ///
+    /// Panics if Price::from_decimal or Quantity::from_decimal fails when reconstructing orders.
+    pub fn new_checked(
+        book: OrderBook,
+        own_book: OwnOrderBook,
+        own_synthetic_book: OwnOrderBook,
+        depth: Option<usize>,
+        status: Option<AHashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        now: Option<u64>,
+    ) -> Result<Self, BinaryMarketBookViewError> {
+        if book.instrument_id != own_book.instrument_id {
+            return Err(
+                BinaryMarketBookViewError::BookAndOwnBookMustBeSameInstrumentId(
+                    book.instrument_id,
+                    own_book.instrument_id,
+                ),
+            );
+        }
+
+        if book.instrument_id == own_synthetic_book.instrument_id {
+            return Err(
+                BinaryMarketBookViewError::BookAndOwnSyntheticBookMustBeDifferentInstrumentId(
+                    book.instrument_id,
+                    own_synthetic_book.instrument_id,
+                ),
+            );
+        }
+
         let mut bids_map = book
             .bids(depth)
             .map(|level| (level.price.value.as_decimal(), level.size_decimal()))
@@ -124,9 +182,9 @@ impl BinaryMarketBookView {
             filtered_book.add(order, 0, sequence, ts_event);
         }
 
-        Self {
+        Ok(Self {
             book: filtered_book,
-        }
+        })
     }
 }
 
