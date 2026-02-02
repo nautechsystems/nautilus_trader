@@ -76,6 +76,7 @@ def _create_ws_mock():
     ws_client.close = AsyncMock()
     ws_client.is_closed.return_value = False
     ws_client.has_credentials.return_value = False
+    ws_client.is_authenticated.return_value = False
     ws_client.wait_until_active = AsyncMock()
     ws_client.cache_instruments = MagicMock()
     ws_client.cache_instrument = MagicMock()

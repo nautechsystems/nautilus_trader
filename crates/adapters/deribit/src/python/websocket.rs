@@ -390,22 +390,6 @@ impl DeribitWebSocketClient {
         })
     }
 
-    #[pyo3(name = "subscribe_trades_raw")]
-    fn py_subscribe_trades_raw<'py>(
-        &self,
-        py: Python<'py>,
-        instrument_id: InstrumentId,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client
-                .subscribe_trades_raw(instrument_id)
-                .await
-                .map_err(to_pyvalue_err)
-        })
-    }
-
     #[pyo3(name = "unsubscribe_trades")]
     #[pyo3(signature = (instrument_id, interval=None))]
     fn py_unsubscribe_trades<'py>(
@@ -437,22 +421,6 @@ impl DeribitWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
                 .subscribe_book(instrument_id, interval)
-                .await
-                .map_err(to_pyvalue_err)
-        })
-    }
-
-    #[pyo3(name = "subscribe_book_raw")]
-    fn py_subscribe_book_raw<'py>(
-        &self,
-        py: Python<'py>,
-        instrument_id: InstrumentId,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client
-                .subscribe_book_raw(instrument_id)
                 .await
                 .map_err(to_pyvalue_err)
         })
@@ -529,22 +497,6 @@ impl DeribitWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
                 .subscribe_ticker(instrument_id, interval)
-                .await
-                .map_err(to_pyvalue_err)
-        })
-    }
-
-    #[pyo3(name = "subscribe_ticker_raw")]
-    fn py_subscribe_ticker_raw<'py>(
-        &self,
-        py: Python<'py>,
-        instrument_id: InstrumentId,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client
-                .subscribe_ticker_raw(instrument_id)
                 .await
                 .map_err(to_pyvalue_err)
         })

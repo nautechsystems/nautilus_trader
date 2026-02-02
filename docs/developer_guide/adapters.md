@@ -1511,6 +1511,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 | `_request_quote_ticks`             | Requests historical quote tick data.                    |
 | `_request_trade_ticks`             | Requests historical trade tick data.                    |
 | `_request_bars`                    | Requests historical bar data.                           |
+| `_request_funding_rates`           | Requests historical funding rate data.                  |
 
 ### ExecutionClient
 

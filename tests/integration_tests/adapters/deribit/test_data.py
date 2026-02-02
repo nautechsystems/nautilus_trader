@@ -140,6 +140,7 @@ class TestDeribitDataClient:
 
             command = SimpleNamespace(
                 instrument_id=InstrumentId(Symbol("BTC-PERPETUAL"), DERIBIT_VENUE),
+                params=None,
             )
 
             # Act
@@ -147,7 +148,7 @@ class TestDeribitDataClient:
 
             # Assert
             expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
-            client._ws_client.subscribe_trades.assert_called_once_with(expected_id)
+            client._ws_client.subscribe_trades.assert_called_once_with(expected_id, None)
         finally:
             await client._disconnect()
 
@@ -200,6 +201,7 @@ class TestDeribitDataClient:
 
             command = SimpleNamespace(
                 instrument_id=InstrumentId(Symbol("BTC-PERPETUAL"), DERIBIT_VENUE),
+                params=None,
             )
 
             # Act
@@ -207,7 +209,7 @@ class TestDeribitDataClient:
 
             # Assert
             expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
-            client._ws_client.unsubscribe_trades.assert_called_once_with(expected_id)
+            client._ws_client.unsubscribe_trades.assert_called_once_with(expected_id, None)
         finally:
             await client._disconnect()
 

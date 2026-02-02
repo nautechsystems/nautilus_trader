@@ -780,18 +780,6 @@ impl DeribitWebSocketClient {
         self.send_subscribe(vec![channel]).await
     }
 
-    /// Subscribes to raw trade updates (requires authentication).
-    ///
-    /// Convenience method equivalent to `subscribe_trades(id, Some(DeribitUpdateInterval::Raw))`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if not authenticated or subscription fails.
-    pub async fn subscribe_trades_raw(&self, instrument_id: InstrumentId) -> DeribitWsResult<()> {
-        self.subscribe_trades(instrument_id, Some(DeribitUpdateInterval::Raw))
-            .await
-    }
-
     /// Unsubscribes from trade updates for an instrument.
     ///
     /// # Errors
@@ -828,18 +816,6 @@ impl DeribitWebSocketClient {
         let channel =
             DeribitWsChannel::Book.format_channel(instrument_id.symbol.as_str(), Some(interval));
         self.send_subscribe(vec![channel]).await
-    }
-
-    /// Subscribes to raw order book updates (requires authentication).
-    ///
-    /// Convenience method equivalent to `subscribe_book(id, Some(DeribitUpdateInterval::Raw))`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if not authenticated or subscription fails.
-    pub async fn subscribe_book_raw(&self, instrument_id: InstrumentId) -> DeribitWsResult<()> {
-        self.subscribe_book(instrument_id, Some(DeribitUpdateInterval::Raw))
-            .await
     }
 
     /// Unsubscribes from order book updates for an instrument.
@@ -927,18 +903,6 @@ impl DeribitWebSocketClient {
         let channel =
             DeribitWsChannel::Ticker.format_channel(instrument_id.symbol.as_str(), Some(interval));
         self.send_subscribe(vec![channel]).await
-    }
-
-    /// Subscribes to raw ticker updates (requires authentication).
-    ///
-    /// Convenience method equivalent to `subscribe_ticker(id, Some(DeribitUpdateInterval::Raw))`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if not authenticated or subscription fails.
-    pub async fn subscribe_ticker_raw(&self, instrument_id: InstrumentId) -> DeribitWsResult<()> {
-        self.subscribe_ticker(instrument_id, Some(DeribitUpdateInterval::Raw))
-            .await
     }
 
     /// Unsubscribes from ticker updates for an instrument.

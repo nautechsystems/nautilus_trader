@@ -151,6 +151,31 @@ impl DeribitDataClient {
             .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))
     }
 
+    /// Gets the interval from params, defaulting to Raw if authenticated.
+    ///
+    /// If authenticated, we prefer Raw interval for best data quality.
+    /// Users can still override via params if they want 100ms or agg2.
+    fn get_interval(
+        &self,
+        params: &Option<indexmap::IndexMap<String, String>>,
+    ) -> Option<DeribitUpdateInterval> {
+        if let Some(interval) = params
+            .as_ref()
+            .and_then(|p| p.get("interval"))
+            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok())
+        {
+            return Some(interval);
+        }
+
+        // Default to Raw if authenticated, otherwise None (100ms default)
+        if let Some(ws) = self.ws_client.as_ref()
+            && ws.is_authenticated()
+        {
+            return Some(DeribitUpdateInterval::Raw);
+        }
+        None
+    }
+
     /// Spawns a task to process WebSocket messages.
     fn spawn_stream_task(
         &mut self,
@@ -546,13 +571,7 @@ impl DataClient for DeribitDataClient {
             .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
             .clone();
         let instrument_id = cmd.instrument_id;
-
-        // Get interval from params, default to 100ms (public)
-        let interval = cmd
-            .params
-            .as_ref()
-            .and_then(|p| p.get("interval"))
-            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+        let interval = self.get_interval(&cmd.params);
 
         let depth = cmd
             .params
@@ -608,15 +627,7 @@ impl DataClient for DeribitDataClient {
             .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
             .clone();
         let instrument_id = cmd.instrument_id;
-
-        // Get interval from params, default to 100ms (public)
-        let interval = cmd
-            .params
-            .as_ref()
-            .and_then(|p| p.get("interval"))
-            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
-
-        // Get price grouping from params, default to "none" (no grouping)
+        let interval = self.get_interval(&cmd.params);
         let group = cmd
             .params
             .as_ref()
@@ -670,12 +681,7 @@ impl DataClient for DeribitDataClient {
             .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
             .clone();
         let instrument_id = cmd.instrument_id;
-
-        let interval = cmd
-            .params
-            .as_ref()
-            .and_then(|p| p.get("interval"))
-            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+        let interval = self.get_interval(&cmd.params);
 
         log::info!(
             "Subscribing to trades for {} (interval: {})",
@@ -699,12 +705,7 @@ impl DataClient for DeribitDataClient {
             .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
             .clone();
         let instrument_id = cmd.instrument_id;
-
-        let interval = cmd
-            .params
-            .as_ref()
-            .and_then(|p| p.get("interval"))
-            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+        let interval = self.get_interval(&cmd.params);
 
         log::info!(
             "Subscribing to mark prices for {} (via ticker channel, interval: {})",
@@ -728,12 +729,7 @@ impl DataClient for DeribitDataClient {
             .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
             .clone();
         let instrument_id = cmd.instrument_id;
-
-        let interval = cmd
-            .params
-            .as_ref()
-            .and_then(|p| p.get("interval"))
-            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+        let interval = self.get_interval(&cmd.params);
 
         log::info!(
             "Subscribing to index prices for {} (via ticker channel, interval: {})",
@@ -744,6 +740,24 @@ impl DataClient for DeribitDataClient {
         get_runtime().spawn(async move {
             if let Err(e) = ws.subscribe_ticker(instrument_id, interval).await {
                 log::error!("Failed to subscribe to index prices for {instrument_id}: {e}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.bar_type.instrument_id();
+        let resolution = bar_spec_to_resolution(&cmd.bar_type);
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_chart(instrument_id, &resolution).await {
+                log::error!("Failed to subscribe to bars for {instrument_id}: {e}");
             }
         });
 
@@ -773,14 +787,8 @@ impl DataClient for DeribitDataClient {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
             .clone();
+        let interval = self.get_interval(&cmd.params);
 
-        let interval = cmd
-            .params
-            .as_ref()
-            .and_then(|p| p.get("interval"))
-            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
-
-        // Funding rates use the dedicated perpetual channel
         log::info!(
             "Subscribing to funding rates for {} (perpetual channel, interval: {})",
             instrument_id,
@@ -793,25 +801,6 @@ impl DataClient for DeribitDataClient {
                 .await
             {
                 log::error!("Failed to subscribe to funding rates for {instrument_id}: {e}");
-            }
-        });
-
-        Ok(())
-    }
-
-    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
-        let ws = self
-            .ws_client
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
-            .clone();
-        let instrument_id = cmd.bar_type.instrument_id();
-        // Convert bar spec to Deribit resolution
-        let resolution = bar_spec_to_resolution(&cmd.bar_type);
-
-        get_runtime().spawn(async move {
-            if let Err(e) = ws.subscribe_chart(instrument_id, &resolution).await {
-                log::error!("Failed to subscribe to bars for {instrument_id}: {e}");
             }
         });
 
@@ -883,13 +872,7 @@ impl DataClient for DeribitDataClient {
             .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
             .clone();
         let instrument_id = cmd.instrument_id;
-
-        // Get interval from params to match the subscribed channel
-        let interval = cmd
-            .params
-            .as_ref()
-            .and_then(|p| p.get("interval"))
-            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+        let interval = self.get_interval(&cmd.params);
 
         let depth = cmd
             .params
@@ -940,15 +923,7 @@ impl DataClient for DeribitDataClient {
             .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
             .clone();
         let instrument_id = cmd.instrument_id;
-
-        // Get interval from params to match the subscribed channel
-        let interval = cmd
-            .params
-            .as_ref()
-            .and_then(|p| p.get("interval"))
-            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
-
-        // Get price grouping from params to match the subscribed channel
+        let interval = self.get_interval(&cmd.params);
         let group = cmd
             .params
             .as_ref()
@@ -1001,12 +976,7 @@ impl DataClient for DeribitDataClient {
             .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
             .clone();
         let instrument_id = cmd.instrument_id;
-
-        let interval = cmd
-            .params
-            .as_ref()
-            .and_then(|p| p.get("interval"))
-            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+        let interval = self.get_interval(&cmd.params);
 
         log::info!(
             "Unsubscribing from trades for {} (interval: {})",
@@ -1030,12 +1000,7 @@ impl DataClient for DeribitDataClient {
             .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
             .clone();
         let instrument_id = cmd.instrument_id;
-
-        let interval = cmd
-            .params
-            .as_ref()
-            .and_then(|p| p.get("interval"))
-            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+        let interval = self.get_interval(&cmd.params);
 
         log::info!(
             "Unsubscribing from mark prices for {} (via ticker channel, interval: {})",
@@ -1059,12 +1024,7 @@ impl DataClient for DeribitDataClient {
             .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
             .clone();
         let instrument_id = cmd.instrument_id;
-
-        let interval = cmd
-            .params
-            .as_ref()
-            .and_then(|p| p.get("interval"))
-            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+        let interval = self.get_interval(&cmd.params);
 
         log::info!(
             "Unsubscribing from index prices for {} (via ticker channel, interval: {})",
@@ -1075,6 +1035,24 @@ impl DataClient for DeribitDataClient {
         get_runtime().spawn(async move {
             if let Err(e) = ws.unsubscribe_ticker(instrument_id, interval).await {
                 log::error!("Failed to unsubscribe from index prices for {instrument_id}: {e}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.bar_type.instrument_id();
+        let resolution = bar_spec_to_resolution(&cmd.bar_type);
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_chart(instrument_id, &resolution).await {
+                log::error!("Failed to unsubscribe from bars for {instrument_id}: {e}");
             }
         });
 
@@ -1104,12 +1082,7 @@ impl DataClient for DeribitDataClient {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
             .clone();
-
-        let interval = cmd
-            .params
-            .as_ref()
-            .and_then(|p| p.get("interval"))
-            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+        let interval = self.get_interval(&cmd.params);
 
         log::info!(
             "Unsubscribing from funding rates for {} (perpetual channel, interval: {})",
@@ -1123,24 +1096,6 @@ impl DataClient for DeribitDataClient {
                 .await
             {
                 log::error!("Failed to unsubscribe from funding rates for {instrument_id}: {e}");
-            }
-        });
-
-        Ok(())
-    }
-
-    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        let ws = self
-            .ws_client
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
-            .clone();
-        let instrument_id = cmd.bar_type.instrument_id();
-        let resolution = bar_spec_to_resolution(&cmd.bar_type);
-
-        get_runtime().spawn(async move {
-            if let Err(e) = ws.unsubscribe_chart(instrument_id, &resolution).await {
-                log::error!("Failed to unsubscribe from bars for {instrument_id}: {e}");
             }
         });
 
