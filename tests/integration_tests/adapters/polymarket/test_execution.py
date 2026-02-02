@@ -3198,3 +3198,129 @@ class TestPolymarketCancelAndPostOnly:
         mock_generate_denied.assert_called_once()
         denied_call = mock_generate_denied.call_args
         assert "POST_ONLY_REQUIRES_GTC_OR_GTD" in denied_call.kwargs["reason"]
+
+    @pytest.mark.asyncio
+    async def test_submit_order_list_with_signing_failure(self, mocker):
+        """
+        Test that individual signing failures are handled gracefully.
+
+        When one order fails to sign, it should be rejected while others proceed.
+
+        """
+        # Arrange
+        mock_create_order = mocker.patch.object(self.http_client, "create_order")
+        mock_post_orders = mocker.patch.object(self.http_client, "post_orders")
+        mock_generate_rejected = mocker.patch.object(
+            self.exec_client,
+            "generate_order_rejected",
+        )
+
+        # First call succeeds, second call fails
+        mock_create_order.side_effect = [
+            {"signed_order": "mock_signed"},
+            Exception("Signing failed for order 2"),
+        ]
+        mock_post_orders.return_value = [{"success": True, "orderID": "order-001"}]
+
+        # Create two orders
+        order1 = self.strategy.order_factory.limit(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("10"),
+            price=Price.from_str("0.50"),
+        )
+        order2 = self.strategy.order_factory.limit(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_str("5"),
+            price=Price.from_str("0.60"),
+        )
+        self.cache.add_order(order1, None)
+        self.cache.add_order(order2, None)
+
+        order_list = OrderList(
+            order_list_id=OrderListId("BATCH-SIGN-FAIL"),
+            orders=[order1, order2],
+        )
+
+        submit_order_list = SubmitOrderList(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            order_list=order_list,
+            position_id=None,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        await self.exec_client._submit_order_list(submit_order_list)
+
+        # Assert
+        # Order 2 should be rejected due to signing failure
+        mock_generate_rejected.assert_called_once()
+        rejected_call = mock_generate_rejected.call_args
+        assert rejected_call.kwargs["client_order_id"] == order2.client_order_id
+        assert "signing failed" in rejected_call.kwargs["reason"].lower()
+
+        # Only order 1 should be submitted
+        mock_post_orders.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_batch_response_length_mismatch(self, mocker):
+        """
+        Test that response length mismatch is handled gracefully.
+
+        When the API returns fewer results than orders submitted, remaining orders
+        should be rejected.
+
+        """
+        # Arrange
+        mock_create_order = mocker.patch.object(self.http_client, "create_order")
+        mock_post_orders = mocker.patch.object(self.http_client, "post_orders")
+        mock_generate_rejected = mocker.patch.object(
+            self.exec_client,
+            "generate_order_rejected",
+        )
+
+        mock_create_order.return_value = {"signed_order": "mock_signed"}
+        # API returns only 1 result for 2 orders
+        mock_post_orders.return_value = [{"success": True, "orderID": "order-001"}]
+
+        # Create two orders
+        order1 = self.strategy.order_factory.limit(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("10"),
+            price=Price.from_str("0.50"),
+        )
+        order2 = self.strategy.order_factory.limit(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_str("5"),
+            price=Price.from_str("0.60"),
+        )
+        self.cache.add_order(order1, None)
+        self.cache.add_order(order2, None)
+
+        order_list = OrderList(
+            order_list_id=OrderListId("BATCH-LEN-MISMATCH"),
+            orders=[order1, order2],
+        )
+
+        submit_order_list = SubmitOrderList(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            order_list=order_list,
+            position_id=None,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        await self.exec_client._submit_order_list(submit_order_list)
+
+        # Assert - order 2 should be rejected because it wasn't in the response
+        mock_generate_rejected.assert_called_once()
+        rejected_call = mock_generate_rejected.call_args
+        assert rejected_call.kwargs["client_order_id"] == order2.client_order_id
+        assert "not included in API response" in rejected_call.kwargs["reason"]

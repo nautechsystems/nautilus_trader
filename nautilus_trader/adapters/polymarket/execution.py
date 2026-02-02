@@ -965,6 +965,12 @@ class PolymarketExecutionClient(LiveExecutionClient):
         This cancels ALL orders across all markets and strategies. Use with caution as
         it cannot be filtered by instrument or strategy.
 
+        Notes
+        -----
+        This is a "fire-and-forget" method. Order state updates are handled via WebSocket
+        events. Local order state will be updated when the WebSocket receives cancel
+        confirmations from Polymarket.
+
         """
         self._log.info("Canceling ALL orders globally via Polymarket cancel_all endpoint")
 
@@ -1006,10 +1012,13 @@ class PolymarketExecutionClient(LiveExecutionClient):
         asset_id : str, optional
             The specific asset ID (token_id) to cancel orders for.
 
-        """
-        from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_condition_id
-        from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
+        Notes
+        -----
+        This is a "fire-and-forget" method. Order state updates are handled via WebSocket
+        events. Local order state will be updated when the WebSocket receives cancel
+        confirmations from Polymarket.
 
+        """
         market = ""
         if instrument_id is not None:
             market = get_polymarket_condition_id(instrument_id)
@@ -1195,12 +1204,16 @@ class PolymarketExecutionClient(LiveExecutionClient):
         for order in valid_orders:
             await self._maintain_active_market(order.instrument_id)
 
-        # Sign all orders
-        signed_orders_args = await self._sign_orders_for_batch(valid_orders)
+        # Sign all orders (individual failures are rejected during signing)
+        signed_orders, signed_orders_args = await self._sign_orders_for_batch(valid_orders)
 
-        # Generate submitted events for all orders
+        if not signed_orders:
+            self._log.warning("No orders successfully signed for batch submission")
+            return
+
+        # Generate submitted events only for successfully signed orders
         now_ns = self._clock.timestamp_ns()
-        for order in valid_orders:
+        for order in signed_orders:
             self.generate_order_submitted(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
@@ -1209,54 +1222,77 @@ class PolymarketExecutionClient(LiveExecutionClient):
             )
 
         # Submit batch
-        await self._post_signed_orders_batch(valid_orders, signed_orders_args)
+        await self._post_signed_orders_batch(signed_orders, signed_orders_args)
 
     async def _sign_orders_for_batch(
         self,
         orders: list[Order],
-    ) -> list[PostOrdersArgs]:
+    ) -> tuple[list[Order], list[PostOrdersArgs]]:
         """
         Sign multiple orders for batch submission.
+
+        Returns
+        -------
+        tuple[list[Order], list[PostOrdersArgs]]
+            Tuple of (successfully signed orders, signed order args).
+            Orders that fail to sign are rejected and excluded from the result.
+
         """
         signed_orders_args: list[PostOrdersArgs] = []
+        successfully_signed_orders: list[Order] = []
         signing_start = self._clock.timestamp()
 
         for order in orders:
-            instrument = self._cache.instrument(order.instrument_id)
+            try:
+                instrument = self._cache.instrument(order.instrument_id)
 
-            order_args = OrderArgs(
-                price=float(order.price),
-                token_id=get_polymarket_token_id(order.instrument_id),
-                size=float(order.quantity),
-                side=order_side_to_str(order.side),
-                expiration=int(nanos_to_secs(order.expire_time_ns)),
-            )
+                order_args = OrderArgs(
+                    price=float(order.price),
+                    token_id=get_polymarket_token_id(order.instrument_id),
+                    size=float(order.quantity),
+                    side=order_side_to_str(order.side),
+                    expiration=int(nanos_to_secs(order.expire_time_ns)),
+                )
 
-            neg_risk = self._get_neg_risk_for_instrument(instrument)
-            options = PartialCreateOrderOptions(neg_risk=neg_risk)
+                neg_risk = self._get_neg_risk_for_instrument(instrument)
+                options = PartialCreateOrderOptions(neg_risk=neg_risk)
 
-            signed_order = await asyncio.to_thread(
-                self._http_client.create_order,
-                order_args,
-                options=options,
-            )
+                signed_order = await asyncio.to_thread(
+                    self._http_client.create_order,
+                    order_args,
+                    options=options,
+                )
 
-            order_type = convert_tif_to_polymarket_order_type(order.time_in_force)
-            signed_orders_args.append(
-                PostOrdersArgs(
-                    order=signed_order,
-                    orderType=order_type,
-                    postOnly=order.is_post_only,
-                ),
-            )
+                order_type = convert_tif_to_polymarket_order_type(order.time_in_force)
+                signed_orders_args.append(
+                    PostOrdersArgs(
+                        order=signed_order,
+                        orderType=order_type,
+                        postOnly=order.is_post_only,
+                    ),
+                )
+                successfully_signed_orders.append(order)
+            except Exception as e:
+                self._log.error(
+                    f"Failed to sign order {order.client_order_id}: {e}",
+                    LogColor.RED,
+                )
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=f"Order signing failed: {e}",
+                    ts_event=self._clock.timestamp_ns(),
+                )
 
         interval = self._clock.timestamp() - signing_start
         self._log.info(
-            f"Signed {len(orders)} Polymarket orders in {interval:.3f}s",
+            f"Signed {len(successfully_signed_orders)}/{len(orders)} Polymarket orders "
+            f"in {interval:.3f}s",
             LogColor.BLUE,
         )
 
-        return signed_orders_args
+        return successfully_signed_orders, signed_orders_args
 
     async def _post_signed_orders_batch(
         self,
@@ -1305,9 +1341,26 @@ class PolymarketExecutionClient(LiveExecutionClient):
     def _process_batch_response(self, orders: list[Order], response: list) -> None:
         """
         Process the response from a batch order submission.
+
+        If response length doesn't match orders, remaining orders are rejected.
+
         """
-        for i, result in enumerate(response):
-            order = orders[i]
+        if len(response) != len(orders):
+            self._log.warning(
+                f"Response length ({len(response)}) != orders length ({len(orders)}). "
+                "Some orders may not have been processed.",
+            )
+            # Reject any orders beyond the response length
+            for order in orders[len(response) :]:
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason="Order not included in API response",
+                    ts_event=self._clock.timestamp_ns(),
+                )
+
+        for order, result in zip(orders, response, strict=False):
             if result.get("success"):
                 venue_order_id = VenueOrderId(result["orderID"])
                 self._cache.add_venue_order_id(order.client_order_id, venue_order_id)
