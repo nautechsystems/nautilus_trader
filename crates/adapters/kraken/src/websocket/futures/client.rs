@@ -47,8 +47,6 @@ use crate::{common::credential::KrakenCredential, websocket::error::KrakenWsErro
 /// Topics use colon format: `feed:symbol` (e.g., `trades:PF_ETHUSD`).
 pub const KRAKEN_FUTURES_WS_TOPIC_DELIMITER: char = ':';
 
-const WS_PING_MSG: &str = r#"{"event":"ping"}"#;
-
 /// WebSocket client for the Kraken Futures v1 streaming API.
 #[derive(Debug)]
 #[cfg_attr(
@@ -256,7 +254,7 @@ impl KrakenFuturesWebSocketClient {
             url: self.url.clone(),
             headers: vec![],
             heartbeat: self.heartbeat_secs,
-            heartbeat_msg: Some(WS_PING_MSG.to_string()),
+            heartbeat_msg: None, // Use WebSocket ping frames, not text messages
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: Some(500),
             reconnect_delay_max_ms: Some(5_000),

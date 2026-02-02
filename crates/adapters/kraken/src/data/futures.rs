@@ -452,6 +452,14 @@ impl DataClient for KrakenFuturesDataClient {
         Ok(())
     }
 
+    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+        log::warn!(
+            "Cannot subscribe to {} bars: Kraken Futures does not support EXTERNAL bar streaming",
+            cmd.bar_type
+        );
+        Ok(())
+    }
+
     fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         let ws = self.ws.clone();
@@ -466,14 +474,6 @@ impl DataClient for KrakenFuturesDataClient {
         );
 
         log::info!("Subscribed to funding rate: instrument_id={instrument_id}");
-        Ok(())
-    }
-
-    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
-        log::warn!(
-            "Cannot subscribe to {} bars: Kraken Futures does not support EXTERNAL bar streaming",
-            cmd.bar_type
-        );
         Ok(())
     }
 

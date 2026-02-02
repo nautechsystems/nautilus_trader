@@ -662,7 +662,7 @@ class KrakenExecutionClient(LiveExecutionClient):
 
         if client is None:
             self._log.error(f"No HTTP client available for symbol {symbol}")
-            self.generate_order_rejected(
+            self.generate_order_denied(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,

@@ -734,6 +734,7 @@ impl From<KrakenFuturesOrderStatus> for OrderStatus {
 /// Futures symbols have the following prefixes:
 /// - `PI_` - Perpetual Inverse futures (e.g., `PI_XBTUSD`)
 /// - `PF_` - Perpetual Fixed-margin futures (e.g., `PF_XBTUSD`)
+/// - `PV_` - Perpetual Vanilla futures (e.g., `PV_XRPXBT`)
 /// - `FI_` - Fixed maturity Inverse futures (e.g., `FI_XBTUSD_230929`)
 /// - `FF_` - Flex futures
 ///
@@ -742,6 +743,7 @@ impl From<KrakenFuturesOrderStatus> for OrderStatus {
 pub fn product_type_from_symbol(symbol: &str) -> KrakenProductType {
     if symbol.starts_with("PI_")
         || symbol.starts_with("PF_")
+        || symbol.starts_with("PV_")
         || symbol.starts_with("FI_")
         || symbol.starts_with("FF_")
     {

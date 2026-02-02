@@ -59,7 +59,7 @@ use super::messages::{
     KrakenFuturesFillsDelta, KrakenFuturesMessageType, KrakenFuturesOpenOrder,
     KrakenFuturesOpenOrdersCancel, KrakenFuturesOpenOrdersDelta,
     KrakenFuturesPrivateSubscribeRequest, KrakenFuturesTickerData, KrakenFuturesTradeData,
-    KrakenFuturesTradeSnapshot, KrakenFuturesWsMessage, classify_futures_message,
+    KrakenFuturesWsMessage, classify_futures_message,
 };
 use crate::common::enums::KrakenOrderSide;
 
@@ -344,7 +344,7 @@ impl FuturesFeedHandler {
                             continue;
                         }
                         Message::Pong(_) => {
-                            log::trace!("Received pong");
+                            log::debug!("Received pong from server");
                             continue;
                         }
                         Message::Close(_) => {
@@ -517,7 +517,7 @@ impl FuturesFeedHandler {
                 self.handle_ticker_message_value(value, ts_init);
             }
             KrakenFuturesMessageType::TradeSnapshot => {
-                self.handle_trade_snapshot_value(value, ts_init);
+                log::debug!("Skipping trade_snapshot (only streaming live trades)");
             }
             KrakenFuturesMessageType::Trade => {
                 self.handle_trade_message_value(value, ts_init);
@@ -533,7 +533,7 @@ impl FuturesFeedHandler {
                 log::debug!("Received info message: {text}");
             }
             KrakenFuturesMessageType::Pong => {
-                log::trace!("Received pong response");
+                log::debug!("Received text pong response");
             }
             KrakenFuturesMessageType::Subscribed => {
                 log::debug!("Subscription confirmed: {text}");
@@ -562,7 +562,7 @@ impl FuturesFeedHandler {
                 log::warn!("Kraken Futures WebSocket alert: {message}");
             }
             KrakenFuturesMessageType::Unknown => {
-                log::debug!("Unhandled message: {text}");
+                log::warn!("Unhandled futures message: {text}");
             }
         }
     }
@@ -692,17 +692,25 @@ impl FuturesFeedHandler {
         let trade = match serde_json::from_value::<KrakenFuturesTradeData>(value) {
             Ok(t) => t,
             Err(e) => {
-                log::trace!("Failed to parse trade: {e}");
+                log::warn!("Failed to parse trade: {e}");
                 return;
             }
         };
 
         if !self.is_subscribed(KrakenFuturesChannel::Trades, &trade.product_id) {
+            log::warn!(
+                "Received trade for unsubscribed product: {}",
+                trade.product_id
+            );
             return;
         }
 
         let (instrument_id, price_precision, size_precision) = {
             let Some(instrument) = self.get_instrument(&trade.product_id) else {
+                log::warn!(
+                    "No instrument found for trade product: {}",
+                    trade.product_id
+                );
                 return;
             };
             (
@@ -741,68 +749,11 @@ impl FuturesFeedHandler {
             .push_back(KrakenFuturesWsMessage::Trade(trade_tick));
     }
 
-    fn handle_trade_snapshot_value(&mut self, value: Value, ts_init: UnixNanos) {
-        let snapshot = match serde_json::from_value::<KrakenFuturesTradeSnapshot>(value) {
-            Ok(s) => s,
-            Err(e) => {
-                log::trace!("Failed to parse trade snapshot: {e}");
-                return;
-            }
-        };
-
-        if !self.is_subscribed(KrakenFuturesChannel::Trades, &snapshot.product_id) {
-            return;
-        }
-
-        let (instrument_id, price_precision, size_precision) = {
-            let Some(instrument) = self.get_instrument(&snapshot.product_id) else {
-                return;
-            };
-            (
-                instrument.id(),
-                instrument.price_precision(),
-                instrument.size_precision(),
-            )
-        };
-
-        for trade in snapshot.trades {
-            let size = Quantity::new(trade.qty, size_precision);
-            if size.is_zero() {
-                let product_id = snapshot.product_id;
-                let raw_qty = trade.qty;
-                log::warn!(
-                    "Skipping zero quantity trade in snapshot for {product_id} (raw qty: {raw_qty})"
-                );
-                continue;
-            }
-
-            let ts_event = UnixNanos::from((trade.time as u64) * 1_000_000);
-            let aggressor_side = match trade.side {
-                KrakenOrderSide::Buy => AggressorSide::Buyer,
-                KrakenOrderSide::Sell => AggressorSide::Seller,
-            };
-            let trade_id = trade.uid.unwrap_or_else(|| trade.seq.to_string());
-
-            let trade_tick = TradeTick::new(
-                instrument_id,
-                Price::new(trade.price, price_precision),
-                size,
-                aggressor_side,
-                TradeId::new(&trade_id),
-                ts_event,
-                ts_init,
-            );
-
-            self.pending_messages
-                .push_back(KrakenFuturesWsMessage::Trade(trade_tick));
-        }
-    }
-
     fn handle_book_snapshot_value(&mut self, value: Value, ts_init: UnixNanos) {
         let snapshot = match serde_json::from_value::<KrakenFuturesBookSnapshot>(value) {
             Ok(s) => s,
             Err(e) => {
-                log::trace!("Failed to parse book snapshot: {e}");
+                log::warn!("Failed to parse book snapshot: {e}");
                 return;
             }
         };
@@ -811,11 +762,19 @@ impl FuturesFeedHandler {
         let has_quotes = self.is_subscribed(KrakenFuturesChannel::Quotes, &snapshot.product_id);
 
         if !has_book && !has_quotes {
+            log::warn!(
+                "Received book snapshot for unsubscribed product: {}",
+                snapshot.product_id
+            );
             return;
         }
 
         let (instrument_id, price_precision, size_precision) = {
             let Some(instrument) = self.get_instrument(&snapshot.product_id) else {
+                log::warn!(
+                    "No instrument found for book snapshot product: {}",
+                    snapshot.product_id
+                );
                 return;
             };
             (
@@ -927,7 +886,7 @@ impl FuturesFeedHandler {
         let delta = match serde_json::from_value::<KrakenFuturesBookDelta>(value) {
             Ok(d) => d,
             Err(e) => {
-                log::trace!("Failed to parse book delta: {e}");
+                log::warn!("Failed to parse book delta: {e}");
                 return;
             }
         };
@@ -936,10 +895,18 @@ impl FuturesFeedHandler {
         let has_quotes = self.is_subscribed(KrakenFuturesChannel::Quotes, &delta.product_id);
 
         if !has_book && !has_quotes {
+            log::warn!(
+                "Received book delta for unsubscribed product: {}",
+                delta.product_id
+            );
             return;
         }
 
         let Some(instrument) = self.get_instrument(&delta.product_id) else {
+            log::warn!(
+                "No instrument found for book delta product: {}",
+                delta.product_id
+            );
             return;
         };
 
