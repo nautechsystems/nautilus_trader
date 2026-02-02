@@ -442,7 +442,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef void _update_mark_xrate(self, Instrument instrument, double xrate, InstrumentId instrument_id):
         if xrate > 0:
             self._cache.set_mark_xrate(
-                from_currency=instrument.base_currency,
+                from_currency=instrument.get_base_currency(),
                 to_currency=instrument.quote_currency,
                 xrate=xrate,
             )

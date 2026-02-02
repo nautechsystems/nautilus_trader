@@ -612,7 +612,7 @@ cdef class MarginAccount(Account):
             )
 
         if instrument.is_inverse and not use_quote_for_inverse:
-            return Money(commission, instrument.base_currency)
+            return Money(commission, instrument.get_base_currency())
         else:
             return Money(commission, instrument.quote_currency)
 
