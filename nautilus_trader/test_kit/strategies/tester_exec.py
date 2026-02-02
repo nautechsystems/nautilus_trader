@@ -230,7 +230,7 @@ class ExecTester(Strategy):
             self.log.info(repr(bar), LogColor.CYAN)
 
     def maintain_orders(self, best_bid: Price, best_ask: Price) -> None:
-        if self.instrument is None or self.config.dry_run:
+        if self.instrument is None or self.config.dry_run or self.is_exiting():
             return
 
         if self.config.enable_limit_buys:

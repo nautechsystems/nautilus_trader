@@ -166,8 +166,6 @@ cdef class Strategy(Actor):
         self.external_order_claims = self._parse_external_order_claims(config.external_order_claims)
         self.manage_contingent_orders = config.manage_contingent_orders
         self.manage_gtd_expiry = config.manage_gtd_expiry
-        self._is_exiting = False
-        self._market_exit_attempts = 0
 
         # Public components
         self.clock = self._clock
@@ -177,6 +175,10 @@ cdef class Strategy(Actor):
 
         # Order management
         self._manager = None       # Initialized when registered
+        self._is_exiting = False
+        self._pending_stop = False
+        self._market_exit_attempts = 0
+        self._market_exit_timer_name = f"MARKET_EXIT_CHECK:{self.id}"
 
         # Register warning events
         self.register_warning_event(OrderDenied)
@@ -192,6 +194,7 @@ cdef class Strategy(Actor):
             return []
 
         order_claims: list[InstrumentId] = []
+
         for instrument_id in config_claims:
             if isinstance(instrument_id, str):
                 instrument_id = InstrumentId.from_str(instrument_id)
@@ -213,8 +216,6 @@ cdef class Strategy(Actor):
             config_path=self.config.fully_qualified_name(),
             config=self.config.dict(),
         )
-
-# -- REGISTRATION ---------------------------------------------------------------------------------
 
     cpdef void on_start(self):
         # Should override in subclass
@@ -247,29 +248,6 @@ cdef class Strategy(Actor):
             "It's expected that any actions required when resetting the strategy "
             "occur here, such as resetting indicators and other state"
         )
-
-    cpdef void on_market_exit(self):
-        """
-        Actions to be performed when a market exit has been initiated.
-
-        Warnings
-        --------
-        Override this method in a subclass to implement custom market exit logic.
-
-        """
-        # Optionally override in subclass
-
-    cpdef void after_market_exit(self):
-        """
-        Actions to be performed after a market exit has been completed.
-
-        Warnings
-        --------
-        Override this method in a subclass to implement custom logic after
-        market exit.
-
-        """
-        # Optionally override in subclass
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -355,6 +333,7 @@ cdef class Strategy(Actor):
         Condition.not_none(strategy_id, "strategy_id")
 
         self.id = strategy_id
+        self._market_exit_timer_name = f"MARKET_EXIT_CHECK:{self.id}"
 
     cpdef void change_order_id_tag(self, str order_id_tag):
         """
@@ -420,6 +399,22 @@ cdef class Strategy(Actor):
 
         self.on_start()
 
+    cpdef void stop(self):
+        if self.config.manage_stop:
+            if self.state != ComponentState.RUNNING:
+                Actor.stop(self)
+                return
+
+            if self._pending_stop:
+                return
+
+            self._pending_stop = True
+            if not self._is_exiting:
+                self.market_exit()
+            return
+
+        Actor.stop(self)
+
     cpdef void _reset(self):
         if self.order_factory:
             self.order_factory.reset()
@@ -432,13 +427,36 @@ cdef class Strategy(Actor):
         if self._manager:
             self._manager.reset()
 
-        # Reset market exit state
         self._is_exiting = False
+        self._pending_stop = False
         self._market_exit_attempts = 0
 
         self.on_reset()
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
+
+    cpdef void on_market_exit(self):
+        """
+        Actions to be performed when a market exit has been initiated.
+
+        Warnings
+        --------
+        Override this method in a subclass to implement custom market exit logic.
+
+        """
+        # Optionally override in subclass
+
+    cpdef void post_market_exit(self):
+        """
+        Actions to be performed after a market exit has been completed.
+
+        Warnings
+        --------
+        Override this method in a subclass to implement custom logic after
+        market exit.
+
+        """
+        # Optionally override in subclass
 
     cpdef void on_order_event(self, OrderEvent event):
         """
@@ -834,8 +852,13 @@ cdef class Strategy(Actor):
             msg=order.init_event_c(),
         )
 
+        if self._is_exiting and not order.is_reduce_only:
+            self._deny_order(order, "MARKET_EXIT_IN_PROGRESS")
+            return
+
         # Check for duplicate client order ID
         if self.cache.order_exists(order.client_order_id):
+            self._log.error(f"Cannot submit order: duplicate {repr(order.client_order_id)}")
             self._deny_order(order, f"duplicate {repr(order.client_order_id)}")
             return
 
@@ -921,6 +944,12 @@ cdef class Strategy(Actor):
                 msg=order.init_event_c(),
             )
 
+        if self._is_exiting:
+            for order in order_list.orders:
+                if not order.is_reduce_only:
+                    self._deny_order_list(order_list, reason="MARKET_EXIT_IN_PROGRESS")
+                    return
+
         # Check for duplicate order list ID
         if self.cache.order_list_exists(order_list.id):
             self._deny_order_list(
@@ -934,6 +963,7 @@ cdef class Strategy(Actor):
         # Check for duplicate client order IDs
         for order in order_list.orders:
             if self.cache.order_exists(order.client_order_id):
+                self._log.error(f"Cannot submit order list: duplicate {repr(order.client_order_id)}")
                 for order in order_list.orders:
                     self._deny_order(
                         order,
@@ -1715,10 +1745,19 @@ cdef class Strategy(Actor):
         Initiate an iterative market exit for the strategy.
 
         Will cancel all open orders and close all open positions, and wait for
-        all in-flight orders to resolve and positions to close before stopping
-        the strategy.
+        all in-flight orders to resolve and positions to close. The strategy
+        remains running after the exit completes.
+
+        The `on_market_exit` hook is called when the exit process begins.
+        The `post_market_exit` hook is called when the exit process completes.
+
         """
+        if self.state != ComponentState.RUNNING:
+            self._log.warning("Cannot market exit: strategy is not running")
+            return
+
         if self._is_exiting:
+            self._log.warning("Market exit called when already in progress")
             return
 
         self._is_exiting = True
@@ -1727,13 +1766,17 @@ cdef class Strategy(Actor):
         self._log.info("Initiating market exit...", LogColor.BLUE)
         self.on_market_exit()
 
-        # Get all instruments the strategy has open orders or positions for
-        cdef list open_orders = self.cache.orders_open(None, None, self.id)
-        cdef list open_positions = self.cache.positions_open(None, None, self.id)
+        # Get all instruments the strategy has orders or positions for
+        cdef list[Order] open_orders = self.cache.orders_open(None, None, self.id)
+        cdef list[Order] inflight_orders = self.cache.orders_inflight(None, None, self.id)
+        cdef list[Position] open_positions = self.cache.positions_open(None, None, self.id)
 
-        cdef set instruments = set()
+        cdef set[InstrumentId] instruments = set()
+
         cdef Order order
         for order in open_orders:
+            instruments.add(order.instrument_id)
+        for order in inflight_orders:
             instruments.add(order.instrument_id)
 
         cdef Position position
@@ -1746,9 +1789,9 @@ cdef class Strategy(Actor):
             self.close_all_positions(instrument_id)
 
         # Start iterative check
-        self._log.info(f"Setting market exit timer for {self.id}")
+        self._log.info(f"Setting market exit timer at {self.config.inflight_check_interval_ms}ms intervals", LogColor.BLUE)
         self._clock.set_timer(
-            f"MARKET-EXIT-CHECK:{self.id}",
+            self._market_exit_timer_name,
             pd.Timedelta(milliseconds=self.config.inflight_check_interval_ms),
             None,
             None,
@@ -1756,6 +1799,19 @@ cdef class Strategy(Actor):
             True,
             False,
         )
+
+    cpdef bint is_exiting(self):
+        """
+        Return whether the strategy is currently executing a market exit.
+
+        Strategies can check this to avoid submitting new orders during exit.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._is_exiting
 
     cpdef void _check_market_exit(self, TimeEvent event):
         if self.state != ComponentState.RUNNING:
@@ -1766,23 +1822,14 @@ cdef class Strategy(Actor):
 
         # Check if max attempts reached
         if self._market_exit_attempts >= self.config.market_exit_max_attempts:
-            timer_name = f"MARKET-EXIT-CHECK:{self.id}"
-            if timer_name in self._clock.timer_names:
-                self._clock.cancel_timer(name=timer_name)
-
             self._log.warning(
-                f"Market exit max attempts ({self.config.market_exit_max_attempts}) reached. "
-                f"Forcing stop. Open orders: {len(self.cache.orders_open(None, None, self.id))}, "
+                f"Market exit max attempts ({self.config.market_exit_max_attempts}) reached, "
+                f"completing with open orders: {len(self.cache.orders_open(None, None, self.id))}, "
                 f"inflight orders: {len(self.cache.orders_inflight(None, None, self.id))}, "
                 f"open positions: {len(self.cache.positions_open(None, None, self.id))}",
                 LogColor.YELLOW
             )
-
-            # Reset before stopping
-            self._is_exiting = False
-            self._market_exit_attempts = 0
-            self.after_market_exit()
-            self.stop()
+            self._finalize_market_exit()
             return
 
         cdef list open_orders = self.cache.orders_open(None, None, self.id)
@@ -1793,22 +1840,26 @@ cdef class Strategy(Actor):
 
         cdef list open_positions = self.cache.positions_open(None, None, self.id)
         if open_positions:
-            # If there are open positions but no orders, we should re-send close orders
+            # If there are open positions but no orders, re-send close orders
             for position in open_positions:
                 self.close_position(position)
 
             return
 
         # All clear
-        timer_name = f"MARKET-EXIT-CHECK:{self.id}"
-        if timer_name in self._clock.timer_names:
-            self._clock.cancel_timer(name=timer_name)
+        self._finalize_market_exit()
 
-        # Reset before stopping
+    cdef void _finalize_market_exit(self):
+        if self._market_exit_timer_name in self._clock.timer_names:
+            self._clock.cancel_timer(name=self._market_exit_timer_name)
+
         self._is_exiting = False
         self._market_exit_attempts = 0
-        self.after_market_exit()
-        self.stop()
+        self.post_market_exit()
+
+        if self._pending_stop:
+            self._pending_stop = False
+            Actor.stop(self)
 
     cpdef void handle_event(self, Event event):
         """
@@ -1956,8 +2007,6 @@ cdef class Strategy(Actor):
         )
 
     cdef void _deny_order(self, Order order, str reason):
-        self._log.error(f"Order denied: {reason}")
-
         if not self.cache.order_exists(order.client_order_id):
             self.cache.add_order(order)
 
