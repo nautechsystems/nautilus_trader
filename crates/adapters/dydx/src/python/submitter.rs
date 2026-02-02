@@ -13,14 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings for dYdX execution components.
+//! Python bindings for dYdX order submitter.
 
 #![allow(clippy::missing_errors_doc)]
 
 use std::{str::FromStr, sync::Arc};
 
 use chrono::Utc;
-use nautilus_core::python::IntoPyObjectNautilusExt;
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
     identifiers::InstrumentId,
@@ -28,54 +27,12 @@ use nautilus_model::{
 };
 use pyo3::prelude::*;
 
+use super::grpc::PyDydxGrpcClient;
 use crate::{
-    execution::{block_time::BlockTimeMonitor, submitter::OrderSubmitter, wallet::Wallet},
-    grpc::{DEFAULT_RUST_CLIENT_METADATA, DydxGrpcClient, types::ChainId},
+    execution::{block_time::BlockTimeMonitor, submitter::OrderSubmitter},
+    grpc::{DEFAULT_RUST_CLIENT_METADATA, types::ChainId},
     http::client::DydxHttpClient,
 };
-
-/// Python wrapper for the Wallet.
-#[pyclass(name = "DydxWallet")]
-#[derive(Debug, Clone)]
-pub struct PyDydxWallet {
-    pub(crate) inner: Arc<Wallet>,
-}
-
-#[pymethods]
-impl PyDydxWallet {
-    /// Create a wallet from a hex-encoded private key.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the private key is invalid.
-    #[staticmethod]
-    #[pyo3(name = "from_private_key")]
-    pub fn py_from_private_key(private_key: &str) -> PyResult<Self> {
-        let wallet = Wallet::from_private_key(private_key)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{e}")))?;
-        Ok(Self {
-            inner: Arc::new(wallet),
-        })
-    }
-
-    /// Get the wallet address.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if address derivation fails.
-    #[pyo3(name = "address")]
-    pub fn py_address(&self) -> PyResult<String> {
-        let account = self
-            .inner
-            .account_offline()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
-        Ok(account.address)
-    }
-
-    fn __repr__(&self) -> String {
-        "DydxWallet(<redacted>)".to_string()
-    }
-}
 
 /// Python wrapper for OrderSubmitter.
 ///
@@ -222,6 +179,30 @@ impl PyDydxOrderSubmitter {
         self.inner.wallet_address().to_string()
     }
 
+    /// Resolve authenticator IDs for permissioned key trading.
+    ///
+    /// Call this during connect() when using an API trading key.
+    /// Automatically detects if the signing wallet differs from the main account
+    /// and fetches matching authenticators from the chain.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Using permissioned key but no authenticators found
+    /// - No authenticator matches the wallet's public key
+    /// - gRPC query fails
+    #[pyo3(name = "resolve_authenticators")]
+    fn py_resolve_authenticators<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let submitter = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            submitter
+                .tx_manager()
+                .resolve_authenticators()
+                .await
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))
+        })
+    }
+
     /// Submit a market order to dYdX via gRPC.
     ///
     /// Block height is read from the internal state (set via `set_block_height`).
@@ -245,7 +226,13 @@ impl PyDydxOrderSubmitter {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let tx_hash = submitter
-                .submit_market_order(instrument_id, client_order_id, client_metadata, side, quantity)
+                .submit_market_order(
+                    instrument_id,
+                    client_order_id,
+                    client_metadata,
+                    side,
+                    quantity,
+                )
                 .await
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
             Ok(tx_hash)
@@ -567,239 +554,5 @@ impl PyDydxOrderSubmitter {
             self.inner.wallet_address(),
             self.block_time_monitor.current_block_height()
         )
-    }
-}
-
-#[pyclass(name = "DydxGrpcClient")]
-#[derive(Debug, Clone)]
-pub struct PyDydxGrpcClient {
-    pub(crate) inner: Arc<DydxGrpcClient>,
-}
-
-#[pymethods]
-impl PyDydxGrpcClient {
-    /// Create a new gRPC client.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if connection fails.
-    #[staticmethod]
-    #[pyo3(name = "connect")]
-    pub fn py_connect(py: Python<'_>, grpc_url: String) -> PyResult<Bound<'_, PyAny>> {
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let client = DydxGrpcClient::new(grpc_url)
-                .await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
-
-            Ok(Self {
-                inner: Arc::new(client),
-            })
-        })
-    }
-
-    /// Create a new gRPC client with fallback URLs.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if all connection attempts fail.
-    #[staticmethod]
-    #[pyo3(name = "connect_with_fallback")]
-    pub fn py_connect_with_fallback(
-        py: Python<'_>,
-        grpc_urls: Vec<String>,
-    ) -> PyResult<Bound<'_, PyAny>> {
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let urls: Vec<&str> = grpc_urls.iter().map(String::as_str).collect();
-            let client = DydxGrpcClient::new_with_fallback(&urls)
-                .await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
-
-            Ok(Self {
-                inner: Arc::new(client),
-            })
-        })
-    }
-
-    /// Fetch the latest block height from the chain.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the gRPC request fails.
-    #[pyo3(name = "latest_block_height")]
-    pub fn py_latest_block_height<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut client = (*client).clone();
-            let height = client
-                .latest_block_height()
-                .await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
-            Ok(height.0 as u64)
-        })
-    }
-
-    /// Query account information (account_number, sequence).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the gRPC request fails.
-    #[pyo3(name = "get_account")]
-    pub fn py_get_account<'py>(
-        &self,
-        py: Python<'py>,
-        address: String,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut client = (*client).clone();
-            let account = client
-                .get_account(&address)
-                .await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
-            Ok((account.account_number, account.sequence))
-        })
-    }
-
-    /// Query account balances.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the gRPC request fails.
-    #[pyo3(name = "get_account_balances")]
-    pub fn py_get_account_balances<'py>(
-        &self,
-        py: Python<'py>,
-        address: String,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut client = (*client).clone();
-            let balances = client
-                .get_account_balances(&address)
-                .await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
-            let result: Vec<(String, String)> =
-                balances.into_iter().map(|c| (c.denom, c.amount)).collect();
-            Ok(result)
-        })
-    }
-
-    /// Query subaccount information.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the gRPC request fails.
-    #[pyo3(name = "get_subaccount")]
-    pub fn py_get_subaccount<'py>(
-        &self,
-        py: Python<'py>,
-        address: String,
-        subaccount_number: u32,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut client = (*client).clone();
-            let subaccount = client
-                .get_subaccount(&address, subaccount_number)
-                .await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
-
-            // Return as dict-like structure
-            // quantums is bytes representing a big-endian signed integer
-            let result: Vec<(String, String)> = subaccount
-                .asset_positions
-                .into_iter()
-                .map(|p| {
-                    let quantums_str = if p.quantums.is_empty() {
-                        "0".to_string()
-                    } else {
-                        // Convert bytes to hex string for now
-                        hex::encode(&p.quantums)
-                    };
-                    (p.asset_id.to_string(), quantums_str)
-                })
-                .collect();
-            Ok(result)
-        })
-    }
-
-    /// Get node information from the gRPC endpoint.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the gRPC request fails.
-    #[pyo3(name = "get_node_info")]
-    pub fn py_get_node_info<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut client = (*client).clone();
-            let info = client
-                .get_node_info()
-                .await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
-
-            // Return node info as a dict
-            Python::attach(|py| {
-                use pyo3::types::PyDict;
-                let dict = PyDict::new(py);
-                if let Some(default_node_info) = info.default_node_info {
-                    dict.set_item("network", default_node_info.network)?;
-                    dict.set_item("moniker", default_node_info.moniker)?;
-                    dict.set_item("version", default_node_info.version)?;
-                }
-                if let Some(app_info) = info.application_version {
-                    dict.set_item("app_name", app_info.name)?;
-                    dict.set_item("app_version", app_info.version)?;
-                }
-                Ok(dict.into_py_any_unwrap(py))
-            })
-        })
-    }
-
-    /// Simulate a transaction to estimate gas.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the gRPC request fails.
-    #[pyo3(name = "simulate_tx")]
-    pub fn py_simulate_tx<'py>(
-        &self,
-        py: Python<'py>,
-        tx_bytes: Vec<u8>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut client = (*client).clone();
-            let gas_used = client
-                .simulate_tx(tx_bytes)
-                .await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
-            Ok(gas_used)
-        })
-    }
-
-    /// Get transaction details by hash.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the gRPC request fails.
-    #[pyo3(name = "get_tx")]
-    pub fn py_get_tx<'py>(&self, py: Python<'py>, hash: String) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut client = (*client).clone();
-            let tx = client
-                .get_tx(&hash)
-                .await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
-
-            // Return tx as JSON string
-            let result = format!("Tx(body_bytes_len={})", tx.body.messages.len());
-            Ok(result)
-        })
-    }
-
-    fn __repr__(&self) -> String {
-        "DydxGrpcClient()".to_string()
     }
 }

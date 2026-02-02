@@ -48,9 +48,7 @@ use crate::{
         nanos_to_secs_i64, order_side_to_proto, time_in_force_to_proto_with_post_only,
     },
     error::DydxError,
-    grpc::{
-        OrderBuilder, OrderGoodUntil, OrderMarketParams, SHORT_TERM_ORDER_MAXIMUM_LIFETIME,
-    },
+    grpc::{OrderBuilder, OrderGoodUntil, OrderMarketParams, SHORT_TERM_ORDER_MAXIMUM_LIFETIME},
     http::client::DydxHttpClient,
     proto::{
         ToAny,

@@ -78,7 +78,6 @@ use nautilus_network::{
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
-use ustr::Ustr;
 
 use super::error::DydxHttpError;
 use crate::common::{
@@ -866,10 +865,10 @@ impl DydxHttpClient {
         self.instrument_cache.insert_instrument_only(instrument);
     }
 
-    /// Gets an instrument from the cache by symbol.
+    /// Gets an instrument from the cache by InstrumentId.
     #[must_use]
-    pub fn get_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
-        self.instrument_cache.get(symbol)
+    pub fn get_instrument(&self, instrument_id: &InstrumentId) -> Option<InstrumentAny> {
+        self.instrument_cache.get(instrument_id)
     }
 
     /// Gets an instrument by CLOB pair ID.
@@ -901,7 +900,7 @@ impl DydxHttpClient {
         &self,
         instrument_id: &InstrumentId,
     ) -> Option<super::models::PerpetualMarket> {
-        self.instrument_cache.get_market_params_by_id(instrument_id)
+        self.instrument_cache.get_market_params(instrument_id)
     }
 
     /// Requests historical trades for a symbol.
@@ -963,15 +962,14 @@ impl DydxHttpClient {
         to_iso: Option<DateTime<Utc>>,
     ) -> anyhow::Result<Vec<Bar>> {
         let instrument_id = bar_type.instrument_id();
-        let symbol = instrument_id.symbol;
 
         // Get instrument for precision info
         let instrument = self
-            .get_instrument(&symbol.inner())
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {symbol}"))?;
+            .get_instrument(&instrument_id)
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
 
         // dYdX API expects ticker format "BTC-USD", not "BTC-USD-PERP"
-        let ticker = extract_raw_symbol(symbol.as_str());
+        let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
         let response = self
             .request_candles(ticker, resolution, limit, from_iso, to_iso)
             .await?;
@@ -1019,13 +1017,11 @@ impl DydxHttpClient {
         instrument_id: InstrumentId,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
-        let symbol = instrument_id.symbol;
-
         let instrument = self
-            .get_instrument(&symbol.inner())
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {symbol}"))?;
+            .get_instrument(&instrument_id)
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
 
-        let ticker = extract_raw_symbol(symbol.as_str());
+        let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
         let response = self.request_trades(ticker, limit).await?;
 
         let ts_init = get_atomic_clock_realtime().get_time_ns();
@@ -1074,13 +1070,11 @@ impl DydxHttpClient {
         &self,
         instrument_id: InstrumentId,
     ) -> anyhow::Result<OrderBookDeltas> {
-        let symbol = instrument_id.symbol;
-
         let instrument = self
-            .get_instrument(&symbol.inner())
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {symbol}"))?;
+            .get_instrument(&instrument_id)
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
 
-        let ticker = extract_raw_symbol(symbol.as_str());
+        let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
         let response = self.inner.get_orderbook(ticker).await?;
 
         let ts_init = get_atomic_clock_realtime().get_time_ns();
@@ -1285,10 +1279,8 @@ impl DydxHttpClient {
         let mut reports = Vec::new();
 
         for fill in fills_response.fills {
-            // Get instrument by market ticker
-            let market = &fill.market;
-            let symbol = Ustr::from(&format!("{market}-PERP"));
-            let instrument = match self.get_instrument(&symbol) {
+            // Get instrument by market ticker (e.g., "BTC-USD")
+            let instrument = match self.get_instrument_by_market(&fill.market) {
                 Some(inst) => inst,
                 None => {
                     log::warn!(
@@ -1341,9 +1333,8 @@ impl DydxHttpClient {
         let mut reports = Vec::new();
 
         for (market, position) in subaccount_response.subaccount.open_perpetual_positions {
-            // Get instrument by market ticker
-            let symbol = Ustr::from(&format!("{market}-PERP"));
-            let instrument = match self.get_instrument(&symbol) {
+            // Get instrument by market ticker (e.g., "BTC-USD")
+            let instrument = match self.get_instrument_by_market(&market) {
                 Some(inst) => inst,
                 None => {
                     log::warn!("Skipping position: no cached instrument for market {market}");
@@ -1448,9 +1439,10 @@ mod tests {
 
     #[rstest]
     fn test_domain_client_get_instrument_not_found() {
+        use nautilus_model::identifiers::{Symbol, Venue};
         let client = DydxHttpClient::default();
-        let eth_usd = Ustr::from("ETH-USD");
-        let result = client.get_instrument(&eth_usd);
+        let instrument_id = InstrumentId::new(Symbol::new("ETH-USD-PERP"), Venue::new("DYDX"));
+        let result = client.get_instrument(&instrument_id);
         assert!(result.is_none());
     }
 

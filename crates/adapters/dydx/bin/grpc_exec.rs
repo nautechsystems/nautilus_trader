@@ -836,7 +836,13 @@ async fn place_edge_test_order(
 
     let height = grpc.latest_block_height().await?;
 
-    let mut builder = OrderBuilder::new(params, account.address.clone(), 0, client_id, DEFAULT_RUST_CLIENT_METADATA);
+    let mut builder = OrderBuilder::new(
+        params,
+        account.address.clone(),
+        0,
+        client_id,
+        DEFAULT_RUST_CLIENT_METADATA,
+    );
 
     builder = builder.limit(
         DydxSide::Buy,

@@ -203,7 +203,11 @@ impl TxBroadcaster {
                 log::warn!("Sequence mismatch detected, will resync and retry");
                 true
             } else if e.is_transient() {
-                log::warn!("Transient error detected, will retry: {e}");
+                // Also resync on transient errors (timeout, unavailable).
+                // Without this, each retry allocates a NEW sequence, causing drift
+                // (e.g., timeout → alloc 314, timeout → alloc 315, then sequence mismatch).
+                needs_resync_for_retry.store(true, Ordering::SeqCst);
+                log::warn!("Transient error detected, will resync and retry: {e}");
                 true
             } else {
                 false

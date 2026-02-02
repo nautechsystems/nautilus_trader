@@ -23,7 +23,7 @@ use std::str::FromStr;
 
 use anyhow::Context;
 use chrono::{DateTime, Utc};
-use dashmap::{DashMap, DashSet};
+use dashmap::DashMap;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{OrderSide, OrderStatus},
@@ -35,7 +35,7 @@ use rust_decimal::Decimal;
 
 use crate::{
     common::{enums::DydxOrderStatus, instrument_cache::InstrumentCache},
-    execution::{client_order_id_encoder::ClientOrderIdEncoder, types::OrderContext},
+    execution::{encoder::ClientOrderIdEncoder, types::OrderContext},
     http::{
         models::{Fill, Order, PerpetualPosition},
         parse::{parse_fill_report, parse_order_status_report, parse_position_status_report},
@@ -57,7 +57,6 @@ use crate::{
 /// * `instrument_cache` - Cache for looking up instruments by clob_pair_id
 /// * `order_contexts` - Map of dYdX u32 client IDs to order contexts
 /// * `encoder` - Bidirectional encoder for ClientOrderId ↔ u32 mapping
-/// * `pending_cancels` - Set of client_id_u32 with cancels in-flight
 /// * `account_id` - Account ID for the report
 /// * `ts_init` - Timestamp for initialization
 ///
@@ -73,7 +72,6 @@ pub fn parse_ws_order_report(
     instrument_cache: &InstrumentCache,
     order_contexts: &DashMap<u32, OrderContext>,
     encoder: &ClientOrderIdEncoder,
-    pending_cancels: &DashSet<u32>,
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
@@ -124,17 +122,12 @@ pub fn parse_ws_order_report(
         } else if let Some(client_order_id) = encoder.decode(client_id, dydx_client_metadata) {
             // Fallback: use encoder's bidirectional decode with both client_id and client_metadata
             log::info!(
-                "[WS_ORDER_RECV] DECODE via encoder fallback: dYdX u32={} meta={:#x} -> Nautilus '{}'",
-                client_id,
-                dydx_client_metadata,
-                client_order_id
+                "[WS_ORDER_RECV] DECODE via encoder fallback: dYdX u32={client_id} meta={dydx_client_metadata:#x} -> Nautilus '{client_order_id}'"
             );
             report.client_order_id = Some(client_order_id);
         } else {
             log::warn!(
-                "[WS_ORDER_RECV] DECODE FAILED: dYdX u32={} meta={:#x} not found in order_contexts or encoder!",
-                client_id,
-                dydx_client_metadata
+                "[WS_ORDER_RECV] DECODE FAILED: dYdX u32={client_id} meta={dydx_client_metadata:#x} not found in order_contexts or encoder!"
             );
         }
     } else {
@@ -162,20 +155,10 @@ pub fn parse_ws_order_report(
             report.order_status
         );
         if order_contexts.remove(&client_id).is_some() {
-            log::info!(
-                "[WS_ORDER_RECV] Cleaned up order_contexts for dYdX client_id={}",
-                client_id
-            );
+            log::info!("[WS_ORDER_RECV] Cleaned up order_contexts for dYdX client_id={client_id}");
         }
         // Also clean up encoder mapping using both client_id and client_metadata
         encoder.remove(client_id, dydx_client_metadata);
-        // Clean up pending_cancels (if cancel was in-flight)
-        if pending_cancels.remove(&client_id).is_some() {
-            log::info!(
-                "[WS_ORDER_RECV] Cleaned up pending_cancels for dYdX client_id={}",
-                client_id
-            );
-        }
     }
 
     Ok(report)
@@ -663,7 +646,6 @@ mod tests {
 
         let instrument_cache = create_test_instrument_cache();
         let encoder = ClientOrderIdEncoder::new();
-        let pending_cancels: DashSet<u32> = DashSet::new();
 
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
@@ -674,7 +656,6 @@ mod tests {
             &instrument_cache,
             &order_contexts,
             &encoder,
-            &pending_cancels,
             account_id,
             ts_init,
         );
@@ -713,7 +694,6 @@ mod tests {
 
         let instrument_cache = InstrumentCache::new(); // Empty cache
         let encoder = ClientOrderIdEncoder::new();
-        let pending_cancels: DashSet<u32> = DashSet::new();
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
         let order_contexts: DashMap<u32, OrderContext> = DashMap::new();
@@ -723,7 +703,6 @@ mod tests {
             &instrument_cache,
             &order_contexts,
             &encoder,
-            &pending_cancels,
             account_id,
             ts_init,
         );
@@ -1027,7 +1006,6 @@ mod tests {
 
         let instrument_cache = create_test_instrument_cache();
         let encoder = ClientOrderIdEncoder::new();
-        let pending_cancels: DashSet<u32> = DashSet::new();
 
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
@@ -1038,7 +1016,6 @@ mod tests {
             &instrument_cache,
             &order_contexts,
             &encoder,
-            &pending_cancels,
             account_id,
             ts_init,
         );
@@ -1091,7 +1068,6 @@ mod tests {
 
         let instrument_cache = create_test_instrument_cache();
         let encoder = ClientOrderIdEncoder::new();
-        let pending_cancels: DashSet<u32> = DashSet::new();
 
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
@@ -1102,7 +1078,6 @@ mod tests {
             &instrument_cache,
             &order_contexts,
             &encoder,
-            &pending_cancels,
             account_id,
             ts_init,
         );
@@ -1142,7 +1117,6 @@ mod tests {
 
         let instrument_cache = create_test_instrument_cache();
         let encoder = ClientOrderIdEncoder::new();
-        let pending_cancels: DashSet<u32> = DashSet::new();
 
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
@@ -1153,7 +1127,6 @@ mod tests {
             &instrument_cache,
             &order_contexts,
             &encoder,
-            &pending_cancels,
             account_id,
             ts_init,
         );
@@ -1192,7 +1165,6 @@ mod tests {
 
         let instrument_cache = InstrumentCache::new(); // Empty cache
         let encoder = ClientOrderIdEncoder::new();
-        let pending_cancels: DashSet<u32> = DashSet::new();
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
         let order_contexts: DashMap<u32, OrderContext> = DashMap::new();
@@ -1202,7 +1174,6 @@ mod tests {
             &instrument_cache,
             &order_contexts,
             &encoder,
-            &pending_cancels,
             account_id,
             ts_init,
         );

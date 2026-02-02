@@ -459,66 +459,6 @@ impl OrderSubmitter {
         Ok(tx_hash)
     }
 
-    /// Modifies an order via cancel-and-replace.
-    ///
-    /// dYdX doesn't support native order modification. This method atomically
-    /// cancels the old order and places a new one in a single transaction.
-    ///
-    /// # Arguments
-    ///
-    /// * `instrument_id` - The instrument for both cancel and new order
-    /// * `old_client_order_id` - Client ID of the order to cancel
-    /// * `new_client_order_id` - Client ID for the replacement order
-    /// * `old_time_in_force` - TimeInForce of the original order (for cancel routing)
-    /// * `old_expire_time_ns` - Expire time of the original order (for cancel routing)
-    /// * `new_params` - Parameters for the replacement limit order
-    ///
-    /// # Returns
-    ///
-    /// The transaction hash on success.
-    ///
-    /// # Errors
-    ///
-    /// Returns `DydxError` if transaction broadcast fails.
-    pub async fn modify_order(
-        &self,
-        instrument_id: InstrumentId,
-        old_client_order_id: u32,
-        new_client_order_id: u32,
-        old_time_in_force: TimeInForce,
-        old_expire_time_ns: Option<nautilus_core::UnixNanos>,
-        new_params: &LimitOrderParams,
-    ) -> Result<String, DydxError> {
-        log::info!(
-            "Modifying order via cancel-and-replace: old_id={old_client_order_id}, \
-             new_id={new_client_order_id}, price={}, qty={}",
-            new_params.price,
-            new_params.quantity
-        );
-
-        let block_height = self.current_block_height();
-
-        // Build atomic cancel + replace batch
-        let msgs = self.order_builder.build_cancel_and_replace(
-            instrument_id,
-            old_client_order_id,
-            new_client_order_id,
-            old_time_in_force,
-            old_expire_time_ns,
-            new_params,
-            block_height,
-        )?;
-
-        // Broadcast as single transaction
-        let operation = format!("Modify order {old_client_order_id} -> {new_client_order_id}");
-        let tx_hash = self
-            .broadcaster
-            .broadcast_with_retry(&self.tx_manager, msgs, &operation)
-            .await?;
-
-        Ok(tx_hash)
-    }
-
     /// Submits a stop market order to dYdX via gRPC.
     ///
     /// Stop market orders are triggered when the price reaches `trigger_price`.

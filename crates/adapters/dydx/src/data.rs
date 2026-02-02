@@ -22,6 +22,7 @@ use std::sync::{
 
 use anyhow::Context;
 use dashmap::DashMap;
+use futures_util::{Stream, StreamExt, pin_mut};
 use nautilus_common::{
     clients::DataClient,
     live::{runner::get_data_event_sender, runtime::get_runtime},
@@ -58,7 +59,6 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use tokio::{task::JoinHandle, time::Duration};
 use tokio_util::sync::CancellationToken;
-use ustr::Ustr;
 
 use crate::{
     common::{
@@ -228,6 +228,52 @@ impl DydxDataClient {
         });
     }
 
+    /// Spawns a stream handler to dispatch WebSocket messages to the data engine.
+    fn spawn_ws_stream_handler(
+        &mut self,
+        stream: impl Stream<Item = NautilusWsMessage> + Send + 'static,
+        ctx: WsMessageContext,
+    ) {
+        let cancellation = self.cancellation_token.clone();
+
+        let handle = get_runtime().spawn(async move {
+            log::debug!("Message processing task started");
+            pin_mut!(stream);
+
+            loop {
+                tokio::select! {
+                    maybe_msg = stream.next() => {
+                        match maybe_msg {
+                            Some(msg) => Self::handle_ws_message(msg, &ctx),
+                            None => {
+                                log::debug!("WebSocket message channel closed");
+                                break;
+                            }
+                        }
+                    }
+                    () = cancellation.cancelled() => {
+                        log::debug!("WebSocket message task cancelled");
+                        break;
+                    }
+                }
+            }
+            log::debug!("WebSocket stream handler ended");
+        });
+
+        self.tasks.push(handle);
+    }
+
+    /// Awaits all background tasks with a timeout for graceful shutdown.
+    ///
+    /// This ensures tasks are given a chance to complete cleanly after cancellation
+    /// rather than being abruptly dropped. Tasks that don't complete within the
+    /// timeout are allowed to continue running (will be cleaned up by tokio).
+    async fn await_tasks_with_timeout(&mut self, timeout: Duration) {
+        for handle in self.tasks.drain(..) {
+            let _ = tokio::time::timeout(timeout, handle).await;
+        }
+    }
+
     /// Bootstrap instruments from the dYdX Indexer API.
     ///
     /// This method:
@@ -306,7 +352,10 @@ impl DataClient for DydxDataClient {
         log::debug!("Resetting {}", self.client_id);
         self.is_connected.store(false, Ordering::Relaxed);
         self.cancellation_token = CancellationToken::new();
-        self.tasks.clear();
+        // Abort remaining tasks instead of just dropping handles to prevent resource leaks
+        for handle in self.tasks.drain(..) {
+            handle.abort();
+        }
         Ok(())
     }
 
@@ -337,43 +386,20 @@ impl DataClient for DydxDataClient {
             .context("failed to subscribe to markets channel")?;
 
         // Start message processing task (handler already converts to NautilusWsMessage)
-        if let Some(rx) = self.ws_client.take_receiver() {
-            log::debug!("Starting message processing task");
-            let data_tx = self.data_sender.clone();
-            let instrument_cache = self.instrument_cache.clone();
-            let order_books = self.order_books.clone();
-            let last_quotes = self.last_quotes.clone();
-            let ws_client = self.ws_client.clone();
-            let active_orderbook_subs = self.active_orderbook_subs.clone();
-            let active_trade_subs = self.active_trade_subs.clone();
-            let active_bar_subs = self.active_bar_subs.clone();
-            let incomplete_bars = self.incomplete_bars.clone();
+        let ctx = WsMessageContext {
+            data_sender: self.data_sender.clone(),
+            instrument_cache: self.instrument_cache.clone(),
+            order_books: self.order_books.clone(),
+            last_quotes: self.last_quotes.clone(),
+            ws_client: self.ws_client.clone(),
+            active_orderbook_subs: self.active_orderbook_subs.clone(),
+            active_trade_subs: self.active_trade_subs.clone(),
+            active_bar_subs: self.active_bar_subs.clone(),
+            incomplete_bars: self.incomplete_bars.clone(),
+        };
 
-            let ctx = WsMessageContext {
-                data_sender: data_tx,
-                instrument_cache,
-                order_books,
-                last_quotes,
-                ws_client,
-                active_orderbook_subs,
-                active_trade_subs,
-                active_bar_subs,
-                incomplete_bars,
-            };
-
-            let task = get_runtime().spawn(async move {
-                log::debug!("Message processing task started");
-                let mut rx = rx;
-
-                while let Some(msg) = rx.recv().await {
-                    Self::handle_ws_message(msg, &ctx);
-                }
-                log::debug!("Message processing task ended (channel closed)");
-            });
-            self.tasks.push(task);
-        } else {
-            log::error!("No inbound WS receiver available after connect");
-        }
+        let stream = self.ws_client.stream();
+        self.spawn_ws_stream_handler(stream, ctx);
 
         // Start orderbook snapshot refresh task
         self.start_orderbook_refresh_task()?;
@@ -393,6 +419,12 @@ impl DataClient for DydxDataClient {
         }
 
         log::info!("Disconnecting");
+
+        // Cancel all tasks
+        self.cancellation_token.cancel();
+
+        // Await tasks with timeout for graceful shutdown
+        self.await_tasks_with_timeout(Duration::from_secs(5)).await;
 
         self.ws_client
             .disconnect()
@@ -438,9 +470,7 @@ impl DataClient for DydxDataClient {
     fn subscribe_instrument(&mut self, cmd: &SubscribeInstrument) -> anyhow::Result<()> {
         // dYdX instruments are already cached from HTTP during connect()
         // Look up and send the requested instrument to the data engine
-        let symbol = cmd.instrument_id.symbol.inner();
-
-        if let Some(instrument) = self.instrument_cache.get(&symbol) {
+        if let Some(instrument) = self.instrument_cache.get(&cmd.instrument_id) {
             log::debug!("Sending cached instrument for {}", cmd.instrument_id);
             if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
                 log::warn!("Failed to send instrument {}: {e}", cmd.instrument_id);
@@ -699,6 +729,19 @@ impl DataClient for DydxDataClient {
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
+        if request.start.is_some() {
+            log::warn!(
+                "Requesting instrument {} with specified `start` which has no effect",
+                request.instrument_id
+            );
+        }
+        if request.end.is_some() {
+            log::warn!(
+                "Requesting instrument {} with specified `end` which has no effect",
+                request.instrument_id
+            );
+        }
+
         let instrument_cache = self.instrument_cache.clone();
         let sender = self.data_sender.clone();
         let http = self.http_client.clone();
@@ -714,8 +757,7 @@ impl DataClient for DydxDataClient {
 
         get_runtime().spawn(async move {
             // First try to get from cache
-            let symbol = instrument_id.symbol.inner();
-            let instrument = if let Some(cached) = instrument_cache.get(&symbol) {
+            let instrument = if let Some(cached) = instrument_cache.get(&instrument_id) {
                 log::debug!("Found instrument {instrument_id} in cache");
                 Some(cached)
             } else {
@@ -850,7 +892,7 @@ impl DataClient for DydxDataClient {
                 .to_string();
 
             // Look up instrument to derive price and size precision.
-            let instrument = match instrument_cache.get(&instrument_id.symbol.inner()) {
+            let instrument = match instrument_cache.get(&instrument_id) {
                 Some(inst) => inst.clone(),
                 None => {
                     log::error!(
@@ -1082,7 +1124,7 @@ impl DataClient for DydxDataClient {
             };
 
             // Look up instrument to derive price and size precision.
-            let instrument = match instrument_cache.get(&instrument_id.symbol.inner()) {
+            let instrument = match instrument_cache.get(&instrument_id) {
                 Some(inst) => inst.clone(),
                 None => {
                     log::error!(
@@ -1409,7 +1451,7 @@ impl DydxDataClient {
 
                         for instrument_id in active_instruments {
                             // Get instrument for parsing
-                            let instrument = match instrument_cache.get(&instrument_id.symbol.inner()) {
+                            let instrument = match instrument_cache.get(&instrument_id) {
                                 Some(inst) => inst.clone(),
                                 None => {
                                     log::warn!(
@@ -1549,10 +1591,10 @@ impl DydxDataClient {
         Ok(OrderBookDeltas::new(instrument_id, deltas))
     }
 
-    /// Get a cached instrument by symbol.
+    /// Get a cached instrument by InstrumentId.
     #[must_use]
-    pub fn get_instrument(&self, symbol: &str) -> Option<InstrumentAny> {
-        self.instrument_cache.get(&Ustr::from(symbol))
+    pub fn get_instrument(&self, instrument_id: &InstrumentId) -> Option<InstrumentAny> {
+        self.instrument_cache.get(instrument_id)
     }
 
     /// Get all cached instruments.
@@ -2000,7 +2042,7 @@ impl DydxDataClient {
         let instrument_id = deltas.instrument_id;
 
         // Get instrument for crossed orderbook resolution
-        let instrument = match instrument_cache.get(&instrument_id.symbol.inner()) {
+        let instrument = match instrument_cache.get(&instrument_id) {
             Some(inst) => inst,
             None => {
                 log::error!("Cannot resolve crossed order book: no instrument for {instrument_id}");
@@ -2091,15 +2133,11 @@ impl DydxDataClient {
         let ts_init = get_atomic_clock_realtime().get_time_ns();
 
         for (symbol_str, oracle_market) in oracle_prices {
-            // Oracle prices use market format (e.g., "BTC-USD"), but instruments are keyed
-            // by perpetual symbol (e.g., "BTC-USD-PERP")
-            let perp_symbol = format!("{symbol_str}-PERP");
-            let symbol = Ustr::from(&perp_symbol);
-
-            // Get instrument to access instrument_id
-            let Some(instrument) = instrument_cache.get(&symbol) else {
+            // Oracle prices use market format (e.g., "BTC-USD")
+            // Use get_by_market to look up the instrument directly
+            let Some(instrument) = instrument_cache.get_by_market(&symbol_str) else {
                 log::debug!(
-                    "Received oracle price for unknown instrument (not cached yet): symbol={symbol}"
+                    "Received oracle price for unknown instrument (not cached yet): market={symbol_str}"
                 );
                 continue;
             };
@@ -2110,7 +2148,7 @@ impl DydxDataClient {
             let oracle_price_str = &oracle_market.oracle_price;
             let Ok(oracle_price_dec) = oracle_price_str.parse::<Decimal>() else {
                 log::error!(
-                    "Failed to parse oracle price: symbol={symbol}, price_str={oracle_price_str}"
+                    "Failed to parse oracle price: market={symbol_str}, price_str={oracle_price_str}"
                 );
                 continue;
             };
@@ -2118,7 +2156,7 @@ impl DydxDataClient {
             let price_precision = instrument.price_precision();
             let Ok(oracle_price) = Price::from_decimal_dp(oracle_price_dec, price_precision) else {
                 log::error!(
-                    "Failed to create oracle Price: symbol={symbol}, price={oracle_price_dec}"
+                    "Failed to create oracle Price: market={symbol_str}, price={oracle_price_dec}"
                 );
                 continue;
             };

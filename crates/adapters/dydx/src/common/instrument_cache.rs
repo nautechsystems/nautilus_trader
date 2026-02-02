@@ -21,11 +21,13 @@
 //! # Design
 //!
 //! dYdX uses different identifiers in different contexts:
-//! - **Symbol** ("BTC-USD-PERP"): Nautilus internal identifier
+//! - **InstrumentId** ("BTC-USD-PERP.DYDX"): Nautilus internal identifier (primary key)
 //! - **Market ticker** ("BTC-USD"): Used in public WebSocket channels
 //! - **clob_pair_id** (0, 1, 2...): Used in blockchain transactions and order messages
 //!
 //! This cache provides O(1) lookups by any of these identifiers through internal indices.
+//! Using `InstrumentId` as the primary key provides better type safety and eliminates
+//! redundant conversions.
 //!
 //! # Thread Safety
 //!
@@ -46,22 +48,18 @@ use crate::{grpc::OrderMarketParams, http::models::PerpetualMarket};
 /// Thread-safe instrument cache with multiple lookup indices.
 ///
 /// Shared between HTTP client, WebSocket client, and execution client via `Arc`.
-/// Provides O(1) lookups by symbol, market ticker, or clob_pair_id.
+/// Provides O(1) lookups by `InstrumentId`, market ticker, or clob_pair_id.
 
 #[derive(Debug, Default)]
 pub struct InstrumentCache {
-    /// Primary storage: symbol ("BTC-USD-PERP") → InstrumentAny
-    instruments: DashMap<Ustr, InstrumentAny>,
-
-    /// Index: clob_pair_id (0, 1, 2...) → symbol
-    clob_pair_id_index: DashMap<u32, Ustr>,
-
-    /// Index: market ticker ("BTC-USD") → symbol
-    market_index: DashMap<Ustr, Ustr>,
-
-    /// Market parameters for order building (quantization, margin, etc.)
-    market_params: DashMap<Ustr, PerpetualMarket>,
-
+    /// Primary storage: InstrumentId → InstrumentAny
+    instruments: DashMap<InstrumentId, InstrumentAny>,
+    /// Index: clob_pair_id (0, 1, 2...) → InstrumentId (direct lookup)
+    clob_pair_id_index: DashMap<u32, InstrumentId>,
+    /// Index: market ticker ("BTC-USD") → InstrumentId (direct lookup)
+    market_index: DashMap<Ustr, InstrumentId>,
+    /// Market parameters: InstrumentId → PerpetualMarket
+    market_params: DashMap<InstrumentId, PerpetualMarket>,
     /// Whether cache has been initialized with instrument data
     initialized: AtomicBool,
 }
@@ -77,19 +75,19 @@ impl InstrumentCache {
     ///
     /// This populates the primary storage and all lookup indices.
     pub fn insert(&self, instrument: InstrumentAny, market: PerpetualMarket) {
-        let symbol = instrument.id().symbol.inner();
+        let instrument_id = instrument.id();
         let ticker = Ustr::from(&market.ticker);
         let clob_pair_id = market.clob_pair_id;
 
         // Primary storage
-        self.instruments.insert(symbol, instrument);
+        self.instruments.insert(instrument_id, instrument);
 
-        // Build indices for reverse lookups
-        self.clob_pair_id_index.insert(clob_pair_id, symbol);
-        self.market_index.insert(ticker, symbol);
+        // Build indices for reverse lookups (now point directly to InstrumentId)
+        self.clob_pair_id_index.insert(clob_pair_id, instrument_id);
+        self.market_index.insert(ticker, instrument_id);
 
         // Store full market params for order building
-        self.market_params.insert(symbol, market);
+        self.market_params.insert(instrument_id, market);
     }
 
     /// Bulk inserts instruments with their market data.
@@ -113,14 +111,14 @@ impl InstrumentCache {
         self.initialized.store(false, Ordering::Release);
     }
 
-    /// Inserts an instrument without market data (symbol lookup only).
+    /// Inserts an instrument without market data (InstrumentId lookup only).
     ///
     /// Use this for caching instruments when market params are not available.
     /// Note: `get_by_clob_id()` and `get_by_market()` won't work for instruments
-    /// inserted this way - only `get()` by symbol will work.
+    /// inserted this way - only `get()` by InstrumentId will work.
     pub fn insert_instrument_only(&self, instrument: InstrumentAny) {
-        let symbol = instrument.id().symbol.inner();
-        self.instruments.insert(symbol, instrument);
+        let instrument_id = instrument.id();
+        self.instruments.insert(instrument_id, instrument);
     }
 
     /// Bulk inserts instruments without market data.
@@ -133,10 +131,10 @@ impl InstrumentCache {
         self.initialized.store(true, Ordering::Release);
     }
 
-    /// Gets an instrument by Nautilus symbol (e.g., "BTC-USD-PERP").
+    /// Gets an instrument by InstrumentId.
     #[must_use]
-    pub fn get(&self, symbol: &Ustr) -> Option<InstrumentAny> {
-        self.instruments.get(symbol).map(|r| r.clone())
+    pub fn get(&self, instrument_id: &InstrumentId) -> Option<InstrumentAny> {
+        self.instruments.get(instrument_id).map(|r| r.clone())
     }
 
     /// Gets an instrument by market ticker (e.g., "BTC-USD").
@@ -147,7 +145,7 @@ impl InstrumentCache {
         let ticker_ustr = Ustr::from(ticker);
         self.market_index
             .get(&ticker_ustr)
-            .and_then(|symbol| self.instruments.get(&*symbol).map(|r| r.clone()))
+            .and_then(|instrument_id| self.instruments.get(&*instrument_id).map(|r| r.clone()))
     }
 
     /// Gets an instrument by clob_pair_id (e.g., 0, 1, 2).
@@ -157,38 +155,33 @@ impl InstrumentCache {
     pub fn get_by_clob_id(&self, clob_pair_id: u32) -> Option<InstrumentAny> {
         self.clob_pair_id_index
             .get(&clob_pair_id)
-            .and_then(|symbol| self.instruments.get(&*symbol).map(|r| r.clone()))
+            .and_then(|instrument_id| self.instruments.get(&*instrument_id).map(|r| r.clone()))
     }
 
     /// Gets an InstrumentId by clob_pair_id.
     ///
-    /// Convenience method when only the ID is needed (avoids cloning full instrument).
+    /// Returns directly from index without cloning full instrument.
     #[must_use]
     pub fn get_id_by_clob_id(&self, clob_pair_id: u32) -> Option<InstrumentId> {
-        self.get_by_clob_id(clob_pair_id).map(|inst| inst.id())
+        self.clob_pair_id_index.get(&clob_pair_id).map(|r| *r)
     }
 
     /// Gets an InstrumentId by market ticker.
     ///
-    /// Convenience method when only the ID is needed (avoids cloning full instrument).
+    /// Returns directly from index without cloning full instrument.
     #[must_use]
     pub fn get_id_by_market(&self, ticker: &str) -> Option<InstrumentId> {
-        self.get_by_market(ticker).map(|inst| inst.id())
+        let ticker_ustr = Ustr::from(ticker);
+        self.market_index.get(&ticker_ustr).map(|r| *r)
     }
 
-    /// Gets full market parameters by symbol.
+    /// Gets full market parameters by InstrumentId.
     ///
     /// Returns the complete `PerpetualMarket` data including margin requirements,
     /// quantization parameters, and current oracle price.
     #[must_use]
-    pub fn get_market_params(&self, symbol: &Ustr) -> Option<PerpetualMarket> {
-        self.market_params.get(symbol).map(|r| r.clone())
-    }
-
-    /// Gets market parameters by InstrumentId.
-    #[must_use]
-    pub fn get_market_params_by_id(&self, instrument_id: &InstrumentId) -> Option<PerpetualMarket> {
-        self.get_market_params(&instrument_id.symbol.inner())
+    pub fn get_market_params(&self, instrument_id: &InstrumentId) -> Option<PerpetualMarket> {
+        self.market_params.get(instrument_id).map(|r| r.clone())
     }
 
     /// Gets order market parameters for order building.
@@ -200,7 +193,7 @@ impl InstrumentCache {
         &self,
         instrument_id: &InstrumentId,
     ) -> Option<OrderMarketParams> {
-        self.get_market_params_by_id(instrument_id).map(|market| {
+        self.get_market_params(instrument_id).map(|market| {
             OrderMarketParams {
                 atomic_resolution: market.atomic_resolution,
                 clob_pair_id: market.clob_pair_id,
@@ -217,8 +210,8 @@ impl InstrumentCache {
     /// Called when receiving price updates via WebSocket `v4_markets` channel.
     pub fn update_oracle_price(&self, ticker: &str, oracle_price: rust_decimal::Decimal) {
         let ticker_ustr = Ustr::from(ticker);
-        if let Some(symbol) = self.market_index.get(&ticker_ustr)
-            && let Some(mut market) = self.market_params.get_mut(&*symbol)
+        if let Some(instrument_id) = self.market_index.get(&ticker_ustr)
+            && let Some(mut market) = self.market_params.get_mut(&*instrument_id)
         {
             market.oracle_price = oracle_price;
         }
@@ -256,24 +249,16 @@ impl InstrumentCache {
         self.instruments.iter().map(|r| r.value().id()).collect()
     }
 
-    /// Checks if an instrument exists by symbol.
+    /// Checks if an instrument exists by InstrumentId.
     #[must_use]
-    pub fn contains(&self, symbol: &Ustr) -> bool {
-        self.instruments.contains_key(symbol)
+    pub fn contains(&self, instrument_id: &InstrumentId) -> bool {
+        self.instruments.contains_key(instrument_id)
     }
 
     /// Checks if an instrument exists by clob_pair_id.
     #[must_use]
     pub fn contains_clob_id(&self, clob_pair_id: u32) -> bool {
         self.clob_pair_id_index.contains_key(&clob_pair_id)
-    }
-
-    /// Retrieves an instrument by InstrumentId.
-    ///
-    /// This is a convenience method that extracts the symbol and looks it up.
-    #[must_use]
-    pub fn get_by_id(&self, instrument_id: &InstrumentId) -> Option<InstrumentAny> {
-        self.get(&instrument_id.symbol.inner())
     }
 
     /// Returns a HashMap of all instruments keyed by InstrumentId.
@@ -288,15 +273,26 @@ impl InstrumentCache {
             .collect()
     }
 
+    /// Returns a HashMap of oracle prices keyed by InstrumentId.
+    ///
+    /// This is useful for parsing functions like `parse_account_state` that need oracle prices.
+    /// Note: Creates a snapshot copy, so frequent calls should be avoided.
+    #[must_use]
+    pub fn to_oracle_prices_map(
+        &self,
+    ) -> std::collections::HashMap<InstrumentId, rust_decimal::Decimal> {
+        self.market_params
+            .iter()
+            .map(|entry| (*entry.key(), entry.value().oracle_price))
+            .collect()
+    }
+
     /// Logs a warning about a missing instrument for a clob_pair_id, listing known mappings.
     pub fn log_missing_clob_pair_id(&self, clob_pair_id: u32) {
         let known: Vec<(u32, String)> = self
             .clob_pair_id_index
             .iter()
-            .filter_map(|entry| {
-                self.get(entry.value())
-                    .map(|inst| (*entry.key(), inst.id().symbol.as_str().to_string()))
-            })
+            .map(|entry| (*entry.key(), entry.value().symbol.as_str().to_string()))
             .collect();
 
         log::warn!(
@@ -386,13 +382,13 @@ mod tests {
     fn test_insert_and_get() {
         let cache = InstrumentCache::new();
         let instrument = create_test_instrument("BTC-USD-PERP");
+        let instrument_id = instrument.id();
         let market = create_test_market("BTC-USD", 0);
 
         cache.insert(instrument, market);
 
-        // Get by symbol
-        let symbol = Ustr::from("BTC-USD-PERP");
-        let retrieved = cache.get(&symbol);
+        // Get by InstrumentId
+        let retrieved = cache.get(&instrument_id);
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().id().symbol.as_str(), "BTC-USD-PERP");
     }
@@ -476,7 +472,7 @@ mod tests {
 
         cache.insert(instrument.clone(), market);
 
-        let params = cache.get_market_params_by_id(&instrument.id());
+        let params = cache.get_market_params(&instrument.id());
         assert!(params.is_some());
         let params = params.unwrap();
         assert_eq!(params.clob_pair_id, 0);
@@ -492,13 +488,45 @@ mod tests {
         cache.insert(instrument.clone(), market);
 
         // Initial oracle price
-        let params = cache.get_market_params_by_id(&instrument.id()).unwrap();
+        let params = cache.get_market_params(&instrument.id()).unwrap();
         assert_eq!(params.oracle_price, dec!(50000));
 
         // Update oracle price
         cache.update_oracle_price("BTC-USD", dec!(55000));
 
-        let params = cache.get_market_params_by_id(&instrument.id()).unwrap();
+        let params = cache.get_market_params(&instrument.id()).unwrap();
         assert_eq!(params.oracle_price, dec!(55000));
+    }
+
+    #[rstest]
+    fn test_to_oracle_prices_map() {
+        let cache = InstrumentCache::new();
+
+        let items = vec![
+            (
+                create_test_instrument("BTC-USD-PERP"),
+                create_test_market("BTC-USD", 0),
+            ),
+            (
+                create_test_instrument("ETH-USD-PERP"),
+                create_test_market("ETH-USD", 1),
+            ),
+        ];
+
+        cache.insert_many(items);
+
+        // Update one oracle price
+        cache.update_oracle_price("ETH-USD", dec!(3000));
+
+        let oracle_map = cache.to_oracle_prices_map();
+        assert_eq!(oracle_map.len(), 2);
+
+        // BTC-USD should have default 50000
+        let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+        assert_eq!(oracle_map.get(&btc_id), Some(&dec!(50000)));
+
+        // ETH-USD should have updated price 3000
+        let eth_id = InstrumentId::new(Symbol::new("ETH-USD-PERP"), Venue::new("DYDX"));
+        assert_eq!(oracle_map.get(&eth_id), Some(&dec!(3000)));
     }
 }

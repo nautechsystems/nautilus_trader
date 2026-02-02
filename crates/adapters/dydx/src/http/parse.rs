@@ -817,7 +817,7 @@ use nautilus_model::{
     types::{Money, Price, Quantity},
 };
 
-use super::models::{Fill, Order, PerpetualPosition, Subaccount};
+use super::models::{Fill, Order, PerpetualPosition};
 use crate::common::enums::{DydxConditionType, DydxLiquidity, DydxOrderStatus};
 #[cfg(test)]
 use crate::common::enums::{DydxFillType, DydxPositionStatus, DydxTickerType};
@@ -1185,138 +1185,6 @@ pub fn parse_account_state(
 
         // Create synthetic instrument ID for account-level margin
         // Format: ACCOUNT.DYDX (similar to OKX pattern)
-        let margin_instrument_id = InstrumentId::new(Symbol::new("ACCOUNT"), Venue::new("DYDX"));
-
-        let margin_balance =
-            MarginBalance::new(initial_money, maintenance_money, margin_instrument_id);
-        margins.push(margin_balance);
-    }
-
-    Ok(AccountState::new(
-        account_id,
-        AccountType::Margin, // dYdX uses cross-margin
-        balances,
-        margins,
-        true, // is_reported - comes from venue
-        UUID4::new(),
-        ts_event,
-        ts_init,
-        None, // base_currency - dYdX settles in USDC
-    ))
-}
-
-/// Parses an account state from HTTP subaccount response.
-///
-/// Unlike `parse_account_state` which handles WebSocket types with string fields,
-/// this function handles HTTP API types with pre-parsed Decimal fields.
-///
-/// # Errors
-///
-/// Returns an error if balance fields cannot be parsed.
-pub fn parse_http_account_state(
-    subaccount: &Subaccount,
-    account_id: AccountId,
-    instruments: &std::collections::HashMap<InstrumentId, InstrumentAny>,
-    oracle_prices: &std::collections::HashMap<InstrumentId, Decimal>,
-    ts_event: UnixNanos,
-    ts_init: UnixNanos,
-) -> anyhow::Result<AccountState> {
-    use std::collections::HashMap;
-
-    use nautilus_model::{
-        enums::AccountType,
-        events::AccountState,
-        types::{AccountBalance, MarginBalance},
-    };
-
-    let mut balances = Vec::new();
-    let equity = subaccount.equity;
-    let free_collateral = subaccount.free_collateral;
-
-    // dYdX uses USDC as the settlement currency
-    let currency = Currency::get_or_create_crypto_with_context("USDC", None);
-
-    let total = Money::from_decimal(equity, currency).context("failed to parse equity")?;
-    let free = Money::from_decimal(free_collateral, currency)
-        .context("failed to parse free collateral")?;
-    let locked = total - free;
-
-    let balance = AccountBalance::new_checked(total, locked, free)
-        .context("Failed to create AccountBalance from subaccount data")?;
-    balances.push(balance);
-
-    let mut margins = Vec::new();
-    let mut initial_margins: HashMap<Currency, Decimal> = HashMap::new();
-    let mut maintenance_margins: HashMap<Currency, Decimal> = HashMap::new();
-
-    for (market_str, position) in &subaccount.open_perpetual_positions {
-        // Transform market symbol (e.g., "BTC-USD" -> "BTC-USD-PERP")
-        let instrument_id = parse_instrument_id(market_str);
-
-        let instrument = match instruments.get(&instrument_id) {
-            Some(inst) => inst,
-            None => {
-                log::warn!(
-                    "Cannot calculate margin for position {market_str}: instrument not found"
-                );
-                continue;
-            }
-        };
-
-        let (margin_init, margin_maint) = match instrument {
-            InstrumentAny::CryptoPerpetual(perp) => (perp.margin_init, perp.margin_maint),
-            _ => {
-                log::warn!(
-                    "Instrument {instrument_id} is not a CryptoPerpetual, skipping margin calculation"
-                );
-                continue;
-            }
-        };
-
-        // HTTP position.size is already Decimal (unlike WS which uses strings)
-        let position_size = position.size.abs();
-        if position_size.is_zero() {
-            continue;
-        }
-
-        // Fallback to entry price if oracle price not available
-        let oracle_price = oracle_prices
-            .get(&instrument_id)
-            .copied()
-            .unwrap_or(position.entry_price);
-
-        if oracle_price.is_zero() {
-            log::warn!("No valid price for position {market_str}, skipping margin calculation");
-            continue;
-        }
-
-        // margin = margin_fraction * abs(size) * oracle_price
-        let initial_margin = margin_init * position_size * oracle_price;
-        let maintenance_margin = margin_maint * position_size * oracle_price;
-
-        let quote_currency = instrument.quote_currency();
-        *initial_margins
-            .entry(quote_currency)
-            .or_insert(Decimal::ZERO) += initial_margin;
-        *maintenance_margins
-            .entry(quote_currency)
-            .or_insert(Decimal::ZERO) += maintenance_margin;
-    }
-
-    for (currency, initial_margin) in initial_margins {
-        let maintenance_margin = maintenance_margins
-            .get(&currency)
-            .copied()
-            .unwrap_or(Decimal::ZERO);
-
-        let initial_money = Money::from_decimal(initial_margin, currency).context(format!(
-            "Failed to create initial margin Money for {currency}"
-        ))?;
-        let maintenance_money = Money::from_decimal(maintenance_margin, currency).context(
-            format!("Failed to create maintenance margin Money for {currency}"),
-        )?;
-
-        // Synthetic instrument ID for account-level margin (not a real instrument)
         let margin_instrument_id = InstrumentId::new(Symbol::new("ACCOUNT"), Venue::new("DYDX"));
 
         let margin_balance =

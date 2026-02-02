@@ -45,17 +45,15 @@ use std::{
 
 use anyhow::Context;
 use async_trait::async_trait;
-use dashmap::{DashMap, DashSet};
+use dashmap::DashMap;
+use futures_util::{Stream, StreamExt, pin_mut};
 use nautilus_common::{
     clients::ExecutionClient,
     live::{get_runtime, runner::get_exec_event_sender},
-    messages::{
-        ExecutionEvent,
-        execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-            GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
-        },
+    messages::execution::{
+        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+        GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
+        ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
 };
 use nautilus_core::{
@@ -66,7 +64,6 @@ use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce},
-    events::{OrderEventAny, OrderModifyRejected, OrderPendingUpdate},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
@@ -87,7 +84,7 @@ use crate::{
     config::DydxAdapterConfig,
     execution::{
         broadcaster::TxBroadcaster,
-        client_order_id_encoder::ClientOrderIdEncoder,
+        encoder::ClientOrderIdEncoder,
         order_builder::OrderMessageBuilder,
         tx_manager::TransactionManager,
         types::{LimitOrderParams, OrderContext},
@@ -96,8 +93,8 @@ use crate::{
     http::{
         client::DydxHttpClient,
         parse::{
-            parse_account_state, parse_fill_report, parse_http_account_state,
-            parse_order_status_report, parse_position_status_report,
+            parse_account_state, parse_fill_report, parse_order_status_report,
+            parse_position_status_report,
         },
     },
     websocket::{
@@ -109,7 +106,7 @@ use crate::{
 
 pub mod block_time;
 pub mod broadcaster;
-pub mod client_order_id_encoder;
+pub mod encoder;
 pub mod order_builder;
 pub mod submitter;
 pub mod tx_manager;
@@ -157,9 +154,6 @@ pub struct DydxExecutionClient {
     /// Wrapped in Arc for sharing with async WebSocket handler.
     encoder: Arc<ClientOrderIdEncoder>,
     order_contexts: Arc<DashMap<u32, OrderContext>>,
-    /// Set of client_id_u32 values that have cancel requests in-flight.
-    /// Used to prevent duplicate cancel requests for the same order.
-    pending_cancels: Arc<DashSet<u32>>,
     wallet_address: String,
     subaccount_number: u32,
     tx_manager: Option<Arc<TransactionManager>>,
@@ -240,7 +234,6 @@ impl DydxExecutionClient {
             oracle_prices: Arc::new(DashMap::new()),
             encoder: Arc::new(ClientOrderIdEncoder::new()),
             order_contexts: Arc::new(DashMap::new()),
-            pending_cancels: Arc::new(DashSet::new()),
             wallet_address,
             subaccount_number,
             tx_manager: None,
@@ -298,6 +291,250 @@ impl DydxExecutionClient {
     /// This is the recommended way to get chain_id for all transaction submissions.
     fn get_chain_id(&self) -> ChainId {
         self.config.get_chain_id()
+    }
+
+    /// Spawns a stream handler to dispatch WebSocket messages to the execution engine.
+    fn spawn_ws_stream_handler(
+        &mut self,
+        stream: impl Stream<Item = NautilusWsMessage> + Send + 'static,
+    ) {
+        if self.ws_stream_handle.is_some() {
+            return;
+        }
+
+        log::debug!("Starting execution WebSocket message processing task");
+
+        // Clone data needed for account state parsing in spawned task
+        let account_id = self.core.account_id;
+        let instrument_cache = self.instrument_cache.clone();
+        let oracle_prices = self.oracle_prices.clone();
+        let encoder = self.encoder.clone();
+        let order_contexts = self.order_contexts.clone();
+        let block_time_monitor = self.block_time_monitor.clone();
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+
+        let handle = get_runtime().spawn(async move {
+            log::debug!("Execution WebSocket message loop started");
+            pin_mut!(stream);
+            while let Some(msg) = stream.next().await {
+                match msg {
+                    NautilusWsMessage::Order(report) => {
+                        log::debug!("Received order update: {:?}", report.order_status);
+                        emitter.send_order_status_report(*report);
+                    }
+                    NautilusWsMessage::Fill(report) => {
+                        log::debug!("Received fill update");
+                        emitter.send_fill_report(*report);
+                    }
+                    NautilusWsMessage::Position(report) => {
+                        log::debug!("Received position update");
+                        emitter.send_position_report(*report);
+                    }
+                    NautilusWsMessage::AccountState(state) => {
+                        log::debug!("Received account state update");
+                        emitter.send_account_state(*state);
+                    }
+                    NautilusWsMessage::SubaccountSubscribed(msg) => {
+
+                        log::debug!("Parsing subaccount subscription with full context");
+
+                        // Build instruments map for parsing from shared cache
+                        let inst_map = instrument_cache.to_instrument_id_map();
+
+                        // Build oracle prices map (copy Decimals)
+                        let oracle_map: std::collections::HashMap<_, _> = oracle_prices
+                            .iter()
+                            .map(|entry| (*entry.key(), *entry.value()))
+                            .collect();
+
+                        let ts_init = clock.get_time_ns();
+                        let ts_event = ts_init;
+
+                        match parse_account_state(
+                            &msg.contents.subaccount,
+                            account_id,
+                            &inst_map,
+                            &oracle_map,
+                            ts_event,
+                            ts_init,
+                        ) {
+                            Ok(account_state) => {
+                                println!("PARSED ACCOUNT STATE: {account_state:?}");
+                                log::debug!(
+                                    "Parsed account state: {} balance(s), {} margin(s)",
+                                    account_state.balances.len(),
+                                    account_state.margins.len()
+                                );
+                                emitter.send_account_state(account_state);
+                            }
+                            Err(e) => {
+                                log::error!("Failed to parse account state: {e}");
+                            }
+                        }
+
+                        // Parse positions from the subscription
+                        if let Some(ref positions) =
+                            msg.contents.subaccount.open_perpetual_positions
+                        {
+                            log::debug!(
+                                "Parsing {} position(s) from subscription",
+                                positions.len()
+                            );
+
+                            for (market, ws_position) in positions {
+                                match parse_ws_position_report(
+                                    ws_position,
+                                    &instrument_cache,
+                                    account_id,
+                                    ts_init,
+                                ) {
+                                    Ok(report) => {
+                                        log::debug!(
+                                            "Parsed position report: {} {} {} {}",
+                                            report.instrument_id,
+                                            report.position_side,
+                                            report.quantity,
+                                            market
+                                        );
+                                        emitter.send_position_report(report);
+                                    }
+                                    Err(e) => {
+                                        log::error!(
+                                            "Failed to parse WebSocket position for {market}: {e}"
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    NautilusWsMessage::SubaccountsChannelData(data) => {
+                        log::debug!(
+                            "Processing subaccounts channel data (orders={:?}, fills={:?})",
+                            data.contents.orders.as_ref().map(|o| o.len()),
+                            data.contents.fills.as_ref().map(|f| f.len())
+                        );
+                        let ts_init = clock.get_time_ns();
+
+                        // Process orders
+                        if let Some(ref orders) = data.contents.orders {
+                            log::info!(
+                                "Processing {} orders from SubaccountsChannelData",
+                                orders.len()
+                            );
+                            for ws_order in orders {
+                                log::info!(
+                                    "Parsing WS order: clob_pair_id={}, status={:?}, client_id={}",
+                                    ws_order.clob_pair_id,
+                                    ws_order.status,
+                                    ws_order.client_id
+                                );
+                                match parse_ws_order_report(
+                                    ws_order,
+                                    &instrument_cache,
+                                    &order_contexts,
+                                    &encoder,
+                                    account_id,
+                                    ts_init,
+                                ) {
+                                    Ok(report) => {
+                                        log::info!(
+                                            "Parsed order report: {} {} {:?} qty={} client_order_id={:?}",
+                                            report.instrument_id,
+                                            report.order_side,
+                                            report.order_status,
+                                            report.quantity,
+                                            report.client_order_id
+                                        );
+                                        emitter.send_order_status_report(report);
+                                    }
+                                    Err(e) => {
+                                        log::error!("Failed to parse WebSocket order: {e}");
+                                    }
+                                }
+                            }
+                        }
+
+                        // Process fills
+                        if let Some(ref fills) = data.contents.fills {
+                            for ws_fill in fills {
+                                match parse_ws_fill_report(
+                                    ws_fill,
+                                    &instrument_cache,
+                                    account_id,
+                                    ts_init,
+                                ) {
+                                    Ok(report) => {
+                                        log::debug!(
+                                            "Parsed fill report: {} {} {} @ {}",
+                                            report.instrument_id,
+                                            report.venue_order_id,
+                                            report.last_qty,
+                                            report.last_px
+                                        );
+                                        emitter.send_fill_report(report);
+                                    }
+                                    Err(e) => {
+                                        log::error!("Failed to parse WebSocket fill: {e}");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    NautilusWsMessage::OraclePrices(oracle_prices_map) => {
+                        log::debug!(
+                            "Processing oracle price updates for {} markets",
+                            oracle_prices_map.len()
+                        );
+
+                        // Update oracle_prices map with new prices
+                        for (market_symbol, oracle_data) in &oracle_prices_map {
+                            // Parse oracle price
+                            match oracle_data.oracle_price.parse::<Decimal>() {
+                                Ok(price) => {
+                                    // Find instrument by market ticker (oracle uses "BTC-USD")
+                                    if let Some(instrument) =
+                                        instrument_cache.get_by_market(market_symbol)
+                                    {
+                                        let instrument_id = instrument.id();
+                                        oracle_prices.insert(instrument_id, price);
+                                        log::trace!(
+                                            "Updated oracle price for {instrument_id}: {price}"
+                                        );
+                                    } else {
+                                        log::debug!(
+                                            "No instrument found for market symbol '{market_symbol}'"
+                                        );
+                                    }
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "Failed to parse oracle price for {market_symbol}: {e}"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    NautilusWsMessage::BlockHeight { height, time } => {
+                        log::debug!("Block height update: {height} at {time}");
+                        block_time_monitor.record_block(height, time);
+                    }
+                    NautilusWsMessage::Error(err) => {
+                        log::error!("WebSocket error: {err:?}");
+                    }
+                    NautilusWsMessage::Reconnected => {
+                        log::info!("WebSocket reconnected");
+                    }
+                    _ => {
+                        // Data, Deltas are for market data, not execution
+                    }
+                }
+            }
+            log::debug!("WebSocket message processing task ended");
+        });
+
+        self.ws_stream_handle = Some(handle);
+        log::info!("WebSocket stream handler started");
     }
 
     /// Marks instruments as initialized after HTTP client has fetched them.
@@ -1201,453 +1438,20 @@ impl ExecutionClient for DydxExecutionClient {
         Ok(())
     }
 
-    /// Modifies an order on dYdX by canceling and replacing.
+    /// dYdX does not support native order modification.
     ///
-    /// dYdX doesn't support native order modification, so this implements
-    /// cancel-and-replace: the existing order is canceled and a new order
-    /// is submitted with the modified parameters.
+    /// Strategies should handle `OrderModifyRejected` by canceling and resubmitting.
     fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
-        if !self.is_connected() {
-            anyhow::bail!("Cannot modify order: not connected");
-        }
+        let reason = "dYdX does not support order modification. Use cancel and resubmit instead.";
+        log::error!("{reason}");
 
-        let client_order_id = cmd.client_order_id;
-        let instrument_id = cmd.instrument_id;
-
-        // Validate order exists in cache and is open
-        let cache = self.core.cache();
-
-        let order = match cache.order(&client_order_id).cloned() {
-            Some(order) => order,
-            None => {
-                log::error!("Cannot modify order {client_order_id}: not found in cache");
-                return Ok(());
-            }
-        };
-
-        if order.is_closed() {
-            log::warn!(
-                "ModifyOrder command for {} when order already {} (will not send to exchange)",
-                client_order_id,
-                order.status()
-            );
-            return Ok(());
-        }
-
-        // Only support limit order modification for now
-        if order.order_type() != OrderType::Limit {
-            let reason = format!(
-                "Order modification only supported for Limit orders, was {:?}",
-                order.order_type()
-            );
-            log::error!("{reason}");
-            self.send_modify_rejected(
-                cmd.strategy_id,
-                instrument_id,
-                client_order_id,
-                cmd.venue_order_id,
-                &reason,
-            );
-            return Ok(());
-        }
-
-        // Get the modified values (use existing if not specified)
-        let new_quantity = cmd.quantity.unwrap_or_else(|| order.quantity());
-        let new_price = match cmd.price.or_else(|| order.price()) {
-            Some(p) => p,
-            None => {
-                let reason = "Cannot modify order: no price specified and order has no price";
-                log::error!("{reason}");
-                self.send_modify_rejected(
-                    cmd.strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    cmd.venue_order_id,
-                    reason,
-                );
-                return Ok(());
-            }
-        };
-
-        // Check block height is available
-        let current_block = self.block_time_monitor.current_block_height();
-        if current_block == 0 {
-            let reason = "Block height not initialized";
-            log::warn!("Cannot modify order {client_order_id}: {reason}");
-            self.send_modify_rejected(
-                cmd.strategy_id,
-                instrument_id,
-                client_order_id,
-                cmd.venue_order_id,
-                reason,
-            );
-            return Ok(());
-        }
-
-        log::info!(
-            "Modifying order {} via cancel-and-replace: qty={} -> {}, price={:?} -> {}",
-            client_order_id,
-            order.quantity(),
-            new_quantity,
-            order.price(),
-            new_price
-        );
-
-        // Send OrderPendingUpdate event
-        let ts_now = self.clock.get_time_ns();
-        let pending_event = OrderPendingUpdate::new(
-            cmd.trader_id,
+        self.send_modify_rejected(
             cmd.strategy_id,
-            instrument_id,
-            client_order_id,
-            self.core.account_id,
-            UUID4::new(),
-            ts_now,
-            ts_now,
-            false,
+            cmd.instrument_id,
+            cmd.client_order_id,
             cmd.venue_order_id,
+            reason,
         );
-        let sender = get_exec_event_sender();
-        if let Err(e) = sender.send(ExecutionEvent::Order(OrderEventAny::PendingUpdate(
-            pending_event,
-        ))) {
-            log::warn!("Failed to send OrderPendingUpdate event: {e}");
-        }
-
-        // Get the OLD encoded pair for cancellation
-        let old_encoded = match self.encoder.get(&client_order_id) {
-            Some(enc) => enc,
-            None => {
-                log::error!("Client order ID {client_order_id} not found in cache");
-                self.send_modify_rejected(
-                    cmd.strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    cmd.venue_order_id,
-                    "Client order ID not found in mapping",
-                );
-                return Ok(());
-            }
-        };
-        let old_client_id_u32 = old_encoded.client_id;
-        let old_client_metadata = old_encoded.client_metadata;
-
-        // Get old order context (needed for order_flags during cancellation)
-        let old_order_context = self.get_order_context(old_client_id_u32);
-        let old_order_flags = old_order_context.as_ref().map_or(0, |ctx| ctx.order_flags); // Default to short-term if not found
-
-        // Generate NEW client_id for replacement order using encoder
-        // dYdX doesn't allow reusing client_id even after cancellation
-        let new_encoded = match self
-            .encoder
-            .update_mapping(client_order_id, old_client_id_u32, old_client_metadata)
-        {
-            Ok(enc) => enc,
-            Err(e) => {
-                log::error!("Failed to generate new client order ID: {e}");
-                self.send_modify_rejected(
-                    cmd.strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    cmd.venue_order_id,
-                    &e.to_string(),
-                );
-                return Ok(());
-            }
-        };
-        let new_client_id_u32 = new_encoded.client_id;
-        let new_client_metadata = new_encoded.client_metadata;
-
-        // Remove old context
-        self.order_contexts.remove(&old_client_id_u32);
-
-        log::info!(
-            "[MODIFY_ORDER] Nautilus '{}' | old dYdX u32={} meta={:#x} -> new dYdX u32={} meta={:#x} | instrument={} new_qty={} new_price={}",
-            client_order_id,
-            old_client_id_u32,
-            old_client_metadata,
-            new_client_id_u32,
-            new_client_metadata,
-            instrument_id,
-            new_quantity,
-            new_price
-        );
-
-        // Get execution components
-        let (tx_manager, broadcaster, order_builder) = match self.get_execution_components() {
-            Ok(components) => components,
-            Err(e) => {
-                log::error!("Failed to get execution components for modify: {e}");
-                self.send_modify_rejected(
-                    cmd.strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    cmd.venue_order_id,
-                    &e.to_string(),
-                );
-                return Ok(());
-            }
-        };
-
-        let block_height = current_block as u32;
-        let trader_id = cmd.trader_id;
-        let strategy_id = cmd.strategy_id;
-        let venue_order_id = cmd.venue_order_id;
-        let order_side = order.order_side();
-        let time_in_force = order.time_in_force();
-        let post_only = order.is_post_only();
-        let reduce_only = order.is_reduce_only();
-        // Capture raw expire_time (builder will apply default_short_term_expiry)
-        let expire_time_ns = order.expire_time();
-        let account_id = self.core.account_id;
-
-        // Create params for the replacement order (needed for short-term check)
-        let new_params = LimitOrderParams {
-            instrument_id,
-            client_order_id: new_client_id_u32,
-            client_metadata: new_client_metadata,
-            side: order_side,
-            price: new_price,
-            quantity: new_quantity,
-            time_in_force,
-            post_only,
-            reduce_only,
-            expire_time_ns,
-        };
-
-        // Check if either cancel or place is short-term
-        // dYdX protocol restriction: short-term orders CANNOT be batched
-        let cancel_is_short_term =
-            order_builder.is_short_term_cancel(time_in_force, expire_time_ns);
-        let place_is_short_term = order_builder.is_short_term_order(&new_params);
-        let requires_sequential = cancel_is_short_term || place_is_short_term;
-
-        // Determine new order_flags for the replacement order
-        let new_order_flags = if place_is_short_term {
-            types::ORDER_FLAG_SHORT_TERM
-        } else {
-            types::ORDER_FLAG_LONG_TERM
-        };
-
-        // FIX: Register new order context BEFORE spawning async task
-        // This prevents race condition where WS response arrives before context is registered
-        let ts_submitted = self.clock.get_time_ns();
-        self.register_order_context(
-            new_client_id_u32,
-            OrderContext {
-                client_order_id,
-                trader_id,
-                strategy_id,
-                instrument_id,
-                submitted_at: ts_submitted,
-                order_flags: new_order_flags,
-            },
-        );
-
-        if requires_sequential {
-            log::info!(
-                "Modifying order {client_order_id} via sequential cancel+place (short-term: cancel={cancel_is_short_term}, place={place_is_short_term})"
-            );
-        }
-
-        self.spawn_task("modify_order", async move {
-            log::debug!(
-                "Modify order {client_order_id}: old_id={old_client_id_u32}, new_id={new_client_id_u32}, qty={new_quantity}, price={new_price}"
-            );
-
-            if requires_sequential {
-                // Short-term orders cannot be batched - execute cancel then place sequentially
-                // Step 1: Build and send cancel using stored order_flags
-                let cancel_msg = match order_builder.build_cancel_order_with_flags(
-                    instrument_id,
-                    old_client_id_u32,
-                    old_order_flags,
-                    block_height,
-                ) {
-                    Ok(msg) => msg,
-                    Err(e) => {
-                        log::error!("Modify failed - cancel build failed for {client_order_id}: {e:?}");
-                        let ts_now = UnixNanos::default();
-                        let event = OrderModifyRejected::new(
-                            trader_id,
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            format!("Cancel build failed: {e:?}").into(),
-                            UUID4::new(),
-                            ts_now,
-                            ts_now,
-                            false,
-                            venue_order_id,
-                            Some(account_id),
-                        );
-                        let sender = get_exec_event_sender();
-                        let _ = sender.send(ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)));
-                        return Ok(());
-                    }
-                };
-
-                // Broadcast cancel first
-                if let Err(e) = broadcaster
-                    .broadcast_with_retry(
-                        &tx_manager,
-                        vec![cancel_msg],
-                        &format!("Modify cancel {client_order_id}"),
-                    )
-                    .await
-                {
-                    log::error!("Modify failed - cancel broadcast failed for {client_order_id}: {e:?}");
-                    let ts_now = UnixNanos::default();
-                    let event = OrderModifyRejected::new(
-                        trader_id,
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        format!("Cancel failed: {e:?}").into(),
-                        UUID4::new(),
-                        ts_now,
-                        ts_now,
-                        false,
-                        venue_order_id,
-                        Some(account_id),
-                    );
-                    let sender = get_exec_event_sender();
-                    let _ = sender.send(ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)));
-                    return Ok(());
-                }
-
-                log::debug!("Modify cancel succeeded for {client_order_id}, now placing replacement");
-
-                // Step 2: Build and send place
-                let place_msg = match order_builder.build_limit_order_from_params(&new_params, block_height) {
-                    Ok(msg) => msg,
-                    Err(e) => {
-                        log::error!("Modify failed - place build failed for {client_order_id}: {e:?}");
-                        let ts_now = UnixNanos::default();
-                        let event = OrderModifyRejected::new(
-                            trader_id,
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            format!("Place build failed: {e:?}").into(),
-                            UUID4::new(),
-                            ts_now,
-                            ts_now,
-                            false,
-                            venue_order_id,
-                            Some(account_id),
-                        );
-                        let sender = get_exec_event_sender();
-                        let _ = sender.send(ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)));
-                        return Ok(());
-                    }
-                };
-
-                // Broadcast place
-                match broadcaster
-                    .broadcast_with_retry(
-                        &tx_manager,
-                        vec![place_msg],
-                        &format!("Modify place {client_order_id}"),
-                    )
-                    .await
-                {
-                    Ok(_) => {
-                        log::info!(
-                            "Modify complete: Order {client_order_id} sequentially modified (qty={new_quantity}, price={new_price})"
-                        );
-                    }
-                    Err(e) => {
-                        log::error!("Modify failed - place broadcast failed for {client_order_id}: {e:?}");
-                        let ts_now = UnixNanos::default();
-                        let event = OrderModifyRejected::new(
-                            trader_id,
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            format!("Place failed after cancel: {e:?}").into(),
-                            UUID4::new(),
-                            ts_now,
-                            ts_now,
-                            false,
-                            venue_order_id,
-                            Some(account_id),
-                        );
-                        let sender = get_exec_event_sender();
-                        let _ = sender.send(ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)));
-                    }
-                }
-            } else {
-                // Both long-term - can batch cancel+place in single transaction
-                log::debug!(
-                    "Modify order {client_order_id}: building atomic cancel+replace batch"
-                );
-
-                let batch_msgs = match order_builder.build_cancel_and_replace_with_flags(
-                    instrument_id,
-                    old_client_id_u32,
-                    old_order_flags,
-                    &new_params,
-                    block_height,
-                ) {
-                    Ok(msgs) => msgs,
-                    Err(e) => {
-                        log::error!("Modify failed - batch build failed for {client_order_id}: {e:?}");
-                        let ts_now = UnixNanos::default();
-                        let event = OrderModifyRejected::new(
-                            trader_id,
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            format!("Batch build failed: {e:?}").into(),
-                            UUID4::new(),
-                            ts_now,
-                            ts_now,
-                            false,
-                            venue_order_id,
-                            Some(account_id),
-                        );
-                        let sender = get_exec_event_sender();
-                        let _ = sender.send(ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)));
-                        return Ok(());
-                    }
-                };
-
-                // Broadcast atomic cancel+replace as single transaction
-                match broadcaster
-                    .broadcast_with_retry(&tx_manager, batch_msgs, &format!("Modify order {client_order_id}"))
-                    .await
-                {
-                    Ok(_) => {
-                        log::info!(
-                            "Modify complete: Order {client_order_id} atomically modified (qty={new_quantity}, price={new_price})"
-                        );
-                    }
-                    Err(e) => {
-                        log::error!("Modify failed for {client_order_id}: {e:?}");
-                        let ts_now = UnixNanos::default();
-                        let event = OrderModifyRejected::new(
-                            trader_id,
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            format!("Modify failed: {e:?}").into(),
-                            UUID4::new(),
-                            ts_now,
-                            ts_now,
-                            false,
-                            venue_order_id,
-                            Some(account_id),
-                        );
-                        let sender = get_exec_event_sender();
-                        let _ = sender.send(ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)));
-                    }
-                }
-            }
-
-            Ok(())
-        });
-
         Ok(())
     }
 
@@ -1738,23 +1542,8 @@ impl ExecutionClient for DydxExecutionClient {
         };
         let client_id_u32 = encoded.client_id;
 
-        // Check if cancel is already in-flight for this order
-        if !self.pending_cancels.insert(client_id_u32) {
-            // Returns false if value was already present
-            log::info!(
-                "[CANCEL_ORDER] SKIPPED: Cancel already in-flight for '{}' (u32={})",
-                client_order_id,
-                client_id_u32
-            );
-            return Ok(());
-        }
-
         log::info!(
-            "[CANCEL_ORDER] Nautilus '{}' -> dYdX u32={} | instrument={} | pending_cancels={}",
-            client_order_id,
-            client_id_u32,
-            instrument_id,
-            self.pending_cancels.len()
+            "[CANCEL_ORDER] Nautilus '{client_order_id}' -> dYdX u32={client_id_u32} | instrument={instrument_id}"
         );
 
         // Get stored order_flags from order context (set at submission time)
@@ -1778,7 +1567,6 @@ impl ExecutionClient for DydxExecutionClient {
 
         let clock = self.clock;
         let emitter = self.emitter.clone();
-        let pending_cancels = self.pending_cancels.clone();
 
         self.spawn_task("cancel_order", async move {
             // Build cancel message using stored order_flags
@@ -1800,8 +1588,6 @@ impl ExecutionClient for DydxExecutionClient {
                         &format!("Cancel build failed: {e:?}"),
                         ts_event,
                     );
-                    // Remove from pending_cancels on failure
-                    pending_cancels.remove(&client_id_u32);
                     return Ok(());
                 }
             };
@@ -1817,9 +1603,6 @@ impl ExecutionClient for DydxExecutionClient {
             {
                 Ok(_) => {
                     log::debug!("Successfully cancelled order: {client_order_id}");
-                    // Note: pending_cancels will be cleaned up when WS confirms cancel
-                    // But we can remove here since the request was sent successfully
-                    pending_cancels.remove(&client_id_u32);
                 }
                 Err(e) => {
                     log::error!("Failed to cancel order {client_order_id}: {e:?}");
@@ -1833,8 +1616,6 @@ impl ExecutionClient for DydxExecutionClient {
                         &format!("Cancel order failed: {e:?}"),
                         ts_event,
                     );
-                    // Remove from pending_cancels on failure
-                    pending_cancels.remove(&client_id_u32);
                 }
             }
 
@@ -2297,11 +2078,7 @@ impl ExecutionClient for DydxExecutionClient {
             .context("failed to initialize sequence")?;
 
         self.tx_manager = Some(tx_manager);
-        log::debug!("TransactionManager initialized");
-
         self.broadcaster = Some(Arc::new(TxBroadcaster::new(grpc_client)));
-        log::debug!("TxBroadcaster initialized");
-
         self.order_builder = Some(Arc::new(OrderMessageBuilder::new(
             self.http_client.clone(),
             self.wallet_address.clone(),
@@ -2342,308 +2119,13 @@ impl ExecutionClient for DydxExecutionClient {
             self.subaccount_number
         );
 
-        // Fetch initial account state via HTTP (required before orders can be submitted)
-        log::debug!("Fetching initial account state from HTTP API");
-        let subaccount_response = self
-            .http_client
-            .inner
-            .get_subaccount(&self.wallet_address, self.subaccount_number)
-            .await
-            .context("failed to fetch initial account state")?;
-
-        let inst_map = self.instrument_cache.to_instrument_id_map();
-
-        // Build empty oracle prices map (not available yet during connect)
-        let oracle_map: std::collections::HashMap<_, _> = self
-            .oracle_prices
-            .iter()
-            .map(|entry| (*entry.key(), *entry.value()))
-            .collect();
-
-        let ts_init = self.clock.get_time_ns();
-        let account_state = parse_http_account_state(
-            &subaccount_response.subaccount,
-            self.core.account_id,
-            &inst_map,
-            &oracle_map,
-            ts_init,
-            ts_init,
-        )
-        .context("failed to parse initial account state")?;
-
-        log::debug!(
-            "Initial account state: {} balance(s), {} margin(s)",
-            account_state.balances.len(),
-            account_state.margins.len()
-        );
-
-        let ts_event = self.clock.get_time_ns();
-        self.emitter.emit_account_state(
-            account_state.balances,
-            account_state.margins,
-            account_state.is_reported,
-            ts_event,
-        );
+        let stream = self.ws_client.stream();
+        self.spawn_ws_stream_handler(stream);
 
         // Wait for account to be registered in cache before continuing.
         // This ensures execution state reconciliation can process fills correctly
         // (fills require the account to be registered for portfolio updates).
         self.await_account_registered(30.0).await?;
-
-        // Spawn WebSocket message processing task following standard adapter pattern
-        // Per docs/developer_guide/adapters.md: Parse -> Dispatch -> Engine handles events
-        if let Some(mut rx) = self.ws_client.take_receiver() {
-            log::debug!("Starting execution WebSocket message processing task");
-
-            // Clone data needed for account state parsing in spawned task
-            let account_id = self.core.account_id;
-            let instrument_cache = self.instrument_cache.clone();
-            let oracle_prices = self.oracle_prices.clone();
-            let encoder = self.encoder.clone();
-            let order_contexts = self.order_contexts.clone();
-            let pending_cancels = self.pending_cancels.clone();
-            let block_time_monitor = self.block_time_monitor.clone();
-            let emitter = self.emitter.clone();
-            let clock = self.clock;
-
-            let handle = get_runtime().spawn(async move {
-                    log::debug!("Execution WebSocket message loop started");
-                    while let Some(msg) = rx.recv().await {
-                        let msg_type = match &msg {
-                            NautilusWsMessage::Data(_) => "Data",
-                            NautilusWsMessage::Deltas(_) => "Deltas",
-                            NautilusWsMessage::Order(_) => "Order",
-                            NautilusWsMessage::Fill(_) => "Fill",
-                            NautilusWsMessage::Position(_) => "Position",
-                            NautilusWsMessage::AccountState(_) => "AccountState",
-                            NautilusWsMessage::SubaccountSubscribed(_) => "SubaccountSubscribed",
-                            NautilusWsMessage::SubaccountsChannelData(_) => "SubaccountsChannelData",
-                            NautilusWsMessage::OraclePrices(_) => "OraclePrices",
-                            NautilusWsMessage::BlockHeight { .. } => "BlockHeight",
-                            NautilusWsMessage::Error(_) => "Error",
-                            NautilusWsMessage::Reconnected => "Reconnected",
-                        };
-                        log::debug!("Execution client received: {msg_type}");
-                        match msg {
-                            NautilusWsMessage::Order(report) => {
-                                log::debug!("Received order update: {:?}", report.order_status);
-                                emitter.send_order_status_report(*report);
-                            }
-                            NautilusWsMessage::Fill(report) => {
-                                log::debug!("Received fill update");
-                                emitter.send_fill_report(*report);
-                            }
-                            NautilusWsMessage::Position(report) => {
-                                log::debug!("Received position update");
-                                emitter.send_position_report(*report);
-                            }
-                            NautilusWsMessage::AccountState(state) => {
-                                log::debug!("Received account state update");
-                                emitter.send_account_state(*state);
-                            }
-                            NautilusWsMessage::SubaccountSubscribed(msg) => {
-                                log::debug!(
-                                    "Parsing subaccount subscription with full context"
-                                );
-
-                                // Build instruments map for parsing from shared cache
-                                let inst_map = instrument_cache.to_instrument_id_map();
-
-                                // Build oracle prices map (copy Decimals)
-                                let oracle_map: std::collections::HashMap<_, _> = oracle_prices
-                                    .iter()
-                                    .map(|entry| (*entry.key(), *entry.value()))
-                                    .collect();
-
-                                let ts_init = clock.get_time_ns();
-                                let ts_event = ts_init;
-
-                                match parse_account_state(
-                                    &msg.contents.subaccount,
-                                    account_id,
-                                    &inst_map,
-                                    &oracle_map,
-                                    ts_event,
-                                    ts_init,
-                                ) {
-                                    Ok(account_state) => {
-                                        log::debug!(
-                                            "Parsed account state: {} balance(s), {} margin(s)",
-                                            account_state.balances.len(),
-                                            account_state.margins.len()
-                                        );
-                                        emitter.send_account_state(account_state);
-                                    }
-                                    Err(e) => {
-                                        log::error!("Failed to parse account state: {e}");
-                                    }
-                                }
-
-                                // Parse positions from the subscription
-                                if let Some(ref positions) =
-                                    msg.contents.subaccount.open_perpetual_positions
-                                {
-                                    log::debug!(
-                                        "Parsing {} position(s) from subscription",
-                                        positions.len()
-                                    );
-
-                                    for (market, ws_position) in positions {
-                                        match parse_ws_position_report(
-                                            ws_position,
-                                            &instrument_cache,
-                                            account_id,
-                                            ts_init,
-                                        ) {
-                                            Ok(report) => {
-                                                log::debug!(
-                                                    "Parsed position report: {} {} {} {}",
-                                                    report.instrument_id,
-                                                    report.position_side,
-                                                    report.quantity,
-                                                    market
-                                                );
-                                                emitter.send_position_report(report);
-                                            }
-                                            Err(e) => {
-                                                log::error!(
-                                                    "Failed to parse WebSocket position for {market}: {e}"
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            NautilusWsMessage::SubaccountsChannelData(data) => {
-                                log::debug!("Processing subaccounts channel data (orders={:?}, fills={:?})",
-                                    data.contents.orders.as_ref().map(|o| o.len()),
-                                    data.contents.fills.as_ref().map(|f| f.len())
-                                );
-                                let ts_init = clock.get_time_ns();
-
-                                // Process orders
-                                if let Some(ref orders) = data.contents.orders {
-                                    log::info!("Processing {} orders from SubaccountsChannelData", orders.len());
-                                    for ws_order in orders {
-                                        log::info!(
-                                            "Parsing WS order: clob_pair_id={}, status={:?}, client_id={}",
-                                            ws_order.clob_pair_id,
-                                            ws_order.status,
-                                            ws_order.client_id
-                                        );
-                                        match parse_ws_order_report(
-                                            ws_order,
-                                            &instrument_cache,
-                                            &order_contexts,
-                                            &encoder,
-                                            &pending_cancels,
-                                            account_id,
-                                            ts_init,
-                                        ) {
-                                            Ok(report) => {
-                                                log::info!(
-                                                    "Parsed order report: {} {} {:?} qty={} client_order_id={:?}",
-                                                    report.instrument_id,
-                                                    report.order_side,
-                                                    report.order_status,
-                                                    report.quantity,
-                                                    report.client_order_id
-                                                );
-                                                emitter.send_order_status_report(report);
-                                            }
-                                            Err(e) => {
-                                                log::error!(
-                                                    "Failed to parse WebSocket order: {e}"
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Process fills
-                                if let Some(ref fills) = data.contents.fills {
-                                    for ws_fill in fills {
-                                        match parse_ws_fill_report(
-                                            ws_fill,
-                                            &instrument_cache,
-                                            account_id,
-                                            ts_init,
-                                        ) {
-                                            Ok(report) => {
-                                                log::debug!(
-                                                    "Parsed fill report: {} {} {} @ {}",
-                                                    report.instrument_id,
-                                                    report.venue_order_id,
-                                                    report.last_qty,
-                                                    report.last_px
-                                                );
-                                                emitter.send_fill_report(report);
-                                            }
-                                            Err(e) => {
-                                                log::error!(
-                                                    "Failed to parse WebSocket fill: {e}"
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            NautilusWsMessage::OraclePrices(oracle_prices_map) => {
-                                log::debug!(
-                                    "Processing oracle price updates for {} markets",
-                                    oracle_prices_map.len()
-                                );
-
-                                // Update oracle_prices map with new prices
-                                for (market_symbol, oracle_data) in &oracle_prices_map {
-                                    // Parse oracle price
-                                    match oracle_data.oracle_price.parse::<Decimal>()
-                                    {
-                                        Ok(price) => {
-                                            // Find instrument by market ticker (oracle uses "BTC-USD")
-                                            if let Some(instrument) = instrument_cache.get_by_market(market_symbol) {
-                                                let instrument_id = instrument.id();
-                                                oracle_prices.insert(instrument_id, price);
-                                                log::trace!(
-                                                    "Updated oracle price for {instrument_id}: {price}"
-                                                );
-                                            } else {
-                                                log::debug!(
-                                                    "No instrument found for market symbol '{market_symbol}'"
-                                                );
-                                            }
-                                        }
-                                        Err(e) => {
-                                            log::warn!(
-                                                "Failed to parse oracle price for {market_symbol}: {e}"
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                            NautilusWsMessage::BlockHeight { height, time } => {
-                                log::debug!("Block height update: {height} at {time}");
-                                block_time_monitor.record_block(height, time);
-                            }
-                            NautilusWsMessage::Error(err) => {
-                                log::error!("WebSocket error: {err:?}");
-                            }
-                            NautilusWsMessage::Reconnected => {
-                                log::info!("WebSocket reconnected");
-                            }
-                            _ => {
-                                // Data, Deltas are for market data, not execution
-                            }
-                        }
-                    }
-                    log::debug!("WebSocket message processing task ended");
-                });
-
-            self.ws_stream_handle = Some(handle);
-            log::debug!("Spawned WebSocket message processing task");
-        } else {
-            log::error!("Failed to take WebSocket receiver - no messages will be processed");
-        }
 
         self.core.set_connected();
         log::info!("Connected: client_id={}", self.core.client_id);

@@ -26,11 +26,13 @@ use axum::{
 };
 use nautilus_common::testing::wait_until_async;
 use nautilus_dydx::{common::enums::DydxCandleResolution, http::client::DydxHttpClient};
-use nautilus_model::instruments::Instrument;
+use nautilus_model::{
+    identifiers::{InstrumentId, Symbol, Venue},
+    instruments::Instrument,
+};
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
 use serde_json::{Value, json};
-use ustr::Ustr;
 
 fn test_data_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
@@ -225,8 +227,8 @@ async fn test_instrument_caching() {
     client.cache_instruments(instruments);
 
     // Retrieve from cache
-    let btc_symbol = Ustr::from("BTC-USD-PERP");
-    let cached = client.get_instrument(&btc_symbol);
+    let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let cached = client.get_instrument(&btc_id);
     assert!(cached.is_some(), "BTC-USD-PERP should be cached");
     assert_eq!(cached.unwrap().id().symbol.as_str(), "BTC-USD-PERP");
 }
@@ -247,12 +249,12 @@ async fn test_cache_single_instrument() {
 
     client.cache_instrument(btc);
 
-    let btc_symbol = Ustr::from("BTC-USD-PERP");
-    assert!(client.get_instrument(&btc_symbol).is_some());
+    let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    assert!(client.get_instrument(&btc_id).is_some());
 
     // ETH should not be cached
-    let eth_symbol = Ustr::from("ETH-USD-PERP");
-    assert!(client.get_instrument(&eth_symbol).is_none());
+    let eth_id = InstrumentId::new(Symbol::new("ETH-USD-PERP"), Venue::new("DYDX"));
+    assert!(client.get_instrument(&eth_id).is_none());
 }
 
 #[rstest]

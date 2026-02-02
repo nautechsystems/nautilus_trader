@@ -25,8 +25,11 @@
 //! # Encoding Scheme
 //!
 //! For O-format ClientOrderIds (`O-YYYYMMDD-HHMMSS-TTT-SSS-CCC`):
-//! - `client_id` (32 bits): Seconds since base epoch (2020-01-01 00:00:00 UTC)
-//! - `client_metadata` (32 bits): `[trader:10][strategy:10][count:12]`
+//! - `client_id` (32 bits): `[trader:10][strategy:10][count:12]` - **unique per order**
+//! - `client_metadata` (32 bits): Seconds since base epoch (2020-01-01 00:00:00 UTC)
+//!
+//! **IMPORTANT**: dYdX uses `client_id` for order identity/deduplication, so the
+//! unique part (trader+strategy+count) must be in `client_id`, not `client_metadata`.
 //!
 //! For numeric ClientOrderIds (e.g., "12345"):
 //! - `client_id`: The parsed u32 value
@@ -37,7 +40,7 @@
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use dashmap::{mapref::entry::Entry, DashMap};
+use dashmap::{DashMap, mapref::entry::Entry};
 use nautilus_model::identifiers::ClientOrderId;
 use thiserror::Error;
 
@@ -60,9 +63,10 @@ const COUNT_MASK: u32 = 0xFFF; // Bits [11:0] = 12 bits
 const TRADER_MASK: u32 = 0x3FF; // 10 bits
 const STRATEGY_MASK: u32 = 0x3FF; // 10 bits
 
-/// Sentinel value for client_id to indicate sequential allocation.
-/// This timestamp (~year 2156) is effectively impossible for real orders.
-const SEQUENTIAL_CLIENT_ID_SENTINEL: u32 = u32::MAX;
+/// Marker value for client_metadata to identify sequential allocation.
+/// Sequential IDs use: client_id = counter (unique), client_metadata = SEQUENTIAL_METADATA_MARKER
+/// This marker (0xFFFFFFFF) won't collide with O-format metadata (timestamps) until year ~2156.
+const SEQUENTIAL_METADATA_MARKER: u32 = u32::MAX;
 
 /// Encoded client order ID pair for dYdX.
 ///
@@ -81,7 +85,9 @@ pub struct EncodedClientOrderId {
 #[derive(Debug, Clone, Error)]
 pub enum EncoderError {
     /// The encoder has reached the maximum safe client ID value.
-    #[error("Client order ID counter overflow: current value {0} exceeds safe limit {MAX_SAFE_CLIENT_ID}")]
+    #[error(
+        "Client order ID counter overflow: current value {0} exceeds safe limit {MAX_SAFE_CLIENT_ID}"
+    )]
     CounterOverflow(u32),
 
     /// Failed to parse the O-format ClientOrderId.
@@ -148,12 +154,6 @@ impl ClientOrderIdEncoder {
         // Fast path: already mapped (for non-deterministic IDs)
         if let Some(existing) = self.forward.get(&id) {
             let encoded = *existing.value();
-            log::debug!(
-                "[ENCODER] encode() CACHE HIT: '{}' -> ({}, {})",
-                id,
-                encoded.client_id,
-                encoded.client_metadata
-            );
             return Ok(encoded);
         }
 
@@ -165,15 +165,10 @@ impl ClientOrderIdEncoder {
                 client_id: numeric_id,
                 client_metadata: DEFAULT_RUST_CLIENT_METADATA,
             };
-            log::info!(
-                "[ENCODER] encode() NUMERIC: '{}' -> ({}, {}) [legacy format]",
-                id,
-                encoded.client_id,
-                encoded.client_metadata
-            );
             // Cache for reverse lookup
             self.forward.insert(id, encoded);
-            self.reverse.insert((encoded.client_id, encoded.client_metadata), id);
+            self.reverse
+                .insert((encoded.client_id, encoded.client_metadata), id);
             return Ok(encoded);
         }
 
@@ -181,20 +176,12 @@ impl ClientOrderIdEncoder {
         if id_str.starts_with("O-") {
             match self.encode_o_format(id_str) {
                 Ok(encoded) => {
-                    log::info!(
-                        "[ENCODER] encode() O-FORMAT: '{}' -> ({}, {:#010x})",
-                        id,
-                        encoded.client_id,
-                        encoded.client_metadata
-                    );
                     // No need to cache - deterministic
                     return Ok(encoded);
                 }
                 Err(e) => {
                     log::warn!(
-                        "[ENCODER] O-format parse failed for '{}': {}, falling back to sequential",
-                        id,
-                        e
+                        "[ENCODER] O-format parse failed for '{id}': {e}, falling back to sequential",
                     );
                     // Fall through to sequential allocation
                 }
@@ -218,8 +205,7 @@ impl ClientOrderIdEncoder {
         let parts: Vec<&str> = id_str.split('-').collect();
         if parts.len() != 6 || parts[0] != "O" {
             return Err(EncoderError::ParseError(format!(
-                "Expected O-YYYYMMDD-HHMMSS-TTT-SSS-CCC, got: {}",
-                id_str
+                "Expected O-YYYYMMDD-HHMMSS-TTT-SSS-CCC, received: {id_str}",
             )));
         }
 
@@ -232,84 +218,82 @@ impl ClientOrderIdEncoder {
         // Validate lengths
         if date_str.len() != 8 || time_str.len() != 6 {
             return Err(EncoderError::ParseError(format!(
-                "Invalid date/time format in: {}",
-                id_str
+                "Invalid date/time format in: {id_str}"
             )));
         }
 
         // Parse datetime components
         let year: i32 = date_str[0..4]
             .parse()
-            .map_err(|_| EncoderError::ParseError(format!("Invalid year in: {}", id_str)))?;
+            .map_err(|_| EncoderError::ParseError(format!("Invalid year in: {id_str}")))?;
         let month: u32 = date_str[4..6]
             .parse()
-            .map_err(|_| EncoderError::ParseError(format!("Invalid month in: {}", id_str)))?;
+            .map_err(|_| EncoderError::ParseError(format!("Invalid month in: {id_str}")))?;
         let day: u32 = date_str[6..8]
             .parse()
-            .map_err(|_| EncoderError::ParseError(format!("Invalid day in: {}", id_str)))?;
+            .map_err(|_| EncoderError::ParseError(format!("Invalid day in: {id_str}")))?;
         let hour: u32 = time_str[0..2]
             .parse()
-            .map_err(|_| EncoderError::ParseError(format!("Invalid hour in: {}", id_str)))?;
+            .map_err(|_| EncoderError::ParseError(format!("Invalid hour in: {id_str}")))?;
         let minute: u32 = time_str[2..4]
             .parse()
-            .map_err(|_| EncoderError::ParseError(format!("Invalid minute in: {}", id_str)))?;
+            .map_err(|_| EncoderError::ParseError(format!("Invalid minute in: {id_str}")))?;
         let second: u32 = time_str[4..6]
             .parse()
-            .map_err(|_| EncoderError::ParseError(format!("Invalid second in: {}", id_str)))?;
+            .map_err(|_| EncoderError::ParseError(format!("Invalid second in: {id_str}")))?;
 
         // Parse identity components
         let trader: u32 = trader_str
             .parse()
-            .map_err(|_| EncoderError::ParseError(format!("Invalid trader in: {}", id_str)))?;
+            .map_err(|_| EncoderError::ParseError(format!("Invalid trader in: {id_str}")))?;
         let strategy: u32 = strategy_str
             .parse()
-            .map_err(|_| EncoderError::ParseError(format!("Invalid strategy in: {}", id_str)))?;
+            .map_err(|_| EncoderError::ParseError(format!("Invalid strategy in: {id_str}")))?;
         let count: u32 = count_str
             .parse()
-            .map_err(|_| EncoderError::ParseError(format!("Invalid count in: {}", id_str)))?;
+            .map_err(|_| EncoderError::ParseError(format!("Invalid count in: {id_str}")))?;
 
         // Validate ranges
         if trader > TRADER_MASK {
             return Err(EncoderError::ValueOverflow(format!(
-                "Trader tag {} exceeds max {}",
-                trader, TRADER_MASK
+                "Trader tag {trader} exceeds max {TRADER_MASK}"
             )));
         }
         if strategy > STRATEGY_MASK {
             return Err(EncoderError::ValueOverflow(format!(
-                "Strategy tag {} exceeds max {}",
-                strategy, STRATEGY_MASK
+                "Strategy tag {strategy} exceeds max {STRATEGY_MASK}"
             )));
         }
         if count > COUNT_MASK {
             return Err(EncoderError::ValueOverflow(format!(
-                "Count {} exceeds max {}",
-                count, COUNT_MASK
+                "Count {count} exceeds max {COUNT_MASK}"
             )));
         }
 
         // Convert to Unix timestamp
         let dt = chrono::NaiveDate::from_ymd_opt(year, month, day)
             .and_then(|d| d.and_hms_opt(hour, minute, second))
-            .ok_or_else(|| {
-                EncoderError::ParseError(format!("Invalid datetime in: {}", id_str))
-            })?;
+            .ok_or_else(|| EncoderError::ParseError(format!("Invalid datetime in: {id_str}")))?;
 
         let timestamp = dt.and_utc().timestamp();
 
-        // Encode client_id as seconds since base epoch
+        // Validate timestamp is after base epoch
         let seconds_since_epoch = timestamp - DYDX_BASE_EPOCH;
         if seconds_since_epoch < 0 {
             return Err(EncoderError::ValueOverflow(format!(
-                "Timestamp {} is before base epoch {}",
-                timestamp, DYDX_BASE_EPOCH
+                "Timestamp {timestamp} is before base epoch {DYDX_BASE_EPOCH}"
             )));
         }
-        let client_id = seconds_since_epoch as u32;
 
-        // Encode client_metadata: [trader:10][strategy:10][count:12]
-        let client_metadata =
+        // IMPORTANT: dYdX uses client_id for order identity/deduplication.
+        // We put the UNIQUE part (trader+strategy+count) in client_id,
+        // and the timestamp in client_metadata.
+        //
+        // client_id: [trader:10][strategy:10][count:12] - unique per order
+        // client_metadata: timestamp (seconds since epoch)
+        let client_id =
             (trader << TRADER_SHIFT) | (strategy << STRATEGY_SHIFT) | (count & COUNT_MASK);
+        let client_metadata = seconds_since_epoch as u32;
 
         Ok(EncodedClientOrderId {
             client_id,
@@ -323,9 +307,7 @@ impl ClientOrderIdEncoder {
         let current = self.next_id.load(Ordering::Relaxed);
         if current >= MAX_SAFE_CLIENT_ID {
             log::error!(
-                "[ENCODER] allocate_sequential() OVERFLOW: counter {} >= MAX_SAFE {}",
-                current,
-                MAX_SAFE_CLIENT_ID
+                "[ENCODER] allocate_sequential() OVERFLOW: counter {current} >= MAX_SAFE {MAX_SAFE_CLIENT_ID}"
             );
             return Err(EncoderError::CounterOverflow(current));
         }
@@ -334,28 +316,16 @@ impl ClientOrderIdEncoder {
         match self.forward.entry(id) {
             Entry::Occupied(entry) => {
                 let encoded = *entry.get();
-                log::debug!(
-                    "[ENCODER] allocate_sequential() RACE HIT: '{}' -> ({}, {})",
-                    id,
-                    encoded.client_id,
-                    encoded.client_metadata
-                );
                 Ok(encoded)
             }
             Entry::Vacant(vacant) => {
                 let counter = self.next_id.fetch_add(1, Ordering::Relaxed);
-                // Use SEQUENTIAL_CLIENT_ID_SENTINEL in client_id to mark sequential allocation
-                // The counter goes in client_metadata for uniqueness
+                // Use counter as client_id (unique per order, for dYdX identity)
+                // Use SEQUENTIAL_METADATA_MARKER in client_metadata to identify as sequential
                 let encoded = EncodedClientOrderId {
-                    client_id: SEQUENTIAL_CLIENT_ID_SENTINEL,
-                    client_metadata: counter,
+                    client_id: counter,
+                    client_metadata: SEQUENTIAL_METADATA_MARKER,
                 };
-                log::info!(
-                    "[ENCODER] allocate_sequential() NEW: '{}' -> ({:#x}, {}) [sequential]",
-                    id,
-                    encoded.client_id,
-                    encoded.client_metadata
-                );
                 vacant.insert(encoded);
                 self.reverse
                     .insert((encoded.client_id, encoded.client_metadata), id);
@@ -369,7 +339,7 @@ impl ClientOrderIdEncoder {
     /// # Decoding Rules
     ///
     /// 1. If `client_metadata == DEFAULT_RUST_CLIENT_METADATA (4)`: Return numeric string
-    /// 2. If `client_metadata >= 1_000_000`: Look up in sequential reverse mapping
+    /// 2. If `client_metadata == SEQUENTIAL_METADATA_MARKER`: Look up in sequential reverse mapping
     /// 3. Otherwise: Decode as O-format using timestamp + identity bits
     ///
     /// Returns `None` if decoding fails (e.g., sequential ID not in cache).
@@ -378,38 +348,15 @@ impl ClientOrderIdEncoder {
         // Legacy numeric IDs
         if client_metadata == DEFAULT_RUST_CLIENT_METADATA {
             let id = ClientOrderId::from(client_id.to_string().as_str());
-            log::debug!(
-                "[ENCODER] decode() NUMERIC: ({}, {}) -> '{}' [legacy]",
-                client_id,
-                client_metadata,
-                id
-            );
             return Some(id);
         }
 
-        // Sequential allocation marker
-        if client_metadata >= 1_000_000 {
+        // Sequential allocation (identified by metadata marker)
+        if client_metadata == SEQUENTIAL_METADATA_MARKER {
             let result = self
                 .reverse
                 .get(&(client_id, client_metadata))
                 .map(|r| *r.value());
-            match &result {
-                Some(id) => {
-                    log::debug!(
-                        "[ENCODER] decode() SEQUENTIAL: ({}, {}) -> '{}'",
-                        client_id,
-                        client_metadata,
-                        id
-                    );
-                }
-                None => {
-                    log::warn!(
-                        "[ENCODER] decode() SEQUENTIAL NOT FOUND: ({}, {}) [mapping lost after restart]",
-                        client_id,
-                        client_metadata
-                    );
-                }
-            }
             return result;
         }
 
@@ -418,14 +365,18 @@ impl ClientOrderIdEncoder {
     }
 
     /// Decodes O-format encoded values back to ClientOrderId string.
+    ///
+    /// Encoding scheme (swapped for uniqueness):
+    /// - client_id: [trader:10][strategy:10][count:12] - unique per order
+    /// - client_metadata: timestamp (seconds since epoch)
     fn decode_o_format(&self, client_id: u32, client_metadata: u32) -> Option<ClientOrderId> {
-        // Extract identity components from client_metadata
-        let trader = (client_metadata >> TRADER_SHIFT) & TRADER_MASK;
-        let strategy = (client_metadata >> STRATEGY_SHIFT) & STRATEGY_MASK;
-        let count = client_metadata & COUNT_MASK;
+        // Extract identity components from client_id (unique part)
+        let trader = (client_id >> TRADER_SHIFT) & TRADER_MASK;
+        let strategy = (client_id >> STRATEGY_SHIFT) & STRATEGY_MASK;
+        let count = client_id & COUNT_MASK;
 
-        // Convert client_id back to timestamp
-        let timestamp = (client_id as i64) + DYDX_BASE_EPOCH;
+        // Convert client_metadata back to timestamp
+        let timestamp = (client_metadata as i64) + DYDX_BASE_EPOCH;
 
         // Convert to datetime
         let dt = chrono::DateTime::from_timestamp(timestamp, 0)?;
@@ -445,21 +396,20 @@ impl ClientOrderIdEncoder {
         );
 
         let id = ClientOrderId::from(id_str.as_str());
-        log::debug!(
-            "[ENCODER] decode() O-FORMAT: ({}, {:#010x}) -> '{}'",
-            client_id,
-            client_metadata,
-            id
-        );
         Some(id)
     }
 
     /// Gets the existing encoded pair without allocating a new one.
     ///
-    /// For deterministic formats (numeric, O-format), computes the encoding.
-    /// For non-standard formats, looks up in the cache.
+    /// First checks the forward mapping (for updated/modified orders),
+    /// then falls back to deterministic computation for O-format and numeric IDs.
     #[must_use]
     pub fn get(&self, id: &ClientOrderId) -> Option<EncodedClientOrderId> {
+        // Check forward mapping first (handles update_mapping scenarios)
+        if let Some(entry) = self.forward.get(id) {
+            return Some(*entry.value());
+        }
+
         let id_str = id.as_str();
 
         // Try parsing as numeric
@@ -471,14 +421,13 @@ impl ClientOrderIdEncoder {
         }
 
         // Try O-format encoding
-        if id_str.starts_with("O-") {
-            if let Ok(encoded) = self.encode_o_format(id_str) {
-                return Some(encoded);
-            }
+        if id_str.starts_with("O-")
+            && let Ok(encoded) = self.encode_o_format(id_str)
+        {
+            return Some(encoded);
         }
 
-        // Look up in forward mapping
-        self.forward.get(id).map(|r| *r.value())
+        None
     }
 
     /// Removes the mapping for a given encoded pair.
@@ -486,40 +435,25 @@ impl ClientOrderIdEncoder {
     /// Returns the original ClientOrderId if it was mapped.
     /// For deterministic formats, this is a no-op.
     pub fn remove(&self, client_id: u32, client_metadata: u32) -> Option<ClientOrderId> {
-        // Sequential allocations need cleanup
-        if client_metadata >= 1_000_000 {
+        // Sequential allocations need cleanup (identified by metadata marker)
+        if client_metadata == SEQUENTIAL_METADATA_MARKER {
             if let Some((_, client_order_id)) = self.reverse.remove(&(client_id, client_metadata)) {
                 self.forward.remove(&client_order_id);
-                log::info!(
-                    "[ENCODER] remove() CLEANED: ({}, {}) <-> '{}' (sequential mapping removed)",
-                    client_id,
-                    client_metadata,
-                    client_order_id
-                );
                 return Some(client_order_id);
             }
+            return None;
         }
 
         // Numeric IDs cached for reverse lookup
-        if client_metadata == DEFAULT_RUST_CLIENT_METADATA {
-            if let Some((_, client_order_id)) = self.reverse.remove(&(client_id, client_metadata)) {
-                self.forward.remove(&client_order_id);
-                log::debug!(
-                    "[ENCODER] remove() CLEANED: ({}, {}) <-> '{}' (numeric mapping removed)",
-                    client_id,
-                    client_metadata,
-                    client_order_id
-                );
-                return Some(client_order_id);
-            }
+        if client_metadata == DEFAULT_RUST_CLIENT_METADATA
+            && let Some((_, client_order_id)) = self.reverse.remove(&(client_id, client_metadata))
+        {
+            self.forward.remove(&client_order_id);
+            return Some(client_order_id);
         }
 
         // O-format IDs are deterministic - just decode
-        if client_metadata < 1_000_000 && client_metadata != DEFAULT_RUST_CLIENT_METADATA {
-            return self.decode_o_format(client_id, client_metadata);
-        }
-
-        None
+        self.decode_o_format(client_id, client_metadata)
     }
 
     /// Legacy remove method for backward compatibility.
@@ -542,51 +476,6 @@ impl ClientOrderIdEncoder {
         }
 
         None
-    }
-
-    /// Updates the forward mapping to point to a new encoded pair.
-    ///
-    /// Used during modify_order when a new client ID is assigned.
-    /// Returns the new EncodedClientOrderId.
-    ///
-    /// # Errors
-    ///
-    /// Returns `EncoderError::CounterOverflow` if sequential counter exceeds safe limit.
-    pub fn update_mapping(
-        &self,
-        id: ClientOrderId,
-        old_client_id: u32,
-        old_client_metadata: u32,
-    ) -> Result<EncodedClientOrderId, EncoderError> {
-        // Remove old mappings
-        self.reverse.remove(&(old_client_id, old_client_metadata));
-        self.forward.remove(&id);
-
-        // Allocate new sequential ID (modify always uses sequential to avoid timestamp collision)
-        let current = self.next_id.load(Ordering::Relaxed);
-        if current >= MAX_SAFE_CLIENT_ID {
-            return Err(EncoderError::CounterOverflow(current));
-        }
-
-        let new_id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let encoded = EncodedClientOrderId {
-            client_id: new_id,
-            client_metadata: 1_000_000 + new_id,
-        };
-
-        self.forward.insert(id, encoded);
-        self.reverse.insert((encoded.client_id, encoded.client_metadata), id);
-
-        log::info!(
-            "[ENCODER] update_mapping() MODIFY: '{}' ({}, {}) -> ({}, {}) [for modify_order]",
-            id,
-            old_client_id,
-            old_client_metadata,
-            encoded.client_id,
-            encoded.client_metadata
-        );
-
-        Ok(encoded)
     }
 
     /// Returns the current counter value (for debugging/monitoring).
@@ -638,7 +527,15 @@ mod tests {
         assert!(result.is_ok());
         let encoded = result.unwrap();
 
-        // Verify timestamp encoding (seconds since 2020-01-01)
+        // New encoding scheme (swapped for uniqueness):
+        // client_id: [trader:10][strategy:10][count:12] - unique per order
+        // client_metadata: timestamp (seconds since epoch)
+
+        // Verify client_id encoding: trader=1, strategy=1, count=1
+        let expected_client_id = (1 << TRADER_SHIFT) | (1 << STRATEGY_SHIFT) | 1;
+        assert_eq!(encoded.client_id, expected_client_id);
+
+        // Verify timestamp in metadata (seconds since 2020-01-01)
         // 2026-01-31 17:48:27 UTC
         let expected_timestamp = chrono::NaiveDate::from_ymd_opt(2026, 1, 31)
             .unwrap()
@@ -646,12 +543,7 @@ mod tests {
             .unwrap()
             .and_utc()
             .timestamp();
-        let expected_client_id = (expected_timestamp - DYDX_BASE_EPOCH) as u32;
-        assert_eq!(encoded.client_id, expected_client_id);
-
-        // Verify metadata encoding: [trader:10][strategy:10][count:12]
-        // trader=1, strategy=1, count=1
-        let expected_metadata = (1 << TRADER_SHIFT) | (1 << STRATEGY_SHIFT) | 1;
+        let expected_metadata = (expected_timestamp - DYDX_BASE_EPOCH) as u32;
         assert_eq!(encoded.client_metadata, expected_metadata);
     }
 
@@ -680,12 +572,7 @@ mod tests {
             let id = ClientOrderId::from(id_str);
             let encoded = encoder.encode(id).unwrap();
             let decoded = encoder.decode(encoded.client_id, encoded.client_metadata);
-            assert_eq!(
-                decoded,
-                Some(id),
-                "Roundtrip failed for {}",
-                id_str
-            );
+            assert_eq!(decoded, Some(id), "Roundtrip failed for {id_str}");
         }
     }
 
@@ -709,8 +596,11 @@ mod tests {
         assert!(result.is_ok());
         let encoded = result.unwrap();
 
-        // Sequential allocation uses client_metadata >= 1_000_000
-        assert!(encoded.client_metadata >= 1_000_000);
+        // Sequential allocation uses SEQUENTIAL_METADATA_MARKER in client_metadata
+        assert_eq!(
+            encoded.client_metadata, SEQUENTIAL_METADATA_MARKER,
+            "Expected client_metadata == SEQUENTIAL_METADATA_MARKER"
+        );
     }
 
     #[rstest]
@@ -795,33 +685,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_update_mapping() {
-        let encoder = ClientOrderIdEncoder::new();
-        let id = ClientOrderId::from("O-20260131-174827-001-001-1");
-
-        let old_encoded = encoder.encode(id).unwrap();
-        let new_encoded = encoder
-            .update_mapping(id, old_encoded.client_id, old_encoded.client_metadata)
-            .unwrap();
-
-        // New encoding should be different
-        assert_ne!(new_encoded.client_id, old_encoded.client_id);
-
-        // Forward lookup should return new encoding
-        let got = encoder.get(&id);
-        assert_eq!(got, Some(new_encoded));
-
-        // Old encoding should not decode to this ID anymore
-        let decoded_old = encoder.decode(old_encoded.client_id, old_encoded.client_metadata);
-        // O-format can still be decoded deterministically
-        assert!(decoded_old.is_some());
-
-        // New encoding should decode correctly
-        let decoded_new = encoder.decode(new_encoded.client_id, new_encoded.client_metadata);
-        assert_eq!(decoded_new, Some(id));
-    }
-
-    #[rstest]
     fn test_max_values_o_format() {
         let encoder = ClientOrderIdEncoder::new();
         // Max trader (1023), max strategy (1023), max count (4095)
@@ -844,7 +707,31 @@ mod tests {
         let result = encoder.encode(id);
         // Should fall back to sequential, not error
         assert!(result.is_ok());
-        assert!(result.unwrap().client_metadata >= 1_000_000);
+        assert_eq!(
+            result.unwrap().client_metadata,
+            SEQUENTIAL_METADATA_MARKER,
+            "Overflow should fall back to sequential allocation"
+        );
+    }
+
+    #[rstest]
+    fn test_date_before_base_epoch_falls_back_to_sequential() {
+        let encoder = ClientOrderIdEncoder::new();
+        // Date 2019-12-31 is before base epoch (2020-01-01)
+        let id = ClientOrderId::from("O-20191231-235959-001-001-1");
+
+        let result = encoder.encode(id);
+        // Should fall back to sequential allocation, not error or wrap around
+        assert!(result.is_ok());
+        let encoded = result.unwrap();
+        assert_eq!(
+            encoded.client_metadata, SEQUENTIAL_METADATA_MARKER,
+            "Pre-2020 dates should fall back to sequential allocation"
+        );
+
+        // Should still be decodable via sequential lookup
+        let decoded = encoder.decode(encoded.client_id, encoded.client_metadata);
+        assert_eq!(decoded, Some(id));
     }
 
     #[rstest]
@@ -856,6 +743,39 @@ mod tests {
         let second = encoder.encode(id).unwrap();
 
         assert_eq!(first, second);
+    }
+
+    #[rstest]
+    fn test_same_second_different_count_has_unique_client_ids() {
+        // This is the critical test: orders submitted in the same second
+        // MUST have different client_ids for dYdX deduplication to work.
+        let encoder = ClientOrderIdEncoder::new();
+
+        // Same timestamp, different counts (like the real error case)
+        let id1 = ClientOrderId::from("O-20260201-084653-001-001-1");
+        let id2 = ClientOrderId::from("O-20260201-084653-001-001-2");
+
+        let encoded1 = encoder.encode(id1).unwrap();
+        let encoded2 = encoder.encode(id2).unwrap();
+
+        // client_ids MUST be different (this was the bug before the fix)
+        assert_ne!(
+            encoded1.client_id, encoded2.client_id,
+            "Orders in the same second must have different client_ids for dYdX"
+        );
+
+        // client_metadata can be the same (timestamp)
+        assert_eq!(encoded1.client_metadata, encoded2.client_metadata);
+
+        // Both should decode correctly
+        assert_eq!(
+            encoder.decode(encoded1.client_id, encoded1.client_metadata),
+            Some(id1)
+        );
+        assert_eq!(
+            encoder.decode(encoded2.client_id, encoded2.client_metadata),
+            Some(id2)
+        );
     }
 
     #[rstest]

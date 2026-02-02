@@ -592,8 +592,13 @@ mod tests {
     #[rstest]
     fn test_order_builder_market_buy() {
         let market = sample_market_params();
-        let builder =
-            OrderBuilder::new(market, "dydx1test".to_string(), 0, 1, DEFAULT_RUST_CLIENT_METADATA);
+        let builder = OrderBuilder::new(
+            market,
+            "dydx1test".to_string(),
+            0,
+            1,
+            DEFAULT_RUST_CLIENT_METADATA,
+        );
 
         let order = builder
             .market(OrderSide::Buy, dec!(0.01))
@@ -611,7 +616,13 @@ mod tests {
     #[rstest]
     fn test_order_builder_market_sell() {
         let market = sample_market_params();
-        let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 2, DEFAULT_RUST_CLIENT_METADATA);
+        let builder = OrderBuilder::new(
+            market,
+            "dydx1test".to_string(),
+            0,
+            2,
+            DEFAULT_RUST_CLIENT_METADATA,
+        );
 
         let order = builder
             .market(OrderSide::Sell, dec!(0.02))
@@ -626,7 +637,13 @@ mod tests {
     #[rstest]
     fn test_order_builder_limit_buy() {
         let market = sample_market_params();
-        let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 3, DEFAULT_RUST_CLIENT_METADATA);
+        let builder = OrderBuilder::new(
+            market,
+            "dydx1test".to_string(),
+            0,
+            3,
+            DEFAULT_RUST_CLIENT_METADATA,
+        );
 
         let order = builder
             .limit(OrderSide::Buy, dec!(49000), dec!(0.01))
@@ -643,7 +660,13 @@ mod tests {
     #[rstest]
     fn test_order_builder_limit_sell() {
         let market = sample_market_params();
-        let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 4, DEFAULT_RUST_CLIENT_METADATA);
+        let builder = OrderBuilder::new(
+            market,
+            "dydx1test".to_string(),
+            0,
+            4,
+            DEFAULT_RUST_CLIENT_METADATA,
+        );
 
         let order = builder
             .limit(OrderSide::Sell, dec!(51000), dec!(0.015))
@@ -659,7 +682,13 @@ mod tests {
     #[rstest]
     fn test_order_builder_limit_with_reduce_only() {
         let market = sample_market_params();
-        let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 5, DEFAULT_RUST_CLIENT_METADATA);
+        let builder = OrderBuilder::new(
+            market,
+            "dydx1test".to_string(),
+            0,
+            5,
+            DEFAULT_RUST_CLIENT_METADATA,
+        );
 
         let order = builder
             .limit(OrderSide::Sell, dec!(50000), dec!(0.01))
@@ -674,7 +703,13 @@ mod tests {
     #[rstest]
     fn test_order_builder_short_term_flag() {
         let market = sample_market_params();
-        let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 6, DEFAULT_RUST_CLIENT_METADATA);
+        let builder = OrderBuilder::new(
+            market,
+            "dydx1test".to_string(),
+            0,
+            6,
+            DEFAULT_RUST_CLIENT_METADATA,
+        );
 
         let order = builder
             .short_term()
@@ -690,7 +725,13 @@ mod tests {
     #[rstest]
     fn test_order_builder_long_term_flag() {
         let market = sample_market_params();
-        let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 7, DEFAULT_RUST_CLIENT_METADATA);
+        let builder = OrderBuilder::new(
+            market,
+            "dydx1test".to_string(),
+            0,
+            7,
+            DEFAULT_RUST_CLIENT_METADATA,
+        );
 
         let now = Utc::now();
         let until = now + Duration::hours(1);
@@ -709,7 +750,13 @@ mod tests {
     #[rstest]
     fn test_order_builder_conditional_flag() {
         let market = sample_market_params();
-        let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 8, DEFAULT_RUST_CLIENT_METADATA);
+        let builder = OrderBuilder::new(
+            market,
+            "dydx1test".to_string(),
+            0,
+            8,
+            DEFAULT_RUST_CLIENT_METADATA,
+        );
 
         let order = builder
             .stop_limit(OrderSide::Sell, dec!(48000), dec!(49000), dec!(0.01))
@@ -725,7 +772,13 @@ mod tests {
     #[rstest]
     fn test_stop_limit_sets_condition_type() {
         let market = sample_market_params();
-        let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 100, DEFAULT_RUST_CLIENT_METADATA);
+        let builder = OrderBuilder::new(
+            market,
+            "dydx1test".to_string(),
+            0,
+            100,
+            DEFAULT_RUST_CLIENT_METADATA,
+        );
 
         let order = builder
             .stop_limit(OrderSide::Sell, dec!(48000), dec!(49000), dec!(0.01))
@@ -739,7 +792,13 @@ mod tests {
     #[rstest]
     fn test_stop_market_sets_condition_type() {
         let market = sample_market_params();
-        let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 101, DEFAULT_RUST_CLIENT_METADATA);
+        let builder = OrderBuilder::new(
+            market,
+            "dydx1test".to_string(),
+            0,
+            101,
+            DEFAULT_RUST_CLIENT_METADATA,
+        );
 
         let order = builder
             .stop_market(OrderSide::Sell, dec!(49000), dec!(0.01))
@@ -753,7 +812,13 @@ mod tests {
     #[rstest]
     fn test_take_profit_limit_sets_condition_type() {
         let market = sample_market_params();
-        let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 102, DEFAULT_RUST_CLIENT_METADATA);
+        let builder = OrderBuilder::new(
+            market,
+            "dydx1test".to_string(),
+            0,
+            102,
+            DEFAULT_RUST_CLIENT_METADATA,
+        );
 
         let order = builder
             .take_profit_limit(OrderSide::Sell, dec!(52000), dec!(51000), dec!(0.01))
@@ -767,7 +832,13 @@ mod tests {
     #[rstest]
     fn test_take_profit_market_sets_condition_type() {
         let market = sample_market_params();
-        let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 103, DEFAULT_RUST_CLIENT_METADATA);
+        let builder = OrderBuilder::new(
+            market,
+            "dydx1test".to_string(),
+            0,
+            103,
+            DEFAULT_RUST_CLIENT_METADATA,
+        );
 
         let order = builder
             .take_profit_market(OrderSide::Sell, dec!(51000), dec!(0.01))
@@ -781,7 +852,13 @@ mod tests {
     #[rstest]
     fn test_order_builder_missing_size_error() {
         let market = sample_market_params();
-        let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 9, DEFAULT_RUST_CLIENT_METADATA);
+        let builder = OrderBuilder::new(
+            market,
+            "dydx1test".to_string(),
+            0,
+            9,
+            DEFAULT_RUST_CLIENT_METADATA,
+        );
 
         let result = builder.until(OrderGoodUntil::Block(100)).build();
 
@@ -792,7 +869,13 @@ mod tests {
     #[rstest]
     fn test_order_builder_missing_until_error() {
         let market = sample_market_params();
-        let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 10, DEFAULT_RUST_CLIENT_METADATA);
+        let builder = OrderBuilder::new(
+            market,
+            "dydx1test".to_string(),
+            0,
+            10,
+            DEFAULT_RUST_CLIENT_METADATA,
+        );
 
         let result = builder.market(OrderSide::Buy, dec!(0.01)).build();
 
@@ -802,7 +885,13 @@ mod tests {
     #[rstest]
     fn test_order_builder_time_in_force() {
         let market = sample_market_params();
-        let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 11, DEFAULT_RUST_CLIENT_METADATA);
+        let builder = OrderBuilder::new(
+            market,
+            "dydx1test".to_string(),
+            0,
+            11,
+            DEFAULT_RUST_CLIENT_METADATA,
+        );
 
         let order = builder
             .limit(OrderSide::Buy, dec!(50000), dec!(0.01))
@@ -819,7 +908,13 @@ mod tests {
         let mut market = sample_market_params();
         market.clob_pair_id = 5;
 
-        let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 12, DEFAULT_RUST_CLIENT_METADATA);
+        let builder = OrderBuilder::new(
+            market,
+            "dydx1test".to_string(),
+            0,
+            12,
+            DEFAULT_RUST_CLIENT_METADATA,
+        );
 
         let order = builder
             .market(OrderSide::Buy, dec!(0.01))

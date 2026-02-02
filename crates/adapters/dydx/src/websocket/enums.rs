@@ -30,8 +30,8 @@ use strum::{AsRefStr, Display, EnumString, FromRepr};
 use super::{
     error::DydxWebSocketError,
     messages::{
-        DydxOraclePriceMarket, DydxWsChannelBatchDataMsg, DydxWsChannelDataMsg, DydxWsConnectedMsg,
-        DydxWsSubaccountsChannelData, DydxWsSubaccountsSubscribed, DydxWsSubscriptionMsg,
+        DydxOraclePriceMarket, DydxWsConnectedMsg, DydxWsSubaccountsChannelData,
+        DydxWsSubaccountsSubscribed, DydxWsSubscriptionMsg,
     },
 };
 
@@ -179,7 +179,9 @@ pub enum DydxWsMessageType {
     Unknown,
 }
 
-/// High level message emitted by the dYdX WebSocket client.
+/// Control messages for the fallback parsing path.
+///
+/// Channel data is handled directly via `DydxWsFeedMessage` in `handle_feed_message()`.
 #[derive(Debug, Clone)]
 pub enum DydxWsMessage {
     /// Subscription acknowledgement.
@@ -190,12 +192,6 @@ pub enum DydxWsMessage {
     SubaccountsSubscribed(DydxWsSubaccountsSubscribed),
     /// Connected acknowledgement with connection_id.
     Connected(DydxWsConnectedMsg),
-    /// Channel data update.
-    ChannelData(DydxWsChannelDataMsg),
-    /// Batch of channel data updates.
-    ChannelBatchData(DydxWsChannelBatchDataMsg),
-    /// Block height update from chain with timestamp.
-    BlockHeight { height: u64, time: DateTime<Utc> },
     /// Error received from the venue or client lifecycle.
     Error(DydxWebSocketError),
     /// Raw message payload that does not yet have a typed representation.
