@@ -295,7 +295,7 @@ alloy-signer-local = { version = "1.5.2", default-features = false, features = [
   "mnemonic",
 ] }
 alloy-sol-types = "1.5.4"
-arc-swap = "1.8.0"
+arc-swap = "1.8.1"
 cosmrs = { version = "0.22.0", default-features = false, features = ["bip32"] }
 csv = "1.4.0"
 databento = { version = "0.40.0", default-features = false, features = [
