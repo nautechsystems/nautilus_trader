@@ -89,7 +89,7 @@ fn stub_client() -> StubExecutionClient {
     StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     )
@@ -121,7 +121,7 @@ fn test_register_venue_routing_success(
     stub_client: StubExecutionClient,
 ) {
     let client_id = stub_client.client_id();
-    let venue = Venue::from("STUB_VENUE");
+    let venue = Venue::test_default();
 
     execution_engine
         .register_client(Box::new(stub_client))
@@ -173,7 +173,7 @@ fn test_check_connected_when_client_connected_returns_true(mut execution_engine:
     let mut stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -196,7 +196,7 @@ fn test_check_connected_when_client_disconnected_returns_false(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -220,7 +220,7 @@ fn test_check_disconnected_when_client_disconnected_returns_true(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -293,7 +293,7 @@ fn test_submit_order_with_duplicate_client_order_id_handles_gracefully(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -664,7 +664,7 @@ fn test_submit_order_successfully_processes_and_caches_order(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -1121,7 +1121,7 @@ fn test_canceled_order_receiving_fill_event_reopens_and_completes_order(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -1254,7 +1254,7 @@ fn test_canceled_order_receiving_partial_fill_event_reopens_and_becomes_partiall
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -1396,7 +1396,7 @@ fn test_process_event_with_no_venue_order_id_logs_and_does_nothing(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -1466,7 +1466,7 @@ fn test_modify_order_for_already_closed_order_logs_and_does_nothing(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -1589,7 +1589,7 @@ fn test_handle_order_event_with_different_client_order_id_but_matching_venue_ord
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -1664,7 +1664,7 @@ fn test_handle_order_event_with_random_client_order_id_and_order_id_not_cached(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -1740,7 +1740,7 @@ fn test_handle_duplicate_order_events_logs_error_and_does_not_apply(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::from("TEST-ACCOUNT"),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -1933,7 +1933,7 @@ fn test_handle_order_fill_event(mut execution_engine: ExecutionEngine) {
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::test_default(),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -2028,7 +2028,7 @@ fn test_handle_order_fill_event(mut execution_engine: ExecutionEngine) {
     let cache = execution_engine.cache().borrow();
 
     println!("Filtering parameters:");
-    println!("  Venue: {:?}", Venue::from("STUB_VENUE"));
+    println!("  Venue: {:?}", Venue::test_default());
     println!("  Instrument ID: {:?}", instrument.id);
     println!("  Strategy ID: {strategy_id:?}");
     println!("  Expected Position ID: {expected_position_id:?}");
@@ -2139,7 +2139,7 @@ fn test_handle_multiple_partial_fill_events(mut execution_engine: ExecutionEngin
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         AccountId::test_default(),
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -4177,7 +4177,7 @@ fn test_submit_order_with_quote_quantity_and_no_prices_denies(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -4258,7 +4258,7 @@ fn test_submit_bracket_order_with_quote_quantity_and_no_prices_denies(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -4464,7 +4464,7 @@ fn test_submit_order_with_quote_quantity_and_quote_tick_converts_to_base_quantit
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -4601,7 +4601,7 @@ fn test_submit_order_with_quote_quantity_and_trade_ticks_converts_to_base_quanti
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -4754,7 +4754,7 @@ fn test_submit_bracket_order_with_quote_quantity_and_ticks_converts_expected(
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -4961,7 +4961,7 @@ fn test_submit_market_should_not_add_to_own_book() {
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -5038,7 +5038,7 @@ fn test_submit_ioc_fok_should_not_add_to_own_book(#[case] time_in_force: TimeInF
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -5115,7 +5115,7 @@ fn test_submit_order_adds_to_own_book_bid() {
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -5262,7 +5262,7 @@ fn test_submit_order_adds_to_own_book_ask() {
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -5409,7 +5409,7 @@ fn test_cancel_order_removes_from_own_book() {
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -5573,7 +5573,7 @@ fn test_own_book_status_filtering() {
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -5775,7 +5775,7 @@ fn test_filled_order_removes_from_own_book() {
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -5975,7 +5975,7 @@ fn test_order_updates_in_own_book() {
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -6213,7 +6213,7 @@ fn test_position_flip_with_own_order_book() {
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
@@ -6453,7 +6453,7 @@ fn test_own_book_with_crossed_orders() {
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
         account_id,
-        Venue::from("STUB_VENUE"),
+        Venue::test_default(),
         OmsType::Netting,
         None,
     );
