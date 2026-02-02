@@ -28,6 +28,7 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderStatus
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderType
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStatus
+from nautilus_trader.adapters.polymarket.common.parsing import basis_points_as_decimal
 from nautilus_trader.adapters.polymarket.common.parsing import calculate_commission
 from nautilus_trader.adapters.polymarket.common.parsing import determine_order_side
 from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
@@ -750,6 +751,21 @@ def test_parse_user_trade_zero_commission_with_no_fees() -> None:
 
     # Assert
     assert fill_report.commission == Money(0.0, USDC_POS)
+
+
+@pytest.mark.parametrize(
+    ("basis_points", "expected"),
+    [
+        (Decimal(0), Decimal(0)),
+        (Decimal(1), Decimal("0.0001")),
+        (Decimal(100), Decimal("0.01")),
+        (Decimal(200), Decimal("0.02")),
+        (Decimal(10000), Decimal(1)),
+    ],
+)
+def test_basis_points_as_decimal(basis_points: Decimal, expected: Decimal) -> None:
+    result = basis_points_as_decimal(basis_points)
+    assert result == expected
 
 
 @pytest.mark.parametrize(
