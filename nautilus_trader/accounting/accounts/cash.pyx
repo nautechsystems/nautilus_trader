@@ -162,7 +162,8 @@ cdef class CashAccount(Account):
         """
         Apply the given account event to the account.
 
-        Clears per-instrument locked balances since external state is authoritative.
+        Clears per-instrument locked balances only for externally reported state,
+        since external state is authoritative. Internal state preserves lock tracking.
 
         Parameters
         ----------
@@ -174,7 +175,10 @@ cdef class CashAccount(Account):
         System method (not intended to be called by user code).
 
         """
-        self._balances_locked.clear()
+        # Only clear locks for externally reported state (venue is authoritative)
+        if event.is_reported:
+            self._balances_locked.clear()
+
         Account.apply(self, event)
 
     cpdef void update_balance_locked(self, InstrumentId instrument_id, Money locked):

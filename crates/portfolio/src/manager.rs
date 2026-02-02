@@ -1294,4 +1294,119 @@ mod tests {
             panic!("Expected CashAccount");
         }
     }
+
+    #[rstest]
+    fn test_order_canceled_releases_locked_balance() {
+        // Regression test for https://github.com/nautechsystems/nautilus_trader/issues/3525
+        let usd = Currency::USD();
+        let account_state = AccountState::new(
+            AccountId::new("SIM-001"),
+            AccountType::Cash,
+            vec![AccountBalance::new(
+                Money::new(100_000.0, usd),
+                Money::new(0.0, usd),
+                Money::new(100_000.0, usd),
+            )],
+            Vec::new(),
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            Some(usd),
+        );
+
+        let account = CashAccount::new(account_state, true, false);
+
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        cache
+            .borrow_mut()
+            .add_account(AccountAny::Cash(account.clone()))
+            .unwrap();
+
+        let manager = AccountsManager::new(clock, cache);
+        let instrument = audusd_sim();
+
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100000"))
+            .price(Price::from("0.80000"))
+            .build();
+
+        let submitted = OrderSubmitted::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            AccountId::new("SIM-001"),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        let accepted = OrderAccepted::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            order.venue_order_id().unwrap_or(VenueOrderId::new("1")),
+            AccountId::new("SIM-001"),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+        );
+
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+
+        let result = manager.update_orders(
+            &AccountAny::Cash(account),
+            InstrumentAny::CurrencyPair(instrument),
+            vec![&order],
+            UnixNanos::default(),
+        );
+
+        assert!(result.is_some());
+        let (updated_account, _) = result.unwrap();
+
+        if let AccountAny::Cash(ref cash) = updated_account {
+            // 100k * 0.80 = 80k USD locked
+            assert_eq!(
+                cash.balance_locked(Some(usd)),
+                Some(Money::new(80_000.0, usd))
+            );
+            assert_eq!(
+                cash.balance_free(Some(usd)),
+                Some(Money::new(20_000.0, usd))
+            );
+        } else {
+            panic!("Expected CashAccount");
+        }
+
+        let result = manager.update_orders(
+            &updated_account,
+            InstrumentAny::CurrencyPair(instrument),
+            vec![],
+            UnixNanos::default(),
+        );
+
+        assert!(result.is_some());
+        let (final_account, _) = result.unwrap();
+
+        if let AccountAny::Cash(cash) = final_account {
+            assert_eq!(cash.balance_locked(Some(usd)), Some(Money::new(0.0, usd)));
+            assert_eq!(
+                cash.balance_free(Some(usd)),
+                Some(Money::new(100_000.0, usd))
+            );
+            assert_eq!(
+                cash.balance_total(Some(usd)),
+                Some(Money::new(100_000.0, usd))
+            );
+        } else {
+            panic!("Expected CashAccount");
+        }
+    }
 }

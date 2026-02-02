@@ -3285,3 +3285,57 @@ class TestPortfolio:
 
         # Assert: Verify position is in cache
         assert self.cache.position_exists(position.id)
+
+    def test_order_canceled_releases_locked_balance(self):
+        # Regression test for https://github.com/nautechsystems/nautilus_trader/issues/3525
+        # Verifies that canceling an accepted order releases the locked balance
+
+        # Arrange
+        AccountFactory.register_calculated_account("BINANCE")
+
+        account_id = AccountId("BINANCE-000")
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency account
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_000.00000000, USDT),
+                    Money(0.00000000, USDT),
+                    Money(100_000.00000000, USDT),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state)
+        account = self.portfolio.account(BINANCE)
+
+        order = self.order_factory.limit(
+            instrument_id=BTCUSDT_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("1.0"),
+            price=Price.from_str("50000.00"),
+        )
+
+        self.cache.add_order(order, position_id=None)
+        self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
+        self.exec_engine.process(TestEventStubs.order_accepted(order, account_id=account_id))
+
+        usdt_balance = account.balance(USDT)
+        assert usdt_balance.locked == Money(50_000.00000000, USDT)
+        assert usdt_balance.free == Money(50_000.00000000, USDT)
+
+        # Act
+        self.exec_engine.process(TestEventStubs.order_canceled(order, account_id=account_id))
+
+        # Assert - locked balance should be released
+        usdt_balance = account.balance(USDT)
+        assert usdt_balance.total == Money(100_000.00000000, USDT)
+        assert usdt_balance.locked == Money(0.00000000, USDT)
+        assert usdt_balance.free == Money(100_000.00000000, USDT)

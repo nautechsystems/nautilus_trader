@@ -279,8 +279,10 @@ impl Account for CashAccount {
             }
         }
 
-        // Clear per-instrument locks - external state is authoritative
-        self.balances_locked.clear();
+        // Only clear locks for externally reported state (venue is authoritative)
+        if event.is_reported {
+            self.balances_locked.clear();
+        }
 
         self.base_apply(event);
         Ok(())

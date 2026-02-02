@@ -43,6 +43,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed matching engine trade execution fills discarded with `liquidity_consumption`
 - Fixed matching engine trade execution fill model and FOK/IOC handling
 - Fixed inverse instrument `base_currency` access across accounting
+- Fixed order cancel not releasing locked balance in backtest (#3525), thanks for reporting @dennisnissle
 - Fixed remaining `F_LAST` flag checks to use proper bitmask comparison
 - Fixed `MarketIfTouchedOrder` (MIT) filling at bar extremes instead of trigger price during backtesting (#3461, #3462), thanks @HaakonFlaaronning
 - Fixed OTO child order sizing with rapid parent fills (#3435), thanks for reporting @dxwil

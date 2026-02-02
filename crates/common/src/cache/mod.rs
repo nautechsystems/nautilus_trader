@@ -1994,6 +1994,9 @@ impl Cache {
     ///
     /// Returns an error if updating the account in the database fails.
     pub fn update_account(&mut self, account: AccountAny) -> anyhow::Result<()> {
+        let account_id = account.id();
+        self.accounts.insert(account_id, account.clone());
+
         if let Some(database) = &mut self.database {
             database.update_account(&account)?;
         }
