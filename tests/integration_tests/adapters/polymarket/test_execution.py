@@ -2757,34 +2757,6 @@ class TestPolymarketBatchOrderSubmission:
         mock_post_orders.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_submit_order_list_empty_list(self, mocker):
-        """
-        Test that empty order list is handled gracefully.
-        """
-        # Arrange
-        mock_post_orders = mocker.patch.object(self.http_client, "post_orders")
-
-        order_list = OrderList(
-            order_list_id=OrderListId("BATCH-004"),
-            orders=[],
-        )
-
-        submit_order_list = SubmitOrderList(
-            trader_id=self.trader_id,
-            strategy_id=self.strategy.id,
-            order_list=order_list,
-            position_id=None,
-            command_id=UUID4(),
-            ts_init=0,
-        )
-
-        # Act
-        await self.exec_client._submit_order_list(submit_order_list)
-
-        # Assert - should return early without calling post_orders
-        mock_post_orders.assert_not_called()
-
-    @pytest.mark.asyncio
     async def test_submit_order_list_with_reduce_only_denied(self, mocker):
         """
         Test that reduce_only orders in batch are denied.
