@@ -29,7 +29,6 @@ from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyFactory
 from nautilus_trader.trading.messages import CreateActor
 from nautilus_trader.trading.messages import CreateStrategy
-from nautilus_trader.trading.messages import MarketExitStrategy
 from nautilus_trader.trading.messages import RemoveActor
 from nautilus_trader.trading.messages import RemoveStrategy
 from nautilus_trader.trading.messages import StartActor
@@ -94,8 +93,6 @@ class Controller(Actor):
             self.start_strategy_from_id(command.strategy_id)
         elif isinstance(command, StopStrategy):
             self.stop_strategy_from_id(command.strategy_id)
-        elif isinstance(command, MarketExitStrategy):
-            self.market_exit_strategy_from_id(command.strategy_id)
         elif isinstance(command, RemoveStrategy):
             self.remove_strategy_from_id(command.strategy_id)
 

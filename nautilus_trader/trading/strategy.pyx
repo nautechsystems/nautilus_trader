@@ -29,7 +29,6 @@ import pandas as pd
 
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyConfig
-from nautilus_trader.trading.messages import MarketExitStrategy
 
 from libc.stdint cimport uint64_t
 
