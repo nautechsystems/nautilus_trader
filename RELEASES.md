@@ -65,6 +65,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed Betfair dropped fills from premature cache update
 - Fixed Betfair duplicate cancel event race condition
 - Fixed Betfair stream batch handling and modify/cancel edge cases
+- Fixed Betfair reconciliation with stale API fill data
 - Fixed Binance Spot WebSocket subscription acknowledgment parsing (#3382), thanks @Johnkhk
 - Fixed Binance Futures instrument parsing for margin requirements (#3420), thanks @linimin
 - Fixed Binance algo order quantity `AttributeError` on `_mem` access

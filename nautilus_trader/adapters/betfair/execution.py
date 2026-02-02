@@ -510,15 +510,22 @@ class BetfairExecutionClient(LiveExecutionClient):
             order = self._select_order_from_multiple(orders, command)
 
         venue_order_id = VenueOrderId(str(order.bet_id))
+        client_order_id = self._cache.client_order_id(venue_order_id)
+
+        # Pass cached fill state to handle stale API responses during reconciliation
+        cached_filled_qty = self._cache_filled_qty.get(client_order_id) if client_order_id else None
+        cached_avg_px = self._cache_avg_px.get(client_order_id) if client_order_id else None
 
         report: OrderStatusReport = bet_to_order_status_report(
             order=order,
             account_id=self.account_id,
             instrument_id=command.instrument_id,
             venue_order_id=venue_order_id,
-            client_order_id=self._cache.client_order_id(venue_order_id),
+            client_order_id=client_order_id,
             report_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            cached_filled_qty=cached_filled_qty,
+            cached_avg_px=cached_avg_px,
         )
 
         self._log.debug(f"Received {report}")
@@ -572,6 +579,13 @@ class BetfairExecutionClient(LiveExecutionClient):
             )
             venue_order_id = VenueOrderId(str(order.bet_id))
             client_order_id = self._cache.client_order_id(venue_order_id)
+
+            # Pass cached fill state to handle stale API responses during reconciliation
+            cached_filled_qty = (
+                self._cache_filled_qty.get(client_order_id) if client_order_id else None
+            )
+            cached_avg_px = self._cache_avg_px.get(client_order_id) if client_order_id else None
+
             report = bet_to_order_status_report(
                 order=order,
                 account_id=self.account_id,
@@ -580,6 +594,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                 client_order_id=client_order_id,
                 ts_init=ts_init,
                 report_id=UUID4(),
+                cached_filled_qty=cached_filled_qty,
+                cached_avg_px=cached_avg_px,
             )
             order_status_reports.append(report)
 

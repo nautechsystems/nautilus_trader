@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import hashlib
+from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
 
@@ -409,12 +410,14 @@ def bet_to_order_status_report(
     client_order_id: ClientOrderId,
     ts_init,
     report_id,
+    cached_filled_qty: Quantity | None = None,
+    cached_avg_px: float | None = None,
 ) -> OrderStatusReport:
     is_bsp_order = order.price_size.size == 0.0 and order.bsp_liability != 0.0
 
     if not is_bsp_order and order.price_size.size != 0.0:
         qty = Quantity(order.price_size.size, BETFAIR_QUANTITY_PRECISION)
-        fill_qty = Quantity(order.size_matched, BETFAIR_QUANTITY_PRECISION)
+        api_fill_qty = Quantity(order.size_matched, BETFAIR_QUANTITY_PRECISION)
         price = BETFAIR_FLOAT_TO_PRICE[order.price_size.price]
     elif is_bsp_order:
         # BSP orders: bspLiability is in payout units, but size fields are in stake units
@@ -427,17 +430,39 @@ def bet_to_order_status_report(
             + order.size_voided
         )
         qty = Quantity(total_size, BETFAIR_QUANTITY_PRECISION)
-        fill_qty = Quantity(order.size_matched, BETFAIR_QUANTITY_PRECISION)
+        api_fill_qty = Quantity(order.size_matched, BETFAIR_QUANTITY_PRECISION)
 
         # BSP orders with limit price specified use price_size.price, pure BSP use average_price_matched
         if order.price_size.price > 0.0:
             price = BETFAIR_FLOAT_TO_PRICE[order.price_size.price]
-        elif order.average_price_matched > 0.0:
+        elif order.average_price_matched and order.average_price_matched > 0.0:
             price = Price(order.average_price_matched, BETFAIR_PRICE_PRECISION)
         else:
             price = Price(0.0, BETFAIR_PRICE_PRECISION)
     else:
         raise ValueError(f"Unknown order size {order.price_size.size=}, {order.bsp_liability=}")
+
+    # Use max of API and cached fill qty to handle stale API responses during reconciliation
+    if cached_filled_qty is not None and cached_filled_qty > api_fill_qty:
+        fill_qty = cached_filled_qty
+        avg_px = Decimal(str(cached_avg_px)) if cached_avg_px else None
+        use_cached = True
+    else:
+        fill_qty = api_fill_qty
+        avg_px = (
+            Decimal(str(order.average_price_matched))
+            if order.average_price_matched and order.average_price_matched > 0.0
+            else None
+        )
+        use_cached = False
+
+    order_status = determine_order_status(order)
+    if (
+        use_cached
+        and fill_qty > Quantity.zero(BETFAIR_QUANTITY_PRECISION)
+        and order_status == OrderStatus.ACCEPTED
+    ):
+        order_status = OrderStatus.PARTIALLY_FILLED
 
     return OrderStatusReport(
         account_id=account_id,
@@ -448,10 +473,11 @@ def bet_to_order_status_report(
         order_type=B2N_ORDER_TYPE[order.order_type],
         contingency_type=ContingencyType.NO_CONTINGENCY,
         time_in_force=B2N_TIME_IN_FORCE[order.persistence_type],
-        order_status=determine_order_status(order),
+        order_status=order_status,
         price=price,
         quantity=qty,
         filled_qty=fill_qty,
+        avg_px=avg_px,
         report_id=report_id,
         ts_accepted=dt_to_unix_nanos(pd.Timestamp(order.placed_date)),
         ts_triggered=0,
