@@ -174,6 +174,24 @@ For multi-node setups sharing a Betfair account, set both `stream_market_ids_fil
 and `ignore_external_orders=True` to avoid warnings about orders managed by other nodes.
 :::
 
+## Rate limiting
+
+The adapter enforces a default rate limit of 5 requests/second across all endpoints, aligned with
+Betfair's best practice recommendation. The adapter handles `TOO_MANY_REQUESTS` errors with
+automatic retry using a 1-second delay.
+
+Betfair's actual API limits are more nuanced:
+
+| Category                 | Limit                | Notes                                                |
+|--------------------------|----------------------|------------------------------------------------------|
+| Order operations         | 1,000 transactions/s | Total instructions across `placeOrders`, `cancelOrders`, `replaceOrders`. |
+| Order projection queries | 3 concurrent         | `listMarketBook` (with `OrderProjection`), `listCurrentOrders`, `listMarketProfitAndLoss`. |
+| Best practice            | 5 requests/s         | Recommended for `listMarketBook` per market.         |
+
+:::info
+For details on Betfair rate limits, see the [official documentation](https://support.developer.betfair.com/hc/en-us/articles/360000406111).
+:::
+
 ## Configuration
 
 ### Data client configuration options

@@ -71,7 +71,8 @@ def get_cached_betfair_client(
 
     Logger("BetfairFactory").debug("Creating new instance of `BetfairHttpClient`")
 
-    # Betfair rate limits: ~5 requests/second for most endpoints
+    # Betfair best practice: ~5 requests/second for most endpoints
+    # https://support.developer.betfair.com/hc/en-us/articles/360000406111
     ratelimiter_default_quota = Quota.rate_per_second(5)
 
     return BetfairHttpClient(
