@@ -574,10 +574,14 @@ impl DataClient for DeribitDataClient {
         let interval = self.get_interval(&cmd.params);
 
         let depth = cmd
-            .params
-            .as_ref()
-            .and_then(|p| p.get("depth"))
-            .and_then(|v| v.parse::<u32>().ok())
+            .depth
+            .map(|d| d.get() as u32)
+            .or_else(|| {
+                cmd.params
+                    .as_ref()
+                    .and_then(|p| p.get("depth"))
+                    .and_then(|v| v.parse::<u32>().ok())
+            })
             .unwrap_or(DERIBIT_BOOK_DEFAULT_DEPTH);
 
         if !DERIBIT_BOOK_VALID_DEPTHS.contains(&depth) {

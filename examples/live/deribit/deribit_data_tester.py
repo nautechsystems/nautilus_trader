@@ -106,15 +106,17 @@ node = TradingNode(config=config_node)
 # Configure and initialize the tester
 config_tester = DataTesterConfig(
     instrument_ids=[perpetual_id],
-    # subscribe_book_at_interval=True,
-    subscribe_quotes=True,
-    subscribe_trades=True,
-    subscribe_index_prices=True,
-    subscribe_mark_prices=True,
-    subscribe_funding_rates=True,
-    subscribe_bars=True,
+    subscribe_book_at_interval=True,
+    # subscribe_quotes=True,
+    # subscribe_trades=True,
+    # subscribe_index_prices=True,
+    # subscribe_mark_prices=True,
+    # subscribe_funding_rates=True,
+    # subscribe_bars=True,
     bar_types=bar_types,
-    book_interval_ms=10,
+    book_interval_ms=100,
+    book_depth=20,  # Limits depth to 20 levels (normalized to Deribit's 1, 10, or 20)
+    # subscribe_params={"interval": "100ms"},  # Use 100ms grouped channel instead of raw
     log_data=True,
 )
 tester = DataTester(config=config_tester)

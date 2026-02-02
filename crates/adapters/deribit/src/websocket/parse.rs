@@ -40,7 +40,7 @@ use rust_decimal::prelude::ToPrimitive;
 use ustr::Ustr;
 
 use super::{
-    enums::DeribitBookMsgType,
+    enums::{DeribitBookAction, DeribitBookMsgType},
     messages::{
         DeribitBookMsg, DeribitChartMsg, DeribitOrderMsg, DeribitPerpetualMsg, DeribitQuoteMsg,
         DeribitTickerMsg, DeribitTradeMsg, DeribitUserTradeMsg,
@@ -116,6 +116,110 @@ pub fn parse_trades_data(
         .collect()
 }
 
+fn parse_snapshot_level(
+    level: &[serde_json::Value],
+    index: usize,
+    side: &str,
+    instrument_name: &str,
+) -> Option<(f64, f64)> {
+    let (price_val, amount_val) = if level.len() >= 3 {
+        let price = level[1].as_f64().or_else(|| {
+            log::warn!(
+                "Failed to parse {side} price at index {index} for {instrument_name}: {level:?}"
+            );
+            None
+        })?;
+        let amount = level[2].as_f64().or_else(|| {
+            log::warn!(
+                "Failed to parse {side} amount at index {index} for {instrument_name}: {level:?}"
+            );
+            None
+        })?;
+        (price, amount)
+    } else if level.len() >= 2 {
+        let price = level[0].as_f64().or_else(|| {
+            log::warn!(
+                "Failed to parse {side} price at index {index} for {instrument_name}: {level:?}"
+            );
+            None
+        })?;
+        let amount = level[1].as_f64().or_else(|| {
+            log::warn!(
+                "Failed to parse {side} amount at index {index} for {instrument_name}: {level:?}"
+            );
+            None
+        })?;
+        (price, amount)
+    } else {
+        log::warn!(
+            "Invalid {side} format at index {index} for {instrument_name}: expected 2-3 elements, was {}",
+            level.len()
+        );
+        return None;
+    };
+
+    if price_val <= 0.0 {
+        log::warn!(
+            "Invalid {side} price {price_val} at index {index} for {instrument_name}: {level:?}"
+        );
+        return None;
+    }
+
+    Some((price_val, amount_val))
+}
+
+fn parse_delta_level(
+    level: &[serde_json::Value],
+    index: usize,
+    side: &str,
+    instrument_name: &str,
+) -> Option<(BookAction, f64, f64)> {
+    if level.len() < 3 {
+        log::warn!(
+            "Invalid {side} delta format at index {index} for {instrument_name}: expected 3 elements, was {}",
+            level.len()
+        );
+        return None;
+    }
+
+    let action_str = level[0].as_str().or_else(|| {
+        log::warn!(
+            "Failed to parse {side} action at index {index} for {instrument_name}: {level:?}"
+        );
+        None
+    })?;
+
+    let deribit_action: DeribitBookAction = action_str.parse().ok().or_else(|| {
+        log::warn!(
+            "Unknown {side} action '{action_str}' at index {index} for {instrument_name}: {level:?}"
+        );
+        None
+    })?;
+
+    let price_val = level[1].as_f64().or_else(|| {
+        log::warn!(
+            "Failed to parse {side} price at index {index} for {instrument_name}: {level:?}"
+        );
+        None
+    })?;
+
+    let amount_val = level[2].as_f64().or_else(|| {
+        log::warn!(
+            "Failed to parse {side} amount at index {index} for {instrument_name}: {level:?}"
+        );
+        None
+    })?;
+
+    if price_val <= 0.0 {
+        log::warn!(
+            "Invalid {side} price {price_val} at index {index} for {instrument_name}: {level:?}"
+        );
+        return None;
+    }
+
+    Some((deribit_action.into(), price_val, amount_val))
+}
+
 /// Parses a Deribit order book snapshot into Nautilus `OrderBookDeltas`.
 ///
 /// # Errors
@@ -152,23 +256,10 @@ pub fn parse_book_snapshot(
         ts_init,
     ));
 
-    // Parse bids - handles both formats:
-    // - Simple channel: ["new", price, amount] (3 elements)
-    // - Grouped channel: [price, amount] (2 elements)
     for (i, bid) in msg.bids.iter().enumerate() {
-        let (price_val, amount_val) = if bid.len() >= 3 {
-            // 3-element format: skip action field, use indices 1 and 2
-            (
-                bid[1].as_f64().unwrap_or(0.0),
-                bid[2].as_f64().unwrap_or(0.0),
-            )
-        } else if bid.len() >= 2 {
-            // 2-element format: use indices 0 and 1 directly
-            (
-                bid[0].as_f64().unwrap_or(0.0),
-                bid[1].as_f64().unwrap_or(0.0),
-            )
-        } else {
+        let Some((price_val, amount_val)) =
+            parse_snapshot_level(bid, i, "bid", msg.instrument_name.as_str())
+        else {
             continue;
         };
 
@@ -188,24 +279,11 @@ pub fn parse_book_snapshot(
         }
     }
 
-    // Parse asks - handles both formats:
-    // - Simple channel: ["new", price, amount] (3 elements)
-    // - Grouped channel: [price, amount] (2 elements)
     let num_bids = msg.bids.len();
     for (i, ask) in msg.asks.iter().enumerate() {
-        let (price_val, amount_val) = if ask.len() >= 3 {
-            // 3-element format: skip action field, use indices 1 and 2
-            (
-                ask[1].as_f64().unwrap_or(0.0),
-                ask[2].as_f64().unwrap_or(0.0),
-            )
-        } else if ask.len() >= 2 {
-            // 2-element format: use indices 0 and 1 directly
-            (
-                ask[0].as_f64().unwrap_or(0.0),
-                ask[1].as_f64().unwrap_or(0.0),
-            )
-        } else {
+        let Some((price_val, amount_val)) =
+            parse_snapshot_level(ask, i, "ask", msg.instrument_name.as_str())
+        else {
             continue;
         };
 
@@ -257,63 +335,47 @@ pub fn parse_book_delta(
 
     let mut deltas = Vec::new();
 
-    // Parse bids: [action, price, amount] for delta
     for (i, bid) in msg.bids.iter().enumerate() {
-        if bid.len() >= 3 {
-            let action_str = bid[0].as_str().unwrap_or("new");
-            let price_val = bid[1].as_f64().unwrap_or(0.0);
-            let amount_val = bid[2].as_f64().unwrap_or(0.0);
+        let Some((action, price_val, amount_val)) =
+            parse_delta_level(bid, i, "bid", msg.instrument_name.as_str())
+        else {
+            continue;
+        };
 
-            let action = match action_str {
-                "new" => BookAction::Add,
-                "change" => BookAction::Update,
-                "delete" => BookAction::Delete,
-                _ => continue,
-            };
+        let price = Price::new(price_val, price_precision);
+        let size = Quantity::new(amount_val.abs(), size_precision);
 
-            let price = Price::new(price_val, price_precision);
-            let size = Quantity::new(amount_val.abs(), size_precision);
-
-            deltas.push(OrderBookDelta::new(
-                instrument_id,
-                action,
-                BookOrder::new(OrderSide::Buy, price, size, i as u64),
-                0, // No flags for regular deltas
-                msg.change_id,
-                ts_event,
-                ts_init,
-            ));
-        }
+        deltas.push(OrderBookDelta::new(
+            instrument_id,
+            action,
+            BookOrder::new(OrderSide::Buy, price, size, i as u64),
+            0,
+            msg.change_id,
+            ts_event,
+            ts_init,
+        ));
     }
 
-    // Parse asks: [action, price, amount] for delta
     let num_bids = msg.bids.len();
     for (i, ask) in msg.asks.iter().enumerate() {
-        if ask.len() >= 3 {
-            let action_str = ask[0].as_str().unwrap_or("new");
-            let price_val = ask[1].as_f64().unwrap_or(0.0);
-            let amount_val = ask[2].as_f64().unwrap_or(0.0);
+        let Some((action, price_val, amount_val)) =
+            parse_delta_level(ask, i, "ask", msg.instrument_name.as_str())
+        else {
+            continue;
+        };
 
-            let action = match action_str {
-                "new" => BookAction::Add,
-                "change" => BookAction::Update,
-                "delete" => BookAction::Delete,
-                _ => continue,
-            };
+        let price = Price::new(price_val, price_precision);
+        let size = Quantity::new(amount_val.abs(), size_precision);
 
-            let price = Price::new(price_val, price_precision);
-            let size = Quantity::new(amount_val.abs(), size_precision);
-
-            deltas.push(OrderBookDelta::new(
-                instrument_id,
-                action,
-                BookOrder::new(OrderSide::Sell, price, size, (num_bids + i) as u64),
-                0, // No flags for regular deltas
-                msg.change_id,
-                ts_event,
-                ts_init,
-            ));
-        }
+        deltas.push(OrderBookDelta::new(
+            instrument_id,
+            action,
+            BookOrder::new(OrderSide::Sell, price, size, (num_bids + i) as u64),
+            0,
+            msg.change_id,
+            ts_event,
+            ts_init,
+        ));
     }
 
     // Set F_LAST flag on the last delta

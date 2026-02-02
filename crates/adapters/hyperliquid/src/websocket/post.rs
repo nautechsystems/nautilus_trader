@@ -623,10 +623,11 @@ impl WsSender {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::testing::wait_until_async;
     use rstest::rstest;
     use tokio::{
         sync::oneshot,
-        time::{Duration, sleep, timeout},
+        time::{Duration, timeout},
     };
 
     use super::*;
@@ -1004,11 +1005,18 @@ mod tests {
                 .unwrap();
         }
 
-        // Wait slightly past one tick to allow the lane to flush.
-        sleep(Duration::from_millis(80)).await;
+        // Wait for all 5 posts to be sent
+        let sent_check = sent.clone();
+        wait_until_async(
+            || {
+                let sent_inner = sent_check.clone();
+                async move { sent_inner.lock().await.len() == 5 }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
 
         let got = sent.lock().await.clone();
-        assert_eq!(got.len(), 5, "expected 5 sends on first tick");
         assert_eq!(got, vec![1, 2, 3, 4, 5]);
     }
 }

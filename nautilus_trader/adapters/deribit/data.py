@@ -71,6 +71,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 
 
@@ -150,6 +151,9 @@ class DeribitDataClient(LiveMarketDataClient):
             is_testnet=config.is_testnet,
         )
         self._ws_client_futures: set[asyncio.Future] = set()
+
+        # Track book subscription depths for proper unsubscribe
+        self._book_subscription_depths: dict[InstrumentId, int] = {}
 
     @property
     def instrument_provider(self) -> DeribitInstrumentProvider:
@@ -273,7 +277,17 @@ class DeribitDataClient(LiveMarketDataClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         interval = self._get_interval(command.params)
 
-        await self._ws_client.subscribe_book(pyo3_instrument_id, interval)
+        depth = command.depth or None
+        if not depth and command.params:
+            depth_str = command.params.get("depth")
+            if depth_str:
+                depth = int(depth_str)
+
+        # Track depth for proper unsubscribe
+        if depth:
+            self._book_subscription_depths[command.instrument_id] = depth
+
+        await self._ws_client.subscribe_book(pyo3_instrument_id, interval, depth)
 
     async def _subscribe_order_book_depth(self, command: SubscribeOrderBook) -> None:
         if command.book_type != BookType.L2_MBP:
@@ -283,25 +297,12 @@ class DeribitDataClient(LiveMarketDataClient):
             return
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-
-        # OrderBookDepth10 uses depth=10 by default, but can be overridden
-        depth = command.depth or 10
-        if depth not in (1, 10, 20):
-            if depth < 5:
-                depth = 1
-            elif depth < 15:
-                depth = 10
-            else:
-                depth = 20
-
+        depth = command.depth or 10  # Default for OrderBookDepth10
         group = "none"
         interval = self._get_interval(command.params)
-        interval_display = interval.name if interval else "100ms (default)"
 
-        self._log.info(
-            f"Subscribing to order book depth for {command.instrument_id} "
-            f"(depth={depth}, group={group}, interval={interval_display})",
-        )
+        # TODO: Standardize to validate instead of normalize
+        # Rust layer normalizes depth to Deribit supported values (1, 10, 20)
         await self._ws_client.subscribe_book_grouped(pyo3_instrument_id, group, depth, interval)
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
@@ -391,20 +392,20 @@ class DeribitDataClient(LiveMarketDataClient):
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         interval = self._get_interval(command.params)
-        await self._ws_client.unsubscribe_book(pyo3_instrument_id, interval)
+
+        depth = self._book_subscription_depths.pop(command.instrument_id, None)
+        if depth is None and command.params:
+            depth_str = command.params.get("depth")
+            if depth_str:
+                depth = int(depth_str)
+
+        await self._ws_client.unsubscribe_book(pyo3_instrument_id, interval, depth)
 
     async def _unsubscribe_order_book_depth(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-
-        depth = 10
+        depth = 10  # Default for OrderBookDepth10
         group = "none"
         interval = self._get_interval(command.params)
-        interval_display = interval.name if interval else "100ms (default)"
-
-        self._log.info(
-            f"Unsubscribing from order book depth for {command.instrument_id} "
-            f"(depth={depth}, group={group}, interval={interval_display})",
-        )
         await self._ws_client.unsubscribe_book_grouped(pyo3_instrument_id, group, depth, interval)
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:

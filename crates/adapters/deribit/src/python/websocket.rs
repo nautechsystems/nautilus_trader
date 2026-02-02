@@ -409,38 +409,54 @@ impl DeribitWebSocketClient {
     }
 
     #[pyo3(name = "subscribe_book")]
-    #[pyo3(signature = (instrument_id, interval=None))]
+    #[pyo3(signature = (instrument_id, interval=None, depth=None))]
     fn py_subscribe_book<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
         interval: Option<DeribitUpdateInterval>,
+        depth: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client
-                .subscribe_book(instrument_id, interval)
-                .await
-                .map_err(to_pyvalue_err)
+            if let Some(d) = depth {
+                client
+                    .subscribe_book_grouped(instrument_id, "none", d, interval)
+                    .await
+                    .map_err(to_pyvalue_err)
+            } else {
+                client
+                    .subscribe_book(instrument_id, interval)
+                    .await
+                    .map_err(to_pyvalue_err)
+            }
         })
     }
 
     #[pyo3(name = "unsubscribe_book")]
-    #[pyo3(signature = (instrument_id, interval=None))]
+    #[pyo3(signature = (instrument_id, interval=None, depth=None))]
     fn py_unsubscribe_book<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
         interval: Option<DeribitUpdateInterval>,
+        depth: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client
-                .unsubscribe_book(instrument_id, interval)
-                .await
-                .map_err(to_pyvalue_err)
+            if let Some(d) = depth {
+                client
+                    .unsubscribe_book_grouped(instrument_id, "none", d, interval)
+                    .await
+                    .map_err(to_pyvalue_err)
+            } else {
+                client
+                    .unsubscribe_book(instrument_id, interval)
+                    .await
+                    .map_err(to_pyvalue_err)
+            }
         })
     }
 

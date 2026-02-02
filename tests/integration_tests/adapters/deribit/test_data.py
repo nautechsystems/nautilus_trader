@@ -87,7 +87,7 @@ class TestDeribitDataClient:
 
             # Assert
             expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
-            client._ws_client.subscribe_book.assert_called_once_with(expected_id, None)
+            client._ws_client.subscribe_book.assert_called_once_with(expected_id, None, None)
         finally:
             await client._disconnect()
 
@@ -240,7 +240,7 @@ class TestDeribitDataClient:
 
             # Assert
             expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
-            client._ws_client.unsubscribe_book.assert_called_once_with(expected_id, None)
+            client._ws_client.unsubscribe_book.assert_called_once_with(expected_id, None, None)
         finally:
             await client._disconnect()
 

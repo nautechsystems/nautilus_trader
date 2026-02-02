@@ -6974,6 +6974,7 @@ class DeribitWebSocketClient:
         self,
         instrument_id: InstrumentId,
         interval: DeribitUpdateInterval | None = None,
+        depth: int | None = None,
     ) -> None: ...
     async def subscribe_book_grouped(
         self,
@@ -7013,6 +7014,7 @@ class DeribitWebSocketClient:
         self,
         instrument_id: InstrumentId,
         interval: DeribitUpdateInterval | None = None,
+        depth: int | None = None,
     ) -> None: ...
     async def unsubscribe_book_grouped(
         self,
