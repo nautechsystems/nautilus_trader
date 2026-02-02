@@ -273,7 +273,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         Subscribe to index market data for a specified instrument using reqMktData. This
         method is used for index contracts that don't support reqTickByTickData (^SPX.CBOE for example).
-        Note: Per interactive brokers some CME exchange indexes do support reqTickByTickData.
+        Note: Per Interactive Brokers some CME exchange indexes do support reqTickByTickData.
 
         Parameters
         ----------
@@ -824,7 +824,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         attrib: Any,
     ) -> None:
         """
-        Process tick price data from reqMktData for spread instruments.
+        Process tick price data from reqMktData for spread instruments and indices.
         """
         if not (subscription := self._subscriptions.get(req_id=req_id)):
             return
@@ -859,7 +859,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         size: Decimal,
     ) -> None:
         """
-        Process tick size data from reqMktData for spread instruments.
+        Process tick size data from reqMktData for spread instruments and indices.
         """
         if not (subscription := self._subscriptions.get(req_id=req_id)):
             return
@@ -947,6 +947,10 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         if price is not None:
             instrument_id = InstrumentId.from_str(subscription.name[0])
             instrument = self._cache.instrument(instrument_id)
+            if instrument is None:
+                self._log.error(f"Cannot find instrument for {instrument_id}")
+                return
+
             ts_event = self._clock.timestamp_ns()
             price_magnifier = (
                 self._instrument_provider.get_price_magnifier(instrument_id)

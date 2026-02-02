@@ -179,6 +179,12 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             )
             return
 
+        if contract.secType != "IND":
+            self._log.warning(
+                f"Index price subscription not supported for security type {contract.secType}",
+            )
+            return
+
         await self._client.subscribe_index_market_data(
             instrument_id=command.instrument_id,
             contract=contract,
