@@ -25,11 +25,11 @@ use pyo3::prelude::*;
 #[pymethods]
 impl BinaryMarketBookView {
     #[new]
-    #[pyo3(signature = (book, own_book, own_synthetic_book, depth=None, status=None, accepted_buffer_ns=None, now=None))]
+    #[pyo3(signature = (book, own_book=None, own_synthetic_book=None, depth=None, status=None, accepted_buffer_ns=None, now=None))]
     fn py_new(
         book: OrderBook,
-        own_book: OwnOrderBook,
-        own_synthetic_book: OwnOrderBook,
+        own_book: Option<OwnOrderBook>,
+        own_synthetic_book: Option<OwnOrderBook>,
         depth: Option<usize>,
         status: Option<std::collections::HashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,

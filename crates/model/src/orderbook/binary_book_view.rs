@@ -51,8 +51,8 @@ impl BinaryMarketBookView {
     #[must_use]
     pub fn new(
         book: OrderBook,
-        own_book: OwnOrderBook,
-        own_synthetic_book: OwnOrderBook,
+        own_book: Option<OwnOrderBook>,
+        own_synthetic_book: Option<OwnOrderBook>,
         depth: Option<usize>,
         status: Option<AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
@@ -84,14 +84,16 @@ impl BinaryMarketBookView {
     /// Panics if Price::from_decimal or Quantity::from_decimal fails when reconstructing orders.
     pub fn new_checked(
         book: OrderBook,
-        own_book: OwnOrderBook,
-        own_synthetic_book: OwnOrderBook,
+        own_book: Option<OwnOrderBook>,
+        own_synthetic_book: Option<OwnOrderBook>,
         depth: Option<usize>,
         status: Option<AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
     ) -> Result<Self, BinaryMarketBookViewError> {
-        if book.instrument_id != own_book.instrument_id {
+        if let Some(own_book) = &own_book
+            && book.instrument_id != own_book.instrument_id
+        {
             return Err(
                 BinaryMarketBookViewError::BookAndOwnBookMustBeSameInstrumentId(
                     book.instrument_id,
@@ -100,7 +102,9 @@ impl BinaryMarketBookView {
             );
         }
 
-        if book.instrument_id == own_synthetic_book.instrument_id {
+        if let Some(own_synthetic_book) = &own_synthetic_book
+            && book.instrument_id == own_synthetic_book.instrument_id
+        {
             return Err(
                 BinaryMarketBookViewError::BookAndOwnSyntheticBookMustBeDifferentInstrumentId(
                     book.instrument_id,
@@ -114,36 +118,44 @@ impl BinaryMarketBookView {
             .map(|level| (level.price.value.as_decimal(), level.size_decimal()))
             .collect::<IndexMap<Decimal, Decimal>>();
 
-        filter_quantities(
-            &mut bids_map,
-            own_book.bid_quantity(status.clone(), None, None, accepted_buffer_ns, now),
-        );
+        if let Some(ref own_book) = own_book {
+            filter_quantities(
+                &mut bids_map,
+                own_book.bid_quantity(status.clone(), None, None, accepted_buffer_ns, now),
+            );
+        }
 
-        let synthetic_as_bids = own_synthetic_book
-            .ask_quantity(status.clone(), None, None, accepted_buffer_ns, now)
-            .into_iter()
-            .map(|(price, quantity)| (Decimal::ONE - price, quantity))
-            .collect::<IndexMap<Decimal, Decimal>>();
+        if let Some(ref own_synthetic_book) = own_synthetic_book {
+            let synthetic_as_bids = own_synthetic_book
+                .ask_quantity(status.clone(), None, None, accepted_buffer_ns, now)
+                .into_iter()
+                .map(|(price, quantity)| (Decimal::ONE - price, quantity))
+                .collect::<IndexMap<Decimal, Decimal>>();
 
-        filter_quantities(&mut bids_map, synthetic_as_bids);
+            filter_quantities(&mut bids_map, synthetic_as_bids);
+        }
 
         let mut asks_map = book
             .asks(depth)
             .map(|level| (level.price.value.as_decimal(), level.size_decimal()))
             .collect::<IndexMap<Decimal, Decimal>>();
 
-        filter_quantities(
-            &mut asks_map,
-            own_book.ask_quantity(status.clone(), None, None, accepted_buffer_ns, now),
-        );
+        if let Some(ref own_book) = own_book {
+            filter_quantities(
+                &mut asks_map,
+                own_book.ask_quantity(status.clone(), None, None, accepted_buffer_ns, now),
+            );
+        }
 
-        let synthetic_as_asks = own_synthetic_book
-            .bid_quantity(status, None, None, accepted_buffer_ns, now)
-            .into_iter()
-            .map(|(price, quantity)| (Decimal::ONE - price, quantity))
-            .collect::<IndexMap<Decimal, Decimal>>();
+        if let Some(ref own_synthetic_book) = own_synthetic_book {
+            let synthetic_as_asks = own_synthetic_book
+                .bid_quantity(status, None, None, accepted_buffer_ns, now)
+                .into_iter()
+                .map(|(price, quantity)| (Decimal::ONE - price, quantity))
+                .collect::<IndexMap<Decimal, Decimal>>();
 
-        filter_quantities(&mut asks_map, synthetic_as_asks);
+            filter_quantities(&mut asks_map, synthetic_as_asks);
+        }
 
         let mut filtered_book = OrderBook::new(book.instrument_id, book.book_type);
         let sequence = book.sequence;

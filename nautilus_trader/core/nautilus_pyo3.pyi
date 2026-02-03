@@ -4061,8 +4061,8 @@ class BinaryMarketBookView:
     def __init__(
         self,
         book: OrderBook,
-        own_book: OwnOrderBook,
-        own_synthetic_book: OwnOrderBook,
+        own_book: OwnOrderBook | None = None,
+        own_synthetic_book: OwnOrderBook | None = None,
         depth: int | None = None,
         status: set[OrderStatus] | None = None,
         accepted_buffer_ns: int | None = None,

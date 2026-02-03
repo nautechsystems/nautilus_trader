@@ -1671,8 +1671,15 @@ fn test_book_filtered_with_synthetic_orders() {
     synthetic_book.add(synthetic_ask_order);
     synthetic_book.add(synthetic_bid_order);
 
-    let view =
-        BinaryMarketBookView::new(book, own_book, synthetic_book, Some(10), None, None, None);
+    let view = BinaryMarketBookView::new(
+        book,
+        Some(own_book),
+        Some(synthetic_book),
+        Some(10),
+        None,
+        None,
+        None,
+    );
     let bids_filtered = view.book.bids_as_map(None);
     let asks_filtered = view.book.asks_as_map(None);
 
@@ -1767,8 +1774,15 @@ fn test_book_filtered_with_own_and_synthetic_orders() {
     synthetic_book.add(synthetic_ask_order);
     synthetic_book.add(synthetic_bid_order);
 
-    let view =
-        BinaryMarketBookView::new(book, own_book, synthetic_book, Some(10), None, None, None);
+    let view = BinaryMarketBookView::new(
+        book,
+        Some(own_book),
+        Some(synthetic_book),
+        Some(10),
+        None,
+        None,
+        None,
+    );
     let bids_filtered = view.book.bids_as_map(None);
     let asks_filtered = view.book.asks_as_map(None);
 
@@ -1786,8 +1800,8 @@ fn test_binary_market_book_view_book_and_own_book_instrument_mismatch() {
 
     let result = BinaryMarketBookView::new_checked(
         book,
-        own_book,
-        synthetic_book,
+        Some(own_book),
+        Some(synthetic_book),
         Some(10),
         None,
         None,
@@ -1814,8 +1828,8 @@ fn test_binary_market_book_view_book_and_own_synthetic_book_instrument_must_diff
 
     let result = BinaryMarketBookView::new_checked(
         book,
-        own_book,
-        synthetic_book,
+        Some(own_book),
+        Some(synthetic_book),
         Some(10),
         None,
         None,
@@ -1836,6 +1850,23 @@ fn test_binary_market_book_view_book_and_own_synthetic_book_instrument_must_diff
             "Expected BookAndOwnSyntheticBookMustBeDifferentInstrumentId error, was {other:?}"
         ),
     }
+}
+
+#[rstest]
+fn test_binary_market_book_view_optional_books() {
+    let instrument_id = InstrumentId::from("YES.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    let bid_order = BookOrder::new(OrderSide::Buy, Price::from("0.40"), Quantity::from(100), 1);
+    let ask_order = BookOrder::new(OrderSide::Sell, Price::from("0.60"), Quantity::from(200), 2);
+
+    book.add(bid_order, 0, 1, 1.into());
+    book.add(ask_order, 0, 2, 2.into());
+
+    let view = BinaryMarketBookView::new_checked(book, None, None, None, None, None, None).unwrap();
+
+    assert_eq!(view.book.best_bid_size(), Some(Quantity::from(100)));
+    assert_eq!(view.book.best_ask_size(), Some(Quantity::from(200)));
 }
 
 #[rstest]

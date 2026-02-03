@@ -96,3 +96,23 @@ def test_binary_market_book_view_book_and_own_synthetic_book_instrument_must_dif
         match=r"The instrument IDs of `book` and `own_synthetic_book` must differ: book=YES.XNAS, own_synthetic_book=YES.XNAS",
     ):
         nautilus_pyo3.BinaryMarketBookView(book, own_book, own_synthetic_book)
+
+
+def test_binary_market_book_view_optional_books() -> None:
+    book_type = nautilus_pyo3.BookType.L2_MBP
+    instrument_id = nautilus_pyo3.InstrumentId.from_str("YES.XNAS")
+    book = nautilus_pyo3.OrderBook(instrument_id, book_type)
+    populate_book(
+        book,
+        bids=[
+            (0.40, 100),
+        ],
+        asks=[
+            (0.60, 200),
+        ],
+    )
+
+    book_view = nautilus_pyo3.BinaryMarketBookView(book, own_book=None, own_synthetic_book=None)
+
+    assert book_view.book.best_bid_size() == 100
+    assert book_view.book.best_ask_size() == 200
