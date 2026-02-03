@@ -59,6 +59,9 @@ pub enum AxHttpError {
     /// Error variant when credentials are missing but the request is authenticated.
     #[error("Missing credentials for authenticated request")]
     MissingCredentials,
+    /// Error variant when session token is not set (not yet authenticated).
+    #[error("Session token not set (not authenticated)")]
+    MissingSessionToken,
     /// Errors returned directly by AX Exchange API.
     #[error("AX Exchange API error: {message}")]
     ApiError { message: String },
@@ -120,6 +123,7 @@ impl AxHttpError {
             Self::NetworkError(_) => true,
             Self::UnexpectedStatus { status, .. } => *status == 429 || *status >= 500,
             Self::MissingCredentials
+            | Self::MissingSessionToken
             | Self::ApiError { .. }
             | Self::JsonError(_)
             | Self::ValidationError(_)

@@ -140,10 +140,11 @@ async fn test_raw_http_get_instruments_returns_data() {
 
     let response = client.get_instruments().await.unwrap();
 
-    assert_eq!(response.instruments.len(), 3);
-    assert_eq!(response.instruments[0].symbol.as_str(), "BTC-PERP");
-    assert_eq!(response.instruments[1].symbol.as_str(), "ETH-PERP");
-    assert_eq!(response.instruments[2].symbol.as_str(), "SOL-PERP");
+    assert_eq!(response.instruments.len(), 4);
+    assert_eq!(response.instruments[0].symbol.as_str(), "BTCUSD-PERP");
+    assert_eq!(response.instruments[1].symbol.as_str(), "BTC-PERP");
+    assert_eq!(response.instruments[2].symbol.as_str(), "ETH-PERP");
+    assert_eq!(response.instruments[3].symbol.as_str(), "SOL-PERP");
 }
 
 #[rstest]
@@ -155,9 +156,10 @@ async fn test_raw_http_get_instrument_returns_data() {
     let client =
         AxRawHttpClient::new(Some(base_url), None, Some(60), None, None, None, None).unwrap();
 
-    let instrument = client.get_instrument("BTC-PERP").await.unwrap();
+    // Mock server returns first instrument from list (BTCUSD-PERP)
+    let instrument = client.get_instrument("BTCUSD-PERP").await.unwrap();
 
-    assert_eq!(instrument.symbol.as_str(), "BTC-PERP");
+    assert_eq!(instrument.symbol.as_str(), "BTCUSD-PERP");
     assert_eq!(instrument.tick_size, dec!(0.5));
 }
 
@@ -277,8 +279,8 @@ async fn test_domain_http_request_instruments_returns_nautilus_types() {
         .await
         .unwrap();
 
-    // Should have 2 instruments (SOL-PERP is suspended and skipped)
-    assert_eq!(instruments.len(), 2);
+    // Should have 3 instruments (SOL-PERP is suspended and skipped)
+    assert_eq!(instruments.len(), 3);
 }
 
 #[rstest]
@@ -289,14 +291,15 @@ async fn test_domain_http_request_instrument_returns_nautilus_type() {
 
     let client = AxHttpClient::new(Some(base_url), None, Some(60), None, None, None, None).unwrap();
 
+    // Mock server returns first instrument (BTCUSD-PERP) regardless of request
     let instrument = client
-        .request_instrument("BTC-PERP", None, None)
+        .request_instrument("BTCUSD-PERP", None, None)
         .await
         .unwrap();
 
     match instrument {
         InstrumentAny::CryptoPerpetual(perp) => {
-            assert_eq!(perp.id.symbol.as_str(), "BTC-PERP");
+            assert_eq!(perp.id.symbol.as_str(), "BTCUSD-PERP");
             assert_eq!(perp.id.venue.as_str(), "AX");
         }
         _ => panic!("Expected CryptoPerpetual instrument"),
@@ -319,7 +322,8 @@ async fn test_domain_http_cache_instruments() {
     assert!(client.is_initialized());
 
     let cached_symbols = client.get_cached_symbols();
-    assert_eq!(cached_symbols.len(), 2);
+    assert_eq!(cached_symbols.len(), 3);
+    assert!(cached_symbols.contains(&"BTCUSD-PERP".to_string()));
     assert!(cached_symbols.contains(&"BTC-PERP".to_string()));
     assert!(cached_symbols.contains(&"ETH-PERP".to_string()));
 }

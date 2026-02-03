@@ -46,7 +46,13 @@ use super::consts::{
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.architect")
+    pyo3::pyclass(
+        eq,
+        eq_int,
+        frozen,
+        hash,
+        module = "nautilus_trader.core.nautilus_pyo3.architect"
+    )
 )]
 pub enum AxEnvironment {
     /// Sandbox/test environment.
@@ -314,6 +320,10 @@ pub enum AxTimeInForce {
     Ioc,
     /// Fill-Or-Kill: execute entire order immediately or cancel.
     Fok,
+    /// At-the-Open: execute at market opening or expire.
+    Ato,
+    /// At-the-Close: execute at market close or expire.
+    Atc,
 }
 
 impl From<AxTimeInForce> for TimeInForce {
@@ -324,6 +334,8 @@ impl From<AxTimeInForce> for TimeInForce {
             AxTimeInForce::Day => Self::Day,
             AxTimeInForce::Ioc => Self::Ioc,
             AxTimeInForce::Fok => Self::Fok,
+            AxTimeInForce::Ato => Self::AtTheOpen,
+            AxTimeInForce::Atc => Self::AtTheClose,
         }
     }
 }
@@ -338,7 +350,8 @@ impl TryFrom<TimeInForce> for AxTimeInForce {
             TimeInForce::Day => Ok(Self::Day),
             TimeInForce::Ioc => Ok(Self::Ioc),
             TimeInForce::Fok => Ok(Self::Fok),
-            _ => Err("Unsupported time-in-force for AX"),
+            TimeInForce::AtTheOpen => Ok(Self::Ato),
+            TimeInForce::AtTheClose => Ok(Self::Atc),
         }
     }
 }
@@ -351,7 +364,6 @@ impl TryFrom<TimeInForce> for AxTimeInForce {
     Clone,
     Copy,
     Debug,
-    Default,
     Display,
     Eq,
     PartialEq,
@@ -369,8 +381,9 @@ impl TryFrom<TimeInForce> for AxTimeInForce {
     pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.architect")
 )]
 pub enum AxOrderType {
+    /// Market order; execute immediately at best available price.
+    Market,
     /// Limit order; execute no worse than the limit price specified.
-    #[default]
     Limit,
     /// Stop-limit order; if the trigger price is breached, place a limit order.
     StopLossLimit,
@@ -382,6 +395,7 @@ pub enum AxOrderType {
 impl From<AxOrderType> for OrderType {
     fn from(order_type: AxOrderType) -> Self {
         match order_type {
+            AxOrderType::Market => Self::Market,
             AxOrderType::Limit => Self::Limit,
             AxOrderType::StopLossLimit => Self::StopLimit,
             AxOrderType::TakeProfitLimit => Self::LimitIfTouched,
@@ -394,6 +408,7 @@ impl TryFrom<OrderType> for AxOrderType {
 
     fn try_from(order_type: OrderType) -> Result<Self, Self::Error> {
         match order_type {
+            OrderType::Market => Ok(Self::Market),
             OrderType::Limit => Ok(Self::Limit),
             OrderType::StopLimit => Ok(Self::StopLossLimit),
             OrderType::LimitIfTouched => Ok(Self::TakeProfitLimit),
@@ -423,7 +438,13 @@ impl TryFrom<OrderType> for AxOrderType {
 #[strum(ascii_case_insensitive)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.architect")
+    pyo3::pyclass(
+        eq,
+        eq_int,
+        frozen,
+        hash,
+        module = "nautilus_trader.core.nautilus_pyo3.architect"
+    )
 )]
 pub enum AxMarketDataLevel {
     /// Level 1: best bid/ask only.
@@ -726,6 +747,8 @@ mod tests {
     #[case(AxTimeInForce::Day, "\"DAY\"")]
     #[case(AxTimeInForce::Gtd, "\"GTD\"")]
     #[case(AxTimeInForce::Fok, "\"FOK\"")]
+    #[case(AxTimeInForce::Ato, "\"ATO\"")]
+    #[case(AxTimeInForce::Atc, "\"ATC\"")]
     fn test_time_in_force_serialization(#[case] tif: AxTimeInForce, #[case] expected: &str) {
         let json = serde_json::to_string(&tif).unwrap();
         assert_eq!(json, expected);
@@ -735,6 +758,7 @@ mod tests {
     }
 
     #[rstest]
+    #[case(AxOrderType::Market, "\"MARKET\"")]
     #[case(AxOrderType::Limit, "\"LIMIT\"")]
     #[case(AxOrderType::StopLossLimit, "\"STOP_LOSS_LIMIT\"")]
     #[case(AxOrderType::TakeProfitLimit, "\"TAKE_PROFIT_LIMIT\"")]

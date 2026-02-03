@@ -258,21 +258,14 @@ impl AxRawHttpClient {
     }
 
     fn auth_headers(&self) -> Result<HashMap<String, String>, AxHttpError> {
-        let credential = self
-            .credential
-            .as_ref()
-            .ok_or(AxHttpError::MissingCredentials)?;
-
         // SAFETY: Lock poisoning indicates a panic in another thread, which is fatal
         let guard = self.session_token.read().expect("Lock poisoned");
-        let session_token = guard
-            .as_ref()
-            .ok_or_else(|| AxHttpError::ValidationError("Session token not set".to_string()))?;
+        let session_token = guard.as_ref().ok_or(AxHttpError::MissingSessionToken)?;
 
         let mut headers = HashMap::new();
         headers.insert(
             "Authorization".to_string(),
-            credential.bearer_token(session_token),
+            format!("Bearer {session_token}"),
         );
 
         Ok(headers)
@@ -546,6 +539,42 @@ impl AxRawHttpClient {
             false,
         )
         .await
+    }
+
+    /// Authenticates using stored credentials or environment variables.
+    ///
+    /// # Credential Resolution
+    ///
+    /// Credentials are resolved in the following order:
+    /// 1. Stored credentials (from `with_credentials` constructor)
+    /// 2. Environment variables (`AX_API_KEY` and `AX_API_SECRET`)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - No credentials are available from either source
+    /// - The HTTP request fails
+    /// - The credentials are invalid
+    pub async fn authenticate_auto(
+        &self,
+        expiration_seconds: i32,
+    ) -> Result<AxAuthenticateResponse, AxHttpError> {
+        let (api_key, api_secret) = self
+            .resolve_credentials()
+            .ok_or(AxHttpError::MissingCredentials)?;
+
+        self.authenticate(&api_key, &api_secret, expiration_seconds)
+            .await
+    }
+
+    fn resolve_credentials(&self) -> Option<(String, String)> {
+        if let Some(cred) = &self.credential {
+            return Some((cred.api_key().to_string(), cred.api_secret().to_string()));
+        }
+
+        let api_key = std::env::var("AX_API_KEY").ok()?;
+        let api_secret = std::env::var("AX_API_SECRET").ok()?;
+        Some((api_key, api_secret))
     }
 
     /// Places a new order.
@@ -1022,6 +1051,28 @@ impl AxHttpClient {
             .inner
             .authenticate_with_totp(api_key, api_secret, expiration_seconds, totp_code)
             .await?;
+        self.inner.set_session_token(resp.token.clone());
+        Ok(resp.token)
+    }
+
+    /// Authenticates using stored credentials or environment variables.
+    ///
+    /// # Credential Resolution
+    ///
+    /// Credentials are resolved in the following order:
+    /// 1. Stored credentials (from `with_credentials` constructor)
+    /// 2. Environment variables (`AX_API_KEY` and `AX_API_SECRET`)
+    ///
+    /// On success, the session token is automatically stored for subsequent authenticated requests.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - No credentials are available from either source
+    /// - The HTTP request fails
+    /// - The credentials are invalid
+    pub async fn authenticate_auto(&self, expiration_seconds: i32) -> Result<String, AxHttpError> {
+        let resp = self.inner.authenticate_auto(expiration_seconds).await?;
         self.inner.set_session_token(resp.token.clone());
         Ok(resp.token)
     }

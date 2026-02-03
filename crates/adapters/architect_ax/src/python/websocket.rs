@@ -15,10 +15,19 @@
 
 //! Python bindings for Ax WebSocket clients.
 
-use nautilus_core::python::to_pyruntime_err;
+use futures_util::StreamExt;
+use nautilus_common::live::get_runtime;
+use nautilus_core::python::{call_python, to_pyruntime_err};
+use nautilus_model::{
+    data::{Data, OrderBookDeltas_API},
+    python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
+};
 use pyo3::prelude::*;
 
-use crate::{common::enums::AxMarketDataLevel, websocket::data::AxMdWebSocketClient};
+use crate::{
+    common::enums::AxMarketDataLevel,
+    websocket::{data::AxMdWebSocketClient, messages::NautilusDataWsMessage},
+};
 
 #[pymethods]
 impl AxMdWebSocketClient {
@@ -26,6 +35,13 @@ impl AxMdWebSocketClient {
     #[pyo3(signature = (url, auth_token, heartbeat=None))]
     fn py_new(url: String, auth_token: String, heartbeat: Option<u64>) -> Self {
         Self::new(url, auth_token, heartbeat)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "without_auth")]
+    #[pyo3(signature = (url, heartbeat=None))]
+    fn py_without_auth(url: String, heartbeat: Option<u64>) -> Self {
+        Self::without_auth(url, heartbeat)
     }
 
     #[getter]
@@ -53,12 +69,72 @@ impl AxMdWebSocketClient {
         self.subscription_count()
     }
 
+    #[pyo3(name = "set_auth_token")]
+    fn py_set_auth_token(&mut self, token: String) {
+        self.set_auth_token(token);
+    }
+
+    #[pyo3(name = "cache_instrument")]
+    fn py_cache_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
+        self.cache_instrument(pyobject_to_instrument_any(py, instrument)?);
+        Ok(())
+    }
+
     #[pyo3(name = "connect")]
-    fn py_connect<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    fn py_connect<'py>(
+        &mut self,
+        py: Python<'py>,
+        callback: Py<PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let mut client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client.connect().await.map_err(to_pyruntime_err)
+            client.connect().await.map_err(to_pyruntime_err)?;
+
+            let stream = client.stream();
+
+            get_runtime().spawn(async move {
+                tokio::pin!(stream);
+
+                while let Some(msg) = stream.next().await {
+                    match msg {
+                        NautilusDataWsMessage::Data(data_vec) => {
+                            Python::attach(|py| {
+                                for data in data_vec {
+                                    let py_obj = data_to_pycapsule(py, data);
+                                    call_python(py, &callback, py_obj);
+                                }
+                            });
+                        }
+                        NautilusDataWsMessage::Deltas(deltas) => {
+                            Python::attach(|py| {
+                                let py_obj = data_to_pycapsule(
+                                    py,
+                                    Data::Deltas(OrderBookDeltas_API::new(deltas)),
+                                );
+                                call_python(py, &callback, py_obj);
+                            });
+                        }
+                        NautilusDataWsMessage::Bar(bar) => {
+                            Python::attach(|py| {
+                                let py_obj = data_to_pycapsule(py, Data::Bar(bar));
+                                call_python(py, &callback, py_obj);
+                            });
+                        }
+                        NautilusDataWsMessage::Heartbeat => {
+                            // Heartbeats are handled internally, no need to forward
+                        }
+                        NautilusDataWsMessage::Error(err) => {
+                            log::error!("AX WebSocket error: {err:?}");
+                        }
+                        NautilusDataWsMessage::Reconnected => {
+                            log::info!("AX WebSocket reconnected");
+                        }
+                    }
+                }
+            });
+
+            Ok(())
         })
     }
 

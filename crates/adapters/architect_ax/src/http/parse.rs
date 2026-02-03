@@ -529,21 +529,25 @@ mod tests {
         let response: AxInstrumentsResponse =
             serde_json::from_str(test_data).expect("Failed to deserialize test data");
 
-        assert_eq!(response.instruments.len(), 3);
+        assert_eq!(response.instruments.len(), 4);
 
-        let btc = &response.instruments[0];
+        let btcusd = &response.instruments[0];
+        assert_eq!(btcusd.symbol.as_str(), "BTCUSD-PERP");
+        assert_eq!(btcusd.state, AxInstrumentState::Open);
+
+        let btc = &response.instruments[1];
         assert_eq!(btc.symbol.as_str(), "BTC-PERP");
         assert_eq!(btc.state, AxInstrumentState::Open);
         assert_eq!(btc.tick_size, dec!(0.5));
         assert_eq!(btc.minimum_order_size, dec!(0.001));
         assert!(btc.contract_mark_price.is_some());
 
-        let eth = &response.instruments[1];
+        let eth = &response.instruments[2];
         assert_eq!(eth.symbol.as_str(), "ETH-PERP");
         assert_eq!(eth.state, AxInstrumentState::Open);
 
         // SOL-PERP is suspended with null optional fields
-        let sol = &response.instruments[2];
+        let sol = &response.instruments[3];
         assert_eq!(sol.symbol.as_str(), "SOL-PERP");
         assert_eq!(sol.state, AxInstrumentState::Suspended);
         assert!(sol.contract_mark_price.is_none());
@@ -566,7 +570,7 @@ mod tests {
             .filter(|i| i.state == AxInstrumentState::Open)
             .collect();
 
-        assert_eq!(open_instruments.len(), 2);
+        assert_eq!(open_instruments.len(), 3);
 
         for instrument in open_instruments {
             let result = parse_perp_instrument(instrument, maker_fee, taker_fee, ts_now, ts_now);

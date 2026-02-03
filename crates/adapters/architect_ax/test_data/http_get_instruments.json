@@ -1,6 +1,29 @@
 {
   "instruments": [
     {
+      "symbol": "BTCUSD-PERP",
+      "state": "OPEN",
+      "multiplier": "1.0",
+      "minimum_order_size": "0.001",
+      "tick_size": "0.5",
+      "quote_currency": "USD",
+      "finding_settlement_currency": "USD",
+      "maintenance_margin_pct": "0.005",
+      "initial_margin_pct": "0.01",
+      "contract_mark_price": "45000.50",
+      "contract_size": "1.0",
+      "description": "Bitcoin USD Perpetual Futures",
+      "funding_calendar_schedule": "0,8,16",
+      "funding_frequency": "8h",
+      "funding_rate_cap_lower_pct": "-0.0075",
+      "funding_rate_cap_upper_pct": "0.0075",
+      "price_band_lower_deviation_pct": "0.05",
+      "price_band_upper_deviation_pct": "0.05",
+      "price_bands": "dynamic",
+      "price_quotation": "USD",
+      "underlying_benchmark_price": "45000.00"
+    },
+    {
       "symbol": "BTC-PERP",
       "state": "OPEN",
       "multiplier": "1.0",
