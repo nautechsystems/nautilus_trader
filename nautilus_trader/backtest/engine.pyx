@@ -103,10 +103,12 @@ from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport MarketStatus
 from nautilus_trader.core.rust.model cimport MarketStatusAction
 from nautilus_trader.core.rust.model cimport OmsType
+from nautilus_trader.core.rust.model cimport OptionKind
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport OtoTriggerMode
+from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport PriceRaw
 from nautilus_trader.core.rust.model cimport PriceType
@@ -172,12 +174,15 @@ from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
-from nautilus_trader.model.instruments.base cimport EXPIRING_INSTRUMENT_CLASSES
+from nautilus_trader.model.instruments.base cimport ENGINE_EXPIRING_INSTRUMENT_CLASSES
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.crypto_future cimport CryptoFuture
+from nautilus_trader.model.instruments.crypto_option cimport CryptoOption
 from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.instruments.equity cimport Equity
+from nautilus_trader.model.instruments.index cimport IndexInstrument
+from nautilus_trader.model.instruments.option_contract cimport OptionContract
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
@@ -514,6 +519,7 @@ cdef class BacktestEngine:
         allow_cash_borrowing: bool = False,
         frozen_account: bool = False,
         price_protection_points=None,
+        custom_settlement_prices: dict = None,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -666,6 +672,7 @@ cdef class BacktestEngine:
             liquidity_consumption=liquidity_consumption,
             queue_position=queue_position,
             price_protection_points=price_protection_points,
+            custom_settlement_prices=custom_settlement_prices,
         )
 
         self._venues[venue] = exchange
@@ -2629,6 +2636,7 @@ cdef class SimulatedExchange:
         bint liquidity_consumption = False,
         bint queue_position = False,
         price_protection_points=None,
+        custom_settlement_prices: dict = None,
     ) -> None:
         Condition.not_empty(starting_balances, "starting_balances")
         Condition.list_type(starting_balances, Money, "starting_balances")
@@ -2642,6 +2650,7 @@ cdef class SimulatedExchange:
         self._log = Logger(name=f"{type(self).__name__}({venue})")
 
         self.id = venue
+        self.custom_settlement_prices = custom_settlement_prices or {}
         self.oms_type = oms_type
         self._log.info(f"OmsType={oms_type_to_str(oms_type)}")
         self.book_type = book_type
@@ -2691,9 +2700,9 @@ cdef class SimulatedExchange:
                 cache=cache,
                 clock=clock,
             )
-            # The OptionExerciseModule subscribes to position events in the `register_venue` method.
-            # The msgbus needs to be available to subscribe to the events.
-            # Thus, `register_base` is called before `register_venue`.
+            # Simulation modules may subscribe
+            # to position events in `register_venue`. The msgbus must be available, so
+            # `register_base` is called before `register_venue`.
             module.register_venue(self)
             self.modules.append(module)
             self._log.info(f"Loaded {module}")
@@ -2838,6 +2847,7 @@ cdef class SimulatedExchange:
             liquidity_consumption=self.liquidity_consumption,
             queue_position=self.queue_position,
             price_protection_points=self.price_protection_points,
+            custom_settlement_prices=self.custom_settlement_prices,
         )
 
         self._matching_engines[instrument.id] = matching_engine
@@ -3414,6 +3424,14 @@ cdef class SimulatedExchange:
         for module in self.modules:
             module.process(ts_now)
 
+        # Check instrument expiration for matching engines with expiring instruments at ts_now.
+        # Only call for expiring instruments; engines without data at ts_now would otherwise
+        # never run expiration.
+        cdef OrderMatchingEngine matching_engine
+        for matching_engine in list(self._matching_engines.values()):
+            if matching_engine._instrument_has_expiration:
+                matching_engine.check_instrument_expiration(ts_now)
+
     cpdef void reset(self):
         """
         Reset the simulated exchange.
@@ -3663,6 +3681,7 @@ cdef class OrderMatchingEngine:
         bint liquidity_consumption = False,
         bint queue_position = False,
         price_protection_points=None,
+        custom_settlement_prices: dict = None,
     ) -> None:
         self._clock = clock
         self._log = Logger(name=f"{type(self).__name__}({instrument.id.venue})")
@@ -3677,7 +3696,8 @@ cdef class OrderMatchingEngine:
         self.account_type = account_type
         self.market_status = MarketStatus.OPEN
 
-        self._instrument_has_expiration = instrument.instrument_class in EXPIRING_INSTRUMENT_CLASSES
+        self._custom_settlement_prices = custom_settlement_prices or {}
+        self._instrument_has_expiration = instrument.instrument_class in ENGINE_EXPIRING_INSTRUMENT_CLASSES
         self._instrument_close = None
         self._reject_stop_orders = reject_stop_orders
         self._support_gtd_orders = support_gtd_orders
@@ -5339,30 +5359,200 @@ cdef class OrderMatchingEngine:
         self._target_last = 0
         self._has_targets = False
 
-        # Instrument expiration
-        if (self._instrument_has_expiration and timestamp_ns > self.instrument.expiration_ns) or self._instrument_close is not None:
+        self.check_instrument_expiration(timestamp_ns)
+
+    cpdef void check_instrument_expiration(self, uint64_t timestamp_ns):
+        """Run instrument expiration at timestamp_ns (option exercise/expiry or futures close)."""
+        if (self._instrument_has_expiration and timestamp_ns >= self.instrument.expiration_ns) or self._instrument_close is not None:
             self._log.info(f"{self.instrument.id} reached expiration")
 
             # Cancel all open orders
             for order in self.get_open_orders():
                 self.cancel_order(order)
 
-            # Close all open positions
-            for position in self.cache.positions_open(None, self.instrument.id):
-                order = MarketOrder(
-                    trader_id=position.trader_id,
-                    strategy_id=position.strategy_id,
-                    instrument_id=position.instrument_id,
-                    client_order_id=ClientOrderId(f"EXPIRATION-LEG-{uuid.uuid4()}"),
-                    order_side=Order.closing_side_c(position.side),
-                    quantity=position.quantity,
-                    init_id=UUID4(),
-                    ts_init=self._clock.timestamp_ns(),
-                    reduce_only=True,
-                    tags=[f"EXPIRATION_{self.venue}_CLOSE"],
+            # Close positions: option exercise/expiry or futures close at market/custom
+            if isinstance(self.instrument, (OptionContract, CryptoOption)):
+                self._process_option_expiry(timestamp_ns)
+            else:
+                for position in self.cache.positions_open(None, self.instrument.id):
+                    order = MarketOrder(
+                        trader_id=position.trader_id,
+                        strategy_id=position.strategy_id,
+                        instrument_id=position.instrument_id,
+                        client_order_id=ClientOrderId(f"EXPIRATION-LEG-{uuid.uuid4()}"),
+                        order_side=Order.closing_side_c(position.side),
+                        quantity=position.quantity,
+                        init_id=UUID4(),
+                        ts_init=self._clock.timestamp_ns(),
+                        reduce_only=True,
+                        tags=[f"EXPIRATION_{self.venue}_CLOSE"],
+                    )
+                    self.cache.add_order(order, position_id=position.id)
+                    if self._custom_settlement_prices and self.instrument.id in self._custom_settlement_prices:
+                        self._generate_order_accepted(order, venue_order_id=self._get_venue_order_id(order))
+                        settlement_price = Price(
+                            self._custom_settlement_prices[self.instrument.id],
+                            self._price_prec,
+                        )
+                        self.apply_fills(
+                            order=order,
+                            fills=[(settlement_price, position.quantity)],
+                            liquidity_side=LiquiditySide.TAKER,
+                            venue_position_id=position.id,
+                            position=position,
+                        )
+                    else:
+                        self.fill_market_order(order)
+
+            self._instrument_close = None
+
+    cdef void _process_option_expiry(self, uint64_t ts_now):
+        """Process option expiration: ITM exercise (cash/physical) or OTM expire worthless."""
+        cdef list positions = self.cache.positions_open(venue=None, instrument_id=self.instrument.id)
+        if not positions:
+            return
+        cdef Instrument underlying_instrument = self._get_option_underlying_instrument()
+        if underlying_instrument is None:
+            self._log.error(f"No underlying instrument for option {self.instrument.id}")
+            return
+        cdef Price underlying_price = self.cache.price(underlying_instrument.id, PriceType.LAST)
+        if underlying_price is None:
+            self._log.error(f"No underlying price for option {self.instrument.id}")
+            return
+        cdef Price custom_option_price = None
+        if self._custom_settlement_prices and self.instrument.id in self._custom_settlement_prices:
+            custom_option_price = Price(
+                self._custom_settlement_prices[self.instrument.id],
+                self._price_prec,
+            )
+        cdef Position position
+        for position in positions:
+            if self._option_should_exercise(underlying_price):
+                self._log.info(
+                    f"Exercising {self.instrument.id}: {position.side} {position.quantity} @ strike {self.instrument.strike_price}"
                 )
-                self.cache.add_order(order, position_id=position.id)
-                self.fill_market_order(order)
+                self._option_exercise_position(position, underlying_instrument, underlying_price, ts_now, custom_option_price)
+            else:
+                self._option_otm_expiry(position, ts_now, custom_option_price)
+
+    cdef Instrument _get_option_underlying_instrument(self):
+        cdef InstrumentId underlying_id = InstrumentId.from_str(f"{self.instrument.underlying}.{self.instrument.id.venue.value}")
+        return self.cache.instrument(underlying_id)
+
+    cdef bint _option_should_exercise(self, Price underlying_price):
+        cdef double strike = self.instrument.strike_price.as_double()
+        cdef double spot = underlying_price.as_double()
+        if self.instrument.option_kind == OptionKind.CALL:
+            return spot > strike
+        return strike > spot
+
+    cdef void _option_otm_expiry(self, Position position, uint64_t ts_now, Price custom_option_price=None):
+        cdef str venue = self.instrument.id.venue.value
+        cdef str short_id = str(UUID4())[:8]
+        cdef str trade_id = f"{venue}-LEG-OTM-{short_id}"
+        cdef Price close_px = custom_option_price if custom_option_price is not None else Price(0.0, self.instrument.price_precision)
+        cdef OrderFilled fill = self._option_create_close_fill(position, close_px, trade_id, ts_now)
+        self._option_send_events([fill])
+
+    cdef void _option_exercise_position(
+        self, Position position, Instrument underlying_instrument,
+        Price underlying_price, uint64_t ts_now, Price custom_option_price=None
+    ):
+        cdef bint is_cash = isinstance(underlying_instrument, IndexInstrument)
+        if is_cash:
+            self._option_cash_settlement(position, underlying_price, ts_now, custom_option_price)
+        else:
+            self._option_physical_settlement(position, underlying_instrument, underlying_price, ts_now, custom_option_price)
+
+    cdef void _option_cash_settlement(self, Position position, Price underlying_price, uint64_t ts_now, Price custom_option_price=None):
+        cdef str venue = self.instrument.id.venue.value
+        cdef str short_id = str(UUID4())[:8]
+        cdef str trade_id = f"{venue}-LEG-CASH-{short_id}"
+        cdef Price close_px = custom_option_price if custom_option_price is not None else self._option_settlement_price(underlying_price, True)
+        cdef OrderFilled fill = self._option_create_close_fill(position, close_px, trade_id, ts_now)
+        self._option_send_events([fill])
+
+    cdef void _option_physical_settlement(
+        self, Position position, Instrument underlying_instrument,
+        Price underlying_price, uint64_t ts_now, Price custom_option_price=None
+    ):
+        cdef Quantity underlying_qty
+        cdef PositionSide underlying_side
+        cdef double base_qty = position.quantity.as_double() * self.instrument.multiplier.as_double()
+        underlying_qty = Quantity.from_str(str(base_qty))
+        if self.instrument.option_kind == OptionKind.CALL:
+            underlying_side = position.side
+        else:
+            underlying_side = PositionSide.SHORT if position.side == PositionSide.LONG else PositionSide.LONG
+        cdef str venue = self.instrument.id.venue.value
+        cdef str short_id = str(UUID4())[:8]
+        cdef str trade_base = f"{venue}-LEG-EX-{short_id}"
+        cdef Price settlement_px = self._option_settlement_price(underlying_price, False)
+        cdef Price option_close_px = custom_option_price if custom_option_price is not None else Price(position.avg_px_open, self.instrument.price_precision)
+        cdef OrderFilled option_fill = self._option_create_close_fill(position, option_close_px, f"{trade_base}-CLOSE", ts_now)
+        cdef OrderFilled underlying_fill = self._option_create_underlying_fill(position, underlying_instrument, underlying_qty, underlying_side, settlement_px, f"{trade_base}-OPEN", ts_now)
+        self._option_send_events([option_fill, underlying_fill])
+
+    cdef Price _option_settlement_price(self, Price underlying_price, bint cash_settled):
+        if cash_settled:
+            if self.instrument.option_kind == OptionKind.CALL:
+                return Price(max(0.0, underlying_price.as_double() - self.instrument.strike_price.as_double()), self.instrument.strike_price.precision)
+            return Price(max(0.0, self.instrument.strike_price.as_double() - underlying_price.as_double()), self.instrument.strike_price.precision)
+        return self.instrument.strike_price
+
+    cdef OrderFilled _option_create_close_fill(self, Position position, Price price, str trade_id, uint64_t ts_now):
+        cdef OrderSide close_side = OrderSide.SELL if position.side == PositionSide.LONG else OrderSide.BUY
+        return OrderFilled(
+            trader_id=position.trader_id,
+            strategy_id=position.strategy_id,
+            instrument_id=self.instrument.id,
+            client_order_id=ClientOrderId(trade_id),
+            venue_order_id=VenueOrderId(trade_id),
+            account_id=position.account_id,
+            trade_id=TradeId(trade_id),
+            position_id=position.id,
+            order_side=close_side,
+            order_type=OrderType.MARKET,
+            last_qty=position.quantity,
+            last_px=price,
+            currency=self.instrument.quote_currency,
+            commission=Money(0, self.instrument.quote_currency),
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=ts_now,
+            ts_init=ts_now,
+        )
+
+    cdef OrderFilled _option_create_underlying_fill(
+        self, Position position, Instrument underlying_instrument,
+        Quantity quantity, PositionSide side, Price price, str trade_id_suffix, uint64_t ts_now
+    ):
+        cdef OrderSide order_side = OrderSide.BUY if side == PositionSide.LONG else OrderSide.SELL
+        return OrderFilled(
+            trader_id=position.trader_id,
+            strategy_id=position.strategy_id,
+            instrument_id=underlying_instrument.id,
+            client_order_id=ClientOrderId(trade_id_suffix),
+            venue_order_id=VenueOrderId(trade_id_suffix),
+            account_id=position.account_id,
+            trade_id=TradeId(trade_id_suffix),
+            position_id=None,
+            order_side=order_side,
+            order_type=OrderType.MARKET,
+            last_qty=quantity,
+            last_px=price,
+            currency=underlying_instrument.quote_currency,
+            commission=Money(0, underlying_instrument.quote_currency),
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=ts_now,
+            ts_init=ts_now,
+        )
+
+    cdef void _option_send_events(self, list events):
+        cdef object event
+        for event in events:
+            self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
     cpdef void fill_market_order(self, Order order):
         """

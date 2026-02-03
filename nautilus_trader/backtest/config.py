@@ -354,12 +354,20 @@ class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
         If logging should be bypassed.
     run_analysis : bool, default True
         If post backtest performance analysis should be run.
+    custom_settlement_prices : dict[InstrumentId, float], optional
+        Optional map of instrument_id to settlement price (float) for instrument
+        expiration in backtest. For futures, expiring positions are closed at
+        this price instead of the market price at expiry. For options, the
+        option leg is settled at this price instead of intrinsic (cash/OTM) or
+        avg_px_open (physical); ITM/OTM and physical underlying at strike are
+        still derived from the underlying last price.
 
     """
 
     environment: Environment = Environment.BACKTEST
     trader_id: TraderId = "BACKTESTER-001"
     cache: CacheConfig | None = CacheConfig(drop_instruments_on_reset=False)
+    custom_settlement_prices: dict[InstrumentId, float] | None = None
     data_engine: DataEngineConfig | None = DataEngineConfig()
     risk_engine: RiskEngineConfig | None = RiskEngineConfig()
     exec_engine: ExecEngineConfig | None = ExecEngineConfig()
