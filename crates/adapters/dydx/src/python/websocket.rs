@@ -21,20 +21,21 @@ use std::{
 };
 
 use nautilus_common::live::get_runtime;
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::{python::to_pyvalue_err, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::BarType,
     identifiers::{AccountId, InstrumentId},
     python::instruments::pyobject_to_instrument_any,
 };
 use nautilus_network::mode::ConnectionMode;
-use pyo3::prelude::*;
+use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
     common::{credential::DydxCredential, parse::extract_raw_symbol},
+    http::parse::parse_account_state,
     websocket::{
         client::DydxWebSocketClient, enums::NautilusWsMessage, error::DydxWsError,
-        handler::HandlerCommand,
+        handler::HandlerCommand, parse::parse_ws_position_report,
     },
 };
 
@@ -139,14 +140,167 @@ impl DydxWebSocketClient {
                                     }
                                 });
                             }
+                            NautilusWsMessage::BlockHeight { height, time } => {
+                                Python::attach(|py| {
+                                    use pyo3::types::PyDict;
+                                    let dict = PyDict::new(py);
+                                    let _ = dict.set_item("type", "block_height");
+                                    let _ = dict.set_item("height", height);
+                                    let _ = dict.set_item("time", time.to_rfc3339());
+                                    if let Err(e) = callback.call1(py, (dict,)) {
+                                        log::error!("Error calling Python callback for block_height: {e}");
+                                    }
+                                });
+                            }
+                            NautilusWsMessage::SubaccountSubscribed(data) => {
+                                // Get account_id from the client
+                                let Some(account_id) = _client.account_id() else {
+                                    log::warn!("Cannot parse subaccount subscription: account_id not set");
+                                    continue;
+                                };
+
+                                let instrument_cache = _client.instrument_cache();
+                                let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+                                // Build maps from instrument cache
+                                let inst_map = instrument_cache.to_instrument_id_map();
+                                let oracle_map = instrument_cache.to_oracle_prices_map();
+
+                                // Parse and emit AccountState
+                                match parse_account_state(
+                                    &data.contents.subaccount,
+                                    account_id,
+                                    &inst_map,
+                                    &oracle_map,
+                                    ts_init,
+                                    ts_init,
+                                ) {
+                                    Ok(account_state) => {
+                                        Python::attach(|py| {
+                                            match account_state.into_py_any(py) {
+                                                Ok(py_obj) => {
+                                                    if let Err(e) = callback.call1(py, (py_obj,)) {
+                                                        log::error!("Error calling Python callback for AccountState: {e}");
+                                                    }
+                                                }
+                                                Err(e) => log::error!("Failed to convert AccountState to Python: {e}"),
+                                            }
+                                        });
+                                    }
+                                    Err(e) => log::error!("Failed to parse account state: {e}"),
+                                }
+
+                                // Parse and emit PositionStatusReports
+                                if let Some(ref positions) = data.contents.subaccount.open_perpetual_positions {
+                                    for (market, ws_position) in positions {
+                                        match parse_ws_position_report(
+                                            ws_position,
+                                            instrument_cache,
+                                            account_id,
+                                            ts_init,
+                                        ) {
+                                            Ok(report) => {
+                                                Python::attach(|py| {
+                                                    match pyo3::Py::new(py, report) {
+                                                        Ok(py_obj) => {
+                                                            if let Err(e) = callback.call1(py, (py_obj.into_any(),)) {
+                                                                log::error!("Error calling Python callback for PositionStatusReport: {e}");
+                                                            }
+                                                        }
+                                                        Err(e) => log::error!("Failed to convert PositionStatusReport to Python: {e}"),
+                                                    }
+                                                });
+                                            }
+                                            Err(e) => log::error!("Failed to parse position for {market}: {e}"),
+                                        }
+                                    }
+                                }
+                            }
+                            NautilusWsMessage::SubaccountsChannelData(data) => {
+                                Python::attach(|py| {
+                                    use pyo3::types::PyDict;
+                                    let json_str = serde_json::to_string(&*data)
+                                        .unwrap_or_else(|e| {
+                                            log::error!("Failed to serialize SubaccountsChannelData: {e}");
+                                            "{}".to_string()
+                                        });
+                                    let dict = PyDict::new(py);
+                                    let _ = dict.set_item("type", "subaccounts_channel_data");
+                                    let _ = dict.set_item("data", json_str);
+                                    if let Err(e) = callback.call1(py, (dict,)) {
+                                        log::error!("Error calling Python callback for subaccounts_channel_data: {e}");
+                                    }
+                                });
+                            }
+                            NautilusWsMessage::OraclePrices(prices) => {
+                                Python::attach(|py| {
+                                    use pyo3::types::PyDict;
+                                    let json_str = serde_json::to_string(&prices)
+                                        .unwrap_or_else(|e| {
+                                            log::error!("Failed to serialize OraclePrices: {e}");
+                                            "{}".to_string()
+                                        });
+                                    let dict = PyDict::new(py);
+                                    let _ = dict.set_item("type", "oracle_prices");
+                                    let _ = dict.set_item("data", json_str);
+                                    if let Err(e) = callback.call1(py, (dict,)) {
+                                        log::error!("Error calling Python callback for oracle_prices: {e}");
+                                    }
+                                });
+                            }
                             NautilusWsMessage::Error(err) => {
                                 log::error!("dYdX WebSocket error: {err}");
                             }
                             NautilusWsMessage::Reconnected => {
                                 log::info!("dYdX WebSocket reconnected");
                             }
-                            _ => {
-                                // Handle other message types if needed
+                            NautilusWsMessage::AccountState(state) => {
+                                Python::attach(|py| {
+                                    match state.into_py_any(py) {
+                                        Ok(py_obj) => {
+                                            if let Err(e) = callback.call1(py, (py_obj,)) {
+                                                log::error!("Error calling Python callback for AccountState: {e}");
+                                            }
+                                        }
+                                        Err(e) => log::error!("Failed to convert AccountState to Python: {e}"),
+                                    }
+                                });
+                            }
+                            NautilusWsMessage::Position(report) => {
+                                Python::attach(|py| {
+                                    match pyo3::Py::new(py, *report) {
+                                        Ok(py_obj) => {
+                                            if let Err(e) = callback.call1(py, (py_obj.into_any(),)) {
+                                                log::error!("Error calling Python callback for PositionStatusReport: {e}");
+                                            }
+                                        }
+                                        Err(e) => log::error!("Failed to convert PositionStatusReport to Python: {e}"),
+                                    }
+                                });
+                            }
+                            NautilusWsMessage::Order(report) => {
+                                Python::attach(|py| {
+                                    match pyo3::Py::new(py, *report) {
+                                        Ok(py_obj) => {
+                                            if let Err(e) = callback.call1(py, (py_obj.into_any(),)) {
+                                                log::error!("Error calling Python callback for OrderStatusReport: {e}");
+                                            }
+                                        }
+                                        Err(e) => log::error!("Failed to convert OrderStatusReport to Python: {e}"),
+                                    }
+                                });
+                            }
+                            NautilusWsMessage::Fill(report) => {
+                                Python::attach(|py| {
+                                    match pyo3::Py::new(py, *report) {
+                                        Ok(py_obj) => {
+                                            if let Err(e) = callback.call1(py, (py_obj.into_any(),)) {
+                                                log::error!("Error calling Python callback for FillReport: {e}");
+                                            }
+                                        }
+                                        Err(e) => log::error!("Failed to convert FillReport to Python: {e}"),
+                                    }
+                                });
                             }
                         }
                     }

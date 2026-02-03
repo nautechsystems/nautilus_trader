@@ -35,7 +35,7 @@ use rust_decimal::Decimal;
 
 use crate::{
     common::{enums::DydxOrderStatus, instrument_cache::InstrumentCache},
-    execution::types::OrderContext,
+    execution::{encoder::ClientOrderIdEncoder, types::OrderContext},
     http::{
         models::{Fill, Order, PerpetualPosition},
         parse::{parse_fill_report, parse_order_status_report, parse_position_status_report},
@@ -51,6 +51,15 @@ use crate::{
 /// Converts the WebSocket order format to the HTTP Order format, then delegates
 /// to the existing HTTP parser for consistency.
 ///
+/// # Arguments
+///
+/// * `ws_order` - The WebSocket order message to parse
+/// * `instrument_cache` - Cache for looking up instruments by clob_pair_id
+/// * `order_contexts` - Map of dYdX u32 client IDs to order contexts
+/// * `encoder` - Bidirectional encoder for ClientOrderId ↔ u32 mapping
+/// * `account_id` - Account ID for the report
+/// * `ts_init` - Timestamp for initialization
+///
 /// # Errors
 ///
 /// Returns an error if:
@@ -62,6 +71,7 @@ pub fn parse_ws_order_report(
     ws_order: &DydxWsOrderSubaccountMessageContents,
     instrument_cache: &InstrumentCache,
     order_contexts: &DashMap<u32, OrderContext>,
+    encoder: &ClientOrderIdEncoder,
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
@@ -80,11 +90,51 @@ pub fn parse_ws_order_report(
     let http_order = convert_ws_order_to_http(ws_order)?;
     let mut report = parse_order_status_report(&http_order, &instrument, account_id, ts_init)?;
 
-    // Look up the original Nautilus client_order_id from the order context
-    if let Ok(dydx_client_id) = ws_order.client_id.parse::<u32>()
-        && let Some(ctx) = order_contexts.get(&dydx_client_id)
-    {
-        report.client_order_id = Some(ctx.client_order_id);
+    let dydx_client_id = ws_order.client_id.parse::<u32>().ok();
+    let dydx_client_metadata = ws_order
+        .client_metadata
+        .as_ref()
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(crate::grpc::DEFAULT_RUST_CLIENT_METADATA);
+
+    log::info!(
+        "[WS_ORDER_RECV] dYdX client_id='{}' meta={:#x} (parsed u32={:?}) | status={:?} | clob_pair={} | side={:?} | size={} | filled={}",
+        ws_order.client_id,
+        dydx_client_metadata,
+        dydx_client_id,
+        ws_order.status,
+        ws_order.clob_pair_id,
+        ws_order.side,
+        ws_order.size,
+        ws_order.total_filled.as_deref().unwrap_or("?")
+    );
+
+    // Look up the original Nautilus client_order_id from the order context first,
+    // then fall back to encoder.decode() if not found in context
+    if let Some(client_id) = dydx_client_id {
+        if let Some(ctx) = order_contexts.get(&client_id) {
+            log::info!(
+                "[WS_ORDER_RECV] DECODE via order_contexts: dYdX u32={} -> Nautilus '{}'",
+                client_id,
+                ctx.client_order_id
+            );
+            report.client_order_id = Some(ctx.client_order_id);
+        } else if let Some(client_order_id) = encoder.decode(client_id, dydx_client_metadata) {
+            // Fallback: use encoder's bidirectional decode with both client_id and client_metadata
+            log::info!(
+                "[WS_ORDER_RECV] DECODE via encoder fallback: dYdX u32={client_id} meta={dydx_client_metadata:#x} -> Nautilus '{client_order_id}'"
+            );
+            report.client_order_id = Some(client_order_id);
+        } else {
+            log::warn!(
+                "[WS_ORDER_RECV] DECODE FAILED: dYdX u32={client_id} meta={dydx_client_metadata:#x} not found in order_contexts or encoder!"
+            );
+        }
+    } else {
+        log::warn!(
+            "[WS_ORDER_RECV] Could not parse client_id '{}' as u32",
+            ws_order.client_id
+        );
     }
 
     // For untriggered conditional orders with an explicit trigger price we
@@ -92,6 +142,23 @@ pub fn parse_ws_order_report(
     // enum mapping.
     if matches!(ws_order.status, DydxOrderStatus::Untriggered) && ws_order.trigger_price.is_some() {
         report.order_status = OrderStatus::PendingUpdate;
+    }
+
+    // Clean up order context and encoder mapping when order reaches terminal state
+    if let Some(client_id) = dydx_client_id
+        && !report.order_status.is_open()
+    {
+        log::info!(
+            "[WS_ORDER_RECV] TERMINAL STATE: dYdX u32={} meta={:#x} status={:?} -> cleaning up mappings",
+            client_id,
+            dydx_client_metadata,
+            report.order_status
+        );
+        if order_contexts.remove(&client_id).is_some() {
+            log::info!("[WS_ORDER_RECV] Cleaned up order_contexts for dYdX client_id={client_id}");
+        }
+        // Also clean up encoder mapping using both client_id and client_metadata
+        encoder.remove(client_id, dydx_client_metadata);
     }
 
     Ok(report)
@@ -578,6 +645,7 @@ mod tests {
         };
 
         let instrument_cache = create_test_instrument_cache();
+        let encoder = ClientOrderIdEncoder::new();
 
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
@@ -587,6 +655,7 @@ mod tests {
             &ws_order,
             &instrument_cache,
             &order_contexts,
+            &encoder,
             account_id,
             ts_init,
         );
@@ -624,6 +693,7 @@ mod tests {
         };
 
         let instrument_cache = InstrumentCache::new(); // Empty cache
+        let encoder = ClientOrderIdEncoder::new();
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
         let order_contexts: DashMap<u32, OrderContext> = DashMap::new();
@@ -632,6 +702,7 @@ mod tests {
             &ws_order,
             &instrument_cache,
             &order_contexts,
+            &encoder,
             account_id,
             ts_init,
         );
@@ -934,6 +1005,7 @@ mod tests {
         };
 
         let instrument_cache = create_test_instrument_cache();
+        let encoder = ClientOrderIdEncoder::new();
 
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
@@ -943,6 +1015,7 @@ mod tests {
             &ws_order,
             &instrument_cache,
             &order_contexts,
+            &encoder,
             account_id,
             ts_init,
         );
@@ -994,6 +1067,7 @@ mod tests {
         };
 
         let instrument_cache = create_test_instrument_cache();
+        let encoder = ClientOrderIdEncoder::new();
 
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
@@ -1003,6 +1077,7 @@ mod tests {
             &ws_order,
             &instrument_cache,
             &order_contexts,
+            &encoder,
             account_id,
             ts_init,
         );
@@ -1041,6 +1116,7 @@ mod tests {
         };
 
         let instrument_cache = create_test_instrument_cache();
+        let encoder = ClientOrderIdEncoder::new();
 
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
@@ -1050,6 +1126,7 @@ mod tests {
             &ws_order,
             &instrument_cache,
             &order_contexts,
+            &encoder,
             account_id,
             ts_init,
         );
@@ -1087,6 +1164,7 @@ mod tests {
         };
 
         let instrument_cache = InstrumentCache::new(); // Empty cache
+        let encoder = ClientOrderIdEncoder::new();
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
         let order_contexts: DashMap<u32, OrderContext> = DashMap::new();
@@ -1095,6 +1173,7 @@ mod tests {
             &ws_order,
             &instrument_cache,
             &order_contexts,
+            &encoder,
             account_id,
             ts_init,
         );

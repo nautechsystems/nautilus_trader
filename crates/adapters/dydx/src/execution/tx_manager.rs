@@ -33,26 +33,31 @@
 //! 4. Supporting batch sequence allocation for optimistic parallel broadcasts
 
 use std::sync::{
-    Arc,
+    Arc, RwLock,
     atomic::{AtomicU64, Ordering},
 };
 
-// Note: Arc is still used for sequence_number (shared across components)
 use cosmrs::Any;
 
 use super::{types::PreparedTransaction, wallet::Wallet};
 use crate::{
     error::DydxError,
     grpc::{DydxGrpcClient, TxBuilder, types::ChainId},
+    proto::AccountAuthenticator,
 };
+
+/// Sentinel value indicating sequence is uninitialized.
+pub const SEQUENCE_UNINITIALIZED: u64 = u64::MAX;
 
 /// Default fee denomination for dYdX transactions.
 const FEE_DENOM: &str = "adydx";
 
-/// Transaction manager responsible for sequence tracking and transaction building.
+/// Transaction manager responsible for wallet, sequence tracking, and transaction building.
 ///
-/// This is the single source of truth for sequence numbers, ensuring that
-/// concurrent order operations don't race for the same sequence.
+/// This is the single source of truth for:
+/// - Wallet and signing operations
+/// - Sequence numbers (ensuring concurrent order operations don't race)
+/// - Authenticator resolution for permissioned key trading
 ///
 /// # Thread Safety
 ///
@@ -62,16 +67,16 @@ const FEE_DENOM: &str = "adydx";
 pub struct TransactionManager {
     /// gRPC client for chain queries.
     grpc_client: DydxGrpcClient,
-    /// Wallet for transaction signing (owned, not shared).
+    /// Wallet for transaction signing (created from private key).
     wallet: Wallet,
     /// Main account address (for account lookups).
-    /// May differ from wallet address when using permissioned keys.
+    /// May differ from wallet's signing address when using permissioned keys.
     wallet_address: String,
     /// Chain ID for transaction building.
     chain_id: ChainId,
     /// Authenticator IDs for permissioned key trading.
-    authenticator_ids: Vec<u64>,
-    /// Atomic sequence counter. Value 0 means uninitialized.
+    authenticator_ids: RwLock<Vec<u64>>,
+    /// Atomic sequence counter. Value `SEQUENCE_UNINITIALIZED` means uninitialized.
     sequence_number: Arc<AtomicU64>,
     /// Cached account number (never changes for a given address).
     /// Value 0 means uninitialized.
@@ -81,32 +86,228 @@ pub struct TransactionManager {
 impl TransactionManager {
     /// Creates a new transaction manager.
     ///
-    /// # Arguments
+    /// Creates wallet from private key internally. The sequence number is initialized
+    /// to `SEQUENCE_UNINITIALIZED` and will be fetched from chain on first use, or
+    /// can be proactively initialized by calling [`initialize_sequence`].
     ///
-    /// * `grpc_client` - gRPC client for chain queries
-    /// * `wallet` - Wallet for signing (required)
-    /// * `wallet_address` - Main account address (may differ from wallet address for permissioned keys)
-    /// * `chain_id` - dYdX chain ID
-    /// * `authenticator_ids` - Authenticator IDs for permissioned trading (empty for direct signing)
-    /// * `sequence_number` - Shared atomic sequence counter
-    #[must_use]
+    /// # Errors
+    ///
+    /// Returns error if wallet creation from private key fails.
     pub fn new(
         grpc_client: DydxGrpcClient,
-        wallet: Wallet,
+        private_key: &str,
         wallet_address: String,
         chain_id: ChainId,
-        authenticator_ids: Vec<u64>,
-        sequence_number: Arc<AtomicU64>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, DydxError> {
+        let wallet = Wallet::from_private_key(private_key)
+            .map_err(|e| DydxError::Wallet(format!("Failed to create wallet: {e}")))?;
+
+        Ok(Self {
             grpc_client,
             wallet,
             wallet_address,
             chain_id,
-            authenticator_ids,
-            sequence_number,
+            authenticator_ids: RwLock::new(Vec::new()),
+            sequence_number: Arc::new(AtomicU64::new(SEQUENCE_UNINITIALIZED)),
             account_number: AtomicU64::new(0),
+        })
+    }
+
+    /// Proactively initializes the sequence number from chain.
+    ///
+    /// Call this during connect() to ensure orders can be submitted immediately
+    /// without first-transaction latency penalty. Also catches auth errors early.
+    ///
+    /// Returns the initialized sequence number.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if chain query fails.
+    pub async fn initialize_sequence(&self) -> Result<u64, DydxError> {
+        let mut grpc = self.grpc_client.clone();
+        let base_account = grpc.get_account(&self.wallet_address).await.map_err(|e| {
+            DydxError::Grpc(Box::new(tonic::Status::internal(format!(
+                "Failed to fetch account for sequence init: {e}"
+            ))))
+        })?;
+
+        let chain_seq = base_account.sequence;
+        self.sequence_number.store(chain_seq, Ordering::SeqCst);
+        log::info!("Initialized sequence from chain: {chain_seq}");
+        Ok(chain_seq)
+    }
+
+    /// Resolves authenticator IDs if using permissioned keys (API wallet).
+    ///
+    /// Compares the wallet's signing address with the main account address.
+    /// If they differ, fetches authenticators from chain and finds the one
+    /// matching this wallet's public key.
+    ///
+    /// Call this during connect() after creating the TransactionManager.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Using permissioned key but no authenticators found for main account
+    /// - No authenticator matches the wallet's public key
+    /// - gRPC query fails
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal `RwLock` is poisoned.
+    pub async fn resolve_authenticators(&self) -> Result<(), DydxError> {
+        // Check if we already have authenticator IDs configured
+        {
+            let ids = self.authenticator_ids.read().expect("RwLock poisoned");
+            if !ids.is_empty() {
+                log::debug!("Using pre-configured authenticator IDs: {:?}", *ids);
+                return Ok(());
+            }
         }
+
+        // Get the wallet's address (derived from private key)
+        let account = self
+            .wallet
+            .account_offline()
+            .map_err(|e| DydxError::Wallet(format!("Failed to derive account: {e}")))?;
+        let signing_address = account.address.clone();
+        let signing_pubkey = account.public_key();
+
+        // Check if we're using an API wallet (signing address != main account)
+        if signing_address == self.wallet_address {
+            log::debug!(
+                "Signing wallet matches main account {}, no authenticator needed",
+                self.wallet_address
+            );
+            return Ok(());
+        }
+
+        log::info!(
+            "Detected permissioned key setup: signing with {} for main account {}",
+            signing_address,
+            self.wallet_address
+        );
+
+        // Fetch authenticators for the main account
+        let mut grpc = self.grpc_client.clone();
+        let authenticators = grpc
+            .get_authenticators(&self.wallet_address)
+            .await
+            .map_err(|e| {
+                DydxError::Grpc(Box::new(tonic::Status::internal(format!(
+                    "Failed to fetch authenticators from chain: {e}"
+                ))))
+            })?;
+
+        if authenticators.is_empty() {
+            return Err(DydxError::Config(format!(
+                "No authenticators found for {}. \
+                 Please create an API Trading Key in the dYdX UI first.",
+                self.wallet_address
+            )));
+        }
+
+        log::debug!(
+            "Found {} authenticator(s) for {}",
+            authenticators.len(),
+            self.wallet_address
+        );
+
+        // Find authenticators matching the API wallet's public key
+        let signing_pubkey_bytes = signing_pubkey.to_bytes();
+        let signing_pubkey_b64 = base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            &signing_pubkey_bytes,
+        );
+
+        let mut matching_ids = Vec::new();
+        for auth in &authenticators {
+            if Self::authenticator_matches_pubkey(auth, &signing_pubkey_b64) {
+                matching_ids.push(auth.id);
+                log::info!("Found matching authenticator: id={}", auth.id);
+            }
+        }
+
+        if matching_ids.is_empty() {
+            return Err(DydxError::Config(format!(
+                "No authenticator matches the API wallet's public key. \
+                 Ensure the API Trading Key was created for wallet {}. \
+                 Available authenticators: {:?}",
+                signing_address,
+                authenticators.iter().map(|a| a.id).collect::<Vec<_>>()
+            )));
+        }
+
+        // Store the resolved authenticator IDs
+        {
+            let mut ids = self.authenticator_ids.write().expect("RwLock poisoned");
+            *ids = matching_ids.clone();
+        }
+        log::info!("Resolved authenticator IDs: {matching_ids:?}");
+
+        Ok(())
+    }
+
+    /// Checks if an authenticator contains a SignatureVerification matching the public key.
+    ///
+    /// Expected authenticator config format (JSON array of sub-authenticators):
+    /// ```json
+    /// [{"type": "SignatureVerification", "config": "<base64-pubkey>"}, ...]
+    /// ```
+    fn authenticator_matches_pubkey(auth: &AccountAuthenticator, pubkey_b64: &str) -> bool {
+        #[derive(serde::Deserialize)]
+        struct SubAuth {
+            #[serde(rename = "type")]
+            auth_type: String,
+            config: String,
+        }
+
+        // auth.config is raw bytes (Vec<u8>) containing JSON
+        let config_str = match String::from_utf8(auth.config.clone()) {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!(
+                    "Authenticator id={} has invalid UTF-8 config (len={}): {}",
+                    auth.id,
+                    auth.config.len(),
+                    e
+                );
+                return false;
+            }
+        };
+
+        log::debug!(
+            "Checking authenticator id={}, type={}, config={}",
+            auth.id,
+            auth.r#type,
+            config_str
+        );
+
+        match serde_json::from_str::<Vec<SubAuth>>(&config_str) {
+            Ok(sub_auths) => {
+                for sub in sub_auths {
+                    log::debug!(
+                        "  Sub-authenticator: type={}, config={}",
+                        sub.auth_type,
+                        sub.config
+                    );
+                    if sub.auth_type == "SignatureVerification" && sub.config == pubkey_b64 {
+                        log::debug!("  -> MATCH! pubkey_b64={pubkey_b64}");
+                        return true;
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "Authenticator id={} config is not in expected JSON array format: {} (config={})",
+                    auth.id,
+                    e,
+                    config_str
+                );
+            }
+        }
+
+        false
     }
 
     /// Allocates the next sequence number atomically.
@@ -120,7 +321,7 @@ impl TransactionManager {
     pub async fn allocate_sequence(&self) -> Result<u64, DydxError> {
         loop {
             let current = self.sequence_number.load(Ordering::SeqCst);
-            if current == 0 {
+            if current == SEQUENCE_UNINITIALIZED {
                 // Initialize from chain
                 self.initialize_sequence_from_chain().await?;
                 continue;
@@ -163,7 +364,7 @@ impl TransactionManager {
 
         loop {
             let current = self.sequence_number.load(Ordering::SeqCst);
-            if current == 0 {
+            if current == SEQUENCE_UNINITIALIZED {
                 self.initialize_sequence_from_chain().await?;
                 continue;
             }
@@ -191,10 +392,15 @@ impl TransactionManager {
         })?;
 
         let chain_seq = base_account.sequence;
-        // Only set if still 0 (another thread might have set it)
+        // Only set if still uninitialized (another thread might have set it)
         if self
             .sequence_number
-            .compare_exchange(0, chain_seq, Ordering::SeqCst, Ordering::SeqCst)
+            .compare_exchange(
+                SEQUENCE_UNINITIALIZED,
+                chain_seq,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
             .is_ok()
         {
             log::info!("Initialized sequence from chain: {chain_seq}");
@@ -226,7 +432,7 @@ impl TransactionManager {
 
     /// Returns the current sequence value without allocation.
     ///
-    /// Useful for logging and debugging. Returns 0 if uninitialized.
+    /// Useful for logging and debugging. Returns `SEQUENCE_UNINITIALIZED` if not yet initialized.
     #[must_use]
     pub fn current_sequence(&self) -> u64 {
         self.sequence_number.load(Ordering::SeqCst)
@@ -245,6 +451,10 @@ impl TransactionManager {
     /// # Errors
     ///
     /// Returns error if account lookup fails or transaction building fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal `RwLock` is poisoned.
     pub async fn build_transaction(
         &self,
         msgs: Vec<Any>,
@@ -257,7 +467,13 @@ impl TransactionManager {
             .account_offline()
             .map_err(|e| DydxError::Wallet(format!("Failed to derive account: {e}")))?;
 
-        if !self.authenticator_ids.is_empty() {
+        // Read authenticator IDs (resolved during connect if using permissioned keys)
+        let auth_ids_snapshot: Vec<u64> = {
+            let ids = self.authenticator_ids.read().expect("RwLock poisoned");
+            ids.clone()
+        };
+
+        if !auth_ids_snapshot.is_empty() {
             log::debug!(
                 "Using permissioned key mode: signing with {} for main account {}",
                 account.address,
@@ -281,12 +497,12 @@ impl TransactionManager {
 
         // For permissioned key trading, each message needs an authenticator ID.
         // Repeat the configured authenticator ID(s) for each message in the batch.
-        let expanded_auth_ids: Vec<u64> = if self.authenticator_ids.is_empty() {
+        let expanded_auth_ids: Vec<u64> = if auth_ids_snapshot.is_empty() {
             Vec::new()
         } else {
             // For each message, use the first authenticator ID
             // (typically there's only one configured for the trading key)
-            std::iter::repeat_n(self.authenticator_ids[0], msgs.len()).collect()
+            std::iter::repeat_n(auth_ids_snapshot[0], msgs.len()).collect()
         };
 
         let auth_ids = if expanded_auth_ids.is_empty() {
@@ -373,14 +589,6 @@ impl TransactionManager {
     ) -> Result<PreparedTransaction, DydxError> {
         let sequence = self.allocate_sequence().await?;
         self.build_transaction(msgs, sequence, operation).await
-    }
-
-    /// Returns a reference to the shared sequence counter.
-    ///
-    /// Useful for sharing with other components that need sequence access.
-    #[must_use]
-    pub fn sequence_number(&self) -> Arc<AtomicU64> {
-        Arc::clone(&self.sequence_number)
     }
 
     /// Returns the wallet address.

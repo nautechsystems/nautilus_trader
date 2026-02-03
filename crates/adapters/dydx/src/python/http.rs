@@ -32,7 +32,6 @@ use pyo3::{
     types::{PyDict, PyList},
 };
 use rust_decimal::Decimal;
-use ustr::Ustr;
 
 use crate::{common::enums::DydxCandleResolution, http::client::DydxHttpClient};
 
@@ -112,8 +111,9 @@ impl DydxHttpClient {
 
     #[pyo3(name = "get_instrument")]
     fn py_get_instrument(&self, py: Python<'_>, symbol: &str) -> PyResult<Option<Py<PyAny>>> {
-        let symbol_ustr = Ustr::from(symbol);
-        let instrument = self.get_instrument(&symbol_ustr);
+        use nautilus_model::identifiers::{Symbol, Venue};
+        let instrument_id = InstrumentId::new(Symbol::new(symbol), Venue::new("DYDX"));
+        let instrument = self.get_instrument(&instrument_id);
         match instrument {
             Some(inst) => Ok(Some(instrument_any_to_pyobject(py, inst)?)),
             None => Ok(None),

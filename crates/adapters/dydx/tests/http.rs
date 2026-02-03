@@ -30,11 +30,13 @@ use nautilus_dydx::{
     common::enums::DydxCandleResolution,
     http::client::{DydxHttpClient, DydxRawHttpClient},
 };
-use nautilus_model::instruments::Instrument;
+use nautilus_model::{
+    identifiers::{InstrumentId, Symbol, Venue},
+    instruments::Instrument,
+};
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
 use serde_json::{Value, json};
-use ustr::Ustr;
 
 #[derive(Clone, Default)]
 struct TestServerState {
@@ -311,16 +313,16 @@ async fn test_instrument_caching() {
 
     client.cache_instruments(instruments);
 
-    let btc_symbol = Ustr::from("BTC-USD-PERP");
-    let cached_instrument = client.get_instrument(&btc_symbol);
+    let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let cached_instrument = client.get_instrument(&btc_id);
     assert!(cached_instrument.is_some(), "BTC-USD-PERP should be cached");
     assert_eq!(
         cached_instrument.unwrap().id().symbol.as_str(),
         "BTC-USD-PERP"
     );
 
-    let eth_symbol = Ustr::from("ETH-USD-PERP");
-    let eth_instrument = client.get_instrument(&eth_symbol);
+    let eth_id = InstrumentId::new(Symbol::new("ETH-USD-PERP"), Venue::new("DYDX"));
+    let eth_instrument = client.get_instrument(&eth_id);
     assert!(eth_instrument.is_some(), "ETH-USD-PERP should be cached");
 }
 
@@ -339,8 +341,8 @@ async fn test_cache_single_instrument() {
         .unwrap();
     client.cache_instrument(btc_inst);
 
-    let btc_symbol = Ustr::from("BTC-USD-PERP");
-    let cached = client.get_instrument(&btc_symbol);
+    let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let cached = client.get_instrument(&btc_id);
     assert!(cached.is_some(), "BTC-USD-PERP should be cached");
 }
 

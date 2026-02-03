@@ -349,12 +349,12 @@ impl DydxWebSocketClient {
         self.instrument_cache.len()
     }
 
-    /// Retrieves an instrument from the cache by symbol.
+    /// Retrieves an instrument from the cache by InstrumentId.
     ///
     /// Returns `None` if the instrument is not found.
     #[must_use]
-    pub fn get_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
-        self.instrument_cache.get(symbol)
+    pub fn get_instrument(&self, instrument_id: &InstrumentId) -> Option<InstrumentAny> {
+        self.instrument_cache.get(instrument_id)
     }
 
     /// Retrieves an instrument from the cache by market ticker (e.g., "BTC-USD").
@@ -371,6 +371,28 @@ impl DydxWebSocketClient {
         &mut self,
     ) -> Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>> {
         self.out_rx.take()
+    }
+
+    /// Returns a stream of typed WebSocket messages.
+    ///
+    /// Takes ownership of the message receiver and returns it as a `Stream`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the receiver has already been taken.
+    pub fn stream(
+        &mut self,
+    ) -> impl futures_util::Stream<Item = NautilusWsMessage> + Send + 'static {
+        let mut rx = self
+            .out_rx
+            .take()
+            .expect("Message stream receiver already taken or not connected");
+
+        async_stream::stream! {
+            while let Some(msg) = rx.recv().await {
+                yield msg;
+            }
+        }
     }
 
     /// Connects the websocket client in handler mode with automatic reconnection.

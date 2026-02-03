@@ -54,14 +54,14 @@ use ustr::Ustr;
 use super::{
     DydxWsError, DydxWsResult,
     client::DYDX_RATE_LIMIT_KEY_SUBSCRIPTION,
-    enums::{DydxWsChannel, DydxWsMessage, DydxWsMessageType, NautilusWsMessage},
+    enums::{DydxWsChannel, DydxWsMessage, NautilusWsMessage},
     error::DydxWebSocketError,
     messages::{
-        DydxBlockHeightChannelContents, DydxCandle, DydxMarketsContents, DydxOrderbookContents,
-        DydxOrderbookSnapshotContents, DydxSubscription, DydxTradeContents,
-        DydxWsBlockHeightMessage, DydxWsCandlesMessage, DydxWsChannelBatchDataMsg,
-        DydxWsChannelDataMsg, DydxWsConnectedMsg, DydxWsFeedMessage, DydxWsGenericMsg,
-        DydxWsMarketsMessage, DydxWsOrderbookMessage, DydxWsSubaccountsChannelContents,
+        DydxCandle, DydxMarketsContents, DydxOrderbookContents, DydxOrderbookSnapshotContents,
+        DydxSubscription, DydxTradeContents, DydxWsBlockHeightMessage, DydxWsCandlesMessage,
+        DydxWsChannelBatchDataMsg, DydxWsChannelDataMsg, DydxWsConnectedMsg, DydxWsFeedMessage,
+        DydxWsGenericMsg, DydxWsMarketsMessage, DydxWsOrderbookMessage,
+        DydxWsParentSubaccountsMessage, DydxWsSubaccountsChannelContents,
         DydxWsSubaccountsChannelData, DydxWsSubaccountsMessage, DydxWsSubaccountsSubscribed,
         DydxWsSubscriptionMsg, DydxWsTradesMessage,
     },
@@ -235,14 +235,15 @@ impl FeedHandler {
                         // Try two-level parsing first (channel → type)
                         match serde_json::from_value::<DydxWsFeedMessage>(val.clone()) {
                             Ok(feed_msg) => {
-                                return self.handle_feed_message(feed_msg).await;
+                                return self.handle_feed_message(feed_msg);
                             }
                             Err(e) => {
                                 // Log the raw message for debugging feed parsing failures
                                 if let Some(channel) = val.get("channel") {
                                     // Only log if it has a channel field but failed to parse as feed
-                                    log::debug!(
-                                        "Feed message parse failed for channel {channel:?}: {e}"
+                                    log::warn!(
+                                        "Feed message parse failed for channel {channel:?}: {e}\nRaw JSON: {}",
+                                        serde_json::to_string_pretty(&val).unwrap_or_default()
                                     );
                                 }
                             }
@@ -339,7 +340,7 @@ impl FeedHandler {
         }
     }
 
-    /// Handles a parsed dYdX WebSocket message.
+    /// Handles a parsed     dYdX WebSocket message.
     async fn handle_dydx_message(&self, msg: DydxWsMessage) -> Option<NautilusWsMessage> {
         match self.handle_message(msg).await {
             Ok(opt_msg) => opt_msg,
@@ -350,113 +351,245 @@ impl FeedHandler {
         }
     }
 
-    /// Handles a two-level channel-tagged feed message.
-    async fn handle_feed_message(&self, feed_msg: DydxWsFeedMessage) -> Option<NautilusWsMessage> {
+    /// Dispatches feed messages directly to typed handlers.
+    fn handle_feed_message(&self, feed_msg: DydxWsFeedMessage) -> Option<NautilusWsMessage> {
         log::trace!(
             "Handling feed message: {:?}",
             std::mem::discriminant(&feed_msg)
         );
         match feed_msg {
-            DydxWsFeedMessage::Subaccounts(msg) => match msg {
-                DydxWsSubaccountsMessage::Subscribed(data) => {
-                    self.handle_dydx_message(DydxWsMessage::SubaccountsSubscribed(data))
-                        .await
-                }
-                DydxWsSubaccountsMessage::ChannelData(data) => {
-                    // Explicitly set channel since we know it's subaccounts from outer tag
-                    self.handle_dydx_message(DydxWsMessage::ChannelData(DydxWsChannelDataMsg {
-                        msg_type: data.msg_type,
-                        connection_id: data.connection_id,
-                        message_id: data.message_id,
-                        channel: DydxWsChannel::Subaccounts,
-                        id: Some(data.id),
-                        contents: serde_json::to_value(&data.contents)
-                            .unwrap_or(serde_json::Value::Null),
-                        version: Some(data.version),
-                    }))
-                    .await
-                }
-            },
-            DydxWsFeedMessage::Orderbook(msg) => match msg {
-                DydxWsOrderbookMessage::Subscribed(mut data) => {
-                    data.channel = DydxWsChannel::Orderbook;
-                    data.msg_type = DydxWsMessageType::Subscribed;
-                    self.handle_dydx_message(DydxWsMessage::ChannelData(data))
-                        .await
-                }
-                DydxWsOrderbookMessage::ChannelData(mut data) => {
-                    data.channel = DydxWsChannel::Orderbook;
-                    data.msg_type = DydxWsMessageType::ChannelData;
-                    self.handle_dydx_message(DydxWsMessage::ChannelData(data))
-                        .await
-                }
-                DydxWsOrderbookMessage::ChannelBatchData(mut data) => {
-                    data.channel = DydxWsChannel::Orderbook;
-                    data.msg_type = DydxWsMessageType::ChannelBatchData;
-                    self.handle_dydx_message(DydxWsMessage::ChannelBatchData(data))
-                        .await
-                }
-            },
-            DydxWsFeedMessage::Trades(msg) => match msg {
-                DydxWsTradesMessage::Subscribed(mut data)
-                | DydxWsTradesMessage::ChannelData(mut data) => {
-                    data.channel = DydxWsChannel::Trades;
-                    self.handle_dydx_message(DydxWsMessage::ChannelData(data))
-                        .await
-                }
-            },
-            DydxWsFeedMessage::Markets(msg) => match msg {
-                DydxWsMarketsMessage::Subscribed(mut data)
-                | DydxWsMarketsMessage::ChannelData(mut data) => {
-                    data.channel = DydxWsChannel::Markets;
-                    self.handle_dydx_message(DydxWsMessage::ChannelData(data))
-                        .await
-                }
-            },
-            DydxWsFeedMessage::Candles(msg) => match msg {
-                DydxWsCandlesMessage::Subscribed(mut data)
-                | DydxWsCandlesMessage::ChannelData(mut data) => {
-                    data.channel = DydxWsChannel::Candles;
-                    self.handle_dydx_message(DydxWsMessage::ChannelData(data))
-                        .await
-                }
-            },
-            DydxWsFeedMessage::ParentSubaccounts(msg) => match msg {
-                super::messages::DydxWsParentSubaccountsMessage::Subscribed(mut data)
-                | super::messages::DydxWsParentSubaccountsMessage::ChannelData(mut data) => {
-                    data.channel = DydxWsChannel::ParentSubaccounts;
-                    self.handle_dydx_message(DydxWsMessage::ChannelData(data))
-                        .await
-                }
-            },
-            DydxWsFeedMessage::BlockHeight(msg) => match msg {
-                DydxWsBlockHeightMessage::Subscribed(data) => {
-                    // Subscribed message uses "height" field with timestamp
-                    match data.contents.height.parse::<u64>() {
-                        Ok(height) => Some(NautilusWsMessage::BlockHeight {
-                            height,
-                            time: data.contents.time,
-                        }),
-                        Err(e) => {
-                            log::warn!("Failed to parse block height from subscription: {e}");
-                            None
-                        }
+            DydxWsFeedMessage::Subaccounts(msg) => self.handle_subaccounts(msg),
+            DydxWsFeedMessage::Orderbook(msg) => self.handle_orderbook(msg),
+            DydxWsFeedMessage::Trades(msg) => self.handle_trades(msg),
+            DydxWsFeedMessage::Markets(msg) => self.handle_markets_feed(msg),
+            DydxWsFeedMessage::Candles(msg) => self.handle_candles_feed(msg),
+            DydxWsFeedMessage::ParentSubaccounts(msg) => self.handle_parent_subaccounts(msg),
+            DydxWsFeedMessage::BlockHeight(msg) => self.handle_block_height_feed(msg),
+        }
+    }
+
+    /// Handles subaccounts channel messages.
+    fn handle_subaccounts(&self, msg: DydxWsSubaccountsMessage) -> Option<NautilusWsMessage> {
+        match msg {
+            DydxWsSubaccountsMessage::Subscribed(data) => {
+                let topic =
+                    self.topic_from_msg(&DydxWsChannel::Subaccounts, &Some(data.id.clone()));
+                self.subscriptions.confirm_subscribe(&topic);
+                self.process_subaccounts_subscribed(&data)
+            }
+            DydxWsSubaccountsMessage::ChannelData(data) => {
+                self.process_subaccounts_channel_data(data)
+            }
+        }
+    }
+
+    /// Handles orderbook channel messages.
+    fn handle_orderbook(&self, msg: DydxWsOrderbookMessage) -> Option<NautilusWsMessage> {
+        match msg {
+            DydxWsOrderbookMessage::Subscribed(data) => {
+                let topic = self.topic_from_msg(&DydxWsChannel::Orderbook, &data.id);
+                self.subscriptions.confirm_subscribe(&topic);
+                self.parse_orderbook_from_data(&data, true)
+            }
+            DydxWsOrderbookMessage::ChannelData(data) => {
+                self.parse_orderbook_from_data(&data, false)
+            }
+            DydxWsOrderbookMessage::ChannelBatchData(data) => {
+                self.parse_orderbook_batch_from_data(&data)
+            }
+        }
+    }
+
+    /// Handles trades channel messages.
+    fn handle_trades(&self, msg: DydxWsTradesMessage) -> Option<NautilusWsMessage> {
+        match msg {
+            DydxWsTradesMessage::Subscribed(data) => {
+                let topic = self.topic_from_msg(&DydxWsChannel::Trades, &data.id);
+                self.subscriptions.confirm_subscribe(&topic);
+                self.parse_trades_from_data(&data)
+            }
+            DydxWsTradesMessage::ChannelData(data) => self.parse_trades_from_data(&data),
+        }
+    }
+
+    /// Handles markets channel messages.
+    fn handle_markets_feed(&self, msg: DydxWsMarketsMessage) -> Option<NautilusWsMessage> {
+        match msg {
+            DydxWsMarketsMessage::Subscribed(data) => {
+                let topic = self.topic_from_msg(&DydxWsChannel::Markets, &data.id);
+                self.subscriptions.confirm_subscribe(&topic);
+                self.parse_markets_from_data(&data)
+            }
+            DydxWsMarketsMessage::ChannelData(data) => self.parse_markets_from_data(&data),
+        }
+    }
+
+    /// Handles candles channel messages.
+    fn handle_candles_feed(&self, msg: DydxWsCandlesMessage) -> Option<NautilusWsMessage> {
+        match msg {
+            DydxWsCandlesMessage::Subscribed(data) => {
+                let topic = self.topic_from_msg(&DydxWsChannel::Candles, &data.id);
+                self.subscriptions.confirm_subscribe(&topic);
+                self.parse_candles_from_data(&data)
+            }
+            DydxWsCandlesMessage::ChannelData(data) => self.parse_candles_from_data(&data),
+        }
+    }
+
+    /// Handles parent subaccounts channel messages.
+    fn handle_parent_subaccounts(
+        &self,
+        msg: DydxWsParentSubaccountsMessage,
+    ) -> Option<NautilusWsMessage> {
+        match msg {
+            DydxWsParentSubaccountsMessage::Subscribed(data) => {
+                let topic = self.topic_from_msg(&DydxWsChannel::ParentSubaccounts, &data.id);
+                self.subscriptions.confirm_subscribe(&topic);
+                self.parse_parent_subaccounts_from_data(&data)
+            }
+            DydxWsParentSubaccountsMessage::ChannelData(data) => {
+                self.parse_parent_subaccounts_from_data(&data)
+            }
+        }
+    }
+
+    /// Handles block height channel messages.
+    fn handle_block_height_feed(&self, msg: DydxWsBlockHeightMessage) -> Option<NautilusWsMessage> {
+        match msg {
+            DydxWsBlockHeightMessage::Subscribed(data) => {
+                let topic =
+                    self.topic_from_msg(&DydxWsChannel::BlockHeight, &Some(data.id.clone()));
+                self.subscriptions.confirm_subscribe(&topic);
+                match data.contents.height.parse::<u64>() {
+                    Ok(height) => Some(NautilusWsMessage::BlockHeight {
+                        height,
+                        time: data.contents.time,
+                    }),
+                    Err(e) => {
+                        log::warn!("Failed to parse block height from subscription: {e}");
+                        None
                     }
                 }
-                DydxWsBlockHeightMessage::ChannelData(data) => {
-                    // Channel data uses "blockHeight" field with timestamp
-                    match data.contents.block_height.parse::<u64>() {
-                        Ok(height) => Some(NautilusWsMessage::BlockHeight {
-                            height,
-                            time: data.contents.time,
-                        }),
-                        Err(e) => {
-                            log::warn!("Failed to parse block height from channel data: {e}");
-                            None
-                        }
+            }
+            DydxWsBlockHeightMessage::ChannelData(data) => {
+                match data.contents.block_height.parse::<u64>() {
+                    Ok(height) => Some(NautilusWsMessage::BlockHeight {
+                        height,
+                        time: data.contents.time,
+                    }),
+                    Err(e) => {
+                        log::warn!("Failed to parse block height from channel data: {e}");
+                        None
                     }
                 }
-            },
+            }
+        }
+    }
+
+    /// Processes subaccounts subscribed message.
+    fn process_subaccounts_subscribed(
+        &self,
+        msg: &DydxWsSubaccountsSubscribed,
+    ) -> Option<NautilusWsMessage> {
+        log::debug!("Forwarding subaccount subscription to execution client");
+        Some(NautilusWsMessage::SubaccountSubscribed(Box::new(
+            msg.clone(),
+        )))
+    }
+
+    /// Processes subaccounts channel data directly.
+    fn process_subaccounts_channel_data(
+        &self,
+        data: DydxWsSubaccountsChannelData,
+    ) -> Option<NautilusWsMessage> {
+        let has_orders = data.contents.orders.as_ref().is_some_and(|o| !o.is_empty());
+        let has_fills = data.contents.fills.as_ref().is_some_and(|f| !f.is_empty());
+
+        if has_orders || has_fills {
+            log::debug!(
+                "Received {} order(s), {} fill(s) - forwarding to execution client",
+                data.contents.orders.as_ref().map_or(0, |o| o.len()),
+                data.contents.fills.as_ref().map_or(0, |f| f.len())
+            );
+            Some(NautilusWsMessage::SubaccountsChannelData(Box::new(data)))
+        } else {
+            None
+        }
+    }
+
+    /// Parses trades from channel data message.
+    fn parse_trades_from_data(&self, data: &DydxWsChannelDataMsg) -> Option<NautilusWsMessage> {
+        match self.parse_trades(data) {
+            Ok(msg) => msg,
+            Err(e) => {
+                log::error!("Error parsing trades: {e}");
+                None
+            }
+        }
+    }
+
+    /// Parses orderbook from channel data message.
+    fn parse_orderbook_from_data(
+        &self,
+        data: &DydxWsChannelDataMsg,
+        is_snapshot: bool,
+    ) -> Option<NautilusWsMessage> {
+        match self.parse_orderbook(data, is_snapshot) {
+            Ok(msg) => msg,
+            Err(e) => {
+                log::error!("Error parsing orderbook: {e}");
+                None
+            }
+        }
+    }
+
+    /// Parses orderbook batch from batch data message.
+    fn parse_orderbook_batch_from_data(
+        &self,
+        data: &DydxWsChannelBatchDataMsg,
+    ) -> Option<NautilusWsMessage> {
+        match self.parse_orderbook_batch(data) {
+            Ok(msg) => msg,
+            Err(e) => {
+                log::error!("Error parsing orderbook batch: {e}");
+                None
+            }
+        }
+    }
+
+    /// Parses markets from channel data message.
+    fn parse_markets_from_data(&self, data: &DydxWsChannelDataMsg) -> Option<NautilusWsMessage> {
+        match self.parse_markets(data) {
+            Ok(msg) => msg,
+            Err(e) => {
+                log::error!("Error parsing markets: {e}");
+                None
+            }
+        }
+    }
+
+    /// Parses candles from channel data message.
+    fn parse_candles_from_data(&self, data: &DydxWsChannelDataMsg) -> Option<NautilusWsMessage> {
+        match self.parse_candles(data) {
+            Ok(msg) => msg,
+            Err(e) => {
+                log::error!("Error parsing candles: {e}");
+                None
+            }
+        }
+    }
+
+    /// Parses parent subaccounts from channel data message.
+    fn parse_parent_subaccounts_from_data(
+        &self,
+        data: &DydxWsChannelDataMsg,
+    ) -> Option<NautilusWsMessage> {
+        match self.parse_subaccounts(data) {
+            Ok(msg) => msg,
+            Err(e) => {
+                log::error!("Error parsing parent subaccounts: {e}");
+                None
+            }
         }
     }
 
@@ -552,11 +685,13 @@ impl FeedHandler {
         Ok(())
     }
 
-    /// Processes a WebSocket message and converts it to Nautilus domain objects.
+    /// Handles control messages from the fallback parsing path.
+    ///
+    /// Channel data is handled directly via `handle_feed_message()`.
     ///
     /// # Errors
     ///
-    /// Returns an error if message parsing fails.
+    /// Returns an error if the message cannot be processed.
     #[allow(clippy::result_large_err)]
     pub async fn handle_message(
         &self,
@@ -574,21 +709,16 @@ impl FeedHandler {
                 Ok(None)
             }
             DydxWsMessage::SubaccountsSubscribed(msg) => {
-                log::debug!("Subaccounts subscribed with initial state");
-                let topic = self.topic_from_msg(&msg.channel, &Some(msg.id.clone()));
+                log::debug!("Subaccounts subscribed with initial state (fallback path)");
+                let topic = self.topic_from_msg(&DydxWsChannel::Subaccounts, &Some(msg.id.clone()));
                 self.subscriptions.confirm_subscribe(&topic);
-                self.parse_subaccounts_subscribed(&msg)
+                Ok(self.process_subaccounts_subscribed(&msg))
             }
             DydxWsMessage::Unsubscribed(unsub) => {
                 log::debug!("Unsubscribed from {} (id: {:?})", unsub.channel, unsub.id);
                 let topic = self.topic_from_msg(&unsub.channel, &unsub.id);
                 self.subscriptions.confirm_unsubscribe(&topic);
                 Ok(None)
-            }
-            DydxWsMessage::ChannelData(data) => self.handle_channel_data(data),
-            DydxWsMessage::ChannelBatchData(data) => self.handle_channel_batch_data(data),
-            DydxWsMessage::BlockHeight { height, time } => {
-                Ok(Some(NautilusWsMessage::BlockHeight { height, time }))
             }
             DydxWsMessage::Error(err) => Ok(Some(NautilusWsMessage::Error(err))),
             DydxWsMessage::Reconnected => {
@@ -600,78 +730,6 @@ impl FeedHandler {
             DydxWsMessage::Pong => Ok(None),
             DydxWsMessage::Raw(_) => Ok(None),
         }
-    }
-
-    fn handle_channel_data(
-        &self,
-        data: DydxWsChannelDataMsg,
-    ) -> DydxWsResult<Option<NautilusWsMessage>> {
-        log::trace!(
-            "Handling channel data: channel={:?}, id={:?}, msg_type={:?}",
-            data.channel,
-            data.id,
-            data.msg_type
-        );
-        match data.channel {
-            DydxWsChannel::Trades => self.parse_trades(&data),
-            DydxWsChannel::Orderbook => {
-                // Subscribed messages contain snapshot data (object format)
-                // ChannelData messages contain delta updates (tuple format)
-                let is_snapshot = matches!(data.msg_type, DydxWsMessageType::Subscribed);
-                self.parse_orderbook(&data, is_snapshot)
-            }
-            DydxWsChannel::Candles => self.parse_candles(&data),
-            DydxWsChannel::Markets => self.parse_markets(&data),
-            DydxWsChannel::Subaccounts | DydxWsChannel::ParentSubaccounts => {
-                self.parse_subaccounts(&data)
-            }
-            DydxWsChannel::BlockHeight => self.parse_block_height(&data),
-            DydxWsChannel::Unknown => {
-                log::warn!(
-                    "Unknown channel data received: id={:?}, msg_type={:?}",
-                    data.id,
-                    data.msg_type
-                );
-                Ok(None)
-            }
-        }
-    }
-
-    fn handle_channel_batch_data(
-        &self,
-        data: DydxWsChannelBatchDataMsg,
-    ) -> DydxWsResult<Option<NautilusWsMessage>> {
-        match data.channel {
-            DydxWsChannel::Orderbook => self.parse_orderbook_batch(&data),
-            _ => {
-                log::warn!(
-                    "Unexpected batch data for channel: {:?}, id={:?}",
-                    data.channel,
-                    data.id
-                );
-                Ok(None)
-            }
-        }
-    }
-
-    fn parse_block_height(
-        &self,
-        data: &DydxWsChannelDataMsg,
-    ) -> DydxWsResult<Option<NautilusWsMessage>> {
-        let contents: DydxBlockHeightChannelContents =
-            serde_json::from_value(data.contents.clone()).map_err(|e| {
-                DydxWsError::Parse(format!("Failed to parse block height contents: {e}"))
-            })?;
-
-        let height = contents
-            .block_height
-            .parse::<u64>()
-            .map_err(|e| DydxWsError::Parse(format!("Failed to parse block height: {e}")))?;
-
-        Ok(Some(NautilusWsMessage::BlockHeight {
-            height,
-            time: contents.time,
-        }))
     }
 
     fn parse_trades(&self, data: &DydxWsChannelDataMsg) -> DydxWsResult<Option<NautilusWsMessage>> {
@@ -1128,11 +1186,9 @@ impl FeedHandler {
             );
 
             let channel_data = DydxWsSubaccountsChannelData {
-                msg_type: data.msg_type,
                 connection_id: data.connection_id.clone(),
                 message_id: data.message_id,
                 id: data.id.clone().unwrap_or_default(),
-                channel: data.channel,
                 version: data.version.clone().unwrap_or_default(),
                 contents,
             };
@@ -1143,18 +1199,6 @@ impl FeedHandler {
         }
 
         Ok(None)
-    }
-
-    fn parse_subaccounts_subscribed(
-        &self,
-        msg: &DydxWsSubaccountsSubscribed,
-    ) -> DydxWsResult<Option<NautilusWsMessage>> {
-        // Pass raw subaccount subscription to execution client for parsing
-        // The execution client has access to instruments and oracle prices needed for margin calculations
-        log::debug!("Forwarding subaccount subscription to execution client");
-        Ok(Some(NautilusWsMessage::SubaccountSubscribed(Box::new(
-            msg.clone(),
-        ))))
     }
 
     fn parse_instrument_id(&self, symbol: &str) -> DydxWsResult<InstrumentId> {

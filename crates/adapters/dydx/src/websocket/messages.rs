@@ -331,14 +331,8 @@ pub struct DydxBlockHeightSubscribedContents {
 /// Block height subscription confirmed message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DydxWsBlockHeightSubscribedData {
-    /// The message type (may be absent due to serde tag parsing).
-    #[serde(rename = "type", default)]
-    pub msg_type: DydxWsMessageType,
     pub connection_id: String,
     pub message_id: u64,
-    /// The channel name (may be absent due to serde tag parsing).
-    #[serde(default)]
-    pub channel: DydxWsChannel,
     pub id: String,
     pub contents: DydxBlockHeightSubscribedContents,
 }
@@ -354,15 +348,9 @@ pub struct DydxBlockHeightChannelContents {
 /// Block height channel data message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DydxWsBlockHeightChannelData {
-    /// The message type (may be absent due to serde tag parsing).
-    #[serde(rename = "type", default)]
-    pub msg_type: DydxWsMessageType,
     pub connection_id: String,
     pub message_id: u64,
     pub id: String,
-    /// The channel name (may be absent due to serde tag parsing).
-    #[serde(default)]
-    pub channel: DydxWsChannel,
     pub version: String,
     pub contents: DydxBlockHeightChannelContents,
 }
@@ -663,12 +651,8 @@ pub struct DydxWsSubaccountsSubscribedContents {
 /// Subaccounts subscription confirmed message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DydxWsSubaccountsSubscribed {
-    #[serde(rename = "type", default)]
-    pub msg_type: DydxWsMessageType,
     pub connection_id: String,
     pub message_id: u64,
-    #[serde(default)]
-    pub channel: DydxWsChannel,
     pub id: String,
     pub contents: DydxWsSubaccountsSubscribedContents,
 }
@@ -683,13 +667,9 @@ pub struct DydxWsSubaccountsChannelContents {
 /// Subaccounts channel data message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DydxWsSubaccountsChannelData {
-    #[serde(rename = "type", default)]
-    pub msg_type: DydxWsMessageType,
     pub connection_id: String,
     pub message_id: u64,
     pub id: String,
-    #[serde(default)]
-    pub channel: DydxWsChannel,
     pub version: String,
     pub contents: DydxWsSubaccountsChannelContents,
 }
