@@ -1173,7 +1173,7 @@ async def test_process_tick_size_negative_size_ignored(ib_client):
     )
 
     # Assert - Negative size should be ignored
-    assert 0 not in ib_client._subscription_tick_data[1]
+    assert TickTypeEnum.BID_SIZE not in ib_client._subscription_tick_data[1]
     ib_client._handle_data.assert_not_called()
 
 
@@ -1202,7 +1202,7 @@ async def test_process_tick_size_extremely_large_size_ignored(ib_client):
     )
 
     # Assert - Extremely large size should be ignored
-    assert 0 not in ib_client._subscription_tick_data[1]
+    assert TickTypeEnum.BID_SIZE not in ib_client._subscription_tick_data[1]
     ib_client._handle_data.assert_not_called()
 
 
