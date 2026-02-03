@@ -1,0 +1,15 @@
+{
+  "name": "@nautilus_trader/core",
+  "version": "0.53.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "build:rust": "cargo build --release -p nautilus-bun",
+    "generate": "bun run scripts/generate-enums.ts",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7"
+  }
+}

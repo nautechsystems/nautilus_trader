@@ -5007,6 +5007,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-bun"
+version = "0.53.0"
+dependencies = [
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-infrastructure",
+ "nautilus-model",
+ "nautilus-persistence",
+ "nautilus-serialization",
+ "tokio",
+]
+
+[[package]]
 name = "nautilus-bybit"
 version = "0.53.0"
 dependencies = [

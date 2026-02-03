@@ -18,6 +18,7 @@ members = [
   "crates/adapters/tardis",
   "crates/analysis",
   "crates/backtest",
+  "crates/bun",
   "crates/cli",
   "crates/common",
   "crates/core",
@@ -62,6 +63,7 @@ homepage = "https://nautilustrader.io"
 [workspace.dependencies]
 nautilus-analysis = { path = "crates/analysis", version = "0.53.0" }
 nautilus-backtest = { path = "crates/backtest", version = "0.53.0" }
+nautilus-bun = { path = "crates/bun", version = "0.53.0" }
 nautilus-cli = { path = "crates/cli", version = "0.53.0" }
 nautilus-common = { path = "crates/common", version = "0.53.0" }
 nautilus-core = { path = "crates/core", version = "0.53.0" }

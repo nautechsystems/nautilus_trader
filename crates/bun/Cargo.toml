@@ -1,0 +1,40 @@
+[package]
+name = "nautilus-bun"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Bun/TypeScript FFI bindings for the Nautilus trading engine"
+categories.workspace = true
+keywords.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false # Do not publish to crates.io (ever)
+
+[lints]
+workspace = true
+
+[lib]
+name = "nautilus_bun"
+crate-type = ["cdylib"]
+
+[features]
+default = []
+high-precision = [
+  "nautilus-model/high-precision",
+  "nautilus-serialization/high-precision",
+]
+redis = ["nautilus-infrastructure/redis"]
+postgres = ["nautilus-infrastructure/postgres"]
+
+[dependencies]
+nautilus-core = { workspace = true, features = ["ffi"] }
+nautilus-model = { workspace = true, features = ["ffi"] }
+nautilus-common = { workspace = true, features = ["ffi"] }
+nautilus-persistence = { workspace = true, features = ["ffi"] }
+nautilus-infrastructure = { workspace = true }
+nautilus-serialization = { workspace = true }
+tokio = { workspace = true }
