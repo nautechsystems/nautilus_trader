@@ -164,13 +164,17 @@ impl HyperliquidWebSocketClient {
         let client =
             WebSocketClient::connect(cfg, Some(message_handler), None, None, vec![], None).await?;
 
-        // Atomically swap connection state to the client's atomic
-        self.connection_mode.store(client.connection_mode_atomic());
-        log::info!("Hyperliquid WebSocket connected: {}", self.url);
-
         // Create channels for handler communication
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
+
+        // Update cmd_tx before connection_mode to avoid race where is_active() returns
+        // true but subscriptions still go to the old placeholder channel
+        *self.cmd_tx.write().await = cmd_tx.clone();
+        self.out_rx = Some(out_rx);
+
+        self.connection_mode.store(client.connection_mode_atomic());
+        log::info!("Hyperliquid WebSocket connected: {}", self.url);
 
         // Send SetClient command immediately
         if let Err(e) = cmd_tx.send(HandlerCommand::SetClient(client)) {
@@ -261,8 +265,6 @@ impl HyperliquidWebSocketClient {
             log::debug!("Handler task completed");
         });
         self.task_handle = Some(Arc::new(stream_handle));
-        *self.cmd_tx.write().await = cmd_tx;
-        self.out_rx = Some(out_rx);
         Ok(())
     }
 
@@ -279,13 +281,20 @@ impl HyperliquidWebSocketClient {
             match Arc::try_unwrap(task_handle) {
                 Ok(handle) => {
                     log::debug!("Waiting for task handle to complete");
-                    match tokio::time::timeout(tokio::time::Duration::from_secs(2), handle).await {
-                        Ok(Ok(())) => log::debug!("Task handle completed successfully"),
-                        Ok(Err(e)) => log::error!("Task handle encountered an error: {e:?}"),
-                        Err(_) => {
-                            log::warn!(
-                                "Timeout waiting for task handle, task may still be running"
-                            );
+                    let abort_handle = handle.abort_handle();
+                    tokio::select! {
+                        result = handle => {
+                            match result {
+                                Ok(()) => log::debug!("Task handle completed successfully"),
+                                Err(e) if e.is_cancelled() => {
+                                    log::debug!("Task was cancelled");
+                                }
+                                Err(e) => log::error!("Task handle encountered an error: {e:?}"),
+                            }
+                        }
+                        () = tokio::time::sleep(tokio::time::Duration::from_secs(2)) => {
+                            log::warn!("Timeout waiting for task handle, aborting task");
+                            abort_handle.abort();
                         }
                     }
                 }
@@ -368,6 +377,41 @@ impl HyperliquidWebSocketClient {
     pub fn cache_cloid_mapping(&self, cloid: Ustr, client_order_id: ClientOrderId) {
         log::debug!("Caching cloid mapping: {cloid} -> {client_order_id}");
         self.cloid_cache.insert(cloid, client_order_id);
+    }
+
+    /// Removes a cloid mapping from the cache.
+    ///
+    /// Should be called when an order reaches a terminal state (filled, canceled, expired)
+    /// to prevent unbounded memory growth in long-running sessions.
+    pub fn remove_cloid_mapping(&self, cloid: &Ustr) {
+        if self.cloid_cache.remove(cloid).is_some() {
+            log::debug!("Removed cloid mapping: {cloid}");
+        }
+    }
+
+    /// Clears all cloid mappings from the cache.
+    ///
+    /// Useful for cleanup during reconnection or shutdown.
+    pub fn clear_cloid_cache(&self) {
+        let count = self.cloid_cache.len();
+        self.cloid_cache.clear();
+        if count > 0 {
+            log::debug!("Cleared {count} cloid mappings from cache");
+        }
+    }
+
+    /// Returns the number of cloid mappings in the cache.
+    #[must_use]
+    pub fn cloid_cache_len(&self) -> usize {
+        self.cloid_cache.len()
+    }
+
+    /// Looks up a client_order_id by its cloid hash.
+    ///
+    /// Returns `Some(ClientOrderId)` if the mapping exists, `None` otherwise.
+    #[must_use]
+    pub fn get_cloid_mapping(&self, cloid: &Ustr) -> Option<ClientOrderId> {
+        self.cloid_cache.get(cloid).map(|entry| *entry.value())
     }
 
     /// Gets an instrument from the cache by ID.

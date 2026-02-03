@@ -64,10 +64,29 @@ impl HyperliquidWebSocketClient {
         self.cache_spot_fill_coins(ahash_mapping);
     }
 
-    /// Cache a cloid (hex hash) to client_order_id mapping for order/fill resolution.
     #[pyo3(name = "cache_cloid_mapping")]
     fn py_cache_cloid_mapping(&self, cloid: String, client_order_id: ClientOrderId) {
         self.cache_cloid_mapping(ustr::Ustr::from(&cloid), client_order_id);
+    }
+
+    #[pyo3(name = "remove_cloid_mapping")]
+    fn py_remove_cloid_mapping(&self, cloid: String) {
+        self.remove_cloid_mapping(&ustr::Ustr::from(&cloid));
+    }
+
+    #[pyo3(name = "clear_cloid_cache")]
+    fn py_clear_cloid_cache(&self) {
+        self.clear_cloid_cache();
+    }
+
+    #[pyo3(name = "cloid_cache_len")]
+    fn py_cloid_cache_len(&self) -> usize {
+        self.cloid_cache_len()
+    }
+
+    #[pyo3(name = "get_cloid_mapping")]
+    fn py_get_cloid_mapping(&self, cloid: String) -> Option<ClientOrderId> {
+        self.get_cloid_mapping(&ustr::Ustr::from(&cloid))
     }
 
     #[pyo3(name = "connect")]
@@ -220,7 +239,7 @@ impl HyperliquidWebSocketClient {
                             }
                         }
                         None => {
-                            log::info!("WebSocket connection closed");
+                            log::debug!("WebSocket connection closed");
                             break;
                         }
                     }

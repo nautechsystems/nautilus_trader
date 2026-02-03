@@ -76,12 +76,11 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money},
 };
 use rust_decimal::Decimal;
-use serde_json::Value;
 
 use crate::{
     common::enums::{HyperliquidBarInterval, HyperliquidTpSl},
     http::models::{
-        AssetId, Cloid, CrossMarginSummary, HyperliquidExchangeResponse,
+        Cloid, CrossMarginSummary, HyperliquidExchangeResponse,
         HyperliquidExecCancelByCloidRequest, HyperliquidExecLimitParams, HyperliquidExecOrderKind,
         HyperliquidExecPlaceOrderRequest, HyperliquidExecTif, HyperliquidExecTpSl,
         HyperliquidExecTriggerParams,
@@ -211,57 +210,6 @@ pub fn time_in_force_to_hyperliquid_tif(
     }
 }
 
-/// Extracts asset ID from instrument symbol.
-///
-/// For Hyperliquid, this typically involves parsing the symbol to get the underlying asset.
-/// Currently supports a hardcoded mapping for common assets.
-///
-/// # Errors
-///
-/// Returns an error if the symbol format is unsupported or the asset is not found.
-pub fn extract_asset_id_from_symbol(symbol: &str) -> anyhow::Result<AssetId> {
-    // For perpetuals, remove "-USD-PERP" or "-USD" suffix to get the base asset
-    let base = if let Some(base) = symbol.strip_suffix("-PERP") {
-        // Remove "-USD-PERP" -> Remove "-USD" from what remains
-        base.strip_suffix("-USD")
-            .ok_or_else(|| anyhow::anyhow!("Cannot extract asset from symbol: {symbol}"))?
-    } else if let Some(base) = symbol.strip_suffix("-USD") {
-        // Just "-USD" suffix
-        base
-    } else {
-        anyhow::bail!("Cannot extract asset ID from symbol: {symbol}")
-    };
-
-    // Convert symbol like "BTC" to asset index
-    // Asset indices from Hyperliquid testnet meta endpoint (as of October 2025)
-    // Source: https://api.hyperliquid-testnet.xyz/info
-    //
-    // NOTE: These indices may change. For production, consider querying the meta endpoint
-    // dynamically during initialization to avoid hardcoded mappings.
-    Ok(match base {
-        "SOL" => 0,    // Solana
-        "APT" => 1,    // Aptos
-        "ATOM" => 2,   // Cosmos
-        "BTC" => 3,    // Bitcoin
-        "ETH" => 4,    // Ethereum
-        "MATIC" => 5,  // Polygon
-        "BNB" => 6,    // Binance Coin
-        "AVAX" => 7,   // Avalanche
-        "DYDX" => 9,   // dYdX
-        "APE" => 10,   // ApeCoin
-        "OP" => 11,    // Optimism
-        "kPEPE" => 12, // Pepe (1k units)
-        "ARB" => 13,   // Arbitrum
-        "kSHIB" => 29, // Shiba Inu (1k units)
-        "WIF" => 78,   // Dogwifhat
-        "DOGE" => 173, // Dogecoin
-        _ => {
-            // For unknown assets, query the meta endpoint or add to this mapping
-            anyhow::bail!("Asset ID mapping not found for symbol: {symbol}")
-        }
-    })
-}
-
 /// Determines if a trigger order should be TP (take profit) or SL (stop loss).
 ///
 /// Logic follows exchange patterns from OKX/Bybit:
@@ -364,190 +312,6 @@ pub fn bar_type_to_interval(bar_type: &BarType) -> anyhow::Result<HyperliquidBar
     };
 
     Ok(interval)
-}
-
-/// Converts a Nautilus order into a Hyperliquid order request.
-///
-/// # Supported Order Types
-///
-/// - `Market`: Implemented as IOC limit order.
-/// - `Limit`: Standard limit order with TIF (GTC/IOC/ALO).
-/// - `StopMarket`: Trigger order with market execution (protective stop).
-/// - `StopLimit`: Trigger order with limit price (protective stop).
-/// - `MarketIfTouched`: Trigger order with market execution (profit taking/entry).
-/// - `LimitIfTouched`: Trigger order with limit price (profit taking/entry).
-///
-/// # Conditional Order Patterns
-///
-/// Following patterns from OKX and Bybit adapters:
-/// - Stop orders (StopMarket/StopLimit) use `tpsl: Sl`.
-/// - If Touched orders (MIT/LIT) use `tpsl: Tp`.
-/// - Trigger price determines when order activates.
-/// - Order side and trigger price relationship determines TP vs SL semantics.
-///
-/// # Trigger Type Support
-///
-/// Hyperliquid currently uses last traded price for all triggers.
-/// Future enhancement: Add support for mark/index price triggers if Hyperliquid API supports it.
-pub fn order_to_hyperliquid_request(
-    order: &OrderAny,
-) -> anyhow::Result<HyperliquidExecPlaceOrderRequest> {
-    let instrument_id = order.instrument_id();
-    let symbol = instrument_id.symbol.as_str();
-    let asset = extract_asset_id_from_symbol(symbol)
-        .with_context(|| format!("Failed to extract asset ID from symbol: {symbol}"))?;
-
-    let is_buy = matches!(order.order_side(), OrderSide::Buy);
-    let reduce_only = order.is_reduce_only();
-    let order_side = order.order_side();
-    let order_type = order.order_type();
-
-    // Convert price to decimal
-    let price_decimal = match order.price() {
-        Some(price) => Decimal::from_str_exact(&price.to_string())
-            .with_context(|| format!("Failed to convert price to decimal: {price}"))?,
-        None => {
-            // For market orders without price, use 0 as placeholder
-            // The actual market price will be determined by the exchange
-            if matches!(
-                order_type,
-                OrderType::Market | OrderType::StopMarket | OrderType::MarketIfTouched
-            ) {
-                Decimal::ZERO
-            } else {
-                anyhow::bail!("Limit orders require a price")
-            }
-        }
-    };
-
-    // Convert size to decimal
-    let size_decimal =
-        Decimal::from_str_exact(&order.quantity().to_string()).with_context(|| {
-            format!(
-                "Failed to convert quantity to decimal: {}",
-                order.quantity()
-            )
-        })?;
-
-    // Determine order kind based on order type
-    let kind = match order_type {
-        OrderType::Market => {
-            // Market orders in Hyperliquid are implemented as limit orders with IOC time-in-force
-            HyperliquidExecOrderKind::Limit {
-                limit: HyperliquidExecLimitParams {
-                    tif: HyperliquidExecTif::Ioc,
-                },
-            }
-        }
-        OrderType::Limit => {
-            let tif =
-                time_in_force_to_hyperliquid_tif(order.time_in_force(), order.is_post_only())?;
-            HyperliquidExecOrderKind::Limit {
-                limit: HyperliquidExecLimitParams { tif },
-            }
-        }
-        OrderType::StopMarket => {
-            if let Some(trigger_price) = order.trigger_price() {
-                let trigger_price_decimal = Decimal::from_str_exact(&trigger_price.to_string())
-                    .with_context(|| {
-                        format!("Failed to convert trigger price to decimal: {trigger_price}")
-                    })?;
-
-                // Determine TP/SL based on order semantics
-                let tpsl = determine_tpsl_type(
-                    order_type,
-                    order_side,
-                    trigger_price_decimal,
-                    None, // Current market price not available here
-                );
-
-                HyperliquidExecOrderKind::Trigger {
-                    trigger: HyperliquidExecTriggerParams {
-                        is_market: true,
-                        trigger_px: trigger_price_decimal,
-                        tpsl,
-                    },
-                }
-            } else {
-                anyhow::bail!("Stop market orders require a trigger price")
-            }
-        }
-        OrderType::StopLimit => {
-            if let Some(trigger_price) = order.trigger_price() {
-                let trigger_price_decimal = Decimal::from_str_exact(&trigger_price.to_string())
-                    .with_context(|| {
-                        format!("Failed to convert trigger price to decimal: {trigger_price}")
-                    })?;
-
-                // Determine TP/SL based on order semantics
-                let tpsl = determine_tpsl_type(order_type, order_side, trigger_price_decimal, None);
-
-                HyperliquidExecOrderKind::Trigger {
-                    trigger: HyperliquidExecTriggerParams {
-                        is_market: false,
-                        trigger_px: trigger_price_decimal,
-                        tpsl,
-                    },
-                }
-            } else {
-                anyhow::bail!("Stop limit orders require a trigger price")
-            }
-        }
-        OrderType::MarketIfTouched => {
-            // MIT orders trigger when price is reached and execute at market
-            // These are typically used for profit taking or entry orders
-            if let Some(trigger_price) = order.trigger_price() {
-                let trigger_price_decimal = Decimal::from_str_exact(&trigger_price.to_string())
-                    .with_context(|| {
-                        format!("Failed to convert trigger price to decimal: {trigger_price}")
-                    })?;
-
-                HyperliquidExecOrderKind::Trigger {
-                    trigger: HyperliquidExecTriggerParams {
-                        is_market: true,
-                        trigger_px: trigger_price_decimal,
-                        tpsl: HyperliquidExecTpSl::Tp, // MIT is typically for profit taking
-                    },
-                }
-            } else {
-                anyhow::bail!("Market-if-touched orders require a trigger price")
-            }
-        }
-        OrderType::LimitIfTouched => {
-            // LIT orders trigger when price is reached and execute at limit price
-            // These are typically used for profit taking or entry orders with price control
-            if let Some(trigger_price) = order.trigger_price() {
-                let trigger_price_decimal = Decimal::from_str_exact(&trigger_price.to_string())
-                    .with_context(|| {
-                        format!("Failed to convert trigger price to decimal: {trigger_price}")
-                    })?;
-
-                HyperliquidExecOrderKind::Trigger {
-                    trigger: HyperliquidExecTriggerParams {
-                        is_market: false,
-                        trigger_px: trigger_price_decimal,
-                        tpsl: HyperliquidExecTpSl::Tp, // LIT is typically for profit taking
-                    },
-                }
-            } else {
-                anyhow::bail!("Limit-if-touched orders require a trigger price")
-            }
-        }
-        _ => anyhow::bail!("Unsupported order type for Hyperliquid: {order_type:?}"),
-    };
-
-    // Convert client order ID to CLOID by hashing
-    let cloid = Some(Cloid::from_client_order_id(order.client_order_id()));
-
-    Ok(HyperliquidExecPlaceOrderRequest {
-        asset,
-        is_buy,
-        price: price_decimal,
-        size: size_decimal,
-        reduce_only,
-        kind,
-        cloid,
-    })
 }
 
 /// Converts a Nautilus order to Hyperliquid request using a pre-resolved asset index.
@@ -690,45 +454,13 @@ pub fn order_to_hyperliquid_request_with_asset(
     })
 }
 
-/// Converts a list of Nautilus orders into Hyperliquid order requests.
-pub fn orders_to_hyperliquid_requests(
-    orders: &[&OrderAny],
-) -> anyhow::Result<Vec<HyperliquidExecPlaceOrderRequest>> {
-    orders
-        .iter()
-        .map(|order| order_to_hyperliquid_request(order))
-        .collect()
-}
-
-/// Creates a JSON value representing multiple orders for the Hyperliquid exchange action.
-pub fn orders_to_hyperliquid_action_value(orders: &[&OrderAny]) -> anyhow::Result<Value> {
-    let requests = orders_to_hyperliquid_requests(orders)?;
-    serde_json::to_value(requests).context("failed to serialize orders to JSON")
-}
-
-/// Converts an OrderAny into a Hyperliquid order request.
-pub fn order_any_to_hyperliquid_request(
-    order: &OrderAny,
-) -> anyhow::Result<HyperliquidExecPlaceOrderRequest> {
-    order_to_hyperliquid_request(order)
-}
-
-/// Converts a client order ID to a Hyperliquid cancel request.
-///
-/// # Errors
-///
-/// Returns an error if the symbol cannot be parsed or the client order ID is invalid.
-pub fn client_order_id_to_cancel_request(
+/// Converts a client order ID to a Hyperliquid cancel request using a pre-resolved asset index.
+pub fn client_order_id_to_cancel_request_with_asset(
     client_order_id: &str,
-    symbol: &str,
-) -> anyhow::Result<HyperliquidExecCancelByCloidRequest> {
-    let asset = extract_asset_id_from_symbol(symbol)
-        .with_context(|| format!("Failed to extract asset ID from symbol: {symbol}"))?;
-
-    // Convert client order ID to CLOID by hashing
+    asset: u32,
+) -> HyperliquidExecCancelByCloidRequest {
     let cloid = Cloid::from_client_order_id(ClientOrderId::from(client_order_id));
-
-    Ok(HyperliquidExecCancelByCloidRequest { asset, cloid })
+    HyperliquidExecCancelByCloidRequest { asset, cloid }
 }
 
 /// Checks if a Hyperliquid exchange response indicates success.

@@ -56,8 +56,8 @@ use crate::{
         consts::{HYPERLIQUID_VENUE, NAUTILUS_BUILDER_FEE_ADDRESS, NAUTILUS_BUILDER_FEE_TENTHS_BP},
         credential::Secrets,
         parse::{
-            client_order_id_to_cancel_request, extract_error_message, is_response_successful,
-            order_any_to_hyperliquid_request, orders_to_hyperliquid_requests,
+            client_order_id_to_cancel_request_with_asset, extract_error_message,
+            is_response_successful, order_to_hyperliquid_request_with_asset,
         },
     },
     config::HyperliquidExecClientConfig,
@@ -481,19 +481,35 @@ impl ExecutionClient for HyperliquidExecutionClient {
         }
 
         if let Err(e) = self.validate_order_submission(&order) {
-            let ts_event = self.clock.get_time_ns();
-            self.emitter.emit_order_rejected(
-                &order,
-                &format!("validation-error: {e}"),
-                ts_event,
-                false,
-            );
+            self.emitter
+                .emit_order_denied(&order, &format!("Validation failed: {e}"));
             return Err(e);
         }
 
-        self.emitter.emit_order_submitted(&order);
-
         let http_client = self.http_client.clone();
+        let symbol = order.instrument_id().symbol.to_string();
+
+        // Validate asset index exists before marking as submitted
+        let asset = match http_client.get_asset_index(&symbol) {
+            Some(a) => a,
+            None => {
+                self.emitter
+                    .emit_order_denied(&order, &format!("Asset index not found for {symbol}"));
+                return Ok(());
+            }
+        };
+
+        // Validate order conversion before marking as submitted
+        let hyperliquid_order = match order_to_hyperliquid_request_with_asset(&order, asset) {
+            Ok(req) => req,
+            Err(e) => {
+                self.emitter
+                    .emit_order_denied(&order, &format!("Order conversion failed: {e}"));
+                return Ok(());
+            }
+        };
+
+        self.emitter.emit_order_submitted(&order);
 
         let builder_fee = HyperliquidExecBuilderFee {
             address: NAUTILUS_BUILDER_FEE_ADDRESS.to_string(),
@@ -501,31 +517,19 @@ impl ExecutionClient for HyperliquidExecutionClient {
         };
 
         self.spawn_task("submit_order", async move {
-            match order_any_to_hyperliquid_request(&order) {
-                Ok(hyperliquid_order) => {
-                    let action = ExchangeAction::order(vec![hyperliquid_order], Some(builder_fee));
+            let action = ExchangeAction::order(vec![hyperliquid_order], Some(builder_fee));
 
-                    match http_client.post_action(&action).await {
-                        Ok(response) => {
-                            if is_response_successful(&response) {
-                                log::info!("Order submitted successfully: {response:?}");
-                                // Order acceptance/rejection events will be generated from WebSocket updates
-                                // which provide the venue_order_id and definitive status
-                            } else {
-                                let error_msg = extract_error_message(&response);
-                                log::warn!("Order submission rejected by exchange: {error_msg}");
-                                // Order rejection event will be generated from WebSocket updates
-                            }
-                        }
-                        Err(e) => {
-                            log::warn!("Order submission HTTP request failed: {e}");
-                            // WebSocket reconnection and order reconciliation will handle recovery
-                        }
+            match http_client.post_action(&action).await {
+                Ok(response) => {
+                    if is_response_successful(&response) {
+                        log::info!("Order submitted successfully: {response:?}");
+                    } else {
+                        let error_msg = extract_error_message(&response);
+                        log::warn!("Order submission rejected by exchange: {error_msg}");
                     }
                 }
                 Err(e) => {
-                    log::warn!("Failed to convert order to Hyperliquid format: {e}");
-                    // This indicates a client-side bug or unsupported order configuration
+                    log::warn!("Order submission HTTP request failed: {e}");
                 }
             }
 
@@ -544,7 +548,40 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let http_client = self.http_client.clone();
         let orders: Vec<OrderAny> = command.order_list.orders.clone();
 
+        // Validate all orders synchronously and collect valid ones
+        let mut valid_orders = Vec::new();
+        let mut hyperliquid_orders = Vec::new();
+
         for order in &orders {
+            let symbol = order.instrument_id().symbol.to_string();
+            let asset = match http_client.get_asset_index(&symbol) {
+                Some(a) => a,
+                None => {
+                    self.emitter
+                        .emit_order_denied(order, &format!("Asset index not found for {symbol}"));
+                    continue;
+                }
+            };
+
+            match order_to_hyperliquid_request_with_asset(order, asset) {
+                Ok(req) => {
+                    hyperliquid_orders.push(req);
+                    valid_orders.push(order.clone());
+                }
+                Err(e) => {
+                    self.emitter
+                        .emit_order_denied(order, &format!("Order conversion failed: {e}"));
+                }
+            }
+        }
+
+        if valid_orders.is_empty() {
+            log::warn!("No valid orders to submit in order list");
+            return Ok(());
+        }
+
+        // Emit submitted only for validated orders
+        for order in &valid_orders {
             self.emitter.emit_order_submitted(order);
         }
 
@@ -554,32 +591,18 @@ impl ExecutionClient for HyperliquidExecutionClient {
         };
 
         self.spawn_task("submit_order_list", async move {
-            // Convert all orders to Hyperliquid format
-            let order_refs: Vec<&OrderAny> = orders.iter().collect();
-            match orders_to_hyperliquid_requests(&order_refs) {
-                Ok(hyperliquid_orders) => {
-                    let action = ExchangeAction::order(hyperliquid_orders, Some(builder_fee));
-                    match http_client.post_action(&action).await {
-                        Ok(response) => {
-                            if is_response_successful(&response) {
-                                log::info!("Order list submitted successfully: {response:?}");
-                                // Order acceptance/rejection events will be generated from WebSocket updates
-                            } else {
-                                let error_msg = extract_error_message(&response);
-                                log::warn!(
-                                    "Order list submission rejected by exchange: {error_msg}"
-                                );
-                                // Individual order rejection events will be generated from WebSocket updates
-                            }
-                        }
-                        Err(e) => {
-                            log::warn!("Order list submission HTTP request failed: {e}");
-                            // WebSocket reconciliation will handle recovery
-                        }
+            let action = ExchangeAction::order(hyperliquid_orders, Some(builder_fee));
+            match http_client.post_action(&action).await {
+                Ok(response) => {
+                    if is_response_successful(&response) {
+                        log::info!("Order list submitted successfully: {response:?}");
+                    } else {
+                        let error_msg = extract_error_message(&response);
+                        log::warn!("Order list submission rejected by exchange: {error_msg}");
                     }
                 }
                 Err(e) => {
-                    log::warn!("Failed to convert order list to Hyperliquid format: {e}");
+                    log::warn!("Order list submission HTTP request failed: {e}");
                 }
             }
 
@@ -612,19 +635,17 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let http_client = self.http_client.clone();
         let price = command.price;
         let quantity = command.quantity;
-        let symbol = command.instrument_id.symbol.inner();
+        let symbol = command.instrument_id.symbol.to_string();
 
         self.spawn_task("modify_order", async move {
-            use crate::{
-                common::parse::extract_asset_id_from_symbol,
-                http::models::HyperliquidExecModifyOrderRequest,
-            };
+            use crate::http::models::HyperliquidExecModifyOrderRequest;
 
-            // Extract asset ID from instrument symbol
-            let asset = match extract_asset_id_from_symbol(&symbol) {
-                Ok(asset) => asset,
-                Err(e) => {
-                    log::warn!("Failed to extract asset ID from symbol {symbol}: {e}");
+            let asset = match http_client.get_asset_index(&symbol) {
+                Some(a) => a,
+                None => {
+                    log::warn!(
+                        "Asset index not found for symbol {symbol}. Ensure instruments are loaded."
+                    );
                     return Ok(());
                 }
             };
@@ -668,34 +689,35 @@ impl ExecutionClient for HyperliquidExecutionClient {
         log::debug!("Cancelling order: {command:?}");
 
         let http_client = self.http_client.clone();
-        let client_order_id = command.client_order_id.inner();
-        let symbol = command.instrument_id.symbol.inner();
+        let client_order_id = command.client_order_id.to_string();
+        let symbol = command.instrument_id.symbol.to_string();
 
         self.spawn_task("cancel_order", async move {
-            match client_order_id_to_cancel_request(&client_order_id, &symbol) {
-                Ok(cancel_request) => {
-                    // Create exchange action for order cancellation with typed struct
-                    let action = ExchangeAction::cancel_by_cloid(vec![cancel_request]);
-                    match http_client.post_action(&action).await {
-                        Ok(response) => {
-                            if is_response_successful(&response) {
-                                log::info!("Order cancelled successfully: {response:?}");
-                                // Order cancelled events will be generated from WebSocket updates
-                                // which provide definitive confirmation and venue_order_id
-                            } else {
-                                let error_msg = extract_error_message(&response);
-                                log::warn!("Order cancellation rejected by exchange: {error_msg}");
-                                // Order cancel rejected events will be generated from WebSocket updates
-                            }
-                        }
-                        Err(e) => {
-                            log::warn!("Order cancellation HTTP request failed: {e}");
-                            // WebSocket reconnection and reconciliation will handle recovery
-                        }
+            let asset = match http_client.get_asset_index(&symbol) {
+                Some(a) => a,
+                None => {
+                    log::warn!(
+                        "Asset index not found for symbol {symbol}. Ensure instruments are loaded."
+                    );
+                    return Ok(());
+                }
+            };
+
+            let cancel_request =
+                client_order_id_to_cancel_request_with_asset(&client_order_id, asset);
+            let action = ExchangeAction::cancel_by_cloid(vec![cancel_request]);
+
+            match http_client.post_action(&action).await {
+                Ok(response) => {
+                    if is_response_successful(&response) {
+                        log::info!("Order cancelled successfully: {response:?}");
+                    } else {
+                        let error_msg = extract_error_message(&response);
+                        log::warn!("Order cancellation rejected by exchange: {error_msg}");
                     }
                 }
                 Err(e) => {
-                    log::warn!("Failed to convert order to Hyperliquid cancel format: {e:?}");
+                    log::warn!("Order cancellation HTTP request failed: {e}");
                 }
             }
 
@@ -708,7 +730,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
     fn cancel_all_orders(&self, command: &CancelAllOrders) -> anyhow::Result<()> {
         log::debug!("Cancelling all orders: {command:?}");
 
-        // Query cache for all open orders matching the instrument and side
         let cache = self.core.cache();
         let open_orders = cache.orders_open(
             Some(&self.core.venue),
@@ -723,34 +744,36 @@ impl ExecutionClient for HyperliquidExecutionClient {
             return Ok(());
         }
 
-        // Convert orders to cancel requests
-        let mut cancel_requests = Vec::new();
-        let symbol = command.instrument_id.symbol.inner();
-        for order in open_orders {
-            let client_order_id = order.client_order_id().inner();
+        let symbol = command.instrument_id.symbol.to_string();
+        let client_order_ids: Vec<String> = open_orders
+            .iter()
+            .map(|o| o.client_order_id().to_string())
+            .collect();
 
-            match client_order_id_to_cancel_request(&client_order_id, &symbol) {
-                Ok(req) => cancel_requests.push(req),
-                Err(e) => {
-                    log::warn!("Failed to convert order {client_order_id} to cancel request: {e}");
-                    continue;
-                }
-            }
-        }
-
-        if cancel_requests.is_empty() {
-            log::debug!("No valid cancel requests to send");
-            return Ok(());
-        }
-
-        // Create exchange action for cancellation with typed struct
-        let action = ExchangeAction::cancel_by_cloid(cancel_requests);
-
-        // Send cancel request via HTTP API
-        // Note: The WebSocket connection will authoritatively handle the OrderCancelled events
         let http_client = self.http_client.clone();
         let runtime = get_runtime();
         runtime.spawn(async move {
+            let asset = match http_client.get_asset_index(&symbol) {
+                Some(a) => a,
+                None => {
+                    log::warn!(
+                        "Asset index not found for symbol {symbol}. Ensure instruments are loaded."
+                    );
+                    return;
+                }
+            };
+
+            let cancel_requests: Vec<_> = client_order_ids
+                .iter()
+                .map(|id| client_order_id_to_cancel_request_with_asset(id, asset))
+                .collect();
+
+            if cancel_requests.is_empty() {
+                log::debug!("No valid cancel requests to send");
+                return;
+            }
+
+            let action = ExchangeAction::cancel_by_cloid(cancel_requests);
             if let Err(e) = http_client.post_action(&action).await {
                 log::warn!("Failed to send cancel all orders request: {e}");
             }
@@ -767,33 +790,42 @@ impl ExecutionClient for HyperliquidExecutionClient {
             return Ok(());
         }
 
-        // Convert each CancelOrder to a cancel request
-        let mut cancel_requests = Vec::new();
-        for cancel_cmd in &command.cancels {
-            let client_order_id = cancel_cmd.client_order_id.inner();
-            let symbol = cancel_cmd.instrument_id.symbol.inner();
+        let cancel_info: Vec<(String, String)> = command
+            .cancels
+            .iter()
+            .map(|c| {
+                (
+                    c.client_order_id.to_string(),
+                    c.instrument_id.symbol.to_string(),
+                )
+            })
+            .collect();
 
-            match client_order_id_to_cancel_request(&client_order_id, &symbol) {
-                Ok(req) => cancel_requests.push(req),
-                Err(e) => {
-                    log::warn!("Failed to convert order {client_order_id} to cancel request: {e}");
-                    continue;
-                }
-            }
-        }
-
-        if cancel_requests.is_empty() {
-            log::warn!("No valid cancel requests in batch");
-            return Ok(());
-        }
-
-        let action = ExchangeAction::cancel_by_cloid(cancel_requests);
-
-        // Send batch cancel request via HTTP API
-        // Note: The WebSocket connection will authoritatively handle the OrderCancelled events
         let http_client = self.http_client.clone();
         let runtime = get_runtime();
         runtime.spawn(async move {
+            let mut cancel_requests = Vec::new();
+
+            for (client_order_id, symbol) in &cancel_info {
+                let asset = match http_client.get_asset_index(symbol) {
+                    Some(a) => a,
+                    None => {
+                        log::warn!("Asset index not found for symbol {symbol}. Skipping cancel.");
+                        continue;
+                    }
+                };
+                cancel_requests.push(client_order_id_to_cancel_request_with_asset(
+                    client_order_id,
+                    asset,
+                ));
+            }
+
+            if cancel_requests.is_empty() {
+                log::warn!("No valid cancel requests in batch");
+                return;
+            }
+
+            let action = ExchangeAction::cancel_by_cloid(cancel_requests);
             if let Err(e) = http_client.post_action(&action).await {
                 log::warn!("Failed to send batch cancel orders request: {e}");
             }
@@ -876,25 +908,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
         // Ensure instruments are initialized
         self.ensure_instruments_initialized_async().await?;
 
-        // Connect WebSocket client
-        self.ws_client.connect().await?;
-
-        // Subscribe to user-specific order updates and fills
-        let user_address = self.get_user_address()?;
-        self.ws_client
-            .subscribe_all_user_channels(&user_address)
-            .await?;
+        // Start WebSocket stream (connects and subscribes to user channels)
+        self.start_ws_stream().await?;
 
         // Initialize account state and wait for it to be registered in cache
         self.refresh_account_state().await?;
         self.await_account_registered(30.0).await?;
 
         self.core.set_connected();
-
-        // Start WebSocket stream for execution updates
-        if let Err(e) = self.start_ws_stream().await {
-            log::warn!("Failed to start WebSocket stream: {e}");
-        }
 
         log::info!("Connected: client_id={}", self.core.client_id);
         Ok(())
@@ -1053,25 +1074,14 @@ impl HyperliquidExecutionClient {
             ws_client.cache_instrument(instrument);
         }
 
+        // Connect and subscribe before spawning the event loop
+        ws_client.connect().await?;
+        ws_client.subscribe_order_updates(&user_address).await?;
+        ws_client.subscribe_user_events(&user_address).await?;
+        log::info!("Subscribed to Hyperliquid execution updates");
+
         let runtime = get_runtime();
         let handle = runtime.spawn(async move {
-            if let Err(e) = ws_client.connect().await {
-                log::warn!("Failed to connect WebSocket: {e}");
-                return;
-            }
-
-            if let Err(e) = ws_client.subscribe_order_updates(&user_address).await {
-                log::warn!("Failed to subscribe to order updates: {e}");
-                return;
-            }
-
-            if let Err(e) = ws_client.subscribe_user_events(&user_address).await {
-                log::warn!("Failed to subscribe to user events: {e}");
-                return;
-            }
-
-            log::info!("Subscribed to Hyperliquid execution updates");
-
             loop {
                 let event = ws_client.next_event().await;
 

@@ -51,6 +51,7 @@ nautilus-core = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
+nautilus-system = { workspace = true }
 
 ahash = { workspace = true }
 alloy-primitives = { workspace = true }
@@ -90,6 +91,7 @@ nautilus-testkit = { workspace = true }
 
 axum = { workspace = true }
 criterion = { workspace = true }
+dotenvy = { workspace = true }
 futures-util = { workspace = true }
 rstest = { workspace = true }
 
@@ -136,4 +138,18 @@ doc = false
 [[bin]]
 name = "hyperliquid-capture-test-data"
 path = "bin/capture_test_data.rs"
+doc = false
+
+# Run with `cargo run --example hyperliquid-data-tester --package nautilus-hyperliquid`.
+[[example]]
+name = "hyperliquid-data-tester"
+path = "examples/node_data_tester.rs"
+required-features = []
+doc = false
+
+# Run with `cargo run --example hyperliquid-exec-tester --package nautilus-hyperliquid`.
+[[example]]
+name = "hyperliquid-exec-tester"
+path = "examples/node_exec_tester.rs"
+required-features = []
 doc = false

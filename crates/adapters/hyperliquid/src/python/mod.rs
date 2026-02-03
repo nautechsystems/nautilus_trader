@@ -22,7 +22,7 @@ pub mod websocket;
 
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::identifiers::ClientOrderId;
-use pyo3::prelude::*;
+use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
 use crate::{
     common::builder_fee::{
@@ -87,23 +87,19 @@ fn py_print_hyperliquid_builder_fee_info() {
 /// # Returns
 ///
 /// `true` if approval succeeded, `false` otherwise.
-///
-/// # Panics
-///
-/// Panics if the spawned thread panics or runtime creation fails.
 #[pyfunction]
 #[pyo3(name = "approve_hyperliquid_builder_fee", signature = (non_interactive=false))]
-fn py_approve_hyperliquid_builder_fee(non_interactive: bool) -> bool {
+fn py_approve_hyperliquid_builder_fee(non_interactive: bool) -> PyResult<bool> {
     std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .expect("Failed to create runtime");
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {e}")))?;
 
-        runtime.block_on(approve_from_env(non_interactive))
+        Ok(runtime.block_on(approve_from_env(non_interactive)))
     })
     .join()
-    .expect("Thread panicked")
+    .map_err(|_| PyRuntimeError::new_err("Thread panicked"))?
 }
 
 /// Revoke the Nautilus builder fee approval for your wallet.
@@ -123,23 +119,19 @@ fn py_approve_hyperliquid_builder_fee(non_interactive: bool) -> bool {
 /// # Returns
 ///
 /// `true` if revocation succeeded, `false` otherwise.
-///
-/// # Panics
-///
-/// Panics if the spawned thread panics or runtime creation fails.
 #[pyfunction]
 #[pyo3(name = "revoke_hyperliquid_builder_fee", signature = (non_interactive=false))]
-fn py_revoke_hyperliquid_builder_fee(non_interactive: bool) -> bool {
+fn py_revoke_hyperliquid_builder_fee(non_interactive: bool) -> PyResult<bool> {
     std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .expect("Failed to create runtime");
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {e}")))?;
 
-        runtime.block_on(revoke_from_env(non_interactive))
+        Ok(runtime.block_on(revoke_from_env(non_interactive)))
     })
     .join()
-    .expect("Thread panicked")
+    .map_err(|_| PyRuntimeError::new_err("Thread panicked"))?
 }
 
 /// Verify the Nautilus builder fee approval status for a wallet.
@@ -157,23 +149,19 @@ fn py_revoke_hyperliquid_builder_fee(non_interactive: bool) -> bool {
 /// # Returns
 ///
 /// `true` if builder fee is approved at the required rate, `false` otherwise.
-///
-/// # Panics
-///
-/// Panics if the spawned thread panics or runtime creation fails.
 #[pyfunction]
 #[pyo3(name = "verify_hyperliquid_builder_fee", signature = (wallet_address=None))]
-fn py_verify_hyperliquid_builder_fee(wallet_address: Option<String>) -> bool {
+fn py_verify_hyperliquid_builder_fee(wallet_address: Option<String>) -> PyResult<bool> {
     std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .expect("Failed to create runtime");
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {e}")))?;
 
-        runtime.block_on(verify_from_env_or_address(wallet_address))
+        Ok(runtime.block_on(verify_from_env_or_address(wallet_address)))
     })
     .join()
-    .expect("Thread panicked")
+    .map_err(|_| PyRuntimeError::new_err("Thread panicked"))?
 }
 
 /// Loaded as `nautilus_pyo3.hyperliquid`.

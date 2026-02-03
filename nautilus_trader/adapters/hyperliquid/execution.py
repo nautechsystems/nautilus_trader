@@ -186,7 +186,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         await self._update_account_state()
         await self._await_account_registered()
 
-        self._cache_cloid_mappings_for_existing_orders()
+        self._sync_cloid_cache()
 
         instruments = self._instrument_provider.instruments_pyo3()
 
@@ -206,7 +206,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 LogColor.BLUE,
             )
 
-    def _cache_cloid_mappings_for_existing_orders(self) -> None:
+    def _sync_cloid_cache(self) -> None:
         orders = self._cache.orders(venue=self.venue)
         if not orders:
             return
@@ -247,6 +247,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         if not self._ws_client.is_closed():
             self._log.info("Disconnecting WebSocket")
             await self._ws_client.close()
+
+            # Clear cloid cache to prevent unbounded memory growth
+            self._ws_client.clear_cloid_cache()
             self._log.info(
                 f"Disconnected from WebSocket {self._ws_client.url}",
                 LogColor.BLUE,
@@ -264,6 +267,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
             for pyo3_report in pyo3_reports:
                 report = OrderStatusReport.from_pyo3(pyo3_report)
+
+                report.client_order_id = self._resolve_cloid(report.client_order_id)
 
                 if self._is_external_order(report.client_order_id) and report.venue_order_id:
                     resolved_id = self._cache.client_order_id(report.venue_order_id)
@@ -308,6 +313,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             for pyo3_report in pyo3_reports:
                 report = OrderStatusReport.from_pyo3(pyo3_report)
 
+                report.client_order_id = self._resolve_cloid(report.client_order_id)
+
                 if self._is_external_order(report.client_order_id) and report.venue_order_id:
                     resolved_id = self._cache.client_order_id(report.venue_order_id)
                     if resolved_id:
@@ -337,6 +344,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             reports = []
             for pyo3_report in pyo3_reports:
                 report = FillReport.from_pyo3(pyo3_report)
+
+                report.client_order_id = self._resolve_cloid(report.client_order_id)
 
                 if self._is_external_order(report.client_order_id) and report.venue_order_id:
                     resolved_id = self._cache.client_order_id(report.venue_order_id)
@@ -864,8 +873,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
     ) -> None:
         report = OrderStatusReport.from_pyo3(pyo3_report)
 
-        # Try to resolve client_order_id from venue_order_id if cloid resolution failed
-        client_order_id = report.client_order_id
+        client_order_id = self._resolve_cloid(report.client_order_id)
+        report.client_order_id = client_order_id
+
         if self._is_external_order(client_order_id) and report.venue_order_id:
             resolved_id = self._cache.client_order_id(report.venue_order_id)
             if resolved_id:
@@ -956,6 +966,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             if key in self._terminal_orders:
                 return
 
+            self._terminal_orders.add(key)
+
             # FILLED status often arrives before the fill event - just log at debug level
             self._log.debug(
                 f"Received FILLED status for {report.client_order_id!r} "
@@ -980,6 +992,11 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 venue_order_id=report.venue_order_id,
                 ts_event=report.ts_last,
             )
+        elif report.order_status == OrderStatus.PARTIALLY_FILLED:
+            # Fills come separately via FillReport events
+            self._log.debug(
+                f"Received PARTIALLY_FILLED status for {report.client_order_id!r}",
+            )
         else:
             self._log.warning(f"Received unhandled OrderStatusReport: {report}")
 
@@ -999,8 +1016,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
         self._processed_trade_ids.add(trade_id_str)
 
-        # Try to resolve client_order_id from venue_order_id if cloid resolution failed
-        client_order_id = report.client_order_id
+        client_order_id = self._resolve_cloid(report.client_order_id)
+        report.client_order_id = client_order_id
+
         if self._is_external_order(client_order_id) and report.venue_order_id:
             resolved_id = self._cache.client_order_id(report.venue_order_id)
             if resolved_id:
@@ -1064,3 +1082,19 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
     def _is_external_order(self, client_order_id: ClientOrderId) -> bool:
         return not client_order_id or not self._cache.strategy_id_for_order(client_order_id)
+
+    def _is_cloid_format(self, client_order_id: ClientOrderId) -> bool:
+        if not client_order_id:
+            return False
+        value = client_order_id.value
+        # CLOID format: "0x" + 32 hex chars = 34 chars total
+        return len(value) == 34 and value.startswith("0x")
+
+    def _resolve_cloid(self, client_order_id: ClientOrderId) -> ClientOrderId:
+        if not self._is_cloid_format(client_order_id):
+            return client_order_id
+        resolved = self._ws_client.get_cloid_mapping(client_order_id.value)
+        if resolved:
+            # Convert from PyO3 ClientOrderId to model ClientOrderId
+            return ClientOrderId(resolved.value)
+        return client_order_id

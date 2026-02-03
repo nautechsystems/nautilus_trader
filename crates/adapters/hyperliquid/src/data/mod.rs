@@ -843,14 +843,8 @@ async fn request_bars_from_http(
 
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
-
-    // Extract coin symbol from instrument ID (e.g., "BTC-PERP.HYPERLIQUID" -> "BTC")
-    let coin = instrument_id
-        .symbol
-        .as_str()
-        .split('-')
-        .next()
-        .context("invalid instrument symbol")?;
+    let raw_symbol = instrument.raw_symbol();
+    let coin = raw_symbol.as_str();
 
     let interval = bar_type_to_interval(&bar_type)?;
 

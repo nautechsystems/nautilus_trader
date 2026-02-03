@@ -50,6 +50,7 @@ pub mod common;
 pub mod config;
 pub mod data;
 pub mod execution;
+pub mod factories;
 pub mod http;
 pub mod signing;
 pub mod websocket;
@@ -61,6 +62,10 @@ pub use crate::{
     config::{HyperliquidDataClientConfig, HyperliquidExecClientConfig},
     data::HyperliquidDataClient,
     execution::HyperliquidExecutionClient,
+    factories::{
+        HyperliquidDataClientFactory, HyperliquidExecFactoryConfig,
+        HyperliquidExecutionClientFactory,
+    },
     http::client::HyperliquidHttpClient,
     websocket::client::HyperliquidWebSocketClient,
 };
