@@ -79,6 +79,9 @@ impl StrategyConfig {
         external_order_claims=None,
         manage_contingent_orders=false,
         manage_gtd_expiry=false,
+        manage_stop=false,
+        inflight_check_interval_ms=100,
+        market_exit_max_attempts=100,
         use_uuid_client_order_ids=false,
         use_hyphens_in_client_order_ids=true,
         log_events=true,
@@ -93,6 +96,9 @@ impl StrategyConfig {
         external_order_claims: Option<Vec<InstrumentId>>,
         manage_contingent_orders: bool,
         manage_gtd_expiry: bool,
+        manage_stop: bool,
+        inflight_check_interval_ms: u64,
+        market_exit_max_attempts: u64,
         use_uuid_client_order_ids: bool,
         use_hyphens_in_client_order_ids: bool,
         log_events: bool,
@@ -108,6 +114,9 @@ impl StrategyConfig {
             external_order_claims,
             manage_contingent_orders,
             manage_gtd_expiry,
+            manage_stop,
+            inflight_check_interval_ms,
+            market_exit_max_attempts,
             log_events,
             log_commands,
             log_rejected_due_post_only_as_warning,
@@ -599,6 +608,10 @@ impl Strategy for PyStrategyInner {
 
     fn on_position_closed(&mut self, event: PositionClosed) {
         let _ = self.dispatch_on_position_closed(event);
+    }
+
+    fn is_exiting(&self) -> bool {
+        self.core.is_exiting
     }
 }
 

@@ -412,6 +412,10 @@ cdef class Strategy(Actor):
                 self.market_exit()
             return
 
+        # Clean up any active market exit to avoid state leaks
+        if self._is_exiting:
+            self._cancel_market_exit()
+
         Actor.stop(self)
 
     cpdef void _reset(self):
@@ -1813,7 +1817,8 @@ cdef class Strategy(Actor):
         return self._is_exiting
 
     cpdef void _check_market_exit(self, TimeEvent event):
-        if self.state != ComponentState.RUNNING:
+        # Guard against stale timer events after cancel_market_exit
+        if not self._is_exiting or self.state != ComponentState.RUNNING:
             return
 
         self._market_exit_attempts += 1
@@ -1849,16 +1854,25 @@ cdef class Strategy(Actor):
         self._finalize_market_exit()
 
     cdef void _finalize_market_exit(self):
+        cdef bint should_stop = self._pending_stop
+        self._cancel_market_exit()
+
+        try:
+            self.post_market_exit()
+        except Exception as e:
+            self._log.exception("Error in post_market_exit", e)
+        finally:
+            if should_stop:
+                Actor.stop(self)
+
+    cdef void _cancel_market_exit(self):
+        # Cancel timer and reset state without calling hooks
         if self._market_exit_timer_name in self._clock.timer_names:
             self._clock.cancel_timer(name=self._market_exit_timer_name)
 
         self._is_exiting = False
+        self._pending_stop = False
         self._market_exit_attempts = 0
-        self.post_market_exit()
-
-        if self._pending_stop:
-            self._pending_stop = False
-            Actor.stop(self)
 
     cpdef void handle_event(self, Event event):
         """

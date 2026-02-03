@@ -53,6 +53,14 @@ pub struct StrategyCore {
     pub portfolio: Option<Rc<RefCell<Portfolio>>>,
     /// Maps client order IDs to GTD expiry timer names.
     pub gtd_timers: AHashMap<ClientOrderId, Ustr>,
+    /// Whether the strategy is currently executing a market exit.
+    pub is_exiting: bool,
+    /// Whether a stop is pending (waiting for market exit to complete).
+    pub pending_stop: bool,
+    /// The number of market exit check attempts made.
+    pub market_exit_attempts: u64,
+    /// The timer name for market exit checks.
+    pub market_exit_timer_name: Ustr,
 }
 
 impl Debug for StrategyCore {
@@ -62,6 +70,9 @@ impl Debug for StrategyCore {
             .field("config", &self.config)
             .field("order_manager", &self.order_manager)
             .field("order_factory", &self.order_factory)
+            .field("is_exiting", &self.is_exiting)
+            .field("pending_stop", &self.pending_stop)
+            .field("market_exit_attempts", &self.market_exit_attempts)
             .finish()
     }
 }
@@ -77,6 +88,12 @@ impl StrategyCore {
             log_commands: config.log_commands,
         };
 
+        let strategy_id = config
+            .strategy_id
+            .map(|id| id.inner().to_string())
+            .unwrap_or_default();
+        let market_exit_timer_name = Ustr::from(&format!("MARKET_EXIT_CHECK:{strategy_id}"));
+
         Self {
             actor: DataActorCore::new(actor_config),
             config,
@@ -84,6 +101,10 @@ impl StrategyCore {
             order_factory: None,
             portfolio: None,
             gtd_timers: AHashMap::new(),
+            is_exiting: false,
+            pending_stop: false,
+            market_exit_attempts: 0,
+            market_exit_timer_name,
         }
     }
 
@@ -106,6 +127,9 @@ impl StrategyCore {
 
         let strategy_id = StrategyId::from(self.actor.actor_id.inner().as_str());
 
+        // Update market exit timer name with actual strategy ID
+        self.market_exit_timer_name = Ustr::from(&format!("MARKET_EXIT_CHECK:{strategy_id}"));
+
         self.order_factory = Some(OrderFactory::new(
             trader_id,
             strategy_id,
@@ -121,6 +145,13 @@ impl StrategyCore {
         self.portfolio = Some(portfolio);
 
         Ok(())
+    }
+
+    /// Resets the market exit state.
+    pub fn reset_market_exit_state(&mut self) {
+        self.is_exiting = false;
+        self.pending_stop = false;
+        self.market_exit_attempts = 0;
     }
 }
 
@@ -166,6 +197,9 @@ mod tests {
         assert!(core.order_manager.is_none());
         assert!(core.order_factory.is_none());
         assert!(core.portfolio.is_none());
+        assert!(!core.is_exiting);
+        assert!(!core.pending_stop);
+        assert_eq!(core.market_exit_attempts, 0);
     }
 
     #[rstest]

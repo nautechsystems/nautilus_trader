@@ -181,6 +181,7 @@ cdef class Strategy(Actor):
     cpdef void _expire_gtd_order(self, TimeEvent event)
     cpdef void _check_market_exit(self, TimeEvent event)
     cdef void _finalize_market_exit(self)
+    cdef void _cancel_market_exit(self)
 
 # -- EVENTS ---------------------------------------------------------------------------------------
 

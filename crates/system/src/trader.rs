@@ -19,8 +19,9 @@
 //! and individual trading components. It manages component lifecycles, provides
 //! unique identification, and coordinates with system engines.
 
-use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
+use ahash::AHashMap;
 use nautilus_common::{
     actor::{DataActor, registry::try_get_actor_unchecked},
     cache::Cache,
@@ -50,6 +51,16 @@ use nautilus_trading::strategy::Strategy;
 /// The `Trader` manages the lifecycle and coordination of actors, strategies,
 /// and execution algorithms within the trading system. It provides component
 /// registration, state management, and integration with system engines.
+///
+/// # Notes
+///
+/// Strategies implement `Strategy::stop() -> bool` which returns whether to proceed
+/// with the component stop. This enables `manage_stop` behavior where the strategy
+/// can defer stopping until a market exit completes.
+///
+/// We store type-erased closures because the component registry stores trait objects
+/// and we need to call `Strategy::stop()` which requires the concrete type. The
+/// closure is created during `add_strategy` when the concrete type `T` is known.
 pub struct Trader {
     /// The unique trader identifier.
     pub trader_id: TraderId,
@@ -69,10 +80,12 @@ pub struct Trader {
     actor_ids: Vec<ActorId>,
     /// Registered strategy IDs (strategies stored in global registry).
     strategy_ids: Vec<StrategyId>,
+    /// Strategy stop functions for managed stop behavior.
+    strategy_stop_fns: AHashMap<StrategyId, Box<dyn FnMut() -> bool>>,
     /// Registered exec algorithm IDs (algorithms stored in global registry).
     exec_algorithm_ids: Vec<ExecAlgorithmId>,
     /// Component clocks for individual components.
-    clocks: HashMap<ComponentId, Rc<RefCell<dyn Clock>>>, // TODO: TBD global clock?
+    clocks: AHashMap<ComponentId, Rc<RefCell<dyn Clock>>>,
     /// Timestamp when the trader was created.
     ts_created: UnixNanos,
     /// Timestamp when the trader was last started.
@@ -110,8 +123,9 @@ impl Trader {
             portfolio,
             actor_ids: Vec::new(),
             strategy_ids: Vec::new(),
+            strategy_stop_fns: AHashMap::new(),
             exec_algorithm_ids: Vec::new(),
-            clocks: HashMap::new(),
+            clocks: AHashMap::new(),
             ts_created,
             ts_started: None,
             ts_stopped: None,
@@ -394,6 +408,17 @@ impl Trader {
 
         self.strategy_ids.push(strategy_id);
 
+        let stop_actor_id = actor_id;
+        let stop_fn = Box::new(move || -> bool {
+            if let Some(mut strategy) = try_get_actor_unchecked::<T>(&stop_actor_id) {
+                Strategy::stop(&mut *strategy)
+            } else {
+                log::error!("Strategy {stop_actor_id} not found for stop");
+                true // Proceed with component stop anyway
+            }
+        });
+        self.strategy_stop_fns.insert(strategy_id, stop_fn);
+
         log::info!(
             "Registered strategy {strategy_id} with trader {}",
             self.trader_id
@@ -501,9 +526,15 @@ impl Trader {
             stop_component(&exec_algorithm_id.inner())?;
         }
 
-        for strategy_id in &self.strategy_ids {
+        for strategy_id in self.strategy_ids.clone() {
             log::debug!("Stopping strategy {strategy_id}");
-            stop_component(&strategy_id.inner())?;
+            let should_proceed = self
+                .strategy_stop_fns
+                .get_mut(&strategy_id)
+                .is_none_or(|stop_fn| stop_fn());
+            if should_proceed {
+                stop_component(&strategy_id.inner())?;
+            }
         }
 
         Ok(())
@@ -747,6 +778,10 @@ mod tests {
     impl StrategyTrait for TestStrategy {
         fn core_mut(&mut self) -> &mut StrategyCore {
             &mut self.core
+        }
+
+        fn is_exiting(&self) -> bool {
+            self.core.is_exiting
         }
     }
 

@@ -2558,3 +2558,59 @@ class TestStrategy:
         # Assert - orders should not be denied
         assert order1.status != OrderStatus.DENIED
         assert order2.status != OrderStatus.DENIED
+
+    def test_manage_stop_completes_even_when_post_market_exit_raises(self) -> None:
+        # Arrange
+        class FailingPostExitStrategy(Strategy):
+            def post_market_exit(self):
+                raise RuntimeError("Simulated error in post_market_exit")
+
+        config = StrategyConfig(
+            manage_stop=True,
+            inflight_check_interval_ms=10,
+        )
+        strategy = FailingPostExitStrategy(config=config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        strategy.start()
+
+        # Act - stop() should still complete even if post_market_exit raises
+        strategy.stop()
+
+        # Advance time to complete market exit
+        for handler in self.clock.advance_time(
+            self.clock.timestamp_ns() + pd.Timedelta(milliseconds=20).value,
+        ):
+            handler.handle()
+
+        # Assert - strategy should be stopped despite the exception
+        assert strategy.state == ComponentState.STOPPED
+
+    def test_stop_during_market_exit_with_manage_stop_false_cleans_up_state(self) -> None:
+        # Arrange - manage_stop=False (default)
+        config = StrategyConfig(inflight_check_interval_ms=10)
+        strategy = Strategy(config=config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        strategy.start()
+
+        # Start a market exit manually
+        strategy.market_exit()
+        assert strategy.is_exiting()
+
+        # Act - call stop() while market exit is in progress
+        strategy.stop()
+
+        # Assert - strategy should be stopped and market exit state cleaned up
+        assert strategy.state == ComponentState.STOPPED
+        assert not strategy.is_exiting()

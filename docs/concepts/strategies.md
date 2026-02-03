@@ -573,8 +573,11 @@ class MyStrategy(Strategy):
         self.log.info("Market exit complete")
 ```
 
-During a market exit, non-reduce-only orders are automatically denied. To check if an exit
-is in progress (e.g., to skip order submission logic), use `is_exiting()`:
+During a market exit, non-reduce-only orders are automatically denied. For order lists,
+if any order in the list is non-reduce-only, the entire list is denied to preserve list
+semantics (e.g., bracket orders with interdependencies).
+
+To check if an exit is in progress (e.g., to skip order submission logic), use `is_exiting()`:
 
 ```python
 def on_quote_tick(self, tick: QuoteTick) -> None:

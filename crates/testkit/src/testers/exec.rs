@@ -681,6 +681,10 @@ impl Strategy for ExecTester {
     fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
         self.config.base.external_order_claims.clone()
     }
+
+    fn is_exiting(&self) -> bool {
+        self.core.is_exiting
+    }
 }
 
 impl ExecTester {
