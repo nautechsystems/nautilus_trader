@@ -59,7 +59,7 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use tokio::{task::JoinHandle, time::Duration};
 use tokio_util::sync::CancellationToken;
-
+use nautilus_model::data::Data;
 use crate::{
     common::{
         consts::DYDX_VENUE, enums::DydxCandleResolution, instrument_cache::InstrumentCache,
@@ -319,6 +319,13 @@ impl DydxDataClient {
         log::debug!("Published {} instruments to data engine", instruments.len());
 
         Ok(instruments)
+    }
+
+    /// Sends data to the data channel.
+    fn send_data(sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>, data: Data) {
+        if let Err(e) = sender.send(DataEvent::Data(data)) {
+            log::error!("Failed to send data: {e}");
+        }
     }
 }
 
@@ -767,7 +774,7 @@ impl DataClient for DydxDataClient {
                     Ok(instruments) => {
                         // Cache all fetched instruments
                         for inst in &instruments {
-                            upsert_instrument(&instrument_cache, inst.clone());
+                            instrument_cache.insert_instrument_only(inst.clone());
                         }
                         // Find the requested instrument
                         instruments.into_iter().find(|i| i.id() == instrument_id)
@@ -823,7 +830,7 @@ impl DataClient for DydxDataClient {
 
                     // Cache all instruments
                     for instrument in &instruments {
-                        upsert_instrument(&instrument_cache, instrument.clone());
+                        instrument_cache.insert_instrument_only(instrument.clone());
                     }
 
                     let response = DataResponse::Instruments(InstrumentsResponse::new(
@@ -1328,11 +1335,6 @@ impl DataClient for DydxDataClient {
 
         Ok(())
     }
-}
-
-/// Upserts an instrument into the shared cache.
-fn upsert_instrument(cache: &Arc<InstrumentCache>, instrument: InstrumentAny) {
-    cache.insert_instrument_only(instrument);
 }
 
 impl DydxDataClient {

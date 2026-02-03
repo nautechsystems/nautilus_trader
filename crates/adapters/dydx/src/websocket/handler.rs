@@ -117,6 +117,8 @@ pub struct FeedHandler {
     subscriptions: SubscriptionState,
     /// Original subscription messages by topic (for replay without reconstruction).
     subscription_messages: AHashMap<String, DydxSubscription>,
+    /// Buffer for multiple messages produced from a single raw message.
+    message_buffer: Vec<NautilusWsMessage>,
 }
 
 impl Debug for FeedHandler {
@@ -153,6 +155,7 @@ impl FeedHandler {
             bar_types: AHashMap::new(),
             subscriptions,
             subscription_messages: AHashMap::new(),
+            message_buffer: Vec::new(),
         }
     }
 
@@ -185,9 +188,25 @@ impl FeedHandler {
     }
 
     /// Main processing loop for the handler.
+    ///
+    /// # Panics
+    ///
+    /// This method will not panic. The `expect` call on `iter.next()` is safe
+    /// because we explicitly check that `nautilus_msgs` is not empty before
+    /// calling it.
     pub async fn run(&mut self) {
         log::debug!("WebSocket handler started");
         loop {
+            // First drain any buffered messages
+            if !self.message_buffer.is_empty() {
+                let nautilus_msg = self.message_buffer.remove(0);
+                if self.out_tx.send(nautilus_msg).is_err() {
+                    log::debug!("Receiver dropped, stopping handler");
+                    break;
+                }
+                continue;
+            }
+
             tokio::select! {
                 Some(cmd) = self.cmd_rx.recv() => {
                     self.handle_command(cmd).await;
@@ -195,9 +214,14 @@ impl FeedHandler {
 
                 Some(msg) = self.raw_rx.recv() => {
                     log::trace!("Handler received raw message");
-                    if let Some(nautilus_msg) = self.process_raw_message(msg).await {
-                        log::trace!("Handler sending message: {:?}", std::mem::discriminant(&nautilus_msg));
-                        if self.out_tx.send(nautilus_msg).is_err() {
+                    let nautilus_msgs = self.process_raw_message(msg).await;
+                    if !nautilus_msgs.is_empty() {
+                        let mut iter = nautilus_msgs.into_iter();
+                        // SAFETY: We just checked that nautilus_msgs is not empty
+                        let first = iter.next().expect("non-empty vec has first element");
+                        self.message_buffer.extend(iter);
+                        log::trace!("Handler sending message: {:?}", std::mem::discriminant(&first));
+                        if self.out_tx.send(first).is_err() {
                             log::debug!("Receiver dropped, stopping handler");
                             break;
                         }
@@ -218,14 +242,14 @@ impl FeedHandler {
     }
 
     /// Processes a raw WebSocket message.
-    async fn process_raw_message(&self, msg: Message) -> Option<NautilusWsMessage> {
+    async fn process_raw_message(&mut self, msg: Message) -> Vec<NautilusWsMessage> {
         match msg {
             Message::Text(txt) => {
                 if txt == RECONNECTED {
                     if let Err(e) = self.replay_subscriptions().await {
                         log::error!("Failed to replay subscriptions after reconnect: {e}");
                     }
-                    return Some(NautilusWsMessage::Reconnected);
+                    return vec![NautilusWsMessage::Reconnected];
                 }
 
                 match serde_json::from_str::<serde_json::Value>(&txt) {
@@ -309,7 +333,7 @@ impl FeedHandler {
                                             serde_json::to_string(&val_clone)
                                                 .unwrap_or_else(|_| "<invalid json>".into())
                                         );
-                                        None
+                                        vec![]
                                     }
                                 }
                             }
@@ -319,40 +343,40 @@ impl FeedHandler {
                                 log::error!(
                                     "Failed to parse WebSocket message envelope (DydxWsGenericMsg): {e}\nRaw JSON:\n{raw_json}"
                                 );
-                                None
+                                vec![]
                             }
                         }
                     }
                     Err(e) => {
                         let err = DydxWebSocketError::from_message(e.to_string());
-                        Some(NautilusWsMessage::Error(err))
+                        vec![NautilusWsMessage::Error(err)]
                     }
                 }
             }
-            Message::Pong(_data) => None,
-            Message::Ping(_data) => None,  // Handled by lower layers
-            Message::Binary(_bin) => None, // dYdX uses text frames
+            Message::Pong(_data) => vec![],
+            Message::Ping(_data) => vec![],  // Handled by lower layers
+            Message::Binary(_bin) => vec![], // dYdX uses text frames
             Message::Close(_frame) => {
                 log::info!("WebSocket close frame received");
-                None
+                vec![]
             }
-            Message::Frame(_) => None,
+            Message::Frame(_) => vec![],
         }
     }
 
-    /// Handles a parsed     dYdX WebSocket message.
-    async fn handle_dydx_message(&self, msg: DydxWsMessage) -> Option<NautilusWsMessage> {
+    /// Handles a parsed dYdX WebSocket message.
+    async fn handle_dydx_message(&self, msg: DydxWsMessage) -> Vec<NautilusWsMessage> {
         match self.handle_message(msg).await {
-            Ok(opt_msg) => opt_msg,
+            Ok(msgs) => msgs,
             Err(e) => {
                 log::error!("Error handling message: {e}");
-                None
+                vec![]
             }
         }
     }
 
     /// Dispatches feed messages directly to typed handlers.
-    fn handle_feed_message(&self, feed_msg: DydxWsFeedMessage) -> Option<NautilusWsMessage> {
+    fn handle_feed_message(&self, feed_msg: DydxWsFeedMessage) -> Vec<NautilusWsMessage> {
         log::trace!(
             "Handling feed message: {:?}",
             std::mem::discriminant(&feed_msg)
@@ -369,7 +393,7 @@ impl FeedHandler {
     }
 
     /// Handles subaccounts channel messages.
-    fn handle_subaccounts(&self, msg: DydxWsSubaccountsMessage) -> Option<NautilusWsMessage> {
+    fn handle_subaccounts(&self, msg: DydxWsSubaccountsMessage) -> Vec<NautilusWsMessage> {
         match msg {
             DydxWsSubaccountsMessage::Subscribed(data) => {
                 let topic =
@@ -383,13 +407,13 @@ impl FeedHandler {
             DydxWsSubaccountsMessage::Unsubscribed(data) => {
                 let topic = self.topic_from_msg(&DydxWsChannel::Subaccounts, &data.id);
                 self.subscriptions.confirm_unsubscribe(&topic);
-                None
+                vec![]
             }
         }
     }
 
     /// Handles orderbook channel messages.
-    fn handle_orderbook(&self, msg: DydxWsOrderbookMessage) -> Option<NautilusWsMessage> {
+    fn handle_orderbook(&self, msg: DydxWsOrderbookMessage) -> Vec<NautilusWsMessage> {
         match msg {
             DydxWsOrderbookMessage::Subscribed(data) => {
                 let topic = self.topic_from_msg(&DydxWsChannel::Orderbook, &data.id);
@@ -405,13 +429,13 @@ impl FeedHandler {
             DydxWsOrderbookMessage::Unsubscribed(data) => {
                 let topic = self.topic_from_msg(&DydxWsChannel::Orderbook, &data.id);
                 self.subscriptions.confirm_unsubscribe(&topic);
-                None
+                vec![]
             }
         }
     }
 
     /// Handles trades channel messages.
-    fn handle_trades(&self, msg: DydxWsTradesMessage) -> Option<NautilusWsMessage> {
+    fn handle_trades(&self, msg: DydxWsTradesMessage) -> Vec<NautilusWsMessage> {
         match msg {
             DydxWsTradesMessage::Subscribed(data) => {
                 let topic = self.topic_from_msg(&DydxWsChannel::Trades, &data.id);
@@ -422,13 +446,13 @@ impl FeedHandler {
             DydxWsTradesMessage::Unsubscribed(data) => {
                 let topic = self.topic_from_msg(&DydxWsChannel::Trades, &data.id);
                 self.subscriptions.confirm_unsubscribe(&topic);
-                None
+                vec![]
             }
         }
     }
 
     /// Handles markets channel messages.
-    fn handle_markets_feed(&self, msg: DydxWsMarketsMessage) -> Option<NautilusWsMessage> {
+    fn handle_markets_feed(&self, msg: DydxWsMarketsMessage) -> Vec<NautilusWsMessage> {
         match msg {
             DydxWsMarketsMessage::Subscribed(data) => {
                 let topic = self.topic_from_msg(&DydxWsChannel::Markets, &data.id);
@@ -439,13 +463,13 @@ impl FeedHandler {
             DydxWsMarketsMessage::Unsubscribed(data) => {
                 let topic = self.topic_from_msg(&DydxWsChannel::Markets, &data.id);
                 self.subscriptions.confirm_unsubscribe(&topic);
-                None
+                vec![]
             }
         }
     }
 
     /// Handles candles channel messages.
-    fn handle_candles_feed(&self, msg: DydxWsCandlesMessage) -> Option<NautilusWsMessage> {
+    fn handle_candles_feed(&self, msg: DydxWsCandlesMessage) -> Vec<NautilusWsMessage> {
         match msg {
             DydxWsCandlesMessage::Subscribed(data) => {
                 let topic = self.topic_from_msg(&DydxWsChannel::Candles, &data.id);
@@ -456,7 +480,7 @@ impl FeedHandler {
             DydxWsCandlesMessage::Unsubscribed(data) => {
                 let topic = self.topic_from_msg(&DydxWsChannel::Candles, &data.id);
                 self.subscriptions.confirm_unsubscribe(&topic);
-                None
+                vec![]
             }
         }
     }
@@ -465,7 +489,7 @@ impl FeedHandler {
     fn handle_parent_subaccounts(
         &self,
         msg: DydxWsParentSubaccountsMessage,
-    ) -> Option<NautilusWsMessage> {
+    ) -> Vec<NautilusWsMessage> {
         match msg {
             DydxWsParentSubaccountsMessage::Subscribed(data) => {
                 let topic = self.topic_from_msg(&DydxWsChannel::ParentSubaccounts, &data.id);
@@ -478,45 +502,45 @@ impl FeedHandler {
             DydxWsParentSubaccountsMessage::Unsubscribed(data) => {
                 let topic = self.topic_from_msg(&DydxWsChannel::ParentSubaccounts, &data.id);
                 self.subscriptions.confirm_unsubscribe(&topic);
-                None
+                vec![]
             }
         }
     }
 
     /// Handles block height channel messages.
-    fn handle_block_height_feed(&self, msg: DydxWsBlockHeightMessage) -> Option<NautilusWsMessage> {
+    fn handle_block_height_feed(&self, msg: DydxWsBlockHeightMessage) -> Vec<NautilusWsMessage> {
         match msg {
             DydxWsBlockHeightMessage::Subscribed(data) => {
                 let topic =
                     self.topic_from_msg(&DydxWsChannel::BlockHeight, &Some(data.id.clone()));
                 self.subscriptions.confirm_subscribe(&topic);
                 match data.contents.height.parse::<u64>() {
-                    Ok(height) => Some(NautilusWsMessage::BlockHeight {
+                    Ok(height) => vec![NautilusWsMessage::BlockHeight {
                         height,
                         time: data.contents.time,
-                    }),
+                    }],
                     Err(e) => {
                         log::warn!("Failed to parse block height from subscription: {e}");
-                        None
+                        vec![]
                     }
                 }
             }
             DydxWsBlockHeightMessage::ChannelData(data) => {
                 match data.contents.block_height.parse::<u64>() {
-                    Ok(height) => Some(NautilusWsMessage::BlockHeight {
+                    Ok(height) => vec![NautilusWsMessage::BlockHeight {
                         height,
                         time: data.contents.time,
-                    }),
+                    }],
                     Err(e) => {
                         log::warn!("Failed to parse block height from channel data: {e}");
-                        None
+                        vec![]
                     }
                 }
             }
             DydxWsBlockHeightMessage::Unsubscribed(data) => {
                 let topic = self.topic_from_msg(&DydxWsChannel::BlockHeight, &data.id);
                 self.subscriptions.confirm_unsubscribe(&topic);
-                None
+                vec![]
             }
         }
     }
@@ -525,18 +549,18 @@ impl FeedHandler {
     fn process_subaccounts_subscribed(
         &self,
         msg: &DydxWsSubaccountsSubscribed,
-    ) -> Option<NautilusWsMessage> {
+    ) -> Vec<NautilusWsMessage> {
         log::debug!("Forwarding subaccount subscription to execution client");
-        Some(NautilusWsMessage::SubaccountSubscribed(Box::new(
+        vec![NautilusWsMessage::SubaccountSubscribed(Box::new(
             msg.clone(),
-        )))
+        ))]
     }
 
     /// Processes subaccounts channel data directly.
     fn process_subaccounts_channel_data(
         &self,
         data: DydxWsSubaccountsChannelData,
-    ) -> Option<NautilusWsMessage> {
+    ) -> Vec<NautilusWsMessage> {
         let has_orders = data.contents.orders.as_ref().is_some_and(|o| !o.is_empty());
         let has_fills = data.contents.fills.as_ref().is_some_and(|f| !f.is_empty());
 
@@ -546,19 +570,19 @@ impl FeedHandler {
                 data.contents.orders.as_ref().map_or(0, |o| o.len()),
                 data.contents.fills.as_ref().map_or(0, |f| f.len())
             );
-            Some(NautilusWsMessage::SubaccountsChannelData(Box::new(data)))
+            vec![NautilusWsMessage::SubaccountsChannelData(Box::new(data))]
         } else {
-            None
+            vec![]
         }
     }
 
     /// Parses trades from channel data message.
-    fn parse_trades_from_data(&self, data: &DydxWsChannelDataMsg) -> Option<NautilusWsMessage> {
+    fn parse_trades_from_data(&self, data: &DydxWsChannelDataMsg) -> Vec<NautilusWsMessage> {
         match self.parse_trades(data) {
-            Ok(msg) => msg,
+            Ok(msgs) => msgs,
             Err(e) => {
                 log::error!("Error parsing trades: {e}");
-                None
+                vec![]
             }
         }
     }
@@ -568,12 +592,12 @@ impl FeedHandler {
         &self,
         data: &DydxWsChannelDataMsg,
         is_snapshot: bool,
-    ) -> Option<NautilusWsMessage> {
+    ) -> Vec<NautilusWsMessage> {
         match self.parse_orderbook(data, is_snapshot) {
-            Ok(msg) => msg,
+            Ok(msgs) => msgs,
             Err(e) => {
                 log::error!("Error parsing orderbook: {e}");
-                None
+                vec![]
             }
         }
     }
@@ -582,34 +606,34 @@ impl FeedHandler {
     fn parse_orderbook_batch_from_data(
         &self,
         data: &DydxWsChannelBatchDataMsg,
-    ) -> Option<NautilusWsMessage> {
+    ) -> Vec<NautilusWsMessage> {
         match self.parse_orderbook_batch(data) {
-            Ok(msg) => msg,
+            Ok(msgs) => msgs,
             Err(e) => {
                 log::error!("Error parsing orderbook batch: {e}");
-                None
+                vec![]
             }
         }
     }
 
     /// Parses markets from channel data message.
-    fn parse_markets_from_data(&self, data: &DydxWsChannelDataMsg) -> Option<NautilusWsMessage> {
+    fn parse_markets_from_data(&self, data: &DydxWsChannelDataMsg) -> Vec<NautilusWsMessage> {
         match self.parse_markets(data) {
-            Ok(msg) => msg,
+            Ok(msgs) => msgs,
             Err(e) => {
                 log::error!("Error parsing markets: {e}");
-                None
+                vec![]
             }
         }
     }
 
     /// Parses candles from channel data message.
-    fn parse_candles_from_data(&self, data: &DydxWsChannelDataMsg) -> Option<NautilusWsMessage> {
+    fn parse_candles_from_data(&self, data: &DydxWsChannelDataMsg) -> Vec<NautilusWsMessage> {
         match self.parse_candles(data) {
-            Ok(msg) => msg,
+            Ok(msgs) => msgs,
             Err(e) => {
                 log::error!("Error parsing candles: {e}");
-                None
+                vec![]
             }
         }
     }
@@ -618,12 +642,12 @@ impl FeedHandler {
     fn parse_parent_subaccounts_from_data(
         &self,
         data: &DydxWsChannelDataMsg,
-    ) -> Option<NautilusWsMessage> {
+    ) -> Vec<NautilusWsMessage> {
         match self.parse_subaccounts(data) {
-            Ok(msg) => msg,
+            Ok(msgs) => msgs,
             Err(e) => {
                 log::error!("Error parsing parent subaccounts: {e}");
-                None
+                vec![]
             }
         }
     }
@@ -731,17 +755,17 @@ impl FeedHandler {
     pub async fn handle_message(
         &self,
         msg: DydxWsMessage,
-    ) -> DydxWsResult<Option<NautilusWsMessage>> {
+    ) -> DydxWsResult<Vec<NautilusWsMessage>> {
         match msg {
             DydxWsMessage::Connected(_) => {
                 log::info!("dYdX WebSocket connected");
-                Ok(None)
+                Ok(vec![])
             }
             DydxWsMessage::Subscribed(sub) => {
                 log::debug!("Subscribed to {} (id: {:?})", sub.channel, sub.id);
                 let topic = self.topic_from_msg(&sub.channel, &sub.id);
                 self.subscriptions.confirm_subscribe(&topic);
-                Ok(None)
+                Ok(vec![])
             }
             DydxWsMessage::SubaccountsSubscribed(msg) => {
                 log::debug!("Subaccounts subscribed with initial state (fallback path)");
@@ -753,21 +777,21 @@ impl FeedHandler {
                 log::debug!("Unsubscribed from {} (id: {:?})", unsub.channel, unsub.id);
                 let topic = self.topic_from_msg(&unsub.channel, &unsub.id);
                 self.subscriptions.confirm_unsubscribe(&topic);
-                Ok(None)
+                Ok(vec![])
             }
-            DydxWsMessage::Error(err) => Ok(Some(NautilusWsMessage::Error(err))),
+            DydxWsMessage::Error(err) => Ok(vec![NautilusWsMessage::Error(err)]),
             DydxWsMessage::Reconnected => {
                 if let Err(e) = self.replay_subscriptions().await {
                     log::error!("Failed to replay subscriptions after reconnect message: {e}");
                 }
-                Ok(Some(NautilusWsMessage::Reconnected))
+                Ok(vec![NautilusWsMessage::Reconnected])
             }
-            DydxWsMessage::Pong => Ok(None),
-            DydxWsMessage::Raw(_) => Ok(None),
+            DydxWsMessage::Pong => Ok(vec![]),
+            DydxWsMessage::Raw(_) => Ok(vec![]),
         }
     }
 
-    fn parse_trades(&self, data: &DydxWsChannelDataMsg) -> DydxWsResult<Option<NautilusWsMessage>> {
+    fn parse_trades(&self, data: &DydxWsChannelDataMsg) -> DydxWsResult<Vec<NautilusWsMessage>> {
         let symbol = data
             .id
             .as_ref()
@@ -816,9 +840,9 @@ impl FeedHandler {
         }
 
         if ticks.is_empty() {
-            Ok(None)
+            Ok(vec![])
         } else {
-            Ok(Some(NautilusWsMessage::Data(ticks)))
+            Ok(vec![NautilusWsMessage::Data(ticks)])
         }
     }
 
@@ -826,7 +850,7 @@ impl FeedHandler {
         &self,
         data: &DydxWsChannelDataMsg,
         is_snapshot: bool,
-    ) -> DydxWsResult<Option<NautilusWsMessage>> {
+    ) -> DydxWsResult<Vec<NautilusWsMessage>> {
         let symbol = data
             .id
             .as_ref()
@@ -851,7 +875,7 @@ impl FeedHandler {
                 ts_init,
             )?;
 
-            Ok(Some(NautilusWsMessage::Deltas(Box::new(deltas))))
+            Ok(vec![NautilusWsMessage::Deltas(Box::new(deltas))])
         } else {
             let contents: DydxOrderbookContents = serde_json::from_value(data.contents.clone())
                 .map_err(|e| {
@@ -866,14 +890,14 @@ impl FeedHandler {
                 ts_init,
             )?;
 
-            Ok(Some(NautilusWsMessage::Deltas(Box::new(deltas))))
+            Ok(vec![NautilusWsMessage::Deltas(Box::new(deltas))])
         }
     }
 
     fn parse_orderbook_batch(
         &self,
         data: &DydxWsChannelBatchDataMsg,
-    ) -> DydxWsResult<Option<NautilusWsMessage>> {
+    ) -> DydxWsResult<Vec<NautilusWsMessage>> {
         let symbol = data
             .id
             .as_ref()
@@ -903,7 +927,7 @@ impl FeedHandler {
         }
 
         let deltas = OrderBookDeltas::new(instrument_id, all_deltas);
-        Ok(Some(NautilusWsMessage::Deltas(Box::new(deltas))))
+        Ok(vec![NautilusWsMessage::Deltas(Box::new(deltas))])
     }
 
     fn parse_orderbook_snapshot(
@@ -1111,7 +1135,7 @@ impl FeedHandler {
     fn parse_candles(
         &self,
         data: &DydxWsChannelDataMsg,
-    ) -> DydxWsResult<Option<NautilusWsMessage>> {
+    ) -> DydxWsResult<Vec<NautilusWsMessage>> {
         let topic = data
             .id
             .as_ref()
@@ -1172,13 +1196,13 @@ impl FeedHandler {
             ts_init,
         );
 
-        Ok(Some(NautilusWsMessage::Data(vec![Data::Bar(bar)])))
+        Ok(vec![NautilusWsMessage::Data(vec![Data::Bar(bar)])])
     }
 
     fn parse_markets(
         &self,
         data: &DydxWsChannelDataMsg,
-    ) -> DydxWsResult<Option<NautilusWsMessage>> {
+    ) -> DydxWsResult<Vec<NautilusWsMessage>> {
         let contents: DydxMarketsContents = serde_json::from_value(data.contents.clone())
             .map_err(|e| DydxWsError::Parse(format!("Failed to parse markets contents: {e}")))?;
 
@@ -1189,16 +1213,16 @@ impl FeedHandler {
                 "Forwarding oracle price updates for {} markets to execution client",
                 oracle_prices.len()
             );
-            return Ok(Some(NautilusWsMessage::OraclePrices(oracle_prices)));
+            return Ok(vec![NautilusWsMessage::OraclePrices(oracle_prices)]);
         }
 
-        Ok(None)
+        Ok(vec![])
     }
 
     fn parse_subaccounts(
         &self,
         data: &DydxWsChannelDataMsg,
-    ) -> DydxWsResult<Option<NautilusWsMessage>> {
+    ) -> DydxWsResult<Vec<NautilusWsMessage>> {
         log::debug!(
             "Parsing subaccounts channel data (msg_type={:?})",
             data.msg_type
@@ -1228,12 +1252,12 @@ impl FeedHandler {
                 contents,
             };
 
-            return Ok(Some(NautilusWsMessage::SubaccountsChannelData(Box::new(
+            return Ok(vec![NautilusWsMessage::SubaccountsChannelData(Box::new(
                 channel_data,
-            ))));
+            ))]);
         }
 
-        Ok(None)
+        Ok(vec![])
     }
 
     fn parse_instrument_id(&self, symbol: &str) -> DydxWsResult<InstrumentId> {
