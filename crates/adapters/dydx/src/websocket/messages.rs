@@ -50,13 +50,15 @@ pub struct DydxSubscription {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DydxWsSubscriptionMsg {
     /// The message type ("subscribed" or "unsubscribed").
-    #[serde(rename = "type")]
+    /// Note: This field may be consumed by serde's tag attribute when nested in tagged enums.
+    #[serde(rename = "type", default)]
     pub msg_type: DydxWsMessageType,
     /// The connection ID.
     pub connection_id: String,
     /// The message sequence number.
     pub message_id: u64,
-    /// The channel name.
+    /// The channel name (may be consumed by outer serde tag).
+    #[serde(default)]
     pub channel: DydxWsChannel,
     /// Optional channel-specific identifier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
