@@ -729,14 +729,13 @@ class BetfairExecutionClient(LiveExecutionClient):
         except Exception as e:
             if isinstance(e, BetfairError):
                 await self.on_api_exception(error=e)
-            self._log.warning(f"Submit failed: {e}")
 
             self._customer_order_ref_remove_for_client_id(client_order_id)
             self.generate_order_rejected(
                 command.strategy_id,
                 command.instrument_id,
                 client_order_id,
-                "client error",
+                str(e),
                 self._clock.timestamp_ns(),
             )
             return
@@ -881,13 +880,13 @@ class BetfairExecutionClient(LiveExecutionClient):
             self._pending_update_keys.discard(pending_key)
             if isinstance(e, BetfairError):
                 await self.on_api_exception(error=e)
-            self._log.warning(f"Modify failed (px): {e}")
+
             self.generate_order_modify_rejected(
                 command.strategy_id,
                 command.instrument_id,
                 command.client_order_id,
                 existing_order.venue_order_id,
-                "client error",
+                str(e),
                 self._clock.timestamp_ns(),
             )
             return
@@ -983,13 +982,13 @@ class BetfairExecutionClient(LiveExecutionClient):
         except Exception as e:
             if isinstance(e, BetfairError):
                 await self.on_api_exception(error=e)
-            self._log.warning(f"Modify failed (qty): {e}")
+
             self.generate_order_modify_rejected(
                 command.strategy_id,
                 command.instrument_id,
                 command.client_order_id,
                 existing_order.venue_order_id,
-                "client error",
+                str(e),
                 self._clock.timestamp_ns(),
             )
             return
@@ -1053,13 +1052,13 @@ class BetfairExecutionClient(LiveExecutionClient):
         except Exception as e:
             if isinstance(e, BetfairError):
                 await self.on_api_exception(error=e)
-            self._log.warning(f"Cancel failed: {e}")
+
             self.generate_order_cancel_rejected(
                 command.strategy_id,
                 command.instrument_id,
                 command.client_order_id,
                 command.venue_order_id,
-                "client error",
+                str(e),
                 self._clock.timestamp_ns(),
             )
             return

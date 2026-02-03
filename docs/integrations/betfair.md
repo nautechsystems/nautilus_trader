@@ -26,14 +26,21 @@ You can find live example scripts [here](https://github.com/nautechsystems/nauti
 
 ## Betfair documentation
 
-For API details and troubleshooting, see the official [Betfair Developer Documentation](https://developer.betfair.com/en/get-started/).
+Betfair provides documentation for developers:
+
+- [Betfair Developer Portal](https://developer.betfair.com/): Main entry point for API access and documentation.
+- [Exchange API Guide](https://developer.betfair.com/exchange-api/): Overview of the Betting, Accounts, and Streaming APIs.
 
 ## Application keys
 
-Betfair requires an Application Key to authenticate API requests. After registering and funding your account, obtain your key using the [API-NG Developer AppKeys Tool](https://apps.betfair.com/visualisers/api-ng-account-operations/).
+Betfair requires an Application Key to authenticate API requests. After registering and funding your account,
+obtain your key using the [API-NG Developer AppKeys Tool](https://apps.betfair.com/visualisers/api-ng-account-operations/).
+
+Two App Keys are assigned per account: a **Live** key (requires a one-time activation fee) and a
+**Delayed** key for development and testing.
 
 :::info
-See also the [Betfair Getting Started - Application Keys](https://betfair-developer-docs.atlassian.net/wiki/spaces/1smk3cen4v3lu3yomq5qye0ni/pages/2687105/Application+Keys) guide.
+See the [Application Keys](https://betfair-developer-docs.atlassian.net/wiki/spaces/1smk3cen4v3lu3yomq5qye0ni/pages/2687105/Application+Keys) documentation for detailed setup instructions.
 :::
 
 ## API credentials
@@ -49,6 +56,53 @@ export BETFAIR_CERTS_DIR=<path_to_certificate_dir>
 
 :::tip
 We recommend using environment variables to manage your credentials.
+:::
+
+## SSL Certificates
+
+Betfair recommends [non-interactive (bot) login](https://betfair-developer-docs.atlassian.net/wiki/spaces/1smk3cen4v3lu3yomq5qye0ni/pages/2687915/Non-Interactive+bot+login)
+with SSL certificates for automated trading systems. The `certs_dir` configuration is optional,
+but certificates are recommended for production deployments.
+
+### Generating certificates
+
+Create a 2048-bit RSA certificate using OpenSSL:
+
+```bash
+# Generate private key and certificate signing request
+openssl genrsa -out client-2048.key 2048
+openssl req -new -key client-2048.key -out client-2048.csr
+
+# Self-sign the certificate (valid for 365 days)
+openssl x509 -req -days 365 -in client-2048.csr -signkey client-2048.key -out client-2048.crt
+```
+
+### Uploading to Betfair
+
+Before using the certificate, attach it to your Betfair account:
+
+1. Navigate to [My Betfair Account Security](https://myaccount.betfair.com/accountdetails/mysecurity?showAPI=1).
+2. Scroll to **Automated Betting Program Access** and click **Edit**.
+3. Upload your `client-2048.crt` file.
+
+### Directory structure
+
+Place your certificate files in a directory and set `BETFAIR_CERTS_DIR` to that path:
+
+```
+/path/to/certs/
+├── client-2048.crt
+└── client-2048.key
+```
+
+:::info
+SSL certificates are used for the Exchange Streaming API connection. The REST API uses
+username/password authentication with your Application Key.
+:::
+
+:::warning
+Enabling 2-Step Authentication on the Betfair website does not affect API access.
+Certificate-based login remains functional regardless of 2FA settings.
 :::
 
 ## Overview
@@ -84,12 +138,18 @@ Betfair operates as a betting exchange with unique characteristics compared to t
 
 ### Time in force options
 
-| Time in force | Supported | Notes                                  |
-|---------------|-----------|----------------------------------------|
-| `GTC`         | -         | Betting exchange uses different model. |
-| `GTD`         | -         | Betting exchange uses different model. |
-| `FOK`         | -         | Betting exchange uses different model. |
-| `IOC`         | -         | Betting exchange uses different model. |
+| Time in force | Supported | Notes                                      |
+|---------------|-----------|--------------------------------------------|
+| `GTC`         | ✓         | Maps to Betfair `PERSIST` persistence.     |
+| `GTD`         | -         | *Not supported*.                           |
+| `DAY`         | ✓         | Maps to Betfair `LAPSE` persistence.       |
+| `FOK`         | ✓         | Maps to Betfair `FILL_OR_KILL`.            |
+| `IOC`         | ✓         | Maps to `FILL_OR_KILL` with partial fills. |
+
+:::note
+Betfair uses a persistence model rather than traditional time-in-force. The adapter maps `FOK` to
+Betfair's `FILL_OR_KILL`, while `IOC` uses `FILL_OR_KILL` with `min_fill_size=0` to allow partial fills.
+:::
 
 ### Advanced order features
 
@@ -134,6 +194,39 @@ Betfair operates as a betting exchange with unique characteristics compared to t
 | Bracket orders      | -         | *Not supported*.                        |
 | Conditional orders  | -         | Basic bet conditions only.              |
 
+## Tick scheme and pricing
+
+Betfair uses a tiered tick scheme with varying increments across price ranges:
+
+| Price Range   | Tick Size |
+|---------------|-----------|
+| 1.01 - 2.00   | 0.01      |
+| 2.00 - 3.00   | 0.02      |
+| 3.00 - 4.00   | 0.05      |
+| 4.00 - 6.00   | 0.10      |
+| 6.00 - 10.00  | 0.20      |
+| 10.00 - 20.00 | 0.50      |
+| 20.00 - 30.00 | 1.00      |
+| 30.00 - 50.00 | 2.00      |
+| 50.00 - 100.00 | 5.00     |
+| 100.00 - 1000.00 | 10.00  |
+
+The minimum price is 1.01 and the maximum is 1000.00.
+
+## Order modification
+
+Order modification on Betfair has specific constraints:
+
+- **Price and size cannot be changed atomically** - these require separate operations.
+- **Price modification** uses `ReplaceOrders` (cancel + new order at new price).
+- **Size reduction** uses `CancelOrders` with a `size_reduction` parameter.
+- **Size increase** is not supported - submit a new order instead.
+
+:::warning
+A replace operation generates both a cancel event for the original order and an accepted event
+for the replacement order. The adapter tracks pending replacements to suppress synthetic cancel events.
+:::
+
 ## Order stream fill handling
 
 The execution client processes order updates from the Betfair Exchange Streaming API.
@@ -174,11 +267,23 @@ For multi-node setups sharing a Betfair account, set both `stream_market_ids_fil
 and `ignore_external_orders=True` to avoid warnings about orders managed by other nodes.
 :::
 
+### Fill handling
+
+The adapter handles several edge cases when processing fills from the stream:
+
+- **Incremental fills**: Betfair reports cumulative matched sizes. The adapter calculates incremental
+  fills by tracking the last known filled quantity per order.
+- **Overfill protection**: Fills that would exceed the order quantity are rejected.
+- **Deduplication**: A cache of published trade IDs prevents duplicate fill events from late messages
+  or stream reconnection replays.
+- **Race conditions**: When stream fills arrive before the HTTP order response, the adapter caches
+  the venue order ID immediately to ensure correct order matching.
+
 ## Rate limiting
 
 The adapter enforces a default rate limit of 5 requests/second across all endpoints, aligned with
-Betfair's best practice recommendation. The adapter handles `TOO_MANY_REQUESTS` errors with
-automatic retry using a 1-second delay.
+Betfair's best practice recommendation. Order status and fill report queries retry once on
+`TOO_MANY_REQUESTS` errors after a 1-second delay; order operations reject with the error message.
 
 Betfair's actual API limits are more nuanced:
 
@@ -189,69 +294,9 @@ Betfair's actual API limits are more nuanced:
 | Best practice            | 5 requests/s         | Recommended for `listMarketBook` per market.         |
 
 :::info
-For details on Betfair rate limits, see the [official documentation](https://support.developer.betfair.com/hc/en-us/articles/360000406111).
+For details on rate limits, see [Why am I receiving the TOO_MANY_REQUESTS error?](https://support.developer.betfair.com/hc/en-us/articles/360000406111)
+and [Market Data Request Limits](https://docs.developer.betfair.com/display/1smk3cen4v3lu3yomq5qye0ni/Market+Data+Request+Limits).
 :::
-
-## Configuration
-
-### Data client configuration options
-
-| Option                    | Default   | Description |
-|---------------------------|-----------|-------------|
-| `account_currency`        | Required  | Betfair account currency for data and price feeds. |
-| `username`                | `None`    | Betfair account username; taken from environment when omitted. |
-| `password`                | `None`    | Betfair account password; taken from environment when omitted. |
-| `app_key`                 | `None`    | Betfair application key used for API authentication. |
-| `certs_dir`               | `None`    | Directory containing Betfair SSL certificates for login. |
-| `instrument_config`       | `None`    | Optional `BetfairInstrumentProviderConfig` to scope available markets. |
-| `subscription_delay_secs` | `3`       | Delay (seconds) before initial market subscription request is sent. |
-| `keep_alive_secs`         | `36,000`  | Keep-alive interval (seconds) for the Betfair session. |
-| `stream_conflate_ms`      | `None`    | Explicit stream conflation interval in milliseconds (`0` disables conflation). |
-| `proxy_url`               | `None`    | Optional proxy URL for HTTP requests. |
-
-### Execution client configuration options
-
-| Option                       | Default  | Description |
-|------------------------------|----------|-------------|
-| `account_currency`           | Required | Betfair account currency for order placement and balances. |
-| `username`                   | `None`   | Betfair account username; taken from environment when omitted. |
-| `password`                   | `None`   | Betfair account password; taken from environment when omitted. |
-| `app_key`                    | `None`   | Betfair application key used for API authentication. |
-| `certs_dir`                  | `None`   | Directory containing Betfair SSL certificates for login. |
-| `instrument_config`          | `None`   | Optional `BetfairInstrumentProviderConfig` to scope reconciliation. |
-| `calculate_account_state`    | `True`   | Calculate account state locally from events when `True`. |
-| `request_account_state_secs` | `300`    | Interval (seconds) to poll Betfair for account state (`0` disables). |
-| `reconcile_market_ids_only`  | `False`  | When `True`, reconciliation only covers `instrument_config.market_ids` (no effect if unset). |
-| `stream_market_ids_filter`   | `None`   | List of market IDs to process from stream; others are silently skipped. |
-| `ignore_external_orders`     | `False`  | When `True`, ignore stream orders missing from the local cache. |
-| `proxy_url`                  | `None`   | Optional proxy URL for HTTP requests. |
-
-:::warning
-If you set `stream_market_ids_filter`, ensure it includes all markets you trade. Orders placed on
-markets excluded from this filter will miss live fill and cancel updates from the stream.
-:::
-
-Here is a minimal example showing how to configure a live `TradingNode` with Betfair clients:
-
-```python
-from nautilus_trader.adapters.betfair import BETFAIR
-from nautilus_trader.adapters.betfair import BetfairLiveDataClientFactory
-from nautilus_trader.adapters.betfair import BetfairLiveExecClientFactory
-from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.live.node import TradingNode
-
-# Configure Betfair data and execution clients (using AUD account currency)
-config = TradingNodeConfig(
-    data_clients={BETFAIR: {"account_currency": "AUD"}},
-    exec_clients={BETFAIR: {"account_currency": "AUD"}},
-)
-
-# Build the TradingNode with Betfair adapter factories
-node = TradingNode(config)
-node.add_data_client_factory(BETFAIR, BetfairLiveDataClientFactory)
-node.add_exec_client_factory(BETFAIR, BetfairLiveExecClientFactory)
-node.build()
-```
 
 ## Custom data types
 
@@ -355,6 +400,97 @@ from nautilus_trader.adapters.betfair.parsing.core import parse_betfair_rcm_file
 for data in parse_betfair_rcm_file("path/to/rcm_data.json"):
     if isinstance(data, BetfairRaceRunnerData):
         print(f"Runner {data.selection_id} at {data.latitude}, {data.longitude}")
+```
+
+## Configuration
+
+### Data client configuration options
+
+| Option                    | Default   | Description |
+|---------------------------|-----------|-------------|
+| `account_currency`        | Required  | Betfair account currency for data and price feeds. |
+| `username`                | `None`    | Betfair account username; taken from environment when omitted. |
+| `password`                | `None`    | Betfair account password; taken from environment when omitted. |
+| `app_key`                 | `None`    | Betfair application key used for API authentication. |
+| `certs_dir`               | `None`    | Directory containing Betfair SSL certificates for login. |
+| `instrument_config`       | `None`    | Optional `BetfairInstrumentProviderConfig` to scope available markets. |
+| `subscription_delay_secs` | `3`       | Delay (seconds) before initial market subscription request is sent. |
+| `keep_alive_secs`         | `36,000`  | Keep-alive interval (seconds) for the Betfair session. |
+| `stream_conflate_ms`      | `None`    | Explicit stream conflation interval in milliseconds (`0` disables conflation). |
+| `proxy_url`               | `None`    | Optional proxy URL for HTTP requests. |
+
+:::warning
+When `stream_conflate_ms` is `None`, Betfair applies its default conflation behavior (typically enabled).
+Set `stream_conflate_ms=0` explicitly to guarantee no conflation and receive every price update.
+:::
+
+### Execution client configuration options
+
+| Option                       | Default  | Description |
+|------------------------------|----------|-------------|
+| `account_currency`           | Required | Betfair account currency for order placement and balances. |
+| `username`                   | `None`   | Betfair account username; taken from environment when omitted. |
+| `password`                   | `None`   | Betfair account password; taken from environment when omitted. |
+| `app_key`                    | `None`   | Betfair application key used for API authentication. |
+| `certs_dir`                  | `None`   | Directory containing Betfair SSL certificates for login. |
+| `instrument_config`          | `None`   | Optional `BetfairInstrumentProviderConfig` to scope reconciliation. |
+| `calculate_account_state`    | `True`   | Calculate account state locally from events when `True`. |
+| `request_account_state_secs` | `300`    | Interval (seconds) to poll Betfair for account state (`0` disables). |
+| `reconcile_market_ids_only`  | `False`  | When `True`, reconciliation only covers `instrument_config.market_ids` (no effect if unset). |
+| `stream_market_ids_filter`   | `None`   | List of market IDs to process from stream; others are silently skipped. |
+| `ignore_external_orders`     | `False`  | When `True`, ignore stream orders missing from the local cache. |
+| `proxy_url`                  | `None`   | Optional proxy URL for HTTP requests. |
+
+:::warning
+If you set `stream_market_ids_filter`, ensure it includes all markets you trade. Orders placed on
+markets excluded from this filter will miss live fill and cancel updates from the stream.
+:::
+
+## Session management
+
+Betfair sessions typically expire every 12-24 hours. The adapter automatically handles session
+reconnection when `NO_SESSION` or `INVALID_SESSION_INFORMATION` errors occur:
+
+- The HTTP client reconnects and obtains a new session token.
+- The streaming client re-authenticates and resubscribes to markets.
+- The keep-alive mechanism (`keep_alive_secs`, default 10 hours) proactively extends sessions.
+
+:::info
+Session errors during account state polling or keep-alive trigger automatic reconnection.
+No manual intervention is required for normal session expiry.
+:::
+
+## Multi-node deployment
+
+When multiple trading nodes share a single Betfair account across different markets, configure
+each node to avoid interference:
+
+1. Set `stream_market_ids_filter` to include only that node's markets.
+2. Set `ignore_external_orders=True` to suppress warnings about orders from other nodes.
+3. Set `reconcile_market_ids_only=True` to limit reconciliation scope.
+
+This prevents warning spam and ensures each node processes only its own orders and fills.
+
+Here is a minimal example showing how to configure a live `TradingNode` with Betfair clients:
+
+```python
+from nautilus_trader.adapters.betfair import BETFAIR
+from nautilus_trader.adapters.betfair import BetfairLiveDataClientFactory
+from nautilus_trader.adapters.betfair import BetfairLiveExecClientFactory
+from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.live.node import TradingNode
+
+# Configure Betfair data and execution clients (using AUD account currency)
+config = TradingNodeConfig(
+    data_clients={BETFAIR: {"account_currency": "AUD"}},
+    exec_clients={BETFAIR: {"account_currency": "AUD"}},
+)
+
+# Build the TradingNode with Betfair adapter factories
+node = TradingNode(config)
+node.add_data_client_factory(BETFAIR, BetfairLiveDataClientFactory)
+node.add_exec_client_factory(BETFAIR, BetfairLiveExecClientFactory)
+node.build()
 ```
 
 ## Contributing
