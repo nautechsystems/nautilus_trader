@@ -208,25 +208,29 @@ impl BitmexDataClient {
                 let mut guard = instruments.write().expect("instrument cache lock poisoned");
                 for instrument in insts {
                     let instrument_id = instrument.id();
-                    guard.insert(instrument_id, instrument);
+                    guard.insert(instrument_id, instrument.clone());
+                    if let Err(e) = sender.send(DataEvent::Instrument(instrument)) {
+                        log::error!("Failed to send instrument event: {e}");
+                    }
                 }
-                // TODO: Send instruments to data engine
-                let _ = sender;
             }
             NautilusWsMessage::FundingRateUpdates(updates) => {
                 for update in updates {
                     log::debug!(
-                        "Funding rate update received (not forwarded): instrument={}, rate={}",
+                        "Funding rate update: instrument={}, rate={}",
                         update.instrument_id,
                         update.rate,
                     );
+                    if let Err(e) = sender.send(DataEvent::FundingRate(update)) {
+                        log::error!("Failed to emit funding rate event: {e}");
+                    }
                 }
             }
             NautilusWsMessage::OrderStatusReports(_)
             | NautilusWsMessage::OrderUpdated(_)
             | NautilusWsMessage::FillReports(_)
-            | NautilusWsMessage::PositionStatusReport(_)
-            | NautilusWsMessage::AccountState(_) => {
+            | NautilusWsMessage::PositionStatusReports(_)
+            | NautilusWsMessage::AccountStates(_) => {
                 log::debug!("Ignoring trading message on data client");
             }
             NautilusWsMessage::Reconnected => {
@@ -472,6 +476,11 @@ impl DataClient for BitmexDataClient {
         let instrument_id = cmd.instrument_id;
         let depth = cmd.depth.map_or(0, |d| d.get());
         let channel = if depth > 0 && depth <= 25 {
+            if depth != 25 {
+                log::info!(
+                    "BitMEX only supports depth 25 for L2 deltas, using L2_25 for requested depth {depth}"
+                );
+            }
             BitmexBookChannel::OrderBookL2_25
         } else {
             BitmexBookChannel::OrderBookL2
@@ -760,12 +769,12 @@ impl DataClient for BitmexDataClient {
     }
 
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
-        let venue = request.venue.unwrap_or_else(|| self.venue());
         if let Some(req_venue) = request.venue
             && req_venue != self.venue()
         {
             log::warn!("Ignoring mismatched venue in instruments request: {req_venue}");
         }
+        let venue = self.venue();
 
         let http = self.http_client.clone();
         let instruments_cache = Arc::clone(&self.instruments);

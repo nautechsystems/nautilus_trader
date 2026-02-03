@@ -91,6 +91,7 @@ pub struct BitmexInstrument {
     pub publish_time: Option<DateTime<Utc>>,
     pub max_order_qty: Option<f64>,
     pub max_price: Option<f64>,
+    pub min_price: Option<f64>,
     pub lot_size: Option<f64>,
     pub tick_size: f64,
     pub multiplier: f64,

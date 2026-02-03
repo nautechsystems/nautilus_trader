@@ -545,6 +545,21 @@ impl BitmexHttpClient {
         })
     }
 
+    #[pyo3(name = "get_account_number")]
+    fn py_get_account_number<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let margins = client.get_all_margins().await.map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                // Return the account number from any margin (all have the same account)
+                let account = margins.first().map(|m| m.account);
+                account.into_py_any(py)
+            })
+        })
+    }
+
     #[pyo3(name = "request_account_state")]
     fn py_request_account_state<'py>(
         &self,

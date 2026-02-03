@@ -183,9 +183,11 @@ impl BitmexWebSocketClient {
                                 }
                             }
                         }
-                        NautilusWsMessage::PositionStatusReport(report) => {
-                            if let Ok(py_obj) = report.into_py_any(py) {
-                                call_python(py, &callback, py_obj);
+                        NautilusWsMessage::PositionStatusReports(reports) => {
+                            for report in reports {
+                                if let Ok(py_obj) = report.into_py_any(py) {
+                                    call_python(py, &callback, py_obj);
+                                }
                             }
                         }
                         NautilusWsMessage::FundingRateUpdates(updates) => {
@@ -195,13 +197,15 @@ impl BitmexWebSocketClient {
                                 }
                             }
                         }
-                        NautilusWsMessage::AccountState(account_state) => {
-                            if let Ok(py_obj) = account_state.into_py_any(py) {
-                                call_python(py, &callback, py_obj);
+                        NautilusWsMessage::AccountStates(states) => {
+                            for state in states {
+                                if let Ok(py_obj) = state.into_py_any(py) {
+                                    call_python(py, &callback, py_obj);
+                                }
                             }
                         }
                         NautilusWsMessage::OrderUpdated(event) => {
-                            if let Ok(py_obj) = event.into_py_any(py) {
+                            if let Ok(py_obj) = (*event).into_py_any(py) {
                                 call_python(py, &callback, py_obj);
                             }
                         }

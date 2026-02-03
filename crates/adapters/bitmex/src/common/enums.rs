@@ -259,10 +259,14 @@ impl From<BitmexOrderType> for OrderType {
 pub enum BitmexOrderStatus {
     /// Order has been placed but not yet processed.
     New,
+    /// Order is awaiting confirmation.
+    PendingNew,
     /// Order has been partially filled.
     PartiallyFilled,
     /// Order has been completely filled.
     Filled,
+    /// Order modification is in progress.
+    PendingReplace,
     /// Order cancellation is pending.
     PendingCancel,
     /// Order has been canceled by user or system.
@@ -277,8 +281,10 @@ impl From<BitmexOrderStatus> for OrderStatus {
     fn from(value: BitmexOrderStatus) -> Self {
         match value {
             BitmexOrderStatus::New => Self::Accepted,
+            BitmexOrderStatus::PendingNew => Self::Submitted,
             BitmexOrderStatus::PartiallyFilled => Self::PartiallyFilled,
             BitmexOrderStatus::Filled => Self::Filled,
+            BitmexOrderStatus::PendingReplace => Self::PendingUpdate,
             BitmexOrderStatus::PendingCancel => Self::PendingCancel,
             BitmexOrderStatus::Canceled => Self::Canceled,
             BitmexOrderStatus::Rejected => Self::Rejected,
@@ -483,19 +489,7 @@ impl BitmexExecInstruction {
 }
 
 /// Represents the type of execution that generated a trade.
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Display,
-    PartialEq,
-    Eq,
-    AsRefStr,
-    EnumIter,
-    EnumString,
-    Serialize,
-    Deserialize,
-)]
+#[derive(Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize)]
 pub enum BitmexExecType {
     /// New order placed.
     New,
@@ -531,6 +525,39 @@ pub enum BitmexExecType {
     TrialFill,
     /// Stop/trigger order activated by system.
     TriggeredOrActivatedBySystem,
+    /// Unknown execution type (not yet supported).
+    #[strum(disabled)]
+    Unknown(String),
+}
+
+impl<'de> Deserialize<'de> for BitmexExecType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+
+        match s.as_str() {
+            "New" => Ok(Self::New),
+            "Trade" => Ok(Self::Trade),
+            "Canceled" => Ok(Self::Canceled),
+            "CancelReject" => Ok(Self::CancelReject),
+            "Replaced" => Ok(Self::Replaced),
+            "Rejected" => Ok(Self::Rejected),
+            "AmendReject" => Ok(Self::AmendReject),
+            "Funding" => Ok(Self::Funding),
+            "Settlement" => Ok(Self::Settlement),
+            "Suspended" => Ok(Self::Suspended),
+            "Released" => Ok(Self::Released),
+            "Insurance" => Ok(Self::Insurance),
+            "Rebalance" => Ok(Self::Rebalance),
+            "Liquidation" => Ok(Self::Liquidation),
+            "Bankruptcy" => Ok(Self::Bankruptcy),
+            "TrialFill" => Ok(Self::TrialFill),
+            "TriggeredOrActivatedBySystem" => Ok(Self::TriggeredOrActivatedBySystem),
+            other => Ok(Self::Unknown(other.to_string())),
+        }
+    }
 }
 
 /// Indicates whether the execution was maker or taker.
@@ -817,6 +844,8 @@ pub enum BitmexMarkMethod {
     FairPriceStox,
     /// Last price.
     LastPrice,
+    /// Last price for pre-launch instruments.
+    LastPricePreLaunch,
     /// Composite index.
     CompositeIndex,
 }

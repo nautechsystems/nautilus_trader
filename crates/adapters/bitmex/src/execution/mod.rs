@@ -41,7 +41,7 @@ use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType},
     events::OrderEventAny,
-    identifiers::{AccountId, ClientId, Venue, VenueOrderId},
+    identifiers::{AccountId, ClientId, ClientOrderId, Venue, VenueOrderId},
     instruments::Instrument,
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -189,10 +189,14 @@ impl BitmexExecutionClient {
             }
         });
 
-        self.pending_tasks
+        let mut guard = self
+            .pending_tasks
             .lock()
-            .expect("pending task lock poisoned")
-            .push(handle);
+            .expect("pending task lock poisoned");
+
+        // Remove completed tasks to prevent unbounded growth
+        guard.retain(|h| !h.is_finished());
+        guard.push(handle);
     }
 
     fn abort_pending_tasks(&self) {
@@ -358,11 +362,12 @@ impl ExecutionClient for BitmexExecutionClient {
 
         self.ensure_instruments_initialized_async().await?;
 
-        self._submitter.start().await?;
-        self._canceller.start().await?;
-
         self.ws_client.connect().await?;
         self.ws_client.wait_until_active(10.0).await?;
+
+        // Start submitter/canceller after WS connection succeeds
+        self._submitter.start().await?;
+        self._canceller.start().await?;
 
         self.ws_client.subscribe_orders().await?;
         self.ws_client.subscribe_executions().await?;
@@ -591,12 +596,24 @@ impl ExecutionClient for BitmexExecutionClient {
             match result {
                 Ok(report) => emitter.send_order_status_report(report),
                 Err(e) => {
+                    let error_msg = e.to_string();
+
+                    // If all transports returned "Duplicate clOrdID", the order likely exists
+                    // but the success response was lost. Wait for WebSocket confirmation.
+                    if error_msg.contains("IDEMPOTENT_DUPLICATE") {
+                        log::warn!(
+                            "Order {client_order_id} may exist (duplicate clOrdID from all transports), \
+                             awaiting WebSocket confirmation",
+                        );
+                        return Ok(());
+                    }
+
                     let ts_event = clock.get_time_ns();
                     emitter.emit_order_rejected_event(
                         strategy_id,
                         instrument_id,
                         client_order_id,
-                        &format!("submit-order-error: {e}"),
+                        &format!("submit-order-error: {error_msg}"),
                         ts_event,
                         post_only,
                     );
@@ -700,15 +717,34 @@ impl ExecutionClient for BitmexExecutionClient {
         let canceller = self._canceller.clone_for_async();
         let emitter = self.emitter.clone();
         let instrument_id = cmd.instrument_id;
+
+        let client_ids: Vec<ClientOrderId> = cmd
+            .cancels
+            .iter()
+            .map(|cancel| cancel.client_order_id)
+            .collect();
+
         let venue_ids: Vec<VenueOrderId> = cmd
             .cancels
             .iter()
             .filter_map(|cancel| cancel.venue_order_id)
             .collect();
 
+        let client_ids_opt = if client_ids.is_empty() {
+            None
+        } else {
+            Some(client_ids)
+        };
+
+        let venue_ids_opt = if venue_ids.is_empty() {
+            None
+        } else {
+            Some(venue_ids)
+        };
+
         self.spawn_task("batch_cancel_orders", async move {
             match canceller
-                .broadcast_batch_cancel(instrument_id, None, Some(venue_ids))
+                .broadcast_batch_cancel(instrument_id, client_ids_opt, venue_ids_opt)
                 .await
             {
                 Ok(reports) => {
@@ -738,14 +774,18 @@ fn dispatch_ws_message(message: NautilusWsMessage, emitter: &ExecutionEventEmitt
                 emitter.send_fill_report(report);
             }
         }
-        NautilusWsMessage::PositionStatusReport(report) => {
-            emitter.send_position_report(report);
+        NautilusWsMessage::PositionStatusReports(reports) => {
+            for report in reports {
+                emitter.send_position_report(report);
+            }
         }
-        NautilusWsMessage::AccountState(state) => {
-            emitter.send_account_state(state);
+        NautilusWsMessage::AccountStates(states) => {
+            for state in states {
+                emitter.send_account_state(state);
+            }
         }
         NautilusWsMessage::OrderUpdated(event) => {
-            emitter.send_order_event(OrderEventAny::Updated(event));
+            emitter.send_order_event(OrderEventAny::Updated(*event));
         }
         NautilusWsMessage::Data(_)
         | NautilusWsMessage::Instruments(_)

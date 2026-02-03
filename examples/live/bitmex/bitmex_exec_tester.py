@@ -89,7 +89,7 @@ config_node = TradingNodeConfig(
             base_url_ws=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
             testnet=testnet,  # If client uses the testnet API
-            submitter_pool_size=1,
+            submitter_pool_size=3,
             canceller_pool_size=3,
         ),
     },
@@ -122,10 +122,11 @@ config_tester = ExecTesterConfig(
     # stop_trigger_type=TriggerType.MARK_PRICE,
     # enable_brackets=True,
     # test_reject_post_only=True,
-    # cancel_orders_on_stop=False,
-    # close_positions_on_stop=False,
     # use_batch_cancel_on_stop=True,
     # use_individual_cancels_on_stop=True,
+    # cancel_orders_on_stop=False,
+    # close_positions_on_stop=False,
+    # manage_stop=True,
     log_data=False,
     # dry_run=True,
 )

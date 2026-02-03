@@ -131,6 +131,20 @@ pub fn parse_book_msg_vec(
             );
         }
     }
+
+    // Set F_LAST on the last delta so data engine knows the batch is complete
+    if let Some(Data::Delta(last_delta)) = deltas.last_mut() {
+        *last_delta = OrderBookDelta::new(
+            last_delta.instrument_id,
+            last_delta.action,
+            last_delta.order,
+            last_delta.flags | RecordFlag::F_LAST as u8,
+            last_delta.sequence,
+            last_delta.ts_event,
+            last_delta.ts_init,
+        );
+    }
+
     deltas
 }
 
@@ -237,7 +251,7 @@ pub fn parse_book_msg(
     price_precision: u8,
     ts_init: UnixNanos,
 ) -> OrderBookDelta {
-    let flags = if action == &BitmexAction::Insert {
+    let flags = if action == &BitmexAction::Partial {
         RecordFlag::F_SNAPSHOT as u8
     } else {
         0
@@ -438,9 +452,7 @@ pub fn parse_trade_bin_msg(
 
 /// Converts a WebSocket topic to a bar specification.
 ///
-/// # Panics
-///
-/// Panics if the topic is not a valid bar topic (`TradeBin1m`, `TradeBin5m`, `TradeBin1h`, or `TradeBin1d`).
+/// Returns `BAR_SPEC_1_MINUTE` and logs an error for unsupported topics.
 #[must_use]
 pub fn bar_spec_from_topic(topic: &BitmexWsTopic) -> BarSpecification {
     match topic {
@@ -457,9 +469,7 @@ pub fn bar_spec_from_topic(topic: &BitmexWsTopic) -> BarSpecification {
 
 /// Converts a bar specification to a WebSocket topic.
 ///
-/// # Panics
-///
-/// Panics if the specification is not one of the supported values (1m, 5m, 1h, or 1d).
+/// Returns `TradeBin1m` and logs an error for unsupported specifications.
 #[must_use]
 pub fn topic_from_bar_spec(spec: BarSpecification) -> BitmexWsTopic {
     match spec {
@@ -662,8 +672,15 @@ pub fn parse_order_update_msg(
     let venue_order_id = Some(VenueOrderId::new(msg.order_id.to_string()));
     let client_order_id = msg
         .cl_ord_id
+        .as_ref()
         .map_or_else(ClientOrderId::external, ClientOrderId::new);
-    let quantity = Quantity::zero(instrument.size_precision());
+
+    // BitMEX partial updates may omit leaves_qty/cum_qty. When missing, we fall back
+    // to zero which signals the execution engine to use the cached order quantity.
+    let quantity = match (msg.leaves_qty, msg.cum_qty) {
+        (Some(leaves), Some(cum)) => parse_contracts_quantity((leaves + cum) as u64, instrument),
+        _ => Quantity::zero(instrument.size_precision()),
+    };
     let price = msg
         .price
         .map(|p| Price::new(p, instrument.price_precision()));
@@ -787,6 +804,15 @@ pub fn parse_execution_msg(
             log::debug!(
                 "Execution message skipped (order state change, not a fill): exec_type={exec_type:?}, order_id={:?}",
                 msg.order_id,
+            );
+            return None;
+        }
+
+        BitmexExecType::Unknown(ref type_str) => {
+            log::warn!(
+                "Unknown execution type received, skipping: exec_type={type_str}, order_id={:?}, symbol={:?}",
+                msg.order_id,
+                msg.symbol,
             );
             return None;
         }
@@ -1105,6 +1131,8 @@ mod tests {
 
         // Test Insert action
         let instrument = create_test_perpetual_instrument();
+
+        // Test Insert action (no snapshot flag)
         let delta = parse_book_msg(
             &msg,
             &BitmexAction::Insert,
@@ -1119,12 +1147,24 @@ mod tests {
         assert_eq!(delta.order.side, OrderSide::Sell);
         assert_eq!(delta.order.order_id, 62400580205);
         assert_eq!(delta.action, BookAction::Add);
-        assert_eq!(delta.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(delta.flags, 0);
         assert_eq!(delta.sequence, 0);
         assert_eq!(delta.ts_event, 1732436782356000000); // 2024-11-24T08:26:22.356Z in nanos
         assert_eq!(delta.ts_init, 3);
 
-        // Test Update action (should have different flags)
+        // Test Partial action (should have F_SNAPSHOT flag)
+        let delta = parse_book_msg(
+            &msg,
+            &BitmexAction::Partial,
+            &instrument,
+            instrument.id(),
+            instrument.price_precision(),
+            UnixNanos::from(3),
+        );
+        assert_eq!(delta.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(delta.action, BookAction::Add);
+
+        // Test Update action (no flags)
         let delta = parse_book_msg(
             &msg,
             &BitmexAction::Update,
@@ -1288,6 +1328,7 @@ mod tests {
             turnover: 0,
             home_notional: 0.0,
             foreign_notional: 0.0,
+            pool: None,
         };
 
         let bar = parse_trade_bin_msg(
@@ -1572,7 +1613,7 @@ mod tests {
         for exec_type in order_state_types {
             let mut msg: BitmexExecutionMsg =
                 serde_json::from_str(&load_test_json("ws_execution.json")).unwrap();
-            msg.exec_type = Some(exec_type);
+            msg.exec_type = Some(exec_type.clone());
 
             let result = parse_execution_msg(msg, &instrument);
             assert!(

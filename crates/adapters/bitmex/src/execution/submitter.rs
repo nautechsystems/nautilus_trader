@@ -533,6 +533,7 @@ impl SubmitBroadcaster {
         T: Send + 'static,
     {
         let mut errors = Vec::new();
+        let mut all_duplicate_clordid = true;
 
         while !handles.is_empty() {
             let current_handles = std::mem::take(&mut handles);
@@ -551,6 +552,11 @@ impl SubmitBroadcaster {
                 }
                 Ok((client_id, Err(e))) => {
                     let error_msg = e.to_string();
+                    let is_duplicate = error_msg.contains("Duplicate clOrdID");
+
+                    if !is_duplicate {
+                        all_duplicate_clordid = false;
+                    }
 
                     if self.is_expected_reject(&error_msg) {
                         self.expected_rejects.fetch_add(1, Ordering::Relaxed);
@@ -567,6 +573,7 @@ impl SubmitBroadcaster {
                     }
                 }
                 Err(e) => {
+                    all_duplicate_clordid = false;
                     log::warn!("{operation} task join error: {e:?}");
                     errors.push(format!("Task panicked: {e:?}"));
                 }
@@ -575,6 +582,17 @@ impl SubmitBroadcaster {
 
         // All tasks failed
         self.failed_submits.fetch_add(1, Ordering::Relaxed);
+
+        // If all errors were "Duplicate clOrdID", this is likely an idempotent scenario
+        // where the order exists but the success response was lost
+        if all_duplicate_clordid && !errors.is_empty() {
+            log::warn!(
+                "All {} requests returned 'Duplicate clOrdID' - order likely exists {params}",
+                operation.to_lowercase(),
+            );
+            anyhow::bail!("IDEMPOTENT_DUPLICATE: Order likely exists but confirmation was lost");
+        }
+
         log::error!(
             "All {} requests failed: {errors:?} {params}",
             operation.to_lowercase(),
@@ -651,20 +669,15 @@ impl SubmitBroadcaster {
         );
 
         let mut handles = Vec::new();
-        for (idx, transport) in healthy_transports.into_iter().enumerate() {
-            // First client uses original ID, subsequent clients get suffix to avoid duplicates
-            let modified_client_order_id = if idx == 0 {
-                client_order_id
-            } else {
-                ClientOrderId::new(format!("{}-{}", client_order_id.as_str(), idx))
-            };
-
+        for transport in healthy_transports {
+            // All transports use the same client_order_id. If multiple succeed,
+            // BitMEX rejects duplicates with "duplicate clOrdID" (expected rejection).
             let handle = get_runtime().spawn(async move {
                 let client_id = transport.client_id.clone();
                 let result = transport
                     .submit_order(
                         instrument_id,
-                        modified_client_order_id,
+                        client_order_id,
                         order_side,
                         order_type,
                         quantity,
@@ -1553,12 +1566,10 @@ mod tests {
 
         assert!(result.is_ok());
 
-        // Check captured client_order_ids (order is non-deterministic with concurrent execution)
+        // All transports receive the same client_order_id (no suffixing)
         let ids = captured_ids.lock().unwrap();
         assert_eq!(ids.len(), 3);
-        assert!(ids.contains(&"O-123".to_string())); // First client gets original ID
-        assert!(ids.contains(&"O-123-1".to_string())); // Second client gets suffix -1
-        assert!(ids.contains(&"O-123-2".to_string())); // Third client gets suffix -2
+        assert!(ids.iter().all(|id| id == "O-123")); // All clients get the same ID
     }
 
     #[tokio::test]
@@ -1668,11 +1679,10 @@ mod tests {
 
         assert!(result.is_ok());
 
-        // Check captured client_order_ids (order is non-deterministic with concurrent execution)
+        // All transports receive the same client_order_id (no suffixing)
         let ids = captured_ids.lock().unwrap();
         assert_eq!(ids.len(), 2);
-        assert!(ids.contains(&"O-456".to_string())); // First client gets original ID
-        assert!(ids.contains(&"O-456-1".to_string())); // Second client gets suffix -1
+        assert!(ids.iter().all(|id| id == "O-456")); // All clients get the same ID
     }
 
     #[tokio::test]
