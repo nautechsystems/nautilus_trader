@@ -1040,8 +1040,11 @@ class BybitExecutionClient(LiveExecutionClient):
         is_leverage: bool,
     ) -> None:
         now_ns = self._clock.timestamp_ns()
+        order_list = command.order_list
+        orders = order_list.orders
         order_params = []
-        for order in command.order_list.orders:
+
+        for order in orders:
             if order.is_closed:
                 self._log.warning(f"Cannot submit already closed order: {order}")
                 continue
@@ -1116,7 +1119,8 @@ class BybitExecutionClient(LiveExecutionClient):
                 )
             except Exception as e:
                 self._log.error(f"Failed to batch place orders: {e}")
-                for order in command.order_list.orders:
+
+                for order in orders:
                     if not order.is_closed:
                         self.generate_order_rejected(
                             strategy_id=order.strategy_id,

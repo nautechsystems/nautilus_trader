@@ -1901,6 +1901,8 @@ impl BybitWebSocketClient {
         post_only: Option<bool>,
         reduce_only: Option<bool>,
         is_leverage: bool,
+        take_profit: Option<Price>,
+        stop_loss: Option<Price>,
     ) -> BybitWsResult<BybitWsPlaceOrderParams> {
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())
             .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
@@ -2007,11 +2009,15 @@ impl BybitWebSocketClient {
                 trigger_price: trigger_price.map(|p| p.to_string()),
                 trigger_by: Some(BybitTriggerType::LastPrice),
                 trigger_direction,
-                tpsl_mode: None,
-                take_profit: None,
-                stop_loss: None,
-                tp_trigger_by: None,
-                sl_trigger_by: None,
+                tpsl_mode: if take_profit.is_some() || stop_loss.is_some() {
+                    Some("Full".to_string())
+                } else {
+                    None
+                },
+                take_profit: take_profit.map(|p| p.to_string()),
+                stop_loss: stop_loss.map(|p| p.to_string()),
+                tp_trigger_by: take_profit.map(|_| BybitTriggerType::LastPrice),
+                sl_trigger_by: stop_loss.map(|_| BybitTriggerType::LastPrice),
                 sl_trigger_price: None,
                 tp_trigger_price: None,
                 sl_order_type: None,
@@ -2040,11 +2046,15 @@ impl BybitWebSocketClient {
                 trigger_price: None,
                 trigger_by: None,
                 trigger_direction: None,
-                tpsl_mode: None,
-                take_profit: None,
-                stop_loss: None,
-                tp_trigger_by: None,
-                sl_trigger_by: None,
+                tpsl_mode: if take_profit.is_some() || stop_loss.is_some() {
+                    Some("Full".to_string())
+                } else {
+                    None
+                },
+                take_profit: take_profit.map(|p| p.to_string()),
+                stop_loss: stop_loss.map(|p| p.to_string()),
+                tp_trigger_by: take_profit.map(|_| BybitTriggerType::LastPrice),
+                sl_trigger_by: stop_loss.map(|_| BybitTriggerType::LastPrice),
                 sl_trigger_price: None,
                 tp_trigger_price: None,
                 sl_order_type: None,
@@ -2433,6 +2443,8 @@ mod tests {
                 None,
                 None,
                 is_leverage,
+                None, // take_profit
+                None, // stop_loss
             )
             .expect("Failed to build params");
 
@@ -2490,6 +2502,8 @@ mod tests {
                 None,
                 None,
                 false,
+                None, // take_profit
+                None, // stop_loss
             )
             .expect("Failed to build params");
 

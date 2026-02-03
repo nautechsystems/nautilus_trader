@@ -22,7 +22,10 @@ use nautilus_core::{UnixNanos, correctness::check_slice_not_empty};
 use serde::{Deserialize, Serialize};
 
 use super::{Order, OrderAny};
-use crate::identifiers::{InstrumentId, OrderListId, StrategyId};
+use crate::{
+    enums::ContingencyType,
+    identifiers::{InstrumentId, OrderListId, StrategyId},
+};
 
 #[derive(Clone, Eq, Debug, Serialize, Deserialize)]
 #[cfg_attr(
@@ -81,6 +84,45 @@ impl OrderList {
     pub fn is_empty(&self) -> bool {
         self.orders.is_empty()
     }
+
+    /// Returns whether this order list represents a bracket order.
+    ///
+    /// A bracket order has exactly 3 orders: an entry order (OTO contingency)
+    /// with exactly 2 child orders (OUO contingency, not OCO) that are
+    /// reduce-only TP/SL orders.
+    #[must_use]
+    pub fn is_bracket(&self) -> bool {
+        if self.orders.len() != 3 {
+            return false;
+        }
+
+        let entry = match self.first() {
+            Some(order) => order,
+            None => return false,
+        };
+
+        if entry.contingency_type() != Some(ContingencyType::Oto) {
+            return false;
+        }
+
+        let entry_client_order_id = entry.client_order_id();
+        let mut ouo_child_count = 0;
+
+        for order in self.orders.iter().skip(1) {
+            if order.parent_order_id() != Some(entry_client_order_id) {
+                return false;
+            }
+            if order.contingency_type() != Some(ContingencyType::Ouo) {
+                return false;
+            }
+            if !order.is_reduce_only() {
+                return false;
+            }
+            ouo_child_count += 1;
+        }
+
+        ouo_child_count == 2
+    }
 }
 
 impl PartialEq for OrderList {
@@ -120,7 +162,7 @@ mod tests {
     use super::*;
     use crate::{
         enums::{OrderSide, OrderType},
-        identifiers::{OrderListId, StrategyId},
+        identifiers::{ClientOrderId, OrderListId, StrategyId},
         instruments::{CurrencyPair, stubs::*},
         orders::OrderTestBuilder,
         stubs::TestDefault,
@@ -365,5 +407,225 @@ mod tests {
         order_list2.hash(&mut hasher2);
 
         assert_eq!(hasher1.finish(), hasher2.finish());
+    }
+
+    #[rstest]
+    fn test_is_bracket_with_valid_bracket(audusd_sim: CurrencyPair) {
+        let entry_client_order_id = ClientOrderId::from("O-001");
+
+        // Entry order with OTO contingency
+        let entry = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id)
+            .client_order_id(entry_client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .contingency_type(ContingencyType::Oto)
+            .build();
+
+        // Stop loss with OUO contingency
+        let sl = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(100_000))
+            .trigger_price(Price::from("0.99000"))
+            .contingency_type(ContingencyType::Ouo)
+            .parent_order_id(entry_client_order_id)
+            .reduce_only(true)
+            .build();
+
+        // Take profit with OUO contingency
+        let tp = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(100_000))
+            .price(Price::from("1.01000"))
+            .contingency_type(ContingencyType::Ouo)
+            .parent_order_id(entry_client_order_id)
+            .reduce_only(true)
+            .build();
+
+        let order_list = OrderList::new(
+            OrderListId::from("OL-001"),
+            audusd_sim.id,
+            StrategyId::test_default(),
+            vec![entry, sl, tp],
+            UnixNanos::default(),
+        );
+
+        assert!(order_list.is_bracket());
+    }
+
+    #[rstest]
+    fn test_is_bracket_with_single_order_returns_false(audusd_sim: CurrencyPair) {
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+
+        let order_list = OrderList::new(
+            OrderListId::from("OL-001"),
+            audusd_sim.id,
+            StrategyId::test_default(),
+            vec![order],
+            UnixNanos::default(),
+        );
+
+        assert!(!order_list.is_bracket());
+    }
+
+    #[rstest]
+    fn test_is_bracket_with_two_orders_returns_false(audusd_sim: CurrencyPair) {
+        let order1 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+        let order2 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(100_000))
+            .build();
+
+        let order_list = OrderList::new(
+            OrderListId::from("OL-001"),
+            audusd_sim.id,
+            StrategyId::test_default(),
+            vec![order1, order2],
+            UnixNanos::default(),
+        );
+
+        assert!(!order_list.is_bracket());
+    }
+
+    #[rstest]
+    fn test_is_bracket_with_entry_not_oto_returns_false(audusd_sim: CurrencyPair) {
+        let entry_client_order_id = ClientOrderId::from("O-001");
+
+        // Entry without OTO contingency
+        let entry = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id)
+            .client_order_id(entry_client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+
+        let sl = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(100_000))
+            .trigger_price(Price::from("0.99000"))
+            .contingency_type(ContingencyType::Ouo)
+            .parent_order_id(entry_client_order_id)
+            .reduce_only(true)
+            .build();
+
+        let tp = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(100_000))
+            .price(Price::from("1.01000"))
+            .contingency_type(ContingencyType::Ouo)
+            .parent_order_id(entry_client_order_id)
+            .reduce_only(true)
+            .build();
+
+        let order_list = OrderList::new(
+            OrderListId::from("OL-001"),
+            audusd_sim.id,
+            StrategyId::test_default(),
+            vec![entry, sl, tp],
+            UnixNanos::default(),
+        );
+
+        assert!(!order_list.is_bracket());
+    }
+
+    #[rstest]
+    fn test_is_bracket_with_child_not_reduce_only_returns_false(audusd_sim: CurrencyPair) {
+        let entry_client_order_id = ClientOrderId::from("O-001");
+
+        let entry = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id)
+            .client_order_id(entry_client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .contingency_type(ContingencyType::Oto)
+            .build();
+
+        // SL not reduce_only
+        let sl = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(100_000))
+            .trigger_price(Price::from("0.99000"))
+            .contingency_type(ContingencyType::Ouo)
+            .parent_order_id(entry_client_order_id)
+            .reduce_only(false)
+            .build();
+
+        let tp = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(100_000))
+            .price(Price::from("1.01000"))
+            .contingency_type(ContingencyType::Ouo)
+            .parent_order_id(entry_client_order_id)
+            .reduce_only(true)
+            .build();
+
+        let order_list = OrderList::new(
+            OrderListId::from("OL-001"),
+            audusd_sim.id,
+            StrategyId::test_default(),
+            vec![entry, sl, tp],
+            UnixNanos::default(),
+        );
+
+        assert!(!order_list.is_bracket());
+    }
+
+    #[rstest]
+    fn test_is_bracket_with_child_oco_instead_of_ouo_returns_false(audusd_sim: CurrencyPair) {
+        let entry_client_order_id = ClientOrderId::from("O-001");
+
+        let entry = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id)
+            .client_order_id(entry_client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .contingency_type(ContingencyType::Oto)
+            .build();
+
+        // SL with OCO instead of OUO
+        let sl = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(100_000))
+            .trigger_price(Price::from("0.99000"))
+            .contingency_type(ContingencyType::Oco)
+            .parent_order_id(entry_client_order_id)
+            .reduce_only(true)
+            .build();
+
+        let tp = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(100_000))
+            .price(Price::from("1.01000"))
+            .contingency_type(ContingencyType::Ouo)
+            .parent_order_id(entry_client_order_id)
+            .reduce_only(true)
+            .build();
+
+        let order_list = OrderList::new(
+            OrderListId::from("OL-001"),
+            audusd_sim.id,
+            StrategyId::test_default(),
+            vec![entry, sl, tp],
+            UnixNanos::default(),
+        );
+
+        assert!(!order_list.is_bracket());
     }
 }

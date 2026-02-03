@@ -1846,6 +1846,8 @@ mod conditional_order_tests {
                 None,  // post_only
                 None,  // reduce_only
                 false, // is_leverage
+                None,  // take_profit
+                None,  // stop_loss
             )
             .unwrap()
     }
