@@ -15,6 +15,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Added `request_funding_rates` and `FundingRateUpdate` Arrow serialization (#3467), thanks @dxwil
 - Added `optimize_file_loading` as BacktestDataConfig parameter (#3518), thanks @faysou
 - Added Betfair RCM parsing for TPD race data
+- Added `BetfairOrderVoided` custom data type for VAR voids
 - Added Bybit mark price subscriptions support
 - Added Bybit index price subscriptions support
 - Added Polymarket data loader event-level API support (#3484), thanks @jsemldonado

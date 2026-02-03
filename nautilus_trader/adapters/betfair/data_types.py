@@ -161,7 +161,7 @@ class BetfairTicker(Data):
         traded_volume: float | None = None,
         starting_price_near: float | None = None,
         starting_price_far: float | None = None,
-    ):
+    ) -> None:
         self.instrument_id = instrument_id
         self.last_traded_price = last_traded_price
         self.traded_volume = traded_volume
@@ -267,7 +267,7 @@ class BetfairStartingPrice(Data):
         ts_event: int,
         ts_init: int,
         bsp: float | None = None,
-    ):
+    ) -> None:
         self.instrument_id: InstrumentId = instrument_id
         self.bsp = bsp
         self._ts_event = ts_event
@@ -349,7 +349,7 @@ class BetfairRaceRunnerData(Data):
         speed: float | None = None,
         progress: float | None = None,
         stride_frequency: float | None = None,
-    ):
+    ) -> None:
         self.race_id = race_id
         self.market_id = market_id
         self.selection_id = selection_id
@@ -473,7 +473,7 @@ class BetfairRaceProgress(Data):
         progress: float | None = None,
         order: list[int] | None = None,
         jumps: list[dict] | None = None,
-    ):
+    ) -> None:
         self.race_id = race_id
         self.market_id = market_id
         self.gate_name = gate_name
@@ -583,6 +583,119 @@ class BetfairRaceProgress(Data):
         )
 
 
+class BetfairOrderVoided(Data):
+    """
+    Represents a Betfair order void event (e.g., VAR void).
+
+    Published when a matched bet is retroactively voided by Betfair, such as when a goal
+    is disallowed following a VAR review.
+
+    """
+
+    def __init__(
+        self,
+        instrument_id: InstrumentId,
+        client_order_id: str,
+        venue_order_id: str,
+        ts_event: int,
+        ts_init: int,
+        size_voided: float,
+        reason: str | None = None,
+    ) -> None:
+        self.instrument_id = instrument_id
+        self.client_order_id = client_order_id
+        self.venue_order_id = venue_order_id
+        self.size_voided = size_voided
+        self.reason = reason
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    def __eq__(self, other: object) -> bool:
+        if other is None:
+            return False
+        if not isinstance(other, BetfairOrderVoided):
+            return False
+        return (
+            self.instrument_id == other.instrument_id
+            and self.client_order_id == other.client_order_id
+            and self.venue_order_id == other.venue_order_id
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.instrument_id, self.client_order_id, self.venue_order_id))
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the data event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
+
+    @classmethod
+    def schema(cls):
+        return pa.schema(
+            {
+                "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+                "client_order_id": pa.string(),
+                "venue_order_id": pa.string(),
+                "size_voided": pa.float64(),
+                "reason": pa.string(),
+                "ts_event": pa.uint64(),
+                "ts_init": pa.uint64(),
+            },
+            metadata={"type": "BetfairOrderVoided"},
+        )
+
+    @classmethod
+    def from_dict(cls, values: dict):
+        return cls(
+            instrument_id=InstrumentId.from_str(values["instrument_id"]),
+            client_order_id=values["client_order_id"],
+            venue_order_id=values["venue_order_id"],
+            size_voided=values["size_voided"],
+            reason=values.get("reason"),
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
+        )
+
+    @staticmethod
+    def to_dict(obj: BetfairOrderVoided):
+        return {
+            "type": type(obj).__name__,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id,
+            "venue_order_id": obj.venue_order_id,
+            "size_voided": obj.size_voided,
+            "reason": obj.reason,
+            "ts_event": obj._ts_event,
+            "ts_init": obj._ts_init,
+        }
+
+    def __repr__(self):
+        return (
+            f"BetfairOrderVoided(instrument_id={self.instrument_id.value}, "
+            f"client_order_id={self.client_order_id}, venue_order_id={self.venue_order_id}, "
+            f"size_voided={self.size_voided}, reason={self.reason})"
+        )
+
+
 @customdataclass
 class BetfairSequenceCompleted(Data):
     pass
@@ -653,4 +766,17 @@ register_arrow(
     schema=BetfairRaceProgress.schema(),
     encoder=make_dict_serializer(schema=BetfairRaceProgress.schema()),
     decoder=make_dict_deserializer(BetfairRaceProgress),
+)
+
+register_serializable_type(
+    BetfairOrderVoided,
+    BetfairOrderVoided.to_dict,
+    BetfairOrderVoided.from_dict,
+)
+
+register_arrow(
+    data_cls=BetfairOrderVoided,
+    schema=BetfairOrderVoided.schema(),
+    encoder=make_dict_serializer(schema=BetfairOrderVoided.schema()),
+    decoder=make_dict_deserializer(BetfairOrderVoided),
 )

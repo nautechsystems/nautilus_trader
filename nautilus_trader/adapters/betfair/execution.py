@@ -49,6 +49,7 @@ from nautilus_trader.adapters.betfair.constants import BETFAIR_ORDER_STATUS_EXEC
 from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.constants import BETFAIR_RATE_LIMIT_RETRY_DELAY_SECS
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.data_types import BetfairOrderVoided
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.common import FillQtyResult
@@ -70,6 +71,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import as_utc_timestamp
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.core.datetime import millis_to_nanos
@@ -88,6 +90,8 @@ from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
+from nautilus_trader.model.data import CustomData
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
@@ -1465,6 +1469,26 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         venue_order_id = VenueOrderId(str(unmatched_order.id))
 
+        # Publish void event if matched bets were voided (e.g., VAR decision)
+        if unmatched_order.sv and unmatched_order.sv > 0:
+            self._log.info(
+                f"{client_order_id!r} voided: size_voided={unmatched_order.sv}",
+            )
+            voided = BetfairOrderVoided(
+                instrument_id=instrument.id,
+                client_order_id=client_order_id.value,
+                venue_order_id=venue_order_id.value,
+                size_voided=unmatched_order.sv,
+                reason=None,
+                ts_event=self._get_canceled_timestamp(unmatched_order),
+                ts_init=self._clock.timestamp_ns(),
+            )
+            custom_data = CustomData(
+                DataType(BetfairOrderVoided, {"instrument_id": instrument.id}),
+                voided,
+            )
+            self._handle_data(custom_data)
+
         # Check for cancel
         cancel_qty = self._get_cancel_quantity(unmatched_order)
         if cancel_qty > 0 and not order.is_closed:
@@ -1671,6 +1695,9 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     def _get_cancel_quantity(self, unmatched_order: UnmatchedOrder) -> float:
         return (unmatched_order.sc or 0) + (unmatched_order.sl or 0) + (unmatched_order.sv or 0)
+
+    def _handle_data(self, data: Data) -> None:
+        self._msgbus.send(endpoint="DataEngine.process", msg=data)
 
     def _format_error_reason(self, error_code, result_error_code=None) -> str:
         parts = []

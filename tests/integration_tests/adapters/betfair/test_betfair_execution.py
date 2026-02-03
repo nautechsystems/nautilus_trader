@@ -44,6 +44,7 @@ from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
 from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
 from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
+from nautilus_trader.adapters.betfair.data_types import BetfairOrderVoided
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
@@ -58,6 +59,7 @@ from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.currencies import GBP
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
@@ -131,6 +133,9 @@ async def _setup_order_state(
                             client_order_id=client_order_id,
                         )
                         await _accept_order(order, venue_order_id, exec_client, strategy, cache)
+
+                        # Add venue_order_id mapping for stream resolution when rfo is empty
+                        cache.add_venue_order_id(client_order_id, venue_order_id)
 
                         if include_fills and order_update.sm:
                             await _fill_order(
@@ -1595,6 +1600,137 @@ def test_cleanup_terminal_order_removes_both_truncations(
     # Assert - both truncations removed
     assert new_ref not in exec_client._customer_order_refs
     assert legacy_ref not in exec_client._customer_order_refs
+
+
+@pytest.mark.asyncio
+async def test_voided_order_publishes_custom_data(
+    exec_client: BetfairExecutionClient,
+    setup_order_state,
+    cache,
+    instrument,
+    mock_data_engine_process,
+):
+    """
+    Test that when an order has size_voided (sv) > 0, a BetfairOrderVoided custom data
+    event is published to the message bus.
+    """
+    # Arrange
+    order_change_message = BetfairStreaming.generate_order_change_message(
+        price=1.50,
+        size=100,
+        side="B",
+        status="EC",
+        sm=50,
+        sr=0,
+        sc=0,
+        sl=0,
+        sv=50,  # Voided due to VAR decision
+        avp=1.50,
+        market_id="1-179082386",
+        selection_id=50214,
+    )
+    await setup_order_state(order_change_message=order_change_message)
+
+    # Act
+    exec_client.handle_order_stream_update(msgspec.json.encode(order_change_message))
+    await asyncio.sleep(0)
+
+    # Assert
+    mock_calls = mock_data_engine_process.call_args_list
+    voided_events = [
+        call.args[0]
+        for call in mock_calls
+        if isinstance(call.args[0], CustomData)
+        and isinstance(call.args[0].data, BetfairOrderVoided)
+    ]
+    assert len(voided_events) == 1
+    voided: BetfairOrderVoided = voided_events[0].data
+    assert voided.size_voided == 50.0
+    assert voided.instrument_id.value == "1-179082386-50214-None.BETFAIR"
+
+
+@pytest.mark.asyncio
+async def test_voided_order_with_partial_void(
+    exec_client: BetfairExecutionClient,
+    setup_order_state,
+    mock_data_engine_process,
+):
+    """
+    Test partial void scenario: order had 100 matched, 25 voided (e.g., VAR review
+    determined 25 was matched after goal that was disallowed).
+    """
+    # Arrange
+    order_change_message = BetfairStreaming.generate_order_change_message(
+        price=2.0,
+        size=100,
+        side="L",
+        status="EC",
+        sm=75,
+        sr=0,
+        sc=0,
+        sl=0,
+        sv=25,
+        avp=2.0,
+        market_id="1-179082386",
+        selection_id=50214,
+    )
+    await setup_order_state(order_change_message=order_change_message)
+
+    # Act
+    exec_client.handle_order_stream_update(msgspec.json.encode(order_change_message))
+    await asyncio.sleep(0)
+
+    # Assert
+    mock_calls = mock_data_engine_process.call_args_list
+    voided_events = [
+        call.args[0]
+        for call in mock_calls
+        if isinstance(call.args[0], CustomData)
+        and isinstance(call.args[0].data, BetfairOrderVoided)
+    ]
+    assert len(voided_events) == 1
+    assert voided_events[0].data.size_voided == 25.0
+
+
+@pytest.mark.asyncio
+async def test_no_void_event_when_sv_is_zero(
+    exec_client: BetfairExecutionClient,
+    setup_order_state,
+    mock_data_engine_process,
+):
+    """
+    Test that no BetfairOrderVoided event is published when sv=0.
+    """
+    # Arrange
+    order_change_message = BetfairStreaming.generate_order_change_message(
+        price=1.50,
+        size=100,
+        side="B",
+        status="EC",
+        sm=50,
+        sr=0,
+        sc=50,
+        sl=0,
+        sv=0,
+        avp=1.50,
+        market_id="1-179082386",
+        selection_id=50214,
+    )
+    await setup_order_state(order_change_message=order_change_message)
+
+    # Act
+    exec_client.handle_order_stream_update(msgspec.json.encode(order_change_message))
+    await asyncio.sleep(0)
+
+    # Assert
+    mock_calls = mock_data_engine_process.call_args_list
+    voided_events = [
+        call.args[0]
+        for call in mock_calls
+        if isinstance(call.args[0], CustomData)
+        and isinstance(call.args[0].data, BetfairOrderVoided)
+    ]
+    assert len(voided_events) == 0
 
 
 def test_get_matched_timestamp_fallback(exec_client):

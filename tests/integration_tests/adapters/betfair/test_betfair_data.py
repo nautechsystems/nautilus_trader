@@ -23,6 +23,7 @@ import pytest
 from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
+from nautilus_trader.adapters.betfair.data_types import BetfairOrderVoided
 from nautilus_trader.adapters.betfair.data_types import BetfairRaceProgress
 from nautilus_trader.adapters.betfair.data_types import BetfairRaceRunnerData
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
@@ -640,3 +641,114 @@ def test_rcm_with_jumps(data_client, mock_data_engine_process):
     assert progress_data[0].jumps is not None
     assert len(progress_data[0].jumps) == 9
     assert progress_data[0].jumps[0] == {"J": 9, "L": 3123.5}
+
+
+def test_betfair_order_voided_dict_serialization():
+    # Arrange
+    instrument_id = InstrumentId.from_str("1-123456-789-None.BETFAIR")
+    voided = BetfairOrderVoided(
+        instrument_id=instrument_id,
+        client_order_id="test-order-123",
+        venue_order_id="248485109136",
+        size_voided=50.0,
+        reason=None,
+        ts_event=1635217893000000000,
+        ts_init=1635217893000000001,
+    )
+
+    # Act
+    result_dict = BetfairOrderVoided.to_dict(voided)
+    result = BetfairOrderVoided.from_dict(result_dict)
+
+    # Assert
+    assert result.instrument_id == voided.instrument_id
+    assert result.client_order_id == voided.client_order_id
+    assert result.venue_order_id == voided.venue_order_id
+    assert result.size_voided == voided.size_voided
+    assert result.reason == voided.reason
+    assert result.ts_event == voided.ts_event
+    assert result.ts_init == voided.ts_init
+
+
+def test_betfair_order_voided_dict_serialization_with_reason():
+    # Arrange
+    instrument_id = InstrumentId.from_str("1-123456-789-None.BETFAIR")
+    voided = BetfairOrderVoided(
+        instrument_id=instrument_id,
+        client_order_id="test-order-123",
+        venue_order_id="248485109136",
+        size_voided=25.5,
+        reason="VAR_DECISION",
+        ts_event=1635217893000000000,
+        ts_init=1635217893000000001,
+    )
+
+    # Act
+    result_dict = BetfairOrderVoided.to_dict(voided)
+    result = BetfairOrderVoided.from_dict(result_dict)
+
+    # Assert
+    assert result.reason == "VAR_DECISION"
+    assert result.size_voided == 25.5
+
+
+def test_betfair_order_voided_repr():
+    # Arrange
+    instrument_id = InstrumentId.from_str("1-123456-789-None.BETFAIR")
+    voided = BetfairOrderVoided(
+        instrument_id=instrument_id,
+        client_order_id="test-order-123",
+        venue_order_id="248485109136",
+        size_voided=50.0,
+        reason=None,
+        ts_event=1635217893000000000,
+        ts_init=1635217893000000001,
+    )
+
+    # Act
+    result = repr(voided)
+
+    # Assert
+    assert "BetfairOrderVoided" in result
+    assert "1-123456-789-None.BETFAIR" in result
+    assert "test-order-123" in result
+    assert "248485109136" in result
+    assert "50.0" in result
+
+
+def test_betfair_order_voided_equality():
+    # Arrange
+    instrument_id = InstrumentId.from_str("1-123456-789-None.BETFAIR")
+    voided1 = BetfairOrderVoided(
+        instrument_id=instrument_id,
+        client_order_id="test-order-123",
+        venue_order_id="248485109136",
+        size_voided=50.0,
+        reason=None,
+        ts_event=1635217893000000000,
+        ts_init=1635217893000000001,
+    )
+    voided2 = BetfairOrderVoided(
+        instrument_id=instrument_id,
+        client_order_id="test-order-123",
+        venue_order_id="248485109136",
+        size_voided=25.0,
+        reason="DIFFERENT",
+        ts_event=1635217893000000002,
+        ts_init=1635217893000000003,
+    )
+    voided3 = BetfairOrderVoided(
+        instrument_id=instrument_id,
+        client_order_id="different-order",
+        venue_order_id="248485109136",
+        size_voided=50.0,
+        reason=None,
+        ts_event=1635217893000000000,
+        ts_init=1635217893000000001,
+    )
+
+    # Assert
+    assert voided1 == voided2  # Same instrument_id, client_order_id, venue_order_id
+    assert voided1 != voided3  # Different client_order_id
+    assert voided1 != None  # noqa: E711
+    assert voided1 != "not a voided object"
