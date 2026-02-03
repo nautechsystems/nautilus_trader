@@ -307,8 +307,9 @@ struct BatchedDeltasStreamIterator {
     price_precision: u8,
     size_precision: u8,
     last_ts_event: UnixNanos,
+    last_is_snapshot: bool,
     limit: Option<usize>,
-    records_processed: usize,
+    deltas_emitted: usize,
 }
 
 #[cfg(feature = "python")]
@@ -365,8 +366,9 @@ impl BatchedDeltasStreamIterator {
             price_precision: final_price_precision,
             size_precision: final_size_precision,
             last_ts_event: UnixNanos::default(),
+            last_is_snapshot: false,
             limit,
-            records_processed: 0,
+            deltas_emitted: 0,
         })
     }
 
@@ -395,44 +397,33 @@ impl BatchedDeltasStreamIterator {
 
         Ok((max_price_precision, max_size_precision))
     }
-}
 
-#[cfg(feature = "python")]
-impl Iterator for BatchedDeltasStreamIterator {
-    type Item = anyhow::Result<Vec<Py<PyAny>>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(limit) = self.limit
-            && self.records_processed >= limit
-        {
-            return None;
-        }
-
-        self.buffer.clear();
+    fn fill_pending_batches(&mut self) -> Option<anyhow::Result<()>> {
+        self.pending_batches.clear();
         let mut batches_created = 0;
 
         while batches_created < self.chunk_size {
+            if let Some(limit) = self.limit
+                && self.deltas_emitted >= limit
+            {
+                break;
+            }
+
             match self.reader.read_record(&mut self.record) {
                 Ok(true) => {
-                    let delta = match self.record.deserialize::<TardisBookUpdateRecord>(None) {
-                        Ok(data) => match parse_delta_record(
-                            &data,
-                            self.price_precision,
-                            self.size_precision,
-                            Some(self.instrument_id),
-                        ) {
-                            Ok(d) => d,
-                            Err(e) => {
-                                log::warn!("Skipping invalid delta record: {e}");
-                                continue;
-                            }
-                        },
+                    let data = match self.record.deserialize::<TardisBookUpdateRecord>(None) {
+                        Ok(data) => data,
                         Err(e) => {
-                            return Some(Err(anyhow::anyhow!("Failed to deserialize record: {e}")));
+                            return Some(Err(anyhow::anyhow!(
+                                "Failed to deserialize record: {e}"
+                            )));
                         }
                     };
 
-                    if self.last_ts_event != delta.ts_event && !self.current_batch.is_empty() {
+                    let ts_event = parse_timestamp(data.timestamp);
+                    let ts_init = parse_timestamp(data.local_timestamp);
+
+                    if self.last_ts_event != ts_event && !self.current_batch.is_empty() {
                         // Set F_LAST on the last delta of the completed batch
                         if let Some(last_delta) = self.current_batch.last_mut() {
                             last_delta.flags = RecordFlag::F_LAST.value();
@@ -442,12 +433,42 @@ impl Iterator for BatchedDeltasStreamIterator {
                         batches_created += 1;
                     }
 
-                    self.last_ts_event = delta.ts_event;
+                    self.last_ts_event = ts_event;
+
+                    // Insert CLEAR on snapshot boundary to reset order book state
+                    if data.is_snapshot && !self.last_is_snapshot {
+                        let clear_delta =
+                            OrderBookDelta::clear(self.instrument_id, 0, ts_event, ts_init);
+                        self.current_batch.push(clear_delta);
+                        self.deltas_emitted += 1;
+
+                        if let Some(limit) = self.limit
+                            && self.deltas_emitted >= limit
+                        {
+                            self.last_is_snapshot = data.is_snapshot;
+                            break;
+                        }
+                    }
+                    self.last_is_snapshot = data.is_snapshot;
+
+                    let delta = match parse_delta_record(
+                        &data,
+                        self.price_precision,
+                        self.size_precision,
+                        Some(self.instrument_id),
+                    ) {
+                        Ok(d) => d,
+                        Err(e) => {
+                            log::warn!("Skipping invalid delta record: {e}");
+                            continue;
+                        }
+                    };
+
                     self.current_batch.push(delta);
-                    self.records_processed += 1;
+                    self.deltas_emitted += 1;
 
                     if let Some(limit) = self.limit
-                        && self.records_processed >= limit
+                        && self.deltas_emitted >= limit
                     {
                         break;
                     }
@@ -467,6 +488,32 @@ impl Iterator for BatchedDeltasStreamIterator {
             }
             self.pending_batches
                 .push(std::mem::take(&mut self.current_batch));
+        }
+
+        if self.pending_batches.is_empty() {
+            None
+        } else {
+            Some(Ok(()))
+        }
+    }
+}
+
+#[cfg(feature = "python")]
+impl Iterator for BatchedDeltasStreamIterator {
+    type Item = anyhow::Result<Vec<Py<PyAny>>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(limit) = self.limit
+            && self.deltas_emitted >= limit
+        {
+            return None;
+        }
+
+        self.buffer.clear();
+        if let Some(result) = self.fill_pending_batches() {
+            if let Err(err) = result {
+                return Some(Err(err));
+            }
         }
 
         if self.pending_batches.is_empty() {
@@ -1497,6 +1544,206 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         std::fs::remove_file(&temp_file).ok();
     }
 
+    #[cfg(feature = "python")]
+    #[rstest]
+    pub fn test_stream_batched_deltas_clear_and_limit() {
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance,BTCUSDT,1640995200000000,1640995200100000,true,ask,50000.0,1.0
+binance,BTCUSDT,1640995201000000,1640995201100000,false,bid,49999.5,2.0
+binance,BTCUSDT,1640995202000000,1640995202100000,false,ask,50000.12,1.5
+binance,BTCUSDT,1640995203000000,1640995203100000,false,bid,49999.123,3.0
+binance,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0.5";
+
+        let temp_file = std::env::temp_dir().join("test_stream_batched_deltas.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        // limit=1 should return only the synthetic CLEAR delta
+        let mut iterator =
+            BatchedDeltasStreamIterator::new(&temp_file, 10, Some(4), Some(1), None, Some(1))
+                .unwrap();
+        iterator.fill_pending_batches();
+        assert_eq!(iterator.pending_batches.len(), 1);
+        assert_eq!(iterator.pending_batches[0].len(), 1);
+        assert_eq!(iterator.pending_batches[0][0].action, BookAction::Clear);
+
+        // No limit should return all batches (first batch starts with CLEAR)
+        let mut iterator =
+            BatchedDeltasStreamIterator::new(&temp_file, 10, Some(4), Some(1), None, None)
+                .unwrap();
+        iterator.fill_pending_batches();
+        assert_eq!(iterator.pending_batches.len(), 5);
+        assert_eq!(iterator.pending_batches[0].len(), 2);
+        assert_eq!(iterator.pending_batches[0][0].action, BookAction::Clear);
+        assert_ne!(iterator.pending_batches[0][1].action, BookAction::Clear);
+        let total_deltas: usize = iterator
+            .pending_batches
+            .iter()
+            .map(|batch| batch.len())
+            .sum();
+        assert_eq!(total_deltas, 6);
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
+    pub fn test_stream_batched_deltas_with_mid_snapshot_inserts_clear() {
+        // CSV with:
+        // - Initial snapshot (is_snapshot=true) at start
+        // - Some deltas (is_snapshot=false)
+        // - Mid-day snapshot (is_snapshot=true) - should trigger CLEAR
+        // - Back to deltas (is_snapshot=false)
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,bid,50000.0,1.0
+binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,ask,50001.0,2.0
+binance-futures,BTCUSDT,1640995201000000,1640995201100000,false,bid,49999.0,0.5
+binance-futures,BTCUSDT,1640995202000000,1640995202100000,false,ask,50002.0,1.5
+binance-futures,BTCUSDT,1640995300000000,1640995300100000,true,bid,50100.0,3.0
+binance-futures,BTCUSDT,1640995300000000,1640995300100000,true,ask,50101.0,4.0
+binance-futures,BTCUSDT,1640995301000000,1640995301100000,false,bid,50099.0,1.0";
+
+        let temp_file = std::env::temp_dir().join("test_stream_batched_mid_snapshot.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        let mut iterator =
+            BatchedDeltasStreamIterator::new(&temp_file, 100, Some(1), Some(1), None, None)
+                .unwrap();
+        iterator.fill_pending_batches();
+
+        let all_deltas: Vec<_> = iterator.pending_batches.iter().flatten().collect();
+        let clear_count = all_deltas
+            .iter()
+            .filter(|d| d.action == BookAction::Clear)
+            .count();
+
+        // Should have 2 CLEAR deltas: initial snapshot + mid-day snapshot
+        assert_eq!(
+            clear_count, 2,
+            "Expected 2 CLEAR deltas (initial + mid-day snapshot), got {clear_count}"
+        );
+
+        // Verify CLEAR positions:
+        // 0=CLEAR, 1=Add, 2=Add, 3=Update, 4=Update, 5=CLEAR, 6=Add, 7=Add, 8=Update
+        assert_eq!(all_deltas[0].action, BookAction::Clear);
+        assert_eq!(all_deltas[5].action, BookAction::Clear);
+
+        // CLEAR deltas should NOT have F_LAST when followed by same-timestamp deltas
+        assert_eq!(
+            all_deltas[0].flags & RecordFlag::F_LAST.value(),
+            0,
+            "CLEAR at index 0 should not have F_LAST flag"
+        );
+        assert_eq!(
+            all_deltas[5].flags & RecordFlag::F_LAST.value(),
+            0,
+            "CLEAR at index 5 should not have F_LAST flag"
+        );
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
+    pub fn test_stream_batched_deltas_limit_includes_clear() {
+        // Test that limit counts total emitted deltas (including CLEARs)
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance,BTCUSDT,1640995200000000,1640995200100000,true,bid,50000.0,1.0
+binance,BTCUSDT,1640995201000000,1640995201100000,false,bid,49999.0,0.5
+binance,BTCUSDT,1640995202000000,1640995202100000,false,ask,50002.0,1.5
+binance,BTCUSDT,1640995203000000,1640995203100000,false,bid,49998.0,0.5
+binance,BTCUSDT,1640995204000000,1640995204100000,false,ask,50003.0,1.0";
+
+        let temp_file = std::env::temp_dir().join("test_stream_batched_limit_includes_clear.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        let mut iterator =
+            BatchedDeltasStreamIterator::new(&temp_file, 100, Some(1), Some(1), None, Some(4))
+                .unwrap();
+        iterator.fill_pending_batches();
+
+        let all_deltas: Vec<_> = iterator.pending_batches.iter().flatten().collect();
+
+        // limit=4 should get exactly 4 deltas: 1 CLEAR + 3 data deltas
+        assert_eq!(all_deltas.len(), 4);
+        assert_eq!(all_deltas[0].action, BookAction::Clear);
+        assert_eq!(all_deltas[1].action, BookAction::Add);
+        assert_eq!(all_deltas[2].action, BookAction::Update);
+        assert_eq!(all_deltas[3].action, BookAction::Update);
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
+    pub fn test_stream_batched_deltas_limit_sets_f_last() {
+        // Test that F_LAST is set on the final delta when limit is reached
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance,BTCUSDT,1640995200000000,1640995200100000,true,bid,50000.0,1.0
+binance,BTCUSDT,1640995201000000,1640995201100000,false,ask,50001.0,2.0
+binance,BTCUSDT,1640995202000000,1640995202100000,false,bid,49999.0,0.5
+binance,BTCUSDT,1640995203000000,1640995203100000,false,ask,50002.0,1.5";
+
+        let temp_file = std::env::temp_dir().join("test_stream_batched_limit_f_last.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        // limit=3 should get 3 deltas with F_LAST on the last one
+        let mut iterator =
+            BatchedDeltasStreamIterator::new(&temp_file, 100, Some(1), Some(1), None, Some(3))
+                .unwrap();
+        iterator.fill_pending_batches();
+
+        let all_deltas: Vec<_> = iterator.pending_batches.iter().flatten().collect();
+
+        assert_eq!(all_deltas.len(), 3);
+        assert_eq!(
+            all_deltas[2].flags & RecordFlag::F_LAST.value(),
+            RecordFlag::F_LAST.value(),
+            "Final delta should have F_LAST flag when limit is reached"
+        );
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
+    pub fn test_stream_batched_deltas_snapshot_batch_flags() {
+        // Test that CLEAR is first in batch and only the last delta has F_LAST
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance,BTCUSDT,1640995200000000,1640995200100000,true,bid,50000.0,1.0
+binance,BTCUSDT,1640995200000000,1640995200100000,true,ask,50001.0,2.0
+binance,BTCUSDT,1640995201000000,1640995201100000,false,bid,49999.0,0.5";
+
+        let temp_file = std::env::temp_dir().join("test_stream_batched_snapshot_batch_flags.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        let mut iterator =
+            BatchedDeltasStreamIterator::new(&temp_file, 100, Some(1), Some(1), None, None)
+                .unwrap();
+        iterator.fill_pending_batches();
+
+        assert_eq!(iterator.pending_batches.len(), 2);
+        let first_batch = &iterator.pending_batches[0];
+
+        // First batch contains CLEAR + 2 snapshot deltas
+        assert_eq!(first_batch.len(), 3);
+        assert_eq!(first_batch[0].action, BookAction::Clear);
+        assert_eq!(first_batch[0].flags & RecordFlag::F_LAST.value(), 0);
+        assert_eq!(first_batch[1].flags & RecordFlag::F_LAST.value(), 0);
+        assert_eq!(
+            first_batch[2].flags & RecordFlag::F_LAST.value(),
+            RecordFlag::F_LAST.value()
+        );
+
+        // Second batch should have F_LAST set (end of file)
+        assert_eq!(iterator.pending_batches[1].len(), 1);
+        assert_eq!(
+            iterator.pending_batches[1][0].flags & RecordFlag::F_LAST.value(),
+            RecordFlag::F_LAST.value()
+        );
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
     #[rstest]
     pub fn test_stream_quotes_chunked() {
         let csv_data =
@@ -1993,7 +2240,7 @@ binance-futures,BTCUSDT,1640995301000000,1640995301100000,false,bid,50099.0,1.0"
         // Should have 2 CLEAR deltas: initial snapshot + mid-day snapshot
         assert_eq!(
             clear_count, 2,
-            "Expected 2 CLEAR deltas (initial + mid-day snapshot), was {clear_count}"
+            "Expected 2 CLEAR deltas (initial + mid-day snapshot), got {clear_count}"
         );
 
         // Verify CLEAR positions:
@@ -2029,7 +2276,7 @@ binance-futures,BTCUSDT,1640995301000000,1640995301100000,false,bid,50099.0,1.0"
         // Should have 2 CLEAR deltas: initial snapshot + mid-day snapshot
         assert_eq!(
             clear_count, 2,
-            "Expected 2 CLEAR deltas (initial + mid-day snapshot), was {clear_count}"
+            "Expected 2 CLEAR deltas (initial + mid-day snapshot), got {clear_count}"
         );
 
         assert_eq!(deltas[0].action, BookAction::Clear);
@@ -2045,7 +2292,7 @@ binance-futures,BTCUSDT,1640995301000000,1640995301100000,false,bid,50099.0,1.0"
         // 0=CLEAR, 1=Add, 2=Add, 3=Update, 4=Update, 5=Delete, 6=CLEAR
         assert_eq!(
             second_clear_idx, 6,
-            "Second CLEAR should be at index 6, was {second_clear_idx}"
+            "Second CLEAR should be at index 6, got {second_clear_idx}"
         );
 
         // CLEAR deltas should NOT have F_LAST when followed by same-timestamp deltas
