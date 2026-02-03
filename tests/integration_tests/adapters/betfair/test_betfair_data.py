@@ -15,6 +15,7 @@
 
 import asyncio
 from collections import Counter
+from pathlib import Path
 from unittest.mock import patch
 
 import msgspec
@@ -22,6 +23,8 @@ import pytest
 from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
+from nautilus_trader.adapters.betfair.data_types import BetfairRaceProgress
+from nautilus_trader.adapters.betfair.data_types import BetfairRaceRunnerData
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
@@ -553,3 +556,87 @@ def test_bsp_deltas_apply(data_client, instrument):
 @pytest.mark.asyncio
 async def test_subscribe_instruments(data_client, instrument):
     await data_client._subscribe_instrument(instrument.id)
+
+
+RESOURCES_PATH = Path(__file__).parent / "resources"
+
+
+def test_rcm_race_runner_data(data_client, mock_data_engine_process):
+    # Arrange
+    raw = (RESOURCES_PATH / "streaming" / "streaming_rcm.json").read_bytes()
+
+    # Act
+    data_client.on_market_update(raw)
+
+    # Assert
+    mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
+    custom_data = [data for data in mock_call_args if isinstance(data, CustomData)]
+    runner_data = [
+        data.data for data in custom_data if isinstance(data.data, BetfairRaceRunnerData)
+    ]
+
+    assert len(runner_data) == 1
+    assert runner_data[0].race_id == "28587288.1650"
+    assert runner_data[0].selection_id == 7390417
+    assert runner_data[0].speed == 17.8
+    assert runner_data[0].progress == 2051
+
+
+def test_rcm_race_progress(data_client, mock_data_engine_process):
+    # Arrange
+    raw = (RESOURCES_PATH / "streaming" / "streaming_rcm.json").read_bytes()
+
+    # Act
+    data_client.on_market_update(raw)
+
+    # Assert
+    mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
+    custom_data = [data for data in mock_call_args if isinstance(data, CustomData)]
+    progress_data = [
+        data.data for data in custom_data if isinstance(data.data, BetfairRaceProgress)
+    ]
+
+    assert len(progress_data) == 1
+    assert progress_data[0].race_id == "28587288.1650"
+    assert progress_data[0].gate_name == "1f"
+    assert progress_data[0].running_time == 46.7
+    assert progress_data[0].order == [7390417, 5600338, 11527189, 6395118, 8706072]
+
+
+def test_rcm_multi_runner(data_client, mock_data_engine_process):
+    # Arrange
+    raw = (RESOURCES_PATH / "streaming" / "streaming_rcm_multi_runner.json").read_bytes()
+
+    # Act
+    data_client.on_market_update(raw)
+
+    # Assert
+    mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
+    custom_data = [data for data in mock_call_args if isinstance(data, CustomData)]
+    runner_data = [
+        data.data for data in custom_data if isinstance(data.data, BetfairRaceRunnerData)
+    ]
+
+    assert len(runner_data) == 5
+    assert all(r.race_id == "32908802.0000" for r in runner_data)
+    assert {r.selection_id for r in runner_data} == {35467839, 24947967, 299569, 31422647, 41694785}
+
+
+def test_rcm_with_jumps(data_client, mock_data_engine_process):
+    # Arrange
+    raw = (RESOURCES_PATH / "streaming" / "streaming_rcm_race_start.json").read_bytes()
+
+    # Act
+    data_client.on_market_update(raw)
+
+    # Assert
+    mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
+    custom_data = [data for data in mock_call_args if isinstance(data, CustomData)]
+    progress_data = [
+        data.data for data in custom_data if isinstance(data.data, BetfairRaceProgress)
+    ]
+
+    assert len(progress_data) == 1
+    assert progress_data[0].jumps is not None
+    assert len(progress_data[0].jumps) == 9
+    assert progress_data[0].jumps[0] == {"J": 9, "L": 3123.5}

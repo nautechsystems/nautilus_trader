@@ -253,6 +253,110 @@ node.add_exec_client_factory(BETFAIR, BetfairLiveExecClientFactory)
 node.build()
 ```
 
+## Custom data types
+
+The Betfair adapter provides several custom data types that flow through the market stream.
+All custom data is delivered automatically when subscribed to markets - no explicit subscription is required,
+though strategies can register handlers for specific data types.
+
+### BetfairTicker
+
+Real-time ticker data for a betting selection.
+
+| Field                | Type    | Description                              |
+|----------------------|---------|------------------------------------------|
+| `instrument_id`      | str     | Nautilus instrument identifier.          |
+| `last_traded_price`  | float   | Last matched price (odds).               |
+| `traded_volume`      | float   | Total matched volume.                    |
+| `starting_price_near`| float   | Near-side BSP indicator.                 |
+| `starting_price_far` | float   | Far-side BSP indicator.                  |
+
+### BetfairStartingPrice
+
+The realized Betfair Starting Price (BSP) after market close.
+
+| Field           | Type  | Description                     |
+|-----------------|-------|---------------------------------|
+| `instrument_id` | str   | Nautilus instrument identifier. |
+| `bsp`           | float | Final starting price (odds).    |
+
+### BetfairRaceRunnerData
+
+Live GPS tracking data for individual horses (Total Performance Data).
+Available for supported UK and Irish races.
+
+| Field              | Type  | Description                                |
+|--------------------|-------|--------------------------------------------|
+| `race_id`          | str   | Betfair race identifier.                   |
+| `market_id`        | str   | Betfair market identifier.                 |
+| `selection_id`     | int   | Betfair selection (runner) identifier.     |
+| `latitude`         | float | GPS latitude.                              |
+| `longitude`        | float | GPS longitude.                             |
+| `speed`            | float | Current speed in m/s (Doppler-derived).    |
+| `progress`         | float | Distance to finish line in meters.         |
+| `stride_frequency` | float | Stride frequency in Hz.                    |
+
+### BetfairRaceProgress
+
+Race summary data with sectional times and running order.
+
+| Field            | Type       | Description                                   |
+|------------------|------------|-----------------------------------------------|
+| `race_id`        | str        | Betfair race identifier.                      |
+| `market_id`      | str        | Betfair market identifier.                    |
+| `gate_name`      | str        | Timing gate (e.g., "1f", "2f", "Finish").     |
+| `sectional_time` | float      | Time for this section in seconds.             |
+| `running_time`   | float      | Total time since race start in seconds.       |
+| `speed`          | float      | Lead horse speed in m/s.                      |
+| `progress`       | float      | Lead horse distance to finish in meters.      |
+| `order`          | list[int]  | Selection IDs in current race position order. |
+| `jumps`          | list[dict] | Jump obstacle data for National Hunt races.   |
+
+### Subscribing to custom data
+
+Custom data flows automatically through the Betfair market stream when you subscribe to markets.
+To receive custom data in your strategy, register a handler with the Betfair client ID:
+
+```python
+from nautilus_trader.adapters.betfair.constants import BETFAIR_CLIENT_ID
+from nautilus_trader.adapters.betfair.data_types import BetfairRaceRunnerData
+from nautilus_trader.adapters.betfair.data_types import BetfairRaceProgress
+from nautilus_trader.adapters.betfair.data_types import BetfairTicker
+from nautilus_trader.model.data import DataType
+
+class MyStrategy(Strategy):
+    def on_start(self):
+        # Register handlers for custom data types (client_id required)
+        self.subscribe_data(DataType(BetfairTicker), client_id=BETFAIR_CLIENT_ID)
+        self.subscribe_data(DataType(BetfairRaceRunnerData), client_id=BETFAIR_CLIENT_ID)
+        self.subscribe_data(DataType(BetfairRaceProgress), client_id=BETFAIR_CLIENT_ID)
+
+    def on_data(self, data):
+        if isinstance(data, BetfairRaceRunnerData):
+            self.log.info(f"Runner {data.selection_id}: speed={data.speed} m/s")
+        elif isinstance(data, BetfairRaceProgress):
+            self.log.info(f"Race order: {data.order}")
+        elif isinstance(data, BetfairTicker):
+            self.log.info(f"LTP: {data.last_traded_price}")
+```
+
+:::info
+Race data (RCM messages) is only available for races with Total Performance Data coverage.
+Not all races have GPS tracking enabled.
+:::
+
+### Loading race data from files
+
+For backtesting with recorded race data, use the file parser:
+
+```python
+from nautilus_trader.adapters.betfair.parsing.core import parse_betfair_rcm_file
+
+for data in parse_betfair_rcm_file("path/to/rcm_data.json"):
+    if isinstance(data, BetfairRaceRunnerData):
+        print(f"Runner {data.selection_id} at {data.latitude}, {data.longitude}")
+```
+
 ## Contributing
 
 :::info

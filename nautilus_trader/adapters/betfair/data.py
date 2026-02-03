@@ -28,12 +28,17 @@ from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus
 from nautilus_trader.adapters.betfair.parsing.common import merge_instrument_fields
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
+from nautilus_trader.adapters.betfair.parsing.rcm import RCM
+from nautilus_trader.adapters.betfair.parsing.rcm import BetfairRCMParser
+from nautilus_trader.adapters.betfair.parsing.rcm import is_rcm_message
+from nautilus_trader.adapters.betfair.parsing.rcm import rcm_decode
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.data.messages import SubscribeData
 from nautilus_trader.data.messages import SubscribeInstrument
 from nautilus_trader.data.messages import SubscribeInstrumentClose
 from nautilus_trader.data.messages import SubscribeInstruments
@@ -42,6 +47,7 @@ from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeData
 from nautilus_trader.data.messages import UnsubscribeInstrument
 from nautilus_trader.data.messages import UnsubscribeInstrumentClose
 from nautilus_trader.data.messages import UnsubscribeInstruments
@@ -118,6 +124,7 @@ class BetfairDataClient(LiveMarketDataClient):
         )
 
         self._parser = BetfairParser(currency=config.account_currency)
+        self._rcm_parser = BetfairRCMParser()
 
         # Async tasks
         self._keep_alive_task: asyncio.Task | None = None
@@ -218,7 +225,6 @@ class BetfairDataClient(LiveMarketDataClient):
         if self._stream.is_active():
             self._log.error("Cannot dispose a connected data client")
 
-    # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         self._log.info("Skipping subscribe_order_book_deltas, Betfair subscribes automatically")
 
@@ -240,6 +246,15 @@ class BetfairDataClient(LiveMarketDataClient):
 
     async def _subscribe_instrument_close(self, command: SubscribeInstrumentClose) -> None:
         pass  # Subscribed as part of orderbook
+
+    async def _subscribe(self, command: SubscribeData) -> None:
+        # RCM data (BetfairRaceRunnerData, BetfairRaceProgress) flows automatically
+        # through the market stream - no explicit subscription needed
+        pass
+
+    async def _unsubscribe(self, command: UnsubscribeData) -> None:
+        # RCM data flows through market stream, cannot be unsubscribed separately
+        pass
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the
@@ -267,13 +282,18 @@ class BetfairDataClient(LiveMarketDataClient):
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         self._log.info("Skipping unsubscribe_bars, not applicable for Betfair")
 
-    # -- STREAMS ----------------------------------------------------------------------------------
-
     def on_market_update(self, raw: bytes) -> None:
         """
         Handle an update from the data stream socket.
         """
         self._log.debug(f"[RECV]: {raw.decode()}")
+
+        # Check for RCM (Race Change Message) first
+        if is_rcm_message(raw):
+            rcm = rcm_decode(raw)
+            self._on_rcm_update(rcm=rcm)
+            return
+
         update = stream_decode(raw)
         if isinstance(update, MCM):
             self._on_market_update(mcm=update)
@@ -294,6 +314,12 @@ class BetfairDataClient(LiveMarketDataClient):
                 self._on_instrument(data)
             else:
                 self._handle_data(data)
+
+    def _on_rcm_update(self, rcm: RCM) -> None:
+        updates = self._rcm_parser.parse(rcm=rcm)
+        for data in updates:
+            self._log.debug(f"{data=}")
+            self._handle_data(data)
 
     def _on_instrument(self, instrument: BettingInstrument):
         cache_instrument = self._cache.instrument(instrument.id)
