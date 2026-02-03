@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
+from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProviderConfig
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config import PositiveFloat
@@ -27,6 +28,8 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
 
     Parameters
     ----------
+    instrument_config : PolymarketInstrumentProviderConfig, optional
+        The Polymarket instrument provider config.
     venue : Venue, default POLYMARKET_VENUE
         The venue for the client.
     private_key : str, optional
@@ -70,6 +73,7 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
 
     """
 
+    instrument_config: PolymarketInstrumentProviderConfig | None = None
     venue: Venue = POLYMARKET_VENUE
     private_key: str | None = None
     signature_type: int = 0
@@ -93,6 +97,8 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
 
     Parameters
     ----------
+    instrument_config : PolymarketInstrumentProviderConfig, optional
+        The Polymarket instrument provider config.
     venue : Venue, default POLYMARKET_VENUE
         The venue for the client.
     private_key : str, optional
@@ -143,6 +149,7 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
 
     """
 
+    instrument_config: PolymarketInstrumentProviderConfig | None = None
     venue: Venue = POLYMARKET_VENUE
     private_key: str | None = None
     signature_type: int = 0

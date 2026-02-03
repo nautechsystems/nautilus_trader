@@ -31,10 +31,10 @@ from nautilus_trader.adapters.polymarket.config import PolymarketExecClientConfi
 from nautilus_trader.adapters.polymarket.data import PolymarketDataClient
 from nautilus_trader.adapters.polymarket.execution import PolymarketExecutionClient
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProvider
+from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProviderConfig
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
@@ -100,7 +100,7 @@ def get_polymarket_http_client(
 def get_polymarket_instrument_provider(
     client: ClobClient,
     clock: LiveClock,
-    config: InstrumentProviderConfig,
+    config: PolymarketInstrumentProviderConfig | None,
 ) -> PolymarketInstrumentProvider:
     """
     Cache and return a Polymarket instrument provider.
@@ -113,7 +113,7 @@ def get_polymarket_instrument_provider(
         The client for the instrument provider.
     clock : LiveClock
         The clock for the instrument provider.
-    config : InstrumentProviderConfig
+    config : PolymarketInstrumentProviderConfig, optional
         The configuration for the instrument provider.
 
     Returns
@@ -177,7 +177,7 @@ class PolymarketLiveDataClientFactory(LiveDataClientFactory):
         provider = get_polymarket_instrument_provider(
             client=http_client,
             clock=clock,
-            config=config.instrument_provider,
+            config=config.instrument_config,
         )
         return PolymarketDataClient(
             loop=loop,
@@ -245,7 +245,7 @@ class PolymarketLiveExecClientFactory(LiveExecClientFactory):
         provider = get_polymarket_instrument_provider(
             client=http_client,
             clock=clock,
-            config=config.instrument_provider,
+            config=config.instrument_config,
         )
         return PolymarketExecutionClient(
             loop=loop,
