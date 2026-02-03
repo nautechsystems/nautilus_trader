@@ -177,6 +177,9 @@ pub enum DydxWsSubaccountsMessage {
     /// Channel data update.
     #[serde(rename = "channel_data")]
     ChannelData(DydxWsSubaccountsChannelData),
+    /// Unsubscription confirmation.
+    #[serde(rename = "unsubscribed")]
+    Unsubscribed(DydxWsSubscriptionMsg),
 }
 
 /// Orderbook channel messages (second level, type-tagged).
@@ -192,6 +195,9 @@ pub enum DydxWsOrderbookMessage {
     /// Batch channel data.
     #[serde(rename = "channel_batch_data")]
     ChannelBatchData(DydxWsChannelBatchDataMsg),
+    /// Unsubscription confirmation.
+    #[serde(rename = "unsubscribed")]
+    Unsubscribed(DydxWsSubscriptionMsg),
 }
 
 /// Trades channel messages (second level, type-tagged).
@@ -204,6 +210,9 @@ pub enum DydxWsTradesMessage {
     /// Channel data update.
     #[serde(rename = "channel_data")]
     ChannelData(DydxWsChannelDataMsg),
+    /// Unsubscription confirmation.
+    #[serde(rename = "unsubscribed")]
+    Unsubscribed(DydxWsSubscriptionMsg),
 }
 
 /// Markets channel messages (second level, type-tagged).
@@ -216,6 +225,9 @@ pub enum DydxWsMarketsMessage {
     /// Channel data update.
     #[serde(rename = "channel_data")]
     ChannelData(DydxWsChannelDataMsg),
+    /// Unsubscription confirmation.
+    #[serde(rename = "unsubscribed")]
+    Unsubscribed(DydxWsSubscriptionMsg),
 }
 
 /// Candles channel messages (second level, type-tagged).
@@ -228,6 +240,9 @@ pub enum DydxWsCandlesMessage {
     /// Channel data update.
     #[serde(rename = "channel_data")]
     ChannelData(DydxWsChannelDataMsg),
+    /// Unsubscription confirmation.
+    #[serde(rename = "unsubscribed")]
+    Unsubscribed(DydxWsSubscriptionMsg),
 }
 
 /// Parent subaccounts channel messages (second level, type-tagged).
@@ -240,6 +255,9 @@ pub enum DydxWsParentSubaccountsMessage {
     /// Channel data update.
     #[serde(rename = "channel_data")]
     ChannelData(DydxWsChannelDataMsg),
+    /// Unsubscription confirmation.
+    #[serde(rename = "unsubscribed")]
+    Unsubscribed(DydxWsSubscriptionMsg),
 }
 
 /// Block height channel messages (second level, type-tagged).
@@ -252,6 +270,9 @@ pub enum DydxWsBlockHeightMessage {
     /// Channel data update.
     #[serde(rename = "channel_data")]
     ChannelData(DydxWsBlockHeightChannelData),
+    /// Unsubscription confirmation.
+    #[serde(rename = "unsubscribed")]
+    Unsubscribed(DydxWsSubscriptionMsg),
 }
 
 /// Generic message structure for initial classification (fallback for non-channel messages).

@@ -380,6 +380,11 @@ impl FeedHandler {
             DydxWsSubaccountsMessage::ChannelData(data) => {
                 self.process_subaccounts_channel_data(data)
             }
+            DydxWsSubaccountsMessage::Unsubscribed(data) => {
+                let topic = self.topic_from_msg(&DydxWsChannel::Subaccounts, &data.id);
+                self.subscriptions.confirm_unsubscribe(&topic);
+                None
+            }
         }
     }
 
@@ -397,6 +402,11 @@ impl FeedHandler {
             DydxWsOrderbookMessage::ChannelBatchData(data) => {
                 self.parse_orderbook_batch_from_data(&data)
             }
+            DydxWsOrderbookMessage::Unsubscribed(data) => {
+                let topic = self.topic_from_msg(&DydxWsChannel::Orderbook, &data.id);
+                self.subscriptions.confirm_unsubscribe(&topic);
+                None
+            }
         }
     }
 
@@ -409,6 +419,11 @@ impl FeedHandler {
                 self.parse_trades_from_data(&data)
             }
             DydxWsTradesMessage::ChannelData(data) => self.parse_trades_from_data(&data),
+            DydxWsTradesMessage::Unsubscribed(data) => {
+                let topic = self.topic_from_msg(&DydxWsChannel::Trades, &data.id);
+                self.subscriptions.confirm_unsubscribe(&topic);
+                None
+            }
         }
     }
 
@@ -421,6 +436,11 @@ impl FeedHandler {
                 self.parse_markets_from_data(&data)
             }
             DydxWsMarketsMessage::ChannelData(data) => self.parse_markets_from_data(&data),
+            DydxWsMarketsMessage::Unsubscribed(data) => {
+                let topic = self.topic_from_msg(&DydxWsChannel::Markets, &data.id);
+                self.subscriptions.confirm_unsubscribe(&topic);
+                None
+            }
         }
     }
 
@@ -433,6 +453,11 @@ impl FeedHandler {
                 self.parse_candles_from_data(&data)
             }
             DydxWsCandlesMessage::ChannelData(data) => self.parse_candles_from_data(&data),
+            DydxWsCandlesMessage::Unsubscribed(data) => {
+                let topic = self.topic_from_msg(&DydxWsChannel::Candles, &data.id);
+                self.subscriptions.confirm_unsubscribe(&topic);
+                None
+            }
         }
     }
 
@@ -449,6 +474,11 @@ impl FeedHandler {
             }
             DydxWsParentSubaccountsMessage::ChannelData(data) => {
                 self.parse_parent_subaccounts_from_data(&data)
+            }
+            DydxWsParentSubaccountsMessage::Unsubscribed(data) => {
+                let topic = self.topic_from_msg(&DydxWsChannel::ParentSubaccounts, &data.id);
+                self.subscriptions.confirm_unsubscribe(&topic);
+                None
             }
         }
     }
@@ -482,6 +512,11 @@ impl FeedHandler {
                         None
                     }
                 }
+            }
+            DydxWsBlockHeightMessage::Unsubscribed(data) => {
+                let topic = self.topic_from_msg(&DydxWsChannel::BlockHeight, &data.id);
+                self.subscriptions.confirm_unsubscribe(&topic);
+                None
             }
         }
     }
