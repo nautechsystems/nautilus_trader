@@ -28,6 +28,7 @@ from ibapi.common import BarData
 from ibapi.common import HistoricalTickLast
 from ibapi.common import TickAttribBidAsk
 from ibapi.common import TickAttribLast
+from ibapi.ticktype import TickTypeEnum
 
 from nautilus_trader.adapters.interactive_brokers.client.common import Request
 from nautilus_trader.adapters.interactive_brokers.client.common import Subscription
@@ -1070,8 +1071,8 @@ async def test_realtimeBar(ib_client):
 @pytest.mark.parametrize(
     ("subscription_name", "instrument", "tick_type"),
     [
-        ("market_data", IBTestContractStubs.aapl_instrument(), 1),
-        ("index_market_data", IBTestContractStubs.spx_instrument(), 4),
+        ("market_data", IBTestContractStubs.aapl_instrument(), TickTypeEnum.BID),
+        ("index_market_data", IBTestContractStubs.spx_instrument(), TickTypeEnum.LAST),
     ],
 )
 async def test_process_tick_price_invalid_price_ignored(
@@ -1113,8 +1114,8 @@ async def test_process_tick_price_invalid_price_ignored(
 @pytest.mark.parametrize(
     ("subscription_name", "instrument", "tick_type"),
     [
-        ("market_data", IBTestContractStubs.aapl_instrument(), 1),
-        ("index_market_data", IBTestContractStubs.spx_instrument(), 4),
+        ("market_data", IBTestContractStubs.aapl_instrument(), TickTypeEnum.BID),
+        ("index_market_data", IBTestContractStubs.spx_instrument(), TickTypeEnum.LAST),
     ],
 )
 async def test_process_tick_price_invalid_price_first_allowed(
@@ -1167,7 +1168,7 @@ async def test_process_tick_size_negative_size_ignored(ib_client):
     # Act - Try to set negative size
     await ib_client.process_tick_size(
         req_id=1,
-        tick_type=0,  # BID_SIZE
+        tick_type=TickTypeEnum.BID_SIZE,
         size=Decimal(-100),
     )
 
@@ -1196,7 +1197,7 @@ async def test_process_tick_size_extremely_large_size_ignored(ib_client):
     invalid_size = MAX_VALID_TICK_SIZE + Decimal(1)
     await ib_client.process_tick_size(
         req_id=1,
-        tick_type=0,  # BID_SIZE
+        tick_type=TickTypeEnum.BID_SIZE,
         size=invalid_size,
     )
 
@@ -1224,12 +1225,12 @@ async def test_process_tick_size_valid_size_accepted(ib_client):
     # Act - Set valid size
     await ib_client.process_tick_size(
         req_id=1,
-        tick_type=0,  # BID_SIZE
+        tick_type=TickTypeEnum.BID_SIZE,
         size=Decimal(100),
     )
 
     # Assert - Valid size should be stored
-    assert ib_client._subscription_tick_data[1][0] == 100
+    assert ib_client._subscription_tick_data[1][TickTypeEnum.BID_SIZE] == 100
 
 
 @pytest.mark.asyncio
@@ -1347,7 +1348,7 @@ async def test_process_tick_price_and_size_creates_quote_tick(ib_client):
     # Act - Process bid price
     await ib_client.process_tick_price(
         req_id=1,
-        tick_type=1,  # BID_PRICE
+        tick_type=TickTypeEnum.BID,
         price=100.01,
         attrib=None,
     )
@@ -1355,7 +1356,7 @@ async def test_process_tick_price_and_size_creates_quote_tick(ib_client):
     # Process ask price
     await ib_client.process_tick_price(
         req_id=1,
-        tick_type=2,  # ASK_PRICE
+        tick_type=TickTypeEnum.ASK,
         price=100.02,
         attrib=None,
     )
@@ -1363,14 +1364,14 @@ async def test_process_tick_price_and_size_creates_quote_tick(ib_client):
     # Process bid size
     await ib_client.process_tick_size(
         req_id=1,
-        tick_type=0,  # BID_SIZE
+        tick_type=TickTypeEnum.BID_SIZE,
         size=Decimal(100),
     )
 
     # Process ask size (this should trigger quote tick creation)
     await ib_client.process_tick_size(
         req_id=1,
-        tick_type=3,  # ASK_SIZE
+        tick_type=TickTypeEnum.ASK_SIZE,
         size=Decimal(200),
     )
 
@@ -1404,7 +1405,7 @@ async def test_process_tick_price_creates_index_price_update(ib_client):
     # Act - Process index price
     await ib_client.process_tick_price(
         req_id=1,
-        tick_type=4,  # last price type
+        tick_type=TickTypeEnum.LAST,
         price=7000.53,
         attrib=None,
     )

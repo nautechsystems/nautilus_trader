@@ -30,6 +30,7 @@ from ibapi.common import HistoricalTickLast
 from ibapi.common import MarketDataTypeEnum
 from ibapi.common import TickAttribBidAsk
 from ibapi.common import TickAttribLast
+from ibapi.ticktype import TickTypeEnum
 
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 from nautilus_trader.adapters.interactive_brokers.client.common import IBKRBookLevel
@@ -837,7 +838,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         # But option spreads can have negative prices, in this case the size of a quote will invalidate the quote
         if price == -1.0 and self._subscription_tick_data[req_id].get(tick_type, 0.0) > 0.0:
             self._log.warning(
-                f"Ignoring invalid tick price: {price} for req_id={req_id}, tick_type={tick_type}",
+                f"Ignoring invalid tick price: {price} for req_id={req_id}, tick_type={tick_type}:{TickTypeEnum.toStr(tick_type)}",
             )
             return
 
@@ -859,7 +860,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         size: Decimal,
     ) -> None:
         """
-        Process tick size data from reqMktData for spread instruments and indices.
+        Process tick size data from reqMktData for spread instruments.
         """
         if not (subscription := self._subscriptions.get(req_id=req_id)):
             return
@@ -868,7 +869,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         # IB may send invalid sizes when prices are invalid
         if size < 0 or size > MAX_VALID_TICK_SIZE:
             self._log.warning(
-                f"Ignoring invalid tick size: {size} for req_id={req_id}, tick_type={tick_type}",
+                f"Ignoring invalid tick size: {size} for req_id={req_id}, tick_type={tick_type}:{TickTypeEnum.toStr(tick_type)}",
             )
             return
 
@@ -895,11 +896,10 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         tick_data = self._subscription_tick_data[req_id]
 
-        # IB tick types: 0=BID_SIZE, 1=BID_PRICE, 2=ASK_PRICE, 3=ASK_SIZE
-        bid_size = tick_data.get(0)
-        bid_price = tick_data.get(1)
-        ask_price = tick_data.get(2)
-        ask_size = tick_data.get(3)
+        bid_size = tick_data.get(TickTypeEnum.BID_SIZE)
+        bid_price = tick_data.get(TickTypeEnum.BID)
+        ask_price = tick_data.get(TickTypeEnum.ASK)
+        ask_size = tick_data.get(TickTypeEnum.ASK_SIZE)
 
         # Validate that both prices are present and valid (positive)
         if (
@@ -942,7 +942,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         tick_data = self._subscription_tick_data[req_id]
 
-        price = tick_data.get(4)  # IB tick type 4 = LAST_PRICE for index market data
+        price = tick_data.get(TickTypeEnum.LAST)
 
         if price is not None:
             instrument_id = InstrumentId.from_str(subscription.name[0])
