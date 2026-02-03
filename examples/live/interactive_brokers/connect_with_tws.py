@@ -57,6 +57,7 @@ instrument_provider = InteractiveBrokersInstrumentProviderConfig(
             "V.NYSE",
             "CLZ8.NYMEX",
             "ESZ8.CME",
+            "^SPX.CBOE",
         ],
     ),
 )
@@ -106,10 +107,12 @@ node = TradingNode(config=config_node)
 
 # Configure your strategy
 strategy_config = SubscribeStrategyConfig(
-    instrument_id=InstrumentId.from_str("EUR/USD.IDEALPRO"),
+    # instrument_id=InstrumentId.from_str("EUR/USD.IDEALPRO"),
+    instrument_id=InstrumentId.from_str("^SPX.CBOE"),
     trade_ticks=False,
-    quote_ticks=True,
-    bars=True,
+    quote_ticks=False,
+    bars=False,
+    index_prices=True,
 )
 # Instantiate your strategy
 strategy = SubscribeStrategy(config=strategy_config)

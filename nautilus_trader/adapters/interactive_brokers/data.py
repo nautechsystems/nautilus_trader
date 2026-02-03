@@ -40,6 +40,7 @@ from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeData
+from nautilus_trader.data.messages import SubscribeIndexPrices
 from nautilus_trader.data.messages import SubscribeInstrument
 from nautilus_trader.data.messages import SubscribeInstrumentClose
 from nautilus_trader.data.messages import SubscribeInstruments
@@ -49,6 +50,7 @@ from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
 from nautilus_trader.data.messages import UnsubscribeData
+from nautilus_trader.data.messages import UnsubscribeIndexPrices
 from nautilus_trader.data.messages import UnsubscribeInstrument
 from nautilus_trader.data.messages import UnsubscribeInstrumentClose
 from nautilus_trader.data.messages import UnsubscribeInstruments
@@ -169,6 +171,26 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             "implement the `_subscribe_instrument` coroutine",  # pragma: no cover
         )
 
+    async def _subscribe_index_prices(self, command: SubscribeIndexPrices) -> None:
+        contract = self.instrument_provider.contract.get(command.instrument_id)
+        if not contract:
+            self._log.error(
+                f"Cannot subscribe to index prices for {command.instrument_id}: instrument not found",
+            )
+            return
+
+        if contract.secType != "IND":
+            self._log.warning(
+                f"Index price subscription not supported for security type {contract.secType}",
+            )
+            return
+
+        await self._client.subscribe_index_market_data(
+            instrument_id=command.instrument_id,
+            contract=contract,
+            generic_tick_list="",  # Empty for basic price updates
+        )
+
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         if command.book_type == BookType.L3_MBO:
             self._log.error(
@@ -284,6 +306,9 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_instrument` coroutine",  # pragma: no cover
         )
+
+    async def _unsubscribe_index_prices(self, command: UnsubscribeIndexPrices) -> None:
+        await self._client.unsubscribe_index_market_data(command.instrument_id)
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         is_smart_depth = command.params.get("is_smart_depth", True)
