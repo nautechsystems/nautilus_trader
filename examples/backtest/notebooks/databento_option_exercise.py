@@ -19,14 +19,11 @@
 # %%
 from nautilus_trader.adapters.databento.data_utils import load_catalog
 from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.backtest.option_exercise import OptionExerciseConfig
-from nautilus_trader.backtest.option_exercise import OptionExerciseModule
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
-from nautilus_trader.config import ImportableActorConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StrategyConfig
@@ -57,7 +54,10 @@ backtest_start_time = "2024-05-09T10:00"
 end_time = "2026-01-09T21:05"
 
 # %% [markdown]
-# ## strategy
+# ## Strategy
+#
+# Buys one option; at expiry the option leg settles at `custom_settlement_prices`
+# (or intrinsic/avg_px_open if omitted).
 
 
 # %%
@@ -117,7 +117,7 @@ class OptionStrategy(Strategy):
 
 
 # %% [markdown]
-# ## backtest node
+# ## Backtest node
 
 # %%
 strategies = [
@@ -139,9 +139,13 @@ logging = LoggingConfig(
     clear_log_file=True,
 )
 
+# Custom settlement price for the option leg at expiry (overrides intrinsic/avg_px_open)
+custom_settlement_prices = {option_id: 50.0}
+
 engine_config = BacktestEngineConfig(
     logging=logging,
     strategies=strategies,
+    custom_settlement_prices=custom_settlement_prices,
 )
 
 # BacktestRunConfig
@@ -158,16 +162,6 @@ data = [
     ),
 ]
 
-modules = [
-    ImportableActorConfig(
-        actor_path=OptionExerciseModule.fully_qualified_name(),
-        config_path=OptionExerciseConfig.fully_qualified_name(),
-        config={
-            "auto_exercise_enabled": True,
-        },
-    ),
-]
-
 venues = [
     BacktestVenueConfig(
         name="XCME",
@@ -175,7 +169,6 @@ venues = [
         account_type="MARGIN",
         base_currency="USD",
         starting_balances=["1_000_000 USD"],
-        modules=modules,
     ),
 ]
 
@@ -195,7 +188,7 @@ node = BacktestNode(configs=configs)
 results = node.run()
 
 # %% [markdown]
-# ## backtest results
+# ## Backtest results
 
 # %%
 engine = node.get_engine(configs[0].id)

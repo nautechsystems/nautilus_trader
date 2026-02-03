@@ -40,6 +40,7 @@ from nautilus_trader.core.rust.model cimport MarketStatus
 from nautilus_trader.core.rust.model cimport MarketStatusAction
 from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport PriceRaw
 from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.core.rust.model cimport TimeInForce
@@ -67,6 +68,7 @@ from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -269,6 +271,8 @@ cdef class SimulatedExchange:
     """The simulation modules registered with the exchange.\n\n:returns: `list[SimulationModule]`"""
     cdef readonly dict[InstrumentId, Instrument] instruments
     """The exchange instruments.\n\n:returns: `dict[InstrumentId, Instrument]`"""
+    cdef dict custom_settlement_prices
+    """Optional instrument_id -> settlement price for instrument expiration."""
 
     cdef dict[InstrumentId, OrderMatchingEngine] _matching_engines
     cdef object _message_queue
@@ -361,6 +365,7 @@ cdef class OrderMatchingEngine:
     cdef bint _liquidity_consumption
     cdef bint _queue_position
     cdef uint32_t _price_protection_points
+    cdef dict _custom_settlement_prices
     cdef dict[TraderId, AccountId] _account_ids
     cdef dict[InstrumentId, BarType] _execution_bar_types
     cdef dict[BarType, object] _execution_bar_deltas
@@ -430,6 +435,18 @@ cdef class OrderMatchingEngine:
     cpdef void process_bar(self, Bar bar)
     cpdef void process_status(self, MarketStatusAction status)
     cpdef void process_instrument_close(self, InstrumentClose close)
+    cpdef void check_instrument_expiration(self, uint64_t timestamp_ns)
+    cdef void _process_option_expiry(self, uint64_t ts_now)
+    cdef Instrument _get_option_underlying_instrument(self)
+    cdef bint _option_should_exercise(self, Price underlying_price)
+    cdef void _option_otm_expiry(self, Position position, uint64_t ts_now, Price custom_option_price=*)
+    cdef void _option_exercise_position(self, Position position, Instrument underlying_instrument, Price underlying_price, uint64_t ts_now, Price custom_option_price=*)
+    cdef void _option_cash_settlement(self, Position position, Price underlying_price, uint64_t ts_now, Price custom_option_price=*)
+    cdef void _option_physical_settlement(self, Position position, Instrument underlying_instrument, Price underlying_price, uint64_t ts_now, Price custom_option_price=*)
+    cdef Price _option_settlement_price(self, Price underlying_price, bint cash_settled)
+    cdef OrderFilled _option_create_close_fill(self, Position position, Price price, str trade_id, uint64_t ts_now)
+    cdef OrderFilled _option_create_underlying_fill(self, Position position, Instrument underlying_instrument, Quantity quantity, PositionSide side, Price price, str trade_id_suffix, uint64_t ts_now)
+    cdef void _option_send_events(self, list events)
     cdef void _process_trade_ticks_from_bar(self, Bar bar)
     cdef TradeTick _create_base_trade_tick(self, Bar bar, Quantity size)
     cdef void _process_trade_bar_open(self, Bar bar, TradeTick tick)
