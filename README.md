@@ -58,7 +58,7 @@ including FX, Equities, Futures, Options, Crypto, DeFi, and Betting — enabling
 - **Multi-venue**: Multiple venue capabilities facilitate market-making and statistical arbitrage strategies.
 - **AI Training**: Backtest engine fast enough to be used to train AI trading agents (RL/ES).
 
-![Alt text](https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-art.png "nautilus")
+![nautilus](https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-art.png "nautilus")
 
 > *nautilus - from ancient Greek 'sailor' and naus 'ship'.*
 >
@@ -100,7 +100,7 @@ Rust's rich type system and ownership model guarantee memory-safety and thread-s
 eliminating many classes of bugs at compile-time. Overall safety in this project also depends on
 correctly upheld invariants in unsafe blocks and FFI boundaries.
 
-The project increasingly utilizes Rust for core performance-critical components. Python bindings are implemented via Cython and [PyO3](https://pyo3.rs)—no Rust toolchain is required at install time.
+The project utilizes Rust for core performance-critical components. Python bindings are implemented via Cython and [PyO3](https://pyo3.rs)—no Rust toolchain is required at install time.
 
 This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/01/18/soundness-pledge.html):
 
@@ -150,6 +150,17 @@ The following integrations are currently supported; see [docs/integrations/](htt
 - `stable`: Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain).
 
 See the [Integrations](https://nautilustrader.io/docs/latest/integrations/) documentation for further details.
+
+## Roadmap
+
+The [Roadmap](/ROADMAP.md) outlines NautilusTrader's strategic direction.
+Current priorities include porting the core to Rust, improving documentation, and enhancing code ergonomics.
+
+The open-source project focuses on single-node backtesting and live trading for individual and small-team quantitative traders.
+UI dashboards, distributed orchestration, and built-in AI/ML tooling are out of scope to maintain focus on the core engine and ecosystem sustainability.
+
+New integration proposals should start with an RFC issue to discuss suitability before submitting a PR.
+See [Community-contributed integrations](/ROADMAP.md#community-contributed-integrations) for guidelines.
 
 ## Versioning and releases
 
@@ -250,7 +261,7 @@ pip install -U nautilus_trader --index-url=https://packages.nautechsystems.io/si
 
 > [!TIP]
 >
-> Use `--extra-index-url` instead of `--index-url` if you want pip to fall back to PyPI automatically:
+> Use `--extra-index-url` instead of `--index-url` if you want pip to fall back to PyPI automatically.
 
 #### Development wheels
 
@@ -373,6 +384,12 @@ It's possible to install from source using pip if you first install the build de
 
        ```bash
        sudo apt-get install clang
+       ```
+
+   - macOS:
+
+       ```bash
+       xcode-select --install
        ```
 
    - Windows:
