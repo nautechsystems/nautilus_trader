@@ -177,12 +177,16 @@ impl DatabaseQueries {
     ///
     /// # Errors
     ///
-    /// Returns an error if the underlying Redis MGET operation fails.
+    /// Returns an error if `batch_size` is zero or if the underlying Redis MGET operation fails.
     pub async fn read_bulk_batched(
         con: &ConnectionManager,
         keys: &[String],
         batch_size: usize,
     ) -> anyhow::Result<Vec<Option<Bytes>>> {
+        if batch_size == 0 {
+            anyhow::bail!("`batch_size` must be greater than zero");
+        }
+
         if keys.is_empty() {
             return Ok(vec![]);
         }

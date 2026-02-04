@@ -422,6 +422,22 @@ mod serial_tests {
     }
 
     #[tokio::test]
+    async fn test_read_bulk_batched_zero_batch_size_error() {
+        let con = get_redis_connection().await;
+        let keys: Vec<String> = vec!["key1".to_string(), "key2".to_string()];
+
+        let result = DatabaseQueries::read_bulk_batched(&con, &keys, 0).await;
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("must be greater than zero")
+        );
+    }
+
+    #[tokio::test]
     async fn test_scan_keys_with_special_characters() {
         let mut con = get_redis_connection().await;
 
