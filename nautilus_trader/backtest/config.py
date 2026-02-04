@@ -131,6 +131,10 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
         For BUY orders: protection_price = ask + (points * price_increment).
         For SELL orders: protection_price = bid - (points * price_increment).
         Set to 0 to disable price protection.
+    settlement_prices : dict[InstrumentId, float], optional
+        Map of instrument ID to settlement price for expiring instruments.
+        For futures, positions close at this price instead of market.
+        For options, the option leg settles at this price.
 
     """
 
@@ -164,6 +168,7 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     allow_cash_borrowing: bool = False
     frozen_account: bool = False
     price_protection_points: NonNegativeInt = 0
+    settlement_prices: dict[InstrumentId, float] | None = None
 
 
 class BacktestDataConfig(NautilusConfig, frozen=True):
@@ -354,20 +359,12 @@ class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
         If logging should be bypassed.
     run_analysis : bool, default True
         If post backtest performance analysis should be run.
-    custom_settlement_prices : dict[InstrumentId, float], optional
-        Optional map of instrument_id to settlement price (float) for instrument
-        expiration in backtest. For futures, expiring positions are closed at
-        this price instead of the market price at expiry. For options, the
-        option leg is settled at this price instead of intrinsic (cash/OTM) or
-        avg_px_open (physical); ITM/OTM and physical underlying at strike are
-        still derived from the underlying last price.
 
     """
 
     environment: Environment = Environment.BACKTEST
     trader_id: TraderId = "BACKTESTER-001"
     cache: CacheConfig | None = CacheConfig(drop_instruments_on_reset=False)
-    custom_settlement_prices: dict[InstrumentId, float] | None = None
     data_engine: DataEngineConfig | None = DataEngineConfig()
     risk_engine: RiskEngineConfig | None = RiskEngineConfig()
     exec_engine: ExecEngineConfig | None = ExecEngineConfig()

@@ -18,7 +18,7 @@
 #
 # This example runs a short backtest around a futures contract expiry. It downloads
 # only a small window of data around expiry via `databento_data`. The backtest engine
-# settles open positions at expiry using `custom_settlement_prices` (or market if omitted).
+# settles open positions at expiry using `settlement_prices` (or market if omitted).
 
 # %% [markdown]
 # ## Imports
@@ -136,7 +136,7 @@ catalog = load_catalog(catalog_folder)
 # Subscribes to quote ticks for the expiring future and the next future so the
 # backtest clock advances past 14:30 and we see the crossing of expiry.
 # Opens one long in the expiring future; settlement at expiry uses
-# custom_settlement_prices from the engine config.
+# settlement_prices from the engine config.
 
 
 # %%
@@ -214,12 +214,11 @@ logging = LoggingConfig(
 )
 
 # Custom settlement price for the expiring future (e.g. official CME settlement)
-custom_settlement_prices = {future_id: 6000.0}
+settlement_prices = {future_id: 6000.0}
 
 engine_config = BacktestEngineConfig(
     logging=logging,
     strategies=strategies,
-    custom_settlement_prices=custom_settlement_prices,
 )
 
 data = [
@@ -237,6 +236,7 @@ venues = [
         account_type="MARGIN",
         base_currency="USD",
         starting_balances=["1_000_000 USD"],
+        settlement_prices=settlement_prices,
     ),
 ]
 

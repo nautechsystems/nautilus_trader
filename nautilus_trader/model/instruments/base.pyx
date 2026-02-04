@@ -56,7 +56,7 @@ EXPIRING_INSTRUMENT_CLASSES = {
 }
 
 # Instrument classes for which the backtest engine runs built-in expiration.
-# Futures: close at market or custom_settlement_prices. Options: exercise/expiry logic in engine.
+# Futures: close at market or settlement_prices. Options: exercise/expiry logic in engine.
 ENGINE_EXPIRING_INSTRUMENT_CLASSES = {
     InstrumentClass.FUTURE,
     InstrumentClass.FUTURES_SPREAD,

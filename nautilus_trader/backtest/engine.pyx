@@ -518,8 +518,8 @@ cdef class BacktestEngine:
         queue_position: bool = False,
         allow_cash_borrowing: bool = False,
         frozen_account: bool = False,
-        price_protection_points=None,
-        custom_settlement_prices: dict = None,
+        price_protection_points = None,
+        settlement_prices: dict[InstrumentId, float] | None = None,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -606,6 +606,10 @@ cdef class BacktestEngine:
         price_protection_points : int, optional
             Defines an exchange-calculated price boundary (in points) to prevent
             marketable orders from executing at excessively aggressive prices.
+        settlement_prices : dict[InstrumentId, float], optional
+            Map of instrument ID to settlement price for expiring instruments.
+            For futures, positions close at this price instead of market.
+            For options, the option leg settles at this price.
 
         Raises
         ------
@@ -672,7 +676,7 @@ cdef class BacktestEngine:
             liquidity_consumption=liquidity_consumption,
             queue_position=queue_position,
             price_protection_points=price_protection_points,
-            custom_settlement_prices=custom_settlement_prices,
+            settlement_prices=settlement_prices,
         )
 
         self._venues[venue] = exchange
@@ -2583,6 +2587,10 @@ cdef class SimulatedExchange:
         execution mode. When enabled, limit orders only fill after the quantity ahead
         of them (at order placement time) has been traded through or the price level
         is deleted. Requires trade_execution=True.
+    settlement_prices : dict[InstrumentId, float], optional
+        Map of instrument ID to settlement price for expiring instruments.
+        For futures, positions close at this price instead of market.
+        For options, the option leg settles at this price.
 
     Raises
     ------
@@ -2636,7 +2644,7 @@ cdef class SimulatedExchange:
         bint liquidity_consumption = False,
         bint queue_position = False,
         price_protection_points=None,
-        custom_settlement_prices: dict = None,
+        settlement_prices: dict[InstrumentId, float] | None = None,
     ) -> None:
         Condition.not_empty(starting_balances, "starting_balances")
         Condition.list_type(starting_balances, Money, "starting_balances")
@@ -2650,7 +2658,7 @@ cdef class SimulatedExchange:
         self._log = Logger(name=f"{type(self).__name__}({venue})")
 
         self.id = venue
-        self.custom_settlement_prices = custom_settlement_prices or {}
+        self.settlement_prices = settlement_prices or {}
         self.oms_type = oms_type
         self._log.info(f"OmsType={oms_type_to_str(oms_type)}")
         self.book_type = book_type
@@ -2847,7 +2855,7 @@ cdef class SimulatedExchange:
             liquidity_consumption=self.liquidity_consumption,
             queue_position=self.queue_position,
             price_protection_points=self.price_protection_points,
-            custom_settlement_prices=self.custom_settlement_prices,
+            settlement_prices=self.settlement_prices,
         )
 
         self._matching_engines[instrument.id] = matching_engine
@@ -3652,6 +3660,10 @@ cdef class OrderMatchingEngine:
         If True, the processing order adapts with the heuristic:
         - If High is closer to Open than Low then the processing order is Open, High, Low, Close.
         - If Low is closer to Open than High then the processing order is Open, Low, High, Close.
+    settlement_prices : dict[InstrumentId, float], optional
+        Map of instrument ID to settlement price for expiring instruments.
+        For futures, positions close at this price instead of market.
+        For options, the option leg settles at this price.
 
     """
 
@@ -3681,7 +3693,7 @@ cdef class OrderMatchingEngine:
         bint liquidity_consumption = False,
         bint queue_position = False,
         price_protection_points=None,
-        custom_settlement_prices: dict = None,
+        settlement_prices: dict[InstrumentId, float] | None = None,
     ) -> None:
         self._clock = clock
         self._log = Logger(name=f"{type(self).__name__}({instrument.id.venue})")
@@ -3696,7 +3708,7 @@ cdef class OrderMatchingEngine:
         self.account_type = account_type
         self.market_status = MarketStatus.OPEN
 
-        self._custom_settlement_prices = custom_settlement_prices or {}
+        self._settlement_prices = settlement_prices or {}
         self._instrument_has_expiration = instrument.instrument_class in ENGINE_EXPIRING_INSTRUMENT_CLASSES
         self._instrument_close = None
         self._reject_stop_orders = reject_stop_orders
@@ -5388,10 +5400,10 @@ cdef class OrderMatchingEngine:
                         tags=[f"EXPIRATION_{self.venue}_CLOSE"],
                     )
                     self.cache.add_order(order, position_id=position.id)
-                    if self._custom_settlement_prices and self.instrument.id in self._custom_settlement_prices:
+                    if self._settlement_prices and self.instrument.id in self._settlement_prices:
                         self._generate_order_accepted(order, venue_order_id=self._get_venue_order_id(order))
                         settlement_price = Price(
-                            self._custom_settlement_prices[self.instrument.id],
+                            self._settlement_prices[self.instrument.id],
                             self._price_prec,
                         )
                         self.apply_fills(
@@ -5420,9 +5432,9 @@ cdef class OrderMatchingEngine:
             self._log.error(f"No underlying price for option {self.instrument.id}")
             return
         cdef Price custom_option_price = None
-        if self._custom_settlement_prices and self.instrument.id in self._custom_settlement_prices:
+        if self._settlement_prices and self.instrument.id in self._settlement_prices:
             custom_option_price = Price(
-                self._custom_settlement_prices[self.instrument.id],
+                self._settlement_prices[self.instrument.id],
                 self._price_prec,
             )
         cdef Position position

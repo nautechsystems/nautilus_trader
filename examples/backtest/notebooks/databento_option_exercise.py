@@ -56,7 +56,7 @@ end_time = "2026-01-09T21:05"
 # %% [markdown]
 # ## Strategy
 #
-# Buys one option; at expiry the option leg settles at `custom_settlement_prices`
+# Buys one option; at expiry the option leg settles at `settlement_prices`
 # (or intrinsic/avg_px_open if omitted).
 
 
@@ -140,12 +140,11 @@ logging = LoggingConfig(
 )
 
 # Custom settlement price for the option leg at expiry (overrides intrinsic/avg_px_open)
-custom_settlement_prices = {option_id: 50.0}
+settlement_prices = {option_id: 50.0}
 
 engine_config = BacktestEngineConfig(
     logging=logging,
     strategies=strategies,
-    custom_settlement_prices=custom_settlement_prices,
 )
 
 # BacktestRunConfig
@@ -169,6 +168,7 @@ venues = [
         account_type="MARGIN",
         base_currency="USD",
         starting_balances=["1_000_000 USD"],
+        settlement_prices=settlement_prices,
     ),
 ]
 

@@ -271,7 +271,7 @@ cdef class SimulatedExchange:
     """The simulation modules registered with the exchange.\n\n:returns: `list[SimulationModule]`"""
     cdef readonly dict[InstrumentId, Instrument] instruments
     """The exchange instruments.\n\n:returns: `dict[InstrumentId, Instrument]`"""
-    cdef dict custom_settlement_prices
+    cdef dict[InstrumentId, float] settlement_prices
     """Optional instrument_id -> settlement price for instrument expiration."""
 
     cdef dict[InstrumentId, OrderMatchingEngine] _matching_engines
@@ -365,7 +365,7 @@ cdef class OrderMatchingEngine:
     cdef bint _liquidity_consumption
     cdef bint _queue_position
     cdef uint32_t _price_protection_points
-    cdef dict _custom_settlement_prices
+    cdef dict[InstrumentId, float] _settlement_prices
     cdef dict[TraderId, AccountId] _account_ids
     cdef dict[InstrumentId, BarType] _execution_bar_types
     cdef dict[BarType, object] _execution_bar_deltas

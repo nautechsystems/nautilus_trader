@@ -263,8 +263,8 @@ def test_itm_option_expiry_with_custom_settlement():
     """
     Test ITM option exercise with custom settlement price for the option leg.
 
-    With custom_settlement_prices, the option leg closes at the specified price instead
-    of avg_px_open. Underlying still settles at strike.
+    With settlement_prices, the option leg closes at the specified price instead of
+    avg_px_open. Underlying still settles at strike.
 
     """
     venue = Venue("NASDAQ")
@@ -277,7 +277,7 @@ def test_itm_option_expiry_with_custom_settlement():
         account_type=AccountType.MARGIN,
         base_currency=USD,
         starting_balances=[Money(1_000_000, USD)],
-        custom_settlement_prices={
+        settlement_prices={
             InstrumentId.from_str("AAPL240315C00150000.NASDAQ"): custom_option_price,
         },
     )
@@ -361,8 +361,8 @@ def test_otm_option_expiry_with_custom_settlement():
     """
     Test OTM option expiry with custom settlement price.
 
-    With custom_settlement_prices, the option leg closes at the specified price instead
-    of zero. OTM normally expires worthless (0); custom allows non-zero.
+    With settlement_prices, the option leg closes at the specified price instead of
+    zero. OTM normally expires worthless (0); custom allows non-zero.
 
     """
     venue = Venue("NASDAQ")
@@ -375,7 +375,7 @@ def test_otm_option_expiry_with_custom_settlement():
         account_type=AccountType.MARGIN,
         base_currency=USD,
         starting_balances=[Money(1_000_000, USD)],
-        custom_settlement_prices={
+        settlement_prices={
             InstrumentId.from_str("AAPL240315C00150000.NASDAQ"): custom_option_price,
         },
     )
