@@ -22,6 +22,7 @@
 //! Tokio task within the lock-free I/O boundary.
 
 use std::{
+    collections::VecDeque,
     fmt::Debug,
     str::FromStr,
     sync::{
@@ -118,7 +119,7 @@ pub struct FeedHandler {
     /// Original subscription messages by topic (for replay without reconstruction).
     subscription_messages: AHashMap<String, DydxSubscription>,
     /// Buffer for multiple messages produced from a single raw message.
-    message_buffer: Vec<NautilusWsMessage>,
+    message_buffer: VecDeque<NautilusWsMessage>,
 }
 
 impl Debug for FeedHandler {
@@ -155,7 +156,7 @@ impl FeedHandler {
             bar_types: AHashMap::new(),
             subscriptions,
             subscription_messages: AHashMap::new(),
-            message_buffer: Vec::new(),
+            message_buffer: VecDeque::new(),
         }
     }
 
@@ -199,7 +200,7 @@ impl FeedHandler {
         loop {
             // First drain any buffered messages
             if !self.message_buffer.is_empty() {
-                let nautilus_msg = self.message_buffer.remove(0);
+                let nautilus_msg = self.message_buffer.pop_front().unwrap();
                 if self.out_tx.send(nautilus_msg).is_err() {
                     log::debug!("Receiver dropped, stopping handler");
                     break;
