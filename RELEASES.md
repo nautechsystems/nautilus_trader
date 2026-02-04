@@ -15,6 +15,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Added `oto_trigger_mode` venue config option to control whether OTO child orders activate on partial fills (PARTIAL) or only after full fill (FULL) (default PARTIAL) (#3454), thanks @godnight10061
 - Added `request_funding_rates` and `FundingRateUpdate` Arrow serialization (#3467), thanks @dxwil
 - Added `optimize_file_loading` as BacktestDataConfig parameter (#3518), thanks @faysou
+- Added `bulk_read_batch_size` option to `CacheConfig` for batched Redis bulk reads (#3535), thanks @shzhng
 - Added Betfair RCM parsing for TPD race data
 - Added `BetfairOrderVoided` custom data type for VAR voids
 - Added Bybit mark price subscriptions support

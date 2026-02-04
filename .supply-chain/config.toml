@@ -707,11 +707,11 @@ version = "1.5.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.criterion]]
-version = "0.8.1"
+version = "0.8.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.criterion-plot]]
-version = "0.8.1"
+version = "0.8.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.crossbeam-deque]]

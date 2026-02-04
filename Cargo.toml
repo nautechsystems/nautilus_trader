@@ -290,8 +290,8 @@ alloy = { version = "1.6.1", default-features = false, features = [
   "sol-types",
   "contract",
 ] }
-alloy-signer = { version = "1.5.2", default-features = false }
-alloy-signer-local = { version = "1.5.2", default-features = false, features = [
+alloy-signer = { version = "1.6.1", default-features = false }
+alloy-signer-local = { version = "1.6.1", default-features = false, features = [
   "mnemonic",
 ] }
 alloy-sol-types = "1.5.4"
@@ -337,7 +337,7 @@ axum = { version = "0.8.8", default-features = false, features = [
   "query",
   "ws",
 ] }
-criterion = { version = "0.8.1", default-features = false, features = [
+criterion = { version = "0.8.2", default-features = false, features = [
   "cargo_bench_support",
 ] }
 iai = "0.1.1"
@@ -358,12 +358,12 @@ walkdir = "2.5.0"
 # Tools (for cargo install, used by Makefile and CI)
 # -----------------------------------------------------------------------------
 [workspace.metadata.tools]
-cargo-audit = "0.22.0"
+cargo-audit = "0.22.1"
 cargo-deny = "0.19.0"
 cargo-edit = "0.13.8"
 cargo-llvm-cov = "0.8.2"
 cargo-machete = "0.9.1"
-cargo-nextest = "0.9.124"
+cargo-nextest = "0.9.125"
 cargo-vet = "0.10.2"
 lychee = "0.22.0"
 
