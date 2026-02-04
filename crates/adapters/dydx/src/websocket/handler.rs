@@ -260,29 +260,14 @@ impl FeedHandler {
                     return vec![NautilusWsMessage::Reconnected];
                 }
 
+                // Hot path: zero-copy parse for feed messages (orderbook/trades/candles)
+                if let Ok(feed_msg) = serde_json::from_str::<DydxWsFeedMessage>(&txt) {
+                    return self.handle_feed_message(feed_msg);
+                }
+
+                // Cold path: infrequent control messages (connected/subscribed/error)
                 match serde_json::from_str::<serde_json::Value>(&txt) {
                     Ok(val) => {
-                        let val_clone = val.clone();
-
-                        // Try two-level parsing first (channel → type)
-                        match serde_json::from_value::<DydxWsFeedMessage>(val.clone()) {
-                            Ok(feed_msg) => {
-                                return self.handle_feed_message(feed_msg);
-                            }
-                            Err(e) => {
-                                // Log the raw message for debugging feed parsing failures
-                                if let Some(channel) = val.get("channel") {
-                                    // Only log if it has a channel field but failed to parse as feed
-                                    log::warn!(
-                                        "Feed message parse failed for channel {channel:?}: {e}\nRaw JSON: {}",
-                                        serde_json::to_string_pretty(&val).unwrap_or_default()
-                                    );
-                                }
-                            }
-                        }
-
-                        // Fall back to single-level parsing for non-channel messages
-                        // (connected, error, subscribed/unsubscribed without channel data)
                         match serde_json::from_value::<DydxWsGenericMsg>(val.clone()) {
                             Ok(meta) => {
                                 let result = if meta.is_connected() {
@@ -298,7 +283,7 @@ impl FeedHandler {
                                                 "Parsing subaccounts subscription (fallback)"
                                             );
                                             serde_json::from_value::<DydxWsSubaccountsSubscribed>(
-                                                val.clone(),
+                                                val,
                                             )
                                             .map(DydxWsMessage::SubaccountsSubscribed)
                                             .or_else(|e| {
@@ -322,9 +307,7 @@ impl FeedHandler {
                                         .map(DydxWsMessage::Error)
                                 } else if meta.is_unknown() {
                                     log::warn!(
-                                        "Received unknown WebSocket message type: {}",
-                                        serde_json::to_string(&val_clone)
-                                            .unwrap_or_else(|_| "<invalid json>".into())
+                                        "Received unknown WebSocket message type: {txt}",
                                     );
                                     Ok(DydxWsMessage::Raw(val))
                                 } else {
@@ -335,21 +318,17 @@ impl FeedHandler {
                                     Ok(dydx_msg) => self.handle_dydx_message(dydx_msg).await,
                                     Err(e) => {
                                         log::error!(
-                                            "Failed to parse WebSocket message: {e}. Message type: {:?}, Channel: {:?}. Raw: {}",
+                                            "Failed to parse WebSocket message: {e}. Message type: {:?}, Channel: {:?}. Raw: {txt}",
                                             meta.msg_type,
                                             meta.channel,
-                                            serde_json::to_string(&val_clone)
-                                                .unwrap_or_else(|_| "<invalid json>".into())
                                         );
                                         vec![]
                                     }
                                 }
                             }
                             Err(e) => {
-                                let raw_json = serde_json::to_string_pretty(&val_clone)
-                                    .unwrap_or_else(|_| format!("{val_clone:?}"));
                                 log::error!(
-                                    "Failed to parse WebSocket message envelope (DydxWsGenericMsg): {e}\nRaw JSON:\n{raw_json}"
+                                    "Failed to parse WebSocket message envelope (DydxWsGenericMsg): {e}\nRaw JSON:\n{txt}"
                                 );
                                 vec![]
                             }
