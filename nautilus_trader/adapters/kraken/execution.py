@@ -863,11 +863,9 @@ class KrakenExecutionClient(LiveExecutionClient):
             # Generate OrderUpdated event
             # Use command values if provided, otherwise fall back to order values
             # Note: StopMarketOrder doesn't have a price attribute, only trigger_price
-            price = command.price if command.price else (order.price if order.has_price else None)
-            trigger_price = (
-                command.trigger_price
-                if command.trigger_price
-                else (order.trigger_price if order.has_trigger_price else None)
+            price = command.price or (order.price if order.has_price else None)
+            trigger_price = command.trigger_price or (
+                order.trigger_price if order.has_trigger_price else None
             )
 
             self.generate_order_updated(
@@ -875,7 +873,7 @@ class KrakenExecutionClient(LiveExecutionClient):
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
                 venue_order_id=new_venue_order_id_obj,
-                quantity=command.quantity if command.quantity else order.quantity,
+                quantity=command.quantity or order.quantity,
                 price=price,
                 trigger_price=trigger_price,
                 ts_event=self._clock.timestamp_ns(),

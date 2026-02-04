@@ -583,7 +583,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             order_type=nautilus_pyo3.OrderType.MARKET,
             time_in_force=time_in_force_to_pyo3(time_in_force),
             quantity=nautilus_pyo3.Quantity.from_str(str(order.quantity)),
-            reduce_only=order.is_reduce_only if order.is_reduce_only else None,
+            reduce_only=order.is_reduce_only or None,
         )
 
     async def _submit_limit_order(
@@ -600,8 +600,8 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             expire_time=ensure_pydatetime_utc(order.expire_time),
             quantity=nautilus_pyo3.Quantity.from_str(str(order.quantity)),
             price=nautilus_pyo3.Price.from_str(str(order.price)),
-            post_only=order.is_post_only if order.is_post_only else None,
-            reduce_only=order.is_reduce_only if order.is_reduce_only else None,
+            post_only=order.is_post_only or None,
+            reduce_only=order.is_reduce_only or None,
         )
 
     async def _submit_stop_market_order(
@@ -618,7 +618,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             expire_time=ensure_pydatetime_utc(order.expire_time),
             quantity=nautilus_pyo3.Quantity.from_str(str(order.quantity)),
             trigger_price=nautilus_pyo3.Price.from_str(str(order.trigger_price)),
-            reduce_only=order.is_reduce_only if order.is_reduce_only else None,
+            reduce_only=order.is_reduce_only or None,
         )
 
     async def _submit_stop_limit_order(
@@ -636,7 +636,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             quantity=nautilus_pyo3.Quantity.from_str(str(order.quantity)),
             price=nautilus_pyo3.Price.from_str(str(order.price)),
             trigger_price=nautilus_pyo3.Price.from_str(str(order.trigger_price)),
-            reduce_only=order.is_reduce_only if order.is_reduce_only else None,
+            reduce_only=order.is_reduce_only or None,
         )
 
     def _is_external_order(self, client_order_id: ClientOrderId) -> bool:

@@ -488,8 +488,8 @@ class DeribitExecutionClient(LiveExecutionClient):
         pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
 
         # Use command values if provided, otherwise fall back to existing order values
-        price = command.price if command.price else order.price
-        quantity = command.quantity if command.quantity else order.quantity
+        price = command.price or order.price
+        quantity = command.quantity or order.quantity
 
         pyo3_quantity = nautilus_pyo3.Quantity.from_str(str(quantity))
         pyo3_price = nautilus_pyo3.Price.from_str(str(price))

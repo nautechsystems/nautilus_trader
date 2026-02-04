@@ -1672,7 +1672,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             ),
             liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
             ts_event=timestring_to_timestamp(execution.time).value,
-            info=info if info else None,
+            info=info or None,
         )
 
         # Update position tracking to avoid duplicate processing
@@ -1828,7 +1828,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 commission=commission,
                 liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
                 ts_event=timestring_to_timestamp(execution.time).value,
-                info=info if info else None,
+                info=info or None,
             )
         except Exception as e:
             self._log.error(f"Error generating combo fill: {e}")
@@ -1914,7 +1914,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 commission=commission,
                 liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
                 ts_event=timestring_to_timestamp(execution.time).value,
-                info=info if info else None,
+                info=info or None,
             )
 
             # Update position tracking to avoid duplicate processing

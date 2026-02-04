@@ -387,7 +387,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         # Binance maximum (1000). Note that a depth of ``0`` means *full book*
         # in NautilusTrader semantics, which we translate to 1000; the maximum
         # value accepted by the Binance partial book snapshot endpoint.
-        depth: int = command.depth if command.depth else 1000
+        depth: int = command.depth or 1000
 
         if 0 < depth <= 20:
             if depth not in (5, 10, 20):

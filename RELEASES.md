@@ -18,7 +18,10 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Added `BetfairOrderVoided` custom data type for VAR voids
 - Added Bybit mark price subscriptions support
 - Added Bybit index price subscriptions support
+- Added Interactive Brokers subscribe index price functionality (#3514), thanks @Murph24
 - Added Polymarket data loader event-level API support (#3484), thanks @jsemldonado
+- Added Polymarket `event_slug_builder` support (#3501), thanks @jsemldonado
+- Added Polymarket batch order support (#3506), thanks @loafer-19
 - Improved tearsheet with dynamic Nautilus version and refined run info table (#3396), thanks @KaulSe
 
 ### Breaking Changes
@@ -126,6 +129,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Refactored Betfair order matching to use `rfo` as primary key
 - Refactored Deribit WS client to use standard Nautilus method names (#3418), thanks @filipmacek
 - Refactored dYdX v4 execution client in Rust (#3477), thanks @filipmacek
+- Refactored dYdX v4 adapter (#3521), thanks @filipmacek
 - Refactored Kraken spot quotes to use dedicated Ticker channel
 - Refactored Polymarket WebSocket to multi-client pool pattern
 - Improved `cancel_all_orders` to include inflight orders
@@ -142,6 +146,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Refined handling of `skip_first_non_full_bar` in `TimeBarAggregator` (#3395), thanks @faysou
 - Refined greeks safeguards and docs (#3407), thanks @faysou
 - Refined processing of gaps in aggregated historical bars (#3412), thanks @faysou
+- Refined exercise and settlement of expiring instruments (#3531), thanks @faysou
 - Refined Interactive Brokers adapter (#3195), thanks @faysou
 - Refined Interactive Brokers query of option chains (#3481), thanks @faysou
 - Refined `OptionExerciseModule` (#3423), thanks @faysou

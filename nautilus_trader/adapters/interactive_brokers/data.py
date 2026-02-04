@@ -422,7 +422,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             )
             return
 
-        end = request.end if request.end else pd.Timestamp.utcnow()
+        end = request.end or pd.Timestamp.utcnow()
 
         ticks = await self.get_historical_ticks_paged(
             instrument_id=request.instrument_id,
@@ -460,7 +460,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             )
             return
 
-        end = request.end if request.end else pd.Timestamp.utcnow()
+        end = request.end or pd.Timestamp.utcnow()
 
         ticks = await self.get_historical_ticks_paged(
             instrument_id=request.instrument_id,

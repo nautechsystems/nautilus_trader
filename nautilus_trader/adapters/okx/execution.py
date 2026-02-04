@@ -1139,7 +1139,7 @@ class OKXExecutionClient(LiveExecutionClient):
                 trigger_price=pyo3_trigger_price,
                 trigger_type=pyo3_trigger_type,
                 limit_price=pyo3_limit_price,
-                reduce_only=order.is_reduce_only if order.is_reduce_only else None,
+                reduce_only=order.is_reduce_only or None,
             )
 
             if response.get("s_code") and response["s_code"] != "0":

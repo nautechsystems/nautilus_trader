@@ -32,7 +32,7 @@ dependencies = [
   "portion>=2.6.1",
   "pyarrow>=22.0.0",
   "pytz>=2025.2.0",
-  "tqdm>=4.67.2,<5.0.0",
+  "tqdm>=4.67.3,<5.0.0",
   "uvloop==0.22.1,<1.0.0; sys_platform != \"win32\"", # Pinned to 0.22.1 for stability
 ]
 
@@ -98,13 +98,13 @@ dev = [
   "mypy==1.19.1,<2.0.0", # Pinned to 1.19.1 (keep in line with pre-commit)
   "pandas-stubs>=2.3.3,<3.0.0",
   "pre-commit>=4.5.0,<5.0.0",
-  "ruff==0.14.14", # Pinned to 0.14.14 (keep in line with pre-commit)
+  "ruff==0.15.0", # Pinned to 0.15.0 (keep in line with pre-commit)
   "types-pytz>=2025.2,<2026.0",
   "types-toml>=0.10.2,<1.0.0",
 ]
 test = [
   "aiohttp>=3.13.3,<4.0.0",
-  "coverage>=7.13.2,<8.0.0",
+  "coverage>=7.13.3,<8.0.0",
   "pytest>=7.4.4,<8.0.0", # Intentionally held at 7.x
   "pytest-aiohttp>=1.1.0,<2.0.0",
   "pytest-asyncio==0.23.8", # Pinned to 0.23.8 for stability
@@ -241,6 +241,11 @@ ignore = [
   "PLW0602", # global-variable-not-assigned (intentional module-level caching pattern)
   "PLW0603", # global-statement (intentional module-level caching pattern)
   "PLW2901", # redefined-loop-name (intentional loop variable transformation pattern)
+  "PLW0108", # unnecessary-lambda (lambdas needed for deferred evaluation in tests)
+  "FURB110", # if-exp-instead-of-or-operator (ternary is often clearer than or)
+  "FURB171", # single-item-membership-test (intentional for clarity)
+  "UP042", # Class inherits from both str and Enum (StrEnum pattern used intentionally)
+  "ASYNC240", # async-pathlib (pathlib in async ok for simple checks, refactor later)
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided

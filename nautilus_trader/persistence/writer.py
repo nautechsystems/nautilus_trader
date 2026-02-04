@@ -425,7 +425,7 @@ class StreamingFeatherWriter:
         if self.include_types is not None and cls not in self.include_types:
             return
 
-        table_name = table_name if table_name else class_to_filename(cls)
+        table_name = table_name or class_to_filename(cls)
 
         if table_name in self._writers:
             return

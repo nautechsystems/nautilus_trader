@@ -335,8 +335,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         directory = self._make_path(data_cls=data_cls, identifier=identifier)
         self.fs.mkdirs(directory, exist_ok=True)
 
-        start = start if start else data[0].ts_init
-        end = end if end else data[-1].ts_init
+        start = start or data[0].ts_init
+        end = end or data[-1].ts_init
         filename = _timestamps_to_filename(start, end)
         parquet_file = f"{directory}/{filename}"
 
@@ -1944,7 +1944,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         **kwargs: Any,
     ) -> list[Data]:
         # Load dataset - use provided files or query for them
-        file_list = files if files else self._query_files(data_cls, identifiers, start, end)
+        file_list = files or self._query_files(data_cls, identifiers, start, end)
 
         if not file_list:
             return []

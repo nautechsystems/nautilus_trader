@@ -273,7 +273,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.14
+    rev: v0.15.0
     hooks:
       - id: ruff
         name: ruff
@@ -326,7 +326,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.9.28 # Must match uv-version file
+    rev: 0.9.29 # Must match uv-version file
     hooks:
       - id: uv-lock
         files: ^python/uv\.lock$

@@ -362,7 +362,7 @@ class BinanceFuturesAlgoOrder(msgspec.Struct, frozen=True):
             )
 
         client_order_id = ClientOrderId(self.clientAlgoId) if self.clientAlgoId else None
-        venue_order_id_str = self.actualOrderId if self.actualOrderId else str(self.algoId)
+        venue_order_id_str = self.actualOrderId or str(self.algoId)
         venue_order_id = VenueOrderId(venue_order_id_str)
 
         trigger_type = TriggerType.NO_TRIGGER
@@ -388,7 +388,7 @@ class BinanceFuturesAlgoOrder(msgspec.Struct, frozen=True):
         binance_order_side = BinanceOrderSide(self.side)
         order_side = enum_parser.parse_binance_order_side(binance_order_side)
 
-        price_str = self.price if self.price else "0"
+        price_str = self.price or "0"
         trigger_price_str = self.triggerPrice or self.activatePrice or "0"
         reduce_only = self.reduceOnly if self.reduceOnly is not None else False
 

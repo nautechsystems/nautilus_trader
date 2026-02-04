@@ -600,7 +600,7 @@ class DeribitDataClient(LiveMarketDataClient):
 
     async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(request.instrument_id.value)
-        depth = request.limit if request.limit else None
+        depth = request.limit or None
         try:
             pyo3_book = await self._http_client.request_book_snapshot(
                 instrument_id=pyo3_instrument_id,
