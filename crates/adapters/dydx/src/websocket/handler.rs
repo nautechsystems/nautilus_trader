@@ -408,11 +408,10 @@ impl FeedHandler {
             DydxWsOrderbookMessage::ChannelData(data) => {
                 if let Some(id) = &data.id {
                     if let Some(last_id) = self.book_sequence.get(id)
-                        && data.message_id != last_id + 1
+                        && data.message_id <= *last_id
                     {
                         log::warn!(
-                            "Orderbook sequence gap for {id}: expected {}, got {}",
-                            last_id + 1,
+                            "Orderbook sequence regression for {id}: last {last_id}, got {}",
                             data.message_id
                         );
                     }
@@ -423,11 +422,10 @@ impl FeedHandler {
             DydxWsOrderbookMessage::ChannelBatchData(data) => {
                 if let Some(id) = &data.id {
                     if let Some(last_id) = self.book_sequence.get(id)
-                        && data.message_id != last_id + 1
+                        && data.message_id <= *last_id
                     {
                         log::warn!(
-                            "Orderbook batch sequence gap for {id}: expected {}, got {}",
-                            last_id + 1,
+                            "Orderbook batch sequence regression for {id}: last {last_id}, got {}",
                             data.message_id
                         );
                     }
