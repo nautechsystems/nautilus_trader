@@ -51,6 +51,7 @@ use nautilus_common::{
         self, MessagingSwitchboard, TypedIntoHandler, get_message_bus,
         switchboard::{self},
     },
+    runner::try_get_trading_cmd_sender,
 };
 use nautilus_core::{UUID4, UnixNanos, WeakCell};
 use nautilus_model::{
@@ -143,6 +144,20 @@ impl ExecutionEngine {
             TypedIntoHandler::from(move |cmd: TradingCommand| {
                 if let Some(rc) = weak1.upgrade() {
                     rc.borrow().execute(cmd);
+                }
+            }),
+        );
+
+        // Queued endpoint for deferred command execution (re-entrancy safe),
+        // falls back to direct endpoint if no sender is initialized (e.g., backtest/test).
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            TypedIntoHandler::from(move |cmd: TradingCommand| {
+                if let Some(sender) = try_get_trading_cmd_sender() {
+                    sender.execute(cmd);
+                } else {
+                    let endpoint = MessagingSwitchboard::exec_engine_execute();
+                    msgbus::send_trading_command(endpoint, cmd);
                 }
             }),
         );

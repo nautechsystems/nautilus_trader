@@ -134,6 +134,18 @@ pub trait TradingCommandSender {
     fn execute(&self, command: TradingCommand);
 }
 
+/// Synchronous implementation of TradingCommandSender for backtest environments.
+#[derive(Debug)]
+pub struct SyncTradingCommandSender;
+
+impl TradingCommandSender for SyncTradingCommandSender {
+    fn execute(&self, command: TradingCommand) {
+        // TODO: Placeholder, we still need to queue and drain even for sync
+        let endpoint = MessagingSwitchboard::exec_engine_execute();
+        msgbus::send_trading_command(endpoint, command);
+    }
+}
+
 /// Gets the global trading command sender.
 ///
 /// # Panics
@@ -147,6 +159,14 @@ pub fn get_trading_cmd_sender() -> Arc<dyn TradingCommandSender> {
             .expect("Trading command sender should be initialized by runner")
             .clone()
     })
+}
+
+/// Attempts to get the global trading command sender without panicking.
+///
+/// Returns `None` if the sender is not initialized (e.g., in test environments).
+#[must_use]
+pub fn try_get_trading_cmd_sender() -> Option<Arc<dyn TradingCommandSender>> {
+    EXEC_CMD_SENDER.with(|sender| sender.get().cloned())
 }
 
 /// Sets the global trading command sender.

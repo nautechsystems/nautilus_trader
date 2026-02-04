@@ -573,7 +573,10 @@ impl OrderManager {
 
     pub fn send_exec_command(&self, command: TradingCommand) {
         log_cmd_send(&command);
-        let endpoint = MessagingSwitchboard::exec_engine_execute();
+
+        // Use queued endpoint for re-entrancy safety, commands may be sent from
+        // within event handlers which hold a mutable borrow on ExecutionEngine.
+        let endpoint = MessagingSwitchboard::exec_engine_queue_execute();
         msgbus::send_trading_command(endpoint, command);
     }
 
