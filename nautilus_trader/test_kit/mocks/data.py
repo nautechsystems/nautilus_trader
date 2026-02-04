@@ -25,6 +25,7 @@ from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestFundingRates
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookDeltas
 from nautilus_trader.data.messages import RequestOrderBookDepth
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
@@ -33,6 +34,7 @@ from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import FundingRateUpdate
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -88,6 +90,7 @@ class MockMarketDataClient(MarketDataClient):
         self.funding_rates: list[FundingRateUpdate] = []
         self.bars: list[Bar] = []
         self.order_book_depths: list[OrderBookDepth10] = []
+        self.order_book_deltas: list[OrderBookDeltas] = []
 
     def request_instrument(self, request: RequestInstrument) -> None:
         self._handle_instrument(
@@ -152,6 +155,16 @@ class MockMarketDataClient(MarketDataClient):
         self._handle_order_book_depths_py(
             request.instrument_id,
             self.order_book_depths,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
+
+    def request_order_book_deltas(self, request: RequestOrderBookDeltas) -> None:
+        self._handle_order_book_deltas(
+            request.instrument_id,
+            self.order_book_deltas,
             request.id,
             request.start,
             request.end,
