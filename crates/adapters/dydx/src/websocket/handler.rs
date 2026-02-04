@@ -253,6 +253,7 @@ impl FeedHandler {
         match msg {
             Message::Text(txt) => {
                 if txt == RECONNECTED {
+                    self.clear_state();
                     if let Err(e) = self.replay_subscriptions().await {
                         log::error!("Failed to replay subscriptions after reconnect: {e}");
                     }
@@ -372,7 +373,7 @@ impl FeedHandler {
     }
 
     /// Handles a parsed dYdX WebSocket message.
-    async fn handle_dydx_message(&self, msg: DydxWsMessage) -> Vec<NautilusWsMessage> {
+    async fn handle_dydx_message(&mut self, msg: DydxWsMessage) -> Vec<NautilusWsMessage> {
         match self.handle_message(msg).await {
             Ok(msgs) => msgs,
             Err(e) => {
@@ -759,6 +760,23 @@ impl FeedHandler {
         }
     }
 
+    /// Clears transient state on reconnect.
+    ///
+    /// Preserves `instruments`, `bar_types`, and `subscription_messages` which are
+    /// needed for replay and parsing after reconnect.
+    fn clear_state(&mut self) {
+        let buffer_count = self.message_buffer.len();
+        let seq_count = self.book_sequence.len();
+        let bars_count = self.pending_bars.len();
+        self.message_buffer.clear();
+        self.book_sequence.clear();
+        self.pending_bars.clear();
+        log::debug!(
+            "Cleared reconnect state: message_buffer={buffer_count}, \
+             book_sequence={seq_count}, pending_bars={bars_count}"
+        );
+    }
+
     async fn replay_subscriptions(&self) -> DydxWsResult<()> {
         let topics = self.subscriptions.all_topics();
         for topic in topics {
@@ -791,7 +809,7 @@ impl FeedHandler {
     /// Returns an error if the message cannot be processed.
     #[allow(clippy::result_large_err)]
     pub async fn handle_message(
-        &self,
+        &mut self,
         msg: DydxWsMessage,
     ) -> DydxWsResult<Vec<NautilusWsMessage>> {
         match msg {
@@ -819,6 +837,7 @@ impl FeedHandler {
             }
             DydxWsMessage::Error(err) => Ok(vec![NautilusWsMessage::Error(err)]),
             DydxWsMessage::Reconnected => {
+                self.clear_state();
                 if let Err(e) = self.replay_subscriptions().await {
                     log::error!("Failed to replay subscriptions after reconnect message: {e}");
                 }
