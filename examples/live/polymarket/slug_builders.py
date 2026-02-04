@@ -24,7 +24,6 @@ Usage:
     In your PolymarketInstrumentProviderConfig:
     ```python
     instrument_config = PolymarketInstrumentProviderConfig(
-        load_all=True,
         event_slug_builder="examples.live.polymarket.slug_builders:build_btc_updown_slugs",
     )
     ```

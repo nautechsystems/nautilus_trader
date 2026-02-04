@@ -51,10 +51,7 @@ from nautilus_trader.model.identifiers import TraderId
 
 
 # Configure the instrument provider with event_slug_builder
-# NOTE: load_all=True is required to trigger the provider's load_all_async() method,
-# but event_slug_builder takes priority and only loads the specific events.
 instrument_config = PolymarketInstrumentProviderConfig(
-    load_all=True,  # Required to trigger loading
     event_slug_builder="examples.live.polymarket.slug_builders:build_btc_updown_slugs",
 )
 

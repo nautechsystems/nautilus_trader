@@ -516,6 +516,51 @@ The following limitations are currently known:
 | `generate_order_history_from_trades` | `False`      | Generate synthetic order history from trade reports when `True` (experimental). |
 | `log_raw_ws_messages`                | `False`      | Log raw WebSocket payloads at INFO level when `True`. |
 
+### Instrument provider configuration options
+
+The instrument provider config is passed via the `instrument_config` parameter on the data client config.
+
+| Option               | Default | Description                                                                                       |
+|----------------------|---------|---------------------------------------------------------------------------------------------------|
+| `load_all`           | `False` | Load all venue instruments on start. Auto-set to `True` when `event_slug_builder` is provided.    |
+| `event_slug_builder` | `None`  | Fully qualified path to a callable returning event slugs (e.g., `"mymodule:build_slugs"`).        |
+
+#### Event slug builder
+
+The `event_slug_builder` feature enables efficient loading of niche markets without downloading
+all 151k+ instruments. Instead of loading everything, you provide a function that returns
+event slugs for the specific markets you need.
+
+```python
+from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProviderConfig
+
+# Configure with a slug builder function
+instrument_config = PolymarketInstrumentProviderConfig(
+    event_slug_builder="myproject.slugs:build_temperature_slugs",
+)
+```
+
+The callable must have signature `() -> list[str]` and return a list of event slugs:
+
+```python
+# myproject/slugs.py
+from datetime import UTC, datetime, timedelta
+
+def build_temperature_slugs() -> list[str]:
+    """Build slugs for NYC temperature markets."""
+    slugs = []
+    today = datetime.now(tz=UTC).date()
+
+    for i in range(7):
+        date = today + timedelta(days=i)
+        slug = f"highest-temperature-in-nyc-on-{date.strftime('%B-%d').lower()}"
+        slugs.append(slug)
+
+    return slugs
+```
+
+See `examples/live/polymarket/slug_builders.py` for more examples including crypto UpDown markets.
+
 ## Historical data loading
 
 The `PolymarketDataLoader` provides methods for fetching and parsing historical market data

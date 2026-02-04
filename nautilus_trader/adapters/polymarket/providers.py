@@ -28,7 +28,7 @@ from nautilus_trader.adapters.polymarket.common.gamma_markets import (
 from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_condition_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
-from nautilus_trader.adapters.polymarket.http.errors import PolymarketAPIError
+from nautilus_trader.adapters.polymarket.http.errors import check_clob_response
 from nautilus_trader.adapters.polymarket.loaders import PolymarketDataLoader
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.config import resolve_path
@@ -38,31 +38,6 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BinaryOption
-
-
-def _check_clob_response(response: dict[str, Any] | str) -> dict[str, Any]:
-    """
-    Check CLOB API response and raise exception if error string returned.
-
-    Parameters
-    ----------
-    response : dict[str, Any] | str
-        The response from the CLOB API.
-
-    Returns
-    -------
-    dict[str, Any]
-        The validated response dictionary.
-
-    Raises
-    ------
-    PolymarketAPIError
-        If response is an error string.
-
-    """
-    if isinstance(response, str):
-        raise PolymarketAPIError(response)
-    return response
 
 
 class PolymarketInstrumentProviderConfig(InstrumentProviderConfig, frozen=True, kw_only=True):
@@ -80,14 +55,15 @@ class PolymarketInstrumentProviderConfig(InstrumentProviderConfig, frozen=True, 
         the Gamma API. This is much more efficient for niche markets with predictable
         slug patterns (e.g., temperature markets, UpDown crypto markets).
 
-        Note: Requires ``load_all=True`` to be set in the configuration for the builder
-        to be triggered on startup.
-
         Example: "myproject.slugs:build_temperature_slugs"
 
     """
 
     event_slug_builder: str | None = None
+
+    def __post_init__(self):
+        if self.event_slug_builder and not self.load_all:
+            msgspec.structs.force_setattr(self, "load_all", True)
 
 
 class PolymarketInstrumentProvider(InstrumentProvider):
@@ -320,7 +296,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         token_id = get_polymarket_token_id(instrument_id)
 
         response = await asyncio.to_thread(self._client.get_market, condition_id)
-        response = _check_clob_response(response)
+        response = check_clob_response(response)
 
         for token_info in response["tokens"]:
             if token_id != token_info["token_id"]:
@@ -345,7 +321,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                 self._client.get_market,
                 condition_id=get_polymarket_condition_id(instrument_id),
             )
-            response = _check_clob_response(response)
+            response = check_clob_response(response)
 
             try:
                 active = response["active"]
@@ -399,7 +375,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                 self._client.get_markets,
                 next_cursor=next_cursor,
             )
-            response = _check_clob_response(response)
+            response = check_clob_response(response)
 
             for market_info in response["data"]:
                 try:
