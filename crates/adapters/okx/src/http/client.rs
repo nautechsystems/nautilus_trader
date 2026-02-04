@@ -3014,6 +3014,7 @@ impl OKXHttpClient {
 
         let request = OKXPlaceAlgoOrderRequest {
             inst_id: instrument_id.symbol.as_str().to_string(),
+            inst_id_code: None,
             td_mode,
             side: okx_side,
             ord_type: OKXAlgoOrderType::Trigger, // All conditional orders use 'trigger' type
@@ -3047,6 +3048,7 @@ impl OKXHttpClient {
     ) -> Result<OKXCancelAlgoOrderResponse, OKXHttpError> {
         let request = OKXCancelAlgoOrderRequest {
             inst_id: instrument_id.symbol.to_string(),
+            inst_id_code: None,
             algo_id: Some(algo_id),
             algo_cl_ord_id: None,
         };
