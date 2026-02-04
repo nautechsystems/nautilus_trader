@@ -124,6 +124,7 @@ impl CacheConfig {
         encoding: Option<SerializationEncoding>,
         timestamps_as_iso8601: Option<bool>,
         buffer_interval_ms: Option<usize>,
+        bulk_read_batch_size: Option<usize>,
         use_trader_prefix: Option<bool>,
         use_instance_id: Option<bool>,
         flush_on_start: Option<bool>,
@@ -137,6 +138,7 @@ impl CacheConfig {
             encoding.unwrap_or(SerializationEncoding::MsgPack),
             timestamps_as_iso8601.unwrap_or(false),
             buffer_interval_ms,
+            bulk_read_batch_size,
             use_trader_prefix.unwrap_or(true),
             use_instance_id.unwrap_or(false),
             flush_on_start.unwrap_or(false),
@@ -168,6 +170,11 @@ impl CacheConfig {
     #[getter]
     fn buffer_interval_ms(&self) -> Option<usize> {
         self.buffer_interval_ms
+    }
+
+    #[getter]
+    fn bulk_read_batch_size(&self) -> Option<usize> {
+        self.bulk_read_batch_size
     }
 
     #[getter]

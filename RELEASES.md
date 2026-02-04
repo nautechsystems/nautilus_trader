@@ -5,6 +5,7 @@ Released on TBD (UTC).
 This will be the final release with support for the dYdX v3 (legacy) API. Future releases will only support dYdX v4 (Cosmos-based).
 
 ### Enhancements
+- Added `bulk_read_batch_size` option to `CacheConfig` for batched Redis bulk reads, thanks @shzhng
 - Added sandbox execution adapter in Rust
 - Added multi-account execution support (#3194), thanks @faysou
 - Added `manage_stop` config option to `StrategyConfig` for automatic market exit on stop
