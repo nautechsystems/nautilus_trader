@@ -127,6 +127,7 @@ cdef class BacktestEngine:
     cdef list[Data] _response_data
 
     cdef CVec _advance_time(self, uint64_t ts_now)
+    cdef bint _process_next_timer(self)
     cdef void _flush_accumulator_events(self, uint64_t ts_now)
     cdef void _process_raw_time_event_handlers(
         self,

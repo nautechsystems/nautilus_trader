@@ -928,6 +928,18 @@ Useful when tick data clusters at round interval timestamps.
 Only affects internally aggregated bars (`AggregationSource.INTERNAL`).
 :::
 
+### Timer-only backtests
+
+The backtest engine supports running with timers but no market data. This is useful for scheduled
+operations or testing timer-based logic. Timers fire in chronological order, and timer callbacks
+can dynamically add data via `add_data_iterator()` which will be processed in sequence.
+
+:::warning
+Data added by timer callbacks at the exact start time should have timestamps **after** the start time.
+The engine reads the first data point before processing start-time timers, so dynamically added data
+with timestamps at or before the start time may not be processed in the expected order.
+:::
+
 ### Fill models
 
 Fill models simulate order execution dynamics during backtesting. They address a fundamental challenge:

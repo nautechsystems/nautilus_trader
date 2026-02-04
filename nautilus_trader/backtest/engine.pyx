@@ -942,8 +942,8 @@ cdef class BacktestEngine:
         self._log.info(f"Added {data_name} stream generator")
 
     cpdef void _handle_data_command(self, DataCommand command):
-        if not(command.data_type.type in [Bar, QuoteTick, TradeTick, OrderBookDepth10]
-               or type(command) in [SubscribeData, UnsubscribeData, SubscribeInstruments, UnsubscribeInstruments]):
+        if not(command.data_type.type in [Bar, QuoteTick, TradeTick, OrderBookDelta, OrderBookDeltas, OrderBookDepth10]
+               or isinstance(command, (SubscribeData, UnsubscribeData, SubscribeInstruments, UnsubscribeInstruments))):
             return
 
         if isinstance(command, SubscribeData):
@@ -1558,12 +1558,30 @@ cdef class BacktestEngine:
                     break
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
-        self._last_ns = 0
         cdef uint64_t raw_handlers_count = 0
-        cdef Data data = self._data_iterator.next()
         cdef CVec raw_handlers
+        cdef bint done
+        raw_handlers.ptr = NULL
+        raw_handlers.len = 0
+        raw_handlers.cap = 0
+        cdef Data data = self._data_iterator.next()
+
+        # Initialize _last_ns to ensure timers before first data are processed.
+        # For no-data backtests, start_ns allows _process_next_timer to work correctly.
+        if data is not None:
+            self._last_ns = data.ts_init - 1 if data.ts_init > 0 else 0
+        else:
+            self._last_ns = start_ns
+
         try:
-            while data is not None:
+            while True:
+                if data is None:
+                    done = self._process_next_timer()
+                    data = self._data_iterator.next()
+                    if data is None and done:
+                        break
+                    continue
+
                 if data.ts_init > end_ns:
                     # End of backtest
                     break
@@ -1638,9 +1656,8 @@ cdef class BacktestEngine:
         for exchange in self._venues.values():
             exchange.process(self._kernel.clock.timestamp_ns())
 
-        # Flush remaining events at the last data timestamp
-        if self._last_ns > 0:
-            self._flush_accumulator_events(self._last_ns)
+        # Flush remaining timer events up to end time
+        self._flush_accumulator_events(end_ns)
 
     cdef CVec _advance_time(self, uint64_t ts_now):
         # Advance clocks and process all events before ts_now in timestamp order.
@@ -1722,6 +1739,44 @@ cdef class BacktestEngine:
         empty_vec.len = 0
         empty_vec.cap = 0
         return empty_vec
+
+    cdef bint _process_next_timer(self):
+        # Process the next chronological timer when data is exhausted.
+        #
+        # This method is used when the data stream is empty, but timers (alerts) might
+        # still be active. Instead of jumping to the end of the backtest, it finds the
+        # absolute next timer time across all component clocks and advances to it.
+        #
+        # This allows for scenarios where a timer callback might load new data on-the-fly
+        # (e.g. via a subscription), which should then be processed in proper sequence.
+        #
+        # Returns True if there are no more timers within the backtest range (should break),
+        # False otherwise (should continue the backtest loop to check for new data).
+
+        cdef list[TestClock] clocks = get_component_clocks(self._instance_id)
+        cdef TestClock clock
+        cdef list[str] timer_names
+        cdef uint64_t min_next_time = 0
+        cdef uint64_t next_timer_time
+        cdef str name
+
+        self._flush_accumulator_events(self._last_ns)
+
+        for clock in clocks:
+            timer_names = clock.timer_names
+            for name in timer_names:
+                next_timer_time = clock.next_time_ns(name)
+                if next_timer_time > self._last_ns:
+                    if min_next_time == 0 or next_timer_time < min_next_time:
+                        min_next_time = next_timer_time
+
+        if min_next_time == 0 or min_next_time > self._end_ns:
+            return True
+
+        self._last_ns = min_next_time
+        self._flush_accumulator_events(min_next_time)
+
+        return False
 
     cdef void _flush_accumulator_events(self, uint64_t ts_now):
         cdef list[TestClock] clocks = get_component_clocks(self._instance_id)
