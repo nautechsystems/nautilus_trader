@@ -403,7 +403,9 @@ mod serial_tests {
         let num_keys = 25;
         let batch_size = 10;
         let keys: Vec<String> = (0..num_keys).map(|i| format!("test:batched:{i}")).collect();
-        let values: Vec<Vec<u8>> = (0..num_keys).map(|i| format!("value_{i}").into_bytes()).collect();
+        let values: Vec<Vec<u8>> = (0..num_keys)
+            .map(|i| format!("value_{i}").into_bytes())
+            .collect();
 
         for (key, value) in keys.iter().zip(values.iter()) {
             let _: () = con.set(key, value).await.unwrap();
