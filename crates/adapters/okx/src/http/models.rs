@@ -700,6 +700,9 @@ pub struct OKXPlaceAlgoOrderRequest {
     /// Instrument ID.
     #[serde(rename = "instId")]
     pub inst_id: String,
+    /// Instrument ID code (numeric). May be required per OKX deprecation notice.
+    #[serde(rename = "instIdCode", skip_serializing_if = "Option::is_none")]
+    pub inst_id_code: Option<u64>,
     /// Trade mode (isolated, cross, cash).
     #[serde(rename = "tdMode")]
     pub td_mode: OKXTradeMode,
@@ -765,6 +768,9 @@ pub struct OKXPlaceAlgoOrderResponse {
 pub struct OKXCancelAlgoOrderRequest {
     /// Instrument ID.
     pub inst_id: String,
+    /// Instrument ID code (numeric). May be required per OKX deprecation notice.
+    #[serde(rename = "instIdCode", skip_serializing_if = "Option::is_none")]
+    pub inst_id_code: Option<u64>,
     /// Algo order ID.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub algo_id: Option<String>,
@@ -838,6 +844,7 @@ mod tests {
     fn test_algo_order_request_serialization() {
         let request = OKXPlaceAlgoOrderRequest {
             inst_id: "ETH-USDT-SWAP".to_string(),
+            inst_id_code: None,
             td_mode: OKXTradeMode::Isolated,
             side: OKXSide::Buy,
             ord_type: OKXAlgoOrderType::Trigger,
@@ -874,6 +881,7 @@ mod tests {
     fn test_algo_order_request_array_serialization() {
         let request = OKXPlaceAlgoOrderRequest {
             inst_id: "BTC-USDT".to_string(),
+            inst_id_code: Some(10459),
             td_mode: OKXTradeMode::Cross,
             side: OKXSide::Sell,
             ord_type: OKXAlgoOrderType::Trigger,
@@ -911,6 +919,7 @@ mod tests {
     fn test_cancel_algo_order_request_serialization() {
         let request = OKXCancelAlgoOrderRequest {
             inst_id: "ETH-USDT-SWAP".to_string(),
+            inst_id_code: None,
             algo_id: Some("123456".to_string()),
             algo_cl_ord_id: None,
         };
@@ -927,6 +936,7 @@ mod tests {
     fn test_cancel_algo_order_with_client_id_serialization() {
         let request = OKXCancelAlgoOrderRequest {
             inst_id: "BTC-USDT".to_string(),
+            inst_id_code: Some(10459),
             algo_id: None,
             algo_cl_ord_id: Some("client123".to_string()),
         };

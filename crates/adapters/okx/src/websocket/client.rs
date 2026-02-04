@@ -159,6 +159,7 @@ pub struct OKXWebSocketClient {
     active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
     client_id_aliases: Arc<DashMap<ClientOrderId, ClientOrderId>>,
     instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    inst_id_code_cache: Arc<DashMap<Ustr, u64>>,
     cancellation_token: CancellationToken,
 }
 
@@ -242,6 +243,7 @@ impl OKXWebSocketClient {
             active_client_orders: Arc::new(DashMap::new()),
             client_id_aliases: Arc::new(DashMap::new()),
             instruments_cache: Arc::new(DashMap::new()),
+            inst_id_code_cache: Arc::new(DashMap::new()),
             cancellation_token: CancellationToken::new(),
         })
     }
@@ -372,6 +374,30 @@ impl OKXWebSocketClient {
         }
     }
 
+    /// Caches the instIdCode mapping for an instrument.
+    ///
+    /// The instIdCode is required for WebSocket order operations per OKX API deprecation.
+    pub fn cache_inst_id_code(&self, inst_id: Ustr, inst_id_code: u64) {
+        self.inst_id_code_cache.insert(inst_id, inst_id_code);
+    }
+
+    /// Caches multiple instIdCode mappings for instruments.
+    ///
+    /// This is typically called after loading instruments from the HTTP API.
+    pub fn cache_inst_id_codes(&self, mappings: impl IntoIterator<Item = (Ustr, u64)>) {
+        for (inst_id, inst_id_code) in mappings {
+            self.inst_id_code_cache.insert(inst_id, inst_id_code);
+        }
+    }
+
+    /// Gets the instIdCode for an instrument.
+    ///
+    /// Returns `None` if the instrument is not cached (e.g., SPOT instruments may not have instIdCode).
+    #[must_use]
+    pub fn get_inst_id_code(&self, inst_id: &Ustr) -> Option<u64> {
+        self.inst_id_code_cache.get(inst_id).map(|r| *r.value())
+    }
+
     /// Sets the VIP level for this client.
     ///
     /// The VIP level determines which WebSocket channels are available.
@@ -475,6 +501,7 @@ impl OKXWebSocketClient {
         let auth_tracker = self.auth_tracker.clone();
         let subscriptions_state = self.subscriptions_state.clone();
         let client_id_aliases = self.client_id_aliases.clone();
+        let inst_id_code_cache = self.inst_id_code_cache.clone();
 
         let stream_handle = get_runtime().spawn({
             let auth_tracker = auth_tracker.clone();
@@ -496,6 +523,7 @@ impl OKXWebSocketClient {
                     msg_tx,
                     active_client_orders,
                     client_id_aliases,
+                    inst_id_code_cache,
                     auth_tracker.clone(),
                     subscriptions_state.clone(),
                 );
@@ -1913,6 +1941,12 @@ impl OKXWebSocketClient {
         let mut builder = WsPostOrderParamsBuilder::default();
 
         builder.inst_id(instrument_id.symbol.as_str());
+
+        // Look up instIdCode from cache (required for WebSocket orders per OKX deprecation)
+        if let Some(inst_id_code) = self.get_inst_id_code(&instrument_id.symbol.inner()) {
+            builder.inst_id_code(inst_id_code);
+        }
+
         builder.td_mode(td_mode);
         builder.cl_ord_id(client_order_id.as_str());
 
@@ -2084,6 +2118,11 @@ impl OKXWebSocketClient {
 
         builder.inst_id(instrument_id.symbol.as_str());
 
+        // Look up instIdCode from cache (required for WebSocket orders per OKX deprecation)
+        if let Some(inst_id_code) = self.get_inst_id_code(&instrument_id.symbol.inner()) {
+            builder.inst_id_code(inst_id_code);
+        }
+
         if let Some(venue_order_id) = venue_order_id {
             builder.ord_id(venue_order_id.as_str());
         }
@@ -2214,6 +2253,12 @@ impl OKXWebSocketClient {
             let mut builder = WsPostOrderParamsBuilder::default();
             builder.inst_type(inst_type);
             builder.inst_id(inst_id.symbol.inner());
+
+            // Look up instIdCode from cache (required for WebSocket orders per OKX deprecation)
+            if let Some(inst_id_code) = self.get_inst_id_code(&inst_id.symbol.inner()) {
+                builder.inst_id_code(inst_id_code);
+            }
+
             builder.td_mode(td_mode);
             builder.cl_ord_id(cl_ord_id.as_str());
             builder.side(ord_side);
@@ -2278,6 +2323,12 @@ impl OKXWebSocketClient {
             let mut builder = WsAmendOrderParamsBuilder::default();
             // Note: instType should NOT be included in amend order requests
             builder.inst_id(inst_id.symbol.inner());
+
+            // Look up instIdCode from cache (required for WebSocket orders per OKX deprecation)
+            if let Some(inst_id_code) = self.get_inst_id_code(&inst_id.symbol.inner()) {
+                builder.inst_id_code(inst_id_code);
+            }
+
             builder.cl_ord_id(cl_ord_id.as_str());
             builder.new_cl_ord_id(new_cl_ord_id.as_str());
 
@@ -2322,6 +2373,11 @@ impl OKXWebSocketClient {
             let mut builder = WsCancelOrderParamsBuilder::default();
             // Note: instType should NOT be included in cancel order requests
             builder.inst_id(inst_id.symbol.inner());
+
+            // Look up instIdCode from cache (required for WebSocket orders per OKX deprecation)
+            if let Some(inst_id_code) = self.get_inst_id_code(&inst_id.symbol.inner()) {
+                builder.inst_id_code(inst_id_code);
+            }
 
             if let Some(c) = cl_ord_id {
                 builder.cl_ord_id(c.as_str());
@@ -2382,6 +2438,12 @@ impl OKXWebSocketClient {
         }
 
         builder.inst_id(instrument_id.symbol.inner());
+
+        // Look up instIdCode from cache (required for WebSocket orders per OKX deprecation)
+        if let Some(inst_id_code) = self.get_inst_id_code(&instrument_id.symbol.inner()) {
+            builder.inst_id_code(inst_id_code);
+        }
+
         builder.td_mode(td_mode);
         builder.cl_ord_id(client_order_id.as_str());
         builder.side(order_side);
