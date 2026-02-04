@@ -176,7 +176,7 @@ fn test_config_default() {
     assert_eq!(config.book_type, BookType::L1_MBP);
     assert!(!config.frozen_account);
     assert!(config.bar_execution);
-    assert!(!config.trade_execution);
+    assert!(config.trade_execution);
     assert!(config.reject_stop_orders);
     assert!(config.support_gtd_orders);
     assert!(config.support_contingent_orders);

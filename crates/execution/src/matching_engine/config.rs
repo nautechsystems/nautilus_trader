@@ -77,7 +77,7 @@ impl Default for OrderMatchingEngineConfig {
     fn default() -> Self {
         Self {
             bar_execution: false,
-            trade_execution: false,
+            trade_execution: true,
             liquidity_consumption: false,
             reject_stop_orders: false,
             support_gtd_orders: false,

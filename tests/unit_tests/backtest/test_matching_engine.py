@@ -392,6 +392,201 @@ class TestOrderMatchingEngine:
         assert self.matching_engine.best_bid_price() == matching_engine.best_bid_price()
         assert self.matching_engine.best_ask_price() == matching_engine.best_ask_price()
 
+    def test_trade_execution_disabled_does_not_fill_orders(self) -> None:
+        """
+        Test that with trade_execution=False, trade ticks do NOT trigger order fills
+        even when the trade price would normally fill the order.
+
+        This is the key behavior: users loading both quotes and trades with
+        trade_execution=False expect only quotes to trigger fills.
+
+        """
+        matching_engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L1_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            reject_stop_orders=True,
+            trade_execution=False,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Set initial market state via quote
+        quote = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=211.30,
+            ask_price=211.40,
+        )
+        matching_engine.process_quote_tick(quote)
+
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        # Place BUY LIMIT at 211.35 (inside the spread)
+        order = TestExecStubs.limit_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+            price=Price.from_str("211.35"),
+            quantity=self.instrument.make_qty(1.0),
+        )
+        matching_engine.process_order(order, self.account_id)
+        messages.clear()
+
+        # Process SELLER trade at 211.32 - would fill the order if trade_execution=True
+        trade = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=211.32,
+            aggressor_side=AggressorSide.SELLER,
+        )
+        matching_engine.process_trade_tick(trade)
+
+        # Assert - NO fills should occur with trade_execution=False
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) == 0, (
+            f"Expected no fills with trade_execution=False, was {len(filled_events)}"
+        )
+
+    def test_trade_execution_disabled_quote_ticks_still_fill_orders(self) -> None:
+        """
+        Test that with trade_execution=False, quote ticks still trigger fills.
+
+        This confirms the intended behavior: only trade-based fills are disabled.
+
+        """
+        matching_engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L1_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            reject_stop_orders=True,
+            trade_execution=False,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Set initial market state via quote
+        quote = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=211.30,
+            ask_price=211.40,
+        )
+        matching_engine.process_quote_tick(quote)
+
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        # Place BUY LIMIT at 211.35 (inside the spread, passive)
+        order = TestExecStubs.limit_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+            price=Price.from_str("211.35"),
+            quantity=self.instrument.make_qty(1.0),
+        )
+        matching_engine.process_order(order, self.account_id)
+        messages.clear()
+
+        # Process quote tick where ask crosses down through the order price
+        crossing_quote = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=211.30,
+            ask_price=211.32,  # Ask moved below our BUY LIMIT at 211.35
+        )
+        matching_engine.process_quote_tick(crossing_quote)
+
+        # Assert - Order SHOULD fill from quote tick even with trade_execution=False
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) == 1, f"Expected 1 fill from quote tick, was {len(filled_events)}"
+
+    def test_trade_execution_disabled_with_liquidity_consumption(self) -> None:
+        """
+        Test that trade_execution=False combined with liquidity_consumption=True
+        works correctly: trade ticks don't fill, quote ticks fill up to displayed liquidity.
+        """
+        matching_engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L1_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            reject_stop_orders=True,
+            trade_execution=False,
+            liquidity_consumption=True,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Set initial market state
+        quote = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=100.00,
+            ask_price=100.10,
+            bid_size=50.0,
+            ask_size=50.0,
+        )
+        matching_engine.process_quote_tick(quote)
+
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        # Place large BUY LIMIT order (larger than displayed liquidity)
+        order = TestExecStubs.limit_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+            price=Price.from_str("100.10"),
+            quantity=self.instrument.make_qty(200.0),
+        )
+        matching_engine.process_order(order, self.account_id)
+
+        # Assert - Partial fill limited by displayed ask liquidity (50 units)
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) == 1
+        assert filled_events[0].last_qty == self.instrument.make_qty(50.0), (
+            f"Expected fill of 50 (displayed liquidity), was {filled_events[0].last_qty}"
+        )
+        messages.clear()
+
+        # Process trade tick - should NOT fill remaining quantity
+        trade = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=100.05,
+            aggressor_side=AggressorSide.SELLER,
+        )
+        matching_engine.process_trade_tick(trade)
+
+        # Assert - No fills from trade tick
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) == 0, "Trade tick should not fill with trade_execution=False"
+        messages.clear()
+
+        # New quote with fresh liquidity - should fill more
+        quote2 = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=100.00,
+            ask_price=100.08,
+            bid_size=50.0,
+            ask_size=30.0,
+        )
+        matching_engine.process_quote_tick(quote2)
+
+        # Assert - Another partial fill from fresh quote liquidity
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(filled_events) == 1
+        assert filled_events[0].last_qty == self.instrument.make_qty(30.0), (
+            f"Expected fill of 30 (fresh liquidity), was {filled_events[0].last_qty}"
+        )
+
     def test_fill_order_with_non_positive_qty_returns_early(self) -> None:
         # Arrange - Set initial bid/ask
         quote = TestDataStubs.quote_tick(

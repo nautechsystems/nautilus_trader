@@ -33,6 +33,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Renamed `subscribed_order_book_snapshots` to `subscribed_order_book_depth` for consistency with data engine routing
 - Changed `Price`, `Quantity`, and `Money` arithmetic to use max precision instead of panicking on precision mismatch
 - Changed `Quantity + Quantity`, `Quantity - Quantity`, `Price + Price`, `Price - Price`, `Money + Money`, and `Money - Money` Python operators to return the same type instead of `Decimal` (`Quantity - Quantity` raises `ValueError` if result would be negative)
+- Changed `trade_execution` default from `False` to `True` for consistency with `bar_execution`; users who want to isolate execution to L1 book data only must now explicitly set `trade_execution=False`
 - Changed price-protected market orders to no longer emit `OrderAccepted` by default; set `use_market_order_acks=True` to restore previous behavior
 - Adapter implementations should now override `_subscribe_order_book_depth` and `_unsubscribe_order_book_depth` for `OrderBookDepth10` subscriptions
 
@@ -48,6 +49,8 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed matching engine liquidity consumption tracking for MAKER fills
 - Fixed matching engine trade execution fills discarded with `liquidity_consumption`
 - Fixed matching engine trade execution fill model and FOK/IOC handling
+- Fixed matching engine trade ticks updating L1 book and triggering fills when `trade_execution=False`
+- Fixed matching engine MAKER limit orders over-filling on L1 books when `liquidity_consumption=True`
 - Fixed inverse instrument `base_currency` access across accounting
 - Fixed `UnsubscribeInstrumentClose` message handler routing
 - Fixed order cancel not releasing locked balance in backtest (#3525), thanks for reporting @dennisnissle

@@ -596,6 +596,30 @@ When processing a fill:
 4. A delta updates ask 100.00 to 120 units. Engine resets: `(original=120, consumed=0)`.
 5. New orders can now fill against the fresh 120 units.
 
+**Passive limit order fills on L1 data:**
+
+With L1 data (quotes, trades, bars), the book has only a single price level per side. When the market
+moves through a passive (MAKER) limit order's price, the engine must decide how to handle remaining
+order quantity after exhausting displayed liquidity.
+
+| `liquidity_consumption` | Behavior when market moves through passive limit |
+|-------------------------|--------------------------------------------------|
+| `False` (default)       | Fill entire order at limit price. Assumes market movement implies sufficient liquidity existed. |
+| `True`                  | Fill only against displayed liquidity. Order remains open for subsequent fills. |
+
+**Example scenario** (`liquidity_consumption=True`):
+
+1. Quote shows ask 100.10 with 50 units.
+2. You place BUY LIMIT at 100.05 for 1000 units (passive, resting below ask).
+3. Next quote shows ask 100.00 with 30 units (market moved through your limit).
+4. Order fills 30 units against displayed liquidity. 970 units remain open.
+5. Next quote shows ask 99.95 with 200 units.
+6. Order fills another 200 units. 770 units remain open.
+7. Fills continue as fresh liquidity arrives at crossed price levels.
+
+This behavior provides conservative fill simulation—your order only fills against liquidity
+actually observed in the data, rather than inferring liquidity from price movements.
+
 **Trade tick liquidity:**
 
 Trade ticks provide evidence of executable liquidity at the trade price. When a trade occurs at a price level
@@ -622,9 +646,26 @@ not reflect sustained availability.
 
 ### Trade based execution
 
-When you have trade tick data, enable `trade_execution=True` in your venue configuration to trigger order fills
-based on trade activity. A trade tick indicates that liquidity was accessed at the trade price, allowing resting
-limit orders to match.
+Trade tick data triggers order fills by default (`trade_execution=True`). A trade tick indicates that liquidity
+was accessed at the trade price, allowing resting limit orders to match. This mirrors the default behavior
+for bar data (`bar_execution=True`).
+
+Advanced users who want to isolate execution to L1 book data only (quotes or order book updates) can disable
+trade-based execution:
+
+```python
+venue_config = BacktestVenueConfig(
+    name="SIM",
+    oms_type="NETTING",
+    account_type="CASH",
+    starting_balances=["100_000 USD"],
+    trade_execution=False,  # Disable trade-based fills
+)
+```
+
+When `trade_execution=False` or `bar_execution=False`, the respective data types skip order matching
+and maintenance operations (GTD order expiry, trailing stop activation, instrument expiration checks).
+Quote ticks always trigger maintenance, so this is typically acceptable when using multiple data types.
 
 The matching engine uses a "transient override" mechanism: during the matching process, it temporarily adjusts
 the matching core's Best Bid (for BUYER trades) or Best Ask (for SELLER trades) toward the trade price. This allows
@@ -657,18 +698,6 @@ the trade price. This means repeated trades at or beyond the spread can progress
 - **BUYER trade at P**: The engine sets the core's Best Bid to P (if P > current bid). Resting SELL LIMIT orders at P or lower will fill at their limit price (if book doesn't have that level) or at book prices (if book does).
 
 This conservative approach ensures fills occur at the order's limit price rather than potentially better trade prices. For example, a BUY LIMIT at 100.05 triggered by a SELLER trade at 100.00 will fill at 100.05, not 100.00.
-
-**Example:**
-
-```python
-engine.add_venue(
-    venue=venue,
-    oms_type=OmsType.NETTING,
-    account_type=AccountType.CASH,
-    starting_balances=[Money(10_000, USDT)],
-    trade_execution=True,
-)
-```
 
 :::tip
 Combine trade data with book or quote data for best results: book/quote data establishes the baseline spread,

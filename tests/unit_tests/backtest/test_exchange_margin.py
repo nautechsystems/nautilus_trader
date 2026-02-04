@@ -140,6 +140,7 @@ class TestSimulatedExchangeMarginAccount:
             clock=self.clock,
             latency_model=LatencyModel(0),
             bar_adaptive_high_low_ordering=bar_adaptive_high_low_ordering,
+            trade_execution=True,
         )
         self.exchange.add_instrument(_USDJPY_SIM)
 
@@ -1382,10 +1383,11 @@ class TestSimulatedExchangeMarginAccount:
         self.strategy.submit_order(order)
         self.exchange.process(0)
 
-        # Act
+        # Act: Seller aggressor pushes ask down to fill passive BUY
         trade2 = TestDataStubs.trade_tick(
             instrument=_USDJPY_SIM,
             price=_USDJPY_SIM.make_price(trade_price),
+            aggressor_side=AggressorSide.SELLER,
         )
         self.data_engine.process(trade2)
         self.exchange.process_trade_tick(trade2)

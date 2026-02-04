@@ -860,6 +860,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
             oms_type=OmsType.NETTING,
             starting_balances=[Money(10_000, GBP)],
             book_type=BookType.L2_MBP,
+            trade_execution=False,
         )
 
         data = BetfairDataProvider.betfair_feed_parsed(market_id="1-166811431")

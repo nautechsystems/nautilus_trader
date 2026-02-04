@@ -39,7 +39,7 @@ use nautilus_model::{
     enums::{
         AccountType, AggregationSource, AggressorSide, BookAction, BookType, ContingencyType,
         LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OrderSide, OrderSideSpecified,
-        OrderStatus, OrderType, PriceType, TimeInForce,
+        OrderStatus, OrderType, PriceType, TimeInForce, TriggerType,
     },
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired,
@@ -710,8 +710,10 @@ impl OrderMatchingEngine {
 
     /// Processes a trade tick to update the market state.
     ///
-    /// For L1 books, updates the order book with the trade. When trade execution
-    /// is enabled, allows resting orders to fill against the trade price.
+    /// For L1 books, always updates the order book with the trade tick to maintain
+    /// market state. When `trade_execution` is disabled, order matching and maintenance
+    /// operations (GTD order expiry, trailing stop activation, instrument expiration)
+    /// are skipped. These maintenance operations will run on the next quote tick or bar.
     ///
     /// # Panics
     ///
@@ -736,100 +738,104 @@ impl OrderMatchingEngine {
             trade.size.precision
         );
 
+        let price_raw = trade.price.raw;
+
         if self.book_type == BookType::L1_MBP {
             self.book.update_trade_tick(trade).unwrap();
         }
 
-        let price_raw = trade.price.raw;
         self.core.set_last_raw(trade.price);
 
-        let mut original_bid: Option<Price> = None;
-        let mut original_ask: Option<Price> = None;
-
-        // Initialize aggressor_side to NoAggressor (will reset bid/ask from book in iterate)
-        // Only use actual aggressor when trade_execution is enabled (preserves trade price override)
-        let mut aggressor_side = AggressorSide::NoAggressor;
-
-        if self.config.trade_execution {
-            aggressor_side = trade.aggressor_side;
-
-            match aggressor_side {
-                AggressorSide::Buyer => {
-                    if self.core.ask.is_none() || price_raw > self.core.ask.map_or(0, |p| p.raw) {
-                        self.core.set_ask_raw(trade.price);
-                    }
-                    if self.core.bid.is_none()
-                        || price_raw < self.core.bid.map_or(PriceRaw::MAX, |p| p.raw)
-                    {
-                        self.core.set_bid_raw(trade.price);
-                    }
+        if !self.config.trade_execution {
+            // Sync core to L1 book, skip order matching
+            if self.book_type == BookType::L1_MBP {
+                if let Some(bid) = self.book.best_bid_price() {
+                    self.core.set_bid_raw(bid);
                 }
-                AggressorSide::Seller => {
-                    if self.core.bid.is_none()
-                        || price_raw < self.core.bid.map_or(PriceRaw::MAX, |p| p.raw)
-                    {
-                        self.core.set_bid_raw(trade.price);
-                    }
-                    if self.core.ask.is_none() || price_raw > self.core.ask.map_or(0, |p| p.raw) {
-                        self.core.set_ask_raw(trade.price);
-                    }
-                }
-                AggressorSide::NoAggressor => {
-                    if self.core.bid.is_none()
-                        || price_raw <= self.core.bid.map_or(PriceRaw::MAX, |p| p.raw)
-                    {
-                        self.core.set_bid_raw(trade.price);
-                    }
-                    if self.core.ask.is_none() || price_raw >= self.core.ask.map_or(0, |p| p.raw) {
-                        self.core.set_ask_raw(trade.price);
-                    }
+                if let Some(ask) = self.book.best_ask_price() {
+                    self.core.set_ask_raw(ask);
                 }
             }
-
-            original_bid = self.core.bid;
-            original_ask = self.core.ask;
-
-            match aggressor_side {
-                AggressorSide::Seller => {
-                    if original_ask.is_some_and(|ask| price_raw < ask.raw) {
-                        self.core.set_ask_raw(trade.price);
-                    }
-                }
-                AggressorSide::Buyer => {
-                    if original_bid.is_some_and(|bid| price_raw > bid.raw) {
-                        self.core.set_bid_raw(trade.price);
-                    }
-                }
-                AggressorSide::NoAggressor => {}
-            }
-
-            self.last_trade_size = Some(trade.size);
-            self.trade_consumption = 0;
+            return;
         }
+
+        let aggressor_side = trade.aggressor_side;
+
+        match aggressor_side {
+            AggressorSide::Buyer => {
+                if self.core.ask.is_none() || price_raw > self.core.ask.map_or(0, |p| p.raw) {
+                    self.core.set_ask_raw(trade.price);
+                }
+                if self.core.bid.is_none()
+                    || price_raw < self.core.bid.map_or(PriceRaw::MAX, |p| p.raw)
+                {
+                    self.core.set_bid_raw(trade.price);
+                }
+            }
+            AggressorSide::Seller => {
+                if self.core.bid.is_none()
+                    || price_raw < self.core.bid.map_or(PriceRaw::MAX, |p| p.raw)
+                {
+                    self.core.set_bid_raw(trade.price);
+                }
+                if self.core.ask.is_none() || price_raw > self.core.ask.map_or(0, |p| p.raw) {
+                    self.core.set_ask_raw(trade.price);
+                }
+            }
+            AggressorSide::NoAggressor => {
+                if self.core.bid.is_none()
+                    || price_raw <= self.core.bid.map_or(PriceRaw::MAX, |p| p.raw)
+                {
+                    self.core.set_bid_raw(trade.price);
+                }
+                if self.core.ask.is_none() || price_raw >= self.core.ask.map_or(0, |p| p.raw) {
+                    self.core.set_ask_raw(trade.price);
+                }
+            }
+        }
+
+        let original_bid = self.core.bid;
+        let original_ask = self.core.ask;
+
+        match aggressor_side {
+            AggressorSide::Seller => {
+                if original_ask.is_some_and(|ask| price_raw < ask.raw) {
+                    self.core.set_ask_raw(trade.price);
+                }
+            }
+            AggressorSide::Buyer => {
+                if original_bid.is_some_and(|bid| price_raw > bid.raw) {
+                    self.core.set_bid_raw(trade.price);
+                }
+            }
+            AggressorSide::NoAggressor => {}
+        }
+
+        self.last_trade_size = Some(trade.size);
+        self.trade_consumption = 0;
 
         self.iterate(trade.ts_init, aggressor_side);
 
-        if self.config.trade_execution {
-            self.last_trade_size = None;
-            self.trade_consumption = 0;
+        self.last_trade_size = None;
+        self.trade_consumption = 0;
 
-            match aggressor_side {
-                AggressorSide::Seller => {
-                    if let Some(ask) = original_ask
-                        && price_raw < ask.raw
-                    {
-                        self.core.ask = Some(ask);
-                    }
+        // Restore original bid/ask after temporary trade price override
+        match aggressor_side {
+            AggressorSide::Seller => {
+                if let Some(ask) = original_ask
+                    && price_raw < ask.raw
+                {
+                    self.core.ask = Some(ask);
                 }
-                AggressorSide::Buyer => {
-                    if let Some(bid) = original_bid
-                        && price_raw > bid.raw
-                    {
-                        self.core.bid = Some(bid);
-                    }
-                }
-                AggressorSide::NoAggressor => {}
             }
+            AggressorSide::Buyer => {
+                if let Some(bid) = original_bid
+                    && price_raw > bid.raw
+                {
+                    self.core.bid = Some(bid);
+                }
+            }
+            AggressorSide::NoAggressor => {}
         }
     }
 
@@ -1643,11 +1649,36 @@ impl OrderMatchingEngine {
         self.core.ask = self.book.best_ask_price();
     }
 
+    fn get_trailing_activation_price(
+        &self,
+        trigger_type: TriggerType,
+        order_side: OrderSide,
+        bid: Option<Price>,
+        ask: Option<Price>,
+        last: Option<Price>,
+    ) -> Option<Price> {
+        match trigger_type {
+            TriggerType::LastPrice => last,
+            TriggerType::LastOrBidAsk => last.or(match order_side {
+                OrderSide::Buy => ask,
+                OrderSide::Sell => bid,
+                _ => None,
+            }),
+            // Default, BidAsk, DoubleBidAsk, DoubleLastPrice, IndexPrice, MarkPrice
+            _ => match order_side {
+                OrderSide::Buy => ask,
+                OrderSide::Sell => bid,
+                _ => None,
+            },
+        }
+    }
+
     fn maybe_activate_trailing_stop(
         &mut self,
         order: &mut OrderAny,
         bid: Option<Price>,
         ask: Option<Price>,
+        last: Option<Price>,
     ) -> bool {
         match order {
             OrderAny::TrailingStopMarket(inner) => {
@@ -1656,11 +1687,13 @@ impl OrderMatchingEngine {
                 }
 
                 if inner.activation_price.is_none() {
-                    let px = match inner.order_side() {
-                        OrderSide::Buy => ask,
-                        OrderSide::Sell => bid,
-                        _ => None,
-                    };
+                    let px = self.get_trailing_activation_price(
+                        inner.trigger_type,
+                        inner.order_side(),
+                        bid,
+                        ask,
+                        last,
+                    );
                     if let Some(p) = px {
                         inner.activation_price = Some(p);
                         inner.set_activated();
@@ -1692,11 +1725,13 @@ impl OrderMatchingEngine {
                 }
 
                 if inner.activation_price.is_none() {
-                    let px = match inner.order_side() {
-                        OrderSide::Buy => ask,
-                        OrderSide::Sell => bid,
-                        _ => None,
-                    };
+                    let px = self.get_trailing_activation_price(
+                        inner.trigger_type,
+                        inner.order_side(),
+                        bid,
+                        ask,
+                        last,
+                    );
                     if let Some(p) = px {
                         inner.activation_price = Some(p);
                         inner.set_activated();
@@ -1765,7 +1800,12 @@ impl OrderMatchingEngine {
             ) {
                 let mut any = order;
 
-                if !self.maybe_activate_trailing_stop(&mut any, self.core.bid, self.core.ask) {
+                if !self.maybe_activate_trailing_stop(
+                    &mut any,
+                    self.core.bid,
+                    self.core.ask,
+                    self.core.last,
+                ) {
                     continue;
                 }
 

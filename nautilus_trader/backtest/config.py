@@ -110,7 +110,7 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
         If True, the processing order adapts with the heuristic:
         - If High is closer to Open than Low then the processing order is Open, High, Low, Close.
         - If Low is closer to Open than High then the processing order is Open, Low, High, Close.
-    trade_execution : bool, default False
+    trade_execution : bool, default True
         If trades should be processed by the matching engine(s) (and move the market).
     liquidity_consumption : bool, default False
         If liquidity consumption should be tracked per price level. When enabled, fills
@@ -162,7 +162,7 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     use_market_order_acks: bool = False
     bar_execution: bool = True
     bar_adaptive_high_low_ordering: bool = False
-    trade_execution: bool = False
+    trade_execution: bool = True
     liquidity_consumption: bool = False
     queue_position: bool = False
     allow_cash_borrowing: bool = False

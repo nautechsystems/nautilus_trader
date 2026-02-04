@@ -114,6 +114,7 @@ from nautilus_trader.core.rust.model cimport PriceRaw
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.core.rust.model cimport TimeInForce
+from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.rust.model cimport orderbook_best_ask_price
 from nautilus_trader.core.rust.model cimport orderbook_best_bid_price
 from nautilus_trader.core.rust.model cimport orderbook_has_ask
@@ -513,7 +514,7 @@ cdef class BacktestEngine:
         use_market_order_acks: bool = False,
         bar_execution: bool = True,
         bar_adaptive_high_low_ordering: bool = False,
-        trade_execution: bool = False,
+        trade_execution: bool = True,
         liquidity_consumption: bool = False,
         queue_position: bool = False,
         allow_cash_borrowing: bool = False,
@@ -588,7 +589,7 @@ cdef class BacktestEngine:
             If True, the processing order adapts with the heuristic:
             - If High is closer to Open than Low then the processing order is Open, High, Low, Close.
             - If Low is closer to Open than High then the processing order is Open, Low, High, Close.
-        trade_execution : bool, default False
+        trade_execution : bool, default True
             If trades should be processed by the matching engine(s) (and move the market).
         liquidity_consumption : bool, default False
             If liquidity consumption should be tracked per price level. When enabled, fills
@@ -2631,7 +2632,7 @@ cdef class SimulatedExchange:
     price_protection_points : int, optional
         Defines an exchange-calculated price boundary (in points) to prevent
         marketable orders from executing at excessively aggressive prices.
-    trade_execution : bool, default False
+    trade_execution : bool, default True
         If trades should be processed by the matching engine(s) (and move the market).
     liquidity_consumption : bool, default False
         If liquidity consumption should be tracked per price level. When enabled, fills
@@ -2695,7 +2696,7 @@ cdef class SimulatedExchange:
         bint use_market_order_acks = False,
         bint bar_execution = True,
         bint bar_adaptive_high_low_ordering = False,
-        bint trade_execution = False,
+        bint trade_execution = True,
         bint liquidity_consumption = False,
         bint queue_position = False,
         price_protection_points=None,
@@ -3691,7 +3692,7 @@ cdef class OrderMatchingEngine:
         The logger for the matching engine.
     bar_execution : bool, default True
         If bars should be processed by the matching engine (and move the market).
-    trade_execution : bool, default False
+    trade_execution : bool, default True
         If trades should be processed by the matching engine (and move the market).
     liquidity_consumption : bool, default False
         If liquidity consumption should be tracked per price level.
@@ -3744,7 +3745,7 @@ cdef class OrderMatchingEngine:
         bint use_market_order_acks = False,
         bint bar_execution = True,
         bint bar_adaptive_high_low_ordering = False,
-        bint trade_execution = False,
+        bint trade_execution = True,
         bint liquidity_consumption = False,
         bint queue_position = False,
         price_protection_points=None,
@@ -4211,7 +4212,12 @@ cdef class OrderMatchingEngine:
         """
         Process the exchanges market for the given trade tick.
 
-        The internal order book will only be updated if the venue `book_type` is 'L1_MBP'.
+        The internal order book is always updated if the venue `book_type` is 'L1_MBP'.
+        When `trade_execution` is disabled, the trade tick updates market state (book and
+        last price) but does not trigger order matching or maintenance operations (GTD
+        order expiry, trailing stop activation, instrument expiration checks). These
+        maintenance operations will run on the next quote tick or bar. When `trade_execution`
+        is enabled, resting orders can fill against the trade price.
 
         Parameters
         ----------
@@ -4251,64 +4257,73 @@ cdef class OrderMatchingEngine:
 
         self._core.set_last_raw(price_raw)
 
-        if self._trade_execution:
-            aggressor_side = tick.aggressor_side
+        if not self._trade_execution:
+            # Sync core to L1 book, skip order matching
+            if self.book_type == BookType.L1_MBP:
+                best_bid = self._book.best_bid_price()
+                best_ask = self._book.best_ask_price()
+                if best_bid is not None:
+                    self._core.set_bid_raw(best_bid.raw)
+                if best_ask is not None:
+                    self._core.set_ask_raw(best_ask.raw)
+            self._clock.set_time(tick.ts_init)
+            return
 
-            # Update the natural side based on trade
-            if aggressor_side == AggressorSide.BUYER:
-                if not self._core.is_ask_initialized or price_raw > self._core.ask_raw:
-                    self._core.set_ask_raw(price_raw)
-                if not self._core.is_bid_initialized or price_raw < self._core.bid_raw:
-                    self._core.set_bid_raw(price_raw)
-            elif aggressor_side == AggressorSide.SELLER:
-                if not self._core.is_bid_initialized or price_raw < self._core.bid_raw:
-                    self._core.set_bid_raw(price_raw)
-                if not self._core.is_ask_initialized or price_raw > self._core.ask_raw:
-                    self._core.set_ask_raw(price_raw)
-            elif aggressor_side == AggressorSide.NO_AGGRESSOR:
-                if not self._core.is_bid_initialized or price_raw <= self._core.bid_raw:
-                    self._core.set_bid_raw(price_raw)
-                if not self._core.is_ask_initialized or price_raw >= self._core.ask_raw:
-                    self._core.set_ask_raw(price_raw)
-            else:
-                aggressor_side_str = aggressor_side_to_str(aggressor_side)
-                raise RuntimeError(  # pragma: no cover (design-time error)
-                    f"invalid `AggressorSide` for trade execution, was {aggressor_side_str}",  # pragma: no cover
-                )
+        aggressor_side = tick.aggressor_side
 
-            # Transient override: temporarily drag the opposite side to the trade price
-            original_bid = self._core.bid_raw
-            original_ask = self._core.ask_raw
-
-            if aggressor_side == AggressorSide.SELLER and price_raw < original_ask:
+        if aggressor_side == AggressorSide.BUYER:
+            if not self._core.is_ask_initialized or price_raw > self._core.ask_raw:
                 self._core.set_ask_raw(price_raw)
-            elif aggressor_side == AggressorSide.BUYER and price_raw > original_bid:
+            if not self._core.is_bid_initialized or price_raw < self._core.bid_raw:
                 self._core.set_bid_raw(price_raw)
-            elif aggressor_side == AggressorSide.NO_AGGRESSOR:
-                # Set both sides to trade price so both BUY and SELL orders can match
+        elif aggressor_side == AggressorSide.SELLER:
+            if not self._core.is_bid_initialized or price_raw < self._core.bid_raw:
                 self._core.set_bid_raw(price_raw)
+            if not self._core.is_ask_initialized or price_raw > self._core.ask_raw:
                 self._core.set_ask_raw(price_raw)
+        elif aggressor_side == AggressorSide.NO_AGGRESSOR:
+            if not self._core.is_bid_initialized or price_raw <= self._core.bid_raw:
+                self._core.set_bid_raw(price_raw)
+            if not self._core.is_ask_initialized or price_raw >= self._core.ask_raw:
+                self._core.set_ask_raw(price_raw)
+        else:
+            aggressor_side_str = aggressor_side_to_str(aggressor_side)
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"invalid `AggressorSide` for trade execution, was {aggressor_side_str}",  # pragma: no cover
+            )
 
-            self._last_trade_size = tick.size
-            self._trade_consumption = 0
+        # Transient override: temporarily drag the opposite side to the trade price
+        original_bid = self._core.bid_raw
+        original_ask = self._core.ask_raw
 
-            # Buyer trades consume ask-side (SELL orders), seller trades consume bid-side (BUY orders)
-            if self._queue_position:
-                self._decrement_queue_on_trade(price_raw, tick._mem.size.raw, aggressor_side)
+        if aggressor_side == AggressorSide.SELLER and price_raw < original_ask:
+            self._core.set_ask_raw(price_raw)
+        elif aggressor_side == AggressorSide.BUYER and price_raw > original_bid:
+            self._core.set_bid_raw(price_raw)
+        elif aggressor_side == AggressorSide.NO_AGGRESSOR:
+            # Set both sides to trade price so both BUY and SELL orders can match
+            self._core.set_bid_raw(price_raw)
+            self._core.set_ask_raw(price_raw)
+
+        self._last_trade_size = tick.size
+        self._trade_consumption = 0
+
+        # Buyer trades consume ask-side (SELL orders), seller trades consume bid-side (BUY orders)
+        if self._queue_position:
+            self._decrement_queue_on_trade(price_raw, tick._mem.size.raw, aggressor_side)
 
         self.iterate(tick.ts_init, aggressor_side)
 
-        if self._trade_execution:
-            self._last_trade_size = None
-            self._trade_consumption = 0
+        self._last_trade_size = None
+        self._trade_consumption = 0
 
-            if aggressor_side == AggressorSide.SELLER and price_raw < original_ask:
-                self._core.set_ask_raw(original_ask)
-            elif aggressor_side == AggressorSide.BUYER and price_raw > original_bid:
-                self._core.set_bid_raw(original_bid)
-            elif aggressor_side == AggressorSide.NO_AGGRESSOR:
-                self._core.set_bid_raw(original_bid)
-                self._core.set_ask_raw(original_ask)
+        if aggressor_side == AggressorSide.SELLER and price_raw < original_ask:
+            self._core.set_ask_raw(original_ask)
+        elif aggressor_side == AggressorSide.BUYER and price_raw > original_bid:
+            self._core.set_bid_raw(original_bid)
+        elif aggressor_side == AggressorSide.NO_AGGRESSOR:
+            self._core.set_bid_raw(original_bid)
+            self._core.set_ask_raw(original_ask)
 
     cpdef void process_bar(self, Bar bar):
         """
@@ -4891,6 +4906,21 @@ cdef class OrderMatchingEngine:
 
         return Price(protection_value, precision=self._price_prec)
 
+    cdef Price _get_trailing_activation_price(self, Order order):
+        cdef Price market_price = None
+
+        if order.trigger_type == TriggerType.LAST_PRICE:
+            market_price = self._core.last
+        elif order.trigger_type == TriggerType.LAST_OR_BID_ASK:
+            market_price = self._core.last
+            if market_price is None:
+                market_price = self._core.ask if order.side == OrderSide.BUY else self._core.bid
+        else:
+            # DEFAULT, BID_ASK, DOUBLE_BID_ASK
+            market_price = self._core.ask if order.side == OrderSide.BUY else self._core.bid
+
+        return market_price
+
     cdef list _filter_fills_by_protection(
         self,
         list fills,
@@ -5059,16 +5089,13 @@ cdef class OrderMatchingEngine:
 
         cdef Price market_price = None
         if order.activation_price is None:
-            # If activation price is not given,
-            # set the activation price to the last price, and activate order
-            market_price = self._core.ask if order.side == OrderSide.BUY else self._core.bid
+            market_price = self._get_trailing_activation_price(order)
 
             if market_price is None:
-                # If there is no market price, we cannot process the order
                 raise RuntimeError(  # pragma: no cover (design-time error)
                     f"cannot process trailing stop, "
-                    f"no BID or ASK price for {order.instrument_id} "
-                    f"(add quotes or use bars)",
+                    f"no market price for {order.instrument_id} "
+                    f"(add quotes, trades, or bars)",
                 )
 
             order.set_activated_c(market_price)
@@ -5326,14 +5353,13 @@ cdef class OrderMatchingEngine:
                 # NOTE
                 # The activation price should have been set in OrderMatchingEngine._process_trailing_stop_order()
                 # However, the implementation of the emulator bypass this step, and directly call this method through match_order().
-                market_price = self._core.ask if order.side == OrderSide.BUY else self._core.bid
+                market_price = self._get_trailing_activation_price(order)
 
                 if market_price is None:
-                    # If there is no market price, we cannot process the order
                     raise RuntimeError(  # pragma: no cover (design-time error)
                         f"cannot process trailing stop, "
-                        f"no BID or ASK price for {order.instrument_id} "
-                        f"(add quotes or use bars)",
+                        f"no market price for {order.instrument_id} "
+                        f"(add quotes, trades, or bars)",
                     )
 
                 order.set_activated_c(market_price)
@@ -6538,6 +6564,10 @@ cdef class OrderMatchingEngine:
                 position=position,
             )
 
+        # TODO: Refactor this section - nested conditionals for order types, top-of-book checks,
+        # MAKER vs TAKER, liquidity consumption, spread leg generation, and queue cleanup are
+        # becoming hard to reason about. Consider extracting into smaller focused methods.
+
         # Check LIMIT order on exhausted book volume
         if (
             order.is_open_c()
@@ -6554,8 +6584,21 @@ cdef class OrderMatchingEngine:
                 return  # Limit price is equal to top-of-book, no further fills
 
             if order.liquidity_side == LiquiditySide.MAKER:
-                # Market moved through limit price, assumption is there was enough liquidity to fill entire order
-                fill_px = order.price
+                if self._liquidity_consumption:
+                    # When liquidity_consumption is enabled, don't assume unlimited liquidity
+                    # for passive MAKER orders - skip fill, order remains open for subsequent data
+                    pass
+                else:
+                    # Market moved through limit price, assumption is there was enough liquidity to fill entire order
+                    fill_px = order.price
+                    self.fill_order(
+                        order=order,
+                        last_px=fill_px,
+                        last_qty=order.leaves_qty,
+                        liquidity_side=order.liquidity_side,
+                        venue_position_id=venue_position_id,
+                        position=position,
+                    )
             else:  # Marketable limit order
                 # Exhausted simulated book volume (continue aggressive filling into next level)
                 # This is a very basic implementation of slipping by a single tick, in the future
@@ -6569,14 +6612,14 @@ cdef class OrderMatchingEngine:
                         f"invalid `OrderSide`, was {order.side}",  # pragma: no cover (design-time error)
                     )
 
-            self.fill_order(
-                order=order,
-                last_px=fill_px,
-                last_qty=order.leaves_qty,
-                liquidity_side=order.liquidity_side,
-                venue_position_id=venue_position_id,
-                position=position,
-            )
+                self.fill_order(
+                    order=order,
+                    last_px=fill_px,
+                    last_qty=order.leaves_qty,
+                    liquidity_side=order.liquidity_side,
+                    venue_position_id=venue_position_id,
+                    position=position,
+                )
 
         cdef Instrument instrument = self.cache.instrument(order.instrument_id)
         if instrument is None:

@@ -44,6 +44,7 @@ from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport PriceRaw
 from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.core.rust.model cimport TimeInForce
+from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataCommand
@@ -473,6 +474,7 @@ cdef class OrderMatchingEngine:
     cdef void _process_limit_order(self, LimitOrder order)
     cdef void _process_stop_market_order(self, StopMarketOrder order)
     cdef Price _calculate_protection_price(self, OrderSide side)
+    cdef Price _get_trailing_activation_price(self, Order order)
     cdef list _filter_fills_by_protection(self, list fills, OrderSide side, Price protection_price)
     cdef void _process_stop_limit_order(self, StopLimitOrder order)
     cdef void _process_market_if_touched_order(self, MarketIfTouchedOrder order)

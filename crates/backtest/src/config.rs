@@ -334,7 +334,7 @@ impl BacktestVenueConfig {
             use_reduce_only: use_reduce_only.unwrap_or(true),
             bar_execution: bar_execution.unwrap_or(true),
             bar_adaptive_high_low_ordering: bar_adaptive_high_low_ordering.unwrap_or(false),
-            trade_execution: trade_execution.unwrap_or(false),
+            trade_execution: trade_execution.unwrap_or(true),
             starting_balances,
             base_currency,
             default_leverage,
