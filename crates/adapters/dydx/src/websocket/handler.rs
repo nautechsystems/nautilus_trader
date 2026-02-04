@@ -120,6 +120,10 @@ pub struct FeedHandler {
     subscription_messages: AHashMap<String, DydxSubscription>,
     /// Buffer for multiple messages produced from a single raw message.
     message_buffer: VecDeque<NautilusWsMessage>,
+    /// Tracks last seen message_id per orderbook topic for gap detection.
+    book_sequence: AHashMap<String, u64>,
+    /// Pending (incomplete) bars per candle topic for emit-on-next logic.
+    pending_bars: AHashMap<String, Bar>,
 }
 
 impl Debug for FeedHandler {
@@ -157,6 +161,8 @@ impl FeedHandler {
             subscriptions,
             subscription_messages: AHashMap::new(),
             message_buffer: VecDeque::new(),
+            book_sequence: AHashMap::new(),
+            pending_bars: AHashMap::new(),
         }
     }
 
@@ -377,7 +383,7 @@ impl FeedHandler {
     }
 
     /// Dispatches feed messages directly to typed handlers.
-    fn handle_feed_message(&self, feed_msg: DydxWsFeedMessage) -> Vec<NautilusWsMessage> {
+    fn handle_feed_message(&mut self, feed_msg: DydxWsFeedMessage) -> Vec<NautilusWsMessage> {
         log::trace!(
             "Handling feed message: {:?}",
             std::mem::discriminant(&feed_msg)
@@ -414,22 +420,53 @@ impl FeedHandler {
     }
 
     /// Handles orderbook channel messages.
-    fn handle_orderbook(&self, msg: DydxWsOrderbookMessage) -> Vec<NautilusWsMessage> {
+    fn handle_orderbook(&mut self, msg: DydxWsOrderbookMessage) -> Vec<NautilusWsMessage> {
         match msg {
             DydxWsOrderbookMessage::Subscribed(data) => {
                 let topic = self.topic_from_msg(&DydxWsChannel::Orderbook, &data.id);
                 self.subscriptions.confirm_subscribe(&topic);
+                // Reset sequence tracking on snapshot
+                if let Some(id) = &data.id {
+                    self.book_sequence.insert(id.clone(), data.message_id);
+                }
                 self.parse_orderbook_from_data(&data, true)
             }
             DydxWsOrderbookMessage::ChannelData(data) => {
+                if let Some(id) = &data.id {
+                    if let Some(last_id) = self.book_sequence.get(id)
+                        && data.message_id != last_id + 1
+                    {
+                        log::warn!(
+                            "Orderbook sequence gap for {id}: expected {}, got {}",
+                            last_id + 1,
+                            data.message_id
+                        );
+                    }
+                    self.book_sequence.insert(id.clone(), data.message_id);
+                }
                 self.parse_orderbook_from_data(&data, false)
             }
             DydxWsOrderbookMessage::ChannelBatchData(data) => {
+                if let Some(id) = &data.id {
+                    if let Some(last_id) = self.book_sequence.get(id)
+                        && data.message_id != last_id + 1
+                    {
+                        log::warn!(
+                            "Orderbook batch sequence gap for {id}: expected {}, got {}",
+                            last_id + 1,
+                            data.message_id
+                        );
+                    }
+                    self.book_sequence.insert(id.clone(), data.message_id);
+                }
                 self.parse_orderbook_batch_from_data(&data)
             }
             DydxWsOrderbookMessage::Unsubscribed(data) => {
                 let topic = self.topic_from_msg(&DydxWsChannel::Orderbook, &data.id);
                 self.subscriptions.confirm_unsubscribe(&topic);
+                if let Some(id) = &data.id {
+                    self.book_sequence.remove(id);
+                }
                 vec![]
             }
         }
@@ -470,7 +507,7 @@ impl FeedHandler {
     }
 
     /// Handles candles channel messages.
-    fn handle_candles_feed(&self, msg: DydxWsCandlesMessage) -> Vec<NautilusWsMessage> {
+    fn handle_candles_feed(&mut self, msg: DydxWsCandlesMessage) -> Vec<NautilusWsMessage> {
         match msg {
             DydxWsCandlesMessage::Subscribed(data) => {
                 let topic = self.topic_from_msg(&DydxWsChannel::Candles, &data.id);
@@ -590,7 +627,7 @@ impl FeedHandler {
 
     /// Parses orderbook from channel data message.
     fn parse_orderbook_from_data(
-        &self,
+        &mut self,
         data: &DydxWsChannelDataMsg,
         is_snapshot: bool,
     ) -> Vec<NautilusWsMessage> {
@@ -605,7 +642,7 @@ impl FeedHandler {
 
     /// Parses orderbook batch from batch data message.
     fn parse_orderbook_batch_from_data(
-        &self,
+        &mut self,
         data: &DydxWsChannelBatchDataMsg,
     ) -> Vec<NautilusWsMessage> {
         match self.parse_orderbook_batch(data) {
@@ -629,7 +666,7 @@ impl FeedHandler {
     }
 
     /// Parses candles from channel data message.
-    fn parse_candles_from_data(&self, data: &DydxWsChannelDataMsg) -> Vec<NautilusWsMessage> {
+    fn parse_candles_from_data(&mut self, data: &DydxWsChannelDataMsg) -> Vec<NautilusWsMessage> {
         match self.parse_candles(data) {
             Ok(msgs) => msgs,
             Err(e) => {
@@ -848,7 +885,7 @@ impl FeedHandler {
     }
 
     fn parse_orderbook(
-        &self,
+        &mut self,
         data: &DydxWsChannelDataMsg,
         is_snapshot: bool,
     ) -> DydxWsResult<Vec<NautilusWsMessage>> {
@@ -896,7 +933,7 @@ impl FeedHandler {
     }
 
     fn parse_orderbook_batch(
-        &self,
+        &mut self,
         data: &DydxWsChannelBatchDataMsg,
     ) -> DydxWsResult<Vec<NautilusWsMessage>> {
         let symbol = data
@@ -906,6 +943,8 @@ impl FeedHandler {
 
         let instrument_id = self.parse_instrument_id(symbol)?;
         let instrument = self.get_instrument(&instrument_id)?;
+        let price_prec = instrument.price_precision();
+        let size_prec = instrument.size_precision();
 
         let contents: Vec<DydxOrderbookContents> = serde_json::from_value(data.contents.clone())
             .map_err(|e| DydxWsError::Parse(format!("Failed to parse orderbook batch: {e}")))?;
@@ -919,8 +958,8 @@ impl FeedHandler {
             let deltas = self.parse_orderbook_deltas_with_flag(
                 &instrument_id,
                 content,
-                instrument.price_precision(),
-                instrument.size_precision(),
+                price_prec,
+                size_prec,
                 ts_init,
                 is_last_message,
             )?;
@@ -932,7 +971,7 @@ impl FeedHandler {
     }
 
     fn parse_orderbook_snapshot(
-        &self,
+        &mut self,
         instrument_id: &InstrumentId,
         contents: &DydxOrderbookSnapshotContents,
         price_precision: u8,
@@ -1016,7 +1055,7 @@ impl FeedHandler {
     }
 
     fn parse_orderbook_deltas(
-        &self,
+        &mut self,
         instrument_id: &InstrumentId,
         contents: &DydxOrderbookContents,
         price_precision: u8,
@@ -1036,7 +1075,7 @@ impl FeedHandler {
 
     #[allow(clippy::too_many_arguments)]
     fn parse_orderbook_deltas_with_flag(
-        &self,
+        &mut self,
         instrument_id: &InstrumentId,
         contents: &DydxOrderbookContents,
         price_precision: u8,
@@ -1134,7 +1173,7 @@ impl FeedHandler {
     }
 
     fn parse_candles(
-        &self,
+        &mut self,
         data: &DydxWsChannelDataMsg,
     ) -> DydxWsResult<Vec<NautilusWsMessage>> {
         let topic = data
@@ -1197,7 +1236,24 @@ impl FeedHandler {
             ts_init,
         );
 
-        Ok(vec![NautilusWsMessage::Data(vec![Data::Bar(bar)])])
+        // Emit-on-next: only emit a bar when a new candle period arrives,
+        // confirming the previous bar is closed
+        let topic_key = topic.clone();
+        if let Some(pending) = self.pending_bars.get(&topic_key) {
+            if pending.ts_event != bar.ts_event {
+                // New candle period - emit the previous (now closed) bar
+                let closed_bar = *pending;
+                self.pending_bars.insert(topic_key, bar);
+                return Ok(vec![NautilusWsMessage::Data(vec![Data::Bar(closed_bar)])]);
+            }
+            // Same candle period - update pending with latest values
+            self.pending_bars.insert(topic_key, bar);
+            return Ok(vec![]);
+        }
+
+        // No pending bar yet - store as pending, emit nothing
+        self.pending_bars.insert(topic_key, bar);
+        Ok(vec![])
     }
 
     fn parse_markets(
