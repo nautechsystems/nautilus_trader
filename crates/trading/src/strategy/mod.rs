@@ -938,8 +938,17 @@ pub trait Strategy: DataActor {
     fn handle_order_event(&mut self, event: OrderEventAny) {
         {
             let core = self.core_mut();
-            if core.config.log_events {
-                let id = &core.actor.actor_id;
+            let id = &core.actor.actor_id;
+            let is_warning = matches!(
+                &event,
+                OrderEventAny::Denied(_)
+                    | OrderEventAny::Rejected(_)
+                    | OrderEventAny::CancelRejected(_)
+                    | OrderEventAny::ModifyRejected(_)
+            );
+            if is_warning {
+                log::warn!("{id} {RECV}{EVT} {event}");
+            } else if core.config.log_events {
                 log::info!("{id} {RECV}{EVT} {event}");
             }
         }

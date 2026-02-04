@@ -1152,25 +1152,6 @@ impl AxHttpClient {
         parse_perp_instrument(&resp, maker_fee, taker_fee, ts_init, ts_init)
     }
 
-    /// Requests account state from Ax and parses to a Nautilus [`AccountState`].
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the HTTP request fails or parsing fails.
-    pub async fn request_account_state(
-        &self,
-        account_id: AccountId,
-    ) -> anyhow::Result<AccountState> {
-        let response = self
-            .inner
-            .get_balances()
-            .await
-            .map_err(|e| anyhow::anyhow!(e))?;
-
-        let ts_init = self.generate_ts_init();
-        parse_account_state(&response, account_id, ts_init, ts_init)
-    }
-
     /// Requests funding rates from Ax.
     ///
     /// # Errors
@@ -1228,6 +1209,25 @@ impl AxHttpClient {
         }
 
         Ok(bars)
+    }
+
+    /// Requests account state from Ax and parses to a Nautilus [`AccountState`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
+    pub async fn request_account_state(
+        &self,
+        account_id: AccountId,
+    ) -> anyhow::Result<AccountState> {
+        let response = self
+            .inner
+            .get_balances()
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        let ts_init = self.generate_ts_init();
+        parse_account_state(&response, account_id, ts_init, ts_init)
     }
 
     /// Requests open orders from Ax and parses them to Nautilus [`OrderStatusReport`].

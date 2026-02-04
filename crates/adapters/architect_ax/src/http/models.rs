@@ -90,10 +90,8 @@ pub struct AxInstrument {
     pub tick_size: Decimal,
     /// Quote currency symbol.
     pub quote_currency: Ustr,
-    // TODO: Rename to `funding_settlement_currency` once fixed
     /// Funding settlement currency.
-    #[serde(alias = "funding_settlement_currency")]
-    pub finding_settlement_currency: Ustr,
+    pub funding_settlement_currency: Ustr,
     /// Maintenance margin percentage.
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub maintenance_margin_pct: Decimal,

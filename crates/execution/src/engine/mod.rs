@@ -1028,7 +1028,6 @@ impl ExecutionEngine {
         }
 
         if let Err(e) = client.submit_order(cmd) {
-            log::error!("Error submitting order to client: {e}");
             self.deny_order(&order, &format!("failed-to-submit-order-to-client: {e}"));
         }
     }
@@ -1893,11 +1892,6 @@ impl ExecutionEngine {
     }
 
     fn deny_order(&self, order: &OrderAny, reason: &str) {
-        log::error!(
-            "Order denied: {reason}, order ID: {}",
-            order.client_order_id()
-        );
-
         let denied = OrderDenied::new(
             order.trader_id(),
             order.strategy_id(),

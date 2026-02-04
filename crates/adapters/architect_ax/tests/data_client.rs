@@ -299,18 +299,24 @@ async fn test_data_client_emits_quote_tick_via_channel() {
         .subscribe_quotes(&subscribe_cmd)
         .expect("Subscribe failed");
 
-    // Wait for data events
-    let result = tokio::time::timeout(Duration::from_secs(3), rx.recv()).await;
+    // Wait for quote event (skip instrument events emitted during connect)
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+    loop {
+        let timeout = deadline.saturating_duration_since(tokio::time::Instant::now());
+        assert!(!timeout.is_zero(), "Timeout waiting for quote event");
 
-    match result {
-        Ok(Some(DataEvent::Data(Data::Quote(quote)))) => {
-            assert_eq!(quote.instrument_id.symbol.as_str(), "BTCUSD-PERP");
-            assert!(quote.bid_price.as_f64() > 0.0);
-            assert!(quote.ask_price.as_f64() > 0.0);
+        match tokio::time::timeout(timeout, rx.recv()).await {
+            Ok(Some(DataEvent::Data(Data::Quote(quote)))) => {
+                assert_eq!(quote.instrument_id.symbol.as_str(), "BTCUSD-PERP");
+                assert!(quote.bid_price.as_f64() > 0.0);
+                assert!(quote.ask_price.as_f64() > 0.0);
+                break;
+            }
+            Ok(Some(DataEvent::Instrument(_))) => continue,
+            Ok(Some(other)) => panic!("Expected Quote data event, was {other:?}"),
+            Ok(None) => panic!("Channel closed unexpectedly"),
+            Err(_) => panic!("Timeout waiting for quote event"),
         }
-        Ok(Some(other)) => panic!("Expected Quote data event, was {other:?}"),
-        Ok(None) => panic!("Channel closed unexpectedly"),
-        Err(_) => panic!("Timeout waiting for quote event"),
     }
 
     client.disconnect().await.expect("Failed to disconnect");

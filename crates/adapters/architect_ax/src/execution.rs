@@ -191,51 +191,7 @@ impl AxExecutionClient {
         runtime.block_on(self.refresh_account_state())
     }
 
-    /// Calculates an aggressive limit price for market order simulation.
-    ///
-    /// Uses the best bid/ask from cached quote data with a conservative price band
-    /// buffer to ensure the order fills immediately while staying within AX price bounds.
-    fn calculate_market_order_price(
-        &self,
-        instrument_id: InstrumentId,
-        order_side: OrderSide,
-    ) -> anyhow::Result<Option<Price>> {
-        // Use 3% band (conservative, as AX typically allows ~5%)
-        const PRICE_BAND_PCT: f64 = 0.03;
-
-        let cache = self.core.cache();
-
-        let quote = cache.quote(&instrument_id).ok_or_else(|| {
-            anyhow::anyhow!("Market order simulation requires cached quote for {instrument_id}")
-        })?;
-
-        let aggressive_price = match order_side {
-            OrderSide::Buy => {
-                // For BUY: use ask price + buffer to ensure fill
-                let ask = quote.ask_price.as_f64();
-                let price_value = ask * (1.0 + PRICE_BAND_PCT);
-                Price::new(price_value, quote.ask_price.precision)
-            }
-            OrderSide::Sell => {
-                // For SELL: use bid price - buffer to ensure fill
-                let bid = quote.bid_price.as_f64();
-                let price_value = bid * (1.0 - PRICE_BAND_PCT);
-                Price::new(price_value, quote.bid_price.precision)
-            }
-            _ => {
-                anyhow::bail!("Invalid order side for market simulation: {order_side:?}");
-            }
-        };
-
-        log::debug!(
-            "Market order simulation: {order_side:?} {instrument_id} aggressive_price={aggressive_price}"
-        );
-
-        Ok(Some(aggressive_price))
-    }
-
-    fn submit_order_impl(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
-        // Extract all needed fields in a single borrow scope
+    fn submit_order_internal(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
         let (
             client_order_id,
             strategy_id,
@@ -268,7 +224,8 @@ impl AxExecutionClient {
 
         // For market orders, calculate aggressive price from cached quote
         let price = if order_type == OrderType::Market {
-            self.calculate_market_order_price(instrument_id, order_side)?
+            let price = self.calculate_market_order_price(instrument_id, order_side)?;
+            Some(price)
         } else {
             limit_price
         };
@@ -317,7 +274,7 @@ impl AxExecutionClient {
         Ok(())
     }
 
-    fn cancel_order_impl(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
+    fn cancel_order_internal(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
         let ws_orders = self.ws_orders.clone();
 
         let emitter = self.emitter.clone();
@@ -329,7 +286,7 @@ impl AxExecutionClient {
 
         self.spawn_task("cancel_order", async move {
             let result = ws_orders
-                .cancel_order_command(instrument_id, client_order_id, venue_order_id)
+                .cancel_order(client_order_id, venue_order_id)
                 .await
                 .map_err(|e| anyhow::anyhow!("Cancel order failed: {e}"));
 
@@ -350,6 +307,34 @@ impl AxExecutionClient {
         });
 
         Ok(())
+    }
+
+    fn calculate_market_order_price(
+        &self,
+        instrument_id: InstrumentId,
+        order_side: OrderSide,
+    ) -> anyhow::Result<Price> {
+        // Apply aggressive price buffer to ensure fills in fast markets,
+        // 1% buffer stays within typical price bands while crossing the book.
+        const PRICE_BUFFER_PCT: f64 = 0.01;
+
+        let cache = self.core.cache();
+        let quote = cache.quote(&instrument_id).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Market order requires cached quote for {instrument_id} (quote not yet received)"
+            )
+        })?;
+
+        let (base_price, multiplier) = match order_side {
+            OrderSide::Buy => (quote.ask_price, 1.0 + PRICE_BUFFER_PCT),
+            OrderSide::Sell => (quote.bid_price, 1.0 - PRICE_BUFFER_PCT),
+            _ => anyhow::bail!("Invalid order side for market order: {order_side:?}"),
+        };
+
+        let buffered_value = base_price.as_f64() * multiplier;
+        let price = Price::new(buffered_value, base_price.precision);
+
+        Ok(price)
     }
 
     fn spawn_task<F>(&self, description: &'static str, fut: F)
@@ -569,7 +554,6 @@ impl ExecutionClient for AxExecutionClient {
     }
 
     fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
-        // Hold single borrow for all cache access
         {
             let cache = self.core.cache();
             let order = cache.order(&cmd.client_order_id).ok_or_else(|| {
@@ -581,21 +565,20 @@ impl ExecutionClient for AxExecutionClient {
                 return Ok(());
             }
 
-            // For market orders, validate quote is cached before emitting OrderSubmitted
-            if order.order_type() == OrderType::Market {
-                let instrument_id = order.instrument_id();
-                if cache.quote(&instrument_id).is_none() {
-                    anyhow::bail!(
-                        "Market order requires cached quote for {instrument_id} (quote not yet received)"
-                    );
-                }
+            if order.order_type() == OrderType::Market
+                && cache.quote(&order.instrument_id()).is_none()
+            {
+                anyhow::bail!(
+                    "Market order requires cached quote for {} (quote not yet received)",
+                    order.instrument_id()
+                );
             }
 
             log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
             self.emitter.emit_order_submitted(order);
         }
 
-        self.submit_order_impl(cmd)
+        self.submit_order_internal(cmd)
     }
 
     fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
@@ -615,7 +598,7 @@ impl ExecutionClient for AxExecutionClient {
     }
 
     fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
-        self.cancel_order_impl(cmd)
+        self.cancel_order_internal(cmd)
     }
 
     fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
@@ -647,7 +630,7 @@ impl ExecutionClient for AxExecutionClient {
                 ts_init,
                 params: None,
             };
-            self.cancel_order_impl(&cancel_cmd)?;
+            self.cancel_order_internal(&cancel_cmd)?;
         }
 
         Ok(())
@@ -655,7 +638,7 @@ impl ExecutionClient for AxExecutionClient {
 
     fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
         for cancel in &cmd.cancels {
-            self.cancel_order_impl(cancel)?;
+            self.cancel_order_internal(cancel)?;
         }
         Ok(())
     }

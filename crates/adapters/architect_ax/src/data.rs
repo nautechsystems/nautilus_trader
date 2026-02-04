@@ -332,6 +332,12 @@ impl DataClient for AxDataClient {
 
         for instrument in &instruments {
             self.ws_client.cache_instrument(instrument.clone());
+            if let Err(e) = self
+                .data_sender
+                .send(DataEvent::Instrument(instrument.clone()))
+            {
+                log::warn!("Failed to send instrument: {e}");
+            }
         }
         self.http_client.cache_instruments(instruments);
         log::info!(

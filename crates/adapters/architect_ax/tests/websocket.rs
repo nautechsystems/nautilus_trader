@@ -34,18 +34,18 @@ use axum::{
     routing::get,
 };
 use nautilus_architect_ax::{
-    common::enums::{AxCandleWidth, AxMarketDataLevel, AxOrderSide, AxTimeInForce},
+    common::enums::{AxCandleWidth, AxMarketDataLevel},
     websocket::{data::AxMdWebSocketClient, orders::AxOrdersWebSocketClient},
 };
 use nautilus_common::testing::wait_until_async;
 use nautilus_model::{
-    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TraderId, Venue},
-    instruments::{CryptoPerpetual, InstrumentAny},
+    enums::{OrderSide, OrderType, TimeInForce},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, Venue},
+    instruments::{CryptoPerpetual, Instrument, InstrumentAny},
     types::{Currency, Price, Quantity},
 };
 use rstest::rstest;
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use serde_json::json;
 use ustr::Ustr;
 
@@ -1132,7 +1132,7 @@ async fn test_orders_close_sets_closed_flag() {
 
 #[rstest]
 #[tokio::test]
-async fn test_orders_place_order() {
+async fn test_orders_submit_order() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/orders/ws");
     let account_id = AccountId::from("AX-001");
@@ -1140,19 +1140,27 @@ async fn test_orders_place_order() {
 
     let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, None);
 
+    // Cache instrument before submitting order
+    let instrument = create_test_instrument("BTCUSD-PERP");
+    client.cache_instrument(instrument.clone());
+
     client.connect("test_token").await.unwrap();
     wait_for_connection(&state).await;
 
     let request_id = client
-        .place_order(
+        .submit_order(
+            trader_id,
+            StrategyId::from("TEST-STRATEGY"),
+            instrument.id(),
             ClientOrderId::from("TEST-001"),
-            Ustr::from("BTCUSD-PERP"),
-            AxOrderSide::Buy,
-            100000, // qty in minor units
-            dec!(50000.00),
-            AxTimeInForce::Gtc,
-            false,
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("100"),
+            TimeInForce::Gtc,
+            Some(Price::from("50000.00")),
             None,
+            false,
+            0.into(),
         )
         .await
         .unwrap();
@@ -1184,7 +1192,8 @@ async fn test_orders_cancel_order() {
     client.connect("test_token").await.unwrap();
     wait_for_connection(&state).await;
 
-    let request_id = client.cancel_order("order-123").await.unwrap();
+    let client_order_id = ClientOrderId::from("O-123");
+    let request_id = client.cancel_order(client_order_id, None).await.unwrap();
 
     assert!(request_id > 0);
 

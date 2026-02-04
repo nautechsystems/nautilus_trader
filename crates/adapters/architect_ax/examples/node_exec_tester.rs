@@ -33,6 +33,7 @@ use nautilus_model::{
     types::Quantity,
 };
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
+use rust_decimal::Decimal;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -43,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let account_id = AccountId::from("AX-001");
     let node_name = "AX-EXEC-TESTER-001".to_string();
     let client_id = ClientId::new("AX");
-    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+    let instrument_id = InstrumentId::from("XAU-PERP.AX");
 
     let data_config = AxDataClientConfig {
         api_key: None,    // Will use 'AX_API_KEY' env var
@@ -79,6 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         client_id,
         Quantity::from("1000"), // Minor units for AX
     )
+    .with_open_position_on_start(Some(Decimal::from(1)))
     .with_log_data(false)
     .with_use_post_only(true)
     .with_cancel_orders_on_stop(true)

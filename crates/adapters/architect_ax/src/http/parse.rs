@@ -455,7 +455,7 @@ mod tests {
             minimum_order_size: dec!(0.001),
             tick_size: dec!(0.5),
             quote_currency: Ustr::from("USD"),
-            finding_settlement_currency: Ustr::from("USD"),
+            funding_settlement_currency: Ustr::from("USD"),
             maintenance_margin_pct: dec!(0.005),
             initial_margin_pct: dec!(0.01),
             contract_mark_price: Some("45000.50".to_string()),
