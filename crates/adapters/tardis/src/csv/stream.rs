@@ -414,9 +414,7 @@ impl BatchedDeltasStreamIterator {
                     let data = match self.record.deserialize::<TardisBookUpdateRecord>(None) {
                         Ok(data) => data,
                         Err(e) => {
-                            return Some(Err(anyhow::anyhow!(
-                                "Failed to deserialize record: {e}"
-                            )));
+                            return Some(Err(anyhow::anyhow!("Failed to deserialize record: {e}")));
                         }
                     };
 
@@ -510,10 +508,8 @@ impl Iterator for BatchedDeltasStreamIterator {
         }
 
         self.buffer.clear();
-        if let Some(result) = self.fill_pending_batches() {
-            if let Err(err) = result {
-                return Some(Err(err));
-            }
+        if let Some(Err(err)) = self.fill_pending_batches() {
+            return Some(Err(err));
         }
 
         if self.pending_batches.is_empty() {
@@ -1568,8 +1564,7 @@ binance,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0.5";
 
         // No limit should return all batches (first batch starts with CLEAR)
         let mut iterator =
-            BatchedDeltasStreamIterator::new(&temp_file, 10, Some(4), Some(1), None, None)
-                .unwrap();
+            BatchedDeltasStreamIterator::new(&temp_file, 10, Some(4), Some(1), None, None).unwrap();
         iterator.fill_pending_batches();
         assert_eq!(iterator.pending_batches.len(), 5);
         assert_eq!(iterator.pending_batches[0].len(), 2);
