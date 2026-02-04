@@ -157,17 +157,46 @@ impl DatabaseQueries {
 
         let mut con = con.clone();
 
-        // Use MGET to fetch all keys in a single network operation
         let results: Vec<Option<Vec<u8>>> =
             redis::cmd("MGET").arg(keys).query_async(&mut con).await?;
 
-        // Convert Vec<u8> to Bytes
         let bytes_results: Vec<Option<Bytes>> = results
             .into_iter()
             .map(|opt| opt.map(Bytes::from))
             .collect();
 
         Ok(bytes_results)
+    }
+
+    /// Bulk reads multiple keys from Redis using MGET, batched into chunks.
+    ///
+    /// Keys are batched into chunks of `batch_size` to avoid exceeding Redis
+    /// request size limits on some providers.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying Redis MGET operation fails.
+    pub async fn read_bulk_batched(
+        con: &ConnectionManager,
+        keys: &[String],
+        batch_size: usize,
+    ) -> anyhow::Result<Vec<Option<Bytes>>> {
+        if keys.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let mut all_results: Vec<Option<Bytes>> = Vec::with_capacity(keys.len());
+
+        for chunk in keys.chunks(batch_size) {
+            let mut con = con.clone();
+
+            let results: Vec<Option<Vec<u8>>> =
+                redis::cmd("MGET").arg(chunk).query_async(&mut con).await?;
+
+            all_results.extend(results.into_iter().map(|opt| opt.map(Bytes::from)));
+        }
+
+        Ok(all_results)
     }
 
     /// Reads raw byte payloads for `key` under `trader_key` from Redis.

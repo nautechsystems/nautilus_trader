@@ -136,6 +136,7 @@ pub struct RedisCacheDatabase {
     pub trader_id: TraderId,
     pub trader_key: String,
     pub encoding: SerializationEncoding,
+    pub bulk_read_batch_size: Option<usize>,
     tx: tokio::sync::mpsc::UnboundedSender<DatabaseCommand>,
     handle: tokio::task::JoinHandle<()>,
 }
@@ -175,6 +176,7 @@ impl RedisCacheDatabase {
         let trader_key = get_trader_key(trader_id, instance_id, &config);
         let trader_key_clone = trader_key.clone();
         let encoding = config.encoding;
+        let bulk_read_batch_size = config.bulk_read_batch_size;
 
         let handle = get_runtime().spawn(async move {
             if let Err(e) = process_commands(rx, trader_key_clone, config.clone()).await {
@@ -187,6 +189,7 @@ impl RedisCacheDatabase {
             trader_id,
             trader_key,
             encoding,
+            bulk_read_batch_size,
             tx,
             handle,
         })
@@ -254,7 +257,12 @@ impl RedisCacheDatabase {
     ///
     /// Returns an error if the underlying Redis read operation fails.
     pub async fn read_bulk(&mut self, keys: &[String]) -> anyhow::Result<Vec<Option<Bytes>>> {
-        DatabaseQueries::read_bulk(&self.con, keys).await
+        match self.bulk_read_batch_size {
+            Some(batch_size) => {
+                DatabaseQueries::read_bulk_batched(&self.con, keys, batch_size).await
+            }
+            None => DatabaseQueries::read_bulk(&self.con, keys).await,
+        }
     }
 
     /// Sends an insert command for `key` with optional `payload` to Redis via the background task.
