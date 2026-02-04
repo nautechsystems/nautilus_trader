@@ -31,11 +31,11 @@ use nautilus_common::{
         data::{
             BarsResponse, InstrumentResponse, InstrumentsResponse, RequestBars, RequestInstrument,
             RequestInstruments, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-            SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-            SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
-            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeFundingRates,
-            UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstruments,
-            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstruments,
+            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
+            UnsubscribeBookDeltas, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+            UnsubscribeInstrument, UnsubscribeInstruments, UnsubscribeMarkPrices,
+            UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -46,9 +46,8 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{
-        Bar, BarSpecification, BarType, BookOrder, Data as NautilusData, FundingRateUpdate,
-        IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API,
-        QuoteTick, TradeTick,
+        Bar, BarSpecification, BarType, BookOrder, Data as NautilusData, OrderBookDelta,
+        OrderBookDeltas, OrderBookDeltas_API, QuoteTick, TradeTick,
     },
     enums::{
         AggregationSource, AggressorSide, BarAggregation, BookAction, BookType, OrderSide,
@@ -59,24 +58,17 @@ use nautilus_model::{
     orderbook::OrderBook,
     types::{Price, Quantity},
 };
-use rust_decimal::Decimal;
 use tokio::{task::JoinHandle, time::Duration};
 use tokio_util::sync::CancellationToken;
-use nautilus_model::data::Data;
+
 use crate::{
     common::{
         consts::DYDX_VENUE, enums::DydxCandleResolution, instrument_cache::InstrumentCache,
         parse::extract_raw_symbol,
     },
     config::DydxDataClientConfig,
-    http::{
-        client::DydxHttpClient,
-        models::Candle,
-    },
-    websocket::{
-        client::DydxWebSocketClient, enums::NautilusWsMessage, handler::HandlerCommand,
-        messages::{DydxMarketTradingUpdate, DydxOraclePriceMarket},
-    },
+    http::{client::DydxHttpClient, models::Candle},
+    websocket::{client::DydxWebSocketClient, enums::NautilusWsMessage, handler::HandlerCommand},
 };
 
 /// Groups WebSocket message handling dependencies.
@@ -337,13 +329,6 @@ impl DydxDataClient {
         log::debug!("Published {} instruments to data engine", instruments.len());
 
         Ok(instruments)
-    }
-
-    /// Sends data to the data channel.
-    fn send_data(sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>, data: Data) {
-        if let Err(e) = sender.send(DataEvent::Data(data)) {
-            log::error!("Failed to send data: {e}");
-        }
     }
 }
 
@@ -1567,22 +1552,36 @@ impl DydxDataClient {
                     &ctx.active_delta_subs,
                 );
             }
-            NautilusWsMessage::OraclePrices(oracle_prices) => {
-                Self::handle_oracle_prices(
-                    oracle_prices,
-                    &ctx.instrument_cache,
-                    &ctx.data_sender,
-                    &ctx.active_mark_price_subs,
-                    &ctx.active_index_price_subs,
-                );
+            NautilusWsMessage::MarkPrice(mark_price) => {
+                if ctx
+                    .active_mark_price_subs
+                    .contains(&mark_price.instrument_id)
+                {
+                    let data = NautilusData::MarkPriceUpdate(mark_price);
+                    if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
+                        log::error!("Failed to emit mark price: {e}");
+                    }
+                }
             }
-            NautilusWsMessage::FundingRates(trading_data) => {
-                Self::handle_funding_rates(
-                    trading_data,
-                    &ctx.instrument_cache,
-                    &ctx.data_sender,
-                    &ctx.active_funding_rate_subs,
-                );
+            NautilusWsMessage::IndexPrice(index_price) => {
+                if ctx
+                    .active_index_price_subs
+                    .contains(&index_price.instrument_id)
+                {
+                    let data = NautilusData::IndexPriceUpdate(index_price);
+                    if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
+                        log::error!("Failed to emit index price: {e}");
+                    }
+                }
+            }
+            NautilusWsMessage::FundingRate(funding_rate) => {
+                if ctx
+                    .active_funding_rate_subs
+                    .contains(&funding_rate.instrument_id)
+                    && let Err(e) = ctx.data_sender.send(DataEvent::FundingRate(funding_rate))
+                {
+                    log::error!("Failed to emit funding rate: {e}");
+                }
             }
             NautilusWsMessage::Error(err) => {
                 log::error!("dYdX WS error: {err}");
@@ -2036,102 +2035,6 @@ impl DydxDataClient {
             let data: NautilusData = OrderBookDeltas_API::new(resolved_deltas).into();
             if let Err(e) = data_sender.send(DataEvent::Data(data)) {
                 log::error!("Failed to emit order book deltas event: {e}");
-            }
-        }
-    }
-
-    fn handle_oracle_prices(
-        oracle_prices: std::collections::HashMap<String, DydxOraclePriceMarket>,
-        instrument_cache: &Arc<InstrumentCache>,
-        data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
-        active_mark_subs: &Arc<DashSet<InstrumentId>>,
-        active_index_subs: &Arc<DashSet<InstrumentId>>,
-    ) {
-        let ts_init = get_atomic_clock_realtime().get_time_ns();
-
-        for (symbol_str, oracle_market) in oracle_prices {
-            let Some(instrument) = instrument_cache.get_by_market(&symbol_str) else {
-                continue;
-            };
-
-            let instrument_id = instrument.id();
-            let is_mark_sub = active_mark_subs.contains(&instrument_id);
-            let is_index_sub = active_index_subs.contains(&instrument_id);
-
-            if !is_mark_sub && !is_index_sub {
-                continue;
-            }
-
-            let Ok(oracle_price_dec) = oracle_market.oracle_price.parse::<Decimal>() else {
-                log::error!("Failed to parse oracle price: market={symbol_str}");
-                continue;
-            };
-
-            let price_precision = instrument.price_precision();
-            let Ok(price) = Price::from_decimal_dp(oracle_price_dec, price_precision) else {
-                log::error!("Failed to create Price: market={symbol_str}");
-                continue;
-            };
-
-            if is_mark_sub {
-                let data = NautilusData::MarkPriceUpdate(MarkPriceUpdate::new(
-                    instrument_id, price, ts_init, ts_init,
-                ));
-                if let Err(e) = data_sender.send(DataEvent::Data(data)) {
-                    log::error!("Failed to emit mark price: {e}");
-                }
-            }
-
-            if is_index_sub {
-                let data = NautilusData::IndexPriceUpdate(IndexPriceUpdate::new(
-                    instrument_id, price, ts_init, ts_init,
-                ));
-                if let Err(e) = data_sender.send(DataEvent::Data(data)) {
-                    log::error!("Failed to emit index price: {e}");
-                }
-            }
-        }
-    }
-
-    fn handle_funding_rates(
-        trading_data: std::collections::HashMap<String, DydxMarketTradingUpdate>,
-        instrument_cache: &Arc<InstrumentCache>,
-        data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
-        active_funding_subs: &Arc<DashSet<InstrumentId>>,
-    ) {
-        let ts_init = get_atomic_clock_realtime().get_time_ns();
-
-        for (symbol_str, trading) in trading_data {
-            let Some(next_funding_rate_str) = &trading.next_funding_rate else {
-                continue;
-            };
-
-            let Some(instrument) = instrument_cache.get_by_market(&symbol_str) else {
-                continue;
-            };
-
-            let instrument_id = instrument.id();
-            if !active_funding_subs.contains(&instrument_id) {
-                continue;
-            }
-
-            let Ok(rate) = next_funding_rate_str.parse::<Decimal>() else {
-                log::error!(
-                    "Failed to parse funding rate: market={symbol_str}, rate={next_funding_rate_str}"
-                );
-                continue;
-            };
-
-            let funding_rate = FundingRateUpdate::new(
-                instrument_id,
-                rate,
-                None, // dYdX doesn't provide next_funding_ns in WS stream
-                ts_init,
-                ts_init,
-            );
-
-            if let Err(e) = data_sender.send(DataEvent::FundingRate(funding_rate)) {
-                log::error!("Failed to emit funding rate: {e}");
             }
         }
     }

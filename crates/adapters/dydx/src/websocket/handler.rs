@@ -33,15 +33,19 @@ use std::{
 use ahash::AHashMap;
 use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_model::{
-    data::{Bar, BarType, Data, OrderBookDeltas},
+    data::{
+        Bar, BarType, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas,
+    },
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
+    types::Price,
 };
 use nautilus_network::{
     RECONNECTED,
     retry::{RetryManager, create_websocket_retry_manager},
     websocket::{SubscriptionState, WebSocketClient},
 };
+use rust_decimal::Decimal;
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
@@ -261,24 +265,19 @@ impl FeedHandler {
 
                 // Cold path: infrequent control messages (connected/subscribed/error)
                 match serde_json::from_str::<serde_json::Value>(&txt) {
-                    Ok(val) => {
-                        match serde_json::from_value::<DydxWsGenericMsg>(val.clone()) {
-                            Ok(meta) => {
-                                let result = if meta.is_connected() {
-                                    serde_json::from_value::<DydxWsConnectedMsg>(val)
-                                        .map(DydxWsMessage::Connected)
-                                } else if meta.is_subscribed() {
-                                    log::debug!("Processing subscribed message via fallback path");
-                                    if let Ok(sub_msg) =
-                                        serde_json::from_value::<DydxWsSubscriptionMsg>(val.clone())
-                                    {
-                                        if sub_msg.channel == DydxWsChannel::Subaccounts {
-                                            log::debug!(
-                                                "Parsing subaccounts subscription (fallback)"
-                                            );
-                                            serde_json::from_value::<DydxWsSubaccountsSubscribed>(
-                                                val,
-                                            )
+                    Ok(val) => match serde_json::from_value::<DydxWsGenericMsg>(val.clone()) {
+                        Ok(meta) => {
+                            let result = if meta.is_connected() {
+                                serde_json::from_value::<DydxWsConnectedMsg>(val)
+                                    .map(DydxWsMessage::Connected)
+                            } else if meta.is_subscribed() {
+                                log::debug!("Processing subscribed message via fallback path");
+                                if let Ok(sub_msg) =
+                                    serde_json::from_value::<DydxWsSubscriptionMsg>(val.clone())
+                                {
+                                    if sub_msg.channel == DydxWsChannel::Subaccounts {
+                                        log::debug!("Parsing subaccounts subscription (fallback)");
+                                        serde_json::from_value::<DydxWsSubaccountsSubscribed>(val)
                                             .map(DydxWsMessage::SubaccountsSubscribed)
                                             .or_else(|e| {
                                                 log::warn!(
@@ -286,48 +285,45 @@ impl FeedHandler {
                                                 );
                                                 Ok(DydxWsMessage::Subscribed(sub_msg))
                                             })
-                                        } else {
-                                            Ok(DydxWsMessage::Subscribed(sub_msg))
-                                        }
                                     } else {
-                                        serde_json::from_value::<DydxWsSubscriptionMsg>(val)
-                                            .map(DydxWsMessage::Subscribed)
+                                        Ok(DydxWsMessage::Subscribed(sub_msg))
                                     }
-                                } else if meta.is_unsubscribed() {
-                                    serde_json::from_value::<DydxWsSubscriptionMsg>(val)
-                                        .map(DydxWsMessage::Unsubscribed)
-                                } else if meta.is_error() {
-                                    serde_json::from_value::<DydxWebSocketError>(val)
-                                        .map(DydxWsMessage::Error)
-                                } else if meta.is_unknown() {
-                                    log::warn!(
-                                        "Received unknown WebSocket message type: {txt}",
-                                    );
-                                    Ok(DydxWsMessage::Raw(val))
                                 } else {
-                                    Ok(DydxWsMessage::Raw(val))
-                                };
+                                    serde_json::from_value::<DydxWsSubscriptionMsg>(val)
+                                        .map(DydxWsMessage::Subscribed)
+                                }
+                            } else if meta.is_unsubscribed() {
+                                serde_json::from_value::<DydxWsSubscriptionMsg>(val)
+                                    .map(DydxWsMessage::Unsubscribed)
+                            } else if meta.is_error() {
+                                serde_json::from_value::<DydxWebSocketError>(val)
+                                    .map(DydxWsMessage::Error)
+                            } else if meta.is_unknown() {
+                                log::warn!("Received unknown WebSocket message type: {txt}",);
+                                Ok(DydxWsMessage::Raw(val))
+                            } else {
+                                Ok(DydxWsMessage::Raw(val))
+                            };
 
-                                match result {
-                                    Ok(dydx_msg) => self.handle_dydx_message(dydx_msg).await,
-                                    Err(e) => {
-                                        log::error!(
-                                            "Failed to parse WebSocket message: {e}. Message type: {:?}, Channel: {:?}. Raw: {txt}",
-                                            meta.msg_type,
-                                            meta.channel,
-                                        );
-                                        vec![]
-                                    }
+                            match result {
+                                Ok(dydx_msg) => self.handle_dydx_message(dydx_msg).await,
+                                Err(e) => {
+                                    log::error!(
+                                        "Failed to parse WebSocket message: {e}. Message type: {:?}, Channel: {:?}. Raw: {txt}",
+                                        meta.msg_type,
+                                        meta.channel,
+                                    );
+                                    vec![]
                                 }
                             }
-                            Err(e) => {
-                                log::error!(
-                                    "Failed to parse WebSocket message envelope (DydxWsGenericMsg): {e}\nRaw JSON:\n{txt}"
-                                );
-                                vec![]
-                            }
                         }
-                    }
+                        Err(e) => {
+                            log::error!(
+                                "Failed to parse WebSocket message envelope (DydxWsGenericMsg): {e}\nRaw JSON:\n{txt}"
+                            );
+                            vec![]
+                        }
+                    },
                     Err(e) => {
                         let err = DydxWebSocketError::from_message(e.to_string());
                         vec![NautilusWsMessage::Error(err)]
@@ -335,7 +331,7 @@ impl FeedHandler {
                 }
             }
             Message::Pong(_data) => vec![],
-            Message::Ping(_data) => vec![],  // Handled by lower layers
+            Message::Ping(_data) => vec![], // Handled by lower layers
             Message::Binary(_bin) => vec![], // dYdX uses text frames
             Message::Close(_frame) => {
                 log::info!("WebSocket close frame received");
@@ -411,7 +407,7 @@ impl FeedHandler {
                         && data.message_id <= *last_id
                     {
                         log::warn!(
-                            "Orderbook sequence regression for {id}: last {last_id}, got {}",
+                            "Orderbook sequence regression for {id}: last {last_id}, received {}",
                             data.message_id
                         );
                     }
@@ -425,7 +421,7 @@ impl FeedHandler {
                         && data.message_id <= *last_id
                     {
                         log::warn!(
-                            "Orderbook batch sequence regression for {id}: last {last_id}, got {}",
+                            "Orderbook batch sequence regression for {id}: last {last_id}, received {}",
                             data.message_id
                         );
                     }
@@ -971,14 +967,77 @@ impl FeedHandler {
         Ok(vec![])
     }
 
-    fn parse_markets(
-        &self,
-        data: &DydxWsChannelDataMsg,
-    ) -> DydxWsResult<Vec<NautilusWsMessage>> {
+    fn parse_markets(&self, data: &DydxWsChannelDataMsg) -> DydxWsResult<Vec<NautilusWsMessage>> {
         let contents: DydxMarketsContents = serde_json::from_value(data.contents.clone())
             .map_err(|e| DydxWsError::Parse(format!("Failed to parse markets contents: {e}")))?;
 
-        let messages = ws_parse::parse_markets_contents(&contents);
+        let mut messages = Vec::new();
+        let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+        // Parse oracle prices → MarkPriceUpdate + IndexPriceUpdate
+        if let Some(oracle_prices) = &contents.oracle_prices {
+            for (symbol_str, oracle_market) in oracle_prices {
+                let Ok(instrument_id) = self.parse_instrument_id(symbol_str) else {
+                    continue;
+                };
+                let Some(instrument) = self.instruments.get(&instrument_id.symbol.inner()) else {
+                    continue;
+                };
+                let Ok(oracle_price_dec) = oracle_market.oracle_price.parse::<Decimal>() else {
+                    log::error!("Failed to parse oracle price: market={symbol_str}");
+                    continue;
+                };
+                let Ok(price) =
+                    Price::from_decimal_dp(oracle_price_dec, instrument.price_precision())
+                else {
+                    log::error!("Failed to create Price: market={symbol_str}");
+                    continue;
+                };
+
+                messages.push(NautilusWsMessage::MarkPrice(MarkPriceUpdate::new(
+                    instrument_id,
+                    price,
+                    ts_init,
+                    ts_init,
+                )));
+                messages.push(NautilusWsMessage::IndexPrice(IndexPriceUpdate::new(
+                    instrument_id,
+                    price,
+                    ts_init,
+                    ts_init,
+                )));
+            }
+        }
+
+        // Parse trading data → FundingRateUpdate
+        if let Some(trading) = &contents.trading {
+            for (symbol_str, trading_data) in trading {
+                let Some(rate_str) = &trading_data.next_funding_rate else {
+                    continue;
+                };
+                let Ok(instrument_id) = self.parse_instrument_id(symbol_str) else {
+                    continue;
+                };
+                if !self.instruments.contains_key(&instrument_id.symbol.inner()) {
+                    continue;
+                }
+                let Ok(rate) = rate_str.parse::<Decimal>() else {
+                    log::error!(
+                        "Failed to parse funding rate: market={symbol_str}, rate={rate_str}"
+                    );
+                    continue;
+                };
+
+                messages.push(NautilusWsMessage::FundingRate(FundingRateUpdate::new(
+                    instrument_id,
+                    rate,
+                    None,
+                    ts_init,
+                    ts_init,
+                )));
+            }
+        }
+
         Ok(messages)
     }
 

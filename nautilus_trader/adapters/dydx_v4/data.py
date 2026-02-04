@@ -62,6 +62,9 @@ from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOU
 from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import FundingRateUpdate
+from nautilus_trader.model.data import IndexPriceUpdate
+from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import bar_aggregation_to_str
@@ -214,8 +217,30 @@ class DYDXv4DataClient(LiveMarketDataClient):
 
     def _handle_msg(self, capsule: object) -> None:
         try:
-            data = capsule_to_data(capsule)
-            self._handle_data(data)
+            if nautilus_pyo3.is_pycapsule(capsule):
+                data = capsule_to_data(capsule)
+                self._handle_data(data)
+                return
+
+            if isinstance(capsule, nautilus_pyo3.MarkPriceUpdate):
+                data = MarkPriceUpdate.from_pyo3(capsule)
+                self._handle_data(data)
+                return
+
+            if isinstance(capsule, nautilus_pyo3.IndexPriceUpdate):
+                data = IndexPriceUpdate.from_pyo3(capsule)
+                self._handle_data(data)
+                return
+
+            if isinstance(capsule, nautilus_pyo3.FundingRateUpdate):
+                data = FundingRateUpdate.from_pyo3(capsule)
+                self._handle_data(data)
+                return
+
+            if isinstance(capsule, dict):
+                return
+
+            self._log.debug(f"Ignoring message of type {type(capsule).__name__}")
         except Exception as e:
             self._log.error(f"Error handling WebSocket message: {e}")
 

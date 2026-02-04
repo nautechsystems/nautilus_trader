@@ -38,6 +38,7 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 
+use super::{DydxWsError, DydxWsResult};
 use crate::{
     common::{enums::DydxOrderStatus, instrument_cache::InstrumentCache},
     execution::{encoder::ClientOrderIdEncoder, types::OrderContext},
@@ -46,12 +47,11 @@ use crate::{
         parse::{parse_fill_report, parse_order_status_report, parse_position_status_report},
     },
     websocket::messages::{
-        DydxCandle, DydxMarketsContents, DydxOrderbookContents, DydxOrderbookSnapshotContents,
-        DydxPerpetualPosition, DydxTradeContents, DydxWsFillSubaccountMessageContents,
+        DydxCandle, DydxOrderbookContents, DydxOrderbookSnapshotContents, DydxPerpetualPosition,
+        DydxTradeContents, DydxWsFillSubaccountMessageContents,
         DydxWsOrderSubaccountMessageContents,
     },
 };
-use super::{DydxWsError, DydxWsResult, enums::NautilusWsMessage};
 
 /// Parses a WebSocket order update into an OrderStatusReport.
 ///
@@ -816,29 +816,6 @@ pub fn parse_candle_bar(
     );
 
     Ok(bar)
-}
-
-/// Parses markets contents for oracle price and funding rate updates.
-pub fn parse_markets_contents(contents: &DydxMarketsContents) -> Vec<NautilusWsMessage> {
-    let mut messages = Vec::new();
-
-    if let Some(oracle_prices) = &contents.oracle_prices {
-        log::debug!(
-            "Forwarding oracle price updates for {} markets",
-            oracle_prices.len()
-        );
-        messages.push(NautilusWsMessage::OraclePrices(oracle_prices.clone()));
-    }
-
-    if let Some(trading) = &contents.trading {
-        log::debug!(
-            "Forwarding trading/funding data for {} markets",
-            trading.len()
-        );
-        messages.push(NautilusWsMessage::FundingRates(trading.clone()));
-    }
-
-    messages
 }
 
 #[cfg(test)]
