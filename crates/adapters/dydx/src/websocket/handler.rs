@@ -978,11 +978,8 @@ impl FeedHandler {
         let contents: DydxMarketsContents = serde_json::from_value(data.contents.clone())
             .map_err(|e| DydxWsError::Parse(format!("Failed to parse markets contents: {e}")))?;
 
-        if let Some(msg) = ws_parse::parse_markets_contents(&contents) {
-            return Ok(vec![msg]);
-        }
-
-        Ok(vec![])
+        let messages = ws_parse::parse_markets_contents(&contents);
+        Ok(messages)
     }
 
     fn parse_subaccounts(

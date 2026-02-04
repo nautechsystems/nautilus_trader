@@ -232,6 +232,9 @@ impl DydxWebSocketClient {
                                     }
                                 });
                             }
+                            NautilusWsMessage::FundingRates(_) => {
+                                log::debug!("Ignoring funding rates in Python WebSocket bridge");
+                            }
                             NautilusWsMessage::OraclePrices(prices) => {
                                 Python::attach(|py| {
                                     use pyo3::types::PyDict;

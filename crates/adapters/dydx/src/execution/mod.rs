@@ -525,6 +525,9 @@ impl DydxExecutionClient {
                     NautilusWsMessage::Reconnected => {
                         log::info!("WebSocket reconnected");
                     }
+                    NautilusWsMessage::FundingRates(_) => {
+                        // Funding rates are handled by the data client
+                    }
                     _ => {
                         // Data, Deltas are for market data, not execution
                     }

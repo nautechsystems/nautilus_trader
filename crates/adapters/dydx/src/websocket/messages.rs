@@ -399,6 +399,15 @@ pub struct DydxOraclePriceMarket {
     pub oracle_price: String,
 }
 
+/// Trading data for a market from v4_markets channel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DydxMarketTradingUpdate {
+    /// Next funding rate for the market.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_funding_rate: Option<String>,
+}
+
 /// Market message contents.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DydxMarketMessageContents {
@@ -438,6 +447,9 @@ pub struct DydxMarketsContents {
     /// Oracle prices by market symbol.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub oracle_prices: Option<HashMap<String, DydxOraclePriceMarket>>,
+    /// Trading data by market symbol (contains funding rates).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trading: Option<HashMap<String, DydxMarketTradingUpdate>>,
 }
 
 /// Trade message from v4_trades channel.

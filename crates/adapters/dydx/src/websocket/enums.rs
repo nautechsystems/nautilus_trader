@@ -30,8 +30,8 @@ use strum::{AsRefStr, Display, EnumString, FromRepr};
 use super::{
     error::DydxWebSocketError,
     messages::{
-        DydxOraclePriceMarket, DydxWsConnectedMsg, DydxWsSubaccountsChannelData,
-        DydxWsSubaccountsSubscribed, DydxWsSubscriptionMsg,
+        DydxMarketTradingUpdate, DydxOraclePriceMarket, DydxWsConnectedMsg,
+        DydxWsSubaccountsChannelData, DydxWsSubaccountsSubscribed, DydxWsSubscriptionMsg,
     },
 };
 
@@ -226,6 +226,8 @@ pub enum NautilusWsMessage {
     SubaccountsChannelData(Box<DydxWsSubaccountsChannelData>),
     /// Oracle price updates from markets channel (for execution client).
     OraclePrices(HashMap<String, DydxOraclePriceMarket>),
+    /// Funding rate updates from markets channel trading data.
+    FundingRates(HashMap<String, DydxMarketTradingUpdate>),
     /// Block height update from chain with timestamp.
     BlockHeight { height: u64, time: DateTime<Utc> },
     /// Error message.

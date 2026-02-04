@@ -818,18 +818,27 @@ pub fn parse_candle_bar(
     Ok(bar)
 }
 
-/// Parses markets contents for oracle price updates.
-pub fn parse_markets_contents(
-    contents: &DydxMarketsContents,
-) -> Option<NautilusWsMessage> {
+/// Parses markets contents for oracle price and funding rate updates.
+pub fn parse_markets_contents(contents: &DydxMarketsContents) -> Vec<NautilusWsMessage> {
+    let mut messages = Vec::new();
+
     if let Some(oracle_prices) = &contents.oracle_prices {
         log::debug!(
-            "Forwarding oracle price updates for {} markets to execution client",
+            "Forwarding oracle price updates for {} markets",
             oracle_prices.len()
         );
-        return Some(NautilusWsMessage::OraclePrices(oracle_prices.clone()));
+        messages.push(NautilusWsMessage::OraclePrices(oracle_prices.clone()));
     }
-    None
+
+    if let Some(trading) = &contents.trading {
+        log::debug!(
+            "Forwarding trading/funding data for {} markets",
+            trading.len()
+        );
+        messages.push(NautilusWsMessage::FundingRates(trading.clone()));
+    }
+
+    messages
 }
 
 #[cfg(test)]
