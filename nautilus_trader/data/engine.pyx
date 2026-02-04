@@ -942,7 +942,7 @@ cdef class DataEngine(Component):
         elif isinstance(command, UnsubscribeInstrumentStatus):
             self._handle_unsubscribe_instrument_status(client, command)
         elif isinstance(command, UnsubscribeInstrumentClose):
-            self._handle_unsubscribe_instrument_status(client, command)
+            self._handle_unsubscribe_instrument_close(client, command)
         else:
             self._handle_unsubscribe_data(client, command)
 
