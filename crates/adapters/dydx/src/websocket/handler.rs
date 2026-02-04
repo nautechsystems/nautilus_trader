@@ -24,7 +24,6 @@
 use std::{
     collections::VecDeque,
     fmt::Debug,
-    str::FromStr,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -32,23 +31,17 @@ use std::{
 };
 
 use ahash::AHashMap;
-use nautilus_core::{nanos::UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_model::{
-    data::{
-        Bar, BarType, BookOrder, Data, OrderBookDelta, OrderBookDeltas, TradeTick,
-        bar::get_bar_interval_ns,
-    },
-    enums::{AggressorSide, BookAction, OrderSide, RecordFlag},
-    identifiers::{AccountId, InstrumentId, TradeId},
+    data::{Bar, BarType, Data, OrderBookDeltas},
+    identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
-    types::{Price, Quantity},
 };
 use nautilus_network::{
     RECONNECTED,
     retry::{RetryManager, create_websocket_retry_manager},
     websocket::{SubscriptionState, WebSocketClient},
 };
-use rust_decimal::Decimal;
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
@@ -66,6 +59,7 @@ use super::{
         DydxWsSubaccountsChannelData, DydxWsSubaccountsMessage, DydxWsSubaccountsSubscribed,
         DydxWsSubscriptionMsg, DydxWsTradesMessage,
     },
+    parse as ws_parse,
 };
 use crate::common::parse::parse_instrument_id;
 
@@ -839,41 +833,8 @@ impl FeedHandler {
         let contents: DydxTradeContents = serde_json::from_value(data.contents.clone())
             .map_err(|e| DydxWsError::Parse(format!("Failed to parse trade contents: {e}")))?;
 
-        let mut ticks = Vec::new();
         let ts_init = get_atomic_clock_realtime().get_time_ns();
-
-        for trade in contents.trades {
-            let aggressor_side = match trade.side {
-                OrderSide::Buy => AggressorSide::Buyer,
-                OrderSide::Sell => AggressorSide::Seller,
-                _ => continue, // Skip NoOrderSide
-            };
-
-            let price = Decimal::from_str(&trade.price)
-                .map_err(|e| DydxWsError::Parse(format!("Failed to parse trade price: {e}")))?;
-
-            let size = Decimal::from_str(&trade.size)
-                .map_err(|e| DydxWsError::Parse(format!("Failed to parse trade size: {e}")))?;
-
-            let trade_ts = trade.created_at.timestamp_nanos_opt().ok_or_else(|| {
-                DydxWsError::Parse(format!("Timestamp out of range for trade {}", trade.id))
-            })?;
-
-            let tick = TradeTick::new(
-                instrument_id,
-                Price::from_decimal_dp(price, instrument.price_precision()).map_err(|e| {
-                    DydxWsError::Parse(format!("Failed to create Price from decimal: {e}"))
-                })?,
-                Quantity::from_decimal_dp(size, instrument.size_precision()).map_err(|e| {
-                    DydxWsError::Parse(format!("Failed to create Quantity from decimal: {e}"))
-                })?,
-                aggressor_side,
-                TradeId::new(&trade.id),
-                UnixNanos::from(trade_ts as u64),
-                ts_init,
-            );
-            ticks.push(Data::Trade(tick));
-        }
+        let ticks = ws_parse::parse_trade_ticks(instrument_id, instrument, &contents, ts_init)?;
 
         if ticks.is_empty() {
             Ok(vec![])
@@ -894,6 +855,8 @@ impl FeedHandler {
 
         let instrument_id = self.parse_instrument_id(symbol)?;
         let instrument = self.get_instrument(&instrument_id)?;
+        let price_prec = instrument.price_precision();
+        let size_prec = instrument.size_precision();
 
         let ts_init = get_atomic_clock_realtime().get_time_ns();
 
@@ -903,11 +866,11 @@ impl FeedHandler {
                     DydxWsError::Parse(format!("Failed to parse orderbook snapshot: {e}"))
                 })?;
 
-            let deltas = self.parse_orderbook_snapshot(
+            let deltas = ws_parse::parse_orderbook_snapshot(
                 &instrument_id,
                 &contents,
-                instrument.price_precision(),
-                instrument.size_precision(),
+                price_prec,
+                size_prec,
                 ts_init,
             )?;
 
@@ -918,11 +881,11 @@ impl FeedHandler {
                     DydxWsError::Parse(format!("Failed to parse orderbook contents: {e}"))
                 })?;
 
-            let deltas = self.parse_orderbook_deltas(
+            let deltas = ws_parse::parse_orderbook_deltas(
                 &instrument_id,
                 &contents,
-                instrument.price_precision(),
-                instrument.size_precision(),
+                price_prec,
+                size_prec,
                 ts_init,
             )?;
 
@@ -953,7 +916,7 @@ impl FeedHandler {
         let num_messages = contents.len();
         for (idx, content) in contents.iter().enumerate() {
             let is_last_message = idx == num_messages - 1;
-            let deltas = self.parse_orderbook_deltas_with_flag(
+            let deltas = ws_parse::parse_orderbook_deltas_with_flag(
                 &instrument_id,
                 content,
                 price_prec,
@@ -968,208 +931,6 @@ impl FeedHandler {
         Ok(vec![NautilusWsMessage::Deltas(Box::new(deltas))])
     }
 
-    fn parse_orderbook_snapshot(
-        &mut self,
-        instrument_id: &InstrumentId,
-        contents: &DydxOrderbookSnapshotContents,
-        price_precision: u8,
-        size_precision: u8,
-        ts_init: UnixNanos,
-    ) -> DydxWsResult<OrderBookDeltas> {
-        let mut deltas = Vec::new();
-        deltas.push(OrderBookDelta::clear(*instrument_id, 0, ts_init, ts_init));
-
-        let bids = contents.bids.as_deref().unwrap_or(&[]);
-        let asks = contents.asks.as_deref().unwrap_or(&[]);
-
-        let bids_len = bids.len();
-        let asks_len = asks.len();
-
-        for (idx, bid) in bids.iter().enumerate() {
-            let is_last = idx == bids_len - 1 && asks_len == 0;
-            let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
-
-            let price = Decimal::from_str(&bid.price)
-                .map_err(|e| DydxWsError::Parse(format!("Failed to parse bid price: {e}")))?;
-
-            let size = Decimal::from_str(&bid.size)
-                .map_err(|e| DydxWsError::Parse(format!("Failed to parse bid size: {e}")))?;
-
-            let order = BookOrder::new(
-                OrderSide::Buy,
-                Price::from_decimal_dp(price, price_precision).map_err(|e| {
-                    DydxWsError::Parse(format!("Failed to create Price from decimal: {e}"))
-                })?,
-                Quantity::from_decimal_dp(size, size_precision).map_err(|e| {
-                    DydxWsError::Parse(format!("Failed to create Quantity from decimal: {e}"))
-                })?,
-                0,
-            );
-
-            deltas.push(OrderBookDelta::new(
-                *instrument_id,
-                BookAction::Add,
-                order,
-                flags,
-                0,
-                ts_init,
-                ts_init,
-            ));
-        }
-
-        for (idx, ask) in asks.iter().enumerate() {
-            let is_last = idx == asks_len - 1;
-            let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
-
-            let price = Decimal::from_str(&ask.price)
-                .map_err(|e| DydxWsError::Parse(format!("Failed to parse ask price: {e}")))?;
-
-            let size = Decimal::from_str(&ask.size)
-                .map_err(|e| DydxWsError::Parse(format!("Failed to parse ask size: {e}")))?;
-
-            let order = BookOrder::new(
-                OrderSide::Sell,
-                Price::from_decimal_dp(price, price_precision).map_err(|e| {
-                    DydxWsError::Parse(format!("Failed to create Price from decimal: {e}"))
-                })?,
-                Quantity::from_decimal_dp(size, size_precision).map_err(|e| {
-                    DydxWsError::Parse(format!("Failed to create Quantity from decimal: {e}"))
-                })?,
-                0,
-            );
-
-            deltas.push(OrderBookDelta::new(
-                *instrument_id,
-                BookAction::Add,
-                order,
-                flags,
-                0,
-                ts_init,
-                ts_init,
-            ));
-        }
-
-        Ok(OrderBookDeltas::new(*instrument_id, deltas))
-    }
-
-    fn parse_orderbook_deltas(
-        &mut self,
-        instrument_id: &InstrumentId,
-        contents: &DydxOrderbookContents,
-        price_precision: u8,
-        size_precision: u8,
-        ts_init: UnixNanos,
-    ) -> DydxWsResult<OrderBookDeltas> {
-        let deltas = self.parse_orderbook_deltas_with_flag(
-            instrument_id,
-            contents,
-            price_precision,
-            size_precision,
-            ts_init,
-            true, // Mark as last message by default
-        )?;
-        Ok(OrderBookDeltas::new(*instrument_id, deltas))
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn parse_orderbook_deltas_with_flag(
-        &mut self,
-        instrument_id: &InstrumentId,
-        contents: &DydxOrderbookContents,
-        price_precision: u8,
-        size_precision: u8,
-        ts_init: UnixNanos,
-        is_last_message: bool,
-    ) -> DydxWsResult<Vec<OrderBookDelta>> {
-        let mut deltas = Vec::new();
-
-        let bids = contents.bids.as_deref().unwrap_or(&[]);
-        let asks = contents.asks.as_deref().unwrap_or(&[]);
-
-        let bids_len = bids.len();
-        let asks_len = asks.len();
-
-        for (idx, (price_str, size_str)) in bids.iter().enumerate() {
-            let is_last = is_last_message && idx == bids_len - 1 && asks_len == 0;
-            let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
-
-            let price = Decimal::from_str(price_str)
-                .map_err(|e| DydxWsError::Parse(format!("Failed to parse bid price: {e}")))?;
-
-            let size = Decimal::from_str(size_str)
-                .map_err(|e| DydxWsError::Parse(format!("Failed to parse bid size: {e}")))?;
-
-            let qty = Quantity::from_decimal_dp(size, size_precision).map_err(|e| {
-                DydxWsError::Parse(format!("Failed to create Quantity from decimal: {e}"))
-            })?;
-            let action = if qty.is_zero() {
-                BookAction::Delete
-            } else {
-                BookAction::Update
-            };
-
-            let order = BookOrder::new(
-                OrderSide::Buy,
-                Price::from_decimal_dp(price, price_precision).map_err(|e| {
-                    DydxWsError::Parse(format!("Failed to create Price from decimal: {e}"))
-                })?,
-                qty,
-                0,
-            );
-
-            deltas.push(OrderBookDelta::new(
-                *instrument_id,
-                action,
-                order,
-                flags,
-                0,
-                ts_init,
-                ts_init,
-            ));
-        }
-
-        for (idx, (price_str, size_str)) in asks.iter().enumerate() {
-            let is_last = is_last_message && idx == asks_len - 1;
-            let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
-
-            let price = Decimal::from_str(price_str)
-                .map_err(|e| DydxWsError::Parse(format!("Failed to parse ask price: {e}")))?;
-
-            let size = Decimal::from_str(size_str)
-                .map_err(|e| DydxWsError::Parse(format!("Failed to parse ask size: {e}")))?;
-
-            let qty = Quantity::from_decimal_dp(size, size_precision).map_err(|e| {
-                DydxWsError::Parse(format!("Failed to create Quantity from decimal: {e}"))
-            })?;
-            let action = if qty.is_zero() {
-                BookAction::Delete
-            } else {
-                BookAction::Update
-            };
-
-            let order = BookOrder::new(
-                OrderSide::Sell,
-                Price::from_decimal_dp(price, price_precision).map_err(|e| {
-                    DydxWsError::Parse(format!("Failed to create Price from decimal: {e}"))
-                })?,
-                qty,
-                0,
-            );
-
-            deltas.push(OrderBookDelta::new(
-                *instrument_id,
-                action,
-                order,
-                flags,
-                0,
-                ts_init,
-                ts_init,
-            ));
-        }
-
-        Ok(deltas)
-    }
-
     fn parse_candles(
         &mut self,
         data: &DydxWsChannelDataMsg,
@@ -1179,7 +940,7 @@ impl FeedHandler {
             .as_ref()
             .ok_or_else(|| DydxWsError::Parse("Missing id for candles channel".into()))?;
 
-        let bar_type = self.bar_types.get(topic).ok_or_else(|| {
+        let bar_type = *self.bar_types.get(topic).ok_or_else(|| {
             DydxWsError::Parse(format!("No bar type registered for topic: {topic}"))
         })?;
 
@@ -1189,50 +950,8 @@ impl FeedHandler {
         let instrument_id = self.parse_instrument_id(&candle.ticker)?;
         let instrument = self.get_instrument(&instrument_id)?;
 
-        let open = Decimal::from_str(&candle.open)
-            .map_err(|e| DydxWsError::Parse(format!("Failed to parse open: {e}")))?;
-        let high = Decimal::from_str(&candle.high)
-            .map_err(|e| DydxWsError::Parse(format!("Failed to parse high: {e}")))?;
-        let low = Decimal::from_str(&candle.low)
-            .map_err(|e| DydxWsError::Parse(format!("Failed to parse low: {e}")))?;
-        let close = Decimal::from_str(&candle.close)
-            .map_err(|e| DydxWsError::Parse(format!("Failed to parse close: {e}")))?;
-        let volume = Decimal::from_str(&candle.base_token_volume)
-            .map_err(|e| DydxWsError::Parse(format!("Failed to parse volume: {e}")))?;
-
         let ts_init = get_atomic_clock_realtime().get_time_ns();
-
-        let started_at_nanos = candle.started_at.timestamp_nanos_opt().ok_or_else(|| {
-            DydxWsError::Parse(format!(
-                "Timestamp out of range for candle at {}",
-                candle.started_at
-            ))
-        })?;
-        let interval_nanos = get_bar_interval_ns(bar_type);
-        let ts_event = UnixNanos::from(started_at_nanos as u64) + interval_nanos;
-
-        let bar = Bar::new(
-            *bar_type,
-            Price::from_decimal_dp(open, instrument.price_precision()).map_err(|e| {
-                DydxWsError::Parse(format!("Failed to create open Price from decimal: {e}"))
-            })?,
-            Price::from_decimal_dp(high, instrument.price_precision()).map_err(|e| {
-                DydxWsError::Parse(format!("Failed to create high Price from decimal: {e}"))
-            })?,
-            Price::from_decimal_dp(low, instrument.price_precision()).map_err(|e| {
-                DydxWsError::Parse(format!("Failed to create low Price from decimal: {e}"))
-            })?,
-            Price::from_decimal_dp(close, instrument.price_precision()).map_err(|e| {
-                DydxWsError::Parse(format!("Failed to create close Price from decimal: {e}"))
-            })?,
-            Quantity::from_decimal_dp(volume, instrument.size_precision()).map_err(|e| {
-                DydxWsError::Parse(format!(
-                    "Failed to create volume Quantity from decimal: {e}"
-                ))
-            })?,
-            ts_event,
-            ts_init,
-        );
+        let bar = ws_parse::parse_candle_bar(bar_type, instrument, &candle, ts_init)?;
 
         // Emit-on-next: only emit a bar when a new candle period arrives,
         // confirming the previous bar is closed
@@ -1261,14 +980,8 @@ impl FeedHandler {
         let contents: DydxMarketsContents = serde_json::from_value(data.contents.clone())
             .map_err(|e| DydxWsError::Parse(format!("Failed to parse markets contents: {e}")))?;
 
-        // Markets channel provides oracle price updates needed for margin calculations
-        // Forward to execution client to update oracle_prices map
-        if let Some(oracle_prices) = contents.oracle_prices {
-            log::debug!(
-                "Forwarding oracle price updates for {} markets to execution client",
-                oracle_prices.len()
-            );
-            return Ok(vec![NautilusWsMessage::OraclePrices(oracle_prices)]);
+        if let Some(msg) = ws_parse::parse_markets_contents(&contents) {
+            return Ok(vec![msg]);
         }
 
         Ok(vec![])
