@@ -319,7 +319,11 @@ def parse_instrument(  # noqa: C901
             instrument_id=instrument_id,
         )
     elif security_type in ("OPT", "FOP"):
-        return parse_option_contract(contract_details=contract_details, instrument_id=instrument_id)
+        return parse_option_contract(
+            contract_details=contract_details,
+            instrument_id=instrument_id,
+            symbology_method=symbology_method,
+        )
     elif security_type == "CASH":
         return parse_forex_contract(contract_details=contract_details, instrument_id=instrument_id)
     elif security_type == "CRYPTO":
@@ -433,6 +437,7 @@ def parse_futures_contract(
 def parse_option_contract(
     contract_details: IBContractDetails,
     instrument_id: InstrumentId,
+    symbology_method: SymbologyMethod = SymbologyMethod.IB_SIMPLIFIED,
 ) -> OptionContract:
     price_precision: int = _tick_size_to_precision(contract_details.minTick)
     timestamp = time.time_ns()
@@ -447,6 +452,15 @@ def parse_option_contract(
     # For options, the multiplier represents the lot size (e.g., 100 shares per contract)
     multiplier = Quantity.from_str(contract_details.contract.multiplier)
 
+    # Add ^ prefix for index underlyings to match IB simplified symbology
+    underlying = contract_details.underSymbol
+    if (
+        symbology_method == SymbologyMethod.IB_SIMPLIFIED
+        and contract_details.underSecType == "IND"
+        and not underlying.startswith("^")
+    ):
+        underlying = f"^{underlying}"
+
     return OptionContract(
         instrument_id=instrument_id,
         raw_symbol=Symbol(contract_details.contract.localSymbol),
@@ -456,7 +470,7 @@ def parse_option_contract(
         price_increment=Price(contract_details.minTick, price_precision),
         multiplier=multiplier,
         lot_size=multiplier,  # For options, lot size equals multiplier
-        underlying=contract_details.underSymbol,
+        underlying=underlying,
         strike_price=Price(contract_details.contract.strike, price_precision),
         activation_ns=activation.value,
         expiration_ns=expiration.value,
