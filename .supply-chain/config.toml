@@ -290,6 +290,10 @@ criteria = "safe-to-deploy"
 version = "3.0.11"
 criteria = "safe-to-deploy"
 
+[[exemptions.anyhow]]
+version = "1.0.101"
+criteria = "safe-to-deploy"
+
 [[exemptions.arc-swap]]
 version = "1.8.1"
 criteria = "safe-to-deploy"
@@ -1698,7 +1702,7 @@ version = "3.0.6"
 criteria = "safe-to-deploy"
 
 [[exemptions.pest]]
-version = "2.8.5"
+version = "2.8.6"
 criteria = "safe-to-deploy"
 
 [[exemptions.petgraph]]
@@ -1774,7 +1778,7 @@ version = "1.0.106"
 criteria = "safe-to-deploy"
 
 [[exemptions.proptest]]
-version = "1.9.0"
+version = "1.10.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.prost]]
@@ -1870,7 +1874,7 @@ version = "0.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.rapidhash]]
-version = "4.2.1"
+version = "4.2.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.rawpointer]]
@@ -2334,7 +2338,7 @@ version = "0.17.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.time]]
-version = "0.3.46"
+version = "0.3.47"
 criteria = "safe-to-deploy"
 
 [[exemptions.time-core]]
@@ -2342,7 +2346,7 @@ version = "0.1.8"
 criteria = "safe-to-deploy"
 
 [[exemptions.time-macros]]
-version = "0.2.26"
+version = "0.2.27"
 criteria = "safe-to-deploy"
 
 [[exemptions.tiny-keccak]]

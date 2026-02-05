@@ -62,7 +62,6 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed remaining `F_LAST` flag checks to use proper bitmask comparison
 - Fixed `MarketIfTouchedOrder` (MIT) filling at bar extremes instead of trigger price during backtesting (#3461, #3462), thanks @HaakonFlaaronning
 - Fixed OTO child order sizing with rapid parent fills (#3435), thanks for reporting @dxwil
-- Fixed IB options missing `^` prefix on index underlying symbols with simplified symbology
 - Fixed `ExecAlgorithm` spawn quantity accounting (will now restore quantity from denied/rejected spawned orders)
 - Fixed reconciliation `venue_order_id` indexing and validation
 - Fixed analyzer epoch timestamp from empty shell positions
@@ -75,6 +74,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed directory URI handling in ParquetDataCatalog for S3 and cloud storage (#3378), thanks @KaulSe
 - Fixed instrument cache race condition during `LiveNode` (Rust) startup (#3385), thanks @filipmacek
 - Fixed quickstart MACD strategy logic (#3377), thanks for reporting @SisyphusCoin
+- Fixed reconciliation race condition where inferred fills were generated before real fills arrived, causing double-counting and overfill errors
 - Fixed reconciliation timing (for v2 Rust) - process instruments before reconciliation (#3415), thanks @filipmacek
 - Fixed `request_order_book_snapshot` and add Bybit support (#3416), thanks @dxwil
 - Fixed Arrow serialization encoding for custom Nautilus types (#3515), thanks @dennisnissle
@@ -110,14 +110,14 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed Interactive Brokers external order ID collision where orders placed via TWS/other clients (orderId=0) could cause fills to be attributed to wrong orders (#3465), thanks @shzhng
 - Fixed Interactive Brokers position reconciliation double-counting partial fills from open orders (#3476), thanks @shzhng
 - Fixed Interactive Brokers future chain building for index instruments (#3483), thanks @davidsblom
-- Fixed reconciliation race condition where inferred fills were generated before real fills arrived, causing double-counting and overfill errors
+- Fixed Interactive Brokers options missing `^` prefix on index underlying symbols with simplified symbology (#3540), thanks @shzhng
 - Fixed Kraken spot instrument fee/margin parsing where parameters were incorrectly swapped
 - Fixed Kraken spot XBT to BTC symbol normalization (#3509), thanks for reporting @chester0
 - Fixed Polymarket order state race condition where `PLACEMENT` events could arrive late
 - Fixed Polymarket duplicate WebSocket subscriptions (#3403), thanks for reporting @santivazq
 - Fixed Polymarket duplicate trade_id for multi-order fills (#3450), thanks for reporting @santivazq
 - Fixed Polymarket `load_all_async` ignoring time-based filters (#3475), thanks @Coyote-Den
-- Fixed `MarketIfTouchedOrder` fill price during bar processing to use trigger price instead of bar extremes, thanks @HaakonFlaaronning
+- Fixed Tardis deltas snapshot boundaries with CLEAR (#3530), thanks @Arandott
 
 ### Internal Improvements
 - Added support for setting cache database adapter in cache and `LiveNode` (#3401), thanks @filipmacek
