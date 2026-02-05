@@ -18,6 +18,7 @@ from typing import Callable
 from nautilus_trader.core.nautilus_pyo3 import black_scholes_greeks
 from nautilus_trader.core.nautilus_pyo3 import imply_vol_and_greeks
 from nautilus_trader.core.nautilus_pyo3 import refine_vol_and_greeks
+from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import InstrumentClass
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.greeks_data import GreeksData
@@ -284,6 +285,14 @@ cdef class GreeksCalculator:
         return greeks_data
 
     cdef object _get_price(self, InstrumentId instrument_id):
+        # Check if the instrument is an index - if so, use index price
+        instrument = self._cache.instrument(instrument_id)
+        if instrument is not None and instrument.asset_class is AssetClass.INDEX:
+            index_price = self._cache.index_price(instrument_id)
+            if index_price is not None:
+                return index_price.value
+            # If no index price, fall through to regular price lookup
+
         # Try MID price first, then LAST price as fallback
         price_obj = self._cache.price(instrument_id, PriceType.MID)
         if price_obj is None:
