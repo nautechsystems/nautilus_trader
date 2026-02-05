@@ -89,7 +89,7 @@ config_node = TradingNodeConfig(
             base_url_ws=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
             testnet=testnet,  # If client uses the testnet API
-            submitter_pool_size=3,
+            submitter_pool_size=1,
             canceller_pool_size=3,
         ),
     },

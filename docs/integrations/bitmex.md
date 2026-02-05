@@ -194,7 +194,7 @@ The BitMEX integration supports the following order types and execution features
 | `STOP_LIMIT`           | ✓         | Supported (set `price` and `trigger_price`).  |
 | `MARKET_IF_TOUCHED`    | ✓         | Supported (set `trigger_price`).              |
 | `LIMIT_IF_TOUCHED`     | ✓         | Supported (set `price` and `trigger_price`).  |
-| `TRAILING_STOP_MARKET` | -         | *Not implemented* (supported by BitMEX).      |
+| `TRAILING_STOP_MARKET` | ✓         | Supported (set `trailing_offset`). Price offset type only. |
 
 ### Execution instructions
 
@@ -246,6 +246,38 @@ order = self.order_factory.stop_market(
 `ExecTester` example configuration also demonstrates setting `stop_trigger_type=TriggerType.MARK_PRICE`
 in `examples/live/bitmex/bitmex_exec_tester.py`.
 
+### Trailing stops
+
+BitMEX supports trailing stop orders that automatically adjust the stop price as the market moves
+favorably. The adapter maps `TRAILING_STOP_MARKET` orders to BitMEX's pegged orders with
+`TrailingStopPeg` price type.
+
+**Limitations:**
+
+- Only `PRICE` trailing offset type is supported (absolute price offset, not basis points or ticks).
+- The offset sign is handled automatically: sell stops use negative offset, buy stops use positive.
+- Trigger type can be combined with trailing stops for additional control.
+
+**Example**:
+
+```python
+from nautilus_trader.model.enums import TrailingOffsetType
+
+order = self.order_factory.trailing_stop_market(
+    instrument_id=instrument_id,
+    order_side=OrderSide.SELL,
+    quantity=qty,
+    trailing_offset=Decimal("100"),  # $100 trailing offset
+    trailing_offset_type=TrailingOffsetType.PRICE,
+    trigger_type=TriggerType.LAST_PRICE,  # Optional
+)
+```
+
+:::note
+BitMEX updates trailing stop prices once per second when the underlying moves more than 0.1%.
+The stop price freezes when the market moves toward the trigger level.
+:::
+
 ### Time in force
 
 | Time in force  | Supported | Notes                                               |
@@ -268,7 +300,7 @@ See the [BitMEX Exchange Rules](https://www.bitmex.com/exchange-rules) and [API 
 | Order Modification | ✓         | Modify price, quantity, and trigger price.     |
 | Bracket Orders     | -         | Use `contingency_type` and `linked_order_ids`. |
 | Iceberg Orders     | ✓         | Use `display_qty`.                             |
-| Trailing Stops     | -         | *Not implemented* (supported by BitMEX).       |
+| Trailing Stops     | ✓         | Use `trailing_offset`. Price offset type only. |
 | Pegged Orders      | -         | *Not implemented* (supported by BitMEX).       |
 
 ### Batch operations

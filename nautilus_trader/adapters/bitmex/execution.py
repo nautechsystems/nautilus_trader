@@ -49,6 +49,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderModifyRejected
@@ -58,6 +59,7 @@ from nautilus_trader.model.functions import contingency_type_to_pyo3
 from nautilus_trader.model.functions import order_side_to_pyo3
 from nautilus_trader.model.functions import order_type_to_pyo3
 from nautilus_trader.model.functions import time_in_force_to_pyo3
+from nautilus_trader.model.functions import trailing_offset_type_to_pyo3
 from nautilus_trader.model.functions import trigger_type_to_pyo3
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
@@ -458,16 +460,27 @@ class BitmexExecutionClient(LiveExecutionClient):
             if order.has_trigger_price
             else None
         )
+        # Trigger type applies to stop orders (via trigger_price) and trailing stops
+        has_trigger = order.has_trigger_price or order.order_type in (
+            OrderType.TRAILING_STOP_MARKET,
+            OrderType.TRAILING_STOP_LIMIT,
+        )
         pyo3_trigger_type = (
             trigger_type_to_pyo3(order.trigger_type)
-            if order.has_trigger_price and hasattr(order, "trigger_type")
+            if has_trigger and order.trigger_type is not None
             else None
         )
+        display_qty = getattr(order, "display_qty", None)
         pyo3_display_qty = (
-            nautilus_pyo3.Quantity.from_str(str(order.display_qty))
-            if hasattr(order, "display_qty") and order.display_qty
-            else None
+            nautilus_pyo3.Quantity.from_str(str(display_qty)) if display_qty is not None else None
         )
+
+        trailing_offset = None
+        pyo3_trailing_offset_type = None
+        if order.order_type in (OrderType.TRAILING_STOP_MARKET, OrderType.TRAILING_STOP_LIMIT):
+            if order.trailing_offset is not None:
+                trailing_offset = float(order.trailing_offset)
+            pyo3_trailing_offset_type = trailing_offset_type_to_pyo3(order.trailing_offset_type)
 
         pyo3_contingency_type = None
         pyo3_order_list_id = None
@@ -492,6 +505,8 @@ class BitmexExecutionClient(LiveExecutionClient):
                     price=pyo3_price,
                     trigger_price=pyo3_trigger_price,
                     trigger_type=pyo3_trigger_type,
+                    trailing_offset=trailing_offset,
+                    trailing_offset_type=pyo3_trailing_offset_type,
                     display_qty=pyo3_display_qty,
                     post_only=order.is_post_only,
                     reduce_only=order.is_reduce_only,
@@ -510,6 +525,8 @@ class BitmexExecutionClient(LiveExecutionClient):
                     price=pyo3_price,
                     trigger_price=pyo3_trigger_price,
                     trigger_type=pyo3_trigger_type,
+                    trailing_offset=trailing_offset,
+                    trailing_offset_type=pyo3_trailing_offset_type,
                     display_qty=pyo3_display_qty,
                     post_only=order.is_post_only,
                     reduce_only=order.is_reduce_only,

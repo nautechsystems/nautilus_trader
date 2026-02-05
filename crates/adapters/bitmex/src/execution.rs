@@ -15,9 +15,6 @@
 
 //! Live execution client implementation for the BitMEX adapter.
 
-pub mod canceller;
-pub mod submitter;
-
 use std::{future::Future, sync::Mutex};
 
 use anyhow::Context;
@@ -47,14 +44,15 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance},
 };
+use rust_decimal::prelude::ToPrimitive;
 use tokio::task::JoinHandle;
 
 use crate::{
-    config::BitmexExecClientConfig,
-    execution::{
+    broadcast::{
         canceller::{CancelBroadcaster, CancelBroadcasterConfig},
         submitter::{SubmitBroadcaster, SubmitBroadcasterConfig},
     },
+    config::BitmexExecClientConfig,
     http::client::BitmexHttpClient,
     websocket::{client::BitmexWebSocketClient, messages::NautilusWsMessage},
 };
@@ -545,6 +543,8 @@ impl ExecutionClient for BitmexExecutionClient {
         let price = order.price();
         let trigger_price = order.trigger_price();
         let trigger_type = order.trigger_type();
+        let trailing_offset = order.trailing_offset().and_then(|d| d.to_f64());
+        let trailing_offset_type = order.trailing_offset_type();
         let display_qty = order.display_qty();
         let post_only = order.is_post_only();
         let reduce_only = order.is_reduce_only();
@@ -564,6 +564,8 @@ impl ExecutionClient for BitmexExecutionClient {
                         price,
                         trigger_price,
                         trigger_type,
+                        trailing_offset,
+                        trailing_offset_type,
                         display_qty,
                         post_only,
                         reduce_only,
@@ -584,6 +586,8 @@ impl ExecutionClient for BitmexExecutionClient {
                         price,
                         trigger_price,
                         trigger_type,
+                        trailing_offset,
+                        trailing_offset_type,
                         display_qty,
                         post_only,
                         reduce_only,

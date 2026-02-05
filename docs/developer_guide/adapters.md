@@ -30,8 +30,10 @@ crates/adapters/your_adapter/
 │   │   ├── consts.rs        # Venue constants / broker IDs
 │   │   ├── credential.rs    # API key storage and signing helpers
 │   │   ├── enums.rs         # Venue enums mirrored in REST/WS payloads
+│   │   ├── error.rs         # Adapter-level error aggregation (when applicable)
 │   │   ├── models.rs        # Shared model types
 │   │   ├── parse.rs         # Shared parsing helpers
+│   │   ├── retry.rs         # Retry classification (when applicable)
 │   │   ├── urls.rs          # Environment & product aware base-url resolvers
 │   │   └── testing.rs       # Fixtures reused across unit tests
 │   ├── http/                # HTTP client implementation
@@ -217,15 +219,9 @@ Expose typed config structs in `src/config.rs` so Python callers toggle venue-sp
 (see how OKX wires demo URLs, retries, and channel flags).
 Keep defaults minimal and delegate URL selection to helpers in `common::urls`.
 
-### Error taxonomy (`error.rs`)
+### Error taxonomy (`common/error.rs`)
 
-Centralise HTTP/WebSocket failure handling in an adapter-specific error enum.
-BitMEX, for example, separates retryable, non-retryable, and fatal variants while embedding the original transport
-error—follow that shape so operational tooling can react consistently.
-
-### Adapter-level error aggregation
-
-For adapters with multiple client types, define a top-level error enum in `src/error.rs` that
+For adapters with multiple client types, define an adapter-level error enum in `common/error.rs` that
 aggregates component errors:
 
 ```rust
@@ -244,6 +240,39 @@ pub enum VenueError {
 
 This enables unified error handling at the adapter boundary while preserving component-specific
 error details for debugging.
+
+### Retry classification (`common/retry.rs`)
+
+When an adapter needs sophisticated retry logic, define a retry classification module in `common/retry.rs`
+that distinguishes between retryable, non-retryable, and fatal errors:
+
+```rust
+#[derive(Debug, thiserror::Error)]
+pub enum VenueError {
+    #[error("Retryable error: {source}")]
+    Retryable {
+        #[source]
+        source: VenueRetryableError,
+        retry_after: Option<Duration>,
+    },
+
+    #[error("Non-retryable error: {source}")]
+    NonRetryable {
+        #[source]
+        source: VenueNonRetryableError,
+    },
+
+    #[error("Fatal error: {source}")]
+    Fatal {
+        #[source]
+        source: VenueFatalError,
+    },
+}
+```
+
+Include helper methods like `from_http_status()`, `from_rate_limit_headers()`, `is_retryable()`,
+`is_fatal()`, and `retry_after()` to enable consistent error classification across the adapter.
+See BitMEX and Bybit adapters for reference implementations.
 
 ### Python exports (`python/mod.rs`)
 

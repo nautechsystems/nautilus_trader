@@ -55,7 +55,10 @@ use super::{
     },
 };
 use crate::{
-    common::{enums::BitmexExecType, parse::parse_contracts_quantity},
+    common::{
+        enums::{BitmexExecType, BitmexOrderType, BitmexPegPriceType},
+        parse::parse_contracts_quantity,
+    },
     http::parse::{InstrumentParseResult, parse_instrument_any},
 };
 
@@ -642,7 +645,20 @@ impl FeedHandler {
                                 let client_order_id = ClientOrderId::new(client_order_id);
 
                                 if let Some(ord_type) = &order_msg.ord_type {
-                                    let order_type: OrderType = (*ord_type).into();
+                                    // Pegged orders with TrailingStopPeg are trailing stop orders
+                                    let order_type: OrderType = if *ord_type
+                                        == BitmexOrderType::Pegged
+                                        && order_msg.peg_price_type
+                                            == Some(BitmexPegPriceType::TrailingStopPeg)
+                                    {
+                                        if order_msg.price.is_some() {
+                                            OrderType::TrailingStopLimit
+                                        } else {
+                                            OrderType::TrailingStopMarket
+                                        }
+                                    } else {
+                                        (*ord_type).into()
+                                    };
                                     self.order_type_cache.insert(client_order_id, order_type);
                                 }
 

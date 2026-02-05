@@ -49,10 +49,10 @@
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
+pub mod broadcast;
 pub mod common;
 pub mod config;
 pub mod data;
-pub mod error;
 pub mod execution;
 pub mod http;
 pub mod websocket;
@@ -62,13 +62,13 @@ pub mod python;
 
 // Re-exports
 pub use crate::{
-    common::{consts::BITMEX_VENUE, enums::BitmexSide},
-    data::BitmexDataClient,
-    execution::{
-        BitmexExecutionClient,
+    broadcast::{
         canceller::{BroadcasterMetrics, CancelBroadcaster, CancelBroadcasterConfig, ClientStats},
         submitter::{SubmitBroadcaster, SubmitBroadcasterConfig},
     },
+    common::{consts::BITMEX_VENUE, enums::BitmexSide},
+    data::BitmexDataClient,
+    execution::BitmexExecutionClient,
     http::{client::BitmexHttpClient, error::BitmexHttpError},
     websocket::{client::BitmexWebSocketClient, error::BitmexWsError},
 };

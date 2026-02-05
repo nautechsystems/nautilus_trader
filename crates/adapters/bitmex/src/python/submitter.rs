@@ -17,14 +17,14 @@
 
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
-    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TriggerType},
+    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
     identifiers::{ClientOrderId, InstrumentId, OrderListId},
     python::instruments::pyobject_to_instrument_any,
     types::{Price, Quantity},
 };
 use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyDict};
 
-use crate::execution::submitter::{SubmitBroadcaster, SubmitBroadcasterConfig};
+use crate::broadcast::submitter::{SubmitBroadcaster, SubmitBroadcasterConfig};
 
 #[pymethods]
 impl SubmitBroadcaster {
@@ -115,6 +115,8 @@ impl SubmitBroadcaster {
         price=None,
         trigger_price=None,
         trigger_type=None,
+        trailing_offset=None,
+        trailing_offset_type=None,
         display_qty=None,
         post_only=false,
         reduce_only=false,
@@ -135,6 +137,8 @@ impl SubmitBroadcaster {
         price: Option<Price>,
         trigger_price: Option<Price>,
         trigger_type: Option<TriggerType>,
+        trailing_offset: Option<f64>,
+        trailing_offset_type: Option<TrailingOffsetType>,
         display_qty: Option<Quantity>,
         post_only: bool,
         reduce_only: bool,
@@ -155,6 +159,8 @@ impl SubmitBroadcaster {
                     price,
                     trigger_price,
                     trigger_type,
+                    trailing_offset,
+                    trailing_offset_type,
                     display_qty,
                     post_only,
                     reduce_only,

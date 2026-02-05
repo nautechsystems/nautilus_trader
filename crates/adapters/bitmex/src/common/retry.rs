@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Unified error handling for the BitMEX adapter.
+//! Retry classification for the BitMEX adapter.
 //!
 //! This module provides a comprehensive error taxonomy that distinguishes between
 //! retryable, non-retryable, and fatal errors, with proper context preservation
@@ -24,6 +24,8 @@ use std::time::Duration;
 use nautilus_network::http::{HttpClientError, StatusCode};
 use thiserror::Error;
 use tokio_tungstenite::tungstenite;
+
+use crate::http::error::BitmexBuildError;
 
 /// The main error type for all BitMEX adapter operations.
 #[derive(Debug, Error)]
@@ -281,16 +283,19 @@ impl BitmexError {
     }
 
     /// Checks if this error is retryable.
+    #[must_use]
     pub fn is_retryable(&self) -> bool {
         matches!(self, Self::Retryable { .. })
     }
 
     /// Checks if this error is fatal.
+    #[must_use]
     pub fn is_fatal(&self) -> bool {
         matches!(self, Self::Fatal { .. })
     }
 
     /// Gets the suggested retry duration if available.
+    #[must_use]
     pub fn retry_after(&self) -> Option<Duration> {
         match self {
             Self::Retryable { retry_after, .. } => *retry_after,
@@ -298,9 +303,6 @@ impl BitmexError {
         }
     }
 }
-
-// Re-export for backward compatibility during migration
-pub use crate::http::error::BitmexBuildError;
 
 impl From<serde_json::Error> for BitmexError {
     fn from(error: serde_json::Error) -> Self {

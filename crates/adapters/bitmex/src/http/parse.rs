@@ -21,7 +21,10 @@ use dashmap::DashMap;
 use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
-    enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
+    enums::{
+        ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TrailingOffsetType,
+        TriggerType,
+    },
     identifiers::{AccountId, ClientOrderId, OrderListId, Symbol, TradeId, VenueOrderId},
     instruments::{CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
@@ -35,7 +38,10 @@ use super::models::{
     BitmexExecution, BitmexInstrument, BitmexOrder, BitmexPosition, BitmexTrade, BitmexTradeBin,
 };
 use crate::common::{
-    enums::{BitmexExecInstruction, BitmexExecType, BitmexInstrumentState, BitmexInstrumentType},
+    enums::{
+        BitmexExecInstruction, BitmexExecType, BitmexInstrumentState, BitmexInstrumentType,
+        BitmexOrderType, BitmexPegPriceType,
+    },
     parse::{
         clean_reason, convert_contract_quantity, derive_contract_decimal_and_increment,
         map_bitmex_currency, normalize_trade_bin_prices, normalize_trade_bin_volume,
@@ -668,7 +674,20 @@ pub fn parse_order_status_report(
             );
             inferred
         },
-        |t| t.into(),
+        |t| {
+            // Pegged orders with TrailingStopPeg are trailing stop orders
+            if t == BitmexOrderType::Pegged
+                && order.peg_price_type == Some(BitmexPegPriceType::TrailingStopPeg)
+            {
+                if order.price.is_some() {
+                    OrderType::TrailingStopLimit
+                } else {
+                    OrderType::TrailingStopMarket
+                }
+            } else {
+                t.into()
+            }
+        },
     );
 
     // BitMEX may not include time_in_force in cancel responses,
@@ -811,6 +830,19 @@ pub fn parse_order_status_report(
         report = report
             .with_trigger_price(Price::new(trigger_price, price_precision))
             .with_trigger_type(TriggerType::Default);
+    }
+
+    // Populate trailing offset for trailing stop orders
+    if matches!(
+        order_type,
+        OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+    ) && let Some(peg_offset) = order.peg_offset_value
+    {
+        let trailing_offset = Decimal::try_from(peg_offset.abs())
+            .unwrap_or_else(|_| Decimal::new(peg_offset.abs() as i64, 0));
+        report = report
+            .with_trailing_offset(trailing_offset)
+            .with_trailing_offset_type(TrailingOffsetType::Price);
     }
 
     if let Some(exec_instructions) = &order.exec_inst {

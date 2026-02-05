@@ -18,12 +18,11 @@
 use std::borrow::Cow;
 
 use nautilus_model::enums::{
-    ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+    ContingencyType, LiquiditySide, OrderSide, OrderSideSpecified, OrderStatus, OrderType,
+    PositionSide, TimeInForce,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
-
-use crate::error::{BitmexError, BitmexNonRetryableError};
 
 /// Represents the status of a BitMEX symbol.
 #[derive(
@@ -76,31 +75,12 @@ pub enum BitmexSide {
     Sell,
 }
 
-impl TryFrom<OrderSide> for BitmexSide {
-    type Error = BitmexError;
-
-    fn try_from(value: OrderSide) -> Result<Self, Self::Error> {
+impl From<OrderSideSpecified> for BitmexSide {
+    fn from(value: OrderSideSpecified) -> Self {
         match value {
-            OrderSide::Buy => Ok(Self::Buy),
-            OrderSide::Sell => Ok(Self::Sell),
-            _ => Err(BitmexError::NonRetryable {
-                source: BitmexNonRetryableError::Validation {
-                    field: "order_side".to_string(),
-                    message: format!("Invalid order side: {value:?}"),
-                },
-            }),
+            OrderSideSpecified::Buy => Self::Buy,
+            OrderSideSpecified::Sell => Self::Sell,
         }
-    }
-}
-
-impl BitmexSide {
-    /// Try to convert from Nautilus OrderSide.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the order side is not Buy or Sell.
-    pub fn try_from_order_side(value: OrderSide) -> anyhow::Result<Self> {
-        Self::try_from(value).map_err(|e| anyhow::anyhow!("{e}"))
     }
 }
 
@@ -195,7 +175,7 @@ pub enum BitmexOrderType {
 }
 
 impl TryFrom<OrderType> for BitmexOrderType {
-    type Error = BitmexError;
+    type Error = anyhow::Error;
 
     fn try_from(value: OrderType) -> Result<Self, Self::Error> {
         match value {
@@ -207,12 +187,9 @@ impl TryFrom<OrderType> for BitmexOrderType {
             OrderType::LimitIfTouched => Ok(Self::LimitIfTouched),
             OrderType::TrailingStopMarket => Ok(Self::Pegged),
             OrderType::TrailingStopLimit => Ok(Self::Pegged),
-            OrderType::MarketToLimit => Err(BitmexError::NonRetryable {
-                source: BitmexNonRetryableError::Validation {
-                    field: "order_type".to_string(),
-                    message: "MarketToLimit order type is not supported by BitMEX".to_string(),
-                },
-            }),
+            OrderType::MarketToLimit => {
+                anyhow::bail!("MarketToLimit order type is not supported by BitMEX")
+            }
         }
     }
 }
@@ -224,7 +201,7 @@ impl BitmexOrderType {
     ///
     /// Returns an error if the order type is MarketToLimit (not supported by BitMEX).
     pub fn try_from_order_type(value: OrderType) -> anyhow::Result<Self> {
-        Self::try_from(value).map_err(|e| anyhow::anyhow!("{e}"))
+        Self::try_from(value)
     }
 }
 
@@ -321,7 +298,7 @@ pub enum BitmexTimeInForce {
 }
 
 impl TryFrom<BitmexTimeInForce> for TimeInForce {
-    type Error = BitmexError;
+    type Error = anyhow::Error;
 
     fn try_from(value: BitmexTimeInForce) -> Result<Self, Self::Error> {
         match value {
@@ -332,18 +309,13 @@ impl TryFrom<BitmexTimeInForce> for TimeInForce {
             BitmexTimeInForce::FillOrKill => Ok(Self::Fok),
             BitmexTimeInForce::AtTheOpening => Ok(Self::AtTheOpen),
             BitmexTimeInForce::AtTheClose => Ok(Self::AtTheClose),
-            _ => Err(BitmexError::NonRetryable {
-                source: BitmexNonRetryableError::Validation {
-                    field: "time_in_force".to_string(),
-                    message: format!("Unsupported BitmexTimeInForce: {value}"),
-                },
-            }),
+            _ => anyhow::bail!("Unsupported BitmexTimeInForce: {value}"),
         }
     }
 }
 
 impl TryFrom<TimeInForce> for BitmexTimeInForce {
-    type Error = crate::error::BitmexError;
+    type Error = anyhow::Error;
 
     fn try_from(value: TimeInForce) -> Result<Self, Self::Error> {
         match value {
@@ -365,7 +337,7 @@ impl BitmexTimeInForce {
     ///
     /// Returns an error if the time in force is not supported by BitMEX.
     pub fn try_from_time_in_force(value: TimeInForce) -> anyhow::Result<Self> {
-        Self::try_from(value).map_err(|e| anyhow::anyhow!("{e}"))
+        Self::try_from(value)
     }
 }
 
@@ -405,19 +377,14 @@ impl From<BitmexContingencyType> for ContingencyType {
 }
 
 impl TryFrom<ContingencyType> for BitmexContingencyType {
-    type Error = BitmexError;
+    type Error = anyhow::Error;
 
     fn try_from(value: ContingencyType) -> Result<Self, Self::Error> {
         match value {
             ContingencyType::NoContingency => Ok(Self::Unknown),
             ContingencyType::Oco => Ok(Self::OneCancelsTheOther),
             ContingencyType::Oto => Ok(Self::OneTriggersTheOther),
-            ContingencyType::Ouo => Err(BitmexError::NonRetryable {
-                source: BitmexNonRetryableError::Validation {
-                    field: "contingency_type".to_string(),
-                    message: "OUO contingency type not supported by BitMEX".to_string(),
-                },
-            }),
+            ContingencyType::Ouo => anyhow::bail!("OUO contingency type not supported by BitMEX"),
         }
     }
 }
@@ -482,7 +449,7 @@ impl BitmexExecInstruction {
     pub fn join(instructions: &[Self]) -> String {
         instructions
             .iter()
-            .map(std::string::ToString::to_string)
+            .map(ToString::to_string)
             .collect::<Vec<_>>()
             .join(",")
     }
@@ -1155,29 +1122,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_side_try_from() {
-        // Valid conversions
-        assert_eq!(
-            BitmexSide::try_from(OrderSide::Buy).unwrap(),
-            BitmexSide::Buy
-        );
-        assert_eq!(
-            BitmexSide::try_from(OrderSide::Sell).unwrap(),
-            BitmexSide::Sell
-        );
-
-        // Invalid conversions
-        let result = BitmexSide::try_from(OrderSide::NoOrderSide);
-        assert!(result.is_err());
-        match result {
-            Err(BitmexError::NonRetryable {
-                source: BitmexNonRetryableError::Validation { field, .. },
-                ..
-            }) => {
-                assert_eq!(field, "order_side");
-            }
-            _ => panic!("Expected validation error"),
-        }
+    fn test_order_side_from_specified() {
+        assert_eq!(BitmexSide::from(OrderSideSpecified::Buy), BitmexSide::Buy);
+        assert_eq!(BitmexSide::from(OrderSideSpecified::Sell), BitmexSide::Sell);
     }
 
     #[rstest]
@@ -1195,15 +1142,7 @@ mod tests {
         // MarketToLimit should fail
         let result = BitmexOrderType::try_from(OrderType::MarketToLimit);
         assert!(result.is_err());
-        match result {
-            Err(BitmexError::NonRetryable {
-                source: BitmexNonRetryableError::Validation { message, .. },
-                ..
-            }) => {
-                assert!(message.contains("not supported"));
-            }
-            _ => panic!("Expected validation error"),
-        }
+        assert!(result.unwrap_err().to_string().contains("not supported"));
     }
 
     #[rstest]
@@ -1225,16 +1164,7 @@ mod tests {
         // Unsupported BitMEX variants should fail
         let result = TimeInForce::try_from(BitmexTimeInForce::GoodTillCrossing);
         assert!(result.is_err());
-        match result {
-            Err(BitmexError::NonRetryable {
-                source: BitmexNonRetryableError::Validation { field, message },
-                ..
-            }) => {
-                assert_eq!(field, "time_in_force");
-                assert!(message.contains("Unsupported"));
-            }
-            _ => panic!("Expected validation error"),
-        }
+        assert!(result.unwrap_err().to_string().contains("Unsupported"));
 
         // Nautilus to BitMEX (all supported variants)
         assert_eq!(
@@ -1253,14 +1183,6 @@ mod tests {
 
     #[rstest]
     fn test_helper_methods() {
-        // Test try_from_order_side helper
-        let result = BitmexSide::try_from_order_side(OrderSide::Buy);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), BitmexSide::Buy);
-
-        let result = BitmexSide::try_from_order_side(OrderSide::NoOrderSide);
-        assert!(result.is_err());
-
         // Test try_from_order_type helper
         let result = BitmexOrderType::try_from_order_type(OrderType::Limit);
         assert!(result.is_ok());

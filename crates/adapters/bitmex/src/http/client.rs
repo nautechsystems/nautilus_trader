@@ -43,7 +43,7 @@ use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{
         AccountType, AggregationSource, BarAggregation, ContingencyType, OrderSide, OrderType,
-        PriceType, TimeInForce, TriggerType,
+        PriceType, TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, VenueOrderId},
@@ -1490,6 +1490,8 @@ impl BitmexHttpClient {
         price: Option<Price>,
         trigger_price: Option<Price>,
         trigger_type: Option<TriggerType>,
+        trailing_offset: Option<f64>,
+        trailing_offset_type: Option<TrailingOffsetType>,
         display_qty: Option<Quantity>,
         post_only: bool,
         reduce_only: bool,
@@ -1497,7 +1499,8 @@ impl BitmexHttpClient {
         contingency_type: Option<ContingencyType>,
     ) -> anyhow::Result<OrderStatusReport> {
         use crate::common::enums::{
-            BitmexExecInstruction, BitmexOrderType, BitmexSide, BitmexTimeInForce,
+            BitmexExecInstruction, BitmexOrderType, BitmexPegPriceType, BitmexSide,
+            BitmexTimeInForce,
         };
 
         let instrument = self.instrument_from_cache(instrument_id.symbol.inner())?;
@@ -1507,7 +1510,10 @@ impl BitmexHttpClient {
         params.symbol(instrument_id.symbol.as_str());
         params.cl_ord_id(client_order_id.as_str());
 
-        let side = BitmexSide::try_from_order_side(order_side)?;
+        if order_side == OrderSide::NoOrderSide {
+            anyhow::bail!("Order side must be Buy or Sell");
+        }
+        let side = BitmexSide::from(order_side.as_specified());
         params.side(side);
 
         let ord_type = BitmexOrderType::try_from_order_type(order_type)?;
@@ -1534,6 +1540,31 @@ impl BitmexHttpClient {
             params.cl_ord_link_id(order_list_id.as_str());
         }
 
+        let is_trailing_stop = matches!(
+            order_type,
+            OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+        );
+
+        if is_trailing_stop && let Some(offset) = trailing_offset {
+            if let Some(offset_type) = trailing_offset_type
+                && offset_type != TrailingOffsetType::Price
+            {
+                anyhow::bail!(
+                    "BitMEX only supports PRICE trailing offset type, was {offset_type:?}"
+                );
+            }
+
+            params.peg_price_type(BitmexPegPriceType::TrailingStopPeg);
+
+            // BitMEX requires negative offset for stop-sell orders
+            let signed_offset = match order_side {
+                OrderSide::Sell => -offset.abs(),
+                OrderSide::Buy => offset.abs(),
+                _ => offset,
+            };
+            params.peg_offset_value(signed_offset);
+        }
+
         let mut exec_inst = Vec::new();
 
         if post_only {
@@ -1544,7 +1575,8 @@ impl BitmexHttpClient {
             exec_inst.push(BitmexExecInstruction::ReduceOnly);
         }
 
-        if trigger_price.is_some()
+        // For trailing stops, trigger_type specifies which price to track (Mark, Last, Index)
+        if (trigger_price.is_some() || is_trailing_stop)
             && let Some(trigger_type) = trigger_type
         {
             match trigger_type {
@@ -1716,7 +1748,10 @@ impl BitmexHttpClient {
         params.symbol(instrument_id.symbol.as_str());
 
         if let Some(side) = order_side {
-            let side = BitmexSide::try_from_order_side(side)?;
+            if side == OrderSide::NoOrderSide {
+                anyhow::bail!("Cannot filter by NoOrderSide");
+            }
+            let side = BitmexSide::from(side.as_specified());
             params.filter(serde_json::json!({
                 "side": side
             }));

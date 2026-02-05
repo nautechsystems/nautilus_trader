@@ -30,7 +30,7 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggregationSource, BarAggregation, OrderSide, OrderStatus, OrderType,
-        PriceType, RecordFlag, TimeInForce, TriggerType,
+        PriceType, RecordFlag, TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{OrderUpdated, account::state::AccountState},
     identifiers::{
@@ -56,7 +56,9 @@ use super::{
 use crate::{
     common::{
         consts::BITMEX_VENUE,
-        enums::{BitmexExecInstruction, BitmexExecType, BitmexSide},
+        enums::{
+            BitmexExecInstruction, BitmexExecType, BitmexOrderType, BitmexPegPriceType, BitmexSide,
+        },
         parse::{
             clean_reason, map_bitmex_currency, normalize_trade_bin_prices,
             normalize_trade_bin_volume, parse_contracts_quantity, parse_fractional_quantity,
@@ -523,7 +525,18 @@ pub fn parse_order_msg(
     let order_side: OrderSide = common_side.into();
 
     let order_type: OrderType = if let Some(ord_type) = msg.ord_type {
-        ord_type.into()
+        // Pegged orders with TrailingStopPeg are trailing stop orders
+        if ord_type == BitmexOrderType::Pegged
+            && msg.peg_price_type == Some(BitmexPegPriceType::TrailingStopPeg)
+        {
+            if msg.price.is_some() {
+                OrderType::TrailingStopLimit
+            } else {
+                OrderType::TrailingStopMarket
+            }
+        } else {
+            ord_type.into()
+        }
     } else if let Some(client_order_id) = msg.cl_ord_id {
         let client_order_id = ClientOrderId::new(client_order_id);
         if let Some(entry) = order_type_cache.get(&client_order_id) {
@@ -607,6 +620,19 @@ pub fn parse_order_msg(
         report = report
             .with_trigger_price(Price::new(trigger_price, instrument.price_precision()))
             .with_trigger_type(trigger_type);
+    }
+
+    // Populate trailing offset for trailing stop orders
+    if matches!(
+        order_type,
+        OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+    ) && let Some(peg_offset) = msg.peg_offset_value
+    {
+        let trailing_offset = Decimal::try_from(peg_offset.abs())
+            .unwrap_or_else(|_| Decimal::new(peg_offset.abs() as i64, 0));
+        report = report
+            .with_trailing_offset(trailing_offset)
+            .with_trailing_offset_type(TrailingOffsetType::Price);
     }
 
     if let Some(exec_insts) = &msg.exec_inst {

@@ -18,6 +18,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Added `bulk_read_batch_size` option to `CacheConfig` for batched Redis bulk reads (#3535), thanks @shzhng
 - Added Betfair RCM parsing for TPD race data
 - Added `BetfairOrderVoided` custom data type for VAR voids
+- Added BitMEX trailing stop support
 - Added Bybit mark price subscriptions support
 - Added Bybit index price subscriptions support
 - Added Interactive Brokers subscribe index price functionality (#3514), thanks @Murph24
