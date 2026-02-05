@@ -61,15 +61,19 @@ from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOUT
 from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import IndexPriceUpdate
 from nautilus_trader.model.data import MarkPriceUpdate
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import bar_aggregation_to_str
 from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
 
 
 # Mapping of Nautilus bar aggregation/step to dYdX resolution strings
@@ -153,6 +157,11 @@ class DYDXv4DataClient(LiveMarketDataClient):
         )
         self._ws_client_futures: set[asyncio.Future] = set()
 
+        # Quote synthesis state (quotes are derived from orderbook top-of-book)
+        self._active_quote_subs: set[InstrumentId] = set()
+        self._order_books: dict[InstrumentId, OrderBook] = {}
+        self._last_quotes: dict[InstrumentId, QuoteTick] = {}
+
     @property
     def instrument_provider(self) -> DYDXv4InstrumentProvider:
         return self._instrument_provider
@@ -219,7 +228,12 @@ class DYDXv4DataClient(LiveMarketDataClient):
         try:
             if nautilus_pyo3.is_pycapsule(capsule):
                 data = capsule_to_data(capsule)
-                self._handle_data(data)
+
+                # Synthesize quotes from orderbook deltas if we have active quote subscriptions
+                if isinstance(data, OrderBookDeltas):
+                    self._handle_orderbook_deltas(data)
+                else:
+                    self._handle_data(data)
                 return
 
             if isinstance(capsule, nautilus_pyo3.MarkPriceUpdate):
@@ -244,6 +258,56 @@ class DYDXv4DataClient(LiveMarketDataClient):
         except Exception as e:
             self._log.error(f"Error handling WebSocket message: {e}")
 
+    def _handle_orderbook_deltas(self, deltas: OrderBookDeltas) -> None:
+        instrument_id = deltas.instrument_id
+
+        # Synthesize quote if this instrument has an active quote subscription
+        if instrument_id in self._active_quote_subs:
+            # Get or create local order book
+            book = self._order_books.get(instrument_id)
+            if book is None:
+                book = OrderBook(instrument_id, book_type=BookType.L2_MBP)
+                self._order_books[instrument_id] = book
+
+            # Apply deltas to local order book
+            book.apply(deltas)
+
+            bid_price = book.best_bid_price()
+            ask_price = book.best_ask_price()
+            bid_size = book.best_bid_size()
+            ask_size = book.best_ask_size()
+
+            # Only synthesize quote if we have both bid and ask
+            if (
+                bid_price is not None
+                and ask_price is not None
+                and bid_size is not None
+                and ask_size is not None
+            ):
+                # Deduplicate: only emit if top-of-book changed from last quote
+                last_quote = self._last_quotes.get(instrument_id)
+                if (
+                    last_quote is None
+                    or last_quote.bid_price != bid_price
+                    or last_quote.ask_price != ask_price
+                    or last_quote.bid_size != bid_size
+                    or last_quote.ask_size != ask_size
+                ):
+                    quote = QuoteTick(
+                        instrument_id=instrument_id,
+                        bid_price=bid_price,
+                        ask_price=ask_price,
+                        bid_size=bid_size,
+                        ask_size=ask_size,
+                        ts_event=deltas.ts_event,
+                        ts_init=deltas.ts_init,
+                    )
+                    self._last_quotes[instrument_id] = quote
+                    self._handle_data(quote)
+
+        # Also forward the deltas to the data engine (for orderbook subscriptions)
+        self._handle_data(deltas)
+
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
@@ -266,8 +330,18 @@ class DYDXv4DataClient(LiveMarketDataClient):
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         # dYdX doesn't have a dedicated quote tick channel
-        # Quotes are synthesized from orderbook data
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        # Quotes are synthesized from orderbook data (top-of-book)
+        instrument_id = command.instrument_id
+
+        # Track active quote subscription
+        self._active_quote_subs.add(instrument_id)
+
+        # Initialize local order book if needed
+        if instrument_id not in self._order_books:
+            self._order_books[instrument_id] = OrderBook(instrument_id, book_type=BookType.L2_MBP)
+
+        # Subscribe to orderbook channel (quotes are derived from orderbook deltas)
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
         await self._ws_client.subscribe_orderbook(pyo3_instrument_id)
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
@@ -298,8 +372,17 @@ class DYDXv4DataClient(LiveMarketDataClient):
         await self._ws_client.unsubscribe_orderbook(pyo3_instrument_id)
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
-        # Quotes are synthesized from orderbook, unsubscribe orderbook
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        # Quotes are synthesized from orderbook data (top-of-book)
+        instrument_id = command.instrument_id
+
+        # Remove from active quote subscriptions
+        self._active_quote_subs.discard(instrument_id)
+
+        # Clean up state
+        self._last_quotes.pop(instrument_id, None)
+
+        # Unsubscribe from orderbook channel
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
         await self._ws_client.unsubscribe_orderbook(pyo3_instrument_id)
 
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
