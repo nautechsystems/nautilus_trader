@@ -348,14 +348,9 @@ impl Position {
             self.peak_qty = self.quantity;
         }
 
-        if self.signed_qty > 0.0 {
-            self.entry = OrderSide::Buy;
-            self.side = PositionSide::Long;
-        } else if self.signed_qty < 0.0 {
-            self.entry = OrderSide::Sell;
-            self.side = PositionSide::Short;
-        } else {
+        if self.quantity.is_zero() {
             self.side = PositionSide::Flat;
+            self.signed_qty = 0.0; // Normalize
             self.closing_order_id = Some(fill.client_order_id);
             self.ts_closed = Some(fill.ts_event);
             self.duration_ns = if let Some(ts_closed) = self.ts_closed {
@@ -363,6 +358,12 @@ impl Position {
             } else {
                 0
             };
+        } else if self.signed_qty > 0.0 {
+            self.entry = OrderSide::Buy;
+            self.side = PositionSide::Long;
+        } else {
+            self.entry = OrderSide::Sell;
+            self.side = PositionSide::Short;
         }
 
         self.ts_last = fill.ts_event;
@@ -494,19 +495,21 @@ impl Position {
             });
         }
 
-        // Update position state based on new signed quantity
-        if self.signed_qty > 0.0 {
+        // Update position state based on quantity (source of truth for zero check)
+        // This handles floating-point precision edge cases
+        if self.quantity.is_zero() {
+            self.side = PositionSide::Flat;
+            self.signed_qty = 0.0; // Normalize
+        } else if self.signed_qty > 0.0 {
             self.side = PositionSide::Long;
             if self.entry == OrderSide::NoOrderSide {
                 self.entry = OrderSide::Buy;
             }
-        } else if self.signed_qty < 0.0 {
+        } else {
             self.side = PositionSide::Short;
             if self.entry == OrderSide::NoOrderSide {
                 self.entry = OrderSide::Sell;
             }
-        } else {
-            self.side = PositionSide::Flat;
         }
 
         self.adjustments.push(adjustment);
@@ -3516,5 +3519,129 @@ mod tests {
 
         assert_eq!(position.side, PositionSide::Flat);
         assert_eq!(position.signed_decimal_qty(), Decimal::ZERO);
+    }
+
+    #[rstest]
+    fn test_position_flat_with_floating_point_precision_edge_case() {
+        // This test verifies that when signed_qty has accumulated floating-point
+        // errors (tiny non-zero value) but quantity rounds to zero, the position
+        // correctly becomes FLAT with signed_qty normalized to 0.0
+        let btc_usdt = currency_pair_btcusdt();
+        let btc_usdt = InstrumentAny::CurrencyPair(btc_usdt);
+
+        let order1 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(btc_usdt.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("0.123456789"))
+            .build();
+        let fill1 = TestOrderEventStubs::filled(
+            &order1,
+            &btc_usdt,
+            Some(TradeId::new("1")),
+            None,
+            Some(Price::from("50000.00")),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let mut position = Position::new(&btc_usdt, fill1.into());
+
+        assert_eq!(position.side, PositionSide::Long);
+        assert!(position.quantity.is_positive());
+
+        let order2 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(btc_usdt.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.123456789"))
+            .build();
+        let fill2 = TestOrderEventStubs::filled(
+            &order2,
+            &btc_usdt,
+            Some(TradeId::new("2")),
+            None,
+            Some(Price::from("50000.00")),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        position.apply(&fill2.into());
+
+        assert_eq!(
+            position.side,
+            PositionSide::Flat,
+            "Position should be FLAT, not {:?}",
+            position.side
+        );
+        assert!(
+            position.quantity.is_zero(),
+            "Quantity should be zero, was {}",
+            position.quantity
+        );
+        assert_eq!(
+            position.signed_qty, 0.0,
+            "signed_qty should be normalized to 0.0, was {}",
+            position.signed_qty
+        );
+        assert!(position.is_closed());
+    }
+
+    #[rstest]
+    fn test_position_adjustment_floating_point_precision_edge_case() {
+        // Test that apply_adjustment handles precision edge cases correctly
+        let btc_usdt = currency_pair_btcusdt();
+        let btc_usdt = InstrumentAny::CurrencyPair(btc_usdt);
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(btc_usdt.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .build();
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            &btc_usdt,
+            Some(TradeId::new("1")),
+            None,
+            Some(Price::from("50000.00")),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let mut position = Position::new(&btc_usdt, fill.into());
+
+        let adjustment = PositionAdjusted::new(
+            position.trader_id,
+            position.strategy_id,
+            position.instrument_id,
+            position.id,
+            position.account_id,
+            PositionAdjustmentType::Commission,
+            Some(Decimal::from_str("-1.0").unwrap()),
+            None,
+            None,
+            uuid4(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        position.apply_adjustment(adjustment);
+
+        assert_eq!(
+            position.side,
+            PositionSide::Flat,
+            "Position should be FLAT after zeroing adjustment"
+        );
+        assert!(
+            position.quantity.is_zero(),
+            "Quantity should be zero after adjustment"
+        );
+        assert_eq!(
+            position.signed_qty, 0.0,
+            "signed_qty should be normalized to 0.0"
+        );
     }
 }

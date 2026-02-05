@@ -55,6 +55,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed matching engine trade ticks updating L1 book and triggering fills when `trade_execution=False`
 - Fixed matching engine MAKER limit orders over-filling on L1 books when `liquidity_consumption=True`
 - Fixed inverse instrument `base_currency` access across accounting
+- Fixed `Position` flat detection for floating-point edge cases
 - Fixed `UnsubscribeInstrumentClose` message handler routing
 - Fixed order cancel not releasing locked balance in backtest (#3525), thanks for reporting @dennisnissle
 - Fixed remaining `F_LAST` flag checks to use proper bitmask comparison
