@@ -50,13 +50,15 @@ pub struct DydxSubscription {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DydxWsSubscriptionMsg {
     /// The message type ("subscribed" or "unsubscribed").
-    #[serde(rename = "type")]
+    /// Note: This field may be consumed by serde's tag attribute when nested in tagged enums.
+    #[serde(rename = "type", default)]
     pub msg_type: DydxWsMessageType,
     /// The connection ID.
     pub connection_id: String,
     /// The message sequence number.
     pub message_id: u64,
-    /// The channel name.
+    /// The channel name (may be consumed by outer serde tag).
+    #[serde(default)]
     pub channel: DydxWsChannel,
     /// Optional channel-specific identifier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -177,6 +179,9 @@ pub enum DydxWsSubaccountsMessage {
     /// Channel data update.
     #[serde(rename = "channel_data")]
     ChannelData(DydxWsSubaccountsChannelData),
+    /// Unsubscription confirmation.
+    #[serde(rename = "unsubscribed")]
+    Unsubscribed(DydxWsSubscriptionMsg),
 }
 
 /// Orderbook channel messages (second level, type-tagged).
@@ -192,6 +197,9 @@ pub enum DydxWsOrderbookMessage {
     /// Batch channel data.
     #[serde(rename = "channel_batch_data")]
     ChannelBatchData(DydxWsChannelBatchDataMsg),
+    /// Unsubscription confirmation.
+    #[serde(rename = "unsubscribed")]
+    Unsubscribed(DydxWsSubscriptionMsg),
 }
 
 /// Trades channel messages (second level, type-tagged).
@@ -204,6 +212,9 @@ pub enum DydxWsTradesMessage {
     /// Channel data update.
     #[serde(rename = "channel_data")]
     ChannelData(DydxWsChannelDataMsg),
+    /// Unsubscription confirmation.
+    #[serde(rename = "unsubscribed")]
+    Unsubscribed(DydxWsSubscriptionMsg),
 }
 
 /// Markets channel messages (second level, type-tagged).
@@ -216,6 +227,9 @@ pub enum DydxWsMarketsMessage {
     /// Channel data update.
     #[serde(rename = "channel_data")]
     ChannelData(DydxWsChannelDataMsg),
+    /// Unsubscription confirmation.
+    #[serde(rename = "unsubscribed")]
+    Unsubscribed(DydxWsSubscriptionMsg),
 }
 
 /// Candles channel messages (second level, type-tagged).
@@ -228,6 +242,9 @@ pub enum DydxWsCandlesMessage {
     /// Channel data update.
     #[serde(rename = "channel_data")]
     ChannelData(DydxWsChannelDataMsg),
+    /// Unsubscription confirmation.
+    #[serde(rename = "unsubscribed")]
+    Unsubscribed(DydxWsSubscriptionMsg),
 }
 
 /// Parent subaccounts channel messages (second level, type-tagged).
@@ -240,6 +257,9 @@ pub enum DydxWsParentSubaccountsMessage {
     /// Channel data update.
     #[serde(rename = "channel_data")]
     ChannelData(DydxWsChannelDataMsg),
+    /// Unsubscription confirmation.
+    #[serde(rename = "unsubscribed")]
+    Unsubscribed(DydxWsSubscriptionMsg),
 }
 
 /// Block height channel messages (second level, type-tagged).
@@ -252,6 +272,9 @@ pub enum DydxWsBlockHeightMessage {
     /// Channel data update.
     #[serde(rename = "channel_data")]
     ChannelData(DydxWsBlockHeightChannelData),
+    /// Unsubscription confirmation.
+    #[serde(rename = "unsubscribed")]
+    Unsubscribed(DydxWsSubscriptionMsg),
 }
 
 /// Generic message structure for initial classification (fallback for non-channel messages).
@@ -376,6 +399,15 @@ pub struct DydxOraclePriceMarket {
     pub oracle_price: String,
 }
 
+/// Trading data for a market from v4_markets channel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DydxMarketTradingUpdate {
+    /// Next funding rate for the market.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_funding_rate: Option<String>,
+}
+
 /// Market message contents.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DydxMarketMessageContents {
@@ -415,6 +447,9 @@ pub struct DydxMarketsContents {
     /// Oracle prices by market symbol.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub oracle_prices: Option<HashMap<String, DydxOraclePriceMarket>>,
+    /// Trading data by market symbol (contains funding rates).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trading: Option<HashMap<String, DydxMarketTradingUpdate>>,
 }
 
 /// Trade message from v4_trades channel.

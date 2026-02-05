@@ -26,13 +26,19 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    enums::{OrderSide, OrderStatus},
-    identifiers::AccountId,
-    instruments::Instrument,
+    data::{
+        Bar, BarType, BookOrder, Data, OrderBookDelta, OrderBookDeltas, TradeTick,
+        bar::get_bar_interval_ns,
+    },
+    enums::{AggressorSide, BookAction, OrderSide, OrderStatus, RecordFlag},
+    identifiers::{AccountId, InstrumentId, TradeId},
+    instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
+    types::{Price, Quantity},
 };
 use rust_decimal::Decimal;
 
+use super::{DydxWsError, DydxWsResult};
 use crate::{
     common::{enums::DydxOrderStatus, instrument_cache::InstrumentCache},
     execution::{encoder::ClientOrderIdEncoder, types::OrderContext},
@@ -41,7 +47,8 @@ use crate::{
         parse::{parse_fill_report, parse_order_status_report, parse_position_status_report},
     },
     websocket::messages::{
-        DydxPerpetualPosition, DydxWsFillSubaccountMessageContents,
+        DydxCandle, DydxOrderbookContents, DydxOrderbookSnapshotContents, DydxPerpetualPosition,
+        DydxTradeContents, DydxWsFillSubaccountMessageContents,
         DydxWsOrderSubaccountMessageContents,
     },
 };
@@ -485,6 +492,330 @@ fn convert_ws_position_to_http(
         unrealized_pnl,
         closed_at,
     })
+}
+
+// ---------------------------------------------------------------------------
+//  Market data parsing functions
+// ---------------------------------------------------------------------------
+
+/// Parses an orderbook snapshot into [`OrderBookDeltas`].
+///
+/// # Errors
+///
+/// Returns an error if price/size parsing fails.
+pub fn parse_orderbook_snapshot(
+    instrument_id: &InstrumentId,
+    contents: &DydxOrderbookSnapshotContents,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> DydxWsResult<OrderBookDeltas> {
+    let mut deltas = Vec::new();
+    deltas.push(OrderBookDelta::clear(*instrument_id, 0, ts_init, ts_init));
+
+    let bids = contents.bids.as_deref().unwrap_or(&[]);
+    let asks = contents.asks.as_deref().unwrap_or(&[]);
+
+    let bids_len = bids.len();
+    let asks_len = asks.len();
+
+    for (idx, bid) in bids.iter().enumerate() {
+        let is_last = idx == bids_len - 1 && asks_len == 0;
+        let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
+
+        let price = Decimal::from_str(&bid.price)
+            .map_err(|e| DydxWsError::Parse(format!("Failed to parse bid price: {e}")))?;
+
+        let size = Decimal::from_str(&bid.size)
+            .map_err(|e| DydxWsError::Parse(format!("Failed to parse bid size: {e}")))?;
+
+        let order = BookOrder::new(
+            OrderSide::Buy,
+            Price::from_decimal_dp(price, price_precision).map_err(|e| {
+                DydxWsError::Parse(format!("Failed to create Price from decimal: {e}"))
+            })?,
+            Quantity::from_decimal_dp(size, size_precision).map_err(|e| {
+                DydxWsError::Parse(format!("Failed to create Quantity from decimal: {e}"))
+            })?,
+            0,
+        );
+
+        deltas.push(OrderBookDelta::new(
+            *instrument_id,
+            BookAction::Add,
+            order,
+            flags,
+            0,
+            ts_init,
+            ts_init,
+        ));
+    }
+
+    for (idx, ask) in asks.iter().enumerate() {
+        let is_last = idx == asks_len - 1;
+        let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
+
+        let price = Decimal::from_str(&ask.price)
+            .map_err(|e| DydxWsError::Parse(format!("Failed to parse ask price: {e}")))?;
+
+        let size = Decimal::from_str(&ask.size)
+            .map_err(|e| DydxWsError::Parse(format!("Failed to parse ask size: {e}")))?;
+
+        let order = BookOrder::new(
+            OrderSide::Sell,
+            Price::from_decimal_dp(price, price_precision).map_err(|e| {
+                DydxWsError::Parse(format!("Failed to create Price from decimal: {e}"))
+            })?,
+            Quantity::from_decimal_dp(size, size_precision).map_err(|e| {
+                DydxWsError::Parse(format!("Failed to create Quantity from decimal: {e}"))
+            })?,
+            0,
+        );
+
+        deltas.push(OrderBookDelta::new(
+            *instrument_id,
+            BookAction::Add,
+            order,
+            flags,
+            0,
+            ts_init,
+            ts_init,
+        ));
+    }
+
+    Ok(OrderBookDeltas::new(*instrument_id, deltas))
+}
+
+/// Parses orderbook deltas (marks as last message by default).
+///
+/// # Errors
+///
+/// Returns an error if price/size parsing fails.
+pub fn parse_orderbook_deltas(
+    instrument_id: &InstrumentId,
+    contents: &DydxOrderbookContents,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> DydxWsResult<OrderBookDeltas> {
+    let deltas = parse_orderbook_deltas_with_flag(
+        instrument_id,
+        contents,
+        price_precision,
+        size_precision,
+        ts_init,
+        true,
+    )?;
+    Ok(OrderBookDeltas::new(*instrument_id, deltas))
+}
+
+/// Parses orderbook deltas with explicit last-message flag for batch processing.
+///
+/// # Errors
+///
+/// Returns an error if price/size parsing fails.
+#[allow(clippy::too_many_arguments)]
+pub fn parse_orderbook_deltas_with_flag(
+    instrument_id: &InstrumentId,
+    contents: &DydxOrderbookContents,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+    is_last_message: bool,
+) -> DydxWsResult<Vec<OrderBookDelta>> {
+    let mut deltas = Vec::new();
+
+    let bids = contents.bids.as_deref().unwrap_or(&[]);
+    let asks = contents.asks.as_deref().unwrap_or(&[]);
+
+    let bids_len = bids.len();
+    let asks_len = asks.len();
+
+    for (idx, (price_str, size_str)) in bids.iter().enumerate() {
+        let is_last = is_last_message && idx == bids_len - 1 && asks_len == 0;
+        let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
+
+        let price = Decimal::from_str(price_str)
+            .map_err(|e| DydxWsError::Parse(format!("Failed to parse bid price: {e}")))?;
+
+        let size = Decimal::from_str(size_str)
+            .map_err(|e| DydxWsError::Parse(format!("Failed to parse bid size: {e}")))?;
+
+        let qty = Quantity::from_decimal_dp(size, size_precision).map_err(|e| {
+            DydxWsError::Parse(format!("Failed to create Quantity from decimal: {e}"))
+        })?;
+        let action = if qty.is_zero() {
+            BookAction::Delete
+        } else {
+            BookAction::Update
+        };
+
+        let order = BookOrder::new(
+            OrderSide::Buy,
+            Price::from_decimal_dp(price, price_precision).map_err(|e| {
+                DydxWsError::Parse(format!("Failed to create Price from decimal: {e}"))
+            })?,
+            qty,
+            0,
+        );
+
+        deltas.push(OrderBookDelta::new(
+            *instrument_id,
+            action,
+            order,
+            flags,
+            0,
+            ts_init,
+            ts_init,
+        ));
+    }
+
+    for (idx, (price_str, size_str)) in asks.iter().enumerate() {
+        let is_last = is_last_message && idx == asks_len - 1;
+        let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
+
+        let price = Decimal::from_str(price_str)
+            .map_err(|e| DydxWsError::Parse(format!("Failed to parse ask price: {e}")))?;
+
+        let size = Decimal::from_str(size_str)
+            .map_err(|e| DydxWsError::Parse(format!("Failed to parse ask size: {e}")))?;
+
+        let qty = Quantity::from_decimal_dp(size, size_precision).map_err(|e| {
+            DydxWsError::Parse(format!("Failed to create Quantity from decimal: {e}"))
+        })?;
+        let action = if qty.is_zero() {
+            BookAction::Delete
+        } else {
+            BookAction::Update
+        };
+
+        let order = BookOrder::new(
+            OrderSide::Sell,
+            Price::from_decimal_dp(price, price_precision).map_err(|e| {
+                DydxWsError::Parse(format!("Failed to create Price from decimal: {e}"))
+            })?,
+            qty,
+            0,
+        );
+
+        deltas.push(OrderBookDelta::new(
+            *instrument_id,
+            action,
+            order,
+            flags,
+            0,
+            ts_init,
+            ts_init,
+        ));
+    }
+
+    Ok(deltas)
+}
+
+/// Parses trade ticks from trade contents.
+///
+/// # Errors
+///
+/// Returns an error if price/size/timestamp parsing fails.
+pub fn parse_trade_ticks(
+    instrument_id: InstrumentId,
+    instrument: &InstrumentAny,
+    contents: &DydxTradeContents,
+    ts_init: UnixNanos,
+) -> DydxWsResult<Vec<Data>> {
+    let mut ticks = Vec::new();
+
+    for trade in &contents.trades {
+        let aggressor_side = match trade.side {
+            OrderSide::Buy => AggressorSide::Buyer,
+            OrderSide::Sell => AggressorSide::Seller,
+            _ => continue,
+        };
+
+        let price = Decimal::from_str(&trade.price)
+            .map_err(|e| DydxWsError::Parse(format!("Failed to parse trade price: {e}")))?;
+
+        let size = Decimal::from_str(&trade.size)
+            .map_err(|e| DydxWsError::Parse(format!("Failed to parse trade size: {e}")))?;
+
+        let trade_ts = trade.created_at.timestamp_nanos_opt().ok_or_else(|| {
+            DydxWsError::Parse(format!("Timestamp out of range for trade {}", trade.id))
+        })?;
+
+        let tick = TradeTick::new(
+            instrument_id,
+            Price::from_decimal_dp(price, instrument.price_precision()).map_err(|e| {
+                DydxWsError::Parse(format!("Failed to create Price from decimal: {e}"))
+            })?,
+            Quantity::from_decimal_dp(size, instrument.size_precision()).map_err(|e| {
+                DydxWsError::Parse(format!("Failed to create Quantity from decimal: {e}"))
+            })?,
+            aggressor_side,
+            TradeId::new(&trade.id),
+            UnixNanos::from(trade_ts as u64),
+            ts_init,
+        );
+        ticks.push(Data::Trade(tick));
+    }
+
+    Ok(ticks)
+}
+
+/// Parses a single candle into a [`Bar`].
+///
+/// # Errors
+///
+/// Returns an error if OHLCV/timestamp parsing fails.
+pub fn parse_candle_bar(
+    bar_type: BarType,
+    instrument: &InstrumentAny,
+    candle: &DydxCandle,
+    ts_init: UnixNanos,
+) -> DydxWsResult<Bar> {
+    let open = Decimal::from_str(&candle.open)
+        .map_err(|e| DydxWsError::Parse(format!("Failed to parse open: {e}")))?;
+    let high = Decimal::from_str(&candle.high)
+        .map_err(|e| DydxWsError::Parse(format!("Failed to parse high: {e}")))?;
+    let low = Decimal::from_str(&candle.low)
+        .map_err(|e| DydxWsError::Parse(format!("Failed to parse low: {e}")))?;
+    let close = Decimal::from_str(&candle.close)
+        .map_err(|e| DydxWsError::Parse(format!("Failed to parse close: {e}")))?;
+    let volume = Decimal::from_str(&candle.base_token_volume)
+        .map_err(|e| DydxWsError::Parse(format!("Failed to parse volume: {e}")))?;
+
+    let started_at_nanos = candle.started_at.timestamp_nanos_opt().ok_or_else(|| {
+        DydxWsError::Parse(format!(
+            "Timestamp out of range for candle at {}",
+            candle.started_at
+        ))
+    })?;
+    let interval_nanos = get_bar_interval_ns(&bar_type);
+    let ts_event = UnixNanos::from(started_at_nanos as u64) + interval_nanos;
+
+    let bar = Bar::new(
+        bar_type,
+        Price::from_decimal_dp(open, instrument.price_precision()).map_err(|e| {
+            DydxWsError::Parse(format!("Failed to create open Price from decimal: {e}"))
+        })?,
+        Price::from_decimal_dp(high, instrument.price_precision()).map_err(|e| {
+            DydxWsError::Parse(format!("Failed to create high Price from decimal: {e}"))
+        })?,
+        Price::from_decimal_dp(low, instrument.price_precision()).map_err(|e| {
+            DydxWsError::Parse(format!("Failed to create low Price from decimal: {e}"))
+        })?,
+        Price::from_decimal_dp(close, instrument.price_precision()).map_err(|e| {
+            DydxWsError::Parse(format!("Failed to create close Price from decimal: {e}"))
+        })?,
+        Quantity::from_decimal_dp(volume, instrument.size_precision()).map_err(|e| {
+            DydxWsError::Parse(format!(
+                "Failed to create volume Quantity from decimal: {e}"
+            ))
+        })?,
+        ts_event,
+        ts_init,
+    );
+
+    Ok(bar)
 }
 
 #[cfg(test)]

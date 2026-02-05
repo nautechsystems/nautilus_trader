@@ -21,7 +21,7 @@ use std::sync::{
 };
 
 use anyhow::Context;
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use futures_util::{Stream, StreamExt, pin_mut};
 use nautilus_common::{
     clients::DataClient,
@@ -31,9 +31,11 @@ use nautilus_common::{
         data::{
             BarsResponse, InstrumentResponse, InstrumentsResponse, RequestBars, RequestInstrument,
             RequestInstruments, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-            SubscribeInstrument, SubscribeInstruments, SubscribeQuotes, SubscribeTrades,
-            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeInstrument,
-            UnsubscribeInstruments, UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstruments,
+            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
+            UnsubscribeBookDeltas, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+            UnsubscribeInstrument, UnsubscribeInstruments, UnsubscribeMarkPrices,
+            UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -44,8 +46,8 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{
-        Bar, BarSpecification, BarType, BookOrder, Data as NautilusData, IndexPriceUpdate,
-        OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API, QuoteTick, TradeTick,
+        Bar, BarSpecification, BarType, BookOrder, Data as NautilusData, OrderBookDelta,
+        OrderBookDeltas, OrderBookDeltas_API, QuoteTick, TradeTick,
     },
     enums::{
         AggregationSource, AggressorSide, BarAggregation, BookAction, BookType, OrderSide,
@@ -56,7 +58,6 @@ use nautilus_model::{
     orderbook::OrderBook,
     types::{Price, Quantity},
 };
-use rust_decimal::Decimal;
 use tokio::{task::JoinHandle, time::Duration};
 use tokio_util::sync::CancellationToken;
 
@@ -66,15 +67,8 @@ use crate::{
         parse::extract_raw_symbol,
     },
     config::DydxDataClientConfig,
-    http::{
-        client::DydxHttpClient,
-        models::{Candle, OrderbookResponse},
-    },
-    types::DydxOraclePrice,
-    websocket::{
-        client::DydxWebSocketClient, enums::NautilusWsMessage, handler::HandlerCommand,
-        messages::DydxOraclePriceMarket,
-    },
+    http::{client::DydxHttpClient, models::Candle},
+    websocket::{client::DydxWebSocketClient, enums::NautilusWsMessage, handler::HandlerCommand},
 };
 
 /// Groups WebSocket message handling dependencies.
@@ -84,10 +78,14 @@ struct WsMessageContext {
     order_books: Arc<DashMap<InstrumentId, OrderBook>>,
     last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
     ws_client: DydxWebSocketClient,
-    active_orderbook_subs: Arc<DashMap<InstrumentId, ()>>,
+    active_quote_subs: Arc<DashSet<InstrumentId>>,
+    active_delta_subs: Arc<DashSet<InstrumentId>>,
     active_trade_subs: Arc<DashMap<InstrumentId, ()>>,
     active_bar_subs: Arc<DashMap<(InstrumentId, String), BarType>>,
     incomplete_bars: Arc<DashMap<BarType, Bar>>,
+    active_mark_price_subs: Arc<DashSet<InstrumentId>>,
+    active_index_price_subs: Arc<DashSet<InstrumentId>>,
+    active_funding_rate_subs: Arc<DashSet<InstrumentId>>,
 }
 
 /// dYdX data client for live market data streaming and historical data requests.
@@ -131,12 +129,20 @@ pub struct DydxDataClient {
     /// Maps dYdX candle topics (e.g., "BTC-USD/1MIN") to Nautilus BarType.
     /// Used for subscription validation and reconnection recovery.
     bar_type_mappings: Arc<DashMap<String, BarType>>,
-    /// Active orderbook subscriptions for periodic snapshot refresh.
-    active_orderbook_subs: Arc<DashMap<InstrumentId, ()>>,
+    /// Active quote subscriptions (instruments expecting `QuoteTick` events).
+    active_quote_subs: Arc<DashSet<InstrumentId>>,
+    /// Active orderbook delta subscriptions (instruments expecting `OrderBookDeltas` events).
+    active_delta_subs: Arc<DashSet<InstrumentId>>,
     /// Active trade subscriptions for reconnection recovery.
     active_trade_subs: Arc<DashMap<InstrumentId, ()>>,
     /// Active bar/candle subscriptions for reconnection recovery (maps instrument+resolution to BarType).
     active_bar_subs: Arc<DashMap<(InstrumentId, String), BarType>>,
+    /// Active mark price subscriptions (instruments expecting `MarkPriceUpdate` events).
+    active_mark_price_subs: Arc<DashSet<InstrumentId>>,
+    /// Active index price subscriptions (instruments expecting `IndexPriceUpdate` events).
+    active_index_price_subs: Arc<DashSet<InstrumentId>>,
+    /// Active funding rate subscriptions (instruments expecting `FundingRateUpdate` events).
+    active_funding_rate_subs: Arc<DashSet<InstrumentId>>,
 }
 
 impl DydxDataClient {
@@ -196,9 +202,13 @@ impl DydxDataClient {
             last_quotes: Arc::new(DashMap::new()),
             incomplete_bars: Arc::new(DashMap::new()),
             bar_type_mappings: Arc::new(DashMap::new()),
-            active_orderbook_subs: Arc::new(DashMap::new()),
+            active_quote_subs: Arc::new(DashSet::new()),
+            active_delta_subs: Arc::new(DashSet::new()),
             active_trade_subs: Arc::new(DashMap::new()),
             active_bar_subs: Arc::new(DashMap::new()),
+            active_mark_price_subs: Arc::new(DashSet::new()),
+            active_index_price_subs: Arc::new(DashSet::new()),
+            active_funding_rate_subs: Arc::new(DashSet::new()),
         })
     }
 
@@ -392,17 +402,18 @@ impl DataClient for DydxDataClient {
             order_books: self.order_books.clone(),
             last_quotes: self.last_quotes.clone(),
             ws_client: self.ws_client.clone(),
-            active_orderbook_subs: self.active_orderbook_subs.clone(),
+            active_quote_subs: self.active_quote_subs.clone(),
+            active_delta_subs: self.active_delta_subs.clone(),
             active_trade_subs: self.active_trade_subs.clone(),
             active_bar_subs: self.active_bar_subs.clone(),
             incomplete_bars: self.incomplete_bars.clone(),
+            active_mark_price_subs: self.active_mark_price_subs.clone(),
+            active_index_price_subs: self.active_index_price_subs.clone(),
+            active_funding_rate_subs: self.active_funding_rate_subs.clone(),
         };
 
         let stream = self.ws_client.stream();
         self.spawn_ws_stream_handler(stream, ctx);
-
-        // Start orderbook snapshot refresh task
-        self.start_orderbook_refresh_task()?;
 
         // Start instrument refresh task
         self.start_instrument_refresh_task()?;
@@ -485,6 +496,45 @@ impl DataClient for DydxDataClient {
         Ok(())
     }
 
+    fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+        self.active_mark_price_subs.insert(instrument_id);
+        log::info!("Subscribed to mark prices for {instrument_id} (via v4_markets channel)");
+        Ok(())
+    }
+
+    fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+        self.active_index_price_subs.insert(instrument_id);
+        log::info!("Subscribed to index prices for {instrument_id} (via v4_markets channel)");
+        Ok(())
+    }
+
+    fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+        self.active_funding_rate_subs.insert(instrument_id);
+        log::info!("Subscribed to funding rates for {instrument_id} (via v4_markets channel)");
+        Ok(())
+    }
+
+    fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
+        self.active_mark_price_subs.remove(&cmd.instrument_id);
+        log::info!("Unsubscribed from mark prices for {}", cmd.instrument_id);
+        Ok(())
+    }
+
+    fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
+        self.active_index_price_subs.remove(&cmd.instrument_id);
+        log::info!("Unsubscribed from index prices for {}", cmd.instrument_id);
+        Ok(())
+    }
+
+    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
+        self.active_funding_rate_subs.remove(&cmd.instrument_id);
+        log::info!("Unsubscribed from funding rates for {}", cmd.instrument_id);
+        Ok(())
+    }
+
     fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
         let ws = self.ws_client.clone();
         let instrument_id = cmd.instrument_id;
@@ -515,8 +565,8 @@ impl DataClient for DydxDataClient {
         // Ensure local order book exists for this instrument.
         self.ensure_order_book(cmd.instrument_id, BookType::L2_MBP);
 
-        // Track active subscription for periodic refresh
-        self.active_orderbook_subs.insert(cmd.instrument_id, ());
+        // Track active delta subscription
+        self.active_delta_subs.insert(cmd.instrument_id);
 
         let ws = self.ws_client.clone();
         let instrument_id = cmd.instrument_id;
@@ -534,28 +584,28 @@ impl DataClient for DydxDataClient {
     }
 
     fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> anyhow::Result<()> {
-        // dYdX doesn't have a dedicated quotes channel
-        // Quotes are synthesized from order book deltas
+        // dYdX doesn't have a dedicated quotes channel —
+        // quotes are synthesized from order book deltas (top-of-book).
         log::debug!(
-            "subscribe_quotes for {}: delegating to subscribe_book_deltas (no native quotes channel)",
+            "Subscribe_quotes for {}: subscribing to orderbook WS channel for quote synthesis",
             cmd.instrument_id
         );
 
-        // Simply delegate to book deltas subscription
-        let book_cmd = SubscribeBookDeltas {
-            client_id: cmd.client_id,
-            venue: cmd.venue,
-            instrument_id: cmd.instrument_id,
-            book_type: BookType::L2_MBP,
-            depth: None,
-            managed: false,
-            correlation_id: None,
-            params: None,
-            command_id: cmd.command_id,
-            ts_init: cmd.ts_init,
-        };
+        self.ensure_order_book(cmd.instrument_id, BookType::L2_MBP);
+        self.active_quote_subs.insert(cmd.instrument_id);
+        let ws = self.ws_client.clone();
+        let instrument_id = cmd.instrument_id;
 
-        self.subscribe_book_deltas(&book_cmd)
+        self.spawn_ws(
+            async move {
+                ws.subscribe_orderbook(instrument_id)
+                    .await
+                    .context("orderbook subscription (for quotes)")
+            },
+            "dYdX orderbook subscription (quotes)",
+        );
+
+        Ok(())
     }
 
     fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
@@ -617,8 +667,8 @@ impl DataClient for DydxDataClient {
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        // Remove from active subscription tracking
-        self.active_orderbook_subs.remove(&cmd.instrument_id);
+        // Remove from active delta subscription tracking
+        self.active_delta_subs.remove(&cmd.instrument_id);
 
         let ws = self.ws_client.clone();
         let instrument_id = cmd.instrument_id;
@@ -636,23 +686,29 @@ impl DataClient for DydxDataClient {
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        // dYdX doesn't have a dedicated quotes channel; quotes are derived from book deltas.
         log::debug!(
-            "unsubscribe_quotes for {}: delegating to unsubscribe_book_deltas (no native quotes channel)",
+            "unsubscribe_quotes for {}: removing quote subscription",
             cmd.instrument_id
         );
 
-        let book_cmd = UnsubscribeBookDeltas {
-            instrument_id: cmd.instrument_id,
-            client_id: cmd.client_id,
-            venue: cmd.venue,
-            command_id: cmd.command_id,
-            ts_init: cmd.ts_init,
-            correlation_id: None,
-            params: cmd.params.clone(),
-        };
+        // Remove from active quote subscription tracking
+        self.active_quote_subs.remove(&cmd.instrument_id);
 
-        self.unsubscribe_book_deltas(&book_cmd)
+        // Unsubscribe from WS orderbook channel (refcount handles dedup —
+        // only sends WS unsubscribe when no delta sub remains either)
+        let ws = self.ws_client.clone();
+        let instrument_id = cmd.instrument_id;
+
+        self.spawn_ws(
+            async move {
+                ws.unsubscribe_orderbook(instrument_id)
+                    .await
+                    .context("orderbook unsubscription (for quotes)")
+            },
+            "dYdX orderbook unsubscription (quotes)",
+        );
+
+        Ok(())
     }
 
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
@@ -767,7 +823,7 @@ impl DataClient for DydxDataClient {
                     Ok(instruments) => {
                         // Cache all fetched instruments
                         for inst in &instruments {
-                            upsert_instrument(&instrument_cache, inst.clone());
+                            instrument_cache.insert_instrument_only(inst.clone());
                         }
                         // Find the requested instrument
                         instruments.into_iter().find(|i| i.id() == instrument_id)
@@ -823,7 +879,7 @@ impl DataClient for DydxDataClient {
 
                     // Cache all instruments
                     for instrument in &instruments {
-                        upsert_instrument(&instrument_cache, instrument.clone());
+                        instrument_cache.insert_instrument_only(instrument.clone());
                     }
 
                     let response = DataResponse::Instruments(InstrumentsResponse::new(
@@ -1330,11 +1386,6 @@ impl DataClient for DydxDataClient {
     }
 }
 
-/// Upserts an instrument into the shared cache.
-fn upsert_instrument(cache: &Arc<InstrumentCache>, instrument: InstrumentAny) {
-    cache.insert_instrument_only(instrument);
-}
-
 impl DydxDataClient {
     /// Start a task to periodically refresh instruments.
     ///
@@ -1393,202 +1444,6 @@ impl DydxDataClient {
 
         self.tasks.push(task);
         Ok(())
-    }
-
-    /// Start a background task to periodically refresh orderbook snapshots.
-    ///
-    /// This prevents stale orderbooks from missed WebSocket messages due to:
-    /// - Network issues or message drops
-    /// - dYdX validator delays
-    /// - WebSocket reconnection gaps
-    ///
-    /// The task fetches fresh snapshots via HTTP at the configured interval
-    /// and applies them to the local orderbooks.
-    fn start_orderbook_refresh_task(&mut self) -> anyhow::Result<()> {
-        let interval_secs = match self.config.orderbook_refresh_interval_secs {
-            Some(secs) if secs > 0 => secs,
-            _ => {
-                log::info!("Orderbook snapshot refresh disabled (interval not configured)");
-                return Ok(());
-            }
-        };
-
-        let interval = Duration::from_secs(interval_secs);
-        let http_client = self.http_client.clone();
-        let instrument_cache = self.instrument_cache.clone();
-        let order_books = self.order_books.clone();
-        let active_subs = self.active_orderbook_subs.clone();
-        let cancellation_token = self.cancellation_token.clone();
-        let data_sender = self.data_sender.clone();
-
-        log::info!("Starting orderbook snapshot refresh task (interval: {interval_secs}s)");
-
-        let task = get_runtime().spawn(async move {
-            let mut interval_timer = tokio::time::interval(interval);
-            interval_timer.tick().await; // Skip first immediate tick
-
-            loop {
-                tokio::select! {
-                    () = cancellation_token.cancelled() => {
-                        log::info!("Orderbook refresh task cancelled");
-                        break;
-                    }
-                    _ = interval_timer.tick() => {
-                        let active_instruments: Vec<InstrumentId> = active_subs
-                            .iter()
-                            .map(|entry| *entry.key())
-                            .collect();
-
-                        if active_instruments.is_empty() {
-                            log::debug!("No active orderbook subscriptions to refresh");
-                            continue;
-                        }
-
-                        log::debug!(
-                            "Refreshing {} orderbook snapshots",
-                            active_instruments.len()
-                        );
-
-                        for instrument_id in active_instruments {
-                            // Get instrument for parsing
-                            let instrument = match instrument_cache.get(&instrument_id) {
-                                Some(inst) => inst.clone(),
-                                None => {
-                                    log::warn!(
-                                        "Cannot refresh orderbook: no instrument for {instrument_id}"
-                                    );
-                                    continue;
-                                }
-                            };
-
-                            // Fetch snapshot via HTTP (strip -PERP suffix for dYdX API)
-                            let symbol = instrument_id.symbol.as_str().trim_end_matches("-PERP");
-                            let snapshot_result = http_client.inner.get_orderbook(symbol).await;
-
-                            let snapshot = match snapshot_result {
-                                Ok(s) => s,
-                                Err(e) => {
-                                    log::error!(
-                                        "Failed to fetch orderbook snapshot for {instrument_id}: {e}"
-                                    );
-                                    continue;
-                                }
-                            };
-
-                            // Convert HTTP snapshot to OrderBookDeltas
-                            let deltas_result = Self::parse_orderbook_snapshot(
-                                instrument_id,
-                                &snapshot,
-                                &instrument,
-                            );
-
-                            let deltas = match deltas_result {
-                                Ok(d) => d,
-                                Err(e) => {
-                                    log::error!(
-                                        "Failed to parse orderbook snapshot for {instrument_id}: {e}"
-                                    );
-                                    continue;
-                                }
-                            };
-
-                            // Apply snapshot to local orderbook
-                            if let Some(mut book) = order_books.get_mut(&instrument_id) {
-                                if let Err(e) = book.apply_deltas(&deltas) {
-                                    log::error!(
-                                        "Failed to apply orderbook snapshot for {instrument_id}: {e}"
-                                    );
-                                    continue;
-                                }
-
-                                log::debug!(
-                                    "Refreshed orderbook snapshot for {} (bid={:?}, ask={:?})",
-                                    instrument_id,
-                                    book.best_bid_price(),
-                                    book.best_ask_price()
-                                );
-                            }
-
-                            // Emit the snapshot deltas
-                            let data = NautilusData::from(OrderBookDeltas_API::new(deltas));
-                            if let Err(e) = data_sender.send(DataEvent::Data(data)) {
-                                log::error!("Failed to emit orderbook snapshot: {e}");
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        self.tasks.push(task);
-        Ok(())
-    }
-
-    /// Parse HTTP orderbook snapshot into OrderBookDeltas.
-    ///
-    /// Converts the REST API orderbook format into Nautilus deltas with CLEAR + ADD actions.
-    fn parse_orderbook_snapshot(
-        instrument_id: InstrumentId,
-        snapshot: &OrderbookResponse,
-        instrument: &InstrumentAny,
-    ) -> anyhow::Result<OrderBookDeltas> {
-        let ts_init = get_atomic_clock_realtime().get_time_ns();
-        let mut deltas = Vec::new();
-
-        // Add clear delta first
-        deltas.push(OrderBookDelta::clear(instrument_id, 0, ts_init, ts_init));
-
-        let price_precision = instrument.price_precision();
-        let size_precision = instrument.size_precision();
-
-        let bids_len = snapshot.bids.len();
-        let asks_len = snapshot.asks.len();
-
-        // Add bid levels
-        for (idx, bid) in snapshot.bids.iter().enumerate() {
-            let is_last = idx == bids_len - 1 && asks_len == 0;
-            let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
-
-            let price = Price::from_decimal_dp(bid.price, price_precision)
-                .context("failed to parse bid price")?;
-            let size = Quantity::from_decimal_dp(bid.size, size_precision)
-                .context("failed to parse bid size")?;
-
-            let order = BookOrder::new(OrderSide::Buy, price, size, 0);
-            deltas.push(OrderBookDelta::new(
-                instrument_id,
-                BookAction::Add,
-                order,
-                flags,
-                0,
-                ts_init,
-                ts_init,
-            ));
-        }
-
-        // Add ask levels
-        for (idx, ask) in snapshot.asks.iter().enumerate() {
-            let is_last = idx == asks_len - 1;
-            let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
-
-            let price = Price::from_decimal_dp(ask.price, price_precision)
-                .context("failed to parse ask price")?;
-            let size = Quantity::from_decimal_dp(ask.size, size_precision)
-                .context("failed to parse ask size")?;
-
-            let order = BookOrder::new(OrderSide::Sell, price, size, 0);
-            deltas.push(OrderBookDelta::new(
-                instrument_id,
-                BookAction::Add,
-                order,
-                flags,
-                0,
-                ts_init,
-                ts_init,
-            ));
-        }
-
-        Ok(OrderBookDeltas::new(instrument_id, deltas))
     }
 
     /// Get a cached instrument by InstrumentId.
@@ -1693,10 +1548,40 @@ impl DydxDataClient {
                     &ctx.order_books,
                     &ctx.last_quotes,
                     &ctx.instrument_cache,
+                    &ctx.active_quote_subs,
+                    &ctx.active_delta_subs,
                 );
             }
-            NautilusWsMessage::OraclePrices(oracle_prices) => {
-                Self::handle_oracle_prices(oracle_prices, &ctx.instrument_cache, &ctx.data_sender);
+            NautilusWsMessage::MarkPrice(mark_price) => {
+                if ctx
+                    .active_mark_price_subs
+                    .contains(&mark_price.instrument_id)
+                {
+                    let data = NautilusData::MarkPriceUpdate(mark_price);
+                    if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
+                        log::error!("Failed to emit mark price: {e}");
+                    }
+                }
+            }
+            NautilusWsMessage::IndexPrice(index_price) => {
+                if ctx
+                    .active_index_price_subs
+                    .contains(&index_price.instrument_id)
+                {
+                    let data = NautilusData::IndexPriceUpdate(index_price);
+                    if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
+                        log::error!("Failed to emit index price: {e}");
+                    }
+                }
+            }
+            NautilusWsMessage::FundingRate(funding_rate) => {
+                if ctx
+                    .active_funding_rate_subs
+                    .contains(&funding_rate.instrument_id)
+                    && let Err(e) = ctx.data_sender.send(DataEvent::FundingRate(funding_rate))
+                {
+                    log::error!("Failed to emit funding rate: {e}");
+                }
             }
             NautilusWsMessage::Error(err) => {
                 log::error!("dYdX WS error: {err}");
@@ -1704,7 +1589,8 @@ impl DydxDataClient {
             NautilusWsMessage::Reconnected => {
                 log::info!("dYdX WS reconnected - re-subscribing to active subscriptions");
 
-                let total_subs = ctx.active_orderbook_subs.len()
+                let total_subs = ctx.active_quote_subs.len()
+                    + ctx.active_delta_subs.len()
                     + ctx.active_trade_subs.len()
                     + ctx.active_bar_subs.len();
 
@@ -1714,24 +1600,40 @@ impl DydxDataClient {
                 }
 
                 log::info!(
-                    "Restoring {} subscriptions (orderbook={}, trades={}, bars={})",
+                    "Restoring {} subscriptions (quotes={}, deltas={}, trades={}, bars={})",
                     total_subs,
-                    ctx.active_orderbook_subs.len(),
+                    ctx.active_quote_subs.len(),
+                    ctx.active_delta_subs.len(),
                     ctx.active_trade_subs.len(),
                     ctx.active_bar_subs.len()
                 );
 
-                // Re-subscribe to orderbook channels
-                for entry in ctx.active_orderbook_subs.iter() {
-                    let instrument_id = *entry.key();
+                // Re-subscribe for quote subscriptions (bumps WS refcount)
+                for instrument_id in ctx.active_quote_subs.iter() {
+                    let instrument_id = *instrument_id;
                     let ws_clone = ctx.ws_client.clone();
                     get_runtime().spawn(async move {
                         if let Err(e) = ws_clone.subscribe_orderbook(instrument_id).await {
                             log::error!(
-                                "Failed to re-subscribe to orderbook for {instrument_id}: {e:?}"
+                                "Failed to re-subscribe to orderbook (quotes) for {instrument_id}: {e:?}"
                             );
                         } else {
-                            log::debug!("Re-subscribed to orderbook for {instrument_id}");
+                            log::debug!("Re-subscribed to orderbook (quotes) for {instrument_id}");
+                        }
+                    });
+                }
+
+                // Re-subscribe for delta subscriptions (bumps WS refcount)
+                for instrument_id in ctx.active_delta_subs.iter() {
+                    let instrument_id = *instrument_id;
+                    let ws_clone = ctx.ws_client.clone();
+                    get_runtime().spawn(async move {
+                        if let Err(e) = ws_clone.subscribe_orderbook(instrument_id).await {
+                            log::error!(
+                                "Failed to re-subscribe to orderbook (deltas) for {instrument_id}: {e:?}"
+                            );
+                        } else {
+                            log::debug!("Re-subscribed to orderbook (deltas) for {instrument_id}");
                         }
                     });
                 }
@@ -2038,6 +1940,8 @@ impl DydxDataClient {
         order_books: &Arc<DashMap<InstrumentId, OrderBook>>,
         last_quotes: &Arc<DashMap<InstrumentId, QuoteTick>>,
         instrument_cache: &Arc<InstrumentCache>,
+        active_quote_subs: &Arc<DashSet<InstrumentId>>,
+        active_delta_subs: &Arc<DashSet<InstrumentId>>,
     ) {
         let instrument_id = deltas.instrument_id;
 
@@ -2046,17 +1950,19 @@ impl DydxDataClient {
             Some(inst) => inst,
             None => {
                 log::error!("Cannot resolve crossed order book: no instrument for {instrument_id}");
-                // Still emit the raw deltas even without instrument
-                if let Err(e) = data_sender.send(DataEvent::Data(NautilusData::from(
-                    OrderBookDeltas_API::new(deltas),
-                ))) {
+                // Still emit the raw deltas if delta subscription is active
+                if active_delta_subs.contains(&instrument_id)
+                    && let Err(e) = data_sender.send(DataEvent::Data(NautilusData::from(
+                        OrderBookDeltas_API::new(deltas),
+                    )))
+                {
                     log::error!("Failed to emit order book deltas: {e}");
                 }
                 return;
             }
         };
 
-        // Get or create order book
+        // Always maintain local orderbook — both subscription types need book state
         let mut book = order_books
             .entry(instrument_id)
             .or_insert_with(|| OrderBook::new(instrument_id, BookType::L2_MBP));
@@ -2071,116 +1977,64 @@ impl DydxDataClient {
             }
         };
 
-        // Generate QuoteTick from updated top-of-book
-        // Edge case: If orderbook is empty after deltas, fall back to last quote
-        let quote_opt = if let (Some(bid_price), Some(ask_price)) =
-            (book.best_bid_price(), book.best_ask_price())
-            && let (Some(bid_size), Some(ask_size)) = (book.best_bid_size(), book.best_ask_size())
-        {
-            Some(QuoteTick::new(
-                instrument_id,
-                bid_price,
-                ask_price,
-                bid_size,
-                ask_size,
-                resolved_deltas.ts_event,
-                resolved_deltas.ts_init,
-            ))
-        } else {
-            // Edge case: Empty orderbook levels - use last quote as fallback
-            if book.best_bid_price().is_none() && book.best_ask_price().is_none() {
-                log::debug!(
-                    "Empty orderbook for {instrument_id} after applying deltas, using last quote"
-                );
-                last_quotes.get(&instrument_id).map(|q| *q)
+        // Conditionally emit QuoteTick if instrument has quote subscription
+        if active_quote_subs.contains(&instrument_id) {
+            // Generate QuoteTick from updated top-of-book
+            // Edge case: If orderbook is empty after deltas, fall back to last quote
+            let quote_opt = if let (Some(bid_price), Some(ask_price)) =
+                (book.best_bid_price(), book.best_ask_price())
+                && let (Some(bid_size), Some(ask_size)) =
+                    (book.best_bid_size(), book.best_ask_size())
+            {
+                Some(QuoteTick::new(
+                    instrument_id,
+                    bid_price,
+                    ask_price,
+                    bid_size,
+                    ask_size,
+                    resolved_deltas.ts_event,
+                    resolved_deltas.ts_init,
+                ))
             } else {
-                None
-            }
-        };
-
-        if let Some(quote) = quote_opt {
-            // Only emit when top-of-book changes
-            let emit_quote =
-                !matches!(last_quotes.get(&instrument_id), Some(existing) if *existing == quote);
-
-            if emit_quote {
-                last_quotes.insert(instrument_id, quote);
-                if let Err(e) = data_sender.send(DataEvent::Data(NautilusData::Quote(quote))) {
-                    log::error!("Failed to emit quote tick: {e}");
+                // Edge case: Empty orderbook levels - use last quote as fallback
+                if book.best_bid_price().is_none() && book.best_ask_price().is_none() {
+                    log::debug!(
+                        "Empty orderbook for {instrument_id} after applying deltas, using last quote"
+                    );
+                    last_quotes.get(&instrument_id).map(|q| *q)
+                } else {
+                    None
                 }
-            }
-        } else if book.best_bid_price().is_some() || book.best_ask_price().is_some() {
-            // Partial orderbook (only one side) - log but don't emit
-            log::debug!(
-                "Incomplete top-of-book for {instrument_id} (bid={:?}, ask={:?})",
-                book.best_bid_price(),
-                book.best_ask_price()
-            );
-        }
+            };
 
-        // Emit the resolved order book deltas
-        let data: NautilusData = OrderBookDeltas_API::new(resolved_deltas).into();
-        if let Err(e) = data_sender.send(DataEvent::Data(data)) {
-            log::error!("Failed to emit order book deltas event: {e}");
-        }
-    }
+            if let Some(quote) = quote_opt {
+                // Only emit when top-of-book changes
+                let emit_quote = !matches!(
+                    last_quotes.get(&instrument_id),
+                    Some(existing) if *existing == quote
+                );
 
-    fn handle_oracle_prices(
-        oracle_prices: std::collections::HashMap<String, DydxOraclePriceMarket>,
-        instrument_cache: &Arc<InstrumentCache>,
-        data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    ) {
-        let ts_init = get_atomic_clock_realtime().get_time_ns();
-
-        for (symbol_str, oracle_market) in oracle_prices {
-            // Oracle prices use market format (e.g., "BTC-USD")
-            // Use get_by_market to look up the instrument directly
-            let Some(instrument) = instrument_cache.get_by_market(&symbol_str) else {
+                if emit_quote {
+                    last_quotes.insert(instrument_id, quote);
+                    if let Err(e) = data_sender.send(DataEvent::Data(NautilusData::Quote(quote))) {
+                        log::error!("Failed to emit quote tick: {e}");
+                    }
+                }
+            } else if book.best_bid_price().is_some() || book.best_ask_price().is_some() {
+                // Partial orderbook (only one side) - log but don't emit
                 log::debug!(
-                    "Received oracle price for unknown instrument (not cached yet): market={symbol_str}"
+                    "Incomplete top-of-book for {instrument_id} (bid={:?}, ask={:?})",
+                    book.best_bid_price(),
+                    book.best_ask_price()
                 );
-                continue;
-            };
+            }
+        }
 
-            let instrument_id = instrument.id();
-
-            // Parse oracle price string to Price
-            let oracle_price_str = &oracle_market.oracle_price;
-            let Ok(oracle_price_dec) = oracle_price_str.parse::<Decimal>() else {
-                log::error!(
-                    "Failed to parse oracle price: market={symbol_str}, price_str={oracle_price_str}"
-                );
-                continue;
-            };
-
-            let price_precision = instrument.price_precision();
-            let Ok(oracle_price) = Price::from_decimal_dp(oracle_price_dec, price_precision) else {
-                log::error!(
-                    "Failed to create oracle Price: market={symbol_str}, price={oracle_price_dec}"
-                );
-                continue;
-            };
-
-            let oracle_price_event = DydxOraclePrice::new(
-                instrument_id,
-                oracle_price,
-                ts_init, // Use ts_init as ts_event since dYdX doesn't provide event timestamp
-                ts_init,
-            );
-
-            log::debug!(
-                "Received dYdX oracle price: instrument_id={instrument_id}, oracle_price={oracle_price}, {oracle_price_event:?}"
-            );
-
-            let data = NautilusData::IndexPriceUpdate(IndexPriceUpdate::new(
-                instrument_id,
-                oracle_price,
-                ts_init, // Use ts_init as ts_event since dYdX doesn't provide event timestamp
-                ts_init,
-            ));
-
+        // Conditionally emit OrderBookDeltas if instrument has delta subscription
+        if active_delta_subs.contains(&instrument_id) {
+            let data: NautilusData = OrderBookDeltas_API::new(resolved_deltas).into();
             if let Err(e) = data_sender.send(DataEvent::Data(data)) {
-                log::error!("Failed to emit oracle price: {e}");
+                log::error!("Failed to emit order book deltas event: {e}");
             }
         }
     }

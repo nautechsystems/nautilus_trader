@@ -15,11 +15,9 @@
 
 //! Enums for dYdX WebSocket operations, channels, and message types.
 
-use std::collections::HashMap;
-
 use chrono::{DateTime, Utc};
 use nautilus_model::{
-    data::{Data, OrderBookDeltas},
+    data::{Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas},
     events::AccountState,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
@@ -30,8 +28,8 @@ use strum::{AsRefStr, Display, EnumString, FromRepr};
 use super::{
     error::DydxWebSocketError,
     messages::{
-        DydxOraclePriceMarket, DydxWsConnectedMsg, DydxWsSubaccountsChannelData,
-        DydxWsSubaccountsSubscribed, DydxWsSubscriptionMsg,
+        DydxWsConnectedMsg, DydxWsSubaccountsChannelData, DydxWsSubaccountsSubscribed,
+        DydxWsSubscriptionMsg,
     },
 };
 
@@ -224,8 +222,12 @@ pub enum NautilusWsMessage {
     SubaccountSubscribed(Box<DydxWsSubaccountsSubscribed>),
     /// Raw subaccounts channel data (orders/fills) for execution client parsing.
     SubaccountsChannelData(Box<DydxWsSubaccountsChannelData>),
-    /// Oracle price updates from markets channel (for execution client).
-    OraclePrices(HashMap<String, DydxOraclePriceMarket>),
+    /// Mark price update from oracle prices.
+    MarkPrice(MarkPriceUpdate),
+    /// Index price update from oracle prices.
+    IndexPrice(IndexPriceUpdate),
+    /// Funding rate update from market trading data.
+    FundingRate(FundingRateUpdate),
     /// Block height update from chain with timestamp.
     BlockHeight { height: u64, time: DateTime<Utc> },
     /// Error message.

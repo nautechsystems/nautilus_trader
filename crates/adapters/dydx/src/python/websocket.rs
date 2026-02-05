@@ -232,19 +232,39 @@ impl DydxWebSocketClient {
                                     }
                                 });
                             }
-                            NautilusWsMessage::OraclePrices(prices) => {
+                            NautilusWsMessage::MarkPrice(mark_price) => {
                                 Python::attach(|py| {
-                                    use pyo3::types::PyDict;
-                                    let json_str = serde_json::to_string(&prices)
-                                        .unwrap_or_else(|e| {
-                                            log::error!("Failed to serialize OraclePrices: {e}");
-                                            "{}".to_string()
-                                        });
-                                    let dict = PyDict::new(py);
-                                    let _ = dict.set_item("type", "oracle_prices");
-                                    let _ = dict.set_item("data", json_str);
-                                    if let Err(e) = callback.call1(py, (dict,)) {
-                                        log::error!("Error calling Python callback for oracle_prices: {e}");
+                                    match mark_price.into_py_any(py) {
+                                        Ok(py_obj) => {
+                                            if let Err(e) = callback.call1(py, (py_obj,)) {
+                                                log::error!("Error calling Python callback for MarkPriceUpdate: {e}");
+                                            }
+                                        }
+                                        Err(e) => log::error!("Failed to convert MarkPriceUpdate to Python: {e}"),
+                                    }
+                                });
+                            }
+                            NautilusWsMessage::IndexPrice(index_price) => {
+                                Python::attach(|py| {
+                                    match index_price.into_py_any(py) {
+                                        Ok(py_obj) => {
+                                            if let Err(e) = callback.call1(py, (py_obj,)) {
+                                                log::error!("Error calling Python callback for IndexPriceUpdate: {e}");
+                                            }
+                                        }
+                                        Err(e) => log::error!("Failed to convert IndexPriceUpdate to Python: {e}"),
+                                    }
+                                });
+                            }
+                            NautilusWsMessage::FundingRate(funding_rate) => {
+                                Python::attach(|py| {
+                                    match funding_rate.into_py_any(py) {
+                                        Ok(py_obj) => {
+                                            if let Err(e) = callback.call1(py, (py_obj,)) {
+                                                log::error!("Error calling Python callback for FundingRateUpdate: {e}");
+                                            }
+                                        }
+                                        Err(e) => log::error!("Failed to convert FundingRateUpdate to Python: {e}"),
                                     }
                                 });
                             }

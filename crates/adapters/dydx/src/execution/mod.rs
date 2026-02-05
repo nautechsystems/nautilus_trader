@@ -481,39 +481,16 @@ impl DydxExecutionClient {
                             }
                         }
                     }
-                    NautilusWsMessage::OraclePrices(oracle_prices_map) => {
-                        log::debug!(
-                            "Processing oracle price updates for {} markets",
-                            oracle_prices_map.len()
+                    NautilusWsMessage::MarkPrice(mark_price) => {
+                        let price_dec = Decimal::from(mark_price.value);
+                        oracle_prices.insert(mark_price.instrument_id, price_dec);
+                        log::trace!(
+                            "Updated oracle price for {}: {price_dec}",
+                            mark_price.instrument_id
                         );
-
-                        // Update oracle_prices map with new prices
-                        for (market_symbol, oracle_data) in &oracle_prices_map {
-                            // Parse oracle price
-                            match oracle_data.oracle_price.parse::<Decimal>() {
-                                Ok(price) => {
-                                    // Find instrument by market ticker (oracle uses "BTC-USD")
-                                    if let Some(instrument) =
-                                        instrument_cache.get_by_market(market_symbol)
-                                    {
-                                        let instrument_id = instrument.id();
-                                        oracle_prices.insert(instrument_id, price);
-                                        log::trace!(
-                                            "Updated oracle price for {instrument_id}: {price}"
-                                        );
-                                    } else {
-                                        log::debug!(
-                                            "No instrument found for market symbol '{market_symbol}'"
-                                        );
-                                    }
-                                }
-                                Err(e) => {
-                                    log::warn!(
-                                        "Failed to parse oracle price for {market_symbol}: {e}"
-                                    );
-                                }
-                            }
-                        }
+                    }
+                    NautilusWsMessage::IndexPrice(_) => {
+                        // Index prices not needed by execution client
                     }
                     NautilusWsMessage::BlockHeight { height, time } => {
                         log::debug!("Block height update: {height} at {time}");
@@ -524,6 +501,9 @@ impl DydxExecutionClient {
                     }
                     NautilusWsMessage::Reconnected => {
                         log::info!("WebSocket reconnected");
+                    }
+                    NautilusWsMessage::FundingRate(_) => {
+                        // Funding rates are handled by the data client
                     }
                     _ => {
                         // Data, Deltas are for market data, not execution
