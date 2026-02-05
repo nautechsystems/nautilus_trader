@@ -2775,6 +2775,9 @@ cdef class SimulatedExchange:
         self.instruments: dict[InstrumentId, Instrument] = {}
         self._matching_engines: dict[InstrumentId, OrderMatchingEngine] = {}
 
+        self._has_next_instrument_expiration = False
+        self._next_instrument_expiration_ns = 0
+
         self._message_queue = deque()
         self._inflight_queue: list[tuple[(uint64_t, uint64_t), TradingCommand]] = []
         self._inflight_counter: dict[uint64_t, uint64_t] = {}
@@ -2915,6 +2918,8 @@ cdef class SimulatedExchange:
         )
 
         self._matching_engines[instrument.id] = matching_engine
+
+        self._update_next_instrument_expiration(matching_engine)
 
         self._log.info(f"Added instrument {instrument.id} and created matching engine")
 
@@ -3488,13 +3493,48 @@ cdef class SimulatedExchange:
         for module in self.modules:
             module.process(ts_now)
 
+        self._process_instrument_expirations(ts_now)
+
+    cdef void _process_instrument_expirations(self, uint64_t ts_now):
         # Check instrument expiration for matching engines with expiring instruments at ts_now.
-        # Only call for expiring instruments; engines without data at ts_now would otherwise
-        # never run expiration.
+        # Only call when at or past the next known expiration to avoid scanning all engines
+        # on every time step.
+        if self._has_next_instrument_expiration and ts_now < self._next_instrument_expiration_ns:
+            return
+
+        cdef uint64_t earliest = 0
+        cdef uint64_t expiration_ns
+        cdef bint found = False
+
         cdef OrderMatchingEngine matching_engine
-        for matching_engine in list(self._matching_engines.values()):
-            if matching_engine._instrument_has_expiration:
+        for matching_engine in self._matching_engines.values():
+            if not matching_engine._instrument_has_expiration:
+                continue
+
+            # Trigger expiration once the engine reaches/passes its expiration time.
+            if not matching_engine._expiration_processed and ts_now >= matching_engine.instrument.expiration_ns:
                 matching_engine.check_instrument_expiration(ts_now)
+
+            # Track the next (future) expiration among instruments which have not yet been processed.
+            if not matching_engine._expiration_processed:
+                expiration_ns = matching_engine.instrument.expiration_ns
+                if expiration_ns > ts_now:
+                    if not found or expiration_ns < earliest:
+                        earliest = expiration_ns
+                        found = True
+
+        self._has_next_instrument_expiration = found
+        if found:
+            self._next_instrument_expiration_ns = earliest
+
+    cdef void _update_next_instrument_expiration(self, OrderMatchingEngine matching_engine):
+        cdef uint64_t expiration_ns
+        if matching_engine._instrument_has_expiration and not matching_engine._expiration_processed:
+            expiration_ns = matching_engine.instrument.expiration_ns
+            if expiration_ns > 0:
+                if not self._has_next_instrument_expiration or expiration_ns < self._next_instrument_expiration_ns:
+                    self._has_next_instrument_expiration = True
+                    self._next_instrument_expiration_ns = expiration_ns
 
     cpdef void reset(self):
         """
@@ -3515,6 +3555,13 @@ cdef class SimulatedExchange:
         self._message_queue = deque()
         self._inflight_queue.clear()
         self._inflight_counter.clear()
+
+        # Recompute next instrument expiration tracking from matching engines.
+        self._has_next_instrument_expiration = False
+        self._next_instrument_expiration_ns = 0
+
+        for matching_engine in self._matching_engines.values():
+            self._update_next_instrument_expiration(matching_engine)
 
         self._log.info("Reset")
 
@@ -3767,6 +3814,7 @@ cdef class OrderMatchingEngine:
         self._settlement_prices = settlement_prices or {}
         self._instrument_has_expiration = instrument.instrument_class in ENGINE_EXPIRING_INSTRUMENT_CLASSES
         self._instrument_close = None
+        self._expiration_processed = False
         self._reject_stop_orders = reject_stop_orders
         self._support_gtd_orders = support_gtd_orders
         self._support_contingent_orders = support_contingent_orders
@@ -3856,6 +3904,9 @@ cdef class OrderMatchingEngine:
         self._position_count = 0
         self._order_count = 0
         self._execution_count = 0
+
+        self._expiration_processed = False
+        self._instrument_close = None
 
         self._log.info(f"Reset OrderMatchingEngine {self.instrument.id}")
 
@@ -5456,7 +5507,11 @@ cdef class OrderMatchingEngine:
 
     cpdef void check_instrument_expiration(self, uint64_t timestamp_ns):
         """Run instrument expiration at timestamp_ns (option exercise/expiry or futures close)."""
+        if self._expiration_processed:
+            return
+
         if (self._instrument_has_expiration and timestamp_ns >= self.instrument.expiration_ns) or self._instrument_close is not None:
+            self._expiration_processed = True
             self._log.info(f"{self.instrument.id} reached expiration")
 
             # Cancel all open orders
@@ -5504,20 +5559,24 @@ cdef class OrderMatchingEngine:
         cdef list positions = self.cache.positions_open(venue=None, instrument_id=self.instrument.id)
         if not positions:
             return
+
         cdef Instrument underlying_instrument = self._get_option_underlying_instrument()
         if underlying_instrument is None:
             self._log.error(f"No underlying instrument for option {self.instrument.id}")
             return
+
         cdef Price underlying_price = self.cache.price(underlying_instrument.id, PriceType.LAST)
         if underlying_price is None:
             self._log.error(f"No underlying price for option {self.instrument.id}")
             return
+
         cdef Price custom_option_price = None
         if self._settlement_prices and self.instrument.id in self._settlement_prices:
             custom_option_price = Price(
                 self._settlement_prices[self.instrument.id],
                 self._price_prec,
             )
+
         cdef Position position
         for position in positions:
             if self._option_should_exercise(underlying_price):
@@ -5537,6 +5596,7 @@ cdef class OrderMatchingEngine:
         cdef double spot = underlying_price.as_double()
         if self.instrument.option_kind == OptionKind.CALL:
             return spot > strike
+
         return strike > spot
 
     cdef void _option_otm_expiry(self, Position position, uint64_t ts_now, Price custom_option_price=None):
@@ -5577,6 +5637,7 @@ cdef class OrderMatchingEngine:
             underlying_side = position.side
         else:
             underlying_side = PositionSide.SHORT if position.side == PositionSide.LONG else PositionSide.LONG
+
         cdef str venue = self.instrument.id.venue.value
         cdef str short_id = str(UUID4())[:8]
         cdef str trade_base = f"{venue}-LEG-EX-{short_id}"
@@ -5590,11 +5651,14 @@ cdef class OrderMatchingEngine:
         if cash_settled:
             if self.instrument.option_kind == OptionKind.CALL:
                 return Price(max(0.0, underlying_price.as_double() - self.instrument.strike_price.as_double()), self.instrument.strike_price.precision)
+
             return Price(max(0.0, self.instrument.strike_price.as_double() - underlying_price.as_double()), self.instrument.strike_price.precision)
+
         return self.instrument.strike_price
 
     cdef OrderFilled _option_create_close_fill(self, Position position, Price price, str trade_id, uint64_t ts_now):
         cdef OrderSide close_side = OrderSide.SELL if position.side == PositionSide.LONG else OrderSide.BUY
+
         return OrderFilled(
             trader_id=position.trader_id,
             strategy_id=position.strategy_id,
@@ -5621,6 +5685,7 @@ cdef class OrderMatchingEngine:
         Quantity quantity, PositionSide side, Price price, str trade_id_suffix, uint64_t ts_now
     ):
         cdef OrderSide order_side = OrderSide.BUY if side == PositionSide.LONG else OrderSide.SELL
+
         return OrderFilled(
             trader_id=position.trader_id,
             strategy_id=position.strategy_id,
