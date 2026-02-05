@@ -115,35 +115,29 @@ RESET  := \033[0m
 
 #== Installation
 
+.PHONY: install-deps
+install-deps:  #-- Install Python dependencies only (no package build)
+	$(info $(M) Installing Python dependencies...)
+	$Q uv sync --active --all-groups --all-extras --no-install-package nautilus_trader
+
 .PHONY: install
-install: export BUILD_MODE=release
-install:  #-- Install in release mode with all dependencies and extras
-	$(info $(M) Installing NautilusTrader in release mode with all dependencies and extras...)
-	$Q uv sync --active --all-groups --all-extras --verbose
+install: build  #-- Install dependencies and build package in release mode
 
 .PHONY: install-debug
-install-debug: export BUILD_MODE=debug
-install-debug:  #-- Install in debug mode for development
-	$(info $(M) Installing NautilusTrader in debug mode for development...)
-	$Q uv sync --active --all-groups --all-extras --verbose
-
-.PHONY: install-just-deps
-install-just-deps:  #-- Install dependencies only without building the package
-	$(info $(M) Installing dependencies only without building the package...)
-	$Q uv sync --active --all-groups --all-extras --no-install-package nautilus_trader
+install-debug: build-debug  #-- Install dependencies and build package in debug mode
 
 #== Build
 
 .PHONY: build
 build: export BUILD_MODE=release
 build: export CARGO_TARGET_DIR=$(TARGET_DIR)
-build:  #-- Build the package in release mode
+build: install-deps  #-- Build the package in release mode
 	uv run --active --no-sync build.py
 
 .PHONY: build-debug
 build-debug: export BUILD_MODE=debug
 build-debug: export CARGO_TARGET_DIR=$(TARGET_DIR)
-build-debug:  #-- Build the package in debug mode (recommended for development)
+build-debug: install-deps  #-- Build the package in debug mode (recommended for development)
 ifeq ($(VERBOSE),true)
 	$(info $(M) Building in debug mode with verbose output...)
 	uv run --active --no-sync build.py
@@ -155,7 +149,7 @@ endif
 .PHONY: build-debug-pyo3
 build-debug-pyo3: export BUILD_MODE=debug-pyo3
 build-debug-pyo3: export CARGO_TARGET_DIR=$(TARGET_DIR)
-build-debug-pyo3:  #-- Build the package with PyO3 debug symbols (for debugging Rust code)
+build-debug-pyo3: install-deps  #-- Build the package with PyO3 debug symbols (for debugging Rust code)
 ifeq ($(VERBOSE),true)
 	$(info $(M) Building in debug mode with PyO3 debug symbols...)
 	uv run --active --no-sync build.py
