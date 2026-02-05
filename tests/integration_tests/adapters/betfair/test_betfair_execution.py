@@ -766,6 +766,83 @@ async def test_duplicate_cancel_events_prevented(exec_client, setup_order_state,
     assert isinstance(cancel_events[0], OrderCanceled)
 
 
+@pytest.mark.asyncio
+async def test_http_cancel_then_stream_cancel_no_duplicate(
+    betfair_client: BetfairHttpClient,
+    exec_client: BetfairExecutionClient,
+    accept_order,
+    test_order,
+    venue_order_id,
+    cancel_events,
+):
+    """
+    Test that duplicate cancel events are prevented when HTTP cancel succeeds followed
+    by a stream update with the same cancel status.
+
+    This prevents InvalidStateTrigger: CANCELED -> CANCELED errors from the race
+    condition between HTTP response and stream update.
+
+    """
+    # Arrange
+    order = await accept_order(order=test_order, venue_order_id=venue_order_id)
+    mock_betfair_request(betfair_client, BetfairResponses.betting_cancel_orders_success())
+
+    # Act - HTTP cancel succeeds first
+    command = TestCommandStubs.cancel_order_command(order=order)
+    exec_client.cancel_order(command)
+    await asyncio.sleep(0)
+
+    # Assert
+    assert len(cancel_events) == 1
+
+    # Act - Stream cancel arrives after (simulating race condition)
+    order_change_message = BetfairStreaming.ocm_CANCEL()
+    exec_client.handle_order_stream_update(order_change_message)
+    await asyncio.sleep(0)
+
+    # Assert - Still only one cancel event
+    assert len(cancel_events) == 1
+    assert isinstance(cancel_events[0], OrderCanceled)
+
+
+@pytest.mark.asyncio
+async def test_stream_cancel_then_http_cancel_no_duplicate(
+    betfair_client: BetfairHttpClient,
+    exec_client: BetfairExecutionClient,
+    setup_order_state,
+    cancel_events,
+):
+    """
+    Test that duplicate cancel events are prevented when stream cancel arrives first,
+    followed by HTTP cancel response.
+
+    This covers the reverse race condition where the stream processes the cancel before
+    the HTTP response arrives.
+
+    """
+    # Arrange
+    order_change_message = BetfairStreaming.ocm_CANCEL()
+    await setup_order_state(order_change_message=order_change_message)
+
+    # Act - Stream cancel arrives first
+    exec_client.handle_order_stream_update(order_change_message)
+    await asyncio.sleep(0)
+
+    # Assert
+    assert len(cancel_events) == 1
+
+    # Act - HTTP cancel returns after (simulating race condition)
+    mock_betfair_request(betfair_client, BetfairResponses.betting_cancel_orders_success())
+    order = exec_client._cache.orders()[0]
+    command = TestCommandStubs.cancel_order_command(order=order)
+    exec_client.cancel_order(command)
+    await asyncio.sleep(0)
+
+    # Assert - Still only one cancel event
+    assert len(cancel_events) == 1
+    assert isinstance(cancel_events[0], OrderCanceled)
+
+
 @pytest.mark.parametrize(
     ("side", "price", "quantity", "free"),
     [

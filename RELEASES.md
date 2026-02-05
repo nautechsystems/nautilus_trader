@@ -79,7 +79,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed Arrow serialization encoding for custom Nautilus types (#3515), thanks @dennisnissle
 - Fixed Redis cache buffer flushing during idle periods (#3426), thanks for reporting @santivazq
 - Fixed Betfair dropped fills from premature cache update
-- Fixed Betfair duplicate cancel event race condition
+- Fixed Betfair duplicate cancel event race condition(s)
 - Fixed Betfair stream batch handling and modify/cancel edge cases
 - Fixed Betfair reconciliation with stale API fill data
 - Fixed Binance Spot WebSocket subscription acknowledgment parsing (#3382), thanks @Johnkhk

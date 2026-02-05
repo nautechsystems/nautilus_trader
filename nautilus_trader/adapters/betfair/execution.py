@@ -212,6 +212,10 @@ class BetfairExecutionClient(LiveExecutionClient):
         # to prevent duplicate events from race conditions with multiple event sources
         self._terminal_orders: FifoCache = FifoCache()
 
+        # Tracks venue_order_ids that have been replaced via modify price operations
+        # to ignore late stream updates for the old (replaced) order
+        self._replaced_venue_order_ids: FifoCache = FifoCache()
+
     @property
     def instrument_provider(self) -> BetfairInstrumentProvider:
         """
@@ -939,6 +943,9 @@ class BetfairExecutionClient(LiveExecutionClient):
             # Stream updates for the new order can now be matched via venue_order_id.
             self._pending_update_keys.discard(pending_key)
 
+            # Mark old venue_order_id as replaced to ignore late stream updates
+            self._replaced_venue_order_ids.add(existing_order.venue_order_id.value)
+
             self.generate_order_updated(
                 command.strategy_id,
                 command.instrument_id,
@@ -1099,6 +1106,14 @@ class BetfairExecutionClient(LiveExecutionClient):
                 f"Matching venue_order_id: {venue_order_id} to client_order_id: {command.client_order_id}",
             )
             self._cache.add_venue_order_id(command.client_order_id, venue_order_id, overwrite=True)
+
+            # Guard against duplicate cancel events (stream may have already processed)
+            if not self._try_mark_terminal_order(command.client_order_id):
+                self._log.debug(
+                    f"Order {command.client_order_id!r} already terminal, skipping cancel event",
+                )
+                return
+
             self.generate_order_canceled(
                 command.strategy_id,
                 command.instrument_id,
@@ -1455,7 +1470,7 @@ class BetfairExecutionClient(LiveExecutionClient):
     ) -> None:
         self._process_order_fill(unmatched_order, client_order_id, instrument)
 
-    def _handle_stream_execution_complete_order_update(
+    def _handle_stream_execution_complete_order_update(  # noqa: C901
         self,
         unmatched_order: UnmatchedOrder,
         client_order_id: ClientOrderId,
@@ -1497,6 +1512,12 @@ class BetfairExecutionClient(LiveExecutionClient):
             )
             # If this is the result of a ModifyOrder, we don't want to emit a cancel
             if key not in self._pending_update_keys:
+                # Skip late cancel updates for orders that have been replaced
+                if venue_order_id.value in self._replaced_venue_order_ids:
+                    self._log.debug(
+                        f"Skipping cancel for replaced venue_order_id={venue_order_id!r}",
+                    )
+                    return
                 # Guard against duplicate terminal events from race conditions
                 if not self._try_mark_terminal_order(client_order_id):
                     self._log.debug(f"Skipping duplicate cancel for {client_order_id!r}")
@@ -1539,6 +1560,13 @@ class BetfairExecutionClient(LiveExecutionClient):
 
             # Check if order is still open before generating a cancel
             if order.is_open:
+                # Skip late lapse updates for orders that have been replaced
+                if venue_order_id.value in self._replaced_venue_order_ids:
+                    self._log.debug(
+                        f"Skipping lapse for replaced venue_order_id={venue_order_id!r}",
+                    )
+                    return
+
                 # Guard against duplicate terminal events from race conditions
                 if not self._try_mark_terminal_order(client_order_id):
                     self._log.debug(f"Skipping duplicate lapse cancel for {client_order_id!r}")
