@@ -277,6 +277,8 @@ cdef class SimulatedExchange:
     """Optional instrument_id -> settlement price for instrument expiration."""
 
     cdef dict[InstrumentId, OrderMatchingEngine] _matching_engines
+    cdef bint _has_next_instrument_expiration
+    cdef uint64_t _next_instrument_expiration_ns
     cdef object _message_queue
     cdef list[tuple[tuple[uint64_t, uint64_t], TradingCommand]] _inflight_queue
     cdef dict[uint64_t, uint64_t] _inflight_counter
@@ -319,6 +321,9 @@ cdef class SimulatedExchange:
     cpdef void process(self, uint64_t ts_now)
     cpdef void reset(self)
 
+    cdef void _process_instrument_expirations(self, uint64_t ts_now)
+    cdef void _update_next_instrument_expiration(self, OrderMatchingEngine matching_engine)
+
     cdef void _process_trading_command(self, TradingCommand command)
     cdef void _process_modify_submitted_order(self, ModifyOrder command)
     cdef void _generate_order_modify_rejected(
@@ -353,6 +358,7 @@ cdef class OrderMatchingEngine:
     cdef FeeModel _fee_model
     cdef InstrumentClose _instrument_close
     cdef bint _instrument_has_expiration
+    cdef bint _expiration_processed
     cdef bint _reject_stop_orders
     cdef bint _support_gtd_orders
     cdef bint _support_contingent_orders
