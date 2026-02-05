@@ -57,6 +57,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use pyo3::{IntoPyObjectExt, exceptions::PyRuntimeError, prelude::*};
+use ustr::Ustr;
 
 use crate::{
     common::enums::{OKXInstrumentType, OKXTradeMode, OKXVipLevel},
@@ -1189,6 +1190,14 @@ impl OKXWebSocketClient {
     fn py_cache_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
         self.cache_instrument(pyobject_to_instrument_any(py, instrument)?);
         Ok(())
+    }
+
+    #[pyo3(name = "cache_inst_id_codes")]
+    fn py_cache_inst_id_codes(&self, mappings: Vec<(String, u64)>) {
+        let ustr_mappings = mappings
+            .into_iter()
+            .map(|(inst_id, code)| (Ustr::from(&inst_id), code));
+        self.cache_inst_id_codes(ustr_mappings);
     }
 }
 

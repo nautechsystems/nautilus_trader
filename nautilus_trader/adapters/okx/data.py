@@ -428,7 +428,10 @@ class OKXDataClient(LiveMarketDataClient):
         family: str | None = None,
     ) -> list[Instrument]:
         try:
-            pyo3_instruments = await self._http_client.request_instruments(inst_type, family)
+            pyo3_instruments, _inst_id_codes = await self._http_client.request_instruments(
+                inst_type,
+                family,
+            )
             instruments = []
             for pyo3_instrument in pyo3_instruments:
                 self._cache_instrument(pyo3_instrument)  # type: ignore[arg-type]

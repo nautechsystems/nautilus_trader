@@ -35,10 +35,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rest_client = OKXHttpClient::from_env().unwrap();
 
     let inst_type = OKXInstrumentType::Swap;
-    let instruments = rest_client.request_instruments(inst_type, None).await?;
+    let (instruments, inst_id_codes) = rest_client.request_instruments(inst_type, None).await?;
 
     let mut ws_client = OKXWebSocketClient::from_env().unwrap();
     ws_client.cache_instruments(instruments.clone());
+    ws_client.cache_inst_id_codes(inst_id_codes);
     ws_client.connect().await?;
 
     // Subscribe to execution channels: orders and account updates

@@ -41,7 +41,7 @@ async def main():
     okx_instrument_type = nautilus_pyo3.OKXInstrumentType.MARGIN
 
     # Request instruments and cache them
-    instruments = await http_client.request_instruments(okx_instrument_type)
+    instruments, _inst_id_codes = await http_client.request_instruments(okx_instrument_type, None)
     logger.info(f"Received {len(instruments)} instruments")
 
     for inst in instruments:

@@ -21,6 +21,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Added Bybit mark price subscriptions support
 - Added Bybit index price subscriptions support
 - Added Interactive Brokers subscribe index price functionality (#3514), thanks @Murph24
+- Added OKX batch cancel support for conditional (algo) orders
 - Added Polymarket data loader event-level API support (#3484), thanks @jsemldonado
 - Added Polymarket `event_slug_builder` support (#3501), thanks @jsemldonado
 - Added Polymarket batch order support (#3506), thanks @loafer-19

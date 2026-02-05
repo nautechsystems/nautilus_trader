@@ -37,7 +37,7 @@ async def main():
     # Instrument type must match the symbol for the bar type
     okx_account_id = nautilus_pyo3.AccountId("OKX-master")
     okx_instrument_type = nautilus_pyo3.OKXInstrumentType.SWAP
-    instruments = await http_client.request_instruments(okx_instrument_type)
+    instruments, _inst_id_codes = await http_client.request_instruments(okx_instrument_type, None)
 
     logger.info(f"Received {len(instruments)} instruments")
 

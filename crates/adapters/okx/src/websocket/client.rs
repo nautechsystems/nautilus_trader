@@ -2037,6 +2037,7 @@ impl OKXWebSocketClient {
 
         // OKX implements FOK/IOC as order types rather than separate time-in-force
         // Market + FOK is unsupported (FOK requires a limit price)
+        // optimal_limit_ioc is only supported for derivatives (SWAP/FUTURES), not SPOT
         let (okx_ord_type, price) = if post_only.unwrap_or(false) {
             (OKXOrderType::PostOnly, price)
         } else if let Some(tif) = time_in_force {
@@ -2046,7 +2047,14 @@ impl OKXWebSocketClient {
                         "Market orders with FOK time-in-force are not supported by OKX. Use Limit order with FOK instead.".to_string()
                     ));
                 }
-                (OrderType::Market, TimeInForce::Ioc) => (OKXOrderType::OptimalLimitIoc, price),
+                (OrderType::Market, TimeInForce::Ioc) => {
+                    // optimal_limit_ioc only works for derivatives, use plain market for SPOT
+                    if instrument_type == OKXInstrumentType::Spot {
+                        (OKXOrderType::Market, price)
+                    } else {
+                        (OKXOrderType::OptimalLimitIoc, price)
+                    }
+                }
                 (OrderType::Limit, TimeInForce::Fok) => (OKXOrderType::Fok, price),
                 (OrderType::Limit, TimeInForce::Ioc) => (OKXOrderType::Ioc, price),
                 _ => (OKXOrderType::from(order_type), price),

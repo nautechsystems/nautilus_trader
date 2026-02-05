@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     nautilus_common::logging::ensure_logging_initialized();
 
     let http_client = OKXHttpClient::from_env().unwrap();
-    let instruments = http_client
+    let (instruments, _inst_id_codes) = http_client
         .request_instruments(OKXInstrumentType::Swap, None)
         .await?;
 
