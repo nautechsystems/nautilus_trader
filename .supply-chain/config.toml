@@ -363,63 +363,63 @@ version = "0.5.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow]]
-version = "57.2.0"
+version = "57.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-arith]]
-version = "57.2.0"
+version = "57.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-array]]
-version = "57.2.0"
+version = "57.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-buffer]]
-version = "57.2.0"
+version = "57.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-cast]]
-version = "57.2.0"
+version = "57.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-csv]]
-version = "57.2.0"
+version = "57.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-data]]
-version = "57.2.0"
+version = "57.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-ipc]]
-version = "57.2.0"
+version = "57.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-json]]
-version = "57.2.0"
+version = "57.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-ord]]
-version = "57.2.0"
+version = "57.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-row]]
-version = "57.2.0"
+version = "57.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-schema]]
-version = "57.2.0"
+version = "57.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-select]]
-version = "57.2.0"
+version = "57.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-string]]
-version = "57.2.0"
+version = "57.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.async-compression]]
-version = "0.4.37"
+version = "0.4.38"
 criteria = "safe-to-deploy"
 
 [[exemptions.async-stream]]
@@ -1437,7 +1437,7 @@ version = "0.10.6"
 criteria = "safe-to-deploy"
 
 [[exemptions.memchr]]
-version = "2.7.6"
+version = "2.8.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.memoffset]]
@@ -1621,8 +1621,12 @@ criteria = "safe-to-deploy"
 version = "0.4.8"
 criteria = "safe-to-deploy"
 
+[[exemptions.objc2-core-foundation]]
+version = "0.3.1"
+criteria = "safe-to-deploy"
+
 [[exemptions.objc2-io-kit]]
-version = "0.3.2"
+version = "0.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.object_store]]
@@ -1686,7 +1690,7 @@ version = "0.9.12"
 criteria = "safe-to-deploy"
 
 [[exemptions.parquet]]
-version = "57.2.0"
+version = "57.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.paste]]
@@ -1922,7 +1926,7 @@ version = "0.12.28"
 criteria = "safe-to-deploy"
 
 [[exemptions.reqwest]]
-version = "0.13.1"
+version = "0.13.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.reqwest-eventsource]]
@@ -2290,7 +2294,7 @@ version = "1.0.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.sysinfo]]
-version = "0.38.0"
+version = "0.38.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.tabled]]
@@ -2581,6 +2585,10 @@ criteria = "safe-to-deploy"
 version = "0.4.2"
 criteria = "safe-to-deploy"
 
+[[exemptions.wasm-streams]]
+version = "0.5.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.wasmtimer]]
 version = "0.4.3"
 criteria = "safe-to-deploy"
@@ -2842,11 +2850,11 @@ version = "0.8.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.zerocopy]]
-version = "0.8.38"
+version = "0.8.39"
 criteria = "safe-to-deploy"
 
 [[exemptions.zerocopy-derive]]
-version = "0.8.38"
+version = "0.8.39"
 criteria = "safe-to-deploy"
 
 [[exemptions.zeroize_derive]]

@@ -172,6 +172,7 @@ skip = [
 
   # HTTP client - reqwest 0.12 vs 0.13 transition (databento, hypersync, object_store on 0.12)
   { crate = "reqwest" },
+  { crate = "wasm-streams" },
 
   # Cap'n Proto - hypersync-client uses 0.23.x, nautilus-serialization uses 0.24.x
   { crate = "capnp" },

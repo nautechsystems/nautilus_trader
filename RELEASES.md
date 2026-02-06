@@ -8,6 +8,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Added `bulk_read_batch_size` option to `CacheConfig` for batched Redis bulk reads, thanks @shzhng
 - Added sandbox execution adapter in Rust
 - Added multi-account execution support (#3194), thanks @faysou
+- Added `OrderBookDeltas` historical request support (#3438), thanks @faysou
 - Added `manage_stop` config option to `StrategyConfig` for automatic market exit on stop
 - Added matching engine `queue_position` tracking heuristic for backtests
 - Added tracing subscriber for external Rust library logs (`use_tracing=True` in `LoggingConfig`, filter with `RUST_LOG` env var)
@@ -21,6 +22,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Added BitMEX trailing stop support
 - Added Bybit mark price subscriptions support
 - Added Bybit index price subscriptions support
+- Added Databento bulk subscription and historical request support (#3490), thanks @shzhng
 - Added Interactive Brokers subscribe index price functionality (#3514), thanks @Murph24
 - Added OKX batch cancel support for conditional (algo) orders
 - Added Polymarket data loader event-level API support (#3484), thanks @jsemldonado
@@ -141,6 +143,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Refactored Deribit WS client to use standard Nautilus method names (#3418), thanks @filipmacek
 - Refactored dYdX v4 execution client in Rust (#3477), thanks @filipmacek
 - Refactored dYdX v4 adapter (#3521), thanks @filipmacek
+- Refactored dYdX v4 data client (#3547), thanks @filipmacek
 - Refactored Kraken spot quotes to use dedicated Ticker channel
 - Refactored Polymarket WebSocket to multi-client pool pattern
 - Improved `cancel_all_orders` to include inflight orders
