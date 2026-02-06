@@ -21,7 +21,7 @@ use chrono::{DateTime, Utc};
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::bar::BarType,
-    enums::{AccountType, AggressorSide, CurrencyType, LiquiditySide, PositionSide},
+    enums::{AccountType, AggressorSide, CurrencyType, LiquiditySide, PositionSide, TriggerType},
     events::AccountState,
     identifiers::{AccountId, InstrumentId, Symbol},
     instruments::{Instrument, InstrumentAny},
@@ -36,7 +36,7 @@ use ustr::Ustr;
 use crate::{
     common::{
         consts::BITMEX_VENUE,
-        enums::{BitmexLiquidityIndicator, BitmexSide},
+        enums::{BitmexExecInstruction, BitmexLiquidityIndicator, BitmexSide},
     },
     websocket::messages::BitmexMarginMsg,
 };
@@ -47,6 +47,24 @@ use crate::{
 #[must_use]
 pub fn clean_reason(reason: &str) -> String {
     reason.replace("\nNautilusTrader", "").trim().to_string()
+}
+
+/// Extracts the trigger type from BitMEX exec instructions.
+#[must_use]
+pub fn extract_trigger_type(exec_inst: Option<&Vec<BitmexExecInstruction>>) -> TriggerType {
+    if let Some(exec_insts) = exec_inst {
+        if exec_insts.contains(&BitmexExecInstruction::MarkPrice) {
+            TriggerType::MarkPrice
+        } else if exec_insts.contains(&BitmexExecInstruction::IndexPrice) {
+            TriggerType::IndexPrice
+        } else if exec_insts.contains(&BitmexExecInstruction::LastPrice) {
+            TriggerType::LastPrice
+        } else {
+            TriggerType::Default
+        }
+    } else {
+        TriggerType::Default
+    }
 }
 
 /// Parses a Nautilus instrument ID from the given BitMEX `symbol` value.

@@ -21,10 +21,7 @@ use dashmap::DashMap;
 use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
-    enums::{
-        ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TrailingOffsetType,
-        TriggerType,
-    },
+    enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TrailingOffsetType},
     identifiers::{AccountId, ClientOrderId, OrderListId, Symbol, TradeId, VenueOrderId},
     instruments::{CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
@@ -44,10 +41,10 @@ use crate::common::{
     },
     parse::{
         clean_reason, convert_contract_quantity, derive_contract_decimal_and_increment,
-        map_bitmex_currency, normalize_trade_bin_prices, normalize_trade_bin_volume,
-        parse_aggressor_side, parse_contracts_quantity, parse_instrument_id, parse_liquidity_side,
-        parse_optional_datetime_to_unix_nanos, parse_position_side,
-        parse_signed_contracts_quantity,
+        extract_trigger_type, map_bitmex_currency, normalize_trade_bin_prices,
+        normalize_trade_bin_volume, parse_aggressor_side, parse_contracts_quantity,
+        parse_instrument_id, parse_liquidity_side, parse_optional_datetime_to_unix_nanos,
+        parse_position_side, parse_signed_contracts_quantity,
     },
 };
 
@@ -829,7 +826,7 @@ pub fn parse_order_status_report(
     if let Some(trigger_price) = order.stop_px {
         report = report
             .with_trigger_price(Price::new(trigger_price, price_precision))
-            .with_trigger_type(TriggerType::Default);
+            .with_trigger_type(extract_trigger_type(order.exec_inst.as_ref()));
     }
 
     // Populate trailing offset for trailing stop orders
@@ -843,6 +840,10 @@ pub fn parse_order_status_report(
         report = report
             .with_trailing_offset(trailing_offset)
             .with_trailing_offset_type(TrailingOffsetType::Price);
+
+        if order.stop_px.is_none() {
+            report = report.with_trigger_type(extract_trigger_type(order.exec_inst.as_ref()));
+        }
     }
 
     if let Some(exec_instructions) = &order.exec_inst {

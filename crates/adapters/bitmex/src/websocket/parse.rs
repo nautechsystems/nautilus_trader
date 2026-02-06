@@ -30,7 +30,7 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggregationSource, BarAggregation, OrderSide, OrderStatus, OrderType,
-        PriceType, RecordFlag, TimeInForce, TrailingOffsetType, TriggerType,
+        PriceType, RecordFlag, TimeInForce, TrailingOffsetType,
     },
     events::{OrderUpdated, account::state::AccountState},
     identifiers::{
@@ -60,7 +60,7 @@ use crate::{
             BitmexExecInstruction, BitmexExecType, BitmexOrderType, BitmexPegPriceType, BitmexSide,
         },
         parse::{
-            clean_reason, map_bitmex_currency, normalize_trade_bin_prices,
+            clean_reason, extract_trigger_type, map_bitmex_currency, normalize_trade_bin_prices,
             normalize_trade_bin_volume, parse_contracts_quantity, parse_fractional_quantity,
             parse_instrument_id, parse_liquidity_side, parse_optional_datetime_to_unix_nanos,
             parse_position_side, parse_signed_contracts_quantity,
@@ -602,24 +602,9 @@ pub fn parse_order_msg(
     }
 
     if let Some(trigger_price) = msg.stop_px {
-        let trigger_type = if let Some(exec_insts) = &msg.exec_inst {
-            // Check if any trigger type instruction is present
-            if exec_insts.contains(&BitmexExecInstruction::MarkPrice) {
-                TriggerType::MarkPrice
-            } else if exec_insts.contains(&BitmexExecInstruction::IndexPrice) {
-                TriggerType::IndexPrice
-            } else if exec_insts.contains(&BitmexExecInstruction::LastPrice) {
-                TriggerType::LastPrice
-            } else {
-                TriggerType::Default
-            }
-        } else {
-            TriggerType::Default // BitMEX defaults to LastPrice when not specified
-        };
-
         report = report
             .with_trigger_price(Price::new(trigger_price, instrument.price_precision()))
-            .with_trigger_type(trigger_type);
+            .with_trigger_type(extract_trigger_type(msg.exec_inst.as_ref()));
     }
 
     // Populate trailing offset for trailing stop orders
@@ -633,6 +618,10 @@ pub fn parse_order_msg(
         report = report
             .with_trailing_offset(trailing_offset)
             .with_trailing_offset_type(TrailingOffsetType::Price);
+
+        if msg.stop_px.is_none() {
+            report = report.with_trigger_type(extract_trigger_type(msg.exec_inst.as_ref()));
+        }
     }
 
     if let Some(exec_insts) = &msg.exec_inst {
