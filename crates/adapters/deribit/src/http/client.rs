@@ -86,6 +86,11 @@ use crate::{
     },
 };
 
+/// Maximum number of trades per request for Deribit's historical trades API.
+/// Deribit's default is 10 which is insufficient for most use cases.
+/// The API maximum is 1000.
+pub const DERIBIT_HISTORICAL_TRADES_MAX_COUNT: u32 = 1000;
+
 /// Low-level Deribit HTTP client for raw API operations.
 ///
 /// This client handles JSON-RPC 2.0 protocol, request signing, rate limiting,
@@ -960,6 +965,12 @@ impl DeribitHttpClient {
     /// Returns an error if:
     /// - The request fails
     /// - Trade parsing fails
+    ///
+    /// # Pagination
+    ///
+    /// When `limit` is `None`, this function automatically paginates through all available
+    /// trades in the time range using the `has_more` field from the API response.
+    /// When `limit` is specified, pagination stops once that many trades are collected.
     pub async fn request_trades(
         &self,
         instrument_id: InstrumentId,
@@ -985,51 +996,90 @@ impl DeribitHttpClient {
             anyhow::ensure!(s < e, "Invalid time range: start={s:?} end={e:?}");
         }
 
-        let start_timestamp = start_dt.timestamp_millis();
+        let mut current_start_timestamp = start_dt.timestamp_millis();
         let end_timestamp = end_dt.timestamp_millis();
-
-        let params = GetLastTradesByInstrumentAndTimeParams::new(
-            instrument_id.symbol.to_string(),
-            start_timestamp,
-            end_timestamp,
-            limit,
-            Some("asc".to_string()), // Sort ascending for historical data
-        );
-
-        let full_response = self
-            .inner
-            .get_last_trades_by_instrument_and_time(params)
-            .await
-            .map_err(|e| anyhow::anyhow!(e))?;
-
-        let response_data = full_response
-            .result
-            .ok_or_else(|| anyhow::anyhow!("No result in response"))?;
-
         let ts_init = self.generate_ts_init();
-        let mut trades = Vec::with_capacity(response_data.trades.len());
+        let mut all_trades = Vec::new();
+        let mut has_more = true;
 
-        for raw_trade in &response_data.trades {
-            match parse_trade_tick(
-                raw_trade,
-                instrument_id,
-                price_precision,
-                size_precision,
-                ts_init,
-            ) {
-                Ok(trade) => trades.push(trade),
-                Err(e) => {
-                    log::warn!(
-                        "Failed to parse trade {} for {}: {}",
-                        raw_trade.trade_id,
-                        instrument_id,
-                        e
-                    );
+        // Paginate through all trades in the time range
+        while has_more {
+            let params = GetLastTradesByInstrumentAndTimeParams::new(
+                instrument_id.symbol.to_string(),
+                current_start_timestamp,
+                end_timestamp,
+                Some(DERIBIT_HISTORICAL_TRADES_MAX_COUNT),
+                Some("asc".to_string()), // Sort ascending for pagination
+            );
+
+            let full_response = self
+                .inner
+                .get_last_trades_by_instrument_and_time(params)
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?;
+
+            let response_data = full_response
+                .result
+                .ok_or_else(|| anyhow::anyhow!("No result in response"))?;
+
+            has_more = response_data.has_more;
+
+            if response_data.trades.is_empty() {
+                break;
+            }
+
+            // Track last timestamp for pagination
+            let mut last_timestamp = current_start_timestamp;
+
+            for raw_trade in &response_data.trades {
+                match parse_trade_tick(
+                    raw_trade,
+                    instrument_id,
+                    price_precision,
+                    size_precision,
+                    ts_init,
+                ) {
+                    Ok(trade) => {
+                        last_timestamp = raw_trade.timestamp;
+                        all_trades.push(trade);
+
+                        // If user specified a limit, stop when reached
+                        if let Some(max) = limit
+                            && all_trades.len() >= max as usize
+                        {
+                            return Ok(all_trades);
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to parse trade {} for {}: {}",
+                            raw_trade.trade_id,
+                            instrument_id,
+                            e
+                        );
+                    }
                 }
+            }
+
+            // Move start timestamp forward for next page
+            // Add 1ms to avoid re-fetching the last trade
+            current_start_timestamp = last_timestamp + 1;
+
+            // Safety check: if we're past the end timestamp, stop
+            if current_start_timestamp >= end_timestamp {
+                break;
             }
         }
 
-        Ok(trades)
+        log::info!(
+            "Fetched {} historical trades for {} from {} to {}",
+            all_trades.len(),
+            instrument_id,
+            start_dt,
+            end_dt
+        );
+
+        Ok(all_trades)
     }
 
     /// Requests historical bars (OHLCV) for an instrument.
