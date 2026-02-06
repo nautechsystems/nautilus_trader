@@ -141,7 +141,6 @@ class DYDXv4DataClient(LiveMarketDataClient):
         # Configuration
         self._config = config
         self._log.info(f"{config.is_testnet=}", LogColor.BLUE)
-        self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
@@ -252,11 +251,45 @@ class DYDXv4DataClient(LiveMarketDataClient):
                 return
 
             if isinstance(capsule, dict):
+                msg_type = capsule.get("type")
+                if msg_type == "new_instrument_discovered":
+                    ticker = capsule.get("ticker")
+                    if ticker:
+                        self._log.info(
+                            f"New instrument discovered via WebSocket: {ticker}",
+                            LogColor.BLUE,
+                        )
+                        task = asyncio.create_task(self._fetch_new_instrument(ticker))
+                        self._ws_client_futures.add(task)
+                        task.add_done_callback(self._ws_client_futures.discard)
                 return
 
             self._log.debug(f"Ignoring message of type {type(capsule).__name__}")
         except Exception as e:
             self._log.error(f"Error handling WebSocket message: {e}")
+
+    async def _fetch_new_instrument(self, ticker: str) -> None:
+        """
+        Fetch and cache a newly discovered instrument.
+
+        Called when the WebSocket markets channel reports a ticker that is not in the
+        instrument cache, indicating a new listing.
+
+        """
+        try:
+            instrument = await self._http_client.fetch_instrument(ticker)
+            if instrument is not None:
+                self._ws_client.cache_instrument(instrument)
+                self._instrument_provider.add(instrument)
+                self._handle_data(instrument)
+                self._log.info(
+                    f"Fetched and cached new instrument: {ticker}",
+                    LogColor.GREEN,
+                )
+            else:
+                self._log.warning(f"New instrument {ticker} not found or inactive")
+        except Exception as e:
+            self._log.error(f"Failed to fetch new instrument {ticker}: {e}")
 
     def _handle_orderbook_deltas(self, deltas: OrderBookDeltas) -> None:
         instrument_id = deltas.instrument_id

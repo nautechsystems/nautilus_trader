@@ -322,6 +322,18 @@ impl DydxWebSocketClient {
                                     }
                                 });
                             }
+                            NautilusWsMessage::NewInstrumentDiscovered { ticker } => {
+                                log::info!("New instrument discovered via WebSocket: {ticker}");
+                                Python::attach(|py| {
+                                    use pyo3::types::PyDict;
+                                    let dict = PyDict::new(py);
+                                    let _ = dict.set_item("type", "new_instrument_discovered");
+                                    let _ = dict.set_item("ticker", &ticker);
+                                    if let Err(e) = callback.call1(py, (dict,)) {
+                                        log::error!("Error calling Python callback for new_instrument_discovered: {e}");
+                                    }
+                                });
+                            }
                         }
                     }
                 });

@@ -80,11 +80,14 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
 
 use super::error::DydxHttpError;
-use crate::common::{
-    consts::{DYDX_HTTP_URL, DYDX_TESTNET_HTTP_URL},
-    enums::DydxCandleResolution,
-    instrument_cache::InstrumentCache,
-    parse::extract_raw_symbol,
+use crate::{
+    common::{
+        consts::{DYDX_HTTP_URL, DYDX_TESTNET_HTTP_URL},
+        enums::DydxCandleResolution,
+        instrument_cache::InstrumentCache,
+        parse::extract_raw_symbol,
+    },
+    http::parse::parse_instrument_any,
 };
 
 /// Default dYdX Indexer REST API rate limit.
@@ -389,6 +392,22 @@ impl DydxRawHttpClient {
     /// Returns an error if the HTTP request fails or response parsing fails.
     pub async fn get_markets(&self) -> Result<super::models::MarketsResponse, DydxHttpError> {
         self.send_request(Method::GET, "/v4/perpetualMarkets", None)
+            .await
+    }
+
+    /// Fetch a single perpetual market by ticker.
+    ///
+    /// Uses the `market` query parameter for efficient single-market fetch.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or response parsing fails.
+    pub async fn get_market(
+        &self,
+        ticker: &str,
+    ) -> Result<super::models::MarketsResponse, DydxHttpError> {
+        let query = format!("ticker={ticker}");
+        self.send_request(Method::GET, "/v4/perpetualMarkets", Some(&query))
             .await
     }
 
@@ -847,6 +866,39 @@ impl DydxHttpClient {
         }
 
         Ok(())
+    }
+
+    /// Fetches a single instrument by ticker and caches it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails.
+    pub async fn fetch_and_cache_single_instrument(
+        &self,
+        ticker: &str,
+    ) -> anyhow::Result<Option<InstrumentAny>> {
+        let markets_response = self.inner.get_market(ticker).await?;
+        let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+        // The API returns all markets if ticker not found, so check specifically
+        if let Some(market) = markets_response.markets.get(ticker) {
+            if !super::parse::is_market_active(&market.status) {
+                log::debug!(
+                    "Skipping inactive market {ticker} (status: {:?})",
+                    market.status
+                );
+                return Ok(None);
+            }
+
+            let instrument = parse_instrument_any(market, None, None, ts_init)?;
+            self.instrument_cache
+                .insert(instrument.clone(), market.clone());
+
+            log::info!("Fetched and cached new instrument: {ticker}");
+            return Ok(Some(instrument));
+        }
+
+        Ok(None)
     }
 
     /// Caches multiple instruments (symbol lookup only).

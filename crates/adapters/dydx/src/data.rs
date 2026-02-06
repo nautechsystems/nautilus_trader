@@ -78,6 +78,7 @@ struct WsMessageContext {
     order_books: Arc<DashMap<InstrumentId, OrderBook>>,
     last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
     ws_client: DydxWebSocketClient,
+    http_client: DydxHttpClient,
     active_quote_subs: Arc<DashSet<InstrumentId>>,
     active_delta_subs: Arc<DashSet<InstrumentId>>,
     active_trade_subs: Arc<DashMap<InstrumentId, ()>>,
@@ -216,6 +217,12 @@ impl DydxDataClient {
     #[must_use]
     pub fn venue(&self) -> Venue {
         *DYDX_VENUE
+    }
+
+    /// Returns a reference to the client configuration.
+    #[must_use]
+    pub fn config(&self) -> &DydxDataClientConfig {
+        &self.config
     }
 
     /// Returns `true` when the client is connected.
@@ -402,6 +409,7 @@ impl DataClient for DydxDataClient {
             order_books: self.order_books.clone(),
             last_quotes: self.last_quotes.clone(),
             ws_client: self.ws_client.clone(),
+            http_client: self.http_client.clone(),
             active_quote_subs: self.active_quote_subs.clone(),
             active_delta_subs: self.active_delta_subs.clone(),
             active_trade_subs: self.active_trade_subs.clone(),
@@ -414,9 +422,6 @@ impl DataClient for DydxDataClient {
 
         let stream = self.ws_client.stream();
         self.spawn_ws_stream_handler(stream, ctx);
-
-        // Start instrument refresh task
-        self.start_instrument_refresh_task()?;
 
         self.is_connected.store(true, Ordering::Relaxed);
         log::info!("Connected");
@@ -1387,65 +1392,6 @@ impl DataClient for DydxDataClient {
 }
 
 impl DydxDataClient {
-    /// Start a task to periodically refresh instruments.
-    ///
-    /// This task runs in the background and updates the instrument cache
-    /// at the configured interval.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if a refresh task is already running.
-    pub fn start_instrument_refresh_task(&mut self) -> anyhow::Result<()> {
-        let interval_secs = match self.config.instrument_refresh_interval_secs {
-            Some(secs) if secs > 0 => secs,
-            _ => {
-                log::info!("Instrument refresh disabled (interval not configured)");
-                return Ok(());
-            }
-        };
-
-        let interval = Duration::from_secs(interval_secs);
-        let http_client = self.http_client.clone();
-        let ws_client = self.ws_client.clone();
-        let cancellation_token = self.cancellation_token.clone();
-
-        log::info!("Starting instrument refresh task (interval: {interval_secs}s)");
-
-        let task = get_runtime().spawn(async move {
-            let mut interval_timer = tokio::time::interval(interval);
-            interval_timer.tick().await; // Skip first immediate tick
-
-            loop {
-                tokio::select! {
-                    () = cancellation_token.cancelled() => {
-                        log::info!("Instrument refresh task cancelled");
-                        break;
-                    }
-                    _ = interval_timer.tick() => {
-                        log::debug!("Refreshing instruments");
-
-                        // Populates shared InstrumentCache via HTTP client
-                        match http_client.fetch_and_cache_instruments().await {
-                            Ok(()) => {
-                                let instruments = http_client.all_instruments();
-                                log::debug!("Refreshed {} instruments in shared cache", instruments.len());
-
-                                // Propagate to WS handler for message parsing
-                                ws_client.cache_instruments(instruments);
-                            }
-                            Err(e) => {
-                                log::error!("Failed to refresh instruments: {e}");
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        self.tasks.push(task);
-        Ok(())
-    }
-
     /// Get a cached instrument by InstrumentId.
     #[must_use]
     pub fn get_instrument(&self, instrument_id: &InstrumentId) -> Option<InstrumentAny> {
@@ -1704,6 +1650,36 @@ impl DydxDataClient {
                 log::debug!(
                     "Ignoring execution/subaccount message on dYdX data client (handled by execution adapter)"
                 );
+            }
+            NautilusWsMessage::NewInstrumentDiscovered { ticker } => {
+                // New instrument discovered via WebSocket - fetch via HTTP and cache
+                log::info!("New instrument discovered via WebSocket: {ticker}");
+
+                let http_client = ctx.http_client.clone();
+                let ws_client = ctx.ws_client.clone();
+                let data_sender = ctx.data_sender.clone();
+
+                get_runtime().spawn(async move {
+                    match http_client.fetch_and_cache_single_instrument(&ticker).await {
+                        Ok(Some(instrument)) => {
+                            // Cache in WebSocket client for future data parsing
+                            ws_client.cache_instrument(instrument.clone());
+                            // The InstrumentCache is already updated by fetch_and_cache_single_instrument
+
+                            // Send to data engine
+                            if let Err(e) = data_sender.send(DataEvent::Instrument(instrument)) {
+                                log::error!("Failed to emit new instrument: {e}");
+                            }
+                            log::info!("Fetched and cached new instrument: {ticker}");
+                        }
+                        Ok(None) => {
+                            log::warn!("New instrument {ticker} not found or inactive");
+                        }
+                        Err(e) => {
+                            log::error!("Failed to fetch new instrument {ticker}: {e}");
+                        }
+                    }
+                });
             }
         }
     }

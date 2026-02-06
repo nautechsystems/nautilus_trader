@@ -1009,18 +1009,26 @@ impl FeedHandler {
             }
         }
 
-        // Parse trading data → FundingRateUpdate
+        // Parse trading data → FundingRateUpdate (and detect new instruments)
         if let Some(trading) = &contents.trading {
             for (symbol_str, trading_data) in trading {
-                let Some(rate_str) = &trading_data.next_funding_rate else {
-                    continue;
-                };
                 let Ok(instrument_id) = self.parse_instrument_id(symbol_str) else {
                     continue;
                 };
+
+                // Check if this is a new instrument not in our cache
                 if !self.instruments.contains_key(&instrument_id.symbol.inner()) {
+                    log::info!("New instrument discovered via WebSocket: {symbol_str}");
+                    messages.push(NautilusWsMessage::NewInstrumentDiscovered {
+                        ticker: symbol_str.clone(),
+                    });
                     continue;
                 }
+
+                // Existing instrument - emit funding rate if available
+                let Some(rate_str) = &trading_data.next_funding_rate else {
+                    continue;
+                };
                 let Ok(rate) = rate_str.parse::<Decimal>() else {
                     log::error!(
                         "Failed to parse funding rate: market={symbol_str}, rate={rate_str}"

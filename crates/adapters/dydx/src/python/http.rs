@@ -109,6 +109,30 @@ impl DydxHttpClient {
         })
     }
 
+    /// Fetches a single instrument by ticker and caches it.
+    ///
+    /// This is used for on-demand fetching of newly discovered instruments
+    /// via WebSocket.
+    ///
+    /// Returns `None` if the market is not found or inactive.
+    #[pyo3(name = "fetch_instrument")]
+    fn py_fetch_instrument<'py>(
+        &self,
+        py: Python<'py>,
+        ticker: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            match client.fetch_and_cache_single_instrument(&ticker).await {
+                Ok(Some(instrument)) => {
+                    Python::attach(|py| instrument_any_to_pyobject(py, instrument))
+                }
+                Ok(None) => Ok(Python::attach(|py| py.None())),
+                Err(e) => Err(to_pyvalue_err(e)),
+            }
+        })
+    }
+
     #[pyo3(name = "get_instrument")]
     fn py_get_instrument(&self, py: Python<'_>, symbol: &str) -> PyResult<Option<Py<PyAny>>> {
         use nautilus_model::identifiers::{Symbol, Venue};

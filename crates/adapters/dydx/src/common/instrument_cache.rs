@@ -261,6 +261,13 @@ impl InstrumentCache {
         self.clob_pair_id_index.contains_key(&clob_pair_id)
     }
 
+    /// Checks if an instrument exists by market ticker (e.g., "BTC-USD").
+    #[must_use]
+    pub fn contains_market(&self, ticker: &str) -> bool {
+        let ticker_ustr = Ustr::from(ticker);
+        self.market_index.contains_key(&ticker_ustr)
+    }
+
     /// Returns a HashMap of all instruments keyed by InstrumentId.
     ///
     /// This is useful for parsing functions that expect `HashMap<InstrumentId, InstrumentAny>`.
