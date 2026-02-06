@@ -44,7 +44,7 @@
 //!
 //! # Documentation
 //!
-//! - API reference: <https://docs.sandbox.x.architect.co/api-reference/>
+//! - API reference: <https://docs.architect.exchange/api-reference/>
 //! - Crate docs: <https://docs.rs/nautilus-architect-ax>
 
 #![warn(rustc::all)]

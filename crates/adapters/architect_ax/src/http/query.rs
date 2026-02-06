@@ -29,7 +29,7 @@ use crate::common::enums::AxCandleWidth;
 /// Parameters for the GET /ticker endpoint.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/get-ticker>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-ticker>
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GetTickerParams {
     /// Instrument symbol, e.g. "GBPUSD-PERP", "EURUSD-PERP".
@@ -49,7 +49,7 @@ impl GetTickerParams {
 /// Parameters for the GET /instrument endpoint.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/symbols-instruments/get-instrument>
+/// - <https://docs.architect.exchange/api-reference/symbols-instruments/get-instrument>
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GetInstrumentParams {
     /// Instrument symbol, e.g. "GBPUSD-PERP", "EURUSD-PERP".
@@ -69,7 +69,7 @@ impl GetInstrumentParams {
 /// Parameters for the GET /candles endpoint.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/get-candles>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-candles>
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GetCandlesParams {
     /// Instrument symbol.
@@ -103,8 +103,8 @@ impl GetCandlesParams {
 /// Parameters for the GET /candles/current and GET /candles/last endpoints.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/get-current-candle>
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/get-last-candle>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-current-candle>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-last-candle>
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GetCandleParams {
     /// Instrument symbol.
@@ -127,7 +127,7 @@ impl GetCandleParams {
 /// Parameters for the GET /funding-rates endpoint.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/get-funding-rates>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-funding-rates>
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GetFundingRatesParams {
     /// Instrument symbol.
@@ -153,7 +153,7 @@ impl GetFundingRatesParams {
 /// Parameters for the GET /transactions endpoint.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/portfolio-management/get-transactions>
+/// - <https://docs.architect.exchange/api-reference/portfolio-management/get-transactions>
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GetTransactionsParams {
     /// Transaction types to filter by.

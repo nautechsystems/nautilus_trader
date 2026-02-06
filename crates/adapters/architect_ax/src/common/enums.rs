@@ -103,7 +103,7 @@ impl AxEnvironment {
 /// Instrument state as returned by the AX Exchange API.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/symbols-instruments/get-instruments>
+/// - <https://docs.architect.exchange/api-reference/symbols-instruments/get-instruments>
 #[derive(
     Clone,
     Copy,
@@ -140,7 +140,7 @@ pub enum AxInstrumentState {
 /// Order side for trading operations.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/place-order>
+/// - <https://docs.architect.exchange/api-reference/order-management/place-order>
 #[derive(
     Clone,
     Copy,
@@ -212,7 +212,7 @@ impl TryFrom<OrderSide> for AxOrderSide {
 /// Order status as returned by the AX Exchange API.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/get-open-orders>
+/// - <https://docs.architect.exchange/api-reference/order-management/get-open-orders>
 #[derive(
     Clone,
     Copy,
@@ -288,7 +288,7 @@ impl From<AxOrderStatus> for OrderStatus {
 /// Time in force for order validity.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/place-order>
+/// - <https://docs.architect.exchange/api-reference/order-management/place-order>
 #[derive(
     Clone,
     Copy,
@@ -420,7 +420,7 @@ impl TryFrom<OrderType> for AxOrderType {
 /// Market data subscription level.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/md-ws>
+/// - <https://docs.architect.exchange/api-reference/marketdata/md-ws>
 #[derive(
     Clone,
     Copy,
@@ -464,7 +464,7 @@ pub enum AxMarketDataLevel {
 /// Candle/bar width for market data subscriptions.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/md-ws>
+/// - <https://docs.architect.exchange/api-reference/marketdata/md-ws>
 #[derive(
     Clone,
     Copy,
@@ -517,7 +517,7 @@ pub enum AxCandleWidth {
 /// WebSocket market data message type (server to client).
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/md-ws>
+/// - <https://docs.architect.exchange/api-reference/marketdata/md-ws>
 #[derive(
     Clone,
     Copy,
@@ -570,7 +570,7 @@ pub enum AxMdWsMessageType {
 /// WebSocket order message type (server to client).
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/orders-ws>
+/// - <https://docs.architect.exchange/api-reference/order-management/orders-ws>
 #[derive(
     Clone,
     Copy,
@@ -635,7 +635,7 @@ pub enum AxOrderWsMessageType {
 /// Reason for order cancellation.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/orders-ws>
+/// - <https://docs.architect.exchange/api-reference/order-management/orders-ws>
 #[derive(
     Clone,
     Copy,
@@ -664,7 +664,7 @@ pub enum AxCancelReason {
 /// Reason for cancel rejection.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/orders-ws>
+/// - <https://docs.architect.exchange/api-reference/order-management/orders-ws>
 #[derive(
     Clone,
     Copy,

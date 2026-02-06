@@ -32,7 +32,7 @@ use nautilus_core::{
 use nautilus_model::{
     data::Bar,
     events::AccountState,
-    identifiers::AccountId,
+    identifiers::{AccountId, ClientOrderId},
     instruments::{Instrument, any::InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
@@ -1248,16 +1248,23 @@ impl AxHttpClient {
     ///
     /// Requires instruments to be cached for parsing order details.
     ///
+    /// The `cid_resolver` parameter is an optional function that resolves a `cid` (u64)
+    /// to a `ClientOrderId`. This is needed for correlating orders submitted via WebSocket.
+    ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - The HTTP request fails.
     /// - An order's instrument is not found in the cache.
     /// - Order parsing fails.
-    pub async fn request_order_status_reports(
+    pub async fn request_order_status_reports<F>(
         &self,
         account_id: AccountId,
-    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        cid_resolver: Option<F>,
+    ) -> anyhow::Result<Vec<OrderStatusReport>>
+    where
+        F: Fn(u64) -> Option<ClientOrderId>,
+    {
         let response = self
             .inner
             .get_open_orders()
@@ -1272,7 +1279,13 @@ impl AxHttpClient {
                 .get_instrument(&order.s)
                 .ok_or_else(|| anyhow::anyhow!("Instrument {} not found in cache", order.s))?;
 
-            match parse_order_status_report(order, account_id, &instrument, ts_init) {
+            match parse_order_status_report(
+                order,
+                account_id,
+                &instrument,
+                ts_init,
+                cid_resolver.as_ref(),
+            ) {
                 Ok(report) => reports.push(report),
                 Err(e) => {
                     log::warn!("Failed to parse order {}: {e}", order.oid);

@@ -645,9 +645,12 @@ impl ExecutionClient for AxExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
+        let cid_map = self.ws_orders.cid_to_client_order_id().clone();
+        let cid_resolver = move |cid: u64| cid_map.get(&cid).map(|v| *v);
+
         let mut reports = self
             .http_client
-            .request_order_status_reports(self.core.account_id)
+            .request_order_status_reports(self.core.account_id, Some(cid_resolver))
             .await?;
 
         if let Some(instrument_id) = cmd.instrument_id {
@@ -669,9 +672,12 @@ impl ExecutionClient for AxExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        let cid_map = self.ws_orders.cid_to_client_order_id().clone();
+        let cid_resolver = move |cid: u64| cid_map.get(&cid).map(|v| *v);
+
         let mut reports = self
             .http_client
-            .request_order_status_reports(self.core.account_id)
+            .request_order_status_reports(self.core.account_id, Some(cid_resolver))
             .await?;
 
         if let Some(instrument_id) = cmd.instrument_id {

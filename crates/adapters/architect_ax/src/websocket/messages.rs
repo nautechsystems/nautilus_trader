@@ -93,7 +93,7 @@ pub enum NautilusExecWsMessage {
 /// Subscribe request for market data.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/md-ws>
+/// - <https://docs.architect.exchange/api-reference/marketdata/md-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdSubscribe {
     /// Client request ID for correlation.
@@ -110,7 +110,7 @@ pub struct AxMdSubscribe {
 /// Unsubscribe request for market data.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/md-ws>
+/// - <https://docs.architect.exchange/api-reference/marketdata/md-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdUnsubscribe {
     /// Client request ID for correlation.
@@ -125,7 +125,7 @@ pub struct AxMdUnsubscribe {
 /// Subscribe request for candle data.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/md-ws>
+/// - <https://docs.architect.exchange/api-reference/marketdata/md-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdSubscribeCandles {
     /// Client request ID for correlation.
@@ -142,7 +142,7 @@ pub struct AxMdSubscribeCandles {
 /// Unsubscribe request for candle data.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/md-ws>
+/// - <https://docs.architect.exchange/api-reference/marketdata/md-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdUnsubscribeCandles {
     /// Client request ID for correlation.
@@ -159,7 +159,7 @@ pub struct AxMdUnsubscribeCandles {
 /// Heartbeat message from market data WebSocket.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/md-ws>
+/// - <https://docs.architect.exchange/api-reference/marketdata/md-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdHeartbeat {
     /// Timestamp (Unix epoch seconds).
@@ -254,7 +254,7 @@ pub enum AxMdTickerOrTrade {
 /// Ticker/statistics message from market data WebSocket.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/md-ws>
+/// - <https://docs.architect.exchange/api-reference/marketdata/md-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdTicker {
     /// Timestamp (Unix epoch seconds).
@@ -287,7 +287,7 @@ pub struct AxMdTicker {
 /// Trade message from market data WebSocket.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/md-ws>
+/// - <https://docs.architect.exchange/api-reference/marketdata/md-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdTrade {
     /// Timestamp (Unix epoch seconds).
@@ -368,7 +368,7 @@ impl<'de> Deserialize<'de> for AxMdMessage {
 /// Candle/OHLCV message from market data WebSocket.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/md-ws>
+/// - <https://docs.architect.exchange/api-reference/marketdata/md-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdCandle {
     /// Instrument symbol.
@@ -422,7 +422,7 @@ pub struct AxBookLevelL3 {
 /// Level 1 order book update (best bid/ask).
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/md-ws>
+/// - <https://docs.architect.exchange/api-reference/marketdata/md-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdBookL1 {
     /// Timestamp (Unix epoch seconds).
@@ -440,7 +440,7 @@ pub struct AxMdBookL1 {
 /// Level 2 order book update (aggregated price levels).
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/md-ws>
+/// - <https://docs.architect.exchange/api-reference/marketdata/md-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdBookL2 {
     /// Timestamp (Unix epoch seconds).
@@ -458,7 +458,7 @@ pub struct AxMdBookL2 {
 /// Level 3 order book update (individual order quantities).
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/md-ws>
+/// - <https://docs.architect.exchange/api-reference/marketdata/md-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdBookL3 {
     /// Timestamp (Unix epoch seconds).
@@ -476,7 +476,7 @@ pub struct AxMdBookL3 {
 /// Place order request via WebSocket.
 ///
 /// # References
-/// - <https://docs.architect.co/sdk-reference/order-entry>
+/// - <https://docs.architect.exchange/sdk-reference/order-entry>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsPlaceOrder {
     /// Request ID for correlation.
@@ -499,12 +499,12 @@ pub struct AxWsPlaceOrder {
     pub tif: AxTimeInForce,
     /// Post-only flag (maker-or-cancel).
     pub po: bool,
-    /// Optional order tag (max 10 alphanumeric characters).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tag: Option<String>,
     /// Optional client order ID.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cid: Option<u64>,
+    /// Optional order tag (max 10 alphanumeric characters).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
     /// Order type (defaults to LIMIT if not specified).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_type: Option<AxOrderType>,
@@ -521,7 +521,7 @@ pub struct AxWsPlaceOrder {
 /// Cancel order request via WebSocket.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/orders-ws>
+/// - <https://docs.architect.exchange/api-reference/order-management/orders-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsCancelOrder {
     /// Request ID for correlation.
@@ -535,7 +535,7 @@ pub struct AxWsCancelOrder {
 /// Get open orders request via WebSocket.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/orders-ws>
+/// - <https://docs.architect.exchange/api-reference/order-management/orders-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsGetOpenOrders {
     /// Request ID for correlation.
@@ -547,7 +547,7 @@ pub struct AxWsGetOpenOrders {
 /// Place order response from WebSocket.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/orders-ws>
+/// - <https://docs.architect.exchange/api-reference/order-management/orders-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsPlaceOrderResponse {
     /// Request ID matching the original request.
@@ -566,7 +566,7 @@ pub struct AxWsPlaceOrderResult {
 /// Cancel order response from WebSocket.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/orders-ws>
+/// - <https://docs.architect.exchange/api-reference/order-management/orders-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsCancelOrderResponse {
     /// Request ID matching the original request.
@@ -585,7 +585,7 @@ pub struct AxWsCancelOrderResult {
 /// Open orders response from WebSocket.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/orders-ws>
+/// - <https://docs.architect.exchange/api-reference/order-management/orders-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsOpenOrdersResponse {
     /// Request ID matching the original request.
@@ -663,12 +663,12 @@ pub struct AxWsOrder {
     pub ts: i64,
     /// Transaction number.
     pub tn: i64,
-    /// Optional order tag.
-    #[serde(default)]
-    pub tag: Option<String>,
     /// Optional client order ID.
     #[serde(default)]
     pub cid: Option<u64>,
+    /// Optional order tag.
+    #[serde(default)]
+    pub tag: Option<String>,
     /// Optional text/description.
     #[serde(default)]
     pub txt: Option<String>,
@@ -677,7 +677,7 @@ pub struct AxWsOrder {
 /// Heartbeat event from orders WebSocket.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/orders-ws>
+/// - <https://docs.architect.exchange/api-reference/order-management/orders-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsHeartbeat {
     /// Message type (always "h").
@@ -691,7 +691,7 @@ pub struct AxWsHeartbeat {
 /// Order acknowledged event.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/orders-ws>
+/// - <https://docs.architect.exchange/api-reference/order-management/orders-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsOrderAcknowledged {
     /// Timestamp (Unix epoch seconds).
@@ -725,7 +725,7 @@ pub struct AxWsTradeExecution {
 /// Order partially filled event.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/orders-ws>
+/// - <https://docs.architect.exchange/api-reference/order-management/orders-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsOrderPartiallyFilled {
     /// Timestamp (Unix epoch seconds).
@@ -743,7 +743,7 @@ pub struct AxWsOrderPartiallyFilled {
 /// Order filled event.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/orders-ws>
+/// - <https://docs.architect.exchange/api-reference/order-management/orders-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsOrderFilled {
     /// Timestamp (Unix epoch seconds).
@@ -761,7 +761,7 @@ pub struct AxWsOrderFilled {
 /// Order canceled event.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/orders-ws>
+/// - <https://docs.architect.exchange/api-reference/order-management/orders-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsOrderCanceled {
     /// Timestamp (Unix epoch seconds).
@@ -782,7 +782,7 @@ pub struct AxWsOrderCanceled {
 /// Order rejected event.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/orders-ws>
+/// - <https://docs.architect.exchange/api-reference/order-management/orders-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsOrderRejected {
     /// Timestamp (Unix epoch seconds).
@@ -804,7 +804,7 @@ pub struct AxWsOrderRejected {
 /// Order expired event.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/orders-ws>
+/// - <https://docs.architect.exchange/api-reference/order-management/orders-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsOrderExpired {
     /// Timestamp (Unix epoch seconds).
@@ -820,7 +820,7 @@ pub struct AxWsOrderExpired {
 /// Order replaced/amended event.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/orders-ws>
+/// - <https://docs.architect.exchange/api-reference/order-management/orders-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsOrderReplaced {
     /// Timestamp (Unix epoch seconds).
@@ -836,7 +836,7 @@ pub struct AxWsOrderReplaced {
 /// Order done for day event.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/orders-ws>
+/// - <https://docs.architect.exchange/api-reference/order-management/orders-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsOrderDoneForDay {
     /// Timestamp (Unix epoch seconds).
@@ -852,7 +852,7 @@ pub struct AxWsOrderDoneForDay {
 /// Cancel rejected event.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/orders-ws>
+/// - <https://docs.architect.exchange/api-reference/order-management/orders-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxWsCancelRejected {
     /// Timestamp (Unix epoch seconds).

@@ -32,7 +32,7 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 use super::models::{AxBalancesResponse, AxCandle, AxFill, AxInstrument, AxOpenOrder, AxPosition};
-use crate::common::{consts::AX_VENUE, enums::AxCandleWidth};
+use crate::common::{consts::AX_VENUE, enums::AxCandleWidth, parse::cid_to_client_order_id};
 
 fn decimal_to_price(value: Decimal, field_name: &str) -> anyhow::Result<Price> {
     Price::from_decimal(value)
@@ -246,17 +246,25 @@ pub fn parse_account_state(
 
 /// Parses an Ax open order into a Nautilus [`OrderStatusReport`].
 ///
+/// The `cid_resolver` parameter is an optional function that resolves a `cid` (u64)
+/// to a `ClientOrderId`. This is needed because orders submitted via WebSocket use
+/// a hashed `cid` for correlation rather than storing the full `ClientOrderId` in the tag.
+///
 /// # Errors
 ///
 /// Returns an error if:
 /// - Price or quantity fields cannot be parsed.
 /// - Timestamp conversion fails.
-pub fn parse_order_status_report(
+pub fn parse_order_status_report<F>(
     order: &AxOpenOrder,
     account_id: AccountId,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> anyhow::Result<OrderStatusReport> {
+    cid_resolver: Option<F>,
+) -> anyhow::Result<OrderStatusReport>
+where
+    F: Fn(u64) -> Option<ClientOrderId>,
+{
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(&order.oid);
     let order_side = order.d.into();
@@ -293,11 +301,12 @@ pub fn parse_order_status_report(
         Some(UUID4::new()),
     );
 
-    // Add client order ID if tag is present
-    if let Some(ref tag) = order.tag
-        && !tag.is_empty()
-    {
-        report = report.with_client_order_id(ClientOrderId::new(tag.as_str()));
+    if let Some(cid) = order.cid {
+        let client_order_id = cid_resolver
+            .as_ref()
+            .and_then(|resolver| resolver(cid))
+            .unwrap_or_else(|| cid_to_client_order_id(cid));
+        report = report.with_client_order_id(client_order_id);
     }
 
     report = report.with_price(price);

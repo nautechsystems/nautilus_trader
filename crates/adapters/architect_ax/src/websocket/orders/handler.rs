@@ -45,7 +45,10 @@ use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
 use crate::{
-    common::enums::{AxOrderSide, AxTimeInForce},
+    common::{
+        enums::{AxOrderSide, AxTimeInForce},
+        parse::cid_to_client_order_id,
+    },
     websocket::messages::{
         AxOrdersWsMessage, AxWsCancelOrder, AxWsCancelRejected, AxWsGetOpenOrders, AxWsOrder,
         AxWsOrderAcknowledged, AxWsOrderCanceled, AxWsOrderDoneForDay, AxWsOrderEvent,
@@ -938,9 +941,11 @@ impl FeedHandler {
         let ts_event = UnixNanos::from(event_ts as u64 * 1_000_000_000);
         let ts_init = self.generate_ts_init();
 
-        let client_order_id = order
-            .cid
-            .and_then(|cid| self.cid_to_client_order_id.get(&cid).map(|v| *v));
+        let client_order_id = order.cid.map(|cid| {
+            self.cid_to_client_order_id
+                .get(&cid)
+                .map_or_else(|| cid_to_client_order_id(cid), |v| *v)
+        });
 
         let mut report = OrderStatusReport::new(
             self.account_id,
@@ -990,9 +995,11 @@ impl FeedHandler {
         let ts_event = UnixNanos::from(event_ts as u64 * 1_000_000_000);
         let ts_init = self.generate_ts_init();
 
-        let client_order_id = order
-            .cid
-            .and_then(|cid| self.cid_to_client_order_id.get(&cid).map(|v| *v));
+        let client_order_id = order.cid.map(|cid| {
+            self.cid_to_client_order_id
+                .get(&cid)
+                .map_or_else(|| cid_to_client_order_id(cid), |v| *v)
+        });
 
         // AX doesn't provide commission in WebSocket fill events
         let commission = Money::new(0.0, instrument.quote_currency());

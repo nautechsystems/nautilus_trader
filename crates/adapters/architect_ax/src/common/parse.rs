@@ -105,6 +105,15 @@ pub fn client_order_id_to_cid(client_order_id: &ClientOrderId) -> u64 {
     state.hash_one(client_order_id.inner())
 }
 
+/// Creates a [`ClientOrderId`] from a cid value.
+///
+/// Used when we receive an order with a cid but cannot resolve it to the
+/// original ClientOrderId (e.g., after restart when in-memory mapping is lost).
+#[must_use]
+pub fn cid_to_client_order_id(cid: u64) -> ClientOrderId {
+    ClientOrderId::new(format!("CID-{cid}"))
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::{enums::PriceType, identifiers::ClientOrderId, types::Quantity};

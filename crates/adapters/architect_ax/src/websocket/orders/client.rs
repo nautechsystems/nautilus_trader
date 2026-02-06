@@ -254,6 +254,18 @@ impl AxOrdersWebSocketClient {
         &self.orders_metadata
     }
 
+    /// Returns the cid to client order ID mapping for order correlation.
+    #[must_use]
+    pub fn cid_to_client_order_id(&self) -> &Arc<DashMap<u64, ClientOrderId>> {
+        &self.cid_to_client_order_id
+    }
+
+    /// Resolves a cid to a ClientOrderId if the mapping exists.
+    #[must_use]
+    pub fn resolve_cid(&self, cid: u64) -> Option<ClientOrderId> {
+        self.cid_to_client_order_id.get(&cid).map(|v| *v)
+    }
+
     /// Registers an external order with the WebSocket handler for event tracking.
     ///
     /// This allows the handler to create proper events (e.g., OrderCanceled, OrderFilled)

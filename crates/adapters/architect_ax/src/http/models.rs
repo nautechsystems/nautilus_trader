@@ -39,7 +39,7 @@ fn default_instrument_state() -> AxInstrumentState {
 /// Response payload returned by `GET /whoami`.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/user-management/whoami>
+/// - <https://docs.architect.exchange/api-reference/user-management/whoami>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxWhoAmI {
@@ -70,7 +70,7 @@ pub struct AxWhoAmI {
 /// Individual instrument definition.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/symbols-instruments/get-instruments>
+/// - <https://docs.architect.exchange/api-reference/symbols-instruments/get-instruments>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxInstrument {
@@ -139,7 +139,7 @@ pub struct AxInstrument {
 /// Response payload returned by `GET /instruments`.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/symbols-instruments/get-instruments>
+/// - <https://docs.architect.exchange/api-reference/symbols-instruments/get-instruments>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxInstrumentsResponse {
@@ -150,7 +150,7 @@ pub struct AxInstrumentsResponse {
 /// Individual balance entry.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/portfolio-management/get-balances>
+/// - <https://docs.architect.exchange/api-reference/portfolio-management/get-balances>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxBalance {
@@ -164,7 +164,7 @@ pub struct AxBalance {
 /// Response payload returned by `GET /balances`.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/portfolio-management/get-balances>
+/// - <https://docs.architect.exchange/api-reference/portfolio-management/get-balances>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxBalancesResponse {
@@ -175,7 +175,7 @@ pub struct AxBalancesResponse {
 /// Individual position entry.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/portfolio-management/get-positions>
+/// - <https://docs.architect.exchange/api-reference/portfolio-management/get-positions>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxPosition {
@@ -198,7 +198,7 @@ pub struct AxPosition {
 /// Response payload returned by `GET /positions`.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/portfolio-management/get-positions>
+/// - <https://docs.architect.exchange/api-reference/portfolio-management/get-positions>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxPositionsResponse {
@@ -209,7 +209,7 @@ pub struct AxPositionsResponse {
 /// Individual ticker entry.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/get-ticker>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-ticker>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxTicker {
@@ -247,7 +247,7 @@ pub struct AxTicker {
 /// Response payload returned by `GET /tickers`.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/get-tickers>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-tickers>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxTickersResponse {
@@ -258,7 +258,7 @@ pub struct AxTickersResponse {
 /// Response payload returned by `POST /authenticate`.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/user-management/get-user-token>
+/// - <https://docs.architect.exchange/api-reference/user-management/get-user-token>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxAuthenticateResponse {
@@ -269,7 +269,7 @@ pub struct AxAuthenticateResponse {
 /// Response payload returned by `POST /place_order`.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/place-order>
+/// - <https://docs.architect.exchange/api-reference/order-management/place-order>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxPlaceOrderResponse {
     /// Order ID of the placed order.
@@ -279,7 +279,7 @@ pub struct AxPlaceOrderResponse {
 /// Response payload returned by `POST /cancel_order`.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/cancel-order>
+/// - <https://docs.architect.exchange/api-reference/order-management/cancel-order>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxCancelOrderResponse {
     /// Whether the cancel request has been accepted.
@@ -289,7 +289,7 @@ pub struct AxCancelOrderResponse {
 /// Individual open order entry.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/get-open-orders>
+/// - <https://docs.architect.exchange/api-reference/order-management/get-open-orders>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxOpenOrder {
     /// Trade number.
@@ -317,6 +317,9 @@ pub struct AxOpenOrder {
     pub u: String,
     /// Executed quantity.
     pub xq: u64,
+    /// Optional client ID for order correlation.
+    #[serde(default)]
+    pub cid: Option<u64>,
     /// Optional order tag.
     #[serde(default)]
     pub tag: Option<String>,
@@ -325,7 +328,7 @@ pub struct AxOpenOrder {
 /// Response payload returned by `GET /open_orders`.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/get-open-orders>
+/// - <https://docs.architect.exchange/api-reference/order-management/get-open-orders>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxOpenOrdersResponse {
     /// List of open orders.
@@ -335,7 +338,7 @@ pub struct AxOpenOrdersResponse {
 /// Individual fill/trade entry.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/portfolio-management/get-fills>
+/// - <https://docs.architect.exchange/api-reference/portfolio-management/get-fills>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxFill {
@@ -366,7 +369,7 @@ pub struct AxFill {
 /// Response payload returned by `GET /fills`.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/portfolio-management/get-fills>
+/// - <https://docs.architect.exchange/api-reference/portfolio-management/get-fills>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxFillsResponse {
@@ -377,7 +380,7 @@ pub struct AxFillsResponse {
 /// Individual candle/OHLCV entry.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/get-candles>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-candles>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxCandle {
@@ -410,7 +413,7 @@ pub struct AxCandle {
 /// Response payload returned by `GET /candles`.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/get-candles>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-candles>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxCandlesResponse {
@@ -421,8 +424,8 @@ pub struct AxCandlesResponse {
 /// Response payload returned by `GET /candles/current` and `GET /candles/last`.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/get-current-candle>
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/get-last-candle>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-current-candle>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-last-candle>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxCandleResponse {
@@ -433,7 +436,7 @@ pub struct AxCandleResponse {
 /// Individual funding rate entry.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/get-funding-rates>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-funding-rates>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxFundingRate {
@@ -458,7 +461,7 @@ pub struct AxFundingRate {
 /// Response payload returned by `GET /funding-rates`.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/marketdata/get-funding-rates>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-funding-rates>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxFundingRatesResponse {
@@ -469,7 +472,7 @@ pub struct AxFundingRatesResponse {
 /// Per-symbol risk metrics.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/portfolio-management/get-risk-snapshot>
+/// - <https://docs.architect.exchange/api-reference/portfolio-management/get-risk-snapshot>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxPerSymbolRisk {
@@ -498,7 +501,7 @@ pub struct AxPerSymbolRisk {
 /// Risk snapshot data.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/portfolio-management/get-risk-snapshot>
+/// - <https://docs.architect.exchange/api-reference/portfolio-management/get-risk-snapshot>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxRiskSnapshot {
@@ -541,7 +544,7 @@ pub struct AxRiskSnapshot {
 /// Response payload returned by `GET /risk-snapshot`.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/portfolio-management/get-risk-snapshot>
+/// - <https://docs.architect.exchange/api-reference/portfolio-management/get-risk-snapshot>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxRiskSnapshotResponse {
@@ -552,7 +555,7 @@ pub struct AxRiskSnapshotResponse {
 /// Individual transaction entry.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/portfolio-management/get-transactions>
+/// - <https://docs.architect.exchange/api-reference/portfolio-management/get-transactions>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxTransaction {
@@ -577,7 +580,7 @@ pub struct AxTransaction {
 /// Response payload returned by `GET /transactions`.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/portfolio-management/get-transactions>
+/// - <https://docs.architect.exchange/api-reference/portfolio-management/get-transactions>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxTransactionsResponse {
@@ -588,7 +591,7 @@ pub struct AxTransactionsResponse {
 /// Request body for `POST /authenticate` using API key and secret.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/user-management/get-user-token>
+/// - <https://docs.architect.exchange/api-reference/user-management/get-user-token>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AuthenticateApiKeyRequest {
@@ -630,7 +633,7 @@ impl AuthenticateApiKeyRequest {
 /// Request body for `POST /authenticate` using username and password.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/user-management/get-user-token>
+/// - <https://docs.architect.exchange/api-reference/user-management/get-user-token>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AuthenticateUserRequest {
@@ -774,7 +777,7 @@ impl PlaceOrderRequest {
 /// Request body for `POST /cancel_order`.
 ///
 /// # References
-/// - <https://docs.sandbox.x.architect.co/api-reference/order-management/cancel-order>
+/// - <https://docs.architect.exchange/api-reference/order-management/cancel-order>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CancelOrderRequest {
     /// Order ID to cancel.

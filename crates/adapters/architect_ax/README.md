@@ -37,7 +37,7 @@ This crate provides feature flags to control source code inclusion during compil
 ## Documentation
 
 - [Crate docs](https://docs.rs/nautilus-architect-ax)
-- [API reference](https://docs.sandbox.x.architect.co/api-reference/)
+- [API reference](https://docs.architect.exchange/api-reference/)
 - [AX Exchange](https://architect.exchange/)
 
 ## Authentication

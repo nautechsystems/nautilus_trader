@@ -17,7 +17,7 @@
 
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
-    identifiers::AccountId,
+    identifiers::{AccountId, ClientOrderId},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
 };
 use pyo3::{IntoPyObjectExt, prelude::*, types::PyList};
@@ -241,7 +241,7 @@ impl AxHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let reports = client
-                .request_order_status_reports(account_id)
+                .request_order_status_reports(account_id, None::<fn(u64) -> Option<ClientOrderId>>)
                 .await
                 .map_err(to_pyvalue_err)?;
 
