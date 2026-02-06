@@ -63,6 +63,9 @@ from nautilus_trader.model.identifiers import InstrumentId
 # Used to invalidate abnormal tick sizes that can signal data issues
 MAX_VALID_TICK_SIZE = Decimal("1e12")
 
+# Subscription type identifier for index market data (reqMktData for indices)
+INDEX_MARKET_DATA = "index_market_data"
+
 
 class InteractiveBrokersClientMarketDataMixin(BaseMixin):
     """
@@ -286,7 +289,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             A comma-separated list of generic tick types to request.
 
         """
-        name = (str(instrument_id), "index_market_data")
+        name = (str(instrument_id), INDEX_MARKET_DATA)
         await self._subscribe(
             name,
             self._eclient.reqMktData,
@@ -308,7 +311,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             The identifier of the instrument for which to unsubscribe.
 
         """
-        name = (str(instrument_id), "index_market_data")
+        name = (str(instrument_id), INDEX_MARKET_DATA)
         await self._unsubscribe(name, self._eclient.cancelMktData)
 
     async def subscribe_market_data(
@@ -845,7 +848,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         # IB tick types: 0=BID_SIZE, 1=BID_PRICE, 2=ASK_PRICE, 3=ASK_SIZE, 4=LAST_PRICE
         self._subscription_tick_data[req_id][tick_type] = price
 
-        if subscription.name[1] == "index_market_data":
+        if subscription.name[1] == INDEX_MARKET_DATA:
             # Create an index price tick
             await self._try_create_index_price_tick_from_market_data(subscription, req_id)
         else:
@@ -867,10 +870,12 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         # Skip invalid sizes (negative or extremely large values)
         # IB may send invalid sizes when prices are invalid
+        # For index subscriptions, this is expected (indices have no volume) so don't warn
         if size < 0 or size > MAX_VALID_TICK_SIZE:
-            self._log.warning(
-                f"Ignoring invalid tick size: {size} for req_id={req_id}, tick_type={tick_type}:{TickTypeEnum.toStr(tick_type)}",
-            )
+            if subscription.name[1] != INDEX_MARKET_DATA:
+                self._log.warning(
+                    f"Ignoring invalid tick size: {size} for req_id={req_id}, tick_type={tick_type}:{TickTypeEnum.toStr(tick_type)}",
+                )
             return
 
         # Store the size data for this subscription
