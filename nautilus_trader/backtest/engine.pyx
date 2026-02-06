@@ -850,7 +850,6 @@ cdef class BacktestEngine:
 
         if validate:
             first = data[0]
-
             if hasattr(first, "instrument_id"):
                 Condition.is_true(
                     first.instrument_id in self._kernel.cache.instrument_ids(),
@@ -1581,6 +1580,7 @@ cdef class BacktestEngine:
                     data = self._data_iterator.next()
                     if data is None and done:
                         break
+
                     continue
 
                 if data.ts_init > end_ns:
@@ -1638,6 +1638,7 @@ cdef class BacktestEngine:
                     )
                     if raw_handlers.ptr != NULL:
                         vec_time_event_handlers_drop(raw_handlers)
+
                     raw_handlers_count = 0
 
                 self._iteration += 1

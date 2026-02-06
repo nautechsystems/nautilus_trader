@@ -63,6 +63,7 @@ class TestBacktestEngineTimers:
         self.engine.add_instrument(self.instrument)
 
     def test_timer_execution_no_data(self):
+        # Test that timers fire correctly even when no data is provided
         actor = TimerActor(self.instrument.id)
         self.engine.add_actor(actor)
 
@@ -101,6 +102,7 @@ class TestBacktestEngineTimers:
 
         def timer_callback_with_data(event):
             actor.timer_callback(event)
+            # Load data on the fly using add_data_iterator (like _handle_subscribe does)
             self.engine.add_data_iterator("on_the_fly_data", data_generator())
 
         actor.clock.set_time_alert("test_timer", timer_time, timer_callback_with_data)
@@ -112,6 +114,7 @@ class TestBacktestEngineTimers:
         assert actor.received_data[0].ts_init == data_time.value
 
     def test_multiple_timers_same_timestamp(self):
+        # Test that multiple timers at the exact same timestamp all fire
         actor = TimerActor(self.instrument.id)
         self.engine.add_actor(actor)
 
@@ -129,6 +132,7 @@ class TestBacktestEngineTimers:
         assert actor.last_timer_time == timer_time.value
 
     def test_chained_timers(self):
+        # Test that a timer scheduling another timer works
         actor = TimerActor(self.instrument.id)
         self.engine.add_actor(actor)
 
@@ -149,6 +153,7 @@ class TestBacktestEngineTimers:
         assert actor.last_timer_time == timer2_time.value
 
     def test_chained_timers_same_timestamp(self):
+        # Test that a timer scheduling another timer for the SAME timestamp works
         actor = TimerActor(self.instrument.id)
         self.engine.add_actor(actor)
 
@@ -158,6 +163,7 @@ class TestBacktestEngineTimers:
 
         def timer1_callback(event):
             actor.timer_callback(event)
+            # Schedule another one for the same time
             actor.clock.set_time_alert("timer2", timer_time, actor.timer_callback)
 
         actor.clock.set_time_alert("timer1", timer_time, timer1_callback)
@@ -168,6 +174,7 @@ class TestBacktestEngineTimers:
         assert actor.last_timer_time == timer_time.value
 
     def test_timers_alphabetical_order_same_timestamp(self):
+        # Test that multiple timers at the same timestamp fire regardless of name order
         actor = TimerActor(self.instrument.id)
         self.engine.add_actor(actor)
 
@@ -196,6 +203,7 @@ class TestBacktestEngineTimers:
         assert set(fired_order) == {"a", "m", "z"}
 
     def test_timers_and_data_interwoven(self):
+        # Test that timers and data are processed in the correct interleaved order
         start_time = pd.Timestamp("2024-01-01", tz="UTC")
         end_time = start_time + pd.Timedelta(seconds=10)
 
