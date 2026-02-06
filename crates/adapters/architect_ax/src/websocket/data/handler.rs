@@ -24,7 +24,10 @@ use std::{
 };
 
 use ahash::AHashMap;
-use nautilus_core::{nanos::UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    nanos::UnixNanos,
+    time::{AtomicTime, get_atomic_clock_realtime},
+};
 use nautilus_model::{
     data::Data,
     instruments::{Instrument, InstrumentAny},
@@ -98,6 +101,7 @@ pub enum HandlerCommand {
 ///
 /// Runs in a dedicated Tokio task and owns the WebSocket client exclusively.
 pub(crate) struct FeedHandler {
+    clock: &'static AtomicTime,
     signal: Arc<AtomicBool>,
     client: Option<WebSocketClient>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
@@ -124,6 +128,7 @@ impl FeedHandler {
         subscriptions: SubscriptionState,
     ) -> Self {
         Self {
+            clock: get_atomic_clock_realtime(),
             signal,
             client: None,
             cmd_rx,
@@ -215,7 +220,7 @@ impl FeedHandler {
     }
 
     fn generate_ts_init(&self) -> UnixNanos {
-        get_atomic_clock_realtime().get_time_ns()
+        self.clock.get_time_ns()
     }
 
     fn next_book_sequence(&mut self, symbol: Ustr) -> u64 {

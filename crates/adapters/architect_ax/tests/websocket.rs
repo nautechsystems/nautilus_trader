@@ -1160,7 +1160,6 @@ async fn test_orders_submit_order() {
             Some(Price::from("50000.00")),
             None,
             false,
-            0.into(),
         )
         .await
         .unwrap();

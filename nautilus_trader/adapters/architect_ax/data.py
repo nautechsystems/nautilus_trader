@@ -99,9 +99,9 @@ class AxDataClient(LiveMarketDataClient):
         self._instrument_provider: AxInstrumentProvider = instrument_provider
         self._config = config
 
-        self._log.info(f"{config.environment=}", LogColor.BLUE)
+        self._log.info(f"environment={config.environment.name}", LogColor.BLUE)
+        self._log.info(f"API key {client.api_key_masked}", LogColor.BLUE)
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
-        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
 
         self._http_client = client
         self._ws_client: nautilus_pyo3.AxMdWebSocketClient | None = None
@@ -112,9 +112,6 @@ class AxDataClient(LiveMarketDataClient):
             self._ws_url = "wss://gateway.sandbox.architect.exchange/md/ws"
         else:
             self._ws_url = "wss://gateway.architect.exchange/md/ws"
-
-        # Track subscribed symbols to avoid duplicate WebSocket requests
-        self._subscribed_symbols: set[str] = set()
 
         self._update_instruments_interval_mins = config.update_instruments_interval_mins
         self._update_instruments_task: asyncio.Task | None = None
@@ -170,8 +167,6 @@ class AxDataClient(LiveMarketDataClient):
             await self._ws_client.close()
             self._ws_client = None
             self._log.info("Disconnected from AX Exchange", LogColor.BLUE)
-
-        self._subscribed_symbols.clear()
 
     def _send_all_instruments_to_data_engine(self) -> None:
         for currency in self._instrument_provider.currencies().values():
@@ -235,8 +230,6 @@ class AxDataClient(LiveMarketDataClient):
             return
 
         symbol = self._get_symbol_from_instrument_id(command.instrument_id)
-        if symbol in self._subscribed_symbols:
-            return
 
         if command.book_type == BookType.L3_MBO:
             level = nautilus_pyo3.AxMarketDataLevel.LEVEL_3
@@ -249,7 +242,6 @@ class AxDataClient(LiveMarketDataClient):
             level = nautilus_pyo3.AxMarketDataLevel.LEVEL_2
 
         await self._ws_client.subscribe(symbol, level)
-        self._subscribed_symbols.add(symbol)
         self._log.debug(f"Subscribed to order book for {symbol} at {level}")
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
@@ -258,11 +250,7 @@ class AxDataClient(LiveMarketDataClient):
             return
 
         symbol = self._get_symbol_from_instrument_id(command.instrument_id)
-        if symbol in self._subscribed_symbols:
-            return
-
         await self._ws_client.subscribe(symbol, nautilus_pyo3.AxMarketDataLevel.LEVEL_1)
-        self._subscribed_symbols.add(symbol)
         self._log.debug(f"Subscribed to quotes for {symbol}")
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
@@ -271,11 +259,7 @@ class AxDataClient(LiveMarketDataClient):
             return
 
         symbol = self._get_symbol_from_instrument_id(command.instrument_id)
-        if symbol in self._subscribed_symbols:
-            return
-
         await self._ws_client.subscribe(symbol, nautilus_pyo3.AxMarketDataLevel.LEVEL_1)
-        self._subscribed_symbols.add(symbol)
         self._log.debug(f"Subscribed to trades for {symbol}")
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
@@ -287,10 +271,6 @@ class AxDataClient(LiveMarketDataClient):
             return
 
         symbol = self._get_symbol_from_instrument_id(command.instrument_id)
-        if symbol not in self._subscribed_symbols:
-            return
-        self._subscribed_symbols.discard(symbol)
-
         await self._ws_client.unsubscribe(symbol)
         self._log.debug(f"Unsubscribed from order book for {symbol}")
 
@@ -299,10 +279,6 @@ class AxDataClient(LiveMarketDataClient):
             return
 
         symbol = self._get_symbol_from_instrument_id(command.instrument_id)
-        if symbol not in self._subscribed_symbols:
-            return
-        self._subscribed_symbols.discard(symbol)
-
         await self._ws_client.unsubscribe(symbol)
         self._log.debug(f"Unsubscribed from quotes for {symbol}")
 
@@ -311,10 +287,6 @@ class AxDataClient(LiveMarketDataClient):
             return
 
         symbol = self._get_symbol_from_instrument_id(command.instrument_id)
-        if symbol not in self._subscribed_symbols:
-            return
-        self._subscribed_symbols.discard(symbol)
-
         await self._ws_client.unsubscribe(symbol)
         self._log.debug(f"Unsubscribed from trades for {symbol}")
 

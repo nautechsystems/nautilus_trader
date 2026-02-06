@@ -499,9 +499,12 @@ pub struct AxWsPlaceOrder {
     pub tif: AxTimeInForce,
     /// Post-only flag (maker-or-cancel).
     pub po: bool,
-    /// Optional order tag.
+    /// Optional order tag (max 10 alphanumeric characters).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
+    /// Optional client order ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cid: Option<u64>,
     /// Order type (defaults to LIMIT if not specified).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_type: Option<AxOrderType>,
@@ -663,6 +666,12 @@ pub struct AxWsOrder {
     /// Optional order tag.
     #[serde(default)]
     pub tag: Option<String>,
+    /// Optional client order ID.
+    #[serde(default)]
+    pub cid: Option<u64>,
+    /// Optional text/description.
+    #[serde(default)]
+    pub txt: Option<String>,
 }
 
 /// Heartbeat event from orders WebSocket.
@@ -784,8 +793,9 @@ pub struct AxWsOrderRejected {
     pub eid: String,
     /// Order details.
     pub o: AxWsOrder,
-    /// Rejection reason code.
-    pub r: String,
+    /// Rejection reason code (can be null, defaults to txt or "UNKNOWN").
+    #[serde(default)]
+    pub r: Option<String>,
     /// Rejection text/description.
     #[serde(default)]
     pub txt: Option<String>,
@@ -1108,7 +1118,8 @@ mod tests {
             p: dec!(50000.50),
             tif: AxTimeInForce::Gtc,
             po: false,
-            tag: Some("trade001".to_string()),
+            tag: Some("Nautilus".to_string()),
+            cid: Some(1234567890),
             order_type: None,
             trigger_price: None,
         };
@@ -1124,7 +1135,8 @@ mod tests {
         assert_eq!(parsed["p"], "50000.50");
         assert_eq!(parsed["tif"], "GTC");
         assert_eq!(parsed["po"], false);
-        assert_eq!(parsed["tag"], "trade001");
+        assert_eq!(parsed["tag"], "Nautilus");
+        assert_eq!(parsed["cid"], 1234567890);
         assert!(parsed.get("order_type").is_none());
         assert!(parsed.get("trigger_price").is_none());
     }
@@ -1141,6 +1153,7 @@ mod tests {
             tif: AxTimeInForce::Gtc,
             po: false,
             tag: None,
+            cid: None,
             order_type: Some(AxOrderType::StopLossLimit),
             trigger_price: Some(dec!(49000.00)),
         };
@@ -1293,7 +1306,7 @@ mod tests {
     fn test_load_order_rejected_from_file() {
         let json = include_str!("../../test_data/ws_order_rejected.json");
         let msg: AxWsOrderRejected = serde_json::from_str(json).unwrap();
-        assert_eq!(msg.r, "INSUFFICIENT_MARGIN");
+        assert_eq!(msg.r, Some("INSUFFICIENT_MARGIN".to_string()));
     }
 
     #[rstest]

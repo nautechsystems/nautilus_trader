@@ -234,7 +234,6 @@ impl AxExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let trader_id = self.core.trader_id;
-        let ts_init = self.clock.get_time_ns();
 
         self.spawn_task("submit_order", async move {
             let result = ws_orders
@@ -250,7 +249,6 @@ impl AxExecutionClient {
                     price,
                     trigger_price,
                     is_post_only,
-                    ts_init,
                 )
                 .await
                 .map_err(|e| anyhow::anyhow!("Submit order failed: {e}"));
@@ -806,14 +804,13 @@ impl ExecutionClient for AxExecutionClient {
         venue_order_id: VenueOrderId,
         instrument_id: InstrumentId,
         strategy_id: StrategyId,
-        ts_init: UnixNanos,
+        _ts_init: UnixNanos,
     ) {
         self.ws_orders.register_external_order(
             client_order_id,
             venue_order_id,
             instrument_id,
             strategy_id,
-            ts_init,
         );
     }
 }

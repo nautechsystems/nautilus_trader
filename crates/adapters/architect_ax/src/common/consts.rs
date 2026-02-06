@@ -23,6 +23,9 @@ use ustr::Ustr;
 pub const AX: &str = "AX";
 pub static AX_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(AX)));
 
+/// Order tag identifying orders placed by NautilusTrader.
+pub const AX_NAUTILUS_TAG: &str = "Nautilus";
+
 // HTTP endpoints
 pub const AX_HTTP_URL: &str = "https://gateway.architect.exchange/api";
 pub const AX_HTTP_SANDBOX_URL: &str = "https://gateway.sandbox.architect.exchange/api";

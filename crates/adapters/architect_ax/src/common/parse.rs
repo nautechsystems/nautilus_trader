@@ -15,6 +15,7 @@
 
 //! Conversion functions that translate AX API schemas into Nautilus types.
 
+use ahash::RandomState;
 pub use nautilus_core::serialization::{
     deserialize_decimal_or_zero, deserialize_optional_decimal_from_str,
     deserialize_optional_decimal_or_zero, deserialize_optional_decimal_str, parse_decimal,
@@ -23,10 +24,17 @@ pub use nautilus_core::serialization::{
 use nautilus_model::{
     data::BarSpecification,
     enums::BarAggregation,
+    identifiers::ClientOrderId,
     types::{Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw},
 };
 
 use super::enums::AxCandleWidth;
+
+// Fixed seeds for deterministic hashing across sessions
+const HASH_SEED_0: u64 = 0x517cc1b727220a95;
+const HASH_SEED_1: u64 = 0x9b5c18c90c3c314d;
+const HASH_SEED_2: u64 = 0x5851f42d4c957f2d;
+const HASH_SEED_3: u64 = 0x14057b7ef767814f;
 
 /// Maps a Nautilus [`BarSpecification`] to an [`AxCandleWidth`].
 ///
@@ -87,12 +95,46 @@ pub fn quantity_to_contracts(quantity: Quantity) -> anyhow::Result<u64> {
     Ok(contracts)
 }
 
+/// Converts a [`ClientOrderId`] to a 64-bit unsigned integer for AX `cid` field.
+///
+/// Uses a deterministic hash of the client order ID string to produce
+/// a u64 value that can be used for order correlation.
+#[must_use]
+pub fn client_order_id_to_cid(client_order_id: &ClientOrderId) -> u64 {
+    let state = RandomState::with_seeds(HASH_SEED_0, HASH_SEED_1, HASH_SEED_2, HASH_SEED_3);
+    state.hash_one(client_order_id.inner())
+}
+
 #[cfg(test)]
 mod tests {
-    use nautilus_model::{enums::PriceType, types::Quantity};
+    use nautilus_model::{enums::PriceType, identifiers::ClientOrderId, types::Quantity};
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_client_order_id_to_cid_deterministic() {
+        let coid = ClientOrderId::new("O-20240101-000001");
+
+        // Must produce same result across multiple calls
+        let cid1 = client_order_id_to_cid(&coid);
+        let cid2 = client_order_id_to_cid(&coid);
+        let cid3 = client_order_id_to_cid(&coid);
+
+        assert_eq!(cid1, cid2);
+        assert_eq!(cid2, cid3);
+    }
+
+    #[rstest]
+    fn test_client_order_id_to_cid_different_ids() {
+        let coid1 = ClientOrderId::new("O-20240101-000001");
+        let coid2 = ClientOrderId::new("O-20240101-000002");
+
+        let cid1 = client_order_id_to_cid(&coid1);
+        let cid2 = client_order_id_to_cid(&coid2);
+
+        assert_ne!(cid1, cid2);
+    }
 
     #[rstest]
     fn test_quantity_to_contracts_valid_precision_zero() {

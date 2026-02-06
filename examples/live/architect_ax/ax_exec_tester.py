@@ -38,7 +38,7 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 # Configuration
-symbol = "EURUSD-PERP"
+symbol = "XAU-PERP"
 instrument_id = InstrumentId.from_str(f"{symbol}.{AX}")
 order_qty = Decimal(1000)
 
@@ -93,7 +93,8 @@ config_tester = ExecTesterConfig(
     enable_limit_buys=True,
     enable_limit_sells=True,
     order_qty=order_qty,
-    tob_offset_ticks=100,
+    open_position_on_start_qty=order_qty,
+    tob_offset_ticks=10,
     use_post_only=True,
     log_data=False,
     dry_run=False,

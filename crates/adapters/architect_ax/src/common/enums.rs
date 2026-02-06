@@ -161,11 +161,11 @@ pub enum AxInstrumentState {
 )]
 pub enum AxOrderSide {
     /// Buy order.
-    #[serde(rename = "B")]
+    #[serde(rename = "B", alias = "Buy")]
     #[strum(serialize = "B")]
     Buy,
     /// Sell order.
-    #[serde(rename = "S")]
+    #[serde(rename = "S", alias = "Sell")]
     #[strum(serialize = "S")]
     Sell,
 }

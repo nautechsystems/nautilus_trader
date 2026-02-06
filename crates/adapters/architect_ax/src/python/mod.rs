@@ -26,7 +26,7 @@ use pyo3::{prelude::*, types::PyType};
 use crate::{
     common::enums::{AxEnvironment, AxMarketDataLevel},
     http::client::AxHttpClient,
-    websocket::data::AxMdWebSocketClient,
+    websocket::{data::AxMdWebSocketClient, orders::AxOrdersWebSocketClient},
 };
 
 #[pymethods]
@@ -142,6 +142,7 @@ pub fn architect(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<AxMarketDataLevel>()?;
     m.add_class::<AxHttpClient>()?;
     m.add_class::<AxMdWebSocketClient>()?;
+    m.add_class::<AxOrdersWebSocketClient>()?;
 
     Ok(())
 }

@@ -27,7 +27,11 @@ use std::{
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use nautilus_common::live::get_runtime;
-use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT};
+use nautilus_core::{
+    consts::NAUTILUS_USER_AGENT,
+    nanos::UnixNanos,
+    time::{AtomicTime, get_atomic_clock_realtime},
+};
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
@@ -46,8 +50,9 @@ use ustr::Ustr;
 use super::handler::{FeedHandler, HandlerCommand, WsOrderInfo};
 use crate::{
     common::{
+        consts::AX_NAUTILUS_TAG,
         enums::{AxOrderSide, AxOrderType, AxTimeInForce},
-        parse::quantity_to_contracts,
+        parse::{client_order_id_to_cid, quantity_to_contracts},
     },
     websocket::messages::{AxOrdersWsMessage, AxWsPlaceOrder, OrderMetadata},
 };
@@ -94,7 +99,12 @@ impl From<&'static str> for AxOrdersWsClientError {
 ///
 /// Provides authenticated order management including placing, canceling,
 /// and monitoring order status via WebSocket.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.architect")
+)]
 pub struct AxOrdersWebSocketClient {
+    clock: &'static AtomicTime,
     url: String,
     heartbeat: Option<u64>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
@@ -106,6 +116,7 @@ pub struct AxOrdersWebSocketClient {
     instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
     orders_metadata: Arc<DashMap<ClientOrderId, OrderMetadata>>,
     venue_to_client_id: Arc<DashMap<VenueOrderId, ClientOrderId>>,
+    cid_to_client_order_id: Arc<DashMap<u64, ClientOrderId>>,
     request_id_counter: Arc<AtomicI64>,
     account_id: AccountId,
     trader_id: TraderId,
@@ -124,6 +135,7 @@ impl Debug for AxOrdersWebSocketClient {
 impl Clone for AxOrdersWebSocketClient {
     fn clone(&self) -> Self {
         Self {
+            clock: self.clock,
             url: self.url.clone(),
             heartbeat: self.heartbeat,
             connection_mode: Arc::clone(&self.connection_mode),
@@ -135,6 +147,7 @@ impl Clone for AxOrdersWebSocketClient {
             instruments_cache: Arc::clone(&self.instruments_cache),
             orders_metadata: Arc::clone(&self.orders_metadata),
             venue_to_client_id: Arc::clone(&self.venue_to_client_id),
+            cid_to_client_order_id: Arc::clone(&self.cid_to_client_order_id),
             request_id_counter: Arc::clone(&self.request_id_counter),
             account_id: self.account_id,
             trader_id: self.trader_id,
@@ -157,6 +170,7 @@ impl AxOrdersWebSocketClient {
         let connection_mode = Arc::new(ArcSwap::from_pointee(initial_mode));
 
         Self {
+            clock: get_atomic_clock_realtime(),
             url,
             heartbeat: heartbeat.or(Some(DEFAULT_HEARTBEAT_SECS)),
             connection_mode,
@@ -168,10 +182,15 @@ impl AxOrdersWebSocketClient {
             instruments_cache: Arc::new(DashMap::new()),
             orders_metadata: Arc::new(DashMap::new()),
             venue_to_client_id: Arc::new(DashMap::new()),
+            cid_to_client_order_id: Arc::new(DashMap::new()),
             request_id_counter: Arc::new(AtomicI64::new(1)),
             account_id,
             trader_id,
         }
+    }
+
+    fn generate_ts_init(&self) -> UnixNanos {
+        self.clock.get_time_ns()
     }
 
     /// Returns the WebSocket URL.
@@ -247,7 +266,6 @@ impl AxOrdersWebSocketClient {
         venue_order_id: VenueOrderId,
         instrument_id: InstrumentId,
         strategy_id: StrategyId,
-        ts_init: UnixNanos,
     ) -> bool {
         if self.orders_metadata.contains_key(&client_order_id) {
             return true;
@@ -269,7 +287,7 @@ impl AxOrdersWebSocketClient {
             instrument_id,
             client_order_id,
             venue_order_id: Some(venue_order_id),
-            ts_init,
+            ts_init: self.generate_ts_init(),
             size_precision: instrument.size_precision(),
             price_precision: instrument.price_precision(),
             quote_currency: instrument.quote_currency(),
@@ -429,6 +447,7 @@ impl AxOrdersWebSocketClient {
         let account_id = self.account_id;
         let orders_metadata = Arc::clone(&self.orders_metadata);
         let venue_to_client_id = Arc::clone(&self.venue_to_client_id);
+        let cid_to_client_order_id = Arc::clone(&self.cid_to_client_order_id);
 
         let stream_handle = get_runtime().spawn(async move {
             let mut handler = FeedHandler::new(
@@ -439,6 +458,7 @@ impl AxOrdersWebSocketClient {
                 account_id,
                 orders_metadata,
                 venue_to_client_id,
+                cid_to_client_order_id,
             );
 
             while let Some(msg) = handler.next().await {
@@ -488,7 +508,6 @@ impl AxOrdersWebSocketClient {
         price: Option<Price>,
         trigger_price: Option<Price>,
         post_only: bool,
-        ts_init: UnixNanos,
     ) -> AxOrdersWsResult<i64> {
         if !matches!(
             order_type,
@@ -558,7 +577,11 @@ impl AxOrdersWebSocketClient {
                     Some(stop_price.as_decimal()),
                 )
             }
-            _ => unreachable!(),
+            _ => {
+                return Err(AxOrdersWsClientError::ClientError(format!(
+                    "Unsupported order type: {order_type:?}"
+                )));
+            }
         };
 
         // Store order metadata for event correlation (after validation to avoid stale entries)
@@ -568,12 +591,16 @@ impl AxOrdersWebSocketClient {
             instrument_id,
             client_order_id,
             venue_order_id: None,
-            ts_init,
+            ts_init: self.generate_ts_init(),
             size_precision: instrument.size_precision(),
             price_precision: instrument.price_precision(),
             quote_currency: instrument.quote_currency(),
         };
         self.orders_metadata.insert(client_order_id, metadata);
+
+        // Store cid -> client_order_id mapping for correlation
+        let cid = client_order_id_to_cid(&client_order_id);
+        self.cid_to_client_order_id.insert(cid, client_order_id);
 
         let order = AxWsPlaceOrder {
             rid: request_id,
@@ -584,7 +611,8 @@ impl AxOrdersWebSocketClient {
             p: ax_price,
             tif: ax_tif,
             po: ax_post_only,
-            tag: Some(client_order_id.to_string()),
+            tag: Some(AX_NAUTILUS_TAG.to_string()),
+            cid: Some(cid),
             order_type: ax_order_type,
             trigger_price: ax_trigger_price,
         };
@@ -604,6 +632,7 @@ impl AxOrdersWebSocketClient {
 
         if result.is_err() {
             self.orders_metadata.remove(&client_order_id);
+            self.cid_to_client_order_id.remove(&cid);
         }
 
         result?;

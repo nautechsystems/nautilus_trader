@@ -20,13 +20,20 @@ use nautilus_common::live::get_runtime;
 use nautilus_core::python::{call_python, to_pyruntime_err};
 use nautilus_model::{
     data::{Data, OrderBookDeltas_API},
+    enums::{OrderSide, OrderType, TimeInForce},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
+    types::{Price, Quantity},
 };
-use pyo3::prelude::*;
+use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
     common::enums::AxMarketDataLevel,
-    websocket::{data::AxMdWebSocketClient, messages::NautilusDataWsMessage},
+    websocket::{
+        data::AxMdWebSocketClient,
+        messages::{AxOrdersWsMessage, NautilusDataWsMessage, NautilusExecWsMessage},
+        orders::AxOrdersWebSocketClient,
+    },
 };
 
 #[pymethods]
@@ -183,4 +190,296 @@ impl AxMdWebSocketClient {
             Ok(())
         })
     }
+}
+
+#[pymethods]
+impl AxOrdersWebSocketClient {
+    #[new]
+    #[pyo3(signature = (url, account_id, trader_id, heartbeat=None))]
+    fn py_new(
+        url: String,
+        account_id: AccountId,
+        trader_id: TraderId,
+        heartbeat: Option<u64>,
+    ) -> Self {
+        Self::new(url, account_id, trader_id, heartbeat)
+    }
+
+    #[getter]
+    #[pyo3(name = "url")]
+    #[must_use]
+    pub fn py_url(&self) -> &str {
+        self.url()
+    }
+
+    #[getter]
+    #[pyo3(name = "account_id")]
+    #[must_use]
+    pub fn py_account_id(&self) -> AccountId {
+        self.account_id()
+    }
+
+    #[pyo3(name = "is_active")]
+    #[must_use]
+    pub fn py_is_active(&self) -> bool {
+        self.is_active()
+    }
+
+    #[pyo3(name = "is_closed")]
+    #[must_use]
+    pub fn py_is_closed(&self) -> bool {
+        self.is_closed()
+    }
+
+    #[pyo3(name = "cache_instrument")]
+    fn py_cache_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
+        self.cache_instrument(pyobject_to_instrument_any(py, instrument)?);
+        Ok(())
+    }
+
+    #[pyo3(name = "register_external_order")]
+    fn py_register_external_order(
+        &self,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        instrument_id: InstrumentId,
+        strategy_id: StrategyId,
+    ) -> bool {
+        self.register_external_order(client_order_id, venue_order_id, instrument_id, strategy_id)
+    }
+
+    #[pyo3(name = "connect")]
+    fn py_connect<'py>(
+        &mut self,
+        py: Python<'py>,
+        callback: Py<PyAny>,
+        bearer_token: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let mut client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .connect(&bearer_token)
+                .await
+                .map_err(to_pyruntime_err)?;
+
+            let stream = client.stream();
+
+            get_runtime().spawn(async move {
+                tokio::pin!(stream);
+
+                while let Some(msg) = stream.next().await {
+                    match msg {
+                        AxOrdersWsMessage::Nautilus(exec_msg) => {
+                            handle_exec_message(&callback, exec_msg);
+                        }
+                        AxOrdersWsMessage::PlaceOrderResponse(resp) => {
+                            log::debug!(
+                                "Place order response: rid={}, oid={}",
+                                resp.rid,
+                                resp.res.oid
+                            );
+                        }
+                        AxOrdersWsMessage::CancelOrderResponse(resp) => {
+                            log::debug!(
+                                "Cancel order response: rid={}, received={}",
+                                resp.rid,
+                                resp.res.cxl_rx
+                            );
+                        }
+                        AxOrdersWsMessage::OpenOrdersResponse(resp) => {
+                            log::debug!(
+                                "Open orders response: rid={}, count={}",
+                                resp.rid,
+                                resp.res.len()
+                            );
+                        }
+                        AxOrdersWsMessage::Error(err) => {
+                            log::error!(
+                                "AX orders WebSocket error: code={:?}, message={}, rid={:?}",
+                                err.code,
+                                err.message,
+                                err.request_id
+                            );
+                        }
+                        AxOrdersWsMessage::Reconnected => {
+                            log::info!("AX orders WebSocket reconnected");
+                        }
+                        AxOrdersWsMessage::Authenticated => {
+                            log::info!("AX orders WebSocket authenticated");
+                        }
+                    }
+                }
+            });
+
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "submit_order")]
+    #[pyo3(signature = (
+        trader_id,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        order_side,
+        order_type,
+        quantity,
+        time_in_force,
+        price=None,
+        trigger_price=None,
+        post_only=false,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_submit_order<'py>(
+        &self,
+        py: Python<'py>,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        price: Option<Price>,
+        trigger_price: Option<Price>,
+        post_only: bool,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .submit_order(
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    order_side,
+                    order_type,
+                    quantity,
+                    time_in_force,
+                    price,
+                    trigger_price,
+                    post_only,
+                )
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "cancel_order")]
+    #[pyo3(signature = (client_order_id, venue_order_id=None))]
+    fn py_cancel_order<'py>(
+        &self,
+        py: Python<'py>,
+        client_order_id: ClientOrderId,
+        venue_order_id: Option<VenueOrderId>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .cancel_order(client_order_id, venue_order_id)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "get_open_orders")]
+    fn py_get_open_orders<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client.get_open_orders().await.map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "disconnect")]
+    fn py_disconnect<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client.disconnect().await;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "close")]
+    fn py_close<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let mut client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client.close().await;
+            Ok(())
+        })
+    }
+}
+
+fn handle_exec_message(callback: &Py<PyAny>, msg: NautilusExecWsMessage) {
+    match msg {
+        NautilusExecWsMessage::OrderAccepted(event) => {
+            call_python_with_event(callback, move |py| {
+                event.into_py_any(py).map(|obj| obj.into_bound(py))
+            });
+        }
+        NautilusExecWsMessage::OrderFilled(event) => {
+            call_python_with_event(callback, move |py| {
+                event.into_py_any(py).map(|obj| obj.into_bound(py))
+            });
+        }
+        NautilusExecWsMessage::OrderCanceled(event) => {
+            call_python_with_event(callback, move |py| {
+                event.into_py_any(py).map(|obj| obj.into_bound(py))
+            });
+        }
+        NautilusExecWsMessage::OrderExpired(event) => {
+            call_python_with_event(callback, move |py| {
+                event.into_py_any(py).map(|obj| obj.into_bound(py))
+            });
+        }
+        NautilusExecWsMessage::OrderRejected(event) => {
+            call_python_with_event(callback, move |py| {
+                event.into_py_any(py).map(|obj| obj.into_bound(py))
+            });
+        }
+        NautilusExecWsMessage::OrderCancelRejected(event) => {
+            call_python_with_event(callback, move |py| {
+                event.into_py_any(py).map(|obj| obj.into_bound(py))
+            });
+        }
+        NautilusExecWsMessage::OrderStatusReports(reports) => {
+            for report in reports {
+                call_python_with_event(callback, move |py| {
+                    report.into_py_any(py).map(|obj| obj.into_bound(py))
+                });
+            }
+        }
+        NautilusExecWsMessage::FillReports(reports) => {
+            for report in reports {
+                call_python_with_event(callback, move |py| {
+                    report.into_py_any(py).map(|obj| obj.into_bound(py))
+                });
+            }
+        }
+    }
+}
+
+fn call_python_with_event<F>(callback: &Py<PyAny>, event_fn: F)
+where
+    F: FnOnce(Python<'_>) -> PyResult<Bound<'_, PyAny>> + Send + 'static,
+{
+    Python::attach(|py| match event_fn(py) {
+        Ok(event) => {
+            if let Err(e) = callback.call1(py, (event,)) {
+                log::error!("Error calling Python callback: {e}");
+            }
+        }
+        Err(e) => {
+            log::error!("Error converting event to Python: {e}");
+        }
+    });
 }

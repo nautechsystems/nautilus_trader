@@ -409,9 +409,10 @@ pub fn parse_position_status_report(
     };
 
     // Calculate average entry price from notional / quantity
+    // Both signed_notional and signed_quantity are negative for shorts
     let avg_px_open = if position.signed_quantity != 0 {
         let qty_dec = Decimal::from(position.signed_quantity.abs());
-        Some(position.signed_notional / qty_dec)
+        Some(position.signed_notional.abs() / qty_dec)
     } else {
         None
     };

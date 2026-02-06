@@ -121,6 +121,14 @@ impl AxRawHttpClient {
         &self.base_url
     }
 
+    /// Returns a masked version of the API key for logging purposes.
+    #[must_use]
+    pub fn api_key_masked(&self) -> String {
+        self.credential
+            .as_ref()
+            .map_or_else(|| "None".to_string(), |c| c.masked_api_key())
+    }
+
     /// Cancel all pending HTTP requests.
     pub fn cancel_all_requests(&self) {
         self.cancellation_token.cancel();
@@ -958,6 +966,12 @@ impl AxHttpClient {
         self.inner.base_url()
     }
 
+    /// Returns a masked version of the API key for logging purposes.
+    #[must_use]
+    pub fn api_key_masked(&self) -> String {
+        self.inner.api_key_masked()
+    }
+
     /// Cancel all pending HTTP requests.
     pub fn cancel_all_requests(&self) {
         self.inner.cancel_all_requests();
@@ -1332,6 +1346,11 @@ impl AxHttpClient {
         let mut reports = Vec::with_capacity(response.positions.len());
 
         for position in &response.positions {
+            // Skip flat positions (zero quantity)
+            if position.signed_quantity == 0 {
+                continue;
+            }
+
             let instrument = self.get_instrument(&position.symbol).ok_or_else(|| {
                 anyhow::anyhow!("Instrument {} not found in cache", position.symbol)
             })?;

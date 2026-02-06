@@ -93,6 +93,7 @@ pub struct AxMdWebSocketClient {
     subscriptions: SubscriptionState,
     instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
     request_id_counter: Arc<AtomicI64>,
+    subscribe_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Debug for AxMdWebSocketClient {
@@ -117,6 +118,7 @@ impl Clone for AxMdWebSocketClient {
             signal: Arc::clone(&self.signal),
             task_handle: None, // Each clone gets its own task handle
             subscriptions: self.subscriptions.clone(),
+            subscribe_lock: Arc::clone(&self.subscribe_lock),
             instruments_cache: Arc::clone(&self.instruments_cache),
             request_id_counter: Arc::clone(&self.request_id_counter),
         }
@@ -146,6 +148,7 @@ impl AxMdWebSocketClient {
             subscriptions: SubscriptionState::new(AX_TOPIC_DELIMITER),
             instruments_cache: Arc::new(DashMap::new()),
             request_id_counter: Arc::new(AtomicI64::new(1)),
+            subscribe_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -171,6 +174,7 @@ impl AxMdWebSocketClient {
             subscriptions: SubscriptionState::new(AX_TOPIC_DELIMITER),
             instruments_cache: Arc::new(DashMap::new()),
             request_id_counter: Arc::new(AtomicI64::new(1)),
+            subscribe_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -424,6 +428,9 @@ impl AxMdWebSocketClient {
     ///
     /// Returns an error if the subscription command cannot be sent.
     pub async fn subscribe(&self, symbol: &str, level: AxMarketDataLevel) -> AxWsResult<()> {
+        // Lock to prevent concurrent subscribe race conditions
+        let _guard = self.subscribe_lock.lock().await;
+
         // Skip if symbol already subscribed at any level
         if self.is_symbol_subscribed(symbol) {
             log::debug!("Symbol {symbol} already subscribed, skipping");
@@ -433,15 +440,22 @@ impl AxMdWebSocketClient {
         let topic = format!("{symbol}:{level:?}");
         let request_id = self.next_request_id();
 
-        // Mark pending only after successful send to avoid stuck state on failure
-        self.send_cmd(HandlerCommand::Subscribe {
-            request_id,
-            symbol: symbol.to_string(),
-            level,
-        })
-        .await?;
-
+        // Mark pending before sending
         self.subscriptions.mark_subscribe(&topic);
+
+        if let Err(e) = self
+            .send_cmd(HandlerCommand::Subscribe {
+                request_id,
+                symbol: symbol.to_string(),
+                level,
+            })
+            .await
+        {
+            // Rollback pending state on send failure
+            self.subscriptions.mark_unsubscribe(&topic);
+            return Err(e);
+        }
+
         Ok(())
     }
 
@@ -451,6 +465,15 @@ impl AxMdWebSocketClient {
     ///
     /// Returns an error if the unsubscribe command cannot be sent.
     pub async fn unsubscribe(&self, symbol: &str) -> AxWsResult<()> {
+        // Lock to prevent concurrent unsubscribe race conditions
+        let _guard = self.subscribe_lock.lock().await;
+
+        // Skip if symbol not subscribed at any level
+        if !self.is_symbol_subscribed(symbol) {
+            log::debug!("Symbol {symbol} not subscribed, skipping unsubscribe");
+            return Ok(());
+        }
+
         let request_id = self.next_request_id();
 
         for level in [
@@ -487,15 +510,22 @@ impl AxMdWebSocketClient {
 
         let request_id = self.next_request_id();
 
-        // Mark pending only after successful send to avoid stuck state on failure
-        self.send_cmd(HandlerCommand::SubscribeCandles {
-            request_id,
-            symbol: symbol.to_string(),
-            width,
-        })
-        .await?;
-
+        // Mark pending BEFORE sending to prevent race conditions with concurrent subscribes
         self.subscriptions.mark_subscribe(&topic);
+
+        if let Err(e) = self
+            .send_cmd(HandlerCommand::SubscribeCandles {
+                request_id,
+                symbol: symbol.to_string(),
+                width,
+            })
+            .await
+        {
+            // Rollback pending state on send failure
+            self.subscriptions.mark_unsubscribe(&topic);
+            return Err(e);
+        }
+
         Ok(())
     }
 
