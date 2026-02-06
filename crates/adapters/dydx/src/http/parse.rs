@@ -35,7 +35,7 @@
 use anyhow::Context;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::TradeTick,
+    data::{Bar, BarType, TradeTick},
     enums::{AggressorSide, OrderSide, TimeInForce},
     events::AccountState,
     identifiers::{InstrumentId, Symbol, TradeId, Venue},
@@ -44,7 +44,7 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 
-use super::models::{PerpetualMarket, Trade};
+use super::models::{Candle, PerpetualMarket, Trade};
 #[cfg(test)]
 use crate::common::enums::DydxTransferType;
 use crate::{
@@ -93,6 +93,39 @@ pub fn parse_trade_tick(
         TradeId::new(&trade.id),
         ts_event,
         ts_init,
+    ))
+}
+
+/// Parses a dYdX [`Candle`] into a Nautilus [`Bar`].
+///
+/// # Errors
+///
+/// Returns an error if OHLCV or timestamp conversion fails.
+pub fn parse_bar(
+    candle: &Candle,
+    bar_type: BarType,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Bar> {
+    let started_at_nanos = candle.started_at.timestamp_nanos_opt().ok_or_else(|| {
+        anyhow::anyhow!("Timestamp out of range for candle at {}", candle.started_at)
+    })?;
+    let ts_event = UnixNanos::from(started_at_nanos as u64);
+
+    let open = Price::from_decimal_dp(candle.open, price_precision)
+        .context("failed to parse candle open price")?;
+    let high = Price::from_decimal_dp(candle.high, price_precision)
+        .context("failed to parse candle high price")?;
+    let low = Price::from_decimal_dp(candle.low, price_precision)
+        .context("failed to parse candle low price")?;
+    let close = Price::from_decimal_dp(candle.close, price_precision)
+        .context("failed to parse candle close price")?;
+    let volume = Quantity::from_decimal_dp(candle.base_token_volume, size_precision)
+        .context("failed to parse candle base_token_volume")?;
+
+    Ok(Bar::new(
+        bar_type, open, high, low, close, volume, ts_event, ts_init,
     ))
 }
 

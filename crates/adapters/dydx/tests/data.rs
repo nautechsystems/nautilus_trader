@@ -299,7 +299,10 @@ async fn test_trades_with_limit() {
     let base_url = format!("http://{addr}");
 
     let client = DydxHttpClient::new(Some(base_url), Some(30), None, false, None).unwrap();
-    let _trades = client.request_trades("BTC-USD", Some(10), None).await.unwrap();
+    let _trades = client
+        .request_trades("BTC-USD", Some(10), None)
+        .await
+        .unwrap();
 
     let params = state.last_trades_params.lock().await;
     assert!(params.is_some());

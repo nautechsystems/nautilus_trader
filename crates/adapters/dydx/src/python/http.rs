@@ -33,7 +33,7 @@ use pyo3::{
 };
 use rust_decimal::Decimal;
 
-use crate::{common::enums::DydxCandleResolution, http::client::DydxHttpClient};
+use crate::http::client::DydxHttpClient;
 
 #[pymethods]
 impl DydxHttpClient {
@@ -322,25 +322,23 @@ impl DydxHttpClient {
     }
 
     #[pyo3(name = "request_bars")]
-    #[pyo3(signature = (bar_type, resolution, limit=None, start=None, end=None))]
+    #[pyo3(signature = (bar_type, start=None, end=None, limit=None))]
     fn py_request_bars<'py>(
         &self,
         py: Python<'py>,
         bar_type: String,
-        resolution: String,
-        limit: Option<u32>,
         start: Option<String>,
         end: Option<String>,
+        limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let bar_type = BarType::from_str(&bar_type).map_err(to_pyvalue_err)?;
-        let resolution = DydxCandleResolution::from_str(&resolution).map_err(to_pyvalue_err)?;
 
-        let from_iso = start
+        let start_dt = start
             .map(|s| DateTime::parse_from_rfc3339(&s).map(|dt| dt.with_timezone(&chrono::Utc)))
             .transpose()
             .map_err(to_pyvalue_err)?;
 
-        let to_iso = end
+        let end_dt = end
             .map(|s| DateTime::parse_from_rfc3339(&s).map(|dt| dt.with_timezone(&chrono::Utc)))
             .transpose()
             .map_err(to_pyvalue_err)?;
@@ -349,7 +347,7 @@ impl DydxHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let bars = client
-                .request_bars(bar_type, resolution, limit, from_iso, to_iso)
+                .request_bars(bar_type, start_dt, end_dt, limit)
                 .await
                 .map_err(to_pyvalue_err)?;
 

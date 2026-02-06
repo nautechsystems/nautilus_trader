@@ -62,6 +62,7 @@ from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOU
 from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.book import OrderBook
+from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import IndexPriceUpdate
@@ -572,19 +573,6 @@ class DYDXv4DataClient(LiveMarketDataClient):
 
     async def _request_bars(self, request: RequestBars) -> None:
         bar_type = request.bar_type
-        spec = bar_type.spec
-
-        # Map to dYdX resolution
-        aggregation_str = bar_aggregation_to_str(spec.aggregation)
-        key = (spec.step, aggregation_str)
-        resolution = BAR_RESOLUTION_MAP.get(key)
-
-        if resolution is None:
-            self._log.error(
-                f"Cannot request bars: unsupported aggregation "
-                f"step={spec.step} aggregation={aggregation_str}",
-            )
-            return
 
         # Format timestamps for dYdX API
         start_iso = request.start.isoformat() if request.start else None
@@ -600,11 +588,11 @@ class DYDXv4DataClient(LiveMarketDataClient):
         try:
             bars = await self._http_client.request_bars(
                 bar_type=str(bar_type),
-                resolution=resolution,
-                limit=limit,
                 start=start_iso,
                 end=end_iso,
+                limit=limit,
             )
+            bars = Bar.from_pyo3_list(bars)
 
             self._log.info(f"Received {len(bars)} bars for {bar_type}")
 
