@@ -230,6 +230,8 @@ pub enum NautilusWsMessage {
     FundingRate(FundingRateUpdate),
     /// Block height update from chain with timestamp.
     BlockHeight { height: u64, time: DateTime<Utc> },
+    /// New instrument discovered via WebSocket that needs HTTP fetch.
+    NewInstrumentDiscovered { ticker: String },
     /// Error message.
     Error(DydxWebSocketError),
     /// Reconnection notification.

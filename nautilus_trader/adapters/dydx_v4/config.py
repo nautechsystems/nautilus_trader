@@ -42,8 +42,6 @@ class DYDXv4DataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws : str, optional
         The base URL for WebSocket connections.
         If ``None`` then will use the default URL for the selected network.
-    update_instruments_interval_mins : PositiveInt or None, default 60
-        The interval (minutes) between reloading instruments from the venue.
     max_retries : PositiveInt, optional
         The maximum number of retries for HTTP requests or websocket reconnects.
     retry_delay_initial_ms : PositiveInt, optional
@@ -57,7 +55,6 @@ class DYDXv4DataClientConfig(LiveDataClientConfig, frozen=True):
     is_testnet: bool = False
     base_url_http: str | None = None
     base_url_ws: str | None = None
-    update_instruments_interval_mins: PositiveInt | None = 60
     max_retries: PositiveInt | None = 3
     retry_delay_initial_ms: PositiveInt | None = 1_000
     retry_delay_max_ms: PositiveInt | None = 10_000

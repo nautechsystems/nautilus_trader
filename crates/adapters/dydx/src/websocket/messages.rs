@@ -400,9 +400,66 @@ pub struct DydxOraclePriceMarket {
 }
 
 /// Trading data for a market from v4_markets channel.
+///
+/// This matches the `TradingPerpetualMarket` type from dYdX WebSocket docs.
+/// All fields are optional since WebSocket may send partial updates.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DydxMarketTradingUpdate {
+    /// Market ticker (e.g., "BTC-USD").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ticker: Option<String>,
+    /// Market status.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<crate::common::enums::DydxMarketStatus>,
+    /// CLOB pair ID.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clob_pair_id: Option<String>,
+    /// Atomic resolution for quantization.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub atomic_resolution: Option<i32>,
+    /// Quantum conversion exponent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quantum_conversion_exponent: Option<i32>,
+    /// Step base quantums.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step_base_quantums: Option<i32>,
+    /// Subticks per tick.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subticks_per_tick: Option<i32>,
+    /// Initial margin fraction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_margin_fraction: Option<String>,
+    /// Maintenance margin fraction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub maintenance_margin_fraction: Option<String>,
+    /// Base asset symbol.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_asset: Option<String>,
+    /// Quote asset symbol.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quote_asset: Option<String>,
+    /// Open interest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub open_interest: Option<String>,
+    /// 24-hour price change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub price_change_24h: Option<String>,
+    /// 24-hour volume.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub volume_24h: Option<String>,
+    /// 24-hour trade count.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trades_24h: Option<u64>,
+    /// Maximum position size.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_position_size: Option<String>,
+    /// Incremental position size.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub incremental_position_size: Option<String>,
+    /// Base position size.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_position_size: Option<String>,
     /// Next funding rate for the market.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_funding_rate: Option<String>,

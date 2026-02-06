@@ -33,7 +33,7 @@ use pyo3::{
 };
 use rust_decimal::Decimal;
 
-use crate::{common::enums::DydxCandleResolution, http::client::DydxHttpClient};
+use crate::http::client::DydxHttpClient;
 
 #[pymethods]
 impl DydxHttpClient {
@@ -106,6 +106,30 @@ impl DydxHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
             Ok(())
+        })
+    }
+
+    /// Fetches a single instrument by ticker and caches it.
+    ///
+    /// This is used for on-demand fetching of newly discovered instruments
+    /// via WebSocket.
+    ///
+    /// Returns `None` if the market is not found or inactive.
+    #[pyo3(name = "fetch_instrument")]
+    fn py_fetch_instrument<'py>(
+        &self,
+        py: Python<'py>,
+        ticker: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            match client.fetch_and_cache_single_instrument(&ticker).await {
+                Ok(Some(instrument)) => {
+                    Python::attach(|py| instrument_any_to_pyobject(py, instrument))
+                }
+                Ok(None) => Ok(Python::attach(|py| py.None())),
+                Err(e) => Err(to_pyvalue_err(e)),
+            }
         })
     }
 
@@ -298,25 +322,23 @@ impl DydxHttpClient {
     }
 
     #[pyo3(name = "request_bars")]
-    #[pyo3(signature = (bar_type, resolution, limit=None, start=None, end=None))]
+    #[pyo3(signature = (bar_type, start=None, end=None, limit=None))]
     fn py_request_bars<'py>(
         &self,
         py: Python<'py>,
         bar_type: String,
-        resolution: String,
-        limit: Option<u32>,
         start: Option<String>,
         end: Option<String>,
+        limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let bar_type = BarType::from_str(&bar_type).map_err(to_pyvalue_err)?;
-        let resolution = DydxCandleResolution::from_str(&resolution).map_err(to_pyvalue_err)?;
 
-        let from_iso = start
+        let start_dt = start
             .map(|s| DateTime::parse_from_rfc3339(&s).map(|dt| dt.with_timezone(&chrono::Utc)))
             .transpose()
             .map_err(to_pyvalue_err)?;
 
-        let to_iso = end
+        let end_dt = end
             .map(|s| DateTime::parse_from_rfc3339(&s).map(|dt| dt.with_timezone(&chrono::Utc)))
             .transpose()
             .map_err(to_pyvalue_err)?;
@@ -325,7 +347,7 @@ impl DydxHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let bars = client
-                .request_bars(bar_type, resolution, limit, from_iso, to_iso)
+                .request_bars(bar_type, start_dt, end_dt, limit)
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -337,18 +359,30 @@ impl DydxHttpClient {
     }
 
     #[pyo3(name = "request_trade_ticks")]
-    #[pyo3(signature = (instrument_id, limit=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
     fn py_request_trade_ticks<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
+        start: Option<String>,
+        end: Option<String>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let start_dt = start
+            .map(|s| DateTime::parse_from_rfc3339(&s).map(|dt| dt.with_timezone(&chrono::Utc)))
+            .transpose()
+            .map_err(to_pyvalue_err)?;
+
+        let end_dt = end
+            .map(|s| DateTime::parse_from_rfc3339(&s).map(|dt| dt.with_timezone(&chrono::Utc)))
+            .transpose()
+            .map_err(to_pyvalue_err)?;
+
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let trades = client
-                .request_trade_ticks(instrument_id, limit)
+                .request_trade_ticks(instrument_id, start_dt, end_dt, limit)
                 .await
                 .map_err(to_pyvalue_err)?;
 

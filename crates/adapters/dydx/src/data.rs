@@ -40,34 +40,27 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    UnixNanos,
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data as NautilusData, OrderBookDelta,
-        OrderBookDeltas, OrderBookDeltas_API, QuoteTick, TradeTick,
+        OrderBookDeltas, OrderBookDeltas_API, QuoteTick,
     },
-    enums::{
-        AggregationSource, AggressorSide, BarAggregation, BookAction, BookType, OrderSide,
-        PriceType, RecordFlag,
-    },
-    identifiers::{ClientId, InstrumentId, TradeId, Venue},
+    enums::{BarAggregation, BookAction, BookType, OrderSide, RecordFlag},
+    identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
-    types::{Price, Quantity},
+    types::Quantity,
 };
 use tokio::{task::JoinHandle, time::Duration};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    common::{
-        consts::DYDX_VENUE, enums::DydxCandleResolution, instrument_cache::InstrumentCache,
-        parse::extract_raw_symbol,
-    },
+    common::{consts::DYDX_VENUE, instrument_cache::InstrumentCache, parse::extract_raw_symbol},
     config::DydxDataClientConfig,
-    http::{client::DydxHttpClient, models::Candle},
+    http::client::DydxHttpClient,
     websocket::{client::DydxWebSocketClient, enums::NautilusWsMessage, handler::HandlerCommand},
 };
 
@@ -78,6 +71,7 @@ struct WsMessageContext {
     order_books: Arc<DashMap<InstrumentId, OrderBook>>,
     last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
     ws_client: DydxWebSocketClient,
+    http_client: DydxHttpClient,
     active_quote_subs: Arc<DashSet<InstrumentId>>,
     active_delta_subs: Arc<DashSet<InstrumentId>>,
     active_trade_subs: Arc<DashMap<InstrumentId, ()>>,
@@ -216,6 +210,12 @@ impl DydxDataClient {
     #[must_use]
     pub fn venue(&self) -> Venue {
         *DYDX_VENUE
+    }
+
+    /// Returns a reference to the client configuration.
+    #[must_use]
+    pub fn config(&self) -> &DydxDataClientConfig {
+        &self.config
     }
 
     /// Returns `true` when the client is connected.
@@ -402,6 +402,7 @@ impl DataClient for DydxDataClient {
             order_books: self.order_books.clone(),
             last_quotes: self.last_quotes.clone(),
             ws_client: self.ws_client.clone(),
+            http_client: self.http_client.clone(),
             active_quote_subs: self.active_quote_subs.clone(),
             active_delta_subs: self.active_delta_subs.clone(),
             active_trade_subs: self.active_trade_subs.clone(),
@@ -414,9 +415,6 @@ impl DataClient for DydxDataClient {
 
         let stream = self.ws_client.stream();
         self.spawn_ws_stream_handler(stream, ctx);
-
-        // Start instrument refresh task
-        self.start_instrument_refresh_task()?;
 
         self.is_connected.store(true, Ordering::Relaxed);
         log::info!("Connected");
@@ -923,8 +921,7 @@ impl DataClient for DydxDataClient {
     }
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
-        let http = self.http_client.clone();
-        let instrument_cache = self.instrument_cache.clone();
+        let http_client = self.http_client.clone();
         let sender = self.data_sender.clone();
         let instrument_id = request.instrument_id;
         let start = request.start;
@@ -938,149 +935,27 @@ impl DataClient for DydxDataClient {
         let end_nanos = datetime_to_unix_nanos(end);
 
         get_runtime().spawn(async move {
-            // dYdX Indexer trades endpoint supports `limit` but not an explicit
-            // date range in this client; we approximate by using the provided
-            // limit and instrument metadata for precision.
-            let ticker = instrument_id
-                .symbol
-                .as_str()
-                .trim_end_matches("-PERP")
-                .to_string();
-
-            // Look up instrument to derive price and size precision.
-            let instrument = match instrument_cache.get(&instrument_id) {
-                Some(inst) => inst.clone(),
-                None => {
-                    log::error!(
-                        "request_trades: instrument {instrument_id} not found in cache; cannot convert trades"
-                    );
-                    let ts_now = clock.get_time_ns();
-                    let response = DataResponse::Trades(TradesResponse::new(
-                        request_id,
-                        client_id,
-                        instrument_id,
-                        Vec::new(),
-                        start_nanos,
-                        end_nanos,
-                        ts_now,
-                        params,
-                    ));
-                    if let Err(e) = sender.send(DataEvent::Response(response)) {
-                        log::error!("Failed to send empty trades response: {e}");
-                    }
-                    return;
-                }
-            };
-
-            let price_precision = instrument.price_precision();
-            let size_precision = instrument.size_precision();
-
-            match http
-                .inner
-                .get_trades(&ticker, limit)
+            match http_client
+                .request_trade_ticks(instrument_id, start, end, limit)
                 .await
                 .context("failed to request trades from dYdX")
             {
-                Ok(trades_response) => {
-                    let mut ticks = Vec::new();
-
-                    for trade in trades_response.trades {
-                        let aggressor_side = match trade.side {
-                            OrderSide::Buy => AggressorSide::Buyer,
-                            OrderSide::Sell => AggressorSide::Seller,
-                            _ => continue, // Skip unsupported side
-                        };
-
-                        let price = match Price::from_decimal_dp(trade.price, price_precision) {
-                            Ok(p) => p,
-                            Err(e) => {
-                                log::warn!(
-                                    "request_trades: failed to convert price for trade {}: {e}",
-                                    trade.id
-                                );
-                                continue;
-                            }
-                        };
-
-                        let size = match Quantity::from_decimal_dp(trade.size, size_precision) {
-                            Ok(q) => q,
-                            Err(e) => {
-                                log::warn!(
-                                    "request_trades: failed to convert size for trade {}: {e}",
-                                    trade.id
-                                );
-                                continue;
-                            }
-                        };
-
-                        let ts_event = match trade.created_at.timestamp_nanos_opt() {
-                            Some(ns) if ns >= 0 => UnixNanos::from(ns as u64),
-                            _ => {
-                                log::warn!(
-                                    "request_trades: timestamp out of range for trade {}",
-                                    trade.id
-                                );
-                                continue;
-                            }
-                        };
-
-                        // Apply optional time-range filter.
-                        if let Some(start_ts) = start_nanos
-                            && ts_event < start_ts
-                        {
-                            continue;
-                        }
-                        if let Some(end_ts) = end_nanos
-                            && ts_event > end_ts
-                        {
-                            continue;
-                        }
-
-                        let tick = TradeTick::new(
-                            instrument_id,
-                            price,
-                            size,
-                            aggressor_side,
-                            TradeId::new(&trade.id),
-                            ts_event,
-                            clock.get_time_ns(),
-                        );
-                        ticks.push(tick);
-                    }
-
+                Ok(trades) => {
                     let response = DataResponse::Trades(TradesResponse::new(
                         request_id,
                         client_id,
                         instrument_id,
-                        ticks,
+                        trades,
                         start_nanos,
                         end_nanos,
                         clock.get_time_ns(),
                         params,
                     ));
-
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send trades response: {e}");
                     }
                 }
-                Err(e) => {
-                    log::error!("Trade request failed for {instrument_id}: {e:?}");
-
-                    let response = DataResponse::Trades(TradesResponse::new(
-                        request_id,
-                        client_id,
-                        instrument_id,
-                        Vec::new(),
-                        start_nanos,
-                        end_nanos,
-                        clock.get_time_ns(),
-                        params,
-                    ));
-
-                    if let Err(e) = sender.send(DataEvent::Response(response)) {
-                        log::error!("Failed to send empty trades response: {e}");
-                    }
-                }
+                Err(e) => log::error!("Trade request failed for {instrument_id}: {e:?}"),
             }
         });
 
@@ -1088,297 +963,41 @@ impl DataClient for DydxDataClient {
     }
 
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
-        const DYDX_MAX_BARS_PER_REQUEST: u32 = 1_000;
-
-        let bar_type = request.bar_type;
-        let spec = bar_type.spec();
-
-        // Validate bar type requirements
-        if bar_type.aggregation_source() != AggregationSource::External {
-            anyhow::bail!(
-                "dYdX only supports EXTERNAL aggregation, was {:?}",
-                bar_type.aggregation_source()
-            );
-        }
-
-        if spec.price_type != PriceType::Last {
-            anyhow::bail!(
-                "dYdX only supports LAST price type, was {:?}",
-                spec.price_type
-            );
-        }
-
-        // Map BarType spec to dYdX resolution
-        let resolution = match spec.step.get() {
-            1 => match spec.aggregation {
-                BarAggregation::Minute => "1MIN",
-                BarAggregation::Hour => "1HOUR",
-                BarAggregation::Day => "1DAY",
-                _ => {
-                    anyhow::bail!("Unsupported bar aggregation: {:?}", spec.aggregation);
-                }
-            },
-            5 if spec.aggregation == BarAggregation::Minute => "5MINS",
-            15 if spec.aggregation == BarAggregation::Minute => "15MINS",
-            30 if spec.aggregation == BarAggregation::Minute => "30MINS",
-            4 if spec.aggregation == BarAggregation::Hour => "4HOURS",
-            step => {
-                anyhow::bail!("Unsupported bar step: {step}");
-            }
-        };
-
-        let http = self.http_client.clone();
-        let instrument_cache = self.instrument_cache.clone();
+        let http_client = self.http_client.clone();
         let sender = self.data_sender.clone();
-        let instrument_id = bar_type.instrument_id();
-        // dYdX ticker does not include the "-PERP" suffix.
-        let symbol = instrument_id
-            .symbol
-            .as_str()
-            .trim_end_matches("-PERP")
-            .to_string();
+        let bar_type = request.bar_type;
+        let start = request.start;
+        let end = request.end;
+        let limit = request.limit.map(|n| n.get() as u32);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let params = request.params;
         let clock = self.clock;
-
-        let start = request.start;
-        let end = request.end;
-        let overall_limit = request.limit.map(|n| n.get() as u32);
-
-        // Convert optional datetimes to UnixNanos for response metadata
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        // Parse resolution string to DydxCandleResolution enum
-        let resolution_enum = match resolution {
-            "1MIN" => DydxCandleResolution::OneMinute,
-            "5MINS" => DydxCandleResolution::FiveMinutes,
-            "15MINS" => DydxCandleResolution::FifteenMinutes,
-            "30MINS" => DydxCandleResolution::ThirtyMinutes,
-            "1HOUR" => DydxCandleResolution::OneHour,
-            "4HOURS" => DydxCandleResolution::FourHours,
-            "1DAY" => DydxCandleResolution::OneDay,
-            _ => {
-                anyhow::bail!("Unsupported resolution: {resolution}");
-            }
-        };
-
         get_runtime().spawn(async move {
-            // Determine bar duration in seconds.
-            let bar_secs: i64 = match spec.aggregation {
-                BarAggregation::Minute => spec.step.get() as i64 * 60,
-                BarAggregation::Hour => spec.step.get() as i64 * 3_600,
-                BarAggregation::Day => spec.step.get() as i64 * 86_400,
-                _ => {
-                    log::error!(
-                        "Unsupported aggregation for request_bars: {:?}",
-                        spec.aggregation
-                    );
-                    return;
-                }
-            };
-
-            // Look up instrument to derive price and size precision.
-            let instrument = match instrument_cache.get(&instrument_id) {
-                Some(inst) => inst.clone(),
-                None => {
-                    log::error!(
-                        "request_bars: instrument {instrument_id} not found in cache; cannot convert candles"
-                    );
-                    let ts_now = clock.get_time_ns();
+            match http_client
+                .request_bars(bar_type, start, end, limit)
+                .await
+                .context("failed to request bars from dYdX")
+            {
+                Ok(bars) => {
                     let response = DataResponse::Bars(BarsResponse::new(
                         request_id,
                         client_id,
                         bar_type,
-                        Vec::new(),
+                        bars,
                         start_nanos,
                         end_nanos,
-                        ts_now,
+                        clock.get_time_ns(),
                         params,
                     ));
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
-                        log::error!("Failed to send empty bars response: {e}");
-                    }
-                    return;
-                }
-            };
-
-            let price_precision = instrument.price_precision();
-            let size_precision = instrument.size_precision();
-
-            let mut all_bars: Vec<Bar> = Vec::new();
-
-            // If no explicit date range, fall back to a single request using only `limit`.
-            let (range_start, range_end) = match (start, end) {
-                (Some(s), Some(e)) if e > s => (s, e),
-                _ => {
-                    let limit = overall_limit.unwrap_or(DYDX_MAX_BARS_PER_REQUEST);
-                    match http
-                        .inner
-                        .get_candles(&symbol, resolution_enum, Some(limit), None, None)
-                        .await
-                    {
-                        Ok(candles_response) => {
-                            log::debug!(
-                                "request_bars fetched {} candles without explicit date range",
-                                candles_response.candles.len()
-                            );
-
-                            for candle in &candles_response.candles {
-                                match Self::candle_to_bar(
-                                    candle,
-                                    bar_type,
-                                    price_precision,
-                                    size_precision,
-                                    bar_secs,
-                                    clock,
-                                ) {
-                                    Ok(bar) => all_bars.push(bar),
-                                    Err(e) => {
-                                        log::warn!(
-                                            "Failed to convert dYdX candle to bar for {instrument_id}: {e}"
-                                        );
-                                    }
-                                }
-                            }
-
-                            let current_time_ns = clock.get_time_ns();
-                            all_bars.retain(|bar| bar.ts_event < current_time_ns);
-
-                            let response = DataResponse::Bars(BarsResponse::new(
-                                request_id,
-                                client_id,
-                                bar_type,
-                                all_bars,
-                                start_nanos,
-                                end_nanos,
-                                current_time_ns,
-                                params,
-                            ));
-
-                            if let Err(e) = sender.send(DataEvent::Response(response)) {
-                                log::error!("Failed to send bars response: {e}");
-                            }
-                        }
-                        Err(e) => {
-                            log::error!(
-                                "Failed to request candles for {symbol} without date range: {e:?}"
-                            );
-                        }
-                    }
-                    return;
-                }
-            };
-
-            // Calculate expected bars for the range.
-            let total_secs = (range_end - range_start).num_seconds().max(0);
-            let expected_bars = (total_secs / bar_secs).max(1) as u64;
-
-            log::debug!(
-                "request_bars range {range_start:?} -> {range_end:?}, expected_bars ~= {expected_bars}"
-            );
-
-            let mut remaining = overall_limit.unwrap_or(u32::MAX);
-
-            // Determine chunk duration using max bars per request.
-            let bars_per_call = DYDX_MAX_BARS_PER_REQUEST.min(remaining);
-            let chunk_duration = chrono::Duration::seconds(bar_secs * bars_per_call as i64);
-
-            let mut chunk_start = range_start;
-
-            while chunk_start < range_end && remaining > 0 {
-                let mut chunk_end = chunk_start + chunk_duration;
-                if chunk_end > range_end {
-                    chunk_end = range_end;
-                }
-
-                let per_call_limit = remaining.min(DYDX_MAX_BARS_PER_REQUEST);
-
-                log::debug!(
-                    "request_bars chunk: {chunk_start} -> {chunk_end}, limit={per_call_limit}"
-                );
-
-                match http
-                    .inner
-                    .get_candles(
-                        &symbol,
-                        resolution_enum,
-                        Some(per_call_limit),
-                        Some(chunk_start),
-                        Some(chunk_end),
-                    )
-                    .await
-                {
-                    Ok(candles_response) => {
-                        let count = candles_response.candles.len() as u32;
-
-                        if count == 0 {
-                            // No more data available; stop early.
-                            break;
-                        }
-
-                        // Convert candles to bars and accumulate.
-                        for candle in &candles_response.candles {
-                            match Self::candle_to_bar(
-                                candle,
-                                bar_type,
-                                price_precision,
-                                size_precision,
-                                bar_secs,
-                                clock,
-                            ) {
-                                Ok(bar) => all_bars.push(bar),
-                                Err(e) => {
-                                    log::warn!(
-                                        "Failed to convert dYdX candle to bar for {instrument_id}: {e}"
-                                    );
-                                }
-                            }
-                        }
-
-                        if remaining <= count {
-                            break;
-                        } else {
-                            remaining -= count;
-                        }
-                    }
-                    Err(e) => {
-                        log::error!(
-                            "Failed to request candles for {symbol} in chunk {chunk_start:?} -> {chunk_end:?}: {e:?}"
-                        );
-                        break;
+                        log::error!("Failed to send bars response: {e}");
                     }
                 }
-
-                chunk_start += chunk_duration;
-            }
-
-            log::debug!("request_bars completed partitioned fetch for {bar_type}");
-
-            // Filter incomplete bars: only return bars where ts_event < current_time_ns
-            let current_time_ns = clock.get_time_ns();
-            all_bars.retain(|bar| bar.ts_event < current_time_ns);
-
-            log::debug!(
-                "request_bars filtered to {} completed bars (current_time_ns={})",
-                all_bars.len(),
-                current_time_ns
-            );
-
-            let response = DataResponse::Bars(BarsResponse::new(
-                request_id,
-                client_id,
-                bar_type,
-                all_bars,
-                start_nanos,
-                end_nanos,
-                current_time_ns,
-                params,
-            ));
-
-            if let Err(e) = sender.send(DataEvent::Response(response)) {
-                log::error!("Failed to send bars response: {e}");
+                Err(e) => log::error!("Bar request failed for {bar_type}: {e:?}"),
             }
         });
 
@@ -1387,65 +1006,6 @@ impl DataClient for DydxDataClient {
 }
 
 impl DydxDataClient {
-    /// Start a task to periodically refresh instruments.
-    ///
-    /// This task runs in the background and updates the instrument cache
-    /// at the configured interval.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if a refresh task is already running.
-    pub fn start_instrument_refresh_task(&mut self) -> anyhow::Result<()> {
-        let interval_secs = match self.config.instrument_refresh_interval_secs {
-            Some(secs) if secs > 0 => secs,
-            _ => {
-                log::info!("Instrument refresh disabled (interval not configured)");
-                return Ok(());
-            }
-        };
-
-        let interval = Duration::from_secs(interval_secs);
-        let http_client = self.http_client.clone();
-        let ws_client = self.ws_client.clone();
-        let cancellation_token = self.cancellation_token.clone();
-
-        log::info!("Starting instrument refresh task (interval: {interval_secs}s)");
-
-        let task = get_runtime().spawn(async move {
-            let mut interval_timer = tokio::time::interval(interval);
-            interval_timer.tick().await; // Skip first immediate tick
-
-            loop {
-                tokio::select! {
-                    () = cancellation_token.cancelled() => {
-                        log::info!("Instrument refresh task cancelled");
-                        break;
-                    }
-                    _ = interval_timer.tick() => {
-                        log::debug!("Refreshing instruments");
-
-                        // Populates shared InstrumentCache via HTTP client
-                        match http_client.fetch_and_cache_instruments().await {
-                            Ok(()) => {
-                                let instruments = http_client.all_instruments();
-                                log::debug!("Refreshed {} instruments in shared cache", instruments.len());
-
-                                // Propagate to WS handler for message parsing
-                                ws_client.cache_instruments(instruments);
-                            }
-                            Err(e) => {
-                                log::error!("Failed to refresh instruments: {e}");
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        self.tasks.push(task);
-        Ok(())
-    }
-
     /// Get a cached instrument by InstrumentId.
     #[must_use]
     pub fn get_instrument(&self, instrument_id: &InstrumentId) -> Option<InstrumentAny> {
@@ -1492,48 +1052,6 @@ impl DydxDataClient {
             .iter()
             .map(|entry| entry.key().clone())
             .collect()
-    }
-
-    /// Convert a dYdX HTTP candle into a Nautilus [`Bar`].
-    ///
-    /// This mirrors the conversion logic used in other adapters (for example
-    /// Hyperliquid), using the instrument price/size precision and mapping the
-    /// candle start time to `ts_init` with `ts_event` at the end of the bar
-    /// interval.
-    fn candle_to_bar(
-        candle: &Candle,
-        bar_type: BarType,
-        price_precision: u8,
-        size_precision: u8,
-        bar_secs: i64,
-        clock: &AtomicTime,
-    ) -> anyhow::Result<Bar> {
-        // Convert candle start time to UnixNanos (ts_init).
-        let ts_init =
-            datetime_to_unix_nanos(Some(candle.started_at)).unwrap_or_else(|| clock.get_time_ns());
-
-        // Treat ts_event as the end of the bar interval.
-        let ts_event_ns = ts_init
-            .as_u64()
-            .saturating_add((bar_secs as u64).saturating_mul(1_000_000_000));
-        let ts_event = UnixNanos::from(ts_event_ns);
-
-        let open = Price::from_decimal_dp(candle.open, price_precision)
-            .context("failed to parse candle open price")?;
-        let high = Price::from_decimal_dp(candle.high, price_precision)
-            .context("failed to parse candle high price")?;
-        let low = Price::from_decimal_dp(candle.low, price_precision)
-            .context("failed to parse candle low price")?;
-        let close = Price::from_decimal_dp(candle.close, price_precision)
-            .context("failed to parse candle close price")?;
-
-        // Use base token volume as bar volume.
-        let volume = Quantity::from_decimal_dp(candle.base_token_volume, size_precision)
-            .context("failed to parse candle base_token_volume")?;
-
-        Ok(Bar::new(
-            bar_type, open, high, low, close, volume, ts_event, ts_init,
-        ))
     }
 
     fn handle_ws_message(message: NautilusWsMessage, ctx: &WsMessageContext) {
@@ -1704,6 +1222,36 @@ impl DydxDataClient {
                 log::debug!(
                     "Ignoring execution/subaccount message on dYdX data client (handled by execution adapter)"
                 );
+            }
+            NautilusWsMessage::NewInstrumentDiscovered { ticker } => {
+                // New instrument discovered via WebSocket - fetch via HTTP and cache
+                log::info!("New instrument discovered via WebSocket: {ticker}");
+
+                let http_client = ctx.http_client.clone();
+                let ws_client = ctx.ws_client.clone();
+                let data_sender = ctx.data_sender.clone();
+
+                get_runtime().spawn(async move {
+                    match http_client.fetch_and_cache_single_instrument(&ticker).await {
+                        Ok(Some(instrument)) => {
+                            // Cache in WebSocket client for future data parsing
+                            ws_client.cache_instrument(instrument.clone());
+                            // The InstrumentCache is already updated by fetch_and_cache_single_instrument
+
+                            // Send to data engine
+                            if let Err(e) = data_sender.send(DataEvent::Instrument(instrument)) {
+                                log::error!("Failed to emit new instrument: {e}");
+                            }
+                            log::info!("Fetched and cached new instrument: {ticker}");
+                        }
+                        Ok(None) => {
+                            log::warn!("New instrument {ticker} not found or inactive");
+                        }
+                        Err(e) => {
+                            log::error!("Failed to fetch new instrument {ticker}: {e}");
+                        }
+                    }
+                });
             }
         }
     }

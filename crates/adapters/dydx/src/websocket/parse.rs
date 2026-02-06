@@ -26,10 +26,7 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::{
-        Bar, BarType, BookOrder, Data, OrderBookDelta, OrderBookDeltas, TradeTick,
-        bar::get_bar_interval_ns,
-    },
+    data::{Bar, BarType, BookOrder, Data, OrderBookDelta, OrderBookDeltas, TradeTick},
     enums::{AggressorSide, BookAction, OrderSide, OrderStatus, RecordFlag},
     identifiers::{AccountId, InstrumentId, TradeId},
     instruments::{Instrument, InstrumentAny},
@@ -789,8 +786,7 @@ pub fn parse_candle_bar(
             candle.started_at
         ))
     })?;
-    let interval_nanos = get_bar_interval_ns(&bar_type);
-    let ts_event = UnixNanos::from(started_at_nanos as u64) + interval_nanos;
+    let ts_event = UnixNanos::from(started_at_nanos as u64);
 
     let bar = Bar::new(
         bar_type,

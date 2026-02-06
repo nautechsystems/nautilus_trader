@@ -264,7 +264,7 @@ async fn test_request_trades_success() {
     let base_url = format!("http://{addr}");
 
     let client = DydxHttpClient::new(Some(base_url), Some(30), None, false, None).unwrap();
-    let trades = client.request_trades("BTC-USD", None).await.unwrap();
+    let trades = client.request_trades("BTC-USD", None, None).await.unwrap();
 
     assert_eq!(trades.trades.len(), 3);
     assert_eq!(trades.trades[0].id, "03f89a550000000200000002");
@@ -279,7 +279,7 @@ async fn test_trades_chronological_order() {
     let base_url = format!("http://{addr}");
 
     let client = DydxHttpClient::new(Some(base_url), Some(30), None, false, None).unwrap();
-    let trades = client.request_trades("BTC-USD", None).await.unwrap();
+    let trades = client.request_trades("BTC-USD", None, None).await.unwrap();
 
     // dYdX returns trades in reverse chronological order (newest first)
     for i in 0..trades.trades.len() - 1 {
@@ -299,7 +299,10 @@ async fn test_trades_with_limit() {
     let base_url = format!("http://{addr}");
 
     let client = DydxHttpClient::new(Some(base_url), Some(30), None, false, None).unwrap();
-    let _trades = client.request_trades("BTC-USD", Some(10)).await.unwrap();
+    let _trades = client
+        .request_trades("BTC-USD", Some(10), None)
+        .await
+        .unwrap();
 
     let params = state.last_trades_params.lock().await;
     assert!(params.is_some());

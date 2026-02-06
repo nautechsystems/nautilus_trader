@@ -35,15 +35,16 @@
 use anyhow::Context;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    enums::{OrderSide, TimeInForce},
+    data::{Bar, BarType, TradeTick},
+    enums::{AggressorSide, OrderSide, TimeInForce},
     events::AccountState,
-    identifiers::{InstrumentId, Symbol, Venue},
+    identifiers::{InstrumentId, Symbol, TradeId, Venue},
     instruments::{CryptoPerpetual, InstrumentAny},
-    types::Currency,
+    types::{Currency, Price, Quantity},
 };
 use rust_decimal::Decimal;
 
-use super::models::PerpetualMarket;
+use super::models::{Candle, PerpetualMarket, Trade};
 #[cfg(test)]
 use crate::common::enums::DydxTransferType;
 use crate::{
@@ -53,6 +54,80 @@ use crate::{
     },
     websocket::messages::DydxSubaccountInfo,
 };
+
+/// Parses a dYdX [`Trade`] into a Nautilus [`TradeTick`].
+///
+/// # Errors
+///
+/// Returns an error if price, size, or timestamp conversion fails.
+pub fn parse_trade_tick(
+    trade: &Trade,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<TradeTick> {
+    let aggressor_side = match trade.side {
+        OrderSide::Buy => AggressorSide::Buyer,
+        OrderSide::Sell => AggressorSide::Seller,
+        OrderSide::NoOrderSide => AggressorSide::NoAggressor,
+    };
+
+    let price = Price::from_decimal_dp(trade.price, price_precision)
+        .context(format!("failed to parse price for trade {}", trade.id))?;
+
+    let size = Quantity::from_decimal_dp(trade.size, size_precision)
+        .context(format!("failed to parse size for trade {}", trade.id))?;
+
+    let ts_event_nanos = trade
+        .created_at
+        .timestamp_nanos_opt()
+        .ok_or_else(|| anyhow::anyhow!("Timestamp out of range for trade {}", trade.id))?;
+    let ts_event = UnixNanos::from(ts_event_nanos as u64);
+
+    Ok(TradeTick::new(
+        instrument_id,
+        price,
+        size,
+        aggressor_side,
+        TradeId::new(&trade.id),
+        ts_event,
+        ts_init,
+    ))
+}
+
+/// Parses a dYdX [`Candle`] into a Nautilus [`Bar`].
+///
+/// # Errors
+///
+/// Returns an error if OHLCV or timestamp conversion fails.
+pub fn parse_bar(
+    candle: &Candle,
+    bar_type: BarType,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Bar> {
+    let started_at_nanos = candle.started_at.timestamp_nanos_opt().ok_or_else(|| {
+        anyhow::anyhow!("Timestamp out of range for candle at {}", candle.started_at)
+    })?;
+    let ts_event = UnixNanos::from(started_at_nanos as u64);
+
+    let open = Price::from_decimal_dp(candle.open, price_precision)
+        .context("failed to parse candle open price")?;
+    let high = Price::from_decimal_dp(candle.high, price_precision)
+        .context("failed to parse candle high price")?;
+    let low = Price::from_decimal_dp(candle.low, price_precision)
+        .context("failed to parse candle low price")?;
+    let close = Price::from_decimal_dp(candle.close, price_precision)
+        .context("failed to parse candle close price")?;
+    let volume = Quantity::from_decimal_dp(candle.base_token_volume, size_precision)
+        .context("failed to parse candle base_token_volume")?;
+
+    Ok(Bar::new(
+        bar_type, open, high, low, close, volume, ts_event, ts_init,
+    ))
+}
 
 /// Validates that a ticker has the correct format (BASE-QUOTE).
 ///
@@ -811,10 +886,10 @@ use std::str::FromStr;
 use nautilus_core::UUID4;
 use nautilus_model::{
     enums::{LiquiditySide, OrderStatus, PositionSide, TriggerType},
-    identifiers::{AccountId, ClientOrderId, PositionId, TradeId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, PositionId, VenueOrderId},
     instruments::Instrument,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
-    types::{Money, Price, Quantity},
+    types::Money,
 };
 
 use super::models::{Fill, Order, PerpetualPosition};
