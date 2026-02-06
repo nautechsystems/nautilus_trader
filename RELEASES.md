@@ -130,6 +130,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Added Deribit side-specific order cancellation (#3442), thanks @filipmacek
 - Added Deribit real-time portfolio WS subscription (#3444), thanks @filipmacek
 - Added Deribit integration documentation (#3508), thanks @filipmacek
+- Added OKX `instIdCode` support for WebSocket order operations (#3536), thanks @Add1ct1ve
 - Added Polymarket data loader rate limiting
 - Migrated Nautilus internal logging to `log` crate (external `tracing` available via `use_tracing` config)
 - Renamed Deribit instrument kind enum to product type (#3512), thanks @filipmacek
@@ -152,6 +153,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Improved Betfair adapter rate limiting and fill deduplication
 - Improved Deribit with high-performance `Decimal` deserialization (#3510), thanks @filipmacek
 - Improved precision-mode validation for Arrow data (#3511), thanks for reporting @2-5
+- Improved dYdX v4 data client subscription handling (#3537), thanks @filipmacek
 - Refined closing of streaming writer (#3394), thanks @faysou
 - Refined handling of `skip_first_non_full_bar` in `TimeBarAggregator` (#3395), thanks @faysou
 - Refined greeks safeguards and docs (#3407), thanks @faysou

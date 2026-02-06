@@ -282,9 +282,7 @@ pub async fn approve_builder_fee(
 ///
 /// `true` if approval succeeded, `false` otherwise.
 pub async fn approve_from_env(non_interactive: bool) -> bool {
-    let is_testnet = std::env::var("HYPERLIQUID_TESTNET")
-        .map(|v| v.to_lowercase() == "true")
-        .unwrap_or(false);
+    let is_testnet = std::env::var("HYPERLIQUID_TESTNET").is_ok_and(|v| v.to_lowercase() == "true");
 
     let env_var = if is_testnet {
         "HYPERLIQUID_TESTNET_PK"
@@ -494,9 +492,7 @@ pub async fn revoke_builder_fee(
 ///
 /// `true` if revocation succeeded, `false` otherwise.
 pub async fn revoke_from_env(non_interactive: bool) -> bool {
-    let is_testnet = std::env::var("HYPERLIQUID_TESTNET")
-        .map(|v| v.to_lowercase() == "true")
-        .unwrap_or(false);
+    let is_testnet = std::env::var("HYPERLIQUID_TESTNET").is_ok_and(|v| v.to_lowercase() == "true");
 
     let env_var = if is_testnet {
         "HYPERLIQUID_TESTNET_PK"
@@ -669,9 +665,7 @@ pub async fn verify_builder_fee(
 ///
 /// `true` if builder fee is approved at the required rate, `false` otherwise.
 pub async fn verify_from_env_or_address(wallet_address: Option<String>) -> bool {
-    let is_testnet = std::env::var("HYPERLIQUID_TESTNET")
-        .map(|v| v.to_lowercase() == "true")
-        .unwrap_or(false);
+    let is_testnet = std::env::var("HYPERLIQUID_TESTNET").is_ok_and(|v| v.to_lowercase() == "true");
 
     let wallet_address = match wallet_address {
         Some(addr) => addr,

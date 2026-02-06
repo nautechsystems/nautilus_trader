@@ -31,9 +31,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     nautilus_common::logging::ensure_logging_initialized();
 
     // Check for testnet flag from environment (default to mainnet)
-    let is_testnet = env::var("HYPERLIQUID_TESTNET")
-        .map(|v| v.to_lowercase() == "true" || v == "1")
-        .unwrap_or(false);
+    let is_testnet =
+        env::var("HYPERLIQUID_TESTNET").is_ok_and(|v| v.to_lowercase() == "true" || v == "1");
 
     let network_name = if is_testnet { "TESTNET" } else { "MAINNET" };
     log::info!("Starting Hyperliquid {network_name} Order Placer");
