@@ -161,6 +161,14 @@ class DYDXv4DataClient(LiveMarketDataClient):
         self._order_books: dict[InstrumentId, OrderBook] = {}
         self._last_quotes: dict[InstrumentId, QuoteTick] = {}
 
+        # Subscription tracking (mirrors Rust DydxDataClient)
+        self._active_delta_subs: set[InstrumentId] = set()
+        self._active_trade_subs: set[InstrumentId] = set()
+        self._active_bar_subs: dict[tuple[InstrumentId, str], object] = {}
+        self._active_mark_price_subs: set[InstrumentId] = set()
+        self._active_index_price_subs: set[InstrumentId] = set()
+        self._active_funding_rate_subs: set[InstrumentId] = set()
+
     @property
     def instrument_provider(self) -> DYDXv4InstrumentProvider:
         return self._instrument_provider
@@ -208,6 +216,17 @@ class DYDXv4DataClient(LiveMarketDataClient):
 
         self._ws_client_futures.clear()
 
+        # Clear subscription state
+        self._active_quote_subs.clear()
+        self._active_delta_subs.clear()
+        self._active_trade_subs.clear()
+        self._active_bar_subs.clear()
+        self._active_mark_price_subs.clear()
+        self._active_index_price_subs.clear()
+        self._active_funding_rate_subs.clear()
+        self._order_books.clear()
+        self._last_quotes.clear()
+
     def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct
         # price and size precisions when parsing responses
@@ -235,38 +254,59 @@ class DYDXv4DataClient(LiveMarketDataClient):
                     self._handle_data(data)
                 return
 
-            if isinstance(capsule, nautilus_pyo3.MarkPriceUpdate):
-                data = MarkPriceUpdate.from_pyo3(capsule)
-                self._handle_data(data)
-                return
-
-            if isinstance(capsule, nautilus_pyo3.IndexPriceUpdate):
-                data = IndexPriceUpdate.from_pyo3(capsule)
-                self._handle_data(data)
-                return
-
-            if isinstance(capsule, nautilus_pyo3.FundingRateUpdate):
-                data = FundingRateUpdate.from_pyo3(capsule)
-                self._handle_data(data)
+            if self._handle_market_data_update(capsule):
                 return
 
             if isinstance(capsule, dict):
-                msg_type = capsule.get("type")
-                if msg_type == "new_instrument_discovered":
-                    ticker = capsule.get("ticker")
-                    if ticker:
-                        self._log.info(
-                            f"New instrument discovered via WebSocket: {ticker}",
-                            LogColor.BLUE,
-                        )
-                        task = asyncio.create_task(self._fetch_new_instrument(ticker))
-                        self._ws_client_futures.add(task)
-                        task.add_done_callback(self._ws_client_futures.discard)
+                self._handle_dict_message(capsule)
                 return
 
             self._log.debug(f"Ignoring message of type {type(capsule).__name__}")
         except Exception as e:
             self._log.error(f"Error handling WebSocket message: {e}")
+
+    def _handle_market_data_update(self, capsule: object) -> bool:
+        """
+        Handle mark price, index price, and funding rate updates.
+
+        Returns True if handled.
+
+        """
+        if isinstance(capsule, nautilus_pyo3.MarkPriceUpdate):
+            instrument_id = InstrumentId.from_str(capsule.instrument_id.value)
+            if instrument_id in self._active_mark_price_subs:
+                self._handle_data(MarkPriceUpdate.from_pyo3(capsule))
+            return True
+
+        if isinstance(capsule, nautilus_pyo3.IndexPriceUpdate):
+            instrument_id = InstrumentId.from_str(capsule.instrument_id.value)
+            if instrument_id in self._active_index_price_subs:
+                self._handle_data(IndexPriceUpdate.from_pyo3(capsule))
+            return True
+
+        if isinstance(capsule, nautilus_pyo3.FundingRateUpdate):
+            instrument_id = InstrumentId.from_str(capsule.instrument_id.value)
+            if instrument_id in self._active_funding_rate_subs:
+                self._handle_data(FundingRateUpdate.from_pyo3(capsule))
+            return True
+
+        return False
+
+    def _handle_dict_message(self, capsule: dict) -> None:
+        """
+        Handle dict-type messages (e.g., new instrument discovery).
+        """
+        msg_type = capsule.get("type")
+        if msg_type == "new_instrument_discovered":
+            ticker = capsule.get("ticker")
+            if ticker:
+                self._log.info(
+                    f"New instrument discovered via WebSocket: {ticker}",
+                    LogColor.BLUE,
+                )
+                task = asyncio.create_task(self._fetch_new_instrument(ticker))
+                self._ws_client_futures.add(task)
+                task.add_done_callback(self._ws_client_futures.discard)
 
     async def _fetch_new_instrument(self, ticker: str) -> None:
         """
@@ -338,8 +378,9 @@ class DYDXv4DataClient(LiveMarketDataClient):
                     self._last_quotes[instrument_id] = quote
                     self._handle_data(quote)
 
-        # Also forward the deltas to the data engine (for orderbook subscriptions)
-        self._handle_data(deltas)
+        # Only forward deltas if there's an active delta subscription
+        if instrument_id in self._active_delta_subs:
+            self._handle_data(deltas)
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
@@ -357,6 +398,9 @@ class DYDXv4DataClient(LiveMarketDataClient):
                 f"Book type {book_type_to_str(command.book_type)} not supported by dYdX, skipping subscription",
             )
             return
+
+        # Track active subscription
+        self._active_delta_subs.add(command.instrument_id)
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_orderbook(pyo3_instrument_id)
@@ -378,6 +422,9 @@ class DYDXv4DataClient(LiveMarketDataClient):
         await self._ws_client.subscribe_orderbook(pyo3_instrument_id)
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
+        # Track active subscription
+        self._active_trade_subs.add(command.instrument_id)
+
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_trades(pyo3_instrument_id)
 
@@ -397,10 +444,16 @@ class DYDXv4DataClient(LiveMarketDataClient):
             )
             return
 
+        # Track active subscription
+        self._active_bar_subs[(bar_type.instrument_id, resolution)] = bar_type
+
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(bar_type))
         await self._ws_client.subscribe_bars(pyo3_bar_type, resolution)
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
+        # Remove from tracking
+        self._active_delta_subs.discard(command.instrument_id)
+
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_orderbook(pyo3_instrument_id)
 
@@ -419,6 +472,9 @@ class DYDXv4DataClient(LiveMarketDataClient):
         await self._ws_client.unsubscribe_orderbook(pyo3_instrument_id)
 
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
+        # Remove from tracking
+        self._active_trade_subs.discard(command.instrument_id)
+
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_trades(pyo3_instrument_id)
 
@@ -432,6 +488,9 @@ class DYDXv4DataClient(LiveMarketDataClient):
 
         if resolution is None:
             return
+
+        # Remove from tracking
+        self._active_bar_subs.pop((bar_type.instrument_id, resolution), None)
 
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(bar_type))
         await self._ws_client.unsubscribe_bars(pyo3_bar_type, resolution)
@@ -466,28 +525,34 @@ class DYDXv4DataClient(LiveMarketDataClient):
         )
 
     async def _subscribe_mark_prices(self, command: SubscribeMarkPrices) -> None:
-        # dYdX provides mark prices through the markets channel
-        pass
+        # Track active subscription
+        self._active_mark_price_subs.add(command.instrument_id)
+        # dYdX provides mark prices through the markets channel (already subscribed)
 
     async def _unsubscribe_mark_prices(self, command: UnsubscribeMarkPrices) -> None:
+        # Remove from tracking
+        self._active_mark_price_subs.discard(command.instrument_id)
         # Mark prices are part of markets channel, no separate unsubscription
-        pass
 
     async def _subscribe_index_prices(self, command: SubscribeIndexPrices) -> None:
-        # dYdX provides index prices through the markets channel
-        pass
+        # Track active subscription
+        self._active_index_price_subs.add(command.instrument_id)
+        # dYdX provides index prices through the markets channel (already subscribed)
 
     async def _unsubscribe_index_prices(self, command: UnsubscribeIndexPrices) -> None:
+        # Remove from tracking
+        self._active_index_price_subs.discard(command.instrument_id)
         # Index prices are part of markets channel, no separate unsubscription
-        pass
 
     async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
-        # dYdX provides funding rates through the markets channel
-        pass
+        # Track active subscription
+        self._active_funding_rate_subs.add(command.instrument_id)
+        # dYdX provides funding rates through the markets channel (already subscribed)
 
     async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
+        # Remove from tracking
+        self._active_funding_rate_subs.discard(command.instrument_id)
         # Funding rates are part of markets channel, no separate unsubscription
-        pass
 
     async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
         # dYdX provides instrument status through the markets channel
