@@ -421,6 +421,21 @@ impl BatchedDeltasStreamIterator {
                     let ts_event = parse_timestamp(data.timestamp);
                     let ts_init = parse_timestamp(data.local_timestamp);
 
+                    // Parse before any state changes so invalid records
+                    // don't corrupt batch boundaries or snapshot tracking
+                    let delta = match parse_delta_record(
+                        &data,
+                        self.price_precision,
+                        self.size_precision,
+                        Some(self.instrument_id),
+                    ) {
+                        Ok(d) => d,
+                        Err(e) => {
+                            log::warn!("Skipping invalid delta record: {e}");
+                            continue;
+                        }
+                    };
+
                     if self.last_ts_event != ts_event && !self.current_batch.is_empty() {
                         // Set F_LAST on the last delta of the completed batch
                         if let Some(last_delta) = self.current_batch.last_mut() {
@@ -448,19 +463,6 @@ impl BatchedDeltasStreamIterator {
                         }
                     }
                     self.last_is_snapshot = data.is_snapshot;
-
-                    let delta = match parse_delta_record(
-                        &data,
-                        self.price_precision,
-                        self.size_precision,
-                        Some(self.instrument_id),
-                    ) {
-                        Ok(d) => d,
-                        Err(e) => {
-                            log::warn!("Skipping invalid delta record: {e}");
-                            continue;
-                        }
-                    };
 
                     self.current_batch.push(delta);
                     self.deltas_emitted += 1;
@@ -1557,7 +1559,7 @@ binance,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0.5";
         let mut iterator =
             BatchedDeltasStreamIterator::new(&temp_file, 10, Some(4), Some(1), None, Some(1))
                 .unwrap();
-        iterator.fill_pending_batches();
+        iterator.fill_pending_batches().transpose().unwrap();
         assert_eq!(iterator.pending_batches.len(), 1);
         assert_eq!(iterator.pending_batches[0].len(), 1);
         assert_eq!(iterator.pending_batches[0][0].action, BookAction::Clear);
@@ -1565,7 +1567,7 @@ binance,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0.5";
         // No limit should return all batches (first batch starts with CLEAR)
         let mut iterator =
             BatchedDeltasStreamIterator::new(&temp_file, 10, Some(4), Some(1), None, None).unwrap();
-        iterator.fill_pending_batches();
+        iterator.fill_pending_batches().transpose().unwrap();
         assert_eq!(iterator.pending_batches.len(), 5);
         assert_eq!(iterator.pending_batches[0].len(), 2);
         assert_eq!(iterator.pending_batches[0][0].action, BookAction::Clear);
@@ -1603,7 +1605,7 @@ binance-futures,BTCUSDT,1640995301000000,1640995301100000,false,bid,50099.0,1.0"
         let mut iterator =
             BatchedDeltasStreamIterator::new(&temp_file, 100, Some(1), Some(1), None, None)
                 .unwrap();
-        iterator.fill_pending_batches();
+        iterator.fill_pending_batches().transpose().unwrap();
 
         let all_deltas: Vec<_> = iterator.pending_batches.iter().flatten().collect();
         let clear_count = all_deltas
@@ -1654,7 +1656,7 @@ binance,BTCUSDT,1640995204000000,1640995204100000,false,ask,50003.0,1.0";
         let mut iterator =
             BatchedDeltasStreamIterator::new(&temp_file, 100, Some(1), Some(1), None, Some(4))
                 .unwrap();
-        iterator.fill_pending_batches();
+        iterator.fill_pending_batches().transpose().unwrap();
 
         let all_deltas: Vec<_> = iterator.pending_batches.iter().flatten().collect();
 
@@ -1685,7 +1687,7 @@ binance,BTCUSDT,1640995203000000,1640995203100000,false,ask,50002.0,1.5";
         let mut iterator =
             BatchedDeltasStreamIterator::new(&temp_file, 100, Some(1), Some(1), None, Some(3))
                 .unwrap();
-        iterator.fill_pending_batches();
+        iterator.fill_pending_batches().transpose().unwrap();
 
         let all_deltas: Vec<_> = iterator.pending_batches.iter().flatten().collect();
 
@@ -1714,7 +1716,7 @@ binance,BTCUSDT,1640995201000000,1640995201100000,false,bid,49999.0,0.5";
         let mut iterator =
             BatchedDeltasStreamIterator::new(&temp_file, 100, Some(1), Some(1), None, None)
                 .unwrap();
-        iterator.fill_pending_batches();
+        iterator.fill_pending_batches().transpose().unwrap();
 
         assert_eq!(iterator.pending_batches.len(), 2);
         let first_batch = &iterator.pending_batches[0];
