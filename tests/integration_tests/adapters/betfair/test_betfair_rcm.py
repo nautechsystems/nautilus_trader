@@ -241,7 +241,8 @@ def test_rcm_sequence_total_runners(rcm_sequence_path: Path):
             assert rcm.rc is not None
             if rcm.rc[0].rrc:
                 for rrc in rcm.rc[0].rrc:
-                    all_runner_ids.add(rrc.id)
+                    if rrc.id is not None:
+                        all_runner_ids.add(rrc.id)
 
     assert len(all_runner_ids) == 8
 

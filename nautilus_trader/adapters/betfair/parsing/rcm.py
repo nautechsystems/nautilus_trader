@@ -57,8 +57,8 @@ class RaceRunnerChange(msgspec.Struct, frozen=True):
 
     """
 
-    ft: int
-    id: int
+    ft: int | None = None
+    id: int | None = None
     lat: float | None = None
     spd: float | None = None
     prg: float | None = None
@@ -84,7 +84,7 @@ class RaceProgressChange(msgspec.Struct, frozen=True):
 
     """
 
-    ft: int
+    ft: int | None = None
     g: str | None = None
     st: float | None = None
     rt: float | None = None
@@ -106,7 +106,7 @@ class RaceChange(msgspec.Struct, frozen=True):
 
     """
 
-    id: str
+    id: str | None = None
     mid: str | None = None
     rrc: list[RaceRunnerChange] | None = None
     rpc: RaceProgressChange | None = None
@@ -118,17 +118,17 @@ class RCM(msgspec.Struct, frozen=True):
 
     Fields:
     - op: Operation type ("rcm")
-    - id: Request ID
+    - id: Request ID (optional, only present if sent with subscription)
     - clk: Clock token
     - pt: Publish time (ms since epoch)
     - rc: Race changes
     """
 
     op: str
-    id: int
     clk: int | str
     pt: int
     rc: list[RaceChange] | None = None
+    id: int | None = None
 
 
 _RCM_DECODER = msgspec.json.Decoder(RCM)
@@ -164,9 +164,17 @@ def race_change_to_updates(
     """
     updates: list[CustomData] = []
 
+    # Skip if race_id is missing (required for data types)
+    if rc.id is None:
+        return updates
+
     # Use each runner's feed time (ft) for ts_event, fall back to message publish time.
     if rc.rrc:
         for rrc in rc.rrc:
+            # Skip runners without selection_id (required field)
+            if rrc.id is None:
+                continue
+
             ts_event = ts_event_fallback if rrc.ft is None else millis_to_nanos(rrc.ft)
             runner_data = BetfairRaceRunnerData(
                 race_id=rc.id,
