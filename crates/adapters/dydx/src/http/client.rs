@@ -1087,7 +1087,8 @@ impl DydxHttpClient {
         end: Option<DateTime<Utc>>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
-        const DYDX_MAX_TRADES_PER_REQUEST: u32 = 100;
+        const DYDX_MAX_TRADES_PER_REQUEST: u32 = 1_000;
+        const DYDX_BLOCK_TIME_SECS: f64 = 1.1;
 
         // Validation
         if let (Some(s), Some(e)) = (start, end) {
@@ -1102,6 +1103,35 @@ impl DydxHttpClient {
         let price_precision = instrument.price_precision();
         let size_precision = instrument.size_precision();
         let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+        // When an end time is provided, estimate the block height at that time
+        // so we can skip directly to the relevant window instead of paginating
+        // from the latest trade backward (which can be extremely slow for liquid markets).
+        let initial_cursor = if let Some(end_time) = end {
+            match self.inner.get_height().await {
+                Ok(height_resp) => {
+                    let secs_ahead = (height_resp.time - end_time).num_seconds();
+                    if secs_ahead > 0 {
+                        let blocks_to_skip = (secs_ahead as f64 / DYDX_BLOCK_TIME_SECS) as u64;
+                        let target = height_resp.height.saturating_sub(blocks_to_skip);
+                        log::debug!(
+                            "Estimated block height at {end_time}: {target} \
+                             (current: {}, skipping ~{blocks_to_skip} blocks)",
+                            height_resp.height,
+                        );
+                        Some(target)
+                    } else {
+                        None // end_time is in the future, start from latest
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to get block height for time skip, paginating from latest: {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         let overall_limit = limit.unwrap_or(u32::MAX);
         let mut remaining = overall_limit;
