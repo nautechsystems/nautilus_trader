@@ -540,3 +540,40 @@ def test_parse_instrument_future_option():
     # Assert
     assert instrument.id.value == "E4AN4 C5655.CME"
     assert isinstance(instrument, OptionContract), "instrument is not a OptionContract"
+
+
+def test_parse_instrument_option_on_index_has_caret_prefix():
+    # Arrange: SPX option with underSecType=IND
+    contract = IBTestContractStubs.create_contract(
+        secType="OPT",
+        conId=123456,
+        symbol="SPX",
+        lastTradeDateOrContractMonth="20240315",
+        strike=5000.0,
+        right="C",
+        multiplier="100",
+        exchange="CBOE",
+        currency="USD",
+        localSymbol="SPX   240315C05000000",
+        tradingClass="SPX",
+    )
+    contract = IBContract(**contract.__dict__)
+    contract_details = IBTestContractStubs.create_contract_details(
+        contract=contract,
+        marketName="SPX",
+        minTick=0.05,
+        underSymbol="SPX",
+        underSecType="IND",
+        timeZoneId="US/Central",
+        tradingHours="20240101:0830-20240101:1515",
+        liquidHours="20240101:0830-20240101:1515",
+        realExpirationDate="20240315",
+    )
+    contract_details = IBContractDetails(**contract_details.__dict__)
+
+    # Act
+    instrument = parse_instrument(contract_details, "CBOE")
+
+    # Assert
+    assert isinstance(instrument, OptionContract)
+    assert instrument.underlying == "^SPX"
