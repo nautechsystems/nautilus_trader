@@ -121,10 +121,16 @@ install-deps:  #-- Install Python dependencies only (no package build)
 	$Q uv sync --active --all-groups --all-extras --no-install-package nautilus_trader
 
 .PHONY: install
-install: build  #-- Install dependencies and build package in release mode
+install: export BUILD_MODE=release
+install:  #-- Install in release mode with all dependencies and extras
+	$(info $(M) Installing NautilusTrader in release mode...)
+	$Q uv sync --active --all-groups --all-extras
 
 .PHONY: install-debug
-install-debug: build-debug  #-- Install dependencies and build package in debug mode
+install-debug: export BUILD_MODE=debug
+install-debug:  #-- Install in debug mode for development
+	$(info $(M) Installing NautilusTrader in debug mode...)
+	$Q uv sync --active --all-groups --all-extras
 
 #== Build
 
