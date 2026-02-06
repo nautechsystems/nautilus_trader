@@ -633,9 +633,15 @@ class DYDXv4DataClient(LiveMarketDataClient):
                 request.instrument_id.value,
             )
 
+            start_iso = request.start.isoformat() if request.start else None
+            end_iso = request.end.isoformat() if request.end else None
+            limit = request.limit if request.limit > 0 else None
+
             pyo3_trades = await self._http_client.request_trade_ticks(
                 instrument_id=pyo3_instrument_id,
-                limit=request.limit,
+                start=start_iso,
+                end=end_iso,
+                limit=limit,
             )
 
             from nautilus_trader.model.data import TradeTick

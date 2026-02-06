@@ -354,7 +354,7 @@ async fn test_request_trades() {
 
     let client = DydxHttpClient::new(Some(base_url), Some(30), None, false, None).unwrap();
 
-    let trades = client.request_trades("BTC-USD", None).await.unwrap();
+    let trades = client.request_trades("BTC-USD", None, None).await.unwrap();
 
     assert_eq!(trades.trades.len(), 3);
     assert_eq!(trades.trades[0].id, "trade1");
@@ -541,7 +541,7 @@ async fn test_trades_chronological_order() {
 
     let client = DydxHttpClient::new(Some(base_url), Some(30), None, false, None).unwrap();
 
-    let trades = client.request_trades("BTC-USD", None).await.unwrap();
+    let trades = client.request_trades("BTC-USD", None, None).await.unwrap();
 
     assert!(trades.trades.len() >= 2);
     for i in 0..trades.trades.len() - 1 {

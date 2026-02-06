@@ -47,13 +47,12 @@ use nautilus_core::{
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data as NautilusData, OrderBookDelta,
-        OrderBookDeltas, OrderBookDeltas_API, QuoteTick, TradeTick,
+        OrderBookDeltas, OrderBookDeltas_API, QuoteTick,
     },
     enums::{
-        AggregationSource, AggressorSide, BarAggregation, BookAction, BookType, OrderSide,
-        PriceType, RecordFlag,
+        AggregationSource, BarAggregation, BookAction, BookType, OrderSide, PriceType, RecordFlag,
     },
-    identifiers::{ClientId, InstrumentId, TradeId, Venue},
+    identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
     types::{Price, Quantity},
@@ -928,8 +927,7 @@ impl DataClient for DydxDataClient {
     }
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
-        let http = self.http_client.clone();
-        let instrument_cache = self.instrument_cache.clone();
+        let http_client = self.http_client.clone();
         let sender = self.data_sender.clone();
         let instrument_id = request.instrument_id;
         let start = request.start;
@@ -943,149 +941,27 @@ impl DataClient for DydxDataClient {
         let end_nanos = datetime_to_unix_nanos(end);
 
         get_runtime().spawn(async move {
-            // dYdX Indexer trades endpoint supports `limit` but not an explicit
-            // date range in this client; we approximate by using the provided
-            // limit and instrument metadata for precision.
-            let ticker = instrument_id
-                .symbol
-                .as_str()
-                .trim_end_matches("-PERP")
-                .to_string();
-
-            // Look up instrument to derive price and size precision.
-            let instrument = match instrument_cache.get(&instrument_id) {
-                Some(inst) => inst.clone(),
-                None => {
-                    log::error!(
-                        "request_trades: instrument {instrument_id} not found in cache; cannot convert trades"
-                    );
-                    let ts_now = clock.get_time_ns();
-                    let response = DataResponse::Trades(TradesResponse::new(
-                        request_id,
-                        client_id,
-                        instrument_id,
-                        Vec::new(),
-                        start_nanos,
-                        end_nanos,
-                        ts_now,
-                        params,
-                    ));
-                    if let Err(e) = sender.send(DataEvent::Response(response)) {
-                        log::error!("Failed to send empty trades response: {e}");
-                    }
-                    return;
-                }
-            };
-
-            let price_precision = instrument.price_precision();
-            let size_precision = instrument.size_precision();
-
-            match http
-                .inner
-                .get_trades(&ticker, limit)
+            match http_client
+                .request_trade_ticks(instrument_id, start, end, limit)
                 .await
                 .context("failed to request trades from dYdX")
             {
-                Ok(trades_response) => {
-                    let mut ticks = Vec::new();
-
-                    for trade in trades_response.trades {
-                        let aggressor_side = match trade.side {
-                            OrderSide::Buy => AggressorSide::Buyer,
-                            OrderSide::Sell => AggressorSide::Seller,
-                            _ => continue, // Skip unsupported side
-                        };
-
-                        let price = match Price::from_decimal_dp(trade.price, price_precision) {
-                            Ok(p) => p,
-                            Err(e) => {
-                                log::warn!(
-                                    "request_trades: failed to convert price for trade {}: {e}",
-                                    trade.id
-                                );
-                                continue;
-                            }
-                        };
-
-                        let size = match Quantity::from_decimal_dp(trade.size, size_precision) {
-                            Ok(q) => q,
-                            Err(e) => {
-                                log::warn!(
-                                    "request_trades: failed to convert size for trade {}: {e}",
-                                    trade.id
-                                );
-                                continue;
-                            }
-                        };
-
-                        let ts_event = match trade.created_at.timestamp_nanos_opt() {
-                            Some(ns) if ns >= 0 => UnixNanos::from(ns as u64),
-                            _ => {
-                                log::warn!(
-                                    "request_trades: timestamp out of range for trade {}",
-                                    trade.id
-                                );
-                                continue;
-                            }
-                        };
-
-                        // Apply optional time-range filter.
-                        if let Some(start_ts) = start_nanos
-                            && ts_event < start_ts
-                        {
-                            continue;
-                        }
-                        if let Some(end_ts) = end_nanos
-                            && ts_event > end_ts
-                        {
-                            continue;
-                        }
-
-                        let tick = TradeTick::new(
-                            instrument_id,
-                            price,
-                            size,
-                            aggressor_side,
-                            TradeId::new(&trade.id),
-                            ts_event,
-                            clock.get_time_ns(),
-                        );
-                        ticks.push(tick);
-                    }
-
+                Ok(trades) => {
                     let response = DataResponse::Trades(TradesResponse::new(
                         request_id,
                         client_id,
                         instrument_id,
-                        ticks,
+                        trades,
                         start_nanos,
                         end_nanos,
                         clock.get_time_ns(),
                         params,
                     ));
-
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send trades response: {e}");
                     }
                 }
-                Err(e) => {
-                    log::error!("Trade request failed for {instrument_id}: {e:?}");
-
-                    let response = DataResponse::Trades(TradesResponse::new(
-                        request_id,
-                        client_id,
-                        instrument_id,
-                        Vec::new(),
-                        start_nanos,
-                        end_nanos,
-                        clock.get_time_ns(),
-                        params,
-                    ));
-
-                    if let Err(e) = sender.send(DataEvent::Response(response)) {
-                        log::error!("Failed to send empty trades response: {e}");
-                    }
-                }
+                Err(e) => log::error!("Trade request failed for {instrument_id}: {e:?}"),
             }
         });
 

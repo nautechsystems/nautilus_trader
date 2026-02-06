@@ -361,18 +361,30 @@ impl DydxHttpClient {
     }
 
     #[pyo3(name = "request_trade_ticks")]
-    #[pyo3(signature = (instrument_id, limit=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
     fn py_request_trade_ticks<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
+        start: Option<String>,
+        end: Option<String>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let start_dt = start
+            .map(|s| DateTime::parse_from_rfc3339(&s).map(|dt| dt.with_timezone(&chrono::Utc)))
+            .transpose()
+            .map_err(to_pyvalue_err)?;
+
+        let end_dt = end
+            .map(|s| DateTime::parse_from_rfc3339(&s).map(|dt| dt.with_timezone(&chrono::Utc)))
+            .transpose()
+            .map_err(to_pyvalue_err)?;
+
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let trades = client
-                .request_trade_ticks(instrument_id, limit)
+                .request_trade_ticks(instrument_id, start_dt, end_dt, limit)
                 .await
                 .map_err(to_pyvalue_err)?;
 

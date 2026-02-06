@@ -130,7 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let limit = Some(100);
 
     let start = std::time::Instant::now();
-    let trades = client.request_trades(symbol, limit).await?;
+    let trades = client.request_trades(symbol, limit, None).await?;
     let elapsed = start.elapsed();
 
     log::info!(

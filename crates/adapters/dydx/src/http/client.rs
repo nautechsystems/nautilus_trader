@@ -64,8 +64,8 @@ use nautilus_model::{
         Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, TradeTick,
         bar::get_bar_interval_ns,
     },
-    enums::{AggressorSide, BookAction, OrderSide as NautilusOrderSide, RecordFlag},
-    identifiers::{AccountId, InstrumentId, TradeId},
+    enums::{BookAction, OrderSide as NautilusOrderSide, RecordFlag},
+    identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Price, Quantity},
@@ -489,9 +489,21 @@ impl DydxRawHttpClient {
         &self,
         ticker: &str,
         limit: Option<u32>,
+        starting_before_or_at_height: Option<u64>,
     ) -> Result<super::models::TradesResponse, DydxHttpError> {
         let endpoint = format!("/v4/trades/perpetualMarket/{ticker}");
-        let query = limit.map(|l| format!("limit={l}"));
+        let mut query_parts = Vec::new();
+        if let Some(l) = limit {
+            query_parts.push(format!("limit={l}"));
+        }
+        if let Some(height) = starting_before_or_at_height {
+            query_parts.push(format!("createdBeforeOrAtHeight={height}"));
+        }
+        let query = if query_parts.is_empty() {
+            None
+        } else {
+            Some(query_parts.join("&"))
+        };
         self.send_request(Method::GET, &endpoint, query.as_deref())
             .await
     }
@@ -967,9 +979,10 @@ impl DydxHttpClient {
         &self,
         symbol: &str,
         limit: Option<u32>,
+        starting_before_or_at_height: Option<u64>,
     ) -> anyhow::Result<super::models::TradesResponse> {
         self.inner
-            .get_trades(symbol, limit)
+            .get_trades(symbol, limit, starting_before_or_at_height)
             .await
             .map_err(Into::into)
     }
@@ -1055,10 +1068,13 @@ impl DydxHttpClient {
         Ok(bars)
     }
 
-    /// Requests historical trade ticks for a symbol.
+    /// Requests historical trade ticks for an instrument with optional pagination.
     ///
     /// Fetches trade data from the dYdX Indexer API and converts them to Nautilus
-    /// `TradeTick` objects. Results are ordered by timestamp descending (newest first).
+    /// `TradeTick` objects. Supports cursor-based pagination using block height
+    /// and client-side time filtering (the dYdX API has no timestamp filter).
+    ///
+    /// Results are returned in chronological order (oldest first).
     ///
     /// # Errors
     ///
@@ -1067,45 +1083,111 @@ impl DydxHttpClient {
     pub async fn request_trade_ticks(
         &self,
         instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
+        const DYDX_MAX_TRADES_PER_REQUEST: u32 = 100;
+
+        // Validation
+        if let (Some(s), Some(e)) = (start, end) {
+            anyhow::ensure!(s < e, "start ({s}) must be before end ({e})");
+        }
+
         let instrument = self
             .get_instrument(&instrument_id)
             .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
 
         let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
-        let response = self.request_trades(ticker, limit).await?;
-
+        let price_precision = instrument.price_precision();
+        let size_precision = instrument.size_precision();
         let ts_init = get_atomic_clock_realtime().get_time_ns();
 
-        let mut trades = Vec::with_capacity(response.trades.len());
+        let overall_limit = limit.unwrap_or(u32::MAX);
+        let mut remaining = overall_limit;
+        let mut cursor_height: Option<u64> = None;
+        let mut all_trades = Vec::new();
 
-        for trade in response.trades {
-            let ts_event_nanos = trade.created_at.timestamp_nanos_opt().ok_or_else(|| {
-                anyhow::anyhow!("Timestamp out of range for trade at {}", trade.created_at)
-            })?;
-            let ts_event = UnixNanos::from(ts_event_nanos as u64);
+        loop {
+            let page_limit = remaining.min(DYDX_MAX_TRADES_PER_REQUEST);
+            let response = self
+                .inner
+                .get_trades(ticker, Some(page_limit), cursor_height)
+                .await?;
 
-            let aggressor_side = match trade.side {
-                NautilusOrderSide::Buy => AggressorSide::Buyer,
-                NautilusOrderSide::Sell => AggressorSide::Seller,
-                NautilusOrderSide::NoOrderSide => AggressorSide::NoAggressor,
-            };
+            let page_count = response.trades.len() as u32;
+            if page_count == 0 {
+                break;
+            }
 
-            let trade_tick = TradeTick::new(
-                instrument_id,
-                Price::from_decimal_dp(trade.price, instrument.price_precision())?,
-                Quantity::from_decimal_dp(trade.size, instrument.size_precision())?,
-                aggressor_side,
-                TradeId::new(&trade.id),
-                ts_event,
-                ts_init,
-            );
+            // Trades come newest-first; oldest is last
+            let oldest_trade = response.trades.last().unwrap();
 
-            trades.push(trade_tick);
+            // Update cursor for next page (go further back in time)
+            cursor_height = Some(oldest_trade.created_at_height.saturating_sub(1));
+
+            // Break if we've reached before the start boundary
+            if let Some(s) = start {
+                if oldest_trade.created_at < s {
+                    // This page contains trades before start — filter and stop
+                    for trade in &response.trades {
+                        if start.is_some_and(|s| trade.created_at < s) {
+                            continue;
+                        }
+                        if end.is_some_and(|e| trade.created_at > e) {
+                            continue;
+                        }
+                        all_trades.push(
+                            super::parse::parse_trade_tick(
+                                trade,
+                                instrument_id,
+                                price_precision,
+                                size_precision,
+                                ts_init,
+                            )?
+                        );
+                    }
+                    break;
+                }
+            }
+
+            // Convert all trades in this page (with time filtering)
+            for trade in &response.trades {
+                if start.is_some_and(|s| trade.created_at < s) {
+                    continue;
+                }
+                if end.is_some_and(|e| trade.created_at > e) {
+                    continue;
+                }
+                all_trades.push(
+                    super::parse::parse_trade_tick(
+                        trade,
+                        instrument_id,
+                        price_precision,
+                        size_precision,
+                        ts_init,
+                    )?
+                );
+            }
+
+            remaining = remaining.saturating_sub(page_count);
+
+            // Break on partial page (no more data) or limit reached
+            if page_count < page_limit || remaining == 0 {
+                break;
+            }
         }
 
-        Ok(trades)
+        // Reverse to chronological order (oldest first) and dedup
+        all_trades.reverse();
+        all_trades.dedup_by(|a, b| a.trade_id == b.trade_id);
+
+        // Truncate to requested limit
+        if let Some(lim) = limit {
+            all_trades.truncate(lim as usize);
+        }
+
+        Ok(all_trades)
     }
 
     /// Requests an order book snapshot for a symbol.
