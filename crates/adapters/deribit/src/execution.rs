@@ -726,16 +726,23 @@ impl ExecutionClient for DeribitExecutionClient {
             return Ok(());
         }
 
+        let orders: Vec<OrderAny> = cmd
+            .order_list
+            .orders
+            .iter()
+            .map(|id| self.core.get_order(id))
+            .collect::<anyhow::Result<Vec<_>>>()?;
+
         log::info!(
             "Submitting order list {} with {} orders for instrument={}",
             cmd.order_list.id,
-            cmd.order_list.orders.len(),
+            orders.len(),
             cmd.instrument_id
         );
 
         // Deribit doesn't have native batch order submission
         // Loop through and submit each order individually using shared helper
-        for order in &cmd.order_list.orders {
+        for order in &orders {
             self.submit_single_order(order, "submit_order_list_item")?;
         }
 

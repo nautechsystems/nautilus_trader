@@ -570,12 +570,16 @@ fn test_submit_bracket_order_list_with_all_duplicate_client_order_id_logs_does_n
         .price(Price::from_str("1.00000").unwrap())
         .build();
 
-    let bracket_orders = vec![entry.clone(), stop_loss.clone(), take_profit.clone()];
+    let orders = [entry.clone(), stop_loss.clone(), take_profit.clone()];
     let order_list = OrderList::new(
         OrderListId::from("1"),
         instrument.id,
         strategy_id,
-        bracket_orders,
+        vec![
+            entry.client_order_id(),
+            stop_loss.client_order_id(),
+            take_profit.client_order_id(),
+        ],
         UnixNanos::default(),
     );
 
@@ -585,12 +589,23 @@ fn test_submit_bracket_order_list_with_all_duplicate_client_order_id_logs_does_n
         strategy_id,
         instrument_id: instrument.id,
         order_list,
+        order_inits: orders.iter().map(|o| o.init_event().clone()).collect(),
         exec_algorithm_id: None,
         position_id: None,
         params: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
+
+    // Insert orders into cache (simulating what the strategy does)
+    for order in &orders {
+        execution_engine
+            .cache()
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+            .unwrap();
+    }
+
     execution_engine.execute(TradingCommand::SubmitOrderList(submit_order_list.clone()));
     let entry_submitted = TestOrderEventStubs::submitted(&entry, AccountId::test_default());
     execution_engine.process(entry_submitted);
@@ -4298,14 +4313,19 @@ fn test_submit_bracket_order_with_quote_quantity_and_no_prices_denies(
         .quote_quantity(true) // Quantity denominated in quote currency
         .build();
 
+    let orders = [
+        entry_order.clone(),
+        stop_loss_order.clone(),
+        take_profit_order.clone(),
+    ];
     let bracket = OrderList::new(
         OrderListId::from("OL-20240101-000000-001"),
         instrument.id,
         strategy_id,
         vec![
-            entry_order.clone(),
-            stop_loss_order.clone(),
-            take_profit_order.clone(),
+            entry_order.client_order_id(),
+            stop_loss_order.client_order_id(),
+            take_profit_order.client_order_id(),
         ],
         UnixNanos::default(),
     );
@@ -4316,12 +4336,22 @@ fn test_submit_bracket_order_with_quote_quantity_and_no_prices_denies(
         strategy_id,
         instrument_id: instrument.id,
         order_list: bracket,
+        order_inits: orders.iter().map(|o| o.init_event().clone()).collect(),
         exec_algorithm_id: None,
         position_id: None,
         params: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
+
+    // Insert orders into cache (simulating what the strategy does)
+    for order in &orders {
+        execution_engine
+            .cache()
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+            .unwrap();
+    }
 
     execution_engine.execute(TradingCommand::SubmitOrderList(submit_order_list));
 
@@ -4794,14 +4824,19 @@ fn test_submit_bracket_order_with_quote_quantity_and_ticks_converts_expected(
         .price(Price::from_str("20.0").unwrap())
         .quote_quantity(true) // Quantity denominated in quote currency
         .build();
+    let orders = [
+        entry_order.clone(),
+        stop_loss_order.clone(),
+        take_profit_order.clone(),
+    ];
     let order_list = OrderList::new(
         OrderListId::from("OL-20240101-000000-001-001"),
         instrument.id,
         strategy_id,
         vec![
-            entry_order.clone(),
-            stop_loss_order.clone(),
-            take_profit_order.clone(),
+            entry_order.client_order_id(),
+            stop_loss_order.client_order_id(),
+            take_profit_order.client_order_id(),
         ],
         UnixNanos::default(),
     );
@@ -4843,6 +4878,7 @@ fn test_submit_bracket_order_with_quote_quantity_and_ticks_converts_expected(
         strategy_id,
         instrument_id: instrument.id,
         order_list,
+        order_inits: orders.iter().map(|o| o.init_event().clone()).collect(),
         exec_algorithm_id: None,
         position_id: None,
         params: None,

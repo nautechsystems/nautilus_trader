@@ -68,7 +68,7 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
-    orders::Order,
+    orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance},
 };
@@ -1092,7 +1092,13 @@ impl ExecutionClient for DydxExecutionClient {
     }
 
     fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
-        let order_count = cmd.order_list.orders.len();
+        let orders: Vec<OrderAny> = cmd
+            .order_list
+            .orders
+            .iter()
+            .map(|id| self.core.get_order(id))
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let order_count = orders.len();
 
         // Check connection status
         if !self.is_connected() {
@@ -1108,7 +1114,7 @@ impl ExecutionClient for DydxExecutionClient {
             log::warn!("Cannot submit order list: {reason}");
             // Reject all orders in the list
             let ts_event = self.clock.get_time_ns();
-            for order in &cmd.order_list.orders {
+            for order in &orders {
                 self.emitter.emit_order_rejected_event(
                     order.strategy_id(),
                     order.instrument_id(),
@@ -1128,7 +1134,7 @@ impl ExecutionClient for DydxExecutionClient {
                 log::error!("Failed to get execution components for batch: {e}");
                 // Reject all orders in the list
                 let ts_event = self.clock.get_time_ns();
-                for order in &cmd.order_list.orders {
+                for order in &orders {
                     self.emitter.emit_order_rejected_event(
                         order.strategy_id(),
                         order.instrument_id(),
@@ -1147,7 +1153,7 @@ impl ExecutionClient for DydxExecutionClient {
         let mut order_info: Vec<(ClientOrderId, InstrumentId, StrategyId)> =
             Vec::with_capacity(order_count);
 
-        for order in &cmd.order_list.orders {
+        for order in &orders {
             // Only limit orders can be batched
             if order.order_type() != OrderType::Limit {
                 log::warn!(

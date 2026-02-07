@@ -25,7 +25,7 @@ use nautilus_model::{
         ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
     orders::{
-        LimitIfTouchedOrder, LimitOrder, MarketIfTouchedOrder, MarketOrder, OrderAny, OrderList,
+        LimitIfTouchedOrder, LimitOrder, MarketIfTouchedOrder, MarketOrder, OrderAny,
         StopLimitOrder, StopMarketOrder,
     },
     types::{Price, Quantity},
@@ -444,7 +444,7 @@ impl OrderFactory {
         OrderAny::LimitIfTouched(order)
     }
 
-    /// Creates a bracket order list with entry order and attached stop-loss and take-profit orders.
+    /// Creates a bracket order with entry order and attached stop-loss and take-profit orders.
     #[allow(clippy::too_many_arguments)]
     pub fn bracket(
         &mut self,
@@ -466,7 +466,7 @@ impl OrderFactory {
         exec_algorithm_id: Option<ExecAlgorithmId>,
         exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
         tags: Option<Vec<Ustr>>,
-    ) -> OrderList {
+    ) -> Vec<OrderAny> {
         let order_list_id = self.generate_order_list_id();
         let ts_init = self.clock.borrow().timestamp_ns();
 
@@ -671,13 +671,7 @@ impl OrderFactory {
             ts_init,
         ));
 
-        OrderList::new(
-            order_list_id,
-            instrument_id,
-            self.strategy_id,
-            vec![entry_order, sl_order, tp_order],
-            ts_init,
-        )
+        vec![entry_order, sl_order, tp_order]
     }
 }
 
@@ -1087,7 +1081,7 @@ pub mod tests {
 
     #[rstest]
     fn test_bracket_order_with_market_entry(mut order_factory: OrderFactory) {
-        let bracket = order_factory.bracket(
+        let orders = order_factory.bracket(
             InstrumentId::from("BTCUSDT.BINANCE"),
             OrderSide::Buy,
             100.into(),
@@ -1108,27 +1102,24 @@ pub mod tests {
             None,
         );
 
-        assert_eq!(bracket.orders.len(), 3);
-        assert_eq!(bracket.instrument_id, "BTCUSDT.BINANCE".into());
+        assert_eq!(orders.len(), 3);
+        assert_eq!(orders[0].instrument_id(), "BTCUSDT.BINANCE".into());
 
         // Entry should be market order
-        assert_eq!(bracket.orders[0].order_side(), OrderSide::Buy);
+        assert_eq!(orders[0].order_side(), OrderSide::Buy);
 
         // SL should be opposite side stop-market
-        assert_eq!(bracket.orders[1].order_side(), OrderSide::Sell);
-        assert_eq!(
-            bracket.orders[1].trigger_price(),
-            Some(Price::from("45000.00"))
-        );
+        assert_eq!(orders[1].order_side(), OrderSide::Sell);
+        assert_eq!(orders[1].trigger_price(), Some(Price::from("45000.00")));
 
         // TP should be opposite side limit
-        assert_eq!(bracket.orders[2].order_side(), OrderSide::Sell);
-        assert_eq!(bracket.orders[2].price(), Some(Price::from("55000.00")));
+        assert_eq!(orders[2].order_side(), OrderSide::Sell);
+        assert_eq!(orders[2].price(), Some(Price::from("55000.00")));
     }
 
     #[rstest]
     fn test_bracket_order_with_limit_entry(mut order_factory: OrderFactory) {
-        let bracket = order_factory.bracket(
+        let orders = order_factory.bracket(
             InstrumentId::from("BTCUSDT.BINANCE"),
             OrderSide::Buy,
             100.into(),
@@ -1149,15 +1140,15 @@ pub mod tests {
             None,
         );
 
-        assert_eq!(bracket.orders.len(), 3);
+        assert_eq!(orders.len(), 3);
 
         // Entry should be limit order at entry price
-        assert_eq!(bracket.orders[0].price(), Some(Price::from("49000.00")));
+        assert_eq!(orders[0].price(), Some(Price::from("49000.00")));
     }
 
     #[rstest]
     fn test_bracket_order_with_stop_entry(mut order_factory: OrderFactory) {
-        let bracket = order_factory.bracket(
+        let orders = order_factory.bracket(
             InstrumentId::from("BTCUSDT.BINANCE"),
             OrderSide::Buy,
             100.into(),
@@ -1178,18 +1169,15 @@ pub mod tests {
             None,
         );
 
-        assert_eq!(bracket.orders.len(), 3);
+        assert_eq!(orders.len(), 3);
 
         // Entry should be stop-market order
-        assert_eq!(
-            bracket.orders[0].trigger_price(),
-            Some(Price::from("51000.00"))
-        );
+        assert_eq!(orders[0].trigger_price(), Some(Price::from("51000.00")));
     }
 
     #[rstest]
     fn test_bracket_order_sell_side(mut order_factory: OrderFactory) {
-        let bracket = order_factory.bracket(
+        let orders = order_factory.bracket(
             InstrumentId::from("BTCUSDT.BINANCE"),
             OrderSide::Sell,
             100.into(),
@@ -1210,21 +1198,21 @@ pub mod tests {
             None,
         );
 
-        assert_eq!(bracket.orders.len(), 3);
+        assert_eq!(orders.len(), 3);
 
         // Entry should be sell
-        assert_eq!(bracket.orders[0].order_side(), OrderSide::Sell);
+        assert_eq!(orders[0].order_side(), OrderSide::Sell);
 
         // SL should be buy (opposite)
-        assert_eq!(bracket.orders[1].order_side(), OrderSide::Buy);
+        assert_eq!(orders[1].order_side(), OrderSide::Buy);
 
         // TP should be buy (opposite)
-        assert_eq!(bracket.orders[2].order_side(), OrderSide::Buy);
+        assert_eq!(orders[2].order_side(), OrderSide::Buy);
     }
 
     #[rstest]
     fn test_bracket_order_sets_contingencies(mut order_factory: OrderFactory) {
-        let bracket = order_factory.bracket(
+        let orders = order_factory.bracket(
             InstrumentId::from("BTCUSDT.BINANCE"),
             OrderSide::Buy,
             100.into(),
@@ -1245,23 +1233,25 @@ pub mod tests {
             None,
         );
 
-        let entry = &bracket.orders[0];
-        let stop = &bracket.orders[1];
-        let take = &bracket.orders[2];
+        let entry = &orders[0];
+        let stop = &orders[1];
+        let take = &orders[2];
 
-        assert_eq!(entry.order_list_id(), Some(bracket.id));
+        let order_list_id = entry
+            .order_list_id()
+            .expect("Entry should have order_list_id");
         assert_eq!(entry.contingency_type(), Some(ContingencyType::Oto));
         assert_eq!(
             entry.linked_order_ids().unwrap(),
             &[stop.client_order_id(), take.client_order_id()]
         );
 
-        assert_eq!(stop.order_list_id(), Some(bracket.id));
+        assert_eq!(stop.order_list_id(), Some(order_list_id));
         assert_eq!(stop.contingency_type(), Some(ContingencyType::Oco));
         assert_eq!(stop.parent_order_id(), Some(entry.client_order_id()));
         assert_eq!(stop.linked_order_ids().unwrap(), &[take.client_order_id()]);
 
-        assert_eq!(take.order_list_id(), Some(bracket.id));
+        assert_eq!(take.order_list_id(), Some(order_list_id));
         assert_eq!(take.contingency_type(), Some(ContingencyType::Oco));
         assert_eq!(take.parent_order_id(), Some(entry.client_order_id()));
         assert_eq!(take.linked_order_ids().unwrap(), &[stop.client_order_id()]);

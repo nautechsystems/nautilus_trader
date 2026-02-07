@@ -29,7 +29,7 @@ mod tests;
 
 use std::{
     collections::VecDeque,
-    fmt::Debug,
+    fmt::{Debug, Display},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -958,7 +958,7 @@ impl Cache {
                 let all_purged = order_list
                     .orders
                     .iter()
-                    .all(|o| !self.orders.contains_key(&o.client_order_id()));
+                    .all(|id| !self.orders.contains_key(id));
                 if all_purged {
                     self.order_lists.remove(&order_list_id);
                     log::info!("Purged {order_list_id}");
@@ -2640,6 +2640,23 @@ impl Cache {
         self.orders.get(client_order_id)
     }
 
+    /// Gets cloned orders for the given `client_order_ids`, logging an error for any missing.
+    #[must_use]
+    pub fn orders_for_ids(
+        &self,
+        client_order_ids: &[ClientOrderId],
+        context: &dyn Display,
+    ) -> Vec<OrderAny> {
+        let mut orders = Vec::with_capacity(client_order_ids.len());
+        for id in client_order_ids {
+            match self.orders.get(id) {
+                Some(order) => orders.push(order.clone()),
+                None => log::error!("Order {id} not found in cache for {context}"),
+            }
+        }
+        orders
+    }
+
     /// Gets a reference to the order with the `client_order_id` (if found).
     #[must_use]
     pub fn mut_order(&mut self, client_order_id: &ClientOrderId) -> Option<&mut OrderAny> {
@@ -2887,8 +2904,11 @@ impl Cache {
 
         if let Some(account_id) = account_id {
             order_lists.retain(|ol| {
-                ol.first()
-                    .is_some_and(|order| order.account_id().as_ref() == Some(account_id))
+                ol.orders.iter().any(|client_order_id| {
+                    self.orders
+                        .get(client_order_id)
+                        .is_some_and(|order| order.account_id().as_ref() == Some(account_id))
+                })
             });
         }
 

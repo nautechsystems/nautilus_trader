@@ -126,7 +126,13 @@ pub trait ExecutionAlgorithm: DataActor {
             }
             TradingCommand::SubmitOrderList(cmd) => {
                 self.subscribe_to_strategy_events(cmd.strategy_id);
-                self.on_order_list(cmd.order_list)
+                let orders: Vec<OrderAny> = cmd
+                    .order_list
+                    .orders
+                    .iter()
+                    .map(|id| self.core_mut().get_order(id))
+                    .collect::<anyhow::Result<Vec<_>>>()?;
+                self.on_order_list(cmd.order_list, orders)
             }
             TradingCommand::CancelOrder(cmd) => self.handle_cancel_order(cmd),
             _ => {
@@ -153,8 +159,12 @@ pub trait ExecutionAlgorithm: DataActor {
     /// # Errors
     ///
     /// Returns an error if order list handling fails.
-    fn on_order_list(&mut self, order_list: OrderList) -> anyhow::Result<()> {
-        for order in order_list.orders {
+    fn on_order_list(
+        &mut self,
+        _order_list: OrderList,
+        orders: Vec<OrderAny>,
+    ) -> anyhow::Result<()> {
+        for order in orders {
             self.on_order(order)?;
         }
         Ok(())

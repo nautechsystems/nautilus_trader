@@ -647,7 +647,12 @@ impl ExecutionClient for SandboxExecutionClient {
         let ts_init = self.clock.borrow().timestamp_ns();
         let endpoint = MessagingSwitchboard::exec_engine_process();
 
-        for order in &cmd.order_list.orders {
+        let orders: Vec<OrderAny> = self
+            .cache
+            .borrow()
+            .orders_for_ids(&cmd.order_list.orders, cmd);
+
+        for order in &orders {
             if order.is_closed() {
                 log::warn!("Cannot submit closed order {}", order.client_order_id());
                 continue;
@@ -658,7 +663,7 @@ impl ExecutionClient for SandboxExecutionClient {
         }
 
         let account_id = self.core.borrow().account_id;
-        for order in &cmd.order_list.orders {
+        for order in &orders {
             if order.is_closed() {
                 continue;
             }

@@ -16,13 +16,13 @@
 use std::fmt::Display;
 
 use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, correctness::check_equal};
 use nautilus_model::{
     events::OrderInitialized,
     identifiers::{
         ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, TraderId,
     },
-    orders::OrderList,
+    orders::{Order, OrderAny, OrderList},
 };
 use serde::{Deserialize, Serialize};
 
@@ -73,6 +73,32 @@ impl SubmitOrder {
             ts_init,
         }
     }
+
+    /// Creates a new [`SubmitOrder`] from an existing order.
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub fn from_order(
+        order: &OrderAny,
+        trader_id: TraderId,
+        client_id: Option<ClientId>,
+        position_id: Option<PositionId>,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self {
+            trader_id,
+            client_id,
+            strategy_id: order.strategy_id(),
+            instrument_id: order.instrument_id(),
+            client_order_id: order.client_order_id(),
+            order_init: OrderInitialized::from(order),
+            exec_algorithm_id: order.exec_algorithm_id(),
+            position_id,
+            params: None,
+            command_id,
+            ts_init,
+        }
+    }
 }
 
 impl Display for SubmitOrder {
@@ -96,6 +122,7 @@ pub struct SubmitOrderList {
     pub strategy_id: StrategyId,
     pub instrument_id: InstrumentId,
     pub order_list: OrderList,
+    pub order_inits: Vec<OrderInitialized>,
     pub exec_algorithm_id: Option<ExecAlgorithmId>,
     pub position_id: Option<PositionId>,
     pub params: Option<IndexMap<String, String>>,
@@ -105,26 +132,50 @@ pub struct SubmitOrderList {
 
 impl SubmitOrderList {
     /// Creates a new [`SubmitOrderList`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `order_inits` length doesn't match `order_list.orders`, or if
+    /// the client order IDs don't match in order.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
-    pub const fn new(
+    pub fn new(
         trader_id: TraderId,
         client_id: Option<ClientId>,
         strategy_id: StrategyId,
-        instrument_id: InstrumentId,
         order_list: OrderList,
+        order_inits: Vec<OrderInitialized>,
         exec_algorithm_id: Option<ExecAlgorithmId>,
         position_id: Option<PositionId>,
         params: Option<IndexMap<String, String>>,
         command_id: UUID4,
         ts_init: UnixNanos,
     ) -> Self {
+        check_equal(
+            &order_inits.len(),
+            &order_list.orders.len(),
+            "order_inits.len()",
+            "order_list.orders.len()",
+        )
+        .unwrap();
+
+        for (init, id) in order_inits.iter().zip(order_list.orders.iter()) {
+            check_equal(
+                &init.client_order_id,
+                id,
+                "order_init.client_order_id",
+                "order_list.orders id",
+            )
+            .unwrap();
+        }
+
         Self {
             trader_id,
             client_id,
             strategy_id,
-            instrument_id,
+            instrument_id: order_list.instrument_id,
             order_list,
+            order_inits,
             exec_algorithm_id,
             position_id,
             params,
@@ -138,8 +189,9 @@ impl Display for SubmitOrderList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "SubmitOrderList(instrument_id={}, order_list=TBD, position_id={})",
+            "SubmitOrderList(instrument_id={}, order_list={}, position_id={})",
             self.instrument_id,
+            self.order_list.id,
             self.position_id
                 .map_or("None".to_string(), |position_id| format!("{position_id}")),
         )

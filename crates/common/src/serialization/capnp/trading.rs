@@ -292,9 +292,8 @@ impl<'a> ToCapnp<'a> for SubmitOrderList {
 
         let mut order_inits_builder = builder
             .reborrow()
-            .init_order_inits(self.order_list.orders.len() as u32);
-        for (i, order) in self.order_list.orders.iter().enumerate() {
-            let order_init = order.init_event();
+            .init_order_inits(self.order_inits.len() as u32);
+        for (i, order_init) in self.order_inits.iter().enumerate() {
             let order_init_builder = order_inits_builder.reborrow().get(i as u32);
             order_init.to_capnp(order_init_builder);
         }
@@ -708,11 +707,13 @@ mod tests {
             .price(Price::new(51_000.0, 2))
             .build();
 
+        let orders = [order1.clone(), order2];
+        let order_inits: Vec<_> = orders.iter().map(|o| o.init_event().clone()).collect();
         let order_list = OrderList::new(
             OrderListId::new("OL-001"),
             InstrumentId::from("BTCUSDT.BINANCE"),
             order1.strategy_id(),
-            vec![order1.clone(), order2],
+            vec![order1.client_order_id(), orders[1].client_order_id()],
             ts_init,
         );
 
@@ -720,8 +721,8 @@ mod tests {
             order1.trader_id(),
             Some(client_id),
             order1.strategy_id(),
-            order1.instrument_id(),
             order_list,
+            order_inits,
             None,
             None,
             None,

@@ -49,6 +49,7 @@ use nautilus_model::{
     identifiers::{InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
+    orders::OrderAny,
     types::{AccountBalance, Currency, Money, Price},
 };
 use rust_decimal::Decimal;
@@ -777,8 +778,13 @@ impl SimulatedExchange {
                 TradingCommand::BatchCancelOrders(ref command) => {
                     matching_engine.process_batch_cancel(command, account_id);
                 }
-                TradingCommand::SubmitOrderList(mut command) => {
-                    for order in &mut command.order_list.orders {
+                TradingCommand::SubmitOrderList(ref command) => {
+                    let mut orders: Vec<OrderAny> = self
+                        .cache
+                        .borrow()
+                        .orders_for_ids(&command.order_list.orders, command);
+
+                    for order in &mut orders {
                         matching_engine.process_order(order, account_id);
                     }
                 }

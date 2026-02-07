@@ -200,7 +200,13 @@ impl ExecutionClient for BacktestExecutionClient {
     fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
         let ts_init = self.clock.borrow().timestamp_ns();
         let endpoint = MessagingSwitchboard::exec_engine_process();
-        for order in &cmd.order_list.orders {
+
+        let orders: Vec<OrderAny> = self
+            .cache
+            .borrow()
+            .orders_for_ids(&cmd.order_list.orders, cmd);
+
+        for order in &orders {
             let event = self.factory.generate_order_submitted(order, ts_init);
             msgbus::send_order_event(endpoint, event);
         }

@@ -546,7 +546,13 @@ impl ExecutionClient for HyperliquidExecutionClient {
         );
 
         let http_client = self.http_client.clone();
-        let orders: Vec<OrderAny> = command.order_list.orders.clone();
+
+        let orders: Vec<OrderAny> = command
+            .order_list
+            .orders
+            .iter()
+            .map(|id| self.core.get_order(id))
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
         // Validate all orders synchronously and collect valid ones
         let mut valid_orders = Vec::new();

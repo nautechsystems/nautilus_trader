@@ -1341,7 +1341,7 @@ impl ExecTester {
             anyhow::bail!("Strategy not registered: OrderFactory missing");
         };
 
-        let order_list = factory.bracket(
+        let orders = factory.bracket(
             self.config.instrument_id,
             order_side,
             quantity,
@@ -1362,7 +1362,7 @@ impl ExecTester {
             None, // tags
         );
 
-        if let Some(entry_order) = order_list.orders.first() {
+        if let Some(entry_order) = orders.first() {
             if order_side == OrderSide::Buy {
                 self.buy_order = Some(entry_order.clone());
             } else {
@@ -1372,9 +1372,9 @@ impl ExecTester {
 
         let client_id = self.config.client_id;
         if let Some(params) = &self.config.order_params {
-            self.submit_order_list_with_params(order_list, None, client_id, params.clone())
+            self.submit_order_list_with_params(orders, None, client_id, params.clone())
         } else {
-            self.submit_order_list(order_list, None, client_id)
+            self.submit_order_list(orders, None, client_id)
         }
     }
 

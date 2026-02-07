@@ -730,7 +730,7 @@ fn test_add_order_list() {
         order_list_id,
         instrument.id(),
         order.strategy_id(),
-        vec![order],
+        vec![order.client_order_id()],
         UnixNanos::default(),
     );
 
@@ -763,7 +763,7 @@ fn test_add_order_list_when_already_exists_errors() {
         order_list_id,
         instrument.id(),
         order.strategy_id(),
-        vec![order],
+        vec![order.client_order_id()],
         UnixNanos::default(),
     );
 
@@ -2287,7 +2287,7 @@ fn test_purge_closed_orders_also_purges_order_lists() {
         order_list_id,
         instrument.id(),
         order1.strategy_id(),
-        vec![order1.clone(), order2.clone()],
+        vec![order1.client_order_id(), order2.client_order_id()],
         UnixNanos::default(),
     );
 
@@ -2377,7 +2377,7 @@ fn test_purge_closed_orders_does_not_purge_order_list_with_open_orders() {
         order_list_id,
         instrument.id(),
         order1.strategy_id(),
-        vec![order1.clone(), order2.clone()],
+        vec![order1.client_order_id(), order2.client_order_id()],
         UnixNanos::default(),
     );
 

@@ -18,15 +18,21 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::{UnixNanos, correctness::check_slice_not_empty};
+use nautilus_core::{
+    UnixNanos,
+    correctness::{check_equal, check_slice_not_empty},
+};
 use serde::{Deserialize, Serialize};
 
-use super::{Order, OrderAny};
 use crate::{
-    enums::ContingencyType,
-    identifiers::{InstrumentId, OrderListId, StrategyId},
+    identifiers::{ClientOrderId, InstrumentId, OrderListId, StrategyId},
+    orders::{Order, OrderAny},
 };
 
+/// Lightweight runtime state for a group of related orders.
+///
+/// Stores only the order IDs - full order data lives in the cache.
+/// For serialization payload, see `SubmitOrderList.order_inits`.
 #[derive(Clone, Eq, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
@@ -36,7 +42,7 @@ pub struct OrderList {
     pub id: OrderListId,
     pub instrument_id: InstrumentId,
     pub strategy_id: StrategyId,
-    pub orders: Vec<OrderAny>,
+    pub orders: Vec<ClientOrderId>,
     pub ts_init: UnixNanos,
 }
 
@@ -45,19 +51,16 @@ impl OrderList {
     ///
     /// # Panics
     ///
-    /// Panics if `orders` is empty or if any order's instrument or strategy ID does not match.
+    /// Panics if `orders` is empty.
+    #[must_use]
     pub fn new(
         order_list_id: OrderListId,
         instrument_id: InstrumentId,
         strategy_id: StrategyId,
-        orders: Vec<OrderAny>,
+        orders: Vec<ClientOrderId>,
         ts_init: UnixNanos,
     ) -> Self {
         check_slice_not_empty(orders.as_slice(), stringify!(orders)).unwrap();
-        for order in &orders {
-            assert_eq!(instrument_id, order.instrument_id());
-            assert_eq!(strategy_id, order.strategy_id());
-        }
         Self {
             id: order_list_id,
             instrument_id,
@@ -67,9 +70,69 @@ impl OrderList {
         }
     }
 
-    /// Returns a reference to the first order in the list.
+    /// Creates a new [`OrderList`] from a slice of orders.
+    ///
+    /// Derives `order_list_id`, `instrument_id`, and `strategy_id` from the first order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - `orders` is empty
+    /// - Any order has a different `order_list_id` than the first
+    /// - Any order has a different `instrument_id` than the first
+    /// - Any order has a different `strategy_id` than the first
+    /// - Any order has `None` for `order_list_id`
     #[must_use]
-    pub fn first(&self) -> Option<&OrderAny> {
+    pub fn from_orders(orders: &[OrderAny], ts_init: UnixNanos) -> Self {
+        check_slice_not_empty(orders, stringify!(orders)).unwrap();
+
+        let first = &orders[0];
+        let order_list_id = first
+            .order_list_id()
+            .expect("First order must have order_list_id");
+        let instrument_id = first.instrument_id();
+        let strategy_id = first.strategy_id();
+
+        for order in orders.iter().skip(1) {
+            let other_list_id = order
+                .order_list_id()
+                .expect("All orders must have order_list_id");
+            check_equal(
+                &other_list_id,
+                &order_list_id,
+                "order_list_id",
+                "first order order_list_id",
+            )
+            .unwrap();
+            check_equal(
+                &order.instrument_id(),
+                &instrument_id,
+                "instrument_id",
+                "first order instrument_id",
+            )
+            .unwrap();
+            check_equal(
+                &order.strategy_id(),
+                &strategy_id,
+                "strategy_id",
+                "first order strategy_id",
+            )
+            .unwrap();
+        }
+
+        let client_order_ids = orders.iter().map(|o| o.client_order_id()).collect();
+
+        Self {
+            id: order_list_id,
+            instrument_id,
+            strategy_id,
+            orders: client_order_ids,
+            ts_init,
+        }
+    }
+
+    #[must_use]
+    pub fn first(&self) -> Option<&ClientOrderId> {
         self.orders.first()
     }
 
@@ -83,45 +146,6 @@ impl OrderList {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.orders.is_empty()
-    }
-
-    /// Returns whether this order list represents a bracket order.
-    ///
-    /// A bracket order has exactly 3 orders: an entry order (OTO contingency)
-    /// with exactly 2 child orders (OUO contingency, not OCO) that are
-    /// reduce-only TP/SL orders.
-    #[must_use]
-    pub fn is_bracket(&self) -> bool {
-        if self.orders.len() != 3 {
-            return false;
-        }
-
-        let entry = match self.first() {
-            Some(order) => order,
-            None => return false,
-        };
-
-        if entry.contingency_type() != Some(ContingencyType::Oto) {
-            return false;
-        }
-
-        let entry_client_order_id = entry.client_order_id();
-        let mut ouo_child_count = 0;
-
-        for order in self.orders.iter().skip(1) {
-            if order.parent_order_id() != Some(entry_client_order_id) {
-                return false;
-            }
-            if order.contingency_type() != Some(ContingencyType::Ouo) {
-                return false;
-            }
-            if !order.is_reduce_only() {
-                return false;
-            }
-            ouo_child_count += 1;
-        }
-
-        ouo_child_count == 2
     }
 }
 
@@ -161,41 +185,39 @@ mod tests {
 
     use super::*;
     use crate::{
-        enums::{OrderSide, OrderType},
-        identifiers::{ClientOrderId, OrderListId, StrategyId},
-        instruments::{CurrencyPair, stubs::*},
-        orders::OrderTestBuilder,
-        stubs::TestDefault,
-        types::{Price, Quantity},
+        enums::OrderType,
+        identifiers::{InstrumentId, OrderListId},
+        orders::builder::OrderTestBuilder,
+        types::Quantity,
     };
 
-    #[rstest]
-    fn test_new_and_display(audusd_sim: CurrencyPair) {
-        let order1 = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Buy)
-            .price(Price::from("1.00000"))
-            .quantity(Quantity::from(100_000))
-            .build();
-        let order2 = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Buy)
-            .price(Price::from("1.00000"))
-            .quantity(Quantity::from(100_000))
-            .build();
-        let order3 = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Buy)
-            .price(Price::from("1.00000"))
-            .quantity(Quantity::from(100_000))
-            .build();
+    fn create_client_order_ids(count: usize) -> Vec<ClientOrderId> {
+        (0..count)
+            .map(|i| ClientOrderId::from(format!("O-00{}", i + 1).as_str()))
+            .collect()
+    }
 
-        let orders = vec![order1, order2, order3];
+    fn create_orders(count: usize, order_list_id: OrderListId) -> Vec<OrderAny> {
+        (0..count)
+            .map(|i| {
+                OrderTestBuilder::new(OrderType::Market)
+                    .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+                    .client_order_id(ClientOrderId::from(format!("O-00{}", i + 1).as_str()))
+                    .order_list_id(order_list_id)
+                    .quantity(Quantity::from(1))
+                    .build()
+            })
+            .collect()
+    }
+
+    #[rstest]
+    fn test_new_and_display() {
+        let orders = create_client_order_ids(3);
 
         let order_list = OrderList::new(
             OrderListId::from("OL-001"),
-            audusd_sim.id,
-            StrategyId::test_default(),
+            InstrumentId::from("AUD/USD.SIM"),
+            StrategyId::from("S-001"),
             orders,
             UnixNanos::default(),
         );
@@ -206,71 +228,48 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "assertion `left == right` failed")]
-    fn test_order_list_creation_with_mismatched_instrument_id(audusd_sim: CurrencyPair) {
-        let order1 = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Buy)
-            .price(Price::from("1.00000"))
-            .quantity(Quantity::from(100_000))
-            .build();
-        let order2 = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(InstrumentId::from("EUR/USD.SIM"))
-            .side(OrderSide::Sell)
-            .price(Price::from("1.01000"))
-            .quantity(Quantity::from(50_000))
-            .build();
+    #[should_panic(expected = "called `Result::unwrap()` on an `Err` value: the 'orders'")]
+    fn test_order_list_creation_with_empty_orders() {
+        let orders: Vec<ClientOrderId> = vec![];
 
-        let orders = vec![order1, order2];
-
-        // This should panic because the instrument IDs do not match
-        OrderList::new(
-            OrderListId::from("OL-003"),
-            audusd_sim.id,
-            StrategyId::test_default(),
-            orders,
-            UnixNanos::default(),
-        );
-    }
-
-    #[rstest]
-    #[should_panic(expected = "called `Result::unwrap()` on an `Err` value: the 'orders' slice")]
-    fn test_order_list_creation_with_empty_orders(audusd_sim: CurrencyPair) {
-        let orders: Vec<OrderAny> = vec![];
-
-        // This should panic because the orders list is empty
-        OrderList::new(
+        let _ = OrderList::new(
             OrderListId::from("OL-004"),
-            audusd_sim.id,
-            StrategyId::test_default(),
+            InstrumentId::from("AUD/USD.SIM"),
+            StrategyId::from("S-001"),
             orders,
             UnixNanos::default(),
         );
     }
 
     #[rstest]
-    fn test_order_list_equality(audusd_sim: CurrencyPair) {
-        let order1 = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Buy)
-            .price(Price::from("1.00000"))
-            .quantity(Quantity::from(100_000))
-            .build();
+    fn test_from_orders() {
+        let order_list_id = OrderListId::from("OL-002");
+        let orders = create_orders(3, order_list_id);
 
-        let orders = vec![order1];
+        let order_list = OrderList::from_orders(&orders, UnixNanos::default());
+
+        assert_eq!(order_list.id, order_list_id);
+        assert_eq!(order_list.len(), 3);
+        assert_eq!(order_list.instrument_id, InstrumentId::from("AUD/USD.SIM"));
+        assert_eq!(order_list.orders[0], ClientOrderId::from("O-001"));
+    }
+
+    #[rstest]
+    fn test_order_list_equality() {
+        let orders = create_client_order_ids(1);
 
         let order_list1 = OrderList::new(
             OrderListId::from("OL-006"),
-            audusd_sim.id,
-            StrategyId::test_default(),
+            InstrumentId::from("AUD/USD.SIM"),
+            StrategyId::from("S-001"),
             orders.clone(),
             UnixNanos::default(),
         );
 
         let order_list2 = OrderList::new(
             OrderListId::from("OL-006"),
-            audusd_sim.id,
-            StrategyId::test_default(),
+            InstrumentId::from("AUD/USD.SIM"),
+            StrategyId::from("S-001"),
             orders,
             UnixNanos::default(),
         );
@@ -279,28 +278,21 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_list_inequality(audusd_sim: CurrencyPair) {
-        let order1 = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Buy)
-            .price(Price::from("1.00000"))
-            .quantity(Quantity::from(100_000))
-            .build();
-
-        let orders = vec![order1];
+    fn test_order_list_inequality() {
+        let orders = create_client_order_ids(1);
 
         let order_list1 = OrderList::new(
             OrderListId::from("OL-007"),
-            audusd_sim.id,
-            StrategyId::test_default(),
+            InstrumentId::from("AUD/USD.SIM"),
+            StrategyId::from("S-001"),
             orders.clone(),
             UnixNanos::default(),
         );
 
         let order_list2 = OrderList::new(
             OrderListId::from("OL-008"),
-            audusd_sim.id,
-            StrategyId::test_default(),
+            InstrumentId::from("AUD/USD.SIM"),
+            StrategyId::from("S-001"),
             orders,
             UnixNanos::default(),
         );
@@ -309,63 +301,31 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_list_first(audusd_sim: CurrencyPair) {
-        let order1 = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Buy)
-            .price(Price::from("1.00000"))
-            .quantity(Quantity::from(100_000))
-            .build();
-        let order2 = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Sell)
-            .price(Price::from("1.01000"))
-            .quantity(Quantity::from(50_000))
-            .build();
-
-        let first_order_id = order1.client_order_id();
-        let orders = vec![order1, order2];
+    fn test_order_list_first() {
+        let orders = create_client_order_ids(2);
+        let first_id = orders[0];
 
         let order_list = OrderList::new(
             OrderListId::from("OL-009"),
-            audusd_sim.id,
-            StrategyId::test_default(),
+            InstrumentId::from("AUD/USD.SIM"),
+            StrategyId::from("S-001"),
             orders,
             UnixNanos::default(),
         );
 
         let first = order_list.first();
         assert!(first.is_some());
-        assert_eq!(first.unwrap().client_order_id(), first_order_id);
+        assert_eq!(*first.unwrap(), first_id);
     }
 
     #[rstest]
-    fn test_order_list_len(audusd_sim: CurrencyPair) {
-        let order1 = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Buy)
-            .price(Price::from("1.00000"))
-            .quantity(Quantity::from(100_000))
-            .build();
-        let order2 = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Sell)
-            .price(Price::from("1.01000"))
-            .quantity(Quantity::from(50_000))
-            .build();
-        let order3 = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Buy)
-            .price(Price::from("0.99000"))
-            .quantity(Quantity::from(75_000))
-            .build();
-
-        let orders = vec![order1, order2, order3];
+    fn test_order_list_len() {
+        let orders = create_client_order_ids(3);
 
         let order_list = OrderList::new(
             OrderListId::from("OL-010"),
-            audusd_sim.id,
-            StrategyId::test_default(),
+            InstrumentId::from("AUD/USD.SIM"),
+            StrategyId::from("S-001"),
             orders,
             UnixNanos::default(),
         );
@@ -375,28 +335,21 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_list_hash(audusd_sim: CurrencyPair) {
-        let order1 = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Buy)
-            .price(Price::from("1.00000"))
-            .quantity(Quantity::from(100_000))
-            .build();
-
-        let orders = vec![order1];
+    fn test_order_list_hash() {
+        let orders = create_client_order_ids(1);
 
         let order_list1 = OrderList::new(
             OrderListId::from("OL-011"),
-            audusd_sim.id,
-            StrategyId::test_default(),
+            InstrumentId::from("AUD/USD.SIM"),
+            StrategyId::from("S-001"),
             orders.clone(),
             UnixNanos::default(),
         );
 
         let order_list2 = OrderList::new(
             OrderListId::from("OL-011"),
-            audusd_sim.id,
-            StrategyId::test_default(),
+            InstrumentId::from("AUD/USD.SIM"),
+            StrategyId::from("S-001"),
             orders,
             UnixNanos::default(),
         );
@@ -407,225 +360,5 @@ mod tests {
         order_list2.hash(&mut hasher2);
 
         assert_eq!(hasher1.finish(), hasher2.finish());
-    }
-
-    #[rstest]
-    fn test_is_bracket_with_valid_bracket(audusd_sim: CurrencyPair) {
-        let entry_client_order_id = ClientOrderId::from("O-001");
-
-        // Entry order with OTO contingency
-        let entry = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(audusd_sim.id)
-            .client_order_id(entry_client_order_id)
-            .side(OrderSide::Buy)
-            .quantity(Quantity::from(100_000))
-            .contingency_type(ContingencyType::Oto)
-            .build();
-
-        // Stop loss with OUO contingency
-        let sl = OrderTestBuilder::new(OrderType::StopMarket)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Sell)
-            .quantity(Quantity::from(100_000))
-            .trigger_price(Price::from("0.99000"))
-            .contingency_type(ContingencyType::Ouo)
-            .parent_order_id(entry_client_order_id)
-            .reduce_only(true)
-            .build();
-
-        // Take profit with OUO contingency
-        let tp = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Sell)
-            .quantity(Quantity::from(100_000))
-            .price(Price::from("1.01000"))
-            .contingency_type(ContingencyType::Ouo)
-            .parent_order_id(entry_client_order_id)
-            .reduce_only(true)
-            .build();
-
-        let order_list = OrderList::new(
-            OrderListId::from("OL-001"),
-            audusd_sim.id,
-            StrategyId::test_default(),
-            vec![entry, sl, tp],
-            UnixNanos::default(),
-        );
-
-        assert!(order_list.is_bracket());
-    }
-
-    #[rstest]
-    fn test_is_bracket_with_single_order_returns_false(audusd_sim: CurrencyPair) {
-        let order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Buy)
-            .quantity(Quantity::from(100_000))
-            .build();
-
-        let order_list = OrderList::new(
-            OrderListId::from("OL-001"),
-            audusd_sim.id,
-            StrategyId::test_default(),
-            vec![order],
-            UnixNanos::default(),
-        );
-
-        assert!(!order_list.is_bracket());
-    }
-
-    #[rstest]
-    fn test_is_bracket_with_two_orders_returns_false(audusd_sim: CurrencyPair) {
-        let order1 = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Buy)
-            .quantity(Quantity::from(100_000))
-            .build();
-        let order2 = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Sell)
-            .quantity(Quantity::from(100_000))
-            .build();
-
-        let order_list = OrderList::new(
-            OrderListId::from("OL-001"),
-            audusd_sim.id,
-            StrategyId::test_default(),
-            vec![order1, order2],
-            UnixNanos::default(),
-        );
-
-        assert!(!order_list.is_bracket());
-    }
-
-    #[rstest]
-    fn test_is_bracket_with_entry_not_oto_returns_false(audusd_sim: CurrencyPair) {
-        let entry_client_order_id = ClientOrderId::from("O-001");
-
-        // Entry without OTO contingency
-        let entry = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(audusd_sim.id)
-            .client_order_id(entry_client_order_id)
-            .side(OrderSide::Buy)
-            .quantity(Quantity::from(100_000))
-            .build();
-
-        let sl = OrderTestBuilder::new(OrderType::StopMarket)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Sell)
-            .quantity(Quantity::from(100_000))
-            .trigger_price(Price::from("0.99000"))
-            .contingency_type(ContingencyType::Ouo)
-            .parent_order_id(entry_client_order_id)
-            .reduce_only(true)
-            .build();
-
-        let tp = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Sell)
-            .quantity(Quantity::from(100_000))
-            .price(Price::from("1.01000"))
-            .contingency_type(ContingencyType::Ouo)
-            .parent_order_id(entry_client_order_id)
-            .reduce_only(true)
-            .build();
-
-        let order_list = OrderList::new(
-            OrderListId::from("OL-001"),
-            audusd_sim.id,
-            StrategyId::test_default(),
-            vec![entry, sl, tp],
-            UnixNanos::default(),
-        );
-
-        assert!(!order_list.is_bracket());
-    }
-
-    #[rstest]
-    fn test_is_bracket_with_child_not_reduce_only_returns_false(audusd_sim: CurrencyPair) {
-        let entry_client_order_id = ClientOrderId::from("O-001");
-
-        let entry = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(audusd_sim.id)
-            .client_order_id(entry_client_order_id)
-            .side(OrderSide::Buy)
-            .quantity(Quantity::from(100_000))
-            .contingency_type(ContingencyType::Oto)
-            .build();
-
-        // SL not reduce_only
-        let sl = OrderTestBuilder::new(OrderType::StopMarket)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Sell)
-            .quantity(Quantity::from(100_000))
-            .trigger_price(Price::from("0.99000"))
-            .contingency_type(ContingencyType::Ouo)
-            .parent_order_id(entry_client_order_id)
-            .reduce_only(false)
-            .build();
-
-        let tp = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Sell)
-            .quantity(Quantity::from(100_000))
-            .price(Price::from("1.01000"))
-            .contingency_type(ContingencyType::Ouo)
-            .parent_order_id(entry_client_order_id)
-            .reduce_only(true)
-            .build();
-
-        let order_list = OrderList::new(
-            OrderListId::from("OL-001"),
-            audusd_sim.id,
-            StrategyId::test_default(),
-            vec![entry, sl, tp],
-            UnixNanos::default(),
-        );
-
-        assert!(!order_list.is_bracket());
-    }
-
-    #[rstest]
-    fn test_is_bracket_with_child_oco_instead_of_ouo_returns_false(audusd_sim: CurrencyPair) {
-        let entry_client_order_id = ClientOrderId::from("O-001");
-
-        let entry = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(audusd_sim.id)
-            .client_order_id(entry_client_order_id)
-            .side(OrderSide::Buy)
-            .quantity(Quantity::from(100_000))
-            .contingency_type(ContingencyType::Oto)
-            .build();
-
-        // SL with OCO instead of OUO
-        let sl = OrderTestBuilder::new(OrderType::StopMarket)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Sell)
-            .quantity(Quantity::from(100_000))
-            .trigger_price(Price::from("0.99000"))
-            .contingency_type(ContingencyType::Oco)
-            .parent_order_id(entry_client_order_id)
-            .reduce_only(true)
-            .build();
-
-        let tp = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Sell)
-            .quantity(Quantity::from(100_000))
-            .price(Price::from("1.01000"))
-            .contingency_type(ContingencyType::Ouo)
-            .parent_order_id(entry_client_order_id)
-            .reduce_only(true)
-            .build();
-
-        let order_list = OrderList::new(
-            OrderListId::from("OL-001"),
-            audusd_sim.id,
-            StrategyId::test_default(),
-            vec![entry, sl, tp],
-            UnixNanos::default(),
-        );
-
-        assert!(!order_list.is_bracket());
     }
 }

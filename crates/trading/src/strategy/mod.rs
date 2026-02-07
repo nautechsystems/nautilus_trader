@@ -174,17 +174,17 @@ pub trait Strategy: DataActor {
     /// or order list submission fails.
     fn submit_order_list(
         &mut self,
-        order_list: OrderList,
+        orders: Vec<OrderAny>,
         position_id: Option<PositionId>,
         client_id: Option<ClientId>,
     ) -> anyhow::Result<()> {
         let should_deny = {
             let core = self.core_mut();
-            core.is_exiting && order_list.orders.iter().any(|o| !o.is_reduce_only())
+            core.is_exiting && orders.iter().any(|o| !o.is_reduce_only())
         };
 
         if should_deny {
-            self.deny_order_list(&order_list, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
+            self.deny_order_list(&orders, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
             return Ok(());
         }
 
@@ -193,6 +193,8 @@ pub trait Strategy: DataActor {
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
         let ts_init = core.clock().timestamp_ns();
 
+        let order_list = OrderList::from_orders(&orders, ts_init);
+
         {
             let cache_rc = core.cache_rc();
             let cache = cache_rc.borrow();
@@ -200,7 +202,7 @@ pub trait Strategy: DataActor {
                 anyhow::bail!("OrderList denied: duplicate {}", order_list.id);
             }
 
-            for order in &order_list.orders {
+            for order in &orders {
                 if order.status() != OrderStatus::Initialized {
                     anyhow::bail!(
                         "Order in list denied: invalid status for {}, expected INITIALIZED",
@@ -220,20 +222,21 @@ pub trait Strategy: DataActor {
             let cache_rc = core.cache_rc();
             let mut cache = cache_rc.borrow_mut();
             cache.add_order_list(order_list.clone())?;
-            for order in &order_list.orders {
+            for order in &orders {
                 cache.add_order(order.clone(), position_id, client_id, true)?;
             }
         }
 
-        let first_order = order_list.orders.first();
+        let first_order = orders.first();
+        let order_inits: Vec<_> = orders.iter().map(|o| o.init_event().clone()).collect();
         let exec_algorithm_id = first_order.and_then(|o| o.exec_algorithm_id());
 
         let command = SubmitOrderList::new(
             trader_id,
             client_id,
             strategy_id,
-            order_list.instrument_id,
-            order_list.clone(),
+            order_list,
+            order_inits,
             exec_algorithm_id,
             position_id,
             None, // params
@@ -241,7 +244,7 @@ pub trait Strategy: DataActor {
             ts_init,
         );
 
-        let has_emulated_order = order_list.orders.iter().any(|o| {
+        let has_emulated_order = orders.iter().any(|o| {
             matches!(o.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger)
                 || o.is_emulated()
         });
@@ -259,7 +262,7 @@ pub trait Strategy: DataActor {
             manager.send_risk_command(TradingCommand::SubmitOrderList(command));
         }
 
-        for order in &order_list.orders {
+        for order in &orders {
             self.set_gtd_expiry(order)?;
         }
 
@@ -274,18 +277,18 @@ pub trait Strategy: DataActor {
     /// or order list submission fails.
     fn submit_order_list_with_params(
         &mut self,
-        order_list: OrderList,
+        orders: Vec<OrderAny>,
         position_id: Option<PositionId>,
         client_id: Option<ClientId>,
         params: IndexMap<String, String>,
     ) -> anyhow::Result<()> {
         let should_deny = {
             let core = self.core_mut();
-            core.is_exiting && order_list.orders.iter().any(|o| !o.is_reduce_only())
+            core.is_exiting && orders.iter().any(|o| !o.is_reduce_only())
         };
 
         if should_deny {
-            self.deny_order_list(&order_list, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
+            self.deny_order_list(&orders, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
             return Ok(());
         }
 
@@ -294,6 +297,9 @@ pub trait Strategy: DataActor {
         let trader_id = core.trader_id().expect("Trader ID not set");
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
         let ts_init = core.clock().timestamp_ns();
+
+        let order_list = OrderList::from_orders(&orders, ts_init);
+
         {
             let cache_rc = core.cache_rc();
             let cache = cache_rc.borrow();
@@ -301,7 +307,7 @@ pub trait Strategy: DataActor {
                 anyhow::bail!("OrderList denied: duplicate {}", order_list.id);
             }
 
-            for order in &order_list.orders {
+            for order in &orders {
                 if order.status() != OrderStatus::Initialized {
                     anyhow::bail!(
                         "Order in list denied: invalid status for {}, expected INITIALIZED",
@@ -321,7 +327,7 @@ pub trait Strategy: DataActor {
             let cache_rc = core.cache_rc();
             let mut cache = cache_rc.borrow_mut();
             cache.add_order_list(order_list.clone())?;
-            for order in &order_list.orders {
+            for order in &orders {
                 cache.add_order(order.clone(), position_id, client_id, true)?;
             }
         }
@@ -332,15 +338,16 @@ pub trait Strategy: DataActor {
             Some(params)
         };
 
-        let first_order = order_list.orders.first();
+        let first_order = orders.first();
+        let order_inits: Vec<_> = orders.iter().map(|o| o.init_event().clone()).collect();
         let exec_algorithm_id = first_order.and_then(|o| o.exec_algorithm_id());
 
         let command = SubmitOrderList::new(
             trader_id,
             client_id,
             strategy_id,
-            order_list.instrument_id,
-            order_list.clone(),
+            order_list,
+            order_inits,
             exec_algorithm_id,
             position_id,
             params_opt,
@@ -348,7 +355,7 @@ pub trait Strategy: DataActor {
             ts_init,
         );
 
-        let has_emulated_order = order_list.orders.iter().any(|o| {
+        let has_emulated_order = orders.iter().any(|o| {
             matches!(o.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger)
                 || o.is_emulated()
         });
@@ -366,7 +373,7 @@ pub trait Strategy: DataActor {
             manager.send_risk_command(TradingCommand::SubmitOrderList(command));
         }
 
-        for order in &order_list.orders {
+        for order in &orders {
             self.set_gtd_expiry(order)?;
         }
 
@@ -1543,8 +1550,8 @@ pub trait Strategy: DataActor {
     /// Denies all orders in an order list.
     ///
     /// This method denies each non-closed order in the list.
-    fn deny_order_list(&mut self, order_list: &OrderList, reason: Ustr) {
-        for order in &order_list.orders {
+    fn deny_order_list(&mut self, orders: &[OrderAny], reason: Ustr) {
+        for order in orders {
             if !order.is_closed() {
                 self.deny_order(order, reason);
             }

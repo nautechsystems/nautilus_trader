@@ -1033,7 +1033,20 @@ impl ExecutionEngine {
     }
 
     fn handle_submit_order_list(&self, client: &dyn ExecutionClient, cmd: &SubmitOrderList) {
-        let orders = cmd.order_list.orders.clone();
+        let orders: Vec<OrderAny> = self
+            .cache
+            .borrow()
+            .orders_for_ids(&cmd.order_list.orders, cmd);
+
+        if orders.len() != cmd.order_list.orders.len() {
+            for order in &orders {
+                self.deny_order(
+                    order,
+                    &format!("Incomplete order list: missing orders in cache for {cmd}"),
+                );
+            }
+            return;
+        }
 
         let order_list_venue = cmd.instrument_id.venue;
         let client_venue = client.venue();
@@ -1047,21 +1060,11 @@ impl ExecutionEngine {
             return;
         }
 
-        let mut cache = self.cache.borrow_mut();
-        for order in &orders {
-            if !cache.order_exists(&order.client_order_id()) {
-                if let Err(e) = cache.add_order(order.clone(), cmd.position_id, cmd.client_id, true)
-                {
-                    log::error!("Error adding order to cache: {e}");
-                    return;
-                }
-
-                if self.config.snapshot_orders {
-                    self.create_order_state_snapshot(order);
-                }
+        if self.config.snapshot_orders {
+            for order in &orders {
+                self.create_order_state_snapshot(order);
             }
         }
-        drop(cache);
 
         let instrument = {
             let cache = self.cache.borrow();
@@ -1078,10 +1081,9 @@ impl ExecutionEngine {
 
         // Handle quote quantity conversion
         if self.config.convert_quote_qty_to_base && !instrument.is_inverse() {
-            let mut conversions: Vec<(ClientOrderId, Quantity)> =
-                Vec::with_capacity(cmd.order_list.orders.len());
+            let mut conversions: Vec<(ClientOrderId, Quantity)> = Vec::with_capacity(orders.len());
 
-            for order in &cmd.order_list.orders {
+            for order in &orders {
                 if !order.is_quote_quantity() {
                     continue; // Base quantity already set
                 }
@@ -1093,7 +1095,7 @@ impl ExecutionEngine {
                     let base_qty = instrument.get_base_quantity(order.quantity(), px);
                     conversions.push((order.client_order_id(), base_qty));
                 } else {
-                    for order in &cmd.order_list.orders {
+                    for order in &orders {
                         self.deny_order(
                             order,
                             &format!("no-price-to-convert-quote-qty {}", order.instrument_id()),
@@ -1119,7 +1121,7 @@ impl ExecutionEngine {
 
         if self.config.manage_own_order_books {
             let mut own_book = self.get_or_init_own_order_book(&cmd.instrument_id);
-            for order in &cmd.order_list.orders {
+            for order in &orders {
                 if should_handle_own_book_order(order) {
                     own_book.add(order.to_own_book_order());
                 }

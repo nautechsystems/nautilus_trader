@@ -546,7 +546,12 @@ impl OrderEmulator {
     fn handle_submit_order_list(&mut self, command: SubmitOrderList) {
         self.check_monitoring(command.strategy_id, command.position_id);
 
-        for order in &command.order_list.orders {
+        let orders: Vec<OrderAny> = self
+            .cache
+            .borrow()
+            .orders_for_ids(&command.order_list.orders, &command);
+
+        for order in &orders {
             if let Some(parent_order_id) = order.parent_order_id() {
                 let cache = self.cache.borrow();
                 let parent_order = if let Some(parent_order) = cache.order(&parent_order_id) {

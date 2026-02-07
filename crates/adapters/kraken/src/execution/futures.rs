@@ -670,13 +670,20 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
     }
 
     fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
+        let orders: Vec<OrderAny> = cmd
+            .order_list
+            .orders
+            .iter()
+            .map(|id| self.core.get_order(id))
+            .collect::<anyhow::Result<Vec<_>>>()?;
+
         log::info!(
             "Submitting order list: order_list_id={}, count={}",
             cmd.order_list.id,
-            cmd.order_list.orders.len()
+            orders.len()
         );
 
-        for order in &cmd.order_list.orders {
+        for order in &orders {
             self.submit_single_order(order, "submit_order_list")?;
         }
 
