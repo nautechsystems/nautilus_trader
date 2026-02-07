@@ -1026,13 +1026,8 @@ pub fn parse_fill_report(
     let last_px = Price::from_decimal_dp(fill.price, price_precision)
         .context("failed to parse fill price")?;
 
-    // Parse commission (fee)
-    //
-    // Negate dYdX fee to match Nautilus conventions:
-    // - dYdX: negative fee = rebate, positive fee = cost
-    // - Nautilus: positive commission = rebate, negative commission = cost
-    // Reference: OKX and Bybit adapters also negate venue fees
-    let commission = Money::from_decimal(-fill.fee, instrument.quote_currency())
+    // dYdX sign convention matches Nautilus (positive = cost)
+    let commission = Money::from_decimal(fill.fee, instrument.quote_currency())
         .context("failed to parse fee")?;
 
     let liquidity_side = match fill.liquidity {
@@ -1476,7 +1471,7 @@ mod reconciliation_tests {
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(report.last_px.as_f64(), 50100.0);
-        assert_eq!(report.commission.as_f64(), 5.01);
+        assert_eq!(report.commission.as_decimal(), dec!(-5.01));
     }
 
     #[rstest]
@@ -1786,8 +1781,7 @@ mod reconciliation_tests {
         assert!(result.is_ok());
 
         let report = result.unwrap();
-        // Commission should be negated: -(-2.5) = 2.5 (positive = rebate)
-        assert_eq!(report.commission.as_f64(), 2.5);
+        assert_eq!(report.commission.as_decimal(), dec!(-2.5));
         assert_eq!(report.liquidity_side, LiquiditySide::Maker);
     }
 }

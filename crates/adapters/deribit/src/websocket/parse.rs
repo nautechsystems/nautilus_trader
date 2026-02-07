@@ -830,7 +830,7 @@ pub fn parse_user_trade_msg(
 
     // Get fee currency from the fee_currency field
     let fee_currency = Currency::from(&msg.fee_currency);
-    let commission = Money::new(msg.fee.abs().to_f64().unwrap_or_default(), fee_currency);
+    let commission = Money::from_decimal(msg.fee, fee_currency)?;
 
     let ts_event = UnixNanos::new(msg.timestamp * NANOSECONDS_IN_MILLISECOND);
 

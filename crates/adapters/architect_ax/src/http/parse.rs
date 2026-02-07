@@ -345,9 +345,8 @@ pub fn parse_fill_report(
     let last_px = decimal_to_price_dp(fill.price, instrument.price_precision(), "fill.price")?;
     let last_qty = Quantity::new(fill.quantity as f64, instrument.size_precision());
 
-    // Parse fee (Ax returns positive fee, Nautilus uses negative for costs)
     let currency = Currency::USD();
-    let commission = Money::from_decimal(-fill.fee, currency)
+    let commission = Money::from_decimal(fill.fee, currency)
         .context("Failed to convert fill.fee Decimal to Money")?;
 
     let liquidity_side = if fill.is_taker {

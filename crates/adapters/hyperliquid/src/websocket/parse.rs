@@ -306,21 +306,17 @@ pub fn parse_ws_fill_report(
         LiquiditySide::Maker
     };
 
-    let commission_amount = Decimal::from_str(&fill.fee)
-        .with_context(|| format!("Failed to parse fee='{}' as decimal", fill.fee))?
-        .abs()
-        .to_string()
-        .parse::<f64>()
-        .unwrap_or(0.0);
+    let fee_amount = Decimal::from_str(&fill.fee)
+        .with_context(|| format!("Failed to parse fee='{}' as decimal", fill.fee))?;
 
     let commission_currency = if fill.fee_token == "USDC" {
         Currency::from("USDC")
     } else {
-        // Default to quote currency if fee_token is something else
         instrument.quote_currency()
     };
 
-    let commission = Money::new(commission_amount, commission_currency);
+    let commission = Money::from_decimal(fee_amount, commission_currency)
+        .with_context(|| format!("Failed to create commission from fee='{}'", fill.fee))?;
     let ts_event = millis_to_nanos(fill.time)?;
 
     // No client order ID available in fill data directly

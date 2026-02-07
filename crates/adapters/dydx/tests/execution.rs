@@ -344,8 +344,7 @@ async fn test_parse_fill_report_maker_sell() {
     assert_eq!(report.order_side, OrderSide::Sell);
     assert_eq!(report.last_qty.as_f64(), 0.2);
     assert_eq!(report.last_px.as_f64(), 51000.0);
-    // Commission should be negated (rebate becomes positive in Nautilus)
-    assert!(report.commission.as_f64() > 0.0);
+    assert!(report.commission.as_decimal() < dec!(0));
 }
 
 #[rstest]

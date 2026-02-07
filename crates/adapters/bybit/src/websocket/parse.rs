@@ -762,15 +762,18 @@ pub fn parse_ws_fill_report(
         LiquiditySide::Taker
     };
 
-    let commission_str = execution.exec_fee.trim_start_matches('-');
-    let commission_amount = commission_str
-        .parse::<f64>()
-        .with_context(|| format!("Failed to parse execFee='{}' as f64", execution.exec_fee))?
-        .abs();
+    let fee_decimal: Decimal = execution
+        .exec_fee
+        .parse()
+        .with_context(|| format!("Failed to parse execFee='{}'", execution.exec_fee))?;
 
-    // Use instrument quote currency for commission
     let commission_currency = instrument.quote_currency();
-    let commission = Money::new(commission_amount, commission_currency);
+    let commission = Money::from_decimal(fee_decimal, commission_currency).with_context(|| {
+        format!(
+            "Failed to create commission from execFee='{}'",
+            execution.exec_fee
+        )
+    })?;
     let ts_event = parse_millis_timestamp(&execution.exec_time, "execution.execTime")?;
 
     let client_order_id = if execution.order_link_id.is_empty() {

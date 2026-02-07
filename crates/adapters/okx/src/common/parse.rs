@@ -292,7 +292,8 @@ pub fn parse_quantity(value: &str, precision: u8) -> anyhow::Result<Quantity> {
 /// Returns an error if the fee cannot be parsed into `Decimal` or fails internal
 /// validation in [`Money::from_decimal`].
 pub fn parse_fee(value: Option<&str>, currency: Currency) -> anyhow::Result<Money> {
-    // OKX report positive fees with negative signs (i.e., fee charged)
+    // OKX uses opposite sign convention: negative = cost, positive = rebate.
+    // Negate to match Nautilus convention: positive = cost, negative = rebate.
     let decimal = Decimal::from_str(value.unwrap_or("0"))?;
     Money::from_decimal(-decimal, currency)
 }

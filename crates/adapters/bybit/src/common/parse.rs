@@ -755,13 +755,17 @@ pub fn parse_fill_report(
         "execution.execQty",
     )?;
 
-    // Parse commission (Bybit returns positive fee, Nautilus uses negative for costs)
-    let fee_f64 = execution
+    let fee_decimal: Decimal = execution
         .exec_fee
-        .parse::<f64>()
+        .parse()
         .with_context(|| format!("Failed to parse execFee='{}'", execution.exec_fee))?;
     let currency = get_currency(&execution.fee_currency);
-    let commission = Money::new(-fee_f64, currency);
+    let commission = Money::from_decimal(fee_decimal, currency).with_context(|| {
+        format!(
+            "Failed to create commission from execFee='{}'",
+            execution.exec_fee
+        )
+    })?;
 
     // Determine liquidity side from is_maker flag
     let liquidity_side = if execution.is_maker {

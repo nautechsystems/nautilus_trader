@@ -530,7 +530,7 @@ pub fn parse_fill_report(
 
     // Determine fee currency - Hyperliquid perp fees are in USDC
     let fee_currency = Currency::from("USDC");
-    let commission = Money::from_decimal(fee_amount.abs(), fee_currency)
+    let commission = Money::from_decimal(fee_amount, fee_currency)
         .map_err(|e| anyhow::anyhow!("Failed to create commission from fee: {e}"))?;
 
     // Determine liquidity side based on 'crossed' flag

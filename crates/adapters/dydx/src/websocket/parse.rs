@@ -1112,8 +1112,7 @@ mod tests {
         assert_eq!(fill_report.venue_order_id.as_str(), "order999");
         assert_eq!(fill_report.last_qty.as_f64(), 0.5);
         assert_eq!(fill_report.last_px.as_f64(), 49500.0);
-        // Commission should be negative (cost to trader) after negating positive fee
-        assert!((fill_report.commission.as_f64() + 12.38).abs() < 0.01);
+        assert_eq!(fill_report.commission.as_decimal(), dec!(12.38));
     }
 
     #[rstest]
@@ -1577,8 +1576,7 @@ mod tests {
 
         let fill_report = result.unwrap();
         assert_eq!(fill_report.liquidity_side, LiquiditySide::Maker);
-        // Commission should be positive (rebate) after negating dYdX's negative fee
-        assert!(fill_report.commission.as_f64() > 0.0);
+        assert!(fill_report.commission.as_decimal() < dec!(0));
     }
 
     #[rstest]
@@ -1611,7 +1609,6 @@ mod tests {
         let fill_report = result.unwrap();
         assert_eq!(fill_report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(fill_report.order_side, OrderSide::Sell);
-        // Commission should be negative (cost to trader) after negating positive fee
-        assert!(fill_report.commission.as_f64() < 0.0);
+        assert!(fill_report.commission.as_decimal() > dec!(0));
     }
 }
