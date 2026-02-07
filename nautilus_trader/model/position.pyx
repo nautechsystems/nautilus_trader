@@ -602,7 +602,7 @@ cdef class Position:
                 self.id,
                 self.account_id,
                 PositionAdjustmentType.COMMISSION,
-                fill.commission.as_decimal(),
+                -fill.commission.as_decimal(),
                 None,
                 str(fill.client_order_id),
                 UUID4(),
