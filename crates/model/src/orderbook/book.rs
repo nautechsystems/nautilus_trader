@@ -392,17 +392,15 @@ impl OrderBook {
     pub fn to_deltas(&self, ts_event: UnixNanos, ts_init: UnixNanos) -> OrderBookDeltas {
         let mut deltas = Vec::new();
 
-        // Add clear delta first
-        deltas.push(OrderBookDelta::clear(
-            self.instrument_id,
-            self.sequence,
-            ts_event,
-            ts_init,
-        ));
-
-        // Count total orders to determine which one should have F_LAST flag
         let total_orders = self.bids(None).map(|level| level.len()).sum::<usize>()
             + self.asks(None).map(|level| level.len()).sum::<usize>();
+
+        // Set F_LAST on clear when book is empty so buffered consumers flush
+        let mut clear = OrderBookDelta::clear(self.instrument_id, self.sequence, ts_event, ts_init);
+        if total_orders == 0 {
+            clear.flags |= RecordFlag::F_LAST as u8;
+        }
+        deltas.push(clear);
 
         let mut order_count = 0;
 

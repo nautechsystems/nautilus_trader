@@ -6425,6 +6425,49 @@ class TestDataBufferEngine:
         assert len(handler[0].deltas) == 1
         assert len(handler[1].deltas) == 1
 
+    def test_process_order_book_deltas_multiple_f_last_publishes_at_each_boundary(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        self.data_engine.process(ETHUSDT_BINANCE)
+
+        handler = []
+        self.msgbus.subscribe(topic="data.book.deltas.BINANCE.ETHUSDT", handler=handler.append)
+
+        subscribe = SubscribeOrderBook(
+            client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
+            book_data_type=OrderBookDelta,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=BookType.L3_MBO,
+            depth=5,
+            managed=True,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        # Two groups packed into a single OrderBookDeltas message
+        delta1 = TestDataStubs.order_book_delta(ETHUSDT_BINANCE.id)
+        delta2 = TestDataStubs.order_book_delta(ETHUSDT_BINANCE.id, flags=RecordFlag.F_LAST)
+        delta3 = TestDataStubs.order_book_delta(ETHUSDT_BINANCE.id)
+        delta4 = TestDataStubs.order_book_delta(ETHUSDT_BINANCE.id, flags=RecordFlag.F_LAST)
+
+        deltas = OrderBookDeltas(
+            instrument_id=ETHUSDT_BINANCE.id,
+            deltas=[delta1, delta2, delta3, delta4],
+        )
+
+        # Act
+        self.data_engine.process(deltas)
+
+        # Assert - should publish at each F_LAST boundary
+        assert len(handler) == 2
+        assert len(handler[0].deltas) == 2
+        assert len(handler[1].deltas) == 2
+
 
 class TestDataEngineQuoteFromBook:
     @pytest.fixture(autouse=True)

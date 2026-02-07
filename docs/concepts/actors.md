@@ -158,8 +158,9 @@ Here's how different data operations map to their handlers:
 | `subscribe_order_fills()`            | Real-time  | `on_order_filled()`      | Live order fill events for an instrument.         |
 | `subscribe_order_cancels()`          | Real-time  | `on_order_canceled()`    | Live order cancel events for an instrument.       |
 | `request_data()`                     | Historical | `on_historical_data()`   | Historical data processing.                       |
-| `request_order_book_snapshot()`      | Historical | `on_historical_data()`   | Historical order book snapshot.                   |
+| `request_order_book_deltas()`        | Historical | `on_historical_data()`   | Historical order book deltas.                     |
 | `request_order_book_depth()`         | Historical | `on_historical_data()`   | Historical order book depth.                      |
+| `request_order_book_snapshot()`      | Historical | `on_historical_data()`   | Historical order book snapshot.                   |
 | `request_instrument()`               | Historical | `on_instrument()`        | Instrument definition.                            |
 | `request_instruments()`              | Historical | `on_instrument()`        | Instrument definitions.                           |
 | `request_quote_ticks()`              | Historical | `on_historical_data()`   | Historical quotes processing.                     |

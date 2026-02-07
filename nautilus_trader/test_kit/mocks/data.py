@@ -151,20 +151,20 @@ class MockMarketDataClient(MarketDataClient):
             request.params,
         )
 
-    def request_order_book_depth(self, request: RequestOrderBookDepth) -> None:
-        self._handle_order_book_depths_py(
+    def request_order_book_deltas(self, request: RequestOrderBookDeltas) -> None:
+        self._handle_order_book_deltas(
             request.instrument_id,
-            self.order_book_depths,
+            self.order_book_deltas,
             request.id,
             request.start,
             request.end,
             request.params,
         )
 
-    def request_order_book_deltas(self, request: RequestOrderBookDeltas) -> None:
-        self._handle_order_book_deltas(
+    def request_order_book_depth(self, request: RequestOrderBookDepth) -> None:
+        self._handle_order_book_depths_py(
             request.instrument_id,
-            self.order_book_deltas,
+            self.order_book_depths,
             request.id,
             request.start,
             request.end,

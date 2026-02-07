@@ -164,7 +164,6 @@ cdef class Actor(Component):
         ClientId client_id=*,
         bint managed=*,
         bint pyo3_conversion=*,
-        int interval_ms=*,
         dict[str, object] params=*,
     )
     cpdef void subscribe_order_book_depth(
@@ -176,7 +175,6 @@ cdef class Actor(Component):
         bint managed=*,
         bint pyo3_conversion=*,
         bint update_catalog=*,
-        int interval_ms=*,
         dict[str, object] params=*,
     )
     cpdef void subscribe_order_book_at_interval(
@@ -258,16 +256,6 @@ cdef class Actor(Component):
         UUID4 request_id=*,
         dict[str, object] params=*,
     )
-    cpdef UUID4 request_order_book_snapshot(
-        self,
-        InstrumentId instrument_id,
-        int limit=*,
-        ClientId client_id=*,
-        callback=*,
-        bint join_request=*,
-        UUID4 request_id=*,
-        dict[str, object] params=*,
-    )
     cpdef UUID4 request_order_book_deltas(
         self,
         InstrumentId instrument_id,
@@ -291,6 +279,16 @@ cdef class Actor(Component):
         ClientId client_id=*,
         callback=*,
         bint update_catalog=*,
+        bint join_request=*,
+        UUID4 request_id=*,
+        dict[str, object] params=*,
+    )
+    cpdef UUID4 request_order_book_snapshot(
+        self,
+        InstrumentId instrument_id,
+        int limit=*,
+        ClientId client_id=*,
+        callback=*,
         bint join_request=*,
         UUID4 request_id=*,
         dict[str, object] params=*,

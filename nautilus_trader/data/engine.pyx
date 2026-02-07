@@ -1481,12 +1481,12 @@ cdef class DataEngine(Component):
             self._handle_request_instruments(client, request)
         elif isinstance(request, RequestInstrument):
             self._handle_request_instrument(client, request)
-        elif isinstance(request, RequestOrderBookSnapshot):
-            self._handle_request_order_book_snapshot(client, request)
+        elif isinstance(request, RequestOrderBookDeltas):
+            self._handle_request_order_book_deltas(client, request)
         elif isinstance(request, RequestOrderBookDepth):
             self._handle_request_order_book_depth(client, request)
-        elif isinstance(request, RequestOrderBookDeltas):
-            self._handle_order_book_deltas_request(client, request)
+        elif isinstance(request, RequestOrderBookSnapshot):
+            self._handle_request_order_book_snapshot(client, request)
         elif isinstance(request, RequestQuoteTicks):
             self._handle_request_quote_ticks(client, request)
         elif isinstance(request, RequestTradeTicks):
@@ -1528,17 +1528,7 @@ cdef class DataEngine(Component):
 
         client.request_instrument(request)
 
-    cpdef void _handle_request_order_book_snapshot(self, DataClient client, RequestOrderBookSnapshot request):
-        if client is None:
-            self._log_request_warning(request)
-            return  # No client to handle request
-
-        client.request_order_book_snapshot(request)
-
-    cpdef void _handle_request_order_book_depth(self, DataClient client, RequestOrderBookDepth request):
-        self._handle_date_range_request(client, request)
-
-    cpdef void _handle_order_book_deltas_request(self, DataClient client, RequestOrderBookDeltas request):
+    cpdef void _handle_request_order_book_deltas(self, DataClient client, RequestOrderBookDeltas request):
         # Store original start_date only if not already present (for long requests)
         if request.start is not None:
             request.params["original_start_date"] = request.start
@@ -1548,6 +1538,16 @@ cdef class DataEngine(Component):
                 request.start = request.start.floor(freq="d")
 
         self._handle_date_range_request(client, request)
+
+    cpdef void _handle_request_order_book_depth(self, DataClient client, RequestOrderBookDepth request):
+        self._handle_date_range_request(client, request)
+
+    cpdef void _handle_request_order_book_snapshot(self, DataClient client, RequestOrderBookSnapshot request):
+        if client is None:
+            self._log_request_warning(request)
+            return  # No client to handle request
+
+        client.request_order_book_snapshot(request)
 
     cpdef void _handle_request_quote_ticks(self, DataClient client, RequestQuoteTicks request):
         self._handle_date_range_request(client, request)
@@ -2104,55 +2104,33 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_order_book_deltas(self, OrderBookDeltas deltas, bint historical = False):
         cdef:
-            InstrumentId instrument_id = deltas.instrument_id
+            OrderBookDeltas deltas_to_publish = None
             list[OrderBookDelta] buffer_deltas = None
-            OrderBookDeltas all_deltas = None
-            OrderBookDelta delta
-            bint has_last_flag = False
-            uint64_t i
-            uint64_t f_last_index = 0
-            uint64_t deltas_len = len(deltas.deltas)
-
+            bint is_last_delta = False
+            InstrumentId instrument_id = deltas.instrument_id
         if self._buffer_deltas:
             buffer_deltas = self._buffered_deltas_map.get(instrument_id)
             if buffer_deltas is None:
                 buffer_deltas = []
                 self._buffered_deltas_map[instrument_id] = buffer_deltas
 
-            # Find the index of the first delta with F_LAST flag
-            for i in range(deltas_len):
-                delta = deltas.deltas[i]
-                if delta.flags & RecordFlag.F_LAST:
-                    has_last_flag = True
-                    f_last_index = i
-                    break
+            for delta in deltas.deltas:
+                buffer_deltas.append(delta)
 
-            if has_last_flag:
-                # Add deltas up to and including the one with F_LAST to buffer
-                for i in range(f_last_index + 1):
-                    buffer_deltas.append(deltas.deltas[i])
-
-                # Publish all buffered deltas and clear buffer
-                all_deltas = OrderBookDeltas(
-                    instrument_id=instrument_id,
-                    deltas=buffer_deltas,
-                )
-                self._msgbus.publish_c(
-                    topic=self._topic_cache.get_deltas_topic(instrument_id, historical),
-                    msg=all_deltas,
-                )
-                buffer_deltas.clear()
-
-                # Add any remaining deltas (after F_LAST) to buffer for next batch
-                for i in range(f_last_index + 1, deltas_len):
-                    buffer_deltas.append(deltas.deltas[i])
-            else:
-                # No F_LAST flag, add all deltas to buffer
-                for i in range(deltas_len):
-                    buffer_deltas.append(deltas.deltas[i])
+                is_last_delta = delta.flags & RecordFlag.F_LAST
+                if is_last_delta:
+                    deltas_to_publish = OrderBookDeltas(
+                        instrument_id=instrument_id,
+                        deltas=buffer_deltas,
+                    )
+                    self._msgbus.publish_c(
+                        topic=self._topic_cache.get_deltas_topic(instrument_id, historical),
+                        msg=deltas_to_publish,
+                    )
+                    buffer_deltas.clear()
         else:
             self._msgbus.publish_c(
-                topic=self._topic_cache.get_deltas_topic(deltas.instrument_id, historical),
+                topic=self._topic_cache.get_deltas_topic(instrument_id, historical),
                 msg=deltas,
             )
 

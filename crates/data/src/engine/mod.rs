@@ -919,42 +919,34 @@ impl DataEngine {
     }
 
     fn handle_deltas(&mut self, deltas: OrderBookDeltas) {
-        let deltas = if self.config.buffer_deltas {
-            let mut is_last_delta = false;
-            for delta in &deltas.deltas {
-                if RecordFlag::F_LAST.matches(delta.flags) {
-                    is_last_delta = true;
-                    break;
-                }
-            }
-
+        if self.config.buffer_deltas {
             let instrument_id = deltas.instrument_id;
 
-            if let Some(buffered_deltas) = self.buffered_deltas_map.get_mut(&instrument_id) {
-                buffered_deltas.deltas.extend(deltas.deltas);
-
-                if let Some(last_delta) = buffered_deltas.deltas.last() {
-                    buffered_deltas.flags = last_delta.flags;
-                    buffered_deltas.sequence = last_delta.sequence;
-                    buffered_deltas.ts_event = last_delta.ts_event;
-                    buffered_deltas.ts_init = last_delta.ts_init;
+            for delta in deltas.deltas {
+                if let Some(buffered_deltas) = self.buffered_deltas_map.get_mut(&instrument_id) {
+                    buffered_deltas.deltas.push(delta);
+                    buffered_deltas.flags = delta.flags;
+                    buffered_deltas.sequence = delta.sequence;
+                    buffered_deltas.ts_event = delta.ts_event;
+                    buffered_deltas.ts_init = delta.ts_init;
+                } else {
+                    let buffered_deltas = OrderBookDeltas::new(instrument_id, vec![delta]);
+                    self.buffered_deltas_map
+                        .insert(instrument_id, buffered_deltas);
                 }
-            } else {
-                self.buffered_deltas_map.insert(instrument_id, deltas);
-            }
 
-            if !is_last_delta {
-                return;
+                if RecordFlag::F_LAST.matches(delta.flags) {
+                    // SAFETY: We know the deltas exist already
+                    let deltas_to_publish =
+                        self.buffered_deltas_map.remove(&instrument_id).unwrap();
+                    let topic = switchboard::get_book_deltas_topic(instrument_id);
+                    msgbus::publish_deltas(topic, &deltas_to_publish);
+                }
             }
-
-            // SAFETY: We know the deltas exists already
-            self.buffered_deltas_map.remove(&instrument_id).unwrap()
         } else {
-            deltas
+            let topic = switchboard::get_book_deltas_topic(deltas.instrument_id);
+            msgbus::publish_deltas(topic, &deltas);
         };
-
-        let topic = switchboard::get_book_deltas_topic(deltas.instrument_id);
-        msgbus::publish_deltas(topic, &deltas);
     }
 
     fn handle_depth10(&mut self, depth: OrderBookDepth10) {

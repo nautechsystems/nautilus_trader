@@ -172,8 +172,8 @@ cdef class MarketDataClient(DataClient):
 
     cpdef void request_instrument(self, RequestInstrument request)
     cpdef void request_instruments(self, RequestInstruments request)
-    cpdef void request_order_book_snapshot(self, RequestOrderBookSnapshot request)
     cpdef void request_order_book_deltas(self, RequestOrderBookDeltas request)
+    cpdef void request_order_book_snapshot(self, RequestOrderBookSnapshot request)
     cpdef void request_quote_ticks(self, RequestQuoteTicks request)
     cpdef void request_trade_ticks(self, RequestTradeTicks request)
     cpdef void request_funding_rates(self, RequestFundingRates request)

@@ -825,6 +825,42 @@ class LiveMarketDataClient(MarketDataClient):
             log_msg=f"request: instruments for {request.venue}",
         )
 
+    def request_order_book_deltas(self, request: RequestOrderBookDeltas) -> None:
+        time_range_str = format_utc_timerange(request.start, request.end)
+        limit_str = f" limit={request.limit}" if request.limit != 0 else ""
+        self._log.info(
+            f"Request {request.instrument_id} order_book_deltas{time_range_str}{limit_str}",
+            LogColor.BLUE,
+        )
+        self.create_task(
+            self._request_order_book_deltas(request),
+            log_msg=f"request: order_book_deltas {request.instrument_id}",
+        )
+
+    def request_order_book_depth(self, request: RequestOrderBookDepth) -> None:
+        time_range_str = format_utc_timerange(request.start, request.end)
+        limit_str = f" limit={request.limit}" if request.limit != 0 else ""
+        depth_str = f" depth={request.depth}"
+        self._log.info(
+            f"Request {request.instrument_id} order_book_depth{time_range_str}{limit_str}{depth_str}",
+            LogColor.BLUE,
+        )
+        self.create_task(
+            self._request_order_book_depth(request),
+            log_msg=f"request: order_book_depth {request.instrument_id}",
+        )
+
+    def request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
+        limit_str = f" limit={request.limit}" if request.limit != 0 else ""
+        self._log.info(
+            f"Request {request.instrument_id} order_book_snapshot{limit_str}",
+            LogColor.BLUE,
+        )
+        self.create_task(
+            self._request_order_book_snapshot(request),
+            log_msg=f"request: order_book_snapshot {request.instrument_id}",
+        )
+
     def request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         time_range_str = format_utc_timerange(request.start, request.end)
         limit_str = f" limit={request.limit}" if request.limit != 0 else ""
@@ -868,42 +904,6 @@ class LiveMarketDataClient(MarketDataClient):
         self.create_task(
             self._request_bars(request),
             log_msg=f"request: bars {request.bar_type}",
-        )
-
-    def request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
-        limit_str = f" limit={request.limit}" if request.limit != 0 else ""
-        self._log.info(
-            f"Request {request.instrument_id} order_book_snapshot{limit_str}",
-            LogColor.BLUE,
-        )
-        self.create_task(
-            self._request_order_book_snapshot(request),
-            log_msg=f"request: order_book_snapshot {request.instrument_id}",
-        )
-
-    def request_order_book_depth(self, request: RequestOrderBookDepth) -> None:
-        time_range_str = format_utc_timerange(request.start, request.end)
-        limit_str = f" limit={request.limit}" if request.limit != 0 else ""
-        depth_str = f" depth={request.depth}"
-        self._log.info(
-            f"Request {request.instrument_id} order_book_depth{time_range_str}{limit_str}{depth_str}",
-            LogColor.BLUE,
-        )
-        self.create_task(
-            self._request_order_book_depth(request),
-            log_msg=f"request: order_book_depth {request.instrument_id}",
-        )
-
-    def request_order_book_deltas(self, request: RequestOrderBookDeltas) -> None:
-        time_range_str = format_utc_timerange(request.start, request.end)
-        limit_str = f" limit={request.limit}" if request.limit != 0 else ""
-        self._log.info(
-            f"Request {request.instrument_id} order_book_deltas{time_range_str}{limit_str}",
-            LogColor.BLUE,
-        )
-        self.create_task(
-            self._request_order_book_deltas(request),
-            log_msg=f"request: order_book_deltas {request.instrument_id}",
         )
 
     ############################################################################
@@ -1084,9 +1084,9 @@ class LiveMarketDataClient(MarketDataClient):
             "implement the `_request_bars` coroutine",  # pragma: no cover
         )
 
-    async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
-        raise NotImplementedError(
-            "implement the `_request_order_book_snapshot` coroutine",  # pragma: no cover
+    async def _request_order_book_deltas(self, request: RequestOrderBookDeltas) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_request_order_book_deltas` coroutine",  # pragma: no cover
         )
 
     async def _request_order_book_depth(self, request: RequestOrderBookDepth) -> None:
@@ -1094,9 +1094,9 @@ class LiveMarketDataClient(MarketDataClient):
             "implement the `_request_order_book_depth` coroutine",  # pragma: no cover
         )
 
-    async def _request_order_book_deltas(self, request: RequestOrderBookDeltas) -> None:
-        raise NotImplementedError(  # pragma: no cover
-            "implement the `_request_order_book_deltas` coroutine",  # pragma: no cover
+    async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
+        raise NotImplementedError(
+            "implement the `_request_order_book_snapshot` coroutine",  # pragma: no cover
         )
 
     async def cancel_pending_tasks(self, timeout_secs: float = 5.0) -> None:

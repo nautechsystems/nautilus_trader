@@ -1041,21 +1041,6 @@ cdef class MarketDataClient(DataClient):
             f"You can implement by overriding the `request_instruments` method for this client",  # pragma: no cover  # noqa
         )
 
-    cpdef void request_order_book_snapshot(self, RequestOrderBookSnapshot request):
-        """
-        Request order book snapshot data.
-
-        Parameters
-        ----------
-        request : RequestOrderBookSnapshot
-            The message for the data request.
-
-        """
-        self._log.error(
-            f"Cannot request order book snapshot data for {request.instrument_id}: not implemented. "
-            "You can implement by overriding the `request_order_book_snapshot` method for this client."
-        )
-
     cpdef void request_order_book_deltas(self, RequestOrderBookDeltas request):
         """
         Request historical `OrderBookDeltas` data.
@@ -1069,6 +1054,21 @@ cdef class MarketDataClient(DataClient):
         self._log.error(  # pragma: no cover
             f"Cannot request `OrderBookDeltas` data for {request.instrument_id}: not implemented. "  # pragma: no cover
             f"You can implement by overriding the `request_order_book_deltas` method for this client",  # pragma: no cover  # noqa
+        )
+
+    cpdef void request_order_book_snapshot(self, RequestOrderBookSnapshot request):
+        """
+        Request order book snapshot data.
+
+        Parameters
+        ----------
+        request : RequestOrderBookSnapshot
+            The message for the data request.
+
+        """
+        self._log.error(
+            f"Cannot request order book snapshot data for {request.instrument_id}: not implemented. "
+            "You can implement by overriding the `request_order_book_snapshot` method for this client."
         )
 
     cpdef void request_quote_ticks(self, RequestQuoteTicks request):

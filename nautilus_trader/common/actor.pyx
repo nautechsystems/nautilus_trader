@@ -1411,7 +1411,6 @@ cdef class Actor(Component):
         ClientId client_id = None,
         bint managed = True,
         bint pyo3_conversion = False,
-        int interval_ms = 0,
         dict[str, object] params = None,
     ):
         """
@@ -1437,19 +1436,11 @@ cdef class Actor(Component):
         pyo3_conversion : bool, default False
             If received deltas should be converted to `nautilus_pyo3.OrderBookDeltas`
             prior to being passed to the `on_order_book_deltas` handler.
-        interval_ms : int, default 0
-            The order book snapshot interval (milliseconds). A value of 0 means no interval snapshots.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
-        Raises
-        ------
-        ValueError
-            If `interval_ms` is negative (< 0).
-
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_negative(interval_ms, "interval_ms")
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         if pyo3_conversion:
@@ -1470,7 +1461,7 @@ cdef class Actor(Component):
             book_type=book_type,
             depth=depth,
             managed=managed,
-            interval_ms=interval_ms,
+            interval_ms=0,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),
@@ -1488,7 +1479,6 @@ cdef class Actor(Component):
         bint managed = True,
         bint pyo3_conversion = False,
         bint update_catalog = False,
-        int interval_ms = 0,
         dict[str, object] params = None,
     ):
         """
@@ -1514,19 +1504,11 @@ cdef class Actor(Component):
         update_catalog : bool, default False
             Whether to update a catalog with the received data.
             Only useful when downloading data during a backtest.
-        interval_ms : int, default 0
-            The order book snapshot interval (milliseconds). A value of 0 means no interval snapshots.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
-        Raises
-        ------
-        ValueError
-            If `interval_ms` is negative (< 0).
-
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_negative(interval_ms, "interval_ms")
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         if pyo3_conversion:
@@ -1548,7 +1530,7 @@ cdef class Actor(Component):
             book_type=book_type,
             depth=depth,
             managed=managed,
-            interval_ms=interval_ms,
+            interval_ms=0,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),
@@ -3115,20 +3097,23 @@ cdef class Actor(Component):
 
         return used_request_id
 
-    cpdef UUID4 request_order_book_snapshot(
+    cpdef UUID4 request_order_book_deltas(
         self,
         InstrumentId instrument_id,
+        datetime start,
+        datetime end = None,
         int limit = 0,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
+        bint update_catalog = False,
         bint join_request = False,
         UUID4 request_id = None,
         dict[str, object] params = None,
     ):
         """
-        Request an order book snapshot.
+        Request historical `OrderBookDeltas` data.
 
-        Once the response is received, the order book data is forwarded from the message bus
+        Once the response is received, the order book deltas data is forwarded from the message bus
         to the `on_historical_data` handler.
 
         If the request fails, then an error is logged.
@@ -3136,14 +3121,21 @@ cdef class Actor(Component):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument ID for the order book snapshot request.
+            The instrument ID for the order book deltas request.
+        start : datetime
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime, optional
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
         limit : int, optional
-            The limit on the depth of the order book snapshot.
+            The limit on the amount of deltas received.
         client_id : ClientId, optional
             The specific client ID for the command.
             If None, it will be inferred from the venue in the instrument ID.
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has completed processing.
+        update_catalog : bool, default False
+            If the data catalog should be updated with the received data.
         join_request: bool, optional, default to False
             If a request should be joined and sorted with another one by using request_join.
         request_id : UUID4, optional
@@ -3168,18 +3160,23 @@ cdef class Actor(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.callable_or_none(callback, "callback")
 
+        start, end = self._validate_datetime_range(start, end)
+
         used_params = {}
+        used_params["update_catalog"] = update_catalog
         used_params["join_request"] = join_request
         if params:
             used_params.update(params)
 
         cdef UUID4 used_request_id = request_id if request_id else UUID4()
-        cdef RequestOrderBookSnapshot request = RequestOrderBookSnapshot(
+        cdef RequestOrderBookDeltas request = RequestOrderBookDeltas(
             instrument_id=instrument_id,
+            start=start,
+            end=end,
             limit=limit,
             client_id=client_id,
             venue=instrument_id.venue,
-            callback=self._handle_order_book_snapshot_response,
+            callback=self._handle_order_book_deltas_response,
             request_id=used_request_id,
             ts_init=self._clock.timestamp_ns(),
             params=used_params,
@@ -3189,7 +3186,7 @@ cdef class Actor(Component):
 
         self._msgbus.subscribe(
             topic=self._topic_cache.get_deltas_topic(instrument_id, historical=True),
-            handler=self.handle_historical_data,
+            handler=self.handle_historical_order_book_deltas,
         )
 
         self._send_data_req(request)
@@ -3296,23 +3293,20 @@ cdef class Actor(Component):
 
         return used_request_id
 
-    cpdef UUID4 request_order_book_deltas(
+    cpdef UUID4 request_order_book_snapshot(
         self,
         InstrumentId instrument_id,
-        datetime start,
-        datetime end = None,
         int limit = 0,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
-        bint update_catalog = False,
         bint join_request = False,
         UUID4 request_id = None,
         dict[str, object] params = None,
     ):
         """
-        Request historical `OrderBookDeltas` data.
+        Request an order book snapshot.
 
-        Once the response is received, the order book deltas data is forwarded from the message bus
+        Once the response is received, the order book data is forwarded from the message bus
         to the `on_historical_data` handler.
 
         If the request fails, then an error is logged.
@@ -3320,21 +3314,14 @@ cdef class Actor(Component):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument ID for the order book deltas request.
-        start : datetime
-            The start datetime (UTC) of request time range (inclusive).
-        end : datetime, optional
-            The end datetime (UTC) of request time range.
-            The inclusiveness depends on individual data client implementation.
+            The instrument ID for the order book snapshot request.
         limit : int, optional
-            The limit on the amount of deltas received.
+            The limit on the depth of the order book snapshot.
         client_id : ClientId, optional
             The specific client ID for the command.
             If None, it will be inferred from the venue in the instrument ID.
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has completed processing.
-        update_catalog : bool, default False
-            If the data catalog should be updated with the received data.
         join_request: bool, optional, default to False
             If a request should be joined and sorted with another one by using request_join.
         request_id : UUID4, optional
@@ -3359,23 +3346,18 @@ cdef class Actor(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.callable_or_none(callback, "callback")
 
-        start, end = self._validate_datetime_range(start, end)
-
         used_params = {}
-        used_params["update_catalog"] = update_catalog
         used_params["join_request"] = join_request
         if params:
             used_params.update(params)
 
         cdef UUID4 used_request_id = request_id if request_id else UUID4()
-        cdef RequestOrderBookDeltas request = RequestOrderBookDeltas(
+        cdef RequestOrderBookSnapshot request = RequestOrderBookSnapshot(
             instrument_id=instrument_id,
-            start=start,
-            end=end,
             limit=limit,
             client_id=client_id,
             venue=instrument_id.venue,
-            callback=self._handle_order_book_deltas_response,
+            callback=self._handle_order_book_snapshot_response,
             request_id=used_request_id,
             ts_init=self._clock.timestamp_ns(),
             params=used_params,
@@ -3385,7 +3367,7 @@ cdef class Actor(Component):
 
         self._msgbus.subscribe(
             topic=self._topic_cache.get_deltas_topic(instrument_id, historical=True),
-            handler=self.handle_historical_order_book_deltas,
+            handler=self.handle_historical_data,
         )
 
         self._send_data_req(request)

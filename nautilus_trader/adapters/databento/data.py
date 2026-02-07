@@ -1078,10 +1078,10 @@ class DatabentoDataClient(LiveMarketDataClient):
             await self._request_imbalance(request.data_type, request.id)
         elif request.data_type.type == DatabentoStatistics:
             await self._request_statistics(request.data_type, request.id)
-        elif request.data_type.type == OrderBookDepth10:
-            await self._request_order_book_depth(request)
         elif request.data_type.type == OrderBookDeltas:
             await self._request_order_book_deltas(request)
+        elif request.data_type.type == OrderBookDepth10:
+            await self._request_order_book_depth(request)
         else:
             raise NotImplementedError(
                 f"Cannot request {request.data_type.type} (not implemented)",

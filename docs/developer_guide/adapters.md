@@ -1358,6 +1358,7 @@ from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookDeltas
 from nautilus_trader.data.messages import RequestOrderBookDepth
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestQuoteTicks
@@ -1485,11 +1486,14 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     async def _request_instruments(self, request: RequestInstruments) -> None:
         raise NotImplementedError("implement `_request_instruments` in your adapter subclass")
 
-    async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
-        raise NotImplementedError("implement `_request_order_book_snapshot` in your adapter subclass")
+    async def _request_order_book_deltas(self, request: RequestOrderBookDeltas) -> None:
+        raise NotImplementedError("implement `_request_order_book_deltas` in your adapter subclass")
 
     async def _request_order_book_depth(self, request: RequestOrderBookDepth) -> None:
         raise NotImplementedError("implement `_request_order_book_depth` in your adapter subclass")
+
+    async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
+        raise NotImplementedError("implement `_request_order_book_snapshot` in your adapter subclass")
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         raise NotImplementedError("implement `_request_quote_ticks` in your adapter subclass")
@@ -1537,10 +1541,70 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 | `_request_instruments`             | Requests historical data for multiple instruments.      |
 | `_request_order_book_snapshot`     | Requests an order book snapshot.                        |
 | `_request_order_book_depth`        | Requests order book depth.                              |
+| `_request_order_book_deltas`       | Requests historical order book deltas.                  |
 | `_request_quote_ticks`             | Requests historical quote tick data.                    |
 | `_request_trade_ticks`             | Requests historical trade tick data.                    |
 | `_request_bars`                    | Requests historical bar data.                           |
 | `_request_funding_rates`           | Requests historical funding rate data.                  |
+
+#### Order book delta flag requirements
+
+When implementing `_subscribe_order_book_deltas` or streaming order book
+data, adapters **must** set `RecordFlag` flags correctly on each
+`OrderBookDelta`. See also [Delta flags and event boundaries](../concepts/data.md#delta-flags-and-event-boundaries).
+
+- **`F_LAST`**: Set on the last delta of every logical event group. The
+  `DataEngine` uses this flag as the flush signal when `buffer_deltas` is
+  enabled. Without it, deltas accumulate indefinitely and are never
+  published to subscribers.
+
+- **`F_SNAPSHOT`**: Set on all deltas that belong to a snapshot sequence
+  (a `Clear` action followed by `Add` actions reconstructing the book).
+
+- **Empty book snapshots**: When emitting a snapshot for an empty book,
+  the `Clear` delta must have `F_SNAPSHOT | F_LAST`. Otherwise buffered
+  consumers never receive it.
+
+- **Incremental updates**: Each venue update message ends with a delta
+  that has `F_LAST` set. If the venue batches multiple updates into one
+  message, terminate each logical group with `F_LAST`.
+
+```python
+from nautilus_trader.model.enums import RecordFlag
+
+# Incremental update (single event)
+delta = OrderBookDelta(
+    instrument_id=instrument_id,
+    action=BookAction.UPDATE,
+    order=order,
+    flags=RecordFlag.F_LAST,  # Last (and only) delta in this event
+    sequence=sequence,
+    ts_event=ts_event,
+    ts_init=ts_init,
+)
+
+# Snapshot sequence
+clear_delta = OrderBookDelta(
+    instrument_id=instrument_id,
+    action=BookAction.CLEAR,
+    order=NULL_ORDER,
+    flags=RecordFlag.F_SNAPSHOT,  # Not the last delta
+    ...
+)
+
+last_add_delta = OrderBookDelta(
+    instrument_id=instrument_id,
+    action=BookAction.ADD,
+    order=last_order,
+    flags=RecordFlag.F_SNAPSHOT | RecordFlag.F_LAST,  # End of snapshot
+    ...
+)
+```
+
+:::warning
+A missing `F_LAST` is a silent bug — no error is raised, but subscribers
+never receive the data when buffering is enabled.
+:::
 
 ### ExecutionClient
 
