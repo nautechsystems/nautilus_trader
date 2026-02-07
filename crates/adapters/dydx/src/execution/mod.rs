@@ -2470,22 +2470,39 @@ impl ExecutionClient for DydxExecutionClient {
             }
         }
 
-        if lookback_mins.is_some() {
+        // Apply lookback filter to orders and fills (positions are always current state)
+        if let Some(mins) = lookback_mins {
+            let now_ns = get_atomic_clock_realtime().get_time_ns();
+            let cutoff_ns = now_ns.as_u64().saturating_sub(mins * 60 * 1_000_000_000);
+            let cutoff = UnixNanos::from(cutoff_ns);
+
+            let orders_before = order_reports.len();
+            order_reports.retain(|r| r.ts_last >= cutoff);
+            let orders_removed = orders_before - order_reports.len();
+
+            let fills_before = fill_reports.len();
+            fill_reports.retain(|r| r.ts_event >= cutoff);
+            let fills_removed = fills_before - fill_reports.len();
+
+            log::info!(
+                "Lookback filter ({}min): orders {}->{} (removed {}), fills {}->{} (removed {}), positions {} (unfiltered)",
+                mins,
+                orders_before,
+                order_reports.len(),
+                orders_removed,
+                fills_before,
+                fill_reports.len(),
+                fills_removed,
+                position_reports.len(),
+            );
+        } else {
             log::debug!(
-                "lookback_mins={:?} filtering not yet implemented. Returning all: {} orders ({} filtered), {} positions, {} fills ({} filtered)",
-                lookback_mins,
+                "Generated mass status: {} orders ({} filtered), {} positions, {} fills ({} filtered)",
                 order_reports.len(),
                 orders_filtered,
                 position_reports.len(),
                 fill_reports.len(),
-                fills_filtered
-            );
-        } else {
-            log::debug!(
-                "Generated mass status: {} orders, {} positions, {} fills",
-                order_reports.len(),
-                position_reports.len(),
-                fill_reports.len()
+                fills_filtered,
             );
         }
 
