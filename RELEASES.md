@@ -128,6 +128,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 ### Internal Improvements
 - Added support for setting cache database adapter in cache and `LiveNode` (#3401), thanks @filipmacek
 - Added `ts_init` normalization option to `convert_stream_to_data` (#3433), thanks @faysou
+- Added metadata validation for parquet file consolidation to improve handling of mixed precision instruments
 - Added Binance `listenKeyExpired` event handling (#3387), thanks @Johnkhk
 - Added Deribit data client (#3368), thanks @filipmacek
 - Added Deribit order submission (#3408), thanks @filipmacek
