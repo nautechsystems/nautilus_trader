@@ -93,17 +93,6 @@ use crate::{
 /// Maximum number of candles returned per dYdX API request.
 const DYDX_MAX_BARS_PER_REQUEST: u32 = 1_000;
 
-/// Maps a Nautilus [`BarType`] to a [`DydxCandleResolution`].
-///
-/// Also validates that the bar type uses External aggregation and Last price type,
-/// which are the only modes supported by dYdX candle data.
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - Aggregation source is not External.
-/// - Price type is not Last.
-/// - The step/aggregation combination is not supported by dYdX.
 fn bar_type_to_resolution(bar_type: &BarType) -> anyhow::Result<DydxCandleResolution> {
     if bar_type.aggregation_source() != AggregationSource::External {
         anyhow::bail!(
@@ -120,24 +109,7 @@ fn bar_type_to_resolution(bar_type: &BarType) -> anyhow::Result<DydxCandleResolu
         );
     }
 
-    match spec.step.get() {
-        1 => match spec.aggregation {
-            BarAggregation::Minute => Ok(DydxCandleResolution::OneMinute),
-            BarAggregation::Hour => Ok(DydxCandleResolution::OneHour),
-            BarAggregation::Day => Ok(DydxCandleResolution::OneDay),
-            _ => anyhow::bail!("Unsupported bar aggregation: {:?}", spec.aggregation),
-        },
-        5 if spec.aggregation == BarAggregation::Minute => Ok(DydxCandleResolution::FiveMinutes),
-        15 if spec.aggregation == BarAggregation::Minute => {
-            Ok(DydxCandleResolution::FifteenMinutes)
-        }
-        30 if spec.aggregation == BarAggregation::Minute => Ok(DydxCandleResolution::ThirtyMinutes),
-        4 if spec.aggregation == BarAggregation::Hour => Ok(DydxCandleResolution::FourHours),
-        step => anyhow::bail!(
-            "Unsupported bar step: {step} with aggregation {:?}",
-            spec.aggregation
-        ),
-    }
+    DydxCandleResolution::from_bar_spec(&spec)
 }
 
 /// Default dYdX Indexer REST API rate limit.

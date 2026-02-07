@@ -77,11 +77,10 @@ class DYDXv4ExecClientConfig(LiveExecClientConfig, frozen=True):
     subaccount : int, default 0
         The subaccount number.
         The venue creates subaccount 0 by default.
-    mnemonic : str, optional
-        The mnemonic string which is used to generate the private key.
-        The private key is used to sign transactions like submitting orders.
-        If ``None`` then will source `DYDX_MNEMONIC` or
-        `DYDX_TESTNET_MNEMONIC` environment variables.
+    private_key : str, optional
+        The hex-encoded private key used to sign transactions like submitting orders.
+        If ``None`` then will source `DYDX_PRIVATE_KEY` or
+        `DYDX_TESTNET_PRIVATE_KEY` environment variables.
     authenticator_ids : list[int], optional
         List of authenticator IDs for permissioned key trading.
         When provided, transactions will include a TxExtension to enable trading
@@ -109,7 +108,7 @@ class DYDXv4ExecClientConfig(LiveExecClientConfig, frozen=True):
 
     wallet_address: str | None = None
     subaccount: int = 0
-    mnemonic: str | None = None
+    private_key: str | None = None
     authenticator_ids: list[int] | None = None
     is_testnet: bool = False
     base_url_http: str | None = None

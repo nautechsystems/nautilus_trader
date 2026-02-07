@@ -31,7 +31,7 @@ use nautilus_network::mode::ConnectionMode;
 use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
-    common::{credential::DydxCredential, parse::extract_raw_symbol},
+    common::{credential::DydxCredential, enums::DydxCandleResolution, parse::extract_raw_symbol},
     http::parse::parse_account_state,
     websocket::{
         client::DydxWebSocketClient, enums::NautilusWsMessage, error::DydxWsError,
@@ -486,8 +486,11 @@ impl DydxWebSocketClient {
         &self,
         py: Python<'py>,
         bar_type: BarType,
-        resolution: String,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let spec = bar_type.spec();
+        let resolution = DydxCandleResolution::from_bar_spec(&spec).map_err(to_pyvalue_err)?;
+        let resolution = resolution.to_string();
+
         let client = self.clone();
         let instrument_id = bar_type.instrument_id();
 
@@ -517,8 +520,11 @@ impl DydxWebSocketClient {
         &self,
         py: Python<'py>,
         bar_type: BarType,
-        resolution: String,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let spec = bar_type.spec();
+        let resolution = DydxCandleResolution::from_bar_spec(&spec).map_err(to_pyvalue_err)?;
+        let resolution = resolution.to_string();
+
         let client = self.clone();
         let instrument_id = bar_type.instrument_id();
 

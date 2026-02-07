@@ -48,7 +48,7 @@ use nautilus_model::{
         Bar, BarSpecification, BarType, BookOrder, Data as NautilusData, OrderBookDelta,
         OrderBookDeltas, OrderBookDeltas_API, QuoteTick,
     },
-    enums::{BarAggregation, BookAction, BookType, OrderSide, RecordFlag},
+    enums::{BookAction, BookType, OrderSide, RecordFlag},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
@@ -58,7 +58,10 @@ use tokio::{task::JoinHandle, time::Duration};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    common::{consts::DYDX_VENUE, instrument_cache::InstrumentCache, parse::extract_raw_symbol},
+    common::{
+        consts::DYDX_VENUE, enums::DydxCandleResolution, instrument_cache::InstrumentCache,
+        parse::extract_raw_symbol,
+    },
     config::DydxDataClientConfig,
     http::client::DydxHttpClient,
     websocket::{client::DydxWebSocketClient, enums::NautilusWsMessage, handler::HandlerCommand},
@@ -140,28 +143,9 @@ pub struct DydxDataClient {
 }
 
 impl DydxDataClient {
-    /// Maps Nautilus BarType spec to dYdX candle resolution string.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the bar aggregation or step is not supported by dYdX.
     fn map_bar_spec_to_resolution(spec: &BarSpecification) -> anyhow::Result<&'static str> {
-        match spec.step.get() {
-            1 => match spec.aggregation {
-                BarAggregation::Minute => Ok("1MIN"),
-                BarAggregation::Hour => Ok("1HOUR"),
-                BarAggregation::Day => Ok("1DAY"),
-                _ => anyhow::bail!("Unsupported bar aggregation: {:?}", spec.aggregation),
-            },
-            5 if spec.aggregation == BarAggregation::Minute => Ok("5MINS"),
-            15 if spec.aggregation == BarAggregation::Minute => Ok("15MINS"),
-            30 if spec.aggregation == BarAggregation::Minute => Ok("30MINS"),
-            4 if spec.aggregation == BarAggregation::Hour => Ok("4HOURS"),
-            step => anyhow::bail!(
-                "Unsupported bar step: {step} with aggregation {:?}",
-                spec.aggregation
-            ),
-        }
+        let resolution: &'static str = DydxCandleResolution::from_bar_spec(spec)?.into();
+        Ok(resolution)
     }
 
     /// Creates a new [`DydxDataClient`] instance.
@@ -714,48 +698,7 @@ impl DataClient for DydxDataClient {
         let instrument_id = cmd.bar_type.instrument_id();
         let spec = cmd.bar_type.spec();
 
-        // Map BarType spec to dYdX candle resolution string
-        let resolution = match spec.step.get() {
-            1 => match spec.aggregation {
-                BarAggregation::Minute => "1MIN",
-                BarAggregation::Hour => "1HOUR",
-                BarAggregation::Day => "1DAY",
-                _ => {
-                    anyhow::bail!("Unsupported bar aggregation: {:?}", spec.aggregation);
-                }
-            },
-            5 => {
-                if spec.aggregation == BarAggregation::Minute {
-                    "5MINS"
-                } else {
-                    anyhow::bail!("Unsupported 5-step aggregation: {:?}", spec.aggregation);
-                }
-            }
-            15 => {
-                if spec.aggregation == BarAggregation::Minute {
-                    "15MINS"
-                } else {
-                    anyhow::bail!("Unsupported 15-step aggregation: {:?}", spec.aggregation);
-                }
-            }
-            30 => {
-                if spec.aggregation == BarAggregation::Minute {
-                    "30MINS"
-                } else {
-                    anyhow::bail!("Unsupported 30-step aggregation: {:?}", spec.aggregation);
-                }
-            }
-            4 => {
-                if spec.aggregation == BarAggregation::Hour {
-                    "4HOURS"
-                } else {
-                    anyhow::bail!("Unsupported 4-step aggregation: {:?}", spec.aggregation);
-                }
-            }
-            step => {
-                anyhow::bail!("Unsupported bar step: {step}");
-            }
-        };
+        let resolution = Self::map_bar_spec_to_resolution(&spec)?;
 
         // Remove from active subscription tracking
         self.active_bar_subs

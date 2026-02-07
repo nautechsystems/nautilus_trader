@@ -21,7 +21,6 @@ This client uses the Rust-backed HTTP and WebSocket clients for market data.
 
 import asyncio
 
-from nautilus_trader.adapters.dydx_v4.common.urls import get_ws_url
 from nautilus_trader.adapters.dydx_v4.config import DYDXv4DataClientConfig
 from nautilus_trader.adapters.dydx_v4.constants import DYDX_VENUE
 from nautilus_trader.adapters.dydx_v4.providers import DYDXv4InstrumentProvider
@@ -30,6 +29,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
@@ -63,30 +63,17 @@ from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import IndexPriceUpdate
 from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.enums import bar_aggregation_to_str
 from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
-
-
-# Mapping of Nautilus bar aggregation/step to dYdX resolution strings
-BAR_RESOLUTION_MAP = {
-    (1, "MINUTE"): "1MIN",
-    (5, "MINUTE"): "5MINS",
-    (15, "MINUTE"): "15MINS",
-    (30, "MINUTE"): "30MINS",
-    (1, "HOUR"): "1HOUR",
-    (4, "HOUR"): "4HOURS",
-    (1, "DAY"): "1DAY",
-}
 
 
 class DYDXv4DataClient(LiveMarketDataClient):
@@ -152,7 +139,7 @@ class DYDXv4DataClient(LiveMarketDataClient):
         self._http_client = client
 
         # WebSocket API (using public client for market data)
-        ws_url = config.base_url_ws or get_ws_url(is_testnet=config.is_testnet)
+        ws_url = config.base_url_ws or nautilus_pyo3.get_dydx_ws_url(config.is_testnet)  # type: ignore[attr-defined]
         self._ws_client = nautilus_pyo3.DydxWebSocketClient.new_public(  # type: ignore[attr-defined]
             url=ws_url,
             heartbeat=20,
@@ -168,7 +155,6 @@ class DYDXv4DataClient(LiveMarketDataClient):
         # Subscription tracking (mirrors Rust DydxDataClient)
         self._active_delta_subs: set[InstrumentId] = set()
         self._active_trade_subs: set[InstrumentId] = set()
-        self._active_bar_subs: dict[tuple[InstrumentId, str], object] = {}
         self._active_mark_price_subs: set[InstrumentId] = set()
         self._active_index_price_subs: set[InstrumentId] = set()
         self._active_funding_rate_subs: set[InstrumentId] = set()
@@ -224,7 +210,6 @@ class DYDXv4DataClient(LiveMarketDataClient):
         self._active_quote_subs.clear()
         self._active_delta_subs.clear()
         self._active_trade_subs.clear()
-        self._active_bar_subs.clear()
         self._active_mark_price_subs.clear()
         self._active_index_price_subs.clear()
         self._active_funding_rate_subs.clear()
@@ -270,12 +255,6 @@ class DYDXv4DataClient(LiveMarketDataClient):
             self._log.error(f"Error handling WebSocket message: {e}")
 
     def _handle_market_data_update(self, capsule: object) -> bool:
-        """
-        Handle mark price, index price, and funding rate updates.
-
-        Returns True if handled.
-
-        """
         if isinstance(capsule, nautilus_pyo3.MarkPriceUpdate):
             instrument_id = InstrumentId.from_str(capsule.instrument_id.value)
             if instrument_id in self._active_mark_price_subs:
@@ -297,9 +276,6 @@ class DYDXv4DataClient(LiveMarketDataClient):
         return False
 
     def _handle_dict_message(self, capsule: dict) -> None:
-        """
-        Handle dict-type messages (e.g., new instrument discovery).
-        """
         msg_type = capsule.get("type")
         if msg_type == "new_instrument_discovered":
             ticker = capsule.get("ticker")
@@ -313,13 +289,6 @@ class DYDXv4DataClient(LiveMarketDataClient):
                 task.add_done_callback(self._ws_client_futures.discard)
 
     async def _fetch_new_instrument(self, ticker: str) -> None:
-        """
-        Fetch and cache a newly discovered instrument.
-
-        Called when the WebSocket markets channel reports a ticker that is not in the
-        instrument cache, indicating a new listing.
-
-        """
         try:
             instrument = await self._http_client.fetch_instrument(ticker)
             if instrument is not None:
@@ -386,8 +355,6 @@ class DYDXv4DataClient(LiveMarketDataClient):
         if instrument_id in self._active_delta_subs:
             self._handle_data(deltas)
 
-    # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
-
     async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
         # The WebSocket client subscribes to markets channel automatically on connect
         pass
@@ -434,25 +401,9 @@ class DYDXv4DataClient(LiveMarketDataClient):
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         bar_type = command.bar_type
-        spec = bar_type.spec
-
-        # Map to dYdX resolution
-        aggregation_str = bar_aggregation_to_str(spec.aggregation)
-        key = (spec.step, aggregation_str)
-        resolution = BAR_RESOLUTION_MAP.get(key)
-
-        if resolution is None:
-            self._log.error(
-                f"Cannot subscribe to bars: unsupported aggregation "
-                f"step={spec.step} aggregation={aggregation_str}",
-            )
-            return
-
-        # Track active subscription
-        self._active_bar_subs[(bar_type.instrument_id, resolution)] = bar_type
 
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(bar_type))
-        await self._ws_client.subscribe_bars(pyo3_bar_type, resolution)
+        await self._ws_client.subscribe_bars(pyo3_bar_type)
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         # Remove from tracking
@@ -484,20 +435,9 @@ class DYDXv4DataClient(LiveMarketDataClient):
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         bar_type = command.bar_type
-        spec = bar_type.spec
-
-        aggregation_str = bar_aggregation_to_str(spec.aggregation)
-        key = (spec.step, aggregation_str)
-        resolution = BAR_RESOLUTION_MAP.get(key)
-
-        if resolution is None:
-            return
-
-        # Remove from tracking
-        self._active_bar_subs.pop((bar_type.instrument_id, resolution), None)
 
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(bar_type))
-        await self._ws_client.unsubscribe_bars(pyo3_bar_type, resolution)
+        await self._ws_client.unsubscribe_bars(pyo3_bar_type)
 
     async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
         # Markets channel is always subscribed, no unsubscription needed
@@ -506,8 +446,6 @@ class DYDXv4DataClient(LiveMarketDataClient):
     async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
         # Markets channel is always subscribed, no per-instrument unsubscription
         pass
-
-    # -- REQUESTS ---------------------------------------------------------------------------------
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
         instrument = self._instrument_provider.find(request.instrument_id)
@@ -574,43 +512,31 @@ class DYDXv4DataClient(LiveMarketDataClient):
         # dYdX does not support instrument close subscriptions
         pass
 
-    async def _request_bars(self, request: RequestBars) -> None:
-        bar_type = request.bar_type
-
-        # Format timestamps for dYdX API
-        start_iso = request.start.isoformat() if request.start else None
-        end_iso = request.end.isoformat() if request.end else None
-
-        # Determine limit
-        limit = request.limit if request.limit > 0 else None
-
-        self._log.info(
-            f"Request {bar_type} bars from {start_iso or 'start'} to {end_iso or 'end'}",
-        )
-
+    async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
         try:
-            bars = await self._http_client.request_bars(
-                bar_type=str(bar_type),
-                start=start_iso,
-                end=end_iso,
-                limit=limit,
-                timestamp_on_close=self._bars_timestamp_on_close,
+            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+                request.instrument_id.value,
             )
-            bars = Bar.from_pyo3_list(bars)
 
-            self._log.info(f"Received {len(bars)} bars for {bar_type}")
+            pyo3_deltas = await self._http_client.request_orderbook_snapshot(
+                instrument_id=pyo3_instrument_id,
+            )
 
-            self._handle_bars(
-                bar_type,
-                bars,
-                request.id,
-                request.start,
-                request.end,
-                request.params,
+            deltas = OrderBookDeltas.from_pyo3(pyo3_deltas)
+
+            self._handle_data_response(
+                data_type=request.data_type,
+                data=[deltas],
+                correlation_id=request.id,
+                start=None,
+                end=None,
+                params=request.params,
             )
 
         except Exception as e:
-            self._log.error(f"Error requesting bars for {bar_type}: {e}")
+            self._log.error(
+                f"Error requesting order book snapshot for {request.instrument_id}: {e}",
+            )
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         # dYdX does not publish historical quote tick data
@@ -624,19 +550,14 @@ class DYDXv4DataClient(LiveMarketDataClient):
             pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                 request.instrument_id.value,
             )
-
-            start_iso = request.start.isoformat() if request.start else None
-            end_iso = request.end.isoformat() if request.end else None
             limit = request.limit if request.limit > 0 else None
 
             pyo3_trades = await self._http_client.request_trade_ticks(
                 instrument_id=pyo3_instrument_id,
-                start=start_iso,
-                end=end_iso,
+                start=ensure_pydatetime_utc(request.start),
+                end=ensure_pydatetime_utc(request.end),
                 limit=limit,
             )
-
-            from nautilus_trader.model.data import TradeTick
 
             trades = TradeTick.from_pyo3_list(pyo3_trades)
 
@@ -652,34 +573,32 @@ class DYDXv4DataClient(LiveMarketDataClient):
         except Exception as e:
             self._log.error(f"Error requesting trade ticks for {request.instrument_id}: {e}")
 
-    async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
+    async def _request_bars(self, request: RequestBars) -> None:
+        bar_type = request.bar_type
+        limit = request.limit if request.limit > 0 else None
+
+        self._log.info(
+            f"Request {bar_type} bars from {request.start or 'start'} to {request.end or 'end'}",
+        )
+
         try:
-            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
-                request.instrument_id.value,
+            pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(bar_type))
+            bars = await self._http_client.request_bars(
+                bar_type=pyo3_bar_type,
+                start=ensure_pydatetime_utc(request.start),
+                end=ensure_pydatetime_utc(request.end),
+                limit=limit,
+                timestamp_on_close=self._bars_timestamp_on_close,
             )
+            bars = Bar.from_pyo3_list(bars)
 
-            pyo3_deltas = await self._http_client.request_orderbook_snapshot(
-                instrument_id=pyo3_instrument_id,
+            self._handle_bars(
+                bar_type,
+                bars,
+                request.id,
+                request.start,
+                request.end,
+                request.params,
             )
-
-            from nautilus_trader.model.data import OrderBookDeltas
-
-            deltas = OrderBookDeltas.from_pyo3(pyo3_deltas)
-
-            data_type = DataType(
-                OrderBookDeltas,
-                metadata={"instrument_id": request.instrument_id},
-            )
-            self._handle_data_response(
-                data_type=data_type,
-                data=[deltas],
-                correlation_id=request.id,
-                start=None,
-                end=None,
-                params=request.params,
-            )
-
         except Exception as e:
-            self._log.error(
-                f"Error requesting order book snapshot for {request.instrument_id}: {e}",
-            )
+            self._log.error(f"Error requesting bars for {bar_type}: {e}")

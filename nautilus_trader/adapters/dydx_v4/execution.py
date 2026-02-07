@@ -29,9 +29,8 @@ Supported order types:
 
 import asyncio
 import hashlib
+import os
 
-from nautilus_trader.adapters.dydx_v4.common.urls import get_grpc_urls
-from nautilus_trader.adapters.dydx_v4.common.urls import get_ws_url
 from nautilus_trader.adapters.dydx_v4.config import DYDXv4ExecClientConfig
 from nautilus_trader.adapters.dydx_v4.constants import DYDX_VENUE
 from nautilus_trader.adapters.dydx_v4.providers import DYDXv4InstrumentProvider
@@ -62,6 +61,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.events import OrderCancelRejected
+from nautilus_trader.model.events import OrderModifyRejected
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
@@ -77,25 +77,11 @@ from nautilus_trader.model.orders import StopMarketOrder
 
 
 def _client_order_id_to_u32(client_order_id: ClientOrderId) -> int:
-    """
-    Hash a ClientOrderId string to a u32 for dYdX order submission.
-
-    dYdX requires a u32 client_id for orders. We use a hash of the string to ensure
-    uniqueness while fitting in the u32 range.
-
-    """
     digest = hashlib.sha256(client_order_id.value.encode()).digest()
     return int.from_bytes(digest[:4], byteorder="big")
 
 
 def _get_expire_time_secs(order: Order) -> int | None:
-    """
-    Extract expire_time from an order and convert to seconds.
-
-    dYdX conditional orders require expire_time in Unix seconds. Returns None if the
-    order has no expiry time set.
-
-    """
     if hasattr(order, "expire_time_ns") and order.expire_time_ns:
         return int(nanos_to_secs(order.expire_time_ns))
     return None
@@ -169,17 +155,16 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
         self._http_client = client
 
         # Resolve URLs
-        ws_url = config.base_url_ws or get_ws_url(is_testnet=config.is_testnet)
-        grpc_urls = config.base_url_grpc or get_grpc_urls(is_testnet=config.is_testnet)
+        ws_url = config.base_url_ws or nautilus_pyo3.get_dydx_ws_url(config.is_testnet)  # type: ignore[attr-defined]
+        grpc_urls = config.base_url_grpc or nautilus_pyo3.get_dydx_grpc_urls(config.is_testnet)  # type: ignore[attr-defined]
 
-        # Initialize wallet and gRPC client from mnemonic
+        # Initialize wallet and gRPC client from private key
         self._wallet: nautilus_pyo3.DydxWallet | None = None  # type: ignore[name-defined]
         self._grpc_client: nautilus_pyo3.DydxGrpcClient | None = None  # type: ignore[name-defined]
         self._order_submitter: nautilus_pyo3.DydxOrderSubmitter | None = None  # type: ignore[name-defined]
         self._grpc_urls = grpc_urls
 
         # WebSocket API (private client for account updates)
-        # Note: The private WebSocket requires mnemonic for authentication
         self._ws_client: nautilus_pyo3.DydxWebSocketClient | None = None  # type: ignore[name-defined]
         self._ws_url = ws_url
 
@@ -201,25 +186,22 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
         # Load instruments
         await self._instrument_provider.initialize()
 
-        # Initialize wallet from mnemonic
-        mnemonic = self._config.mnemonic
-        if not mnemonic:
-            # Try to get from environment
-            import os
+        # Initialize wallet from private key
+        private_key = self._config.private_key
+        if not private_key:
+            env_var = "DYDX_TESTNET_PRIVATE_KEY" if self._is_testnet else "DYDX_PRIVATE_KEY"
+            private_key = os.environ.get(env_var)
 
-            env_var = "DYDX_TESTNET_MNEMONIC" if self._is_testnet else "DYDX_MNEMONIC"
-            mnemonic = os.environ.get(env_var)
-
-        if not mnemonic:
+        if not private_key:
             self._log.error(
-                f"No mnemonic provided. Set via config or "
-                f"{'DYDX_TESTNET_MNEMONIC' if self._is_testnet else 'DYDX_MNEMONIC'} env var",
+                f"No private key provided. Set via config or "
+                f"{'DYDX_TESTNET_PRIVATE_KEY' if self._is_testnet else 'DYDX_PRIVATE_KEY'} env var",
             )
             return
 
         # Create wallet
-        self._wallet = nautilus_pyo3.DydxWallet.from_mnemonic(  # type: ignore[attr-defined]
-            mnemonic=mnemonic,
+        self._wallet = nautilus_pyo3.DydxWallet.from_private_key(  # type: ignore[attr-defined]
+            private_key,
         )
         self._wallet_address = self._wallet.address()
 
@@ -254,9 +236,8 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
         # Connect private WebSocket for account updates
         self._ws_client = nautilus_pyo3.DydxWebSocketClient.new_private(  # type: ignore[attr-defined]
             url=self._ws_url,
-            mnemonic=mnemonic,
-            account_index=self._subaccount,
-            authenticator_ids=[],
+            private_key=private_key,
+            authenticator_ids=self._config.authenticator_ids or [],
             account_id=nautilus_pyo3.AccountId(account_id.value),
             heartbeat=20,
         )
@@ -304,8 +285,6 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             self._handle_data(data)
         except Exception as e:
             self._log.error(f"Error handling WebSocket message: {e}")
-
-    # -- COMMANDS ---------------------------------------------------------------------------------
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         if self._order_submitter is None or self._wallet is None:
@@ -622,8 +601,6 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
         except Exception as e:
             self._log.error(f"Batch cancel orders failed: {e}")
 
-    # -- REPORTS ----------------------------------------------------------------------------------
-
     async def generate_order_status_report(
         self,
         command: GenerateOrderStatusReport,
@@ -806,8 +783,6 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
 
         return reports
 
-    # -- HELPERS ----------------------------------------------------------------------------------
-
     def _generate_order_rejected(
         self,
         client_order_id: ClientOrderId,
@@ -834,8 +809,6 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
         reason: str,
     ) -> None:
         self._log.error(f"Order modify rejected: {reason}")
-        from nautilus_trader.model.events import OrderModifyRejected
-
         event = OrderModifyRejected(
             trader_id=self.trader_id,
             strategy_id=self._cache.strategy_id_for_order(client_order_id)

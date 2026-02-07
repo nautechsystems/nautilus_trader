@@ -1,10 +1,14 @@
-# dYdX
+# dYdX v3 (legacy Python adapter)
+
+:::warning
+This is the legacy pure-Python dYdX adapter (`nautilus_trader.adapters.dydx`).
+For new projects, use the [Rust-backed dYdX v4 adapter](dydx_v4.md) which provides
+better performance and additional features.
+:::
 
 dYdX is one of the largest decentralized cryptocurrency exchanges for crypto derivative products.
-This integration supports live market data ingestion and order execution with **dYdX v4**, the first
-fully decentralized version of the protocol running on its own application-specific blockchain (dYdX Chain).
-Unlike previous versions, v4 operates entirely on-chain with no central components, using Cosmos SDK
-and CometBFT (formerly Tendermint) for consensus.
+This integration supports live market data ingestion and order execution with dYdX v4, running on
+its own Cosmos SDK application-specific blockchain (dYdX Chain) with CometBFT consensus.
 
 ## Installation
 
@@ -22,9 +26,8 @@ uv sync --all-extras
 
 ## Overview
 
-This adapter is implemented in Rust with Python bindings. It provides direct integration with dYdX's
-Indexer API (REST/WebSocket) for market data and gRPC for transaction submission, without requiring
-external client libraries.
+This adapter is implemented in pure Python. It provides integration with dYdX's Indexer API
+(REST/WebSocket) for market data and gRPC for transaction submission.
 
 ### Product support
 
@@ -316,26 +319,32 @@ support environment variable fallbacks for credentials and network-specific sett
 
 ### Data client configuration options
 
-| Option                             | Default | Description |
-|------------------------------------|---------|-------------|
-| `wallet_address`                   | `None`  | Wallet address for fee calculation. Falls back to `DYDX_WALLET_ADDRESS` (mainnet) or `DYDX_TESTNET_WALLET_ADDRESS` (testnet). |
-| `is_testnet`                       | `False` | Connect to dYdX testnet when `True`. |
-| `bars_timestamp_on_close`          | `True`  | Use bar close time for `ts_event` timestamps. Set `False` to use venue-native open time. |
-| `max_retries`                      | `3`     | Maximum retry attempts for REST/WebSocket recovery. |
-| `retry_delay_initial_ms`           | `1000`  | Initial delay (milliseconds) between retries. |
-| `retry_delay_max_ms`               | `60000` | Maximum delay (milliseconds) between retries. |
+| Option                             | Default | Description                                                                                                                     |
+|------------------------------------|---------|---------------------------------------------------------------------------------------------------------------------------------|
+| `wallet_address`                   | `None`  | Wallet address for fee calculation. Falls back to `DYDX_WALLET_ADDRESS` (mainnet) or `DYDX_TESTNET_WALLET_ADDRESS` (testnet).   |
+| `is_testnet`                       | `False` | Connect to dYdX testnet when `True`.                                                                                            |
+| `update_instruments_interval_mins` | `60`    | Interval (minutes) between reloading instruments from the venue. Set `None` to disable.                                         |
+| `max_retries`                      | `None`  | Maximum retry attempts for REST/WebSocket recovery.                                                                             |
+| `retry_delay_initial_ms`           | `None`  | Initial delay (milliseconds) between retries.                                                                                   |
+| `retry_delay_max_ms`               | `None`  | Maximum delay (milliseconds) between retries.                                                                                   |
+| `proxy_url`                        | `None`  | Proxy URL for HTTP requests.                                                                                                    |
 
 ### Execution client configuration options
 
-| Option                   | Default | Description |
-|--------------------------|---------|-------------|
-| `wallet_address`         | `None`  | Wallet address for the account. Falls back to `DYDX_WALLET_ADDRESS` (mainnet) or `DYDX_TESTNET_WALLET_ADDRESS` (testnet). |
-| `subaccount`             | `0`     | Subaccount number (0-127). Subaccount 0 is the default. |
-| `mnemonic`               | `None`  | BIP-39 mnemonic for transaction signing. Falls back to `DYDX_MNEMONIC` (mainnet) or `DYDX_TESTNET_MNEMONIC` (testnet). |
-| `is_testnet`             | `False` | Connect to dYdX testnet when `True`. |
-| `max_retries`            | `3`     | Maximum retry attempts for order operations. |
-| `retry_delay_initial_ms` | `1000`  | Initial delay (milliseconds) between retries. |
-| `retry_delay_max_ms`     | `60000` | Maximum delay (milliseconds) between retries. |
+| Option                       | Default | Description                                                                                                                   |
+|------------------------------|---------|-------------------------------------------------------------------------------------------------------------------------------|
+| `wallet_address`             | `None`  | Wallet address for the account. Falls back to `DYDX_WALLET_ADDRESS` (mainnet) or `DYDX_TESTNET_WALLET_ADDRESS` (testnet).     |
+| `subaccount`                 | `0`     | Subaccount number (0-127). Subaccount 0 is the default.                                                                       |
+| `mnemonic`                   | `None`  | BIP-39 mnemonic for transaction signing. Falls back to `DYDX_MNEMONIC` (mainnet) or `DYDX_TESTNET_MNEMONIC` (testnet).        |
+| `base_url_http`              | `None`  | HTTP client custom endpoint override.                                                                                         |
+| `base_url_ws`                | `None`  | WebSocket client custom endpoint override.                                                                                    |
+| `is_testnet`                 | `False` | Connect to dYdX testnet when `True`.                                                                                          |
+| `max_retries`                | `None`  | Maximum retry attempts for order operations.                                                                                  |
+| `retry_delay_initial_ms`     | `None`  | Initial delay (milliseconds) between retries.                                                                                 |
+| `retry_delay_max_ms`         | `None`  | Maximum delay (milliseconds) between retries.                                                                                 |
+| `proxy_url`                  | `None`  | Proxy URL for HTTP requests.                                                                                                  |
+| `track_cancel_timeout_secs`  | `60`    | Maximum time (seconds) to track an order after sending a cancel request.                                                      |
+| `track_cancel_interval_secs` | `0.1`   | Interval (seconds) between checking order status after sending a cancel request.                                              |
 
 :::note
 **Environment variable resolution**: The adapter automatically resolves credentials from environment

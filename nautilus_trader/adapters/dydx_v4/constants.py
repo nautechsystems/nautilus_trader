@@ -16,15 +16,10 @@
 Constants for the dYdX v4 adapter.
 """
 
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 
 
 DYDX = "DYDX"
 DYDX_VENUE = Venue(DYDX)
-DYDX_CLIENT_ID = "DYDX"
-
-# Environment variable names for credentials
-ENV_DYDX_WALLET_ADDRESS = "DYDX_WALLET_ADDRESS"
-ENV_DYDX_MNEMONIC = "DYDX_MNEMONIC"
-ENV_DYDX_TESTNET_WALLET_ADDRESS = "DYDX_TESTNET_WALLET_ADDRESS"
-ENV_DYDX_TESTNET_MNEMONIC = "DYDX_TESTNET_MNEMONIC"
+DYDX_CLIENT_ID = ClientId("DYDX")

@@ -19,7 +19,7 @@
 
 use std::str::FromStr;
 
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use nautilus_model::{
     data::BarType,
@@ -326,29 +326,17 @@ impl DydxHttpClient {
     fn py_request_bars<'py>(
         &self,
         py: Python<'py>,
-        bar_type: String,
-        start: Option<String>,
-        end: Option<String>,
+        bar_type: BarType,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<u32>,
         timestamp_on_close: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let bar_type = BarType::from_str(&bar_type).map_err(to_pyvalue_err)?;
-
-        let start_dt = start
-            .map(|s| DateTime::parse_from_rfc3339(&s).map(|dt| dt.with_timezone(&chrono::Utc)))
-            .transpose()
-            .map_err(to_pyvalue_err)?;
-
-        let end_dt = end
-            .map(|s| DateTime::parse_from_rfc3339(&s).map(|dt| dt.with_timezone(&chrono::Utc)))
-            .transpose()
-            .map_err(to_pyvalue_err)?;
-
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let bars = client
-                .request_bars(bar_type, start_dt, end_dt, limit, timestamp_on_close)
+                .request_bars(bar_type, start, end, limit, timestamp_on_close)
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -365,25 +353,15 @@ impl DydxHttpClient {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start: Option<String>,
-        end: Option<String>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let start_dt = start
-            .map(|s| DateTime::parse_from_rfc3339(&s).map(|dt| dt.with_timezone(&chrono::Utc)))
-            .transpose()
-            .map_err(to_pyvalue_err)?;
-
-        let end_dt = end
-            .map(|s| DateTime::parse_from_rfc3339(&s).map(|dt| dt.with_timezone(&chrono::Utc)))
-            .transpose()
-            .map_err(to_pyvalue_err)?;
-
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let trades = client
-                .request_trade_ticks(instrument_id, start_dt, end_dt, limit)
+                .request_trade_ticks(instrument_id, start, end, limit)
                 .await
                 .map_err(to_pyvalue_err)?;
 

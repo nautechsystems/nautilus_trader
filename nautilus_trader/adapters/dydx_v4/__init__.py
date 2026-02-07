@@ -32,10 +32,6 @@ Usage:
 
 """
 
-from nautilus_trader.adapters.dydx_v4.common.urls import get_grpc_url
-from nautilus_trader.adapters.dydx_v4.common.urls import get_grpc_urls
-from nautilus_trader.adapters.dydx_v4.common.urls import get_http_url
-from nautilus_trader.adapters.dydx_v4.common.urls import get_ws_url
 from nautilus_trader.adapters.dydx_v4.config import DYDXv4DataClientConfig
 from nautilus_trader.adapters.dydx_v4.config import DYDXv4ExecClientConfig
 from nautilus_trader.adapters.dydx_v4.constants import DYDX
@@ -46,14 +42,11 @@ from nautilus_trader.adapters.dydx_v4.execution import DYDXv4ExecutionClient
 from nautilus_trader.adapters.dydx_v4.factories import DYDXv4LiveDataClientFactory
 from nautilus_trader.adapters.dydx_v4.factories import DYDXv4LiveExecClientFactory
 from nautilus_trader.adapters.dydx_v4.providers import DYDXv4InstrumentProvider
-from nautilus_trader.adapters.dydx_v4.types import DYDX_INSTRUMENT_TYPES
-from nautilus_trader.adapters.dydx_v4.types import DydxInstrument
 
 
 __all__ = [
     "DYDX",
     "DYDX_CLIENT_ID",
-    "DYDX_INSTRUMENT_TYPES",
     "DYDX_VENUE",
     "DYDXv4DataClient",
     "DYDXv4DataClientConfig",
@@ -62,9 +55,4 @@ __all__ = [
     "DYDXv4InstrumentProvider",
     "DYDXv4LiveDataClientFactory",
     "DYDXv4LiveExecClientFactory",
-    "DydxInstrument",
-    "get_grpc_url",
-    "get_grpc_urls",
-    "get_http_url",
-    "get_ws_url",
 ]
