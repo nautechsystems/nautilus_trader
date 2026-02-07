@@ -465,14 +465,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn submit_order(&self, command: &SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
         let order = self
             .core
             .cache()
-            .order(&command.client_order_id)
+            .order(&cmd.client_order_id)
             .cloned()
             .ok_or_else(|| {
-                anyhow::anyhow!("Order not found in cache for {}", command.client_order_id)
+                anyhow::anyhow!("Order not found in cache for {}", cmd.client_order_id)
             })?;
 
         if order.is_closed() {
@@ -539,15 +539,15 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn submit_order_list(&self, command: &SubmitOrderList) -> anyhow::Result<()> {
+    fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
         log::debug!(
             "Submitting order list with {} orders",
-            command.order_list.client_order_ids.len()
+            cmd.order_list.client_order_ids.len()
         );
 
         let http_client = self.http_client.clone();
 
-        let orders = self.core.get_orders_for_list(&command.order_list)?;
+        let orders = self.core.get_orders_for_list(&cmd.order_list)?;
 
         // Validate all orders synchronously and collect valid ones
         let mut valid_orders = Vec::new();
@@ -613,11 +613,11 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn modify_order(&self, command: &ModifyOrder) -> anyhow::Result<()> {
-        log::debug!("Modifying order: {command:?}");
+    fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
+        log::debug!("Modifying order: {cmd:?}");
 
         // Parse venue_order_id as u64
-        let venue_order_id = match command.venue_order_id {
+        let venue_order_id = match cmd.venue_order_id {
             Some(id) => id,
             None => {
                 log::warn!("Cannot modify order: venue_order_id is None");
@@ -634,9 +634,9 @@ impl ExecutionClient for HyperliquidExecutionClient {
         };
 
         let http_client = self.http_client.clone();
-        let price = command.price;
-        let quantity = command.quantity;
-        let symbol = command.instrument_id.symbol.to_string();
+        let price = cmd.price;
+        let quantity = cmd.quantity;
+        let symbol = cmd.instrument_id.symbol.to_string();
 
         self.spawn_task("modify_order", async move {
             use crate::http::models::HyperliquidExecModifyOrderRequest;
@@ -686,12 +686,12 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn cancel_order(&self, command: &CancelOrder) -> anyhow::Result<()> {
-        log::debug!("Cancelling order: {command:?}");
+    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
+        log::debug!("Cancelling order: {cmd:?}");
 
         let http_client = self.http_client.clone();
-        let client_order_id = command.client_order_id.to_string();
-        let symbol = command.instrument_id.symbol.to_string();
+        let client_order_id = cmd.client_order_id.to_string();
+        let symbol = cmd.instrument_id.symbol.to_string();
 
         self.spawn_task("cancel_order", async move {
             let asset = match http_client.get_asset_index(&symbol) {
@@ -728,24 +728,24 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn cancel_all_orders(&self, command: &CancelAllOrders) -> anyhow::Result<()> {
-        log::debug!("Cancelling all orders: {command:?}");
+    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
+        log::debug!("Cancelling all orders: {cmd:?}");
 
         let cache = self.core.cache();
         let open_orders = cache.orders_open(
             Some(&self.core.venue),
-            Some(&command.instrument_id),
+            Some(&cmd.instrument_id),
             None,
             None,
-            Some(command.order_side),
+            Some(cmd.order_side),
         );
 
         if open_orders.is_empty() {
-            log::debug!("No open orders to cancel for {:?}", command.instrument_id);
+            log::debug!("No open orders to cancel for {:?}", cmd.instrument_id);
             return Ok(());
         }
 
-        let symbol = command.instrument_id.symbol.to_string();
+        let symbol = cmd.instrument_id.symbol.to_string();
         let client_order_ids: Vec<String> = open_orders
             .iter()
             .map(|o| o.client_order_id().to_string())
@@ -783,15 +783,15 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn batch_cancel_orders(&self, command: &BatchCancelOrders) -> anyhow::Result<()> {
-        log::debug!("Batch cancelling orders: {command:?}");
+    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
+        log::debug!("Batch cancelling orders: {cmd:?}");
 
-        if command.cancels.is_empty() {
+        if cmd.cancels.is_empty() {
             log::debug!("No orders to cancel in batch");
             return Ok(());
         }
 
-        let cancel_info: Vec<(String, String)> = command
+        let cancel_info: Vec<(String, String)> = cmd
             .cancels
             .iter()
             .map(|c| {
@@ -835,8 +835,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn query_account(&self, command: &QueryAccount) -> anyhow::Result<()> {
-        log::debug!("Querying account: {command:?}");
+    fn query_account(&self, cmd: &QueryAccount) -> anyhow::Result<()> {
+        log::debug!("Querying account: {cmd:?}");
 
         // Use existing infrastructure to refresh account state
         let runtime = get_runtime();
@@ -849,19 +849,19 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn query_order(&self, command: &QueryOrder) -> anyhow::Result<()> {
-        log::debug!("Querying order: {command:?}");
+    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
+        log::debug!("Querying order: {cmd:?}");
 
         // Get venue order ID from cache
         let cache = self.core.cache();
-        let venue_order_id = cache.venue_order_id(&command.client_order_id);
+        let venue_order_id = cache.venue_order_id(&cmd.client_order_id);
 
         let venue_order_id = match venue_order_id {
             Some(oid) => *oid,
             None => {
                 log::warn!(
                     "No venue order ID found for client order {}",
-                    command.client_order_id
+                    cmd.client_order_id
                 );
                 return Ok(());
             }
