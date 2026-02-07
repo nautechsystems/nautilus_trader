@@ -322,7 +322,7 @@ impl DydxHttpClient {
     }
 
     #[pyo3(name = "request_bars")]
-    #[pyo3(signature = (bar_type, start=None, end=None, limit=None))]
+    #[pyo3(signature = (bar_type, start=None, end=None, limit=None, timestamp_on_close=true))]
     fn py_request_bars<'py>(
         &self,
         py: Python<'py>,
@@ -330,6 +330,7 @@ impl DydxHttpClient {
         start: Option<String>,
         end: Option<String>,
         limit: Option<u32>,
+        timestamp_on_close: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let bar_type = BarType::from_str(&bar_type).map_err(to_pyvalue_err)?;
 
@@ -347,7 +348,7 @@ impl DydxHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let bars = client
-                .request_bars(bar_type, start_dt, end_dt, limit)
+                .request_bars(bar_type, start_dt, end_dt, limit, timestamp_on_close)
                 .await
                 .map_err(to_pyvalue_err)?;
 

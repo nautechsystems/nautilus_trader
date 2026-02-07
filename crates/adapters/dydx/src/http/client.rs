@@ -1088,6 +1088,7 @@ impl DydxHttpClient {
         start: Option<DateTime<Utc>>,
         end: Option<DateTime<Utc>>,
         limit: Option<u32>,
+        timestamp_on_close: bool,
     ) -> anyhow::Result<Vec<Bar>> {
         let resolution = bar_type_to_resolution(&bar_type)?;
         let instrument_id = bar_type.instrument_id();
@@ -1147,6 +1148,7 @@ impl DydxHttpClient {
                             bar_type,
                             price_precision,
                             size_precision,
+                            timestamp_on_close,
                             ts_init,
                         ) {
                             Ok(bar) => all_bars.push(bar),
@@ -1175,6 +1177,7 @@ impl DydxHttpClient {
                         bar_type,
                         price_precision,
                         size_precision,
+                        timestamp_on_close,
                         ts_init,
                     ) {
                         Ok(bar) => all_bars.push(bar),

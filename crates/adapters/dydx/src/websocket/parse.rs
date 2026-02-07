@@ -760,6 +760,9 @@ pub fn parse_trade_ticks(
 
 /// Parses a single candle into a [`Bar`].
 ///
+/// When `timestamp_on_close` is true, `ts_event` is set to bar close time
+/// (started_at + interval). When false, uses the venue-native open time.
+///
 /// # Errors
 ///
 /// Returns an error if OHLCV/timestamp parsing fails.
@@ -767,6 +770,7 @@ pub fn parse_candle_bar(
     bar_type: BarType,
     instrument: &InstrumentAny,
     candle: &DydxCandle,
+    timestamp_on_close: bool,
     ts_init: UnixNanos,
 ) -> DydxWsResult<Bar> {
     let open = Decimal::from_str(&candle.open)
@@ -777,8 +781,13 @@ pub fn parse_candle_bar(
         .map_err(|e| DydxWsError::Parse(format!("Failed to parse low: {e}")))?;
     let close = Decimal::from_str(&candle.close)
         .map_err(|e| DydxWsError::Parse(format!("Failed to parse close: {e}")))?;
-    let volume = Decimal::from_str(&candle.base_token_volume)
-        .map_err(|e| DydxWsError::Parse(format!("Failed to parse volume: {e}")))?;
+    let volume = candle
+        .base_token_volume
+        .as_deref()
+        .map(Decimal::from_str)
+        .transpose()
+        .map_err(|e| DydxWsError::Parse(format!("Failed to parse volume: {e}")))?
+        .unwrap_or(Decimal::ZERO);
 
     let started_at_nanos = candle.started_at.timestamp_nanos_opt().ok_or_else(|| {
         DydxWsError::Parse(format!(
@@ -786,7 +795,20 @@ pub fn parse_candle_bar(
             candle.started_at
         ))
     })?;
-    let ts_event = UnixNanos::from(started_at_nanos as u64);
+    let mut ts_event = UnixNanos::from(started_at_nanos as u64);
+    if timestamp_on_close {
+        let interval_ns = bar_type
+            .spec()
+            .timedelta()
+            .num_nanoseconds()
+            .ok_or_else(|| DydxWsError::Parse("Bar interval overflow".to_string()))?;
+        let updated = (started_at_nanos as u64)
+            .checked_add(interval_ns as u64)
+            .ok_or_else(|| {
+                DydxWsError::Parse("Bar timestamp overflowed adjusting to close time".to_string())
+            })?;
+        ts_event = UnixNanos::from(updated);
+    }
 
     let bar = Bar::new(
         bar_type,
@@ -816,8 +838,14 @@ pub fn parse_candle_bar(
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use nautilus_model::{
-        enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified},
+        data::{BarType, Data},
+        enums::{
+            AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus, OrderType,
+            PositionSideSpecified,
+        },
         identifiers::{AccountId, InstrumentId, Symbol, Venue},
         instruments::{CryptoPerpetual, InstrumentAny},
         types::{Currency, Price, Quantity},
@@ -828,9 +856,12 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::enums::{
-            DydxFillType, DydxLiquidity, DydxMarketStatus, DydxOrderStatus, DydxOrderType,
-            DydxPositionSide, DydxPositionStatus, DydxTickerType, DydxTimeInForce,
+        common::{
+            enums::{
+                DydxFillType, DydxLiquidity, DydxMarketStatus, DydxOrderStatus, DydxOrderType,
+                DydxPositionSide, DydxPositionStatus, DydxTickerType, DydxTimeInForce,
+            },
+            testing::load_json_fixture,
         },
         http::models::PerpetualMarket,
         websocket::messages::{DydxPerpetualPosition, DydxWsFillSubaccountMessageContents},
@@ -1610,5 +1641,129 @@ mod tests {
         assert_eq!(fill_report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(fill_report.order_side, OrderSide::Sell);
         assert!(fill_report.commission.as_decimal() > dec!(0));
+    }
+
+    #[rstest]
+    fn test_parse_orderbook_snapshot() {
+        let json = load_json_fixture("ws_orderbook_subscribed.json");
+        let contents: DydxOrderbookSnapshotContents =
+            serde_json::from_value(json["contents"].clone())
+                .expect("Failed to parse orderbook snapshot contents");
+
+        let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let deltas = parse_orderbook_snapshot(&instrument_id, &contents, 2, 8, ts_init)
+            .expect("Failed to parse orderbook snapshot");
+
+        // 1 clear + 3 bids + 3 asks = 7 deltas
+        assert_eq!(deltas.deltas.len(), 7);
+
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert_eq!(deltas.deltas[1].action, BookAction::Add);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[1].order.price.to_string(), "43240.00");
+        assert_eq!(deltas.deltas[1].order.size.to_string(), "1.50000000");
+
+        assert_eq!(deltas.deltas[4].action, BookAction::Add);
+        assert_eq!(deltas.deltas[4].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[4].order.price.to_string(), "43250.00");
+        assert_eq!(deltas.deltas[4].order.size.to_string(), "1.20000000");
+
+        let last = deltas.deltas.last().unwrap();
+        assert_ne!(last.flags, 0);
+    }
+
+    #[rstest]
+    fn test_parse_orderbook_deltas_update() {
+        let json = load_json_fixture("ws_orderbook_update.json");
+        let contents: DydxOrderbookContents = serde_json::from_value(json["contents"].clone())
+            .expect("Failed to parse orderbook update contents");
+
+        let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let deltas = parse_orderbook_deltas(&instrument_id, &contents, 2, 8, ts_init)
+            .expect("Failed to parse orderbook deltas");
+
+        // 2 bids + 2 asks = 4 deltas
+        assert_eq!(deltas.deltas.len(), 4);
+
+        assert_eq!(deltas.deltas[0].action, BookAction::Update);
+        assert_eq!(deltas.deltas[0].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[0].order.price.to_string(), "43240.00");
+
+        // First ask with size 0.0 should be a Delete
+        assert_eq!(deltas.deltas[2].action, BookAction::Delete);
+        assert_eq!(deltas.deltas[2].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[2].order.price.to_string(), "43250.00");
+
+        assert_eq!(deltas.deltas[3].action, BookAction::Update);
+        assert_eq!(deltas.deltas[3].order.side, OrderSide::Sell);
+    }
+
+    #[rstest]
+    fn test_parse_trade_ticks_ws() {
+        let json = load_json_fixture("ws_trades_subscribed.json");
+        let contents: DydxTradeContents = serde_json::from_value(json["contents"].clone())
+            .expect("Failed to parse trade contents");
+
+        let instrument = create_test_instrument();
+        let instrument_id = instrument.id();
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let ticks = parse_trade_ticks(instrument_id, &instrument, &contents, ts_init)
+            .expect("Failed to parse trade ticks");
+
+        assert_eq!(ticks.len(), 1);
+        if let Data::Trade(tick) = &ticks[0] {
+            assert_eq!(tick.instrument_id, instrument_id);
+            assert_eq!(tick.price.to_string(), "43250.00");
+            assert_eq!(tick.size.to_string(), "0.50000000");
+            assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
+            assert_eq!(tick.trade_id.to_string(), "trade-001");
+        } else {
+            panic!("Expected Trade data");
+        }
+    }
+
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    fn test_parse_candle_bar_timestamp_on_close(#[case] timestamp_on_close: bool) {
+        let json = load_json_fixture("ws_candles_subscribed.json");
+        let candles_value = &json["contents"]["candles"];
+        let candles: Vec<DydxCandle> =
+            serde_json::from_value(candles_value.clone()).expect("Failed to parse candle array");
+
+        let instrument = create_test_instrument();
+        let bar_type = BarType::from_str("BTC-USD-PERP.DYDX-1-MINUTE-LAST-EXTERNAL")
+            .expect("Failed to parse bar type");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let bar = parse_candle_bar(
+            bar_type,
+            &instrument,
+            &candles[0],
+            timestamp_on_close,
+            ts_init,
+        )
+        .expect("Failed to parse candle bar");
+
+        assert_eq!(bar.bar_type, bar_type);
+        assert_eq!(bar.open.to_string(), "43100.00");
+        assert_eq!(bar.high.to_string(), "43500.00");
+        assert_eq!(bar.low.to_string(), "43000.00");
+        assert_eq!(bar.close.to_string(), "43400.00");
+        assert_eq!(bar.volume.to_string(), "12.34500000");
+
+        // 2024-01-01T00:00:00.000Z = 1_704_067_200_000_000_000 ns
+        let started_at_ns = 1_704_067_200_000_000_000u64;
+        let one_min_ns = 60_000_000_000u64;
+        if timestamp_on_close {
+            assert_eq!(bar.ts_event.as_u64(), started_at_ns + one_min_ns);
+        } else {
+            assert_eq!(bar.ts_event.as_u64(), started_at_ns);
+        }
     }
 }

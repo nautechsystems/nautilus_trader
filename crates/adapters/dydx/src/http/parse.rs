@@ -98,6 +98,9 @@ pub fn parse_trade_tick(
 
 /// Parses a dYdX [`Candle`] into a Nautilus [`Bar`].
 ///
+/// When `timestamp_on_close` is true, `ts_event` is set to bar close time
+/// (started_at + interval). When false, uses the venue-native open time.
+///
 /// # Errors
 ///
 /// Returns an error if OHLCV or timestamp conversion fails.
@@ -106,12 +109,27 @@ pub fn parse_bar(
     bar_type: BarType,
     price_precision: u8,
     size_precision: u8,
+    timestamp_on_close: bool,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Bar> {
     let started_at_nanos = candle.started_at.timestamp_nanos_opt().ok_or_else(|| {
         anyhow::anyhow!("Timestamp out of range for candle at {}", candle.started_at)
     })?;
-    let ts_event = UnixNanos::from(started_at_nanos as u64);
+    let mut ts_event = UnixNanos::from(started_at_nanos as u64);
+    if timestamp_on_close {
+        let interval_ns = bar_type
+            .spec()
+            .timedelta()
+            .num_nanoseconds()
+            .context("bar specification produced non-integer interval")?;
+        let interval_ns =
+            u64::try_from(interval_ns).context("bar interval overflowed u64 nanoseconds")?;
+        let updated = ts_event
+            .as_u64()
+            .checked_add(interval_ns)
+            .context("bar timestamp overflowed when adjusting to close time")?;
+        ts_event = UnixNanos::from(updated);
+    }
 
     let open = Price::from_decimal_dp(candle.open, price_precision)
         .context("failed to parse candle open price")?;
@@ -388,7 +406,12 @@ mod tests {
     use std::str::FromStr;
 
     use chrono::Utc;
-    use nautilus_model::{enums::OrderSide, instruments::Instrument};
+    use nautilus_model::{
+        data::BarType,
+        enums::{AggressorSide, OrderSide},
+        identifiers::InstrumentId,
+        instruments::Instrument,
+    };
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
@@ -877,6 +900,65 @@ mod tests {
                 deserialized, variant,
                 "Deserialization failed for {variant:?}"
             );
+        }
+    }
+
+    #[rstest]
+    fn test_parse_trade_tick() {
+        let json = load_json_result_fixture("http_get_trades.json");
+        let response: TradesResponse =
+            serde_json::from_value(json).expect("Failed to parse trades");
+
+        let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let tick = parse_trade_tick(&response.trades[0], instrument_id, 0, 4, ts_init)
+            .expect("Failed to parse trade tick");
+
+        assert_eq!(tick.instrument_id, instrument_id);
+        assert_eq!(tick.price.to_string(), "89942");
+        assert_eq!(tick.size.to_string(), "0.0001");
+        assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
+        assert_eq!(tick.trade_id.to_string(), "03f89a550000000200000002");
+        assert_eq!(tick.ts_init, ts_init);
+    }
+
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    fn test_parse_bar_timestamp_on_close(#[case] timestamp_on_close: bool) {
+        let json = load_json_result_fixture("http_get_candles.json");
+        let response: CandlesResponse =
+            serde_json::from_value(json).expect("Failed to parse candles");
+
+        let bar_type = BarType::from_str("BTC-USD-PERP.DYDX-1-MINUTE-LAST-EXTERNAL")
+            .expect("Failed to parse bar type");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let bar = parse_bar(
+            &response.candles[0],
+            bar_type,
+            0,
+            4,
+            timestamp_on_close,
+            ts_init,
+        )
+        .expect("Failed to parse bar");
+
+        assert_eq!(bar.bar_type, bar_type);
+        assert_eq!(bar.open.to_string(), "89934");
+        assert_eq!(bar.high.to_string(), "89970");
+        assert_eq!(bar.low.to_string(), "89911");
+        assert_eq!(bar.close.to_string(), "89941");
+        assert_eq!(bar.volume.to_string(), "3.2767");
+
+        // 2025-12-08T16:11:00.000Z
+        let started_at_ns = 1_765_210_260_000_000_000u64;
+        let one_min_ns = 60_000_000_000u64;
+        if timestamp_on_close {
+            assert_eq!(bar.ts_event.as_u64(), started_at_ns + one_min_ns);
+        } else {
+            assert_eq!(bar.ts_event.as_u64(), started_at_ns);
         }
     }
 }

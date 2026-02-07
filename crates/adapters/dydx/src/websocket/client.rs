@@ -132,6 +132,8 @@ pub struct DydxWebSocketClient {
     out_rx: Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>,
     /// Background handler task handle.
     handler_task: Option<tokio::task::JoinHandle<()>>,
+    /// Whether to timestamp bars at close time (open + interval).
+    bars_timestamp_on_close: bool,
 }
 
 impl Clone for DydxWebSocketClient {
@@ -150,6 +152,7 @@ impl Clone for DydxWebSocketClient {
             cmd_tx: self.cmd_tx.clone(),
             out_rx: None,       // Cannot clone receiver - only one owner allowed
             handler_task: None, // Cannot clone task handle
+            bars_timestamp_on_close: self.bars_timestamp_on_close,
         }
     }
 }
@@ -192,6 +195,7 @@ impl DydxWebSocketClient {
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
             handler_task: None,
+            bars_timestamp_on_close: true,
         }
     }
 
@@ -245,6 +249,7 @@ impl DydxWebSocketClient {
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
             handler_task: None,
+            bars_timestamp_on_close: true,
         }
     }
 
@@ -277,6 +282,11 @@ impl DydxWebSocketClient {
     #[must_use]
     pub fn connection_mode_atomic(&self) -> Arc<ArcSwap<AtomicU8>> {
         self.connection_mode.clone()
+    }
+
+    /// Sets whether to timestamp bars at close time (open + interval).
+    pub fn set_bars_timestamp_on_close(&mut self, value: bool) {
+        self.bars_timestamp_on_close = value;
     }
 
     /// Sets the account ID for account message parsing.
@@ -472,6 +482,7 @@ impl DydxWebSocketClient {
         let account_id = self.account_id;
         let signal = self.signal.clone();
         let subscriptions = self.subscriptions.clone();
+        let bars_timestamp_on_close = self.bars_timestamp_on_close;
 
         let handler_task = get_runtime().spawn(async move {
             let mut handler = FeedHandler::new(
@@ -482,6 +493,7 @@ impl DydxWebSocketClient {
                 client,
                 signal,
                 subscriptions,
+                bars_timestamp_on_close,
             );
             handler.run().await;
         });

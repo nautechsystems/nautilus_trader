@@ -320,7 +320,7 @@ support environment variable fallbacks for credentials and network-specific sett
 |------------------------------------|---------|-------------|
 | `wallet_address`                   | `None`  | Wallet address for fee calculation. Falls back to `DYDX_WALLET_ADDRESS` (mainnet) or `DYDX_TESTNET_WALLET_ADDRESS` (testnet). |
 | `is_testnet`                       | `False` | Connect to dYdX testnet when `True`. |
-| `update_instruments_interval_mins` | `60`    | Interval (minutes) between instrument catalog refreshes. |
+| `bars_timestamp_on_close`          | `True`  | Use bar close time for `ts_event` timestamps. Set `False` to use venue-native open time. |
 | `max_retries`                      | `3`     | Maximum retry attempts for REST/WebSocket recovery. |
 | `retry_delay_initial_ms`           | `1000`  | Initial delay (milliseconds) between retries. |
 | `retry_delay_max_ms`               | `60000` | Maximum delay (milliseconds) between retries. |

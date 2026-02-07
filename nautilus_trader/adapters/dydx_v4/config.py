@@ -42,6 +42,9 @@ class DYDXv4DataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws : str, optional
         The base URL for WebSocket connections.
         If ``None`` then will use the default URL for the selected network.
+    bars_timestamp_on_close : bool, default True
+        If bar `ts_event` timestamps should be the bar close time.
+        If False, the venue-native open time will be used.
     max_retries : PositiveInt, optional
         The maximum number of retries for HTTP requests or websocket reconnects.
     retry_delay_initial_ms : PositiveInt, optional
@@ -53,6 +56,7 @@ class DYDXv4DataClientConfig(LiveDataClientConfig, frozen=True):
 
     wallet_address: str | None = None
     is_testnet: bool = False
+    bars_timestamp_on_close: bool = True
     base_url_http: str | None = None
     base_url_ws: str | None = None
     max_retries: PositiveInt | None = 3

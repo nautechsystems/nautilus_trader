@@ -542,8 +542,9 @@ pub struct DydxTradeContents {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DydxCandle {
-    /// Base token volume.
-    pub base_token_volume: String,
+    /// Base token volume (may be absent in partial updates).
+    #[serde(default)]
+    pub base_token_volume: Option<String>,
     /// Close price.
     pub close: String,
     /// High price.

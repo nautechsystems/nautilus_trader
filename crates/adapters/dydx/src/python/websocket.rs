@@ -70,6 +70,11 @@ impl DydxWebSocketClient {
         self.is_connected()
     }
 
+    #[pyo3(name = "set_bars_timestamp_on_close")]
+    fn py_set_bars_timestamp_on_close(&mut self, value: bool) {
+        self.set_bars_timestamp_on_close(value);
+    }
+
     #[pyo3(name = "set_account_id")]
     fn py_set_account_id(&mut self, account_id: AccountId) {
         self.set_account_id(account_id);

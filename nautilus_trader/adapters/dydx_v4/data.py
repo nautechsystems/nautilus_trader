@@ -141,7 +141,9 @@ class DYDXv4DataClient(LiveMarketDataClient):
 
         # Configuration
         self._config = config
+        self._bars_timestamp_on_close = config.bars_timestamp_on_close
         self._log.info(f"{config.is_testnet=}", LogColor.BLUE)
+        self._log.info(f"{config.bars_timestamp_on_close=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
@@ -155,6 +157,7 @@ class DYDXv4DataClient(LiveMarketDataClient):
             url=ws_url,
             heartbeat=20,
         )
+        self._ws_client.set_bars_timestamp_on_close(self._bars_timestamp_on_close)
         self._ws_client_futures: set[asyncio.Future] = set()
 
         # Quote synthesis state (quotes are derived from orderbook top-of-book)
@@ -591,6 +594,7 @@ class DYDXv4DataClient(LiveMarketDataClient):
                 start=start_iso,
                 end=end_iso,
                 limit=limit,
+                timestamp_on_close=self._bars_timestamp_on_close,
             )
             bars = Bar.from_pyo3_list(bars)
 

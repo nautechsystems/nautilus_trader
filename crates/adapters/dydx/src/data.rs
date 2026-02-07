@@ -978,7 +978,7 @@ impl DataClient for DydxDataClient {
 
         get_runtime().spawn(async move {
             match http_client
-                .request_bars(bar_type, start, end, limit)
+                .request_bars(bar_type, start, end, limit, true)
                 .await
                 .context("failed to request bars from dYdX")
             {
