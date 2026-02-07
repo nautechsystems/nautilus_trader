@@ -174,7 +174,7 @@ pub trait Strategy: DataActor {
     /// or order list submission fails.
     fn submit_order_list(
         &mut self,
-        orders: Vec<OrderAny>,
+        mut orders: Vec<OrderAny>,
         position_id: Option<PositionId>,
         client_id: Option<ClientId>,
     ) -> anyhow::Result<()> {
@@ -193,7 +193,16 @@ pub trait Strategy: DataActor {
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
         let ts_init = core.clock().timestamp_ns();
 
-        let order_list = OrderList::from_orders(&orders, ts_init);
+        // TODO: Replace with fluent builder API for order list construction
+        let order_list = if orders.first().is_some_and(|o| o.order_list_id().is_some()) {
+            OrderList::from_orders(&orders, ts_init)
+        } else {
+            let order_factory = core
+                .order_factory
+                .as_mut()
+                .expect("OrderFactory not initialized");
+            order_factory.create_list(&mut orders, ts_init)
+        };
 
         {
             let cache_rc = core.cache_rc();
@@ -277,7 +286,7 @@ pub trait Strategy: DataActor {
     /// or order list submission fails.
     fn submit_order_list_with_params(
         &mut self,
-        orders: Vec<OrderAny>,
+        mut orders: Vec<OrderAny>,
         position_id: Option<PositionId>,
         client_id: Option<ClientId>,
         params: IndexMap<String, String>,
@@ -298,7 +307,16 @@ pub trait Strategy: DataActor {
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
         let ts_init = core.clock().timestamp_ns();
 
-        let order_list = OrderList::from_orders(&orders, ts_init);
+        // TODO: Replace with fluent builder API for order list construction
+        let order_list = if orders.first().is_some_and(|o| o.order_list_id().is_some()) {
+            OrderList::from_orders(&orders, ts_init)
+        } else {
+            let order_factory = core
+                .order_factory
+                .as_mut()
+                .expect("OrderFactory not initialized");
+            order_factory.create_list(&mut orders, ts_init)
+        };
 
         {
             let cache_rc = core.cache_rc();

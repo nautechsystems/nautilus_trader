@@ -204,7 +204,7 @@ impl ExecutionClient for BacktestExecutionClient {
         let orders: Vec<OrderAny> = self
             .cache
             .borrow()
-            .orders_for_ids(&cmd.order_list.orders, cmd);
+            .orders_for_ids(&cmd.order_list.client_order_ids, cmd);
 
         for order in &orders {
             let event = self.factory.generate_order_submitted(order, ts_init);

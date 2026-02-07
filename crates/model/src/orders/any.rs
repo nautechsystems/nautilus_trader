@@ -24,7 +24,7 @@ use super::{
     stop_limit::StopLimitOrder, stop_market::StopMarketOrder,
     trailing_stop_limit::TrailingStopLimitOrder, trailing_stop_market::TrailingStopMarketOrder,
 };
-use crate::{events::OrderEventAny, types::Price};
+use crate::{events::OrderEventAny, identifiers::OrderListId, types::Price};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[enum_dispatch(Order)]
@@ -93,6 +93,23 @@ impl OrderAny {
         {
             OrderEventAny::Initialized(init) => init,
             _ => panic!("Order invariant violated: first event must be OrderInitialized"),
+        }
+    }
+
+    // TODO: Does not update the OrderInitialized event in the order's
+    // event history. The init event will still carry the original
+    // order_list_id (typically None). Address with fluent builder API.
+    pub fn set_order_list_id(&mut self, id: OrderListId) {
+        match self {
+            Self::Limit(o) => o.order_list_id = Some(id),
+            Self::LimitIfTouched(o) => o.order_list_id = Some(id),
+            Self::Market(o) => o.order_list_id = Some(id),
+            Self::MarketIfTouched(o) => o.order_list_id = Some(id),
+            Self::MarketToLimit(o) => o.order_list_id = Some(id),
+            Self::StopLimit(o) => o.order_list_id = Some(id),
+            Self::StopMarket(o) => o.order_list_id = Some(id),
+            Self::TrailingStopLimit(o) => o.order_list_id = Some(id),
+            Self::TrailingStopMarket(o) => o.order_list_id = Some(id),
         }
     }
 }

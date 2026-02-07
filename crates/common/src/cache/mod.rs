@@ -956,7 +956,7 @@ impl Cache {
         for order_list_id in affected_order_list_ids {
             if let Some(order_list) = self.order_lists.get(&order_list_id) {
                 let all_purged = order_list
-                    .orders
+                    .client_order_ids
                     .iter()
                     .all(|id| !self.orders.contains_key(id));
                 if all_purged {
@@ -2904,7 +2904,7 @@ impl Cache {
 
         if let Some(account_id) = account_id {
             order_lists.retain(|ol| {
-                ol.orders.iter().any(|client_order_id| {
+                ol.client_order_ids.iter().any(|client_order_id| {
                     self.orders
                         .get(client_order_id)
                         .is_some_and(|order| order.account_id().as_ref() == Some(account_id))

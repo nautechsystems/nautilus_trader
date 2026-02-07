@@ -665,12 +665,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
     }
 
     fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
-        let orders: Vec<OrderAny> = cmd
-            .order_list
-            .orders
-            .iter()
-            .map(|id| self.core.get_order(id))
-            .collect::<anyhow::Result<Vec<_>>>()?;
+        let orders = self.core.get_orders_for_list(&cmd.order_list)?;
 
         log::info!(
             "Submitting order list: order_list_id={}, count={}",

@@ -695,6 +695,7 @@ mod tests {
     ) {
         let order1 = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .client_order_id(ClientOrderId::from("O-001"))
             .side(OrderSide::Buy)
             .quantity(Quantity::new(1.0, 8))
             .price(Price::new(50_000.0, 2))
@@ -702,6 +703,7 @@ mod tests {
 
         let order2 = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .client_order_id(ClientOrderId::from("O-002"))
             .side(OrderSide::Sell)
             .quantity(Quantity::new(1.0, 8))
             .price(Price::new(51_000.0, 2))

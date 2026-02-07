@@ -542,17 +542,12 @@ impl ExecutionClient for HyperliquidExecutionClient {
     fn submit_order_list(&self, command: &SubmitOrderList) -> anyhow::Result<()> {
         log::debug!(
             "Submitting order list with {} orders",
-            command.order_list.orders.len()
+            command.order_list.client_order_ids.len()
         );
 
         let http_client = self.http_client.clone();
 
-        let orders: Vec<OrderAny> = command
-            .order_list
-            .orders
-            .iter()
-            .map(|id| self.core.get_order(id))
-            .collect::<anyhow::Result<Vec<_>>>()?;
+        let orders = self.core.get_orders_for_list(&command.order_list)?;
 
         // Validate all orders synchronously and collect valid ones
         let mut valid_orders = Vec::new();

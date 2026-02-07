@@ -549,7 +549,7 @@ impl OrderEmulator {
         let orders: Vec<OrderAny> = self
             .cache
             .borrow()
-            .orders_for_ids(&command.order_list.orders, &command);
+            .orders_for_ids(&command.order_list.client_order_ids, &command);
 
         for order in &orders {
             if let Some(parent_order_id) = order.parent_order_id() {

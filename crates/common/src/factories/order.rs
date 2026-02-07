@@ -18,15 +18,18 @@
 use std::{cell::RefCell, rc::Rc};
 
 use indexmap::IndexMap;
-use nautilus_core::UUID4;
+use nautilus_core::{
+    UUID4, UnixNanos,
+    correctness::{check_equal, check_slice_not_empty},
+};
 use nautilus_model::{
     enums::{ContingencyType, OrderSide, TimeInForce, TriggerType},
     identifiers::{
         ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
     orders::{
-        LimitIfTouchedOrder, LimitOrder, MarketIfTouchedOrder, MarketOrder, OrderAny,
-        StopLimitOrder, StopMarketOrder,
+        LimitIfTouchedOrder, LimitOrder, MarketIfTouchedOrder, MarketOrder, Order, OrderAny,
+        OrderList, StopLimitOrder, StopMarketOrder,
     },
     types::{Price, Quantity},
 };
@@ -444,6 +447,51 @@ impl OrderFactory {
         OrderAny::LimitIfTouched(order)
     }
 
+    /// Creates a new [`OrderList`] from the given orders, generating a fresh
+    /// order list ID and propagating it back to each order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - `orders` is empty.
+    /// - Any order has a different `instrument_id` than the first.
+    /// - Any order has a different `strategy_id` than the factory.
+    pub fn create_list(&mut self, orders: &mut [OrderAny], ts_init: UnixNanos) -> OrderList {
+        check_slice_not_empty(orders, stringify!(orders)).unwrap();
+        let instrument_id = orders[0].instrument_id();
+        for order in orders.iter().skip(1) {
+            check_equal(
+                &order.instrument_id(),
+                &instrument_id,
+                "instrument_id",
+                "first order instrument_id",
+            )
+            .unwrap();
+            check_equal(
+                &order.strategy_id(),
+                &self.strategy_id,
+                "strategy_id",
+                "factory strategy_id",
+            )
+            .unwrap();
+        }
+        let order_list_id = self.generate_order_list_id();
+        let order_ids: Vec<ClientOrderId> = orders.iter().map(|o| o.client_order_id()).collect();
+
+        // Propagate list ID back to each order
+        for order in orders.iter_mut() {
+            order.set_order_list_id(order_list_id);
+        }
+
+        OrderList::new(
+            order_list_id,
+            instrument_id,
+            self.strategy_id,
+            order_ids,
+            ts_init,
+        )
+    }
+
     /// Creates a bracket order with entry order and attached stop-loss and take-profit orders.
     #[allow(clippy::too_many_arguments)]
     pub fn bracket(
@@ -679,6 +727,7 @@ impl OrderFactory {
 pub mod tests {
     use std::{cell::RefCell, rc::Rc};
 
+    use nautilus_core::UnixNanos;
     use nautilus_model::{
         enums::{ContingencyType, OrderSide, TimeInForce, TriggerType},
         identifiers::{
@@ -1255,5 +1304,62 @@ pub mod tests {
         assert_eq!(take.contingency_type(), Some(ContingencyType::Oco));
         assert_eq!(take.parent_order_id(), Some(entry.client_order_id()));
         assert_eq!(take.linked_order_ids().unwrap(), &[stop.client_order_id()]);
+    }
+
+    #[rstest]
+    fn test_create_list_from_plain_orders(mut order_factory: OrderFactory) {
+        let entry = order_factory.limit(
+            InstrumentId::from("BTCUSDT.BINANCE"),
+            OrderSide::Buy,
+            100.into(),
+            Price::from("50000.00"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let sl = order_factory.stop_market(
+            InstrumentId::from("BTCUSDT.BINANCE"),
+            OrderSide::Sell,
+            100.into(),
+            Price::from("45000.00"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let mut orders = vec![entry.clone(), sl.clone()];
+        let order_list = order_factory.create_list(&mut orders, UnixNanos::default());
+
+        assert_eq!(order_list.len(), 2);
+        assert_eq!(
+            order_list.instrument_id,
+            InstrumentId::from("BTCUSDT.BINANCE")
+        );
+        assert_eq!(order_list.client_order_ids[0], entry.client_order_id());
+        assert_eq!(order_list.client_order_ids[1], sl.client_order_id());
+        assert_eq!(
+            order_list.id,
+            OrderListId::new("OL-19700101-000000-001-001-1"),
+        );
+        assert_eq!(orders[0].order_list_id(), Some(order_list.id));
+        assert_eq!(orders[1].order_list_id(), Some(order_list.id));
     }
 }

@@ -68,7 +68,7 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
-    orders::{Order, OrderAny},
+    orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance},
 };
@@ -1092,12 +1092,7 @@ impl ExecutionClient for DydxExecutionClient {
     }
 
     fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
-        let orders: Vec<OrderAny> = cmd
-            .order_list
-            .orders
-            .iter()
-            .map(|id| self.core.get_order(id))
-            .collect::<anyhow::Result<Vec<_>>>()?;
+        let orders = self.core.get_orders_for_list(&cmd.order_list)?;
         let order_count = orders.len();
 
         // Check connection status

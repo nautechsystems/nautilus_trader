@@ -1036,9 +1036,9 @@ impl ExecutionEngine {
         let orders: Vec<OrderAny> = self
             .cache
             .borrow()
-            .orders_for_ids(&cmd.order_list.orders, cmd);
+            .orders_for_ids(&cmd.order_list.client_order_ids, cmd);
 
-        if orders.len() != cmd.order_list.orders.len() {
+        if orders.len() != cmd.order_list.client_order_ids.len() {
             for order in &orders {
                 self.deny_order(
                     order,

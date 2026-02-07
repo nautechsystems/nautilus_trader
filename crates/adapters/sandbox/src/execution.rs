@@ -650,7 +650,7 @@ impl ExecutionClient for SandboxExecutionClient {
         let orders: Vec<OrderAny> = self
             .cache
             .borrow()
-            .orders_for_ids(&cmd.order_list.orders, cmd);
+            .orders_for_ids(&cmd.order_list.client_order_ids, cmd);
 
         for order in &orders {
             if order.is_closed() {

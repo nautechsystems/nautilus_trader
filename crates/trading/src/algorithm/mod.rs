@@ -126,12 +126,7 @@ pub trait ExecutionAlgorithm: DataActor {
             }
             TradingCommand::SubmitOrderList(cmd) => {
                 self.subscribe_to_strategy_events(cmd.strategy_id);
-                let orders: Vec<OrderAny> = cmd
-                    .order_list
-                    .orders
-                    .iter()
-                    .map(|id| self.core_mut().get_order(id))
-                    .collect::<anyhow::Result<Vec<_>>>()?;
+                let orders = self.core_mut().get_orders_for_list(&cmd.order_list)?;
                 self.on_order_list(cmd.order_list, orders)
             }
             TradingCommand::CancelOrder(cmd) => self.handle_cancel_order(cmd),

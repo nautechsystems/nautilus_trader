@@ -582,7 +582,7 @@ impl ExecutionClient for AxExecutionClient {
     fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
         log::warn!(
             "submit_order_list not yet implemented for AX execution client (got {} orders)",
-            cmd.order_list.orders.len()
+            cmd.order_list.client_order_ids.len()
         );
         Ok(())
     }

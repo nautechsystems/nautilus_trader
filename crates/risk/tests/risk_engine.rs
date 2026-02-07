@@ -2588,12 +2588,14 @@ fn test_submit_order_list_when_trading_halted_then_denies_orders(
 
     let entry = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_audusd.id())
+        .client_order_id(ClientOrderId::from("O-001"))
         .side(OrderSide::Buy)
         .quantity(Quantity::from_str("100").unwrap())
         .build();
 
     let stop_loss = OrderTestBuilder::new(OrderType::StopMarket)
         .instrument_id(instrument_audusd.id())
+        .client_order_id(ClientOrderId::from("O-002"))
         .side(OrderSide::Buy)
         .quantity(Quantity::from_str("100").unwrap())
         .trigger_price(Price::new(0.1, 1))
@@ -2601,6 +2603,7 @@ fn test_submit_order_list_when_trading_halted_then_denies_orders(
 
     let take_profit = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument_audusd.id())
+        .client_order_id(ClientOrderId::from("O-003"))
         .side(OrderSide::Buy)
         .quantity(Quantity::from_str("100").unwrap())
         .price(Price::new(0.11, 2))
@@ -2980,12 +2983,14 @@ fn test_submit_bracket_order_when_instrument_not_in_cache_then_denies(
 
     let entry = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_audusd.id())
+        .client_order_id(ClientOrderId::from("O-001"))
         .side(OrderSide::Buy)
         .quantity(Quantity::from_str("100").unwrap())
         .build();
 
     let stop_loss = OrderTestBuilder::new(OrderType::StopMarket)
         .instrument_id(instrument_audusd.id())
+        .client_order_id(ClientOrderId::from("O-002"))
         .side(OrderSide::Buy)
         .quantity(Quantity::from_str("100").unwrap())
         .trigger_price(Price::new(0.1, 1))
@@ -2993,6 +2998,7 @@ fn test_submit_bracket_order_when_instrument_not_in_cache_then_denies(
 
     let take_profit = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument_audusd.id())
+        .client_order_id(ClientOrderId::from("O-003"))
         .side(OrderSide::Buy)
         .quantity(Quantity::from_str("100").unwrap())
         .price(Price::new(0.1001, 4))

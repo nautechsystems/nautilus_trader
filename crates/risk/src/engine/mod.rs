@@ -480,9 +480,9 @@ impl RiskEngine {
         let orders: Vec<OrderAny> = self
             .cache
             .borrow()
-            .orders_for_ids(&command.order_list.orders, &command);
+            .orders_for_ids(&command.order_list.client_order_ids, &command);
 
-        if orders.len() != command.order_list.orders.len() {
+        if orders.len() != command.order_list.client_order_ids.len() {
             self.deny_order_list(
                 &orders,
                 &format!("Incomplete order list: missing orders in cache for {command}"),
@@ -1219,7 +1219,7 @@ impl RiskEngine {
                 let orders: Vec<OrderAny> = self
                     .cache
                     .borrow()
-                    .orders_for_ids(&command.order_list.orders, &command);
+                    .orders_for_ids(&command.order_list.client_order_ids, &command);
                 self.deny_order_list(&orders, reason);
             }
             _ => {
@@ -1308,10 +1308,10 @@ impl RiskEngine {
                     }
                 }
                 TradingCommand::SubmitOrderList(submit_order_list) => {
-                    let orders: Vec<OrderAny> = self
-                        .cache
-                        .borrow()
-                        .orders_for_ids(&submit_order_list.order_list.orders, &submit_order_list);
+                    let orders: Vec<OrderAny> = self.cache.borrow().orders_for_ids(
+                        &submit_order_list.order_list.client_order_ids,
+                        &submit_order_list,
+                    );
                     self.deny_order_list(&orders, "TradingState::HALTED");
                 }
                 _ => {}
@@ -1343,10 +1343,10 @@ impl RiskEngine {
                     }
                 }
                 TradingCommand::SubmitOrderList(submit_order_list) => {
-                    let orders: Vec<OrderAny> = self
-                        .cache
-                        .borrow()
-                        .orders_for_ids(&submit_order_list.order_list.orders, &submit_order_list);
+                    let orders: Vec<OrderAny> = self.cache.borrow().orders_for_ids(
+                        &submit_order_list.order_list.client_order_ids,
+                        &submit_order_list,
+                    );
                     for order in &orders {
                         if order.is_buy() && self.portfolio.is_net_long(&instrument.id()) {
                             self.deny_order_list(

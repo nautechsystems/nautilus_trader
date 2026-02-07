@@ -135,7 +135,7 @@ impl SubmitOrderList {
     ///
     /// # Panics
     ///
-    /// Panics if `order_inits` length doesn't match `order_list.orders`, or if
+    /// Panics if `order_inits` length doesn't match `order_list.client_order_ids`, or if
     /// the client order IDs don't match in order.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
@@ -153,18 +153,18 @@ impl SubmitOrderList {
     ) -> Self {
         check_equal(
             &order_inits.len(),
-            &order_list.orders.len(),
+            &order_list.client_order_ids.len(),
             "order_inits.len()",
-            "order_list.orders.len()",
+            "order_list.client_order_ids.len()",
         )
         .unwrap();
 
-        for (init, id) in order_inits.iter().zip(order_list.orders.iter()) {
+        for (init, id) in order_inits.iter().zip(order_list.client_order_ids.iter()) {
             check_equal(
                 &init.client_order_id,
                 id,
                 "order_init.client_order_id",
-                "order_list.orders id",
+                "order_list.client_order_ids id",
             )
             .unwrap();
         }

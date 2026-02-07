@@ -782,7 +782,7 @@ impl SimulatedExchange {
                     let mut orders: Vec<OrderAny> = self
                         .cache
                         .borrow()
-                        .orders_for_ids(&command.order_list.orders, command);
+                        .orders_for_ids(&command.order_list.client_order_ids, command);
 
                     for order in &mut orders {
                         matching_engine.process_order(order, account_id);
