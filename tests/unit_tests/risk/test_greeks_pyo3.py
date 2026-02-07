@@ -218,6 +218,7 @@ class TestBlackScholesGreeksPyO3:
         assert hasattr(result, "gamma")
         assert hasattr(result, "vega")
         assert hasattr(result, "theta")
+        assert hasattr(result, "itm_prob")
 
         # Test all values match expected values exactly
         tol = 1e-5
@@ -337,6 +338,43 @@ class TestBlackScholesGreeksPyO3:
         assert abs(result.vega - result_unit.vega * multiplier) < 1e-6
         assert abs(result.theta - result_unit.theta * multiplier) < 1e-6
         assert result.vol == result_unit.vol  # Vol should not change with multiplier
+        assert result.itm_prob == result_unit.itm_prob  # itm_prob should not change with multiplier
+
+    def test_black_scholes_greeks_itm_prob(self):
+        # Test that itm_prob is N(d2), not delta N(d1)
+        # For ATM options, itm_prob < delta for calls (since d2 < d1)
+        result = black_scholes_greeks(
+            s=100.0,
+            r=0.05,
+            b=0.05,
+            vol=0.2,
+            is_call=True,
+            k=100.0,
+            t=1.0,
+            multiplier=1.0,
+        )
+
+        # itm_prob should be between 0 and 1
+        assert 0.0 <= result.itm_prob <= 1.0
+
+        # itm_prob (N(d2)) should be less than delta (N(d1)) for calls
+        # because d2 = d1 - vol*sqrt(t) < d1
+        assert result.itm_prob < result.delta
+
+        # Test put option - itm_prob should be 1 - call_itm_prob
+        result_put = black_scholes_greeks(
+            s=100.0,
+            r=0.05,
+            b=0.05,
+            vol=0.2,
+            is_call=False,
+            k=100.0,
+            t=1.0,
+            multiplier=1.0,
+        )
+
+        assert 0.0 <= result_put.itm_prob <= 1.0
+        assert result.itm_prob + result_put.itm_prob == 1.0
 
     def test_imply_vol_and_greeks_call(self):
         # Test imply_vol_and_greeks for call option

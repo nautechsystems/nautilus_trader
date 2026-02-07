@@ -52,6 +52,11 @@ impl BlackScholesGreeksResult {
     fn theta(&self) -> f64 {
         self.theta
     }
+
+    #[getter]
+    fn itm_prob(&self) -> f64 {
+        self.itm_prob
+    }
 }
 
 /// Computes Black-Scholes greeks for given parameters using the fast compute_greeks implementation.
