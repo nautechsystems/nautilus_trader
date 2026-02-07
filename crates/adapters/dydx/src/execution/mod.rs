@@ -2436,7 +2436,23 @@ impl ExecutionClient for DydxExecutionClient {
             };
 
             match parse_order_status_report(&order, &instrument, self.core.account_id, ts_init) {
-                Ok(r) => order_reports.push(r),
+                Ok(mut r) => {
+                    // Decode dYdX u32 client_id back to Nautilus format using bidirectional encoder
+                    if !order.client_id.is_empty()
+                        && let Ok(client_id_u32) = order.client_id.parse::<u32>()
+                        && let Some(decoded) =
+                            self.encoder.decode(client_id_u32, order.client_metadata)
+                    {
+                        log::debug!(
+                            "Decoded reconciliation order: dYdX client_id={} meta={:#x} -> '{}'",
+                            client_id_u32,
+                            order.client_metadata,
+                            decoded,
+                        );
+                        r.client_order_id = Some(decoded);
+                    }
+                    order_reports.push(r);
+                }
                 Err(e) => {
                     log::warn!("Failed to parse order status report: {e}");
                     orders_filtered += 1;
