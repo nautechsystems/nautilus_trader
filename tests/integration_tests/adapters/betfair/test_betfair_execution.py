@@ -41,6 +41,7 @@ from betfair_parser.spec.streaming import stream_decode
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.common import OrderSideParser
 from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
+from nautilus_trader.adapters.betfair.constants import BETFAIR_FILL_CACHE_TTL_NS
 from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
 from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
@@ -2350,7 +2351,7 @@ async def test_determine_fill_qty_cache_ahead_of_order(
 
 
 @pytest.mark.asyncio
-async def test_update_fill_cache_clears_on_completion(
+async def test_update_fill_cache_retains_on_completion(
     exec_client: BetfairExecutionClient,
     cache,
     accept_order,
@@ -2374,9 +2375,171 @@ async def test_update_fill_cache_clears_on_completion(
     # Act
     exec_client._update_fill_cache(total_matched_qty, avg_px, order)
 
-    # Assert
+    # Assert - cache retained until HTTP API confirms catch-up
+    assert exec_client._cache_filled_qty[order.client_order_id] == total_matched_qty
+    assert exec_client._cache_avg_px[order.client_order_id] == avg_px
+    assert order.client_order_id in exec_client._cache_filled_completed_ns
+
+
+@pytest.mark.asyncio
+async def test_confirm_fill_cache_cleanup_clears_when_api_caught_up(
+    exec_client: BetfairExecutionClient,
+    cache,
+    accept_order,
+):
+    instrument = betting_instrument()
+    cache.add_instrument(instrument)
+
+    order = TestExecStubs.limit_order(
+        instrument=instrument,
+        quantity=Quantity(10.0, BETFAIR_QUANTITY_PRECISION),
+    )
+    venue_order_id = VenueOrderId("12345")
+    await accept_order(order, venue_order_id)
+
+    exec_client._cache_filled_qty[order.client_order_id] = Quantity(
+        10.0,
+        BETFAIR_QUANTITY_PRECISION,
+    )
+    exec_client._cache_avg_px[order.client_order_id] = 2.5
+
+    # Act - API still stale, reports less than cached
+    exec_client._confirm_fill_cache_cleanup(order.client_order_id, 2.17)
+
+    # Assert - cache retained because API hasn't caught up
+    assert order.client_order_id in exec_client._cache_filled_qty
+    assert order.client_order_id in exec_client._cache_avg_px
+
+    # Act - API catches up
+    exec_client._confirm_fill_cache_cleanup(order.client_order_id, 10.0)
+
+    # Assert - cache cleared
     assert order.client_order_id not in exec_client._cache_filled_qty
     assert order.client_order_id not in exec_client._cache_avg_px
+
+
+@pytest.mark.asyncio
+async def test_sweep_expired_fill_cache_evicts_after_ttl(
+    exec_client: BetfairExecutionClient,
+    cache,
+    accept_order,
+):
+    instrument = betting_instrument()
+    cache.add_instrument(instrument)
+
+    order = TestExecStubs.limit_order(
+        instrument=instrument,
+        quantity=Quantity(10.0, BETFAIR_QUANTITY_PRECISION),
+    )
+    venue_order_id = VenueOrderId("12345")
+    await accept_order(order, venue_order_id)
+
+    exec_client._cache_filled_qty[order.client_order_id] = Quantity(
+        10.0,
+        BETFAIR_QUANTITY_PRECISION,
+    )
+    exec_client._cache_avg_px[order.client_order_id] = 2.5
+
+    # Simulate completion timestamp older than TTL
+    ts_now = exec_client._clock.timestamp_ns()
+    exec_client._cache_filled_completed_ns[order.client_order_id] = (
+        ts_now - BETFAIR_FILL_CACHE_TTL_NS - 1
+    )
+
+    # Act
+    exec_client._sweep_expired_fill_cache()
+
+    # Assert - expired entry evicted
+    assert order.client_order_id not in exec_client._cache_filled_qty
+    assert order.client_order_id not in exec_client._cache_filled_completed_ns
+    assert order.client_order_id not in exec_client._cache_avg_px
+
+
+@pytest.mark.asyncio
+async def test_sweep_expired_fill_cache_retains_within_ttl(
+    exec_client: BetfairExecutionClient,
+    cache,
+    accept_order,
+):
+    instrument = betting_instrument()
+    cache.add_instrument(instrument)
+
+    order = TestExecStubs.limit_order(
+        instrument=instrument,
+        quantity=Quantity(10.0, BETFAIR_QUANTITY_PRECISION),
+    )
+    venue_order_id = VenueOrderId("12345")
+    await accept_order(order, venue_order_id)
+
+    exec_client._cache_filled_qty[order.client_order_id] = Quantity(
+        10.0,
+        BETFAIR_QUANTITY_PRECISION,
+    )
+    exec_client._cache_avg_px[order.client_order_id] = 2.5
+
+    # Simulate recent completion
+    exec_client._cache_filled_completed_ns[order.client_order_id] = (
+        exec_client._clock.timestamp_ns()
+    )
+
+    # Act
+    exec_client._sweep_expired_fill_cache()
+
+    # Assert - recent entry retained
+    assert order.client_order_id in exec_client._cache_filled_qty
+    assert order.client_order_id in exec_client._cache_filled_completed_ns
+    assert order.client_order_id in exec_client._cache_avg_px
+
+
+def test_process_order_fill_marks_terminal_on_full_fill(
+    exec_client: BetfairExecutionClient,
+    order_and_cache,
+    monkeypatch,
+):
+    order, instrument = order_and_cache
+    bet_id = "12345"
+
+    exec_client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId(bet_id),
+        ts_event=0,
+    )
+
+    monkeypatch.setattr(OrderSideParser, "to_nautilus", lambda _side: OrderSide.BUY)
+
+    trade_counter = [0]
+
+    def mock_trade_id(_uo):
+        trade_counter[0] += 1
+        return TradeId(f"TRADE-{trade_counter[0]}")
+
+    monkeypatch.setattr(parsing_requests, "order_to_trade_id", mock_trade_id)
+
+    # Fill for the full order quantity
+    fill = _StubUnmatchedOrder(
+        id=bet_id,
+        side="L",
+        p=2.0,
+        avp=2.0,
+        s=order.quantity.as_double(),
+        sm=order.quantity.as_double(),
+        md=1635217893000,
+        pt=None,
+        ot=None,
+        pd=0,
+        sc=0,
+        sl=0,
+        sv=0,
+        lapse_status_reason_code=None,
+        status="E",
+    )
+
+    exec_client._handle_stream_executable_order_update(fill, order.client_order_id, instrument)
+
+    # Assert - fully filled order is marked terminal
+    assert order.client_order_id.value in exec_client._terminal_orders
 
 
 def test_sync_fill_caches_with_multiple_orders(

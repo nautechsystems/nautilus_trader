@@ -44,6 +44,8 @@ from nautilus_trader.adapters.betfair.common import OrderSideParser
 from nautilus_trader.adapters.betfair.common import is_rate_limit_error
 from nautilus_trader.adapters.betfair.common import is_session_error
 from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
+from nautilus_trader.adapters.betfair.constants import BETFAIR_FILL_CACHE_SWEEP_TIMER
+from nautilus_trader.adapters.betfair.constants import BETFAIR_FILL_CACHE_TTL_NS
 from nautilus_trader.adapters.betfair.constants import BETFAIR_ORDER_STATUS_EXECUTABLE
 from nautilus_trader.adapters.betfair.constants import BETFAIR_ORDER_STATUS_EXECUTION_COMPLETE
 from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
@@ -70,6 +72,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.events import TimeEvent
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import as_utc_timestamp
@@ -206,6 +209,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         # cumulative matched sizes (sm). This lets us calculate incremental fills
         # while avoiding race conditions with delayed order state updates.
         self._cache_filled_qty: dict[ClientOrderId, Quantity] = {}
+        self._cache_filled_completed_ns: dict[ClientOrderId, int] = {}
         self._cache_avg_px: dict[ClientOrderId, float] = {}
 
         # Tracks orders for which a terminal event (cancel/expire) has been generated
@@ -233,6 +237,14 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         # Sync before stream connects to prevent duplicate fills from full image
         self._sync_fill_caches_from_orders()
+
+        self._clock.set_timer_ns(
+            name=BETFAIR_FILL_CACHE_SWEEP_TIMER,
+            interval_ns=BETFAIR_FILL_CACHE_TTL_NS,
+            start_time_ns=0,
+            stop_time_ns=0,
+            callback=self._on_fill_cache_sweep_timer,
+        )
 
         self._log.debug(
             "Connecting to stream, checking account currency and loading venue ID mapping...",
@@ -273,7 +285,9 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._is_reconnecting = False
 
     async def _disconnect(self) -> None:
-        # Cancel tasks
+        if BETFAIR_FILL_CACHE_SWEEP_TIMER in self._clock.timer_names:
+            self._clock.cancel_timer(BETFAIR_FILL_CACHE_SWEEP_TIMER)
+
         if self._update_account_task:
             self._log.debug("Canceling task 'update_account_task'")
             self._update_account_task.cancel()
@@ -325,6 +339,11 @@ class BetfairExecutionClient(LiveExecutionClient):
             if order.filled_qty > 0:
                 self._cache_filled_qty[order.client_order_id] = order.filled_qty
                 self._cache_avg_px[order.client_order_id] = order.avg_px
+
+                if order.is_closed:
+                    self._cache_filled_completed_ns[order.client_order_id] = (
+                        self._clock.timestamp_ns()
+                    )
 
                 for trade_id in order.trade_ids:
                     if trade_id.value not in self._published_executions:
@@ -536,6 +555,9 @@ class BetfairExecutionClient(LiveExecutionClient):
             cached_avg_px=cached_avg_px,
         )
 
+        self._confirm_fill_cache_cleanup(client_order_id, order.size_matched)
+        self._sweep_expired_fill_cache()
+
         self._log.debug(f"Received {report}")
         return report
 
@@ -606,6 +628,10 @@ class BetfairExecutionClient(LiveExecutionClient):
                 cached_avg_px=cached_avg_px,
             )
             order_status_reports.append(report)
+
+            self._confirm_fill_cache_cleanup(client_order_id, order.size_matched)
+
+        self._sweep_expired_fill_cache()
 
         return order_status_reports
 
@@ -681,6 +707,8 @@ class BetfairExecutionClient(LiveExecutionClient):
         return []
 
     def _generate_order_denied_from_command(self, command: SubmitOrder, reason: str) -> None:
+        self._try_mark_terminal_order(command.order.client_order_id)
+
         self.generate_order_denied(
             strategy_id=command.strategy_id,
             instrument_id=command.instrument_id,
@@ -735,6 +763,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                 await self.on_api_exception(error=e)
 
             self._customer_order_ref_remove_for_client_id(client_order_id)
+            self._try_mark_terminal_order(client_order_id)
+
             self.generate_order_rejected(
                 command.strategy_id,
                 command.instrument_id,
@@ -753,6 +783,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                 self._log.warning(f"Submit failed (result-level): {reason}")
 
                 self._customer_order_ref_remove_for_client_id(client_order_id)
+                self._try_mark_terminal_order(client_order_id)
+
                 self.generate_order_rejected(
                     command.strategy_id,
                     command.instrument_id,
@@ -769,6 +801,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                 self._log.warning(f"Submit failed: {reason}")
 
                 self._customer_order_ref_remove_for_client_id(client_order_id)
+                self._try_mark_terminal_order(client_order_id)
+
                 self.generate_order_rejected(
                     command.strategy_id,
                     command.instrument_id,
@@ -823,6 +857,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             PyCondition.not_none(command.strategy_id, "command.strategy_id")
             PyCondition.not_none(command.instrument_id, "command.instrument_id")
             PyCondition.not_none(command.client_order_id, "client_order_id")
+
             self.generate_order_modify_rejected(
                 command.strategy_id,
                 command.instrument_id,
@@ -900,6 +935,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         if not result.instruction_reports:
             self._pending_update_keys.discard(pending_key)
             self._log.warning(f"Empty instruction_reports for replace: {result}")
+
             self.generate_order_modify_rejected(
                 command.strategy_id,
                 command.instrument_id,
@@ -1004,6 +1040,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         if not result.instruction_reports:
             self._log.warning(f"Empty instruction_reports for size reduction: {result}")
+
             self.generate_order_modify_rejected(
                 command.strategy_id,
                 command.instrument_id,
@@ -1074,6 +1111,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         if not result.instruction_reports:
             self._log.warning(f"Empty instruction_reports for cancel: {result}")
+
             self.generate_order_cancel_rejected(
                 command.strategy_id,
                 command.instrument_id,
@@ -1092,6 +1130,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             ):
                 reason = f"{report.error_code.name}: {report.error_code.__doc__}"
                 self._log.warning(f"Cancel failed: {reason}")
+
                 self.generate_order_cancel_rejected(
                     command.strategy_id,
                     command.instrument_id,
@@ -1353,7 +1392,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             if not matched and not self.config.ignore_external_orders:
                 self._log.error(f"Unknown fill: {instrument_id=}, {matched_order=}")
 
-    def _process_order_fill(
+    def _process_order_fill(  # noqa: C901
         self,
         unmatched_order: UnmatchedOrder,
         client_order_id: ClientOrderId,
@@ -1460,6 +1499,9 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._update_fill_cache(result.total_matched_qty, avg_px, order)
         self._published_executions.add(trade_id.value)
 
+        if result.total_matched_qty >= order.quantity:
+            self._try_mark_terminal_order(client_order_id)
+
         return order
 
     def _handle_stream_executable_order_update(
@@ -1532,6 +1574,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
                 # The remainder of this order has been canceled
                 canceled_ts = self._get_canceled_timestamp(unmatched_order)
+
                 self.generate_order_canceled(
                     strategy_id=order.strategy_id,
                     instrument_id=instrument.id,
@@ -1579,6 +1622,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     return
 
                 canceled_ts = self._get_canceled_timestamp(unmatched_order)
+
                 self.generate_order_canceled(
                     strategy_id=order.strategy_id,
                     instrument_id=instrument.id,
@@ -1708,12 +1752,50 @@ class BetfairExecutionClient(LiveExecutionClient):
         avg_px: float,
         order: Order,
     ) -> None:
+        # Always retain the cache entry, even for fully filled orders.
+        # Cleanup is deferred to HTTP reconciliation confirmation to avoid
+        # a race where the API returns stale fill qty after the stream
+        # has already applied all fills.
+        self._cache_filled_qty[order.client_order_id] = total_matched_qty
+        self._cache_avg_px[order.client_order_id] = avg_px
+
         if total_matched_qty >= order.quantity:
-            self._cache_filled_qty.pop(order.client_order_id, None)
-            self._cache_avg_px.pop(order.client_order_id, None)
-        else:
-            self._cache_filled_qty[order.client_order_id] = total_matched_qty
-            self._cache_avg_px[order.client_order_id] = avg_px
+            self._cache_filled_completed_ns[order.client_order_id] = self._clock.timestamp_ns()
+
+    def _confirm_fill_cache_cleanup(
+        self,
+        client_order_id: ClientOrderId | None,
+        api_size_matched: float,
+    ) -> None:
+        if client_order_id is None:
+            return
+
+        cached_qty = self._cache_filled_qty.get(client_order_id)
+        if cached_qty is None:
+            return
+
+        api_qty = Quantity(api_size_matched, BETFAIR_QUANTITY_PRECISION)
+        if api_qty >= cached_qty:
+            self._evict_fill_cache(client_order_id)
+
+    def _on_fill_cache_sweep_timer(self, event: TimeEvent) -> None:
+        self._log.debug(f"Fill cache sweep timer fired: {event}")
+        self._sweep_expired_fill_cache()
+
+    def _sweep_expired_fill_cache(self) -> None:
+        ts_now = self._clock.timestamp_ns()
+        expired = [
+            cid
+            for cid, ts in self._cache_filled_completed_ns.items()
+            if (ts_now - ts) > BETFAIR_FILL_CACHE_TTL_NS
+        ]
+        for cid in expired:
+            self._evict_fill_cache(cid)
+
+    def _evict_fill_cache(self, client_order_id: ClientOrderId) -> None:
+        self._cache_filled_qty.pop(client_order_id, None)
+        self._cache_filled_completed_ns.pop(client_order_id, None)
+        self._cache_avg_px.pop(client_order_id, None)
 
     def _get_matched_timestamp(self, unmatched_order: UnmatchedOrder) -> int:
         if unmatched_order.md is None:
