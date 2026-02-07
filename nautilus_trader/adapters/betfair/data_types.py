@@ -600,12 +600,22 @@ class BetfairOrderVoided(Data):
         ts_event: int,
         ts_init: int,
         size_voided: float,
+        price: float,
+        size: float,
+        side: str,
+        avg_price_matched: float | None = None,
+        size_matched: float | None = None,
         reason: str | None = None,
     ) -> None:
         self.instrument_id = instrument_id
         self.client_order_id = client_order_id
         self.venue_order_id = venue_order_id
         self.size_voided = size_voided
+        self.price = price
+        self.size = size
+        self.side = side
+        self.avg_price_matched = avg_price_matched
+        self.size_matched = size_matched
         self.reason = reason
         self._ts_event = ts_event
         self._ts_init = ts_init
@@ -656,6 +666,11 @@ class BetfairOrderVoided(Data):
                 "client_order_id": pa.string(),
                 "venue_order_id": pa.string(),
                 "size_voided": pa.float64(),
+                "price": pa.float64(),
+                "size": pa.float64(),
+                "side": pa.string(),
+                "avg_price_matched": pa.float64(),
+                "size_matched": pa.float64(),
                 "reason": pa.string(),
                 "ts_event": pa.uint64(),
                 "ts_init": pa.uint64(),
@@ -670,6 +685,11 @@ class BetfairOrderVoided(Data):
             client_order_id=values["client_order_id"],
             venue_order_id=values["venue_order_id"],
             size_voided=values["size_voided"],
+            price=values["price"],
+            size=values["size"],
+            side=values["side"],
+            avg_price_matched=values.get("avg_price_matched"),
+            size_matched=values.get("size_matched"),
             reason=values.get("reason"),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -683,6 +703,11 @@ class BetfairOrderVoided(Data):
             "client_order_id": obj.client_order_id,
             "venue_order_id": obj.venue_order_id,
             "size_voided": obj.size_voided,
+            "price": obj.price,
+            "size": obj.size,
+            "side": obj.side,
+            "avg_price_matched": obj.avg_price_matched,
+            "size_matched": obj.size_matched,
             "reason": obj.reason,
             "ts_event": obj._ts_event,
             "ts_init": obj._ts_init,
@@ -692,7 +717,9 @@ class BetfairOrderVoided(Data):
         return (
             f"BetfairOrderVoided(instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id}, venue_order_id={self.venue_order_id}, "
-            f"size_voided={self.size_voided}, reason={self.reason})"
+            f"price={self.price}, size={self.size}, side={self.side}, "
+            f"size_voided={self.size_voided}, avg_price_matched={self.avg_price_matched}, "
+            f"size_matched={self.size_matched}, reason={self.reason})"
         )
 
 

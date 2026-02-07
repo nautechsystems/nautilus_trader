@@ -1723,6 +1723,11 @@ async def test_voided_order_publishes_custom_data(
     assert len(voided_events) == 1
     voided: BetfairOrderVoided = voided_events[0].data
     assert voided.size_voided == 50.0
+    assert voided.price == 1.50
+    assert voided.size == 100.0
+    assert voided.side == "B"
+    assert voided.avg_price_matched == 1.50
+    assert voided.size_matched == 50.0
     assert voided.instrument_id.value == "1-179082386-50214-None.BETFAIR"
 
 
@@ -1767,6 +1772,8 @@ async def test_voided_order_with_partial_void(
     ]
     assert len(voided_events) == 1
     assert voided_events[0].data.size_voided == 25.0
+    assert voided_events[0].data.price == 2.0
+    assert voided_events[0].data.side == "L"
 
 
 @pytest.mark.asyncio

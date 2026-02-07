@@ -651,6 +651,11 @@ def test_betfair_order_voided_dict_serialization():
         client_order_id="test-order-123",
         venue_order_id="248485109136",
         size_voided=50.0,
+        price=1.50,
+        size=100.0,
+        side="B",
+        avg_price_matched=1.50,
+        size_matched=50.0,
         reason=None,
         ts_event=1635217893000000000,
         ts_init=1635217893000000001,
@@ -665,6 +670,11 @@ def test_betfair_order_voided_dict_serialization():
     assert result.client_order_id == voided.client_order_id
     assert result.venue_order_id == voided.venue_order_id
     assert result.size_voided == voided.size_voided
+    assert result.price == voided.price
+    assert result.size == voided.size
+    assert result.side == voided.side
+    assert result.avg_price_matched == voided.avg_price_matched
+    assert result.size_matched == voided.size_matched
     assert result.reason == voided.reason
     assert result.ts_event == voided.ts_event
     assert result.ts_init == voided.ts_init
@@ -678,6 +688,9 @@ def test_betfair_order_voided_dict_serialization_with_reason():
         client_order_id="test-order-123",
         venue_order_id="248485109136",
         size_voided=25.5,
+        price=2.0,
+        size=100.0,
+        side="L",
         reason="VAR_DECISION",
         ts_event=1635217893000000000,
         ts_init=1635217893000000001,
@@ -700,6 +713,9 @@ def test_betfair_order_voided_repr():
         client_order_id="test-order-123",
         venue_order_id="248485109136",
         size_voided=50.0,
+        price=1.50,
+        size=100.0,
+        side="B",
         reason=None,
         ts_event=1635217893000000000,
         ts_init=1635217893000000001,
@@ -724,6 +740,9 @@ def test_betfair_order_voided_equality():
         client_order_id="test-order-123",
         venue_order_id="248485109136",
         size_voided=50.0,
+        price=1.50,
+        size=100.0,
+        side="B",
         reason=None,
         ts_event=1635217893000000000,
         ts_init=1635217893000000001,
@@ -733,6 +752,9 @@ def test_betfair_order_voided_equality():
         client_order_id="test-order-123",
         venue_order_id="248485109136",
         size_voided=25.0,
+        price=2.0,
+        size=100.0,
+        side="L",
         reason="DIFFERENT",
         ts_event=1635217893000000002,
         ts_init=1635217893000000003,
@@ -742,6 +764,9 @@ def test_betfair_order_voided_equality():
         client_order_id="different-order",
         venue_order_id="248485109136",
         size_voided=50.0,
+        price=1.50,
+        size=100.0,
+        side="B",
         reason=None,
         ts_event=1635217893000000000,
         ts_init=1635217893000000001,
