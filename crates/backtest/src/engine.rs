@@ -224,7 +224,7 @@ impl BacktestEngine {
             exchange.borrow_mut().set_fill_model(fill_model);
         } else {
             log::warn!(
-                "BacktestEngine::change_fill_model called for unknown venue {venue}. Ignoring."
+                "BacktestEngine::change_fill_model called for unknown venue {venue}, ignoring"
             );
         }
     }

@@ -234,7 +234,7 @@ impl BlockchainCache {
                 } else {
                     log::error!(
                         "Failed to load pool {} for DEX {}: Token0 with address {} not found in cache. \
-                             This may indicate the token was not properly loaded from the database or the pool references an unknown token.",
+                             This may indicate the token was not properly loaded from the database or the pool references an unknown token",
                         pool_row.address,
                         dex_id,
                         pool_row.token0_address
@@ -247,7 +247,7 @@ impl BlockchainCache {
                 } else {
                     log::error!(
                         "Failed to load pool {} for DEX {}: Token1 with address {} not found in cache. \
-                             This may indicate the token was not properly loaded from the database or the pool references an unknown token.",
+                             This may indicate the token was not properly loaded from the database or the pool references an unknown token",
                         pool_row.address,
                         dex_id,
                         pool_row.token1_address

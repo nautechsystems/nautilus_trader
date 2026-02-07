@@ -781,7 +781,7 @@ impl DataClient for DeribitDataClient {
 
         if !is_perpetual {
             log::warn!(
-                "Funding rates subscription rejected for {instrument_id}: only available for perpetual instruments."
+                "Funding rates subscription rejected for {instrument_id}: only available for perpetual instruments"
             );
             return Ok(());
         }
@@ -1076,7 +1076,7 @@ impl DataClient for DeribitDataClient {
 
         if !is_perpetual {
             log::warn!(
-                "Funding rates unsubscription rejected for {instrument_id}: only available for perpetual instruments."
+                "Funding rates unsubscription rejected for {instrument_id}: only available for perpetual instruments"
             );
             return Ok(());
         }

@@ -1698,7 +1698,7 @@ impl ExecutionEngine {
             let commission2 = commission - commission1;
             (Some(commission1), Some(commission2))
         } else {
-            log::error!("Commission is not available.");
+            log::error!("Commission is not available");
             (None, None)
         };
 

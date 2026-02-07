@@ -460,7 +460,7 @@ impl BinanceFuturesDataClient {
                         }
                         log::error!(
                             "OrderBook overlap validation failed for {instrument_id} after \
-                            {MAX_RETRIES} retries. Book may be inconsistent."
+                            {MAX_RETRIES} retries; book may be inconsistent"
                         );
                     }
                 }
@@ -540,8 +540,8 @@ impl BinanceFuturesDataClient {
                         }
                         log::error!(
                             "OrderBook continuity break for {instrument_id} after {MAX_RETRIES} \
-                            retries: expected pu={last_final_update_id}, was pu={}. \
-                            Book may be inconsistent.",
+                            retries: expected pu={last_final_update_id}, was pu={}; \
+                            book may be inconsistent",
                             update.prev_final_update_id
                         );
                     }
@@ -615,7 +615,7 @@ impl BinanceFuturesDataClient {
                             }
                             log::error!(
                                 "OrderBook continuity break for {instrument_id} after \
-                                {MAX_RETRIES} retries. Book may be inconsistent."
+                                {MAX_RETRIES} retries; book may be inconsistent"
                             );
                         }
 

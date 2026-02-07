@@ -674,7 +674,7 @@ pub trait ExecutionAlgorithm: DataActor {
             log::error!(
                 "Cannot create command ModifyOrder: \
                 quantity, price and trigger were either None \
-                or the same as existing values."
+                or the same as existing values"
             );
             return Ok(());
         }

@@ -165,10 +165,10 @@ repos:
         files: '\.rs$'
         pass_filenames: false
 
-      - id: check-logging-macro-usage
-        name: check logging macro usage
-        description: Enforces logging macro conventions
-        entry: .pre-commit-hooks/check_logging_macro_usage.sh
+      - id: check-logging-conventions
+        name: check logging conventions
+        description: Enforces logging conventions
+        entry: .pre-commit-hooks/check_logging_conventions.sh
         language: script
         files: '\.rs$'
         pass_filenames: false

@@ -645,7 +645,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 Some(a) => a,
                 None => {
                     log::warn!(
-                        "Asset index not found for symbol {symbol}. Ensure instruments are loaded."
+                        "Asset index not found for symbol {symbol}, ensure instruments are loaded"
                     );
                     return Ok(());
                 }
@@ -698,7 +698,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 Some(a) => a,
                 None => {
                     log::warn!(
-                        "Asset index not found for symbol {symbol}. Ensure instruments are loaded."
+                        "Asset index not found for symbol {symbol}, ensure instruments are loaded"
                     );
                     return Ok(());
                 }
@@ -758,7 +758,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 Some(a) => a,
                 None => {
                     log::warn!(
-                        "Asset index not found for symbol {symbol}. Ensure instruments are loaded."
+                        "Asset index not found for symbol {symbol}, ensure instruments are loaded"
                     );
                     return;
                 }
@@ -811,7 +811,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 let asset = match http_client.get_asset_index(symbol) {
                     Some(a) => a,
                     None => {
-                        log::warn!("Asset index not found for symbol {symbol}. Skipping cancel.");
+                        log::warn!("Asset index not found for symbol {symbol}, skipping cancel");
                         continue;
                     }
                 };

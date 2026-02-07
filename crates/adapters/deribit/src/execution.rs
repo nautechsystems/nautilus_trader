@@ -185,7 +185,7 @@ impl DeribitExecutionClient {
                     if order.expire_time().is_some() {
                         log::warn!(
                             "Deribit GTD orders expire at 8:00 UTC only - custom expire_time is ignored. \
-                            For custom expiry times, use managed GTD with emulation_trigger."
+                            For custom expiry times, use managed GTD with emulation_trigger"
                         );
                     }
                     "good_til_day"
