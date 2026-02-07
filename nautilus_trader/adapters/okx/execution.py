@@ -450,13 +450,8 @@ class OKXExecutionClient(LiveExecutionClient):
                 self._apply_client_order_alias(report)
                 self._log.debug(f"Received {report}", LogColor.MAGENTA)
                 reports.append(report)
-        except ValueError as e:
-            if "request canceled" in str(e).lower():
-                self._log.debug("OrderStatusReports request cancelled during shutdown")
-            else:
-                self._log.exception("Failed to generate OrderStatusReports", e)
-        except Exception as e:
-            self._log.exception("Failed to generate OrderStatusReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "OrderStatusReports")
 
         self._log_report_receipt(
             len(reports),
@@ -519,13 +514,8 @@ class OKXExecutionClient(LiveExecutionClient):
                 ) or (command.venue_order_id and report.venue_order_id == command.venue_order_id):
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
                     return report
-        except ValueError as e:
-            if "request canceled" in str(e).lower():
-                self._log.debug("OrderStatusReport request cancelled during shutdown")
-            else:
-                self._log.exception("Failed to generate OrderStatusReport", e)
-        except Exception as e:
-            self._log.exception("Failed to generate OrderStatusReport", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "OrderStatusReport")
 
         if canonical_requested_id is not None:
             return await self._resolve_algo_fallback(
@@ -698,13 +688,8 @@ class OKXExecutionClient(LiveExecutionClient):
                 if canonical_id is not None:
                     report.client_order_id = canonical_id
                 reports.append(report)
-        except ValueError as e:
-            if "request canceled" in str(e).lower():
-                self._log.debug("FillReports request cancelled during shutdown")
-            else:
-                self._log.exception("Failed to generate FillReports", e)
-        except Exception as e:
-            self._log.exception("Failed to generate FillReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "FillReports")
 
         self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
 
@@ -927,13 +912,8 @@ class OKXExecutionClient(LiveExecutionClient):
                 report = PositionStatusReport.from_pyo3(pyo3_report)
                 self._log.debug(f"Received {report}", LogColor.MAGENTA)
                 reports.append(report)
-        except ValueError as e:
-            if "request canceled" in str(e).lower():
-                self._log.debug("PositionReports request cancelled during shutdown")
-            else:
-                self._log.exception("Failed to generate PositionReports", e)
-        except Exception as e:
-            self._log.exception("Failed to generate PositionReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "PositionReports")
 
         self._log_report_receipt(
             len(reports),

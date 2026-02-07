@@ -417,13 +417,8 @@ class KrakenExecutionClient(LiveExecutionClient):
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
                     reports.append(report)
 
-        except asyncio.CancelledError:
-            self._log.debug("Canceled task 'generate_order_status_reports'")
-        except Exception as e:
-            if "canceled" in str(e).lower():
-                self._log.debug("Canceled task 'generate_order_status_reports'")
-            else:
-                self._log.exception("Failed to generate OrderStatusReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "OrderStatusReports")
 
         self._log_report_receipt(
             len(reports),
@@ -528,14 +523,8 @@ class KrakenExecutionClient(LiveExecutionClient):
 
             return None
 
-        except asyncio.CancelledError:
-            self._log.debug("Canceled task 'generate_order_status_report'")
-            return None
-        except Exception as e:
-            if "canceled" in str(e).lower():
-                self._log.debug("Canceled task 'generate_order_status_report'")
-            else:
-                self._log.exception("Failed to generate OrderStatusReport", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "OrderStatusReport")
             return None
 
     async def generate_fill_reports(
@@ -586,13 +575,8 @@ class KrakenExecutionClient(LiveExecutionClient):
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
                     reports.append(report)
 
-        except asyncio.CancelledError:
-            self._log.debug("Canceled task 'generate_fill_reports'")
-        except Exception as e:
-            if "canceled" in str(e).lower():
-                self._log.debug("Canceled task 'generate_fill_reports'")
-            else:
-                self._log.exception("Failed to generate FillReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "FillReports")
 
         self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
 
@@ -633,13 +617,8 @@ class KrakenExecutionClient(LiveExecutionClient):
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
                     reports.append(report)
 
-        except asyncio.CancelledError:
-            self._log.debug("Canceled task 'generate_position_status_reports'")
-        except Exception as e:
-            if "canceled" in str(e).lower():
-                self._log.debug("Canceled task 'generate_position_status_reports'")
-            else:
-                self._log.exception("Failed to generate PositionStatusReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "PositionStatusReports")
 
         self._log_report_receipt(
             len(reports),

@@ -362,8 +362,8 @@ class BitmexExecutionClient(LiveExecutionClient):
             )
 
             return reports
-        except Exception as e:
-            self._log.error(f"Failed to generate order status reports: {e}")
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "OrderStatusReports")
             return []
 
     async def generate_order_status_report(
@@ -392,8 +392,8 @@ class BitmexExecutionClient(LiveExecutionClient):
             self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
 
             return reports
-        except Exception as e:
-            self._log.error(f"Failed to generate fill reports: {e}")
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "FillReports")
             return []
 
     async def generate_position_status_reports(
@@ -415,8 +415,8 @@ class BitmexExecutionClient(LiveExecutionClient):
             )
 
             return reports
-        except Exception as e:
-            self._log.error(f"Failed to generate position status reports: {e}")
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "PositionStatusReports")
             return []
 
     async def _submit_order(self, command: SubmitOrder) -> None:

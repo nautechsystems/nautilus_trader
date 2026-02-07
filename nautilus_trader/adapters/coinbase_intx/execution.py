@@ -270,8 +270,8 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
                     report = OrderStatusReport.from_pyo3(pyo3_order_report)
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
                     reports.append(report)
-        except Exception as e:
-            self._log.exception("Failed to generate OrderStatusReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "OrderStatusReports")
 
         self._log_report_receipt(
             len(reports),
@@ -317,8 +317,8 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             report = OrderStatusReport.from_pyo3(pyo3_report)
             self._log.debug(f"Received {report}", LogColor.MAGENTA)
             return report
-        except Exception as e:
-            self._log.exception("Failed to generate OrderStatusReport", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "OrderStatusReport")
         return None
 
     async def generate_fill_reports(
@@ -342,8 +342,8 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
                 report = FillReport.from_pyo3(pyo3_report)
                 self._log.debug(f"Received {report}", LogColor.MAGENTA)
                 reports.append(report)
-        except Exception as e:
-            self._log.exception("Failed to generate FillReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "FillReports")
 
         self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
 
@@ -397,8 +397,8 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
                     report = PositionStatusReport.from_pyo3(pyo3_report)
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
                     reports.append(report)
-        except Exception as e:
-            self._log.exception("Failed to generate PositionReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "PositionReports")
 
         self._log_report_receipt(
             len(reports),

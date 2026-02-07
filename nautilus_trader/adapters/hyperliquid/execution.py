@@ -295,8 +295,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 f"venue_order_id={command.venue_order_id}",
             )
             return None
-        except Exception as e:
-            self._log.error(f"Failed to generate order status report: {e}")
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "OrderStatusReport")
             return None
 
     async def generate_order_status_reports(
@@ -329,8 +329,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 "Generated",
             )
             return reports
-        except Exception as e:
-            self._log.error(f"Failed to generate order status reports: {e}")
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "OrderStatusReports")
             return []
 
     async def generate_fill_reports(
@@ -356,8 +356,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
             self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO, "Generated")
             return reports
-        except Exception as e:
-            self._log.error(f"Failed to generate fill reports: {e}")
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "FillReports")
             return []
 
     async def generate_position_status_reports(
@@ -379,8 +379,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             )
 
             return reports
-        except Exception as e:
-            self._log.error(f"Failed to generate position status reports: {e}")
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "PositionStatusReports")
             return []
 
     async def _request_and_process_fills_for_order(

@@ -665,13 +665,8 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
                 report = OrderStatusReport.from_pyo3(pyo3_report)
                 self._log.debug(f"Received {report}", LogColor.MAGENTA)
                 reports.append(report)
-        except ValueError as e:
-            if "request canceled" in str(e).lower():
-                self._log.debug("OrderStatusReports request cancelled during shutdown")
-            else:
-                self._log.exception("Failed to generate OrderStatusReports", e)
-        except Exception as e:
-            self._log.exception("Failed to generate OrderStatusReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "OrderStatusReports")
 
         self._log_report_receipt(
             len(reports),
@@ -718,13 +713,8 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
                 report = FillReport.from_pyo3(pyo3_report)
                 self._log.debug(f"Received {report}", LogColor.MAGENTA)
                 reports.append(report)
-        except ValueError as e:
-            if "request canceled" in str(e).lower():
-                self._log.debug("FillReports request cancelled during shutdown")
-            else:
-                self._log.exception("Failed to generate FillReports", e)
-        except Exception as e:
-            self._log.exception("Failed to generate FillReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "FillReports")
 
         self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
 
@@ -767,13 +757,8 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
                 report = PositionStatusReport.from_pyo3(pyo3_report)
                 self._log.debug(f"Received {report}", LogColor.MAGENTA)
                 reports.append(report)
-        except ValueError as e:
-            if "request canceled" in str(e).lower():
-                self._log.debug("PositionStatusReports request cancelled during shutdown")
-            else:
-                self._log.exception("Failed to generate PositionStatusReports", e)
-        except Exception as e:
-            self._log.exception("Failed to generate PositionStatusReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "PositionStatusReports")
 
         self._log_report_receipt(
             len(reports),
