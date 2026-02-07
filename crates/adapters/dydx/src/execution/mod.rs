@@ -1077,11 +1077,18 @@ impl ExecutionClient for DydxExecutionClient {
                     _ => unreachable!("Order type already validated"),
                 };
 
-                // Broadcast with retry
+                // Broadcast: short-term orders use cached sequence (no increment),
+                // stateful orders use broadcast_with_retry (proper sequence management)
                 let operation = format!("Submit {order_type_str} order {client_order_id}");
-                broadcaster
-                    .broadcast_with_retry(&tx_manager, vec![msg], &operation)
-                    .await?;
+                if order_flags == types::ORDER_FLAG_SHORT_TERM {
+                    broadcaster
+                        .broadcast_short_term(&tx_manager, vec![msg], &operation)
+                        .await?;
+                } else {
+                    broadcaster
+                        .broadcast_with_retry(&tx_manager, vec![msg], &operation)
+                        .await?;
+                }
                 log::debug!("Successfully submitted {order_type_str} order: {client_order_id}");
 
                 Ok(())
@@ -1276,15 +1283,17 @@ impl ExecutionClient for DydxExecutionClient {
         let clock = self.clock;
 
         if has_short_term {
-            // Submit each order individually (short-term orders cannot be batched)
-            log::info!(
-                "Submitting {} limit orders individually (short-term orders cannot be batched)",
+            // Submit each order individually (short-term orders cannot be batched).
+            log::debug!(
+                "Submitting {} short-term limit orders concurrently (sequence not consumed)",
                 order_params.len()
             );
 
-            // Submit each order in parallel using separate transactions
+            let order_count = order_params.len();
             let handle = get_runtime().spawn(async move {
-                let mut handles = Vec::with_capacity(order_params.len());
+                // Build and broadcast all orders concurrently — no sequence coordination needed.
+                // Short-term orders use cached sequence (not incremented) via broadcast_short_term.
+                let mut handles = Vec::with_capacity(order_count);
 
                 for (params, (client_order_id, instrument_id, strategy_id)) in
                     order_params.into_iter().zip(order_info.into_iter())
@@ -1316,10 +1325,10 @@ impl ExecutionClient for DydxExecutionClient {
                             }
                         };
 
-                        // Broadcast with retry (single message per transaction)
-                        let operation = format!("Submit order {client_order_id}");
+                        // Broadcast with cached sequence (short-term orders don't consume sequences)
+                        let operation = format!("Submit short-term order {client_order_id}");
                         if let Err(e) = broadcaster
-                            .broadcast_with_retry(&tx_manager, vec![msg], &operation)
+                            .broadcast_short_term(&tx_manager, vec![msg], &operation)
                             .await
                         {
                             let error_msg = format!("Order submission failed: {e:?}");
@@ -1573,15 +1582,18 @@ impl ExecutionClient for DydxExecutionClient {
                 }
             };
 
-            // Broadcast cancel with retry
-            match broadcaster
-                .broadcast_with_retry(
-                    &tx_manager,
-                    vec![cancel_msg],
-                    &format!("Cancel order {client_order_id}"),
-                )
-                .await
-            {
+            // Broadcast cancel: short-term uses cached sequence, stateful uses retry
+            let cancel_op = format!("Cancel order {client_order_id}");
+            let result = if order_flags == types::ORDER_FLAG_SHORT_TERM {
+                broadcaster
+                    .broadcast_short_term(&tx_manager, vec![cancel_msg], &cancel_op)
+                    .await
+            } else {
+                broadcaster
+                    .broadcast_with_retry(&tx_manager, vec![cancel_msg], &cancel_op)
+                    .await
+            };
+            match result {
                 Ok(_) => {
                     log::debug!("Successfully cancelled order: {client_order_id}");
                 }
@@ -1735,15 +1747,18 @@ impl ExecutionClient for DydxExecutionClient {
                             }
                         };
 
-                        // Broadcast cancel (single message per transaction)
-                        if let Err(e) = broadcaster
-                            .broadcast_with_retry(
-                                &tx_manager,
-                                vec![msg],
-                                &format!("Cancel order {client_id}"),
-                            )
-                            .await
-                        {
+                        // Short-term: cached sequence, no retry. Stateful: proper sequence management.
+                        let cancel_op = format!("Cancel order {client_id}");
+                        let result = if order_flags == types::ORDER_FLAG_SHORT_TERM {
+                            broadcaster
+                                .broadcast_short_term(&tx_manager, vec![msg], &cancel_op)
+                                .await
+                        } else {
+                            broadcaster
+                                .broadcast_with_retry(&tx_manager, vec![msg], &cancel_op)
+                                .await
+                        };
+                        if let Err(e) = result {
                             log::error!("Failed to cancel order client_id={client_id}: {e:?}");
                         }
                     });
@@ -1923,15 +1938,18 @@ impl ExecutionClient for DydxExecutionClient {
                             }
                         };
 
-                        // Broadcast cancel (single message per transaction)
-                        if let Err(e) = broadcaster
-                            .broadcast_with_retry(
-                                &tx_manager,
-                                vec![msg],
-                                &format!("Cancel order {client_id}"),
-                            )
-                            .await
-                        {
+                        // Short-term: cached sequence, no retry. Stateful: proper sequence management.
+                        let cancel_op = format!("Cancel order {client_id}");
+                        let result = if order_flags == types::ORDER_FLAG_SHORT_TERM {
+                            broadcaster
+                                .broadcast_short_term(&tx_manager, vec![msg], &cancel_op)
+                                .await
+                        } else {
+                            broadcaster
+                                .broadcast_with_retry(&tx_manager, vec![msg], &cancel_op)
+                                .await
+                        };
+                        if let Err(e) = result {
                             log::error!("Failed to cancel order client_id={client_id}: {e:?}");
                         }
                     });
