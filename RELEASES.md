@@ -49,6 +49,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Masked Binance listen keys in execution client logs
 - Refactored supply chain security checks and update dependencies
 - Improved TLS cert loading and socket suffix validation
+- Hardened Postgres SQL and credential security
 
 ### Fixes
 - Fixed matching engine liquidity consumption using cumulative book quantity

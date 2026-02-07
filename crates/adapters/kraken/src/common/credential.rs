@@ -17,6 +17,7 @@
 
 use std::{
     collections::HashMap,
+    fmt::Debug,
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -30,10 +31,19 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 static NONCE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// API credentials for Kraken authentication.
-#[derive(Clone, Debug, Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct KrakenCredential {
     api_key: String,
     api_secret: String,
+}
+
+impl Debug for KrakenCredential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(KrakenCredential))
+            .field("api_key", &self.api_key)
+            .field("api_secret", &"<redacted>")
+            .finish()
+    }
 }
 
 impl KrakenCredential {

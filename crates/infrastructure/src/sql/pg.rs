@@ -17,6 +17,22 @@ use derive_builder::Builder;
 use regex::Regex;
 use sqlx::{ConnectOptions, PgPool, postgres::PgConnectOptions};
 
+fn validate_sql_identifier(value: &str, label: &str) -> anyhow::Result<()> {
+    if value.is_empty() {
+        anyhow::bail!("{label} must not be empty");
+    }
+    if !value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        anyhow::bail!(
+            "{label} contains invalid characters (only alphanumeric and underscore allowed): {value}"
+        );
+    }
+    Ok(())
+}
+
+fn escape_sql_string(value: &str) -> String {
+    value.replace('\'', "''")
+}
+
 #[derive(Debug, Clone, Builder)]
 #[builder(default)]
 #[cfg_attr(
@@ -60,6 +76,18 @@ impl PostgresConnectOptions {
             "postgres://{username}:{password}@{host}:{port}/{database}",
             username = self.username,
             password = self.password,
+            host = self.host,
+            port = self.port,
+            database = self.database
+        )
+    }
+
+    /// Returns the connection string with the password masked for safe logging.
+    #[must_use]
+    pub fn connection_string_masked(&self) -> String {
+        format!(
+            "postgres://{username}:***@{host}:{port}/{database}",
+            username = self.username,
             host = self.host,
             port = self.port,
             database = self.database
@@ -190,6 +218,8 @@ pub async fn init_postgres(
 ) -> anyhow::Result<()> {
     log::info!("Initializing Postgres database with target permissions and schema");
 
+    validate_sql_identifier(&database, "database")?;
+
     // Create public schema
     match sqlx::query("CREATE SCHEMA IF NOT EXISTS public;")
         .execute(pg)
@@ -200,9 +230,12 @@ pub async fn init_postgres(
     }
 
     // Create role if not exists
-    match sqlx::query(format!("CREATE ROLE {database} PASSWORD '{password}' LOGIN;").as_str())
-        .execute(pg)
-        .await
+    let escaped_password = escape_sql_string(&password);
+    match sqlx::query(
+        format!("CREATE ROLE {database} PASSWORD '{escaped_password}' LOGIN;").as_str(),
+    )
+    .execute(pg)
+    .await
     {
         Ok(_) => log::info!("Role {database} created successfully"),
         Err(e) => {
@@ -319,6 +352,8 @@ pub async fn init_postgres(
 ///
 /// Returns an error if the DROP DATABASE command fails.
 pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> {
+    validate_sql_identifier(&database, "database")?;
+
     // Execute drop owned
     match sqlx::query(format!("DROP OWNED BY {database}").as_str())
         .execute(pg)
