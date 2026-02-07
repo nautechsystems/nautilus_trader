@@ -419,7 +419,7 @@ version = "57.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.async-compression]]
-version = "0.4.38"
+version = "0.4.39"
 criteria = "safe-to-deploy"
 
 [[exemptions.async-stream]]

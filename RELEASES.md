@@ -84,6 +84,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed `request_order_book_snapshot` and add Bybit support (#3416), thanks @dxwil
 - Fixed Arrow serialization encoding for custom Nautilus types (#3515), thanks @dennisnissle
 - Fixed Redis cache buffer flushing during idle periods (#3426), thanks for reporting @santivazq
+- Fixed cache loading when flush_on_start set to True (#3551), thanks @HaakonFlaaronning
 - Fixed Betfair dropped fills from premature cache update
 - Fixed Betfair duplicate cancel event race condition(s)
 - Fixed Betfair stream batch handling and modify/cancel edge cases
@@ -123,7 +124,6 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed Polymarket duplicate trade_id for multi-order fills (#3450), thanks for reporting @santivazq
 - Fixed Polymarket `load_all_async` ignoring time-based filters (#3475), thanks @Coyote-Den
 - Fixed Tardis deltas snapshot boundaries with CLEAR (#3530), thanks @Arandott
-- Fixed cache loading when flush_on_start set to True
 
 ### Internal Improvements
 - Added support for setting cache database adapter in cache and `LiveNode` (#3401), thanks @filipmacek
