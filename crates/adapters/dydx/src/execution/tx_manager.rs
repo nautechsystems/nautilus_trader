@@ -88,7 +88,7 @@ impl TransactionManager {
     ///
     /// Creates wallet from private key internally. The sequence number is initialized
     /// to `SEQUENCE_UNINITIALIZED` and will be fetched from chain on first use, or
-    /// can be proactively initialized by calling [`initialize_sequence`].
+    /// can be proactively initialized by calling [`Self::initialize_sequence`].
     ///
     /// # Errors
     ///

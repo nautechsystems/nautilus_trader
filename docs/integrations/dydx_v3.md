@@ -1,4 +1,4 @@
-# dYdX v3 (legacy Python adapter)
+# dYdX v3
 
 :::warning
 This is the legacy pure-Python dYdX adapter (`nautilus_trader.adapters.dydx`).
