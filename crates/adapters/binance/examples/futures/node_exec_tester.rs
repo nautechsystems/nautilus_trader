@@ -88,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Quantity::from("0.01"), // Small quantity for testing
     )
     .with_log_data(false)
-    .with_open_position_on_start(Some(Decimal::from_str("0.01").unwrap()))
+    .with_open_position_on_start(Some(Decimal::from_str("0.01")?))
     .with_cancel_orders_on_stop(true)
     .with_close_positions_on_stop(true);
 

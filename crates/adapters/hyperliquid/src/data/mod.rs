@@ -184,11 +184,7 @@ impl HyperliquidDataClient {
             .await
             .context("failed to connect to Hyperliquid WebSocket")?;
 
-        let _data_sender = self.data_sender.clone();
-        let _instruments = Arc::clone(&self.instruments);
-        let _coin_to_instrument_id = Arc::clone(&self.coin_to_instrument_id);
-        let _venue = self.venue();
-        let _clock = self.clock;
+        let data_sender = self.data_sender.clone();
         let cancellation_token = self.cancellation_token.clone();
 
         let task = get_runtime().spawn(async move {
@@ -203,14 +199,43 @@ impl HyperliquidDataClient {
                     msg_opt = ws_client.next_event() => {
                         if let Some(msg) = msg_opt {
                             match msg {
-                                // Handled by python/websocket.rs
-                                NautilusWsMessage::Trades(_)
-                                | NautilusWsMessage::Quote(_)
-                                | NautilusWsMessage::Deltas(_)
-                                | NautilusWsMessage::Candle(_)
-                                | NautilusWsMessage::MarkPrice(_)
+                                NautilusWsMessage::Trades(trades) => {
+                                    for trade in trades {
+                                        if let Err(e) = data_sender
+                                            .send(DataEvent::Data(Data::Trade(trade)))
+                                        {
+                                            log::error!("Failed to send trade tick: {e}");
+                                        }
+                                    }
+                                }
+                                NautilusWsMessage::Quote(quote) => {
+                                    if let Err(e) = data_sender
+                                        .send(DataEvent::Data(Data::Quote(quote)))
+                                    {
+                                        log::error!("Failed to send quote tick: {e}");
+                                    }
+                                }
+                                NautilusWsMessage::Deltas(deltas) => {
+                                    if let Err(e) = data_sender
+                                        .send(DataEvent::Data(Data::Deltas(
+                                            OrderBookDeltas_API::new(deltas),
+                                        )))
+                                    {
+                                        log::error!("Failed to send order book deltas: {e}");
+                                    }
+                                }
+                                NautilusWsMessage::Candle(bar) => {
+                                    if let Err(e) = data_sender
+                                        .send(DataEvent::Data(Data::Bar(bar)))
+                                    {
+                                        log::error!("Failed to send bar: {e}");
+                                    }
+                                }
+                                NautilusWsMessage::MarkPrice(_)
                                 | NautilusWsMessage::IndexPrice(_)
-                                | NautilusWsMessage::FundingRate(_) => {}
+                                | NautilusWsMessage::FundingRate(_) => {
+                                    // TODO: Route mark/index/funding data when supported
+                                }
                                 NautilusWsMessage::Reconnected => {
                                     log::info!("WebSocket reconnected");
                                 }

@@ -604,7 +604,7 @@ pub fn parse_account_balances_and_margins(
     let mut margins = Vec::new();
 
     // Parse balance from cross margin summary
-    let currency = Currency::USD(); // Hyperliquid uses USDC/USD
+    let currency = Currency::USDC();
 
     // Account value represents total collateral
     let total_value = cross_margin_summary

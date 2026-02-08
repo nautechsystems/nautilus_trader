@@ -338,9 +338,9 @@ impl HyperliquidHttpClient {
         let instrument_id = instrument_id.map(InstrumentId::from);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let user_address = client.get_user_address().map_err(to_pyvalue_err)?;
+            let account_address = client.get_account_address().map_err(to_pyvalue_err)?;
             let reports = client
-                .request_order_status_reports(&user_address, instrument_id)
+                .request_order_status_reports(&account_address, instrument_id)
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -362,9 +362,9 @@ impl HyperliquidHttpClient {
         let instrument_id = instrument_id.map(InstrumentId::from);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let user_address = client.get_user_address().map_err(to_pyvalue_err)?;
+            let account_address = client.get_account_address().map_err(to_pyvalue_err)?;
             let reports = client
-                .request_fill_reports(&user_address, instrument_id)
+                .request_fill_reports(&account_address, instrument_id)
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -386,9 +386,9 @@ impl HyperliquidHttpClient {
         let instrument_id = instrument_id.map(InstrumentId::from);
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let user_address = client.get_user_address().map_err(to_pyvalue_err)?;
+            let account_address = client.get_account_address().map_err(to_pyvalue_err)?;
             let reports = client
-                .request_position_status_reports(&user_address, instrument_id)
+                .request_position_status_reports(&account_address, instrument_id)
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -405,9 +405,9 @@ impl HyperliquidHttpClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let user_address = client.get_user_address().map_err(to_pyvalue_err)?;
+            let account_address = client.get_account_address().map_err(to_pyvalue_err)?;
             let account_state = client
-                .request_account_state(&user_address)
+                .request_account_state(&account_address)
                 .await
                 .map_err(to_pyvalue_err)?;
 

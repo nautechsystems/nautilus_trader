@@ -21,6 +21,8 @@
 //!
 //! Run with: `cargo run --example hyperliquid-exec-tester --package nautilus-hyperliquid`
 
+use std::str::FromStr;
+
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_hyperliquid::{
@@ -33,6 +35,7 @@ use nautilus_model::{
     types::Quantity,
 };
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
+use rust_decimal::Decimal;
 
 fn get_env_option(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|s| !s.trim().is_empty())
@@ -102,13 +105,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
+    let order_qty = Quantity::from("0.01"); // Minimum order size for ETH-USD-PERP
     let mut tester_config = ExecTesterConfig::new(
         StrategyId::from("EXEC_TESTER-001"),
         instrument_id,
         client_id,
-        Quantity::from("0.01"), // Minimum order size for ETH-USD-PERP
+        order_qty,
     )
     .with_log_data(false)
+    .with_open_position_on_start(Some(Decimal::from_str("0.01")?))
     .with_use_post_only(true)
     .with_cancel_orders_on_stop(true)
     .with_close_positions_on_stop(true);

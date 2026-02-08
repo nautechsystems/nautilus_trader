@@ -248,6 +248,20 @@ impl HyperliquidRawHttpClient {
             .address()
     }
 
+    /// Gets the account address for queries: vault address if configured,
+    /// otherwise the user (EOA) address.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Auth`] if the client has no signer configured.
+    pub fn get_account_address(&self) -> Result<String> {
+        if let Some(vault) = &self.vault_address {
+            Ok(vault.to_hex())
+        } else {
+            self.get_user_address()
+        }
+    }
+
     /// Builds the default headers to include with each request (e.g., `User-Agent`).
     fn default_headers() -> HashMap<String, String> {
         HashMap::from([
@@ -895,6 +909,16 @@ impl HyperliquidHttpClient {
     /// Returns [`Error::Auth`] if the client has no signer configured.
     pub fn get_user_address(&self) -> Result<String> {
         self.inner.get_user_address()
+    }
+
+    /// Gets the account address for queries: vault address if configured,
+    /// otherwise the user (EOA) address.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Auth`] if the client has no signer configured.
+    pub fn get_account_address(&self) -> Result<String> {
+        self.inner.get_account_address()
     }
 
     /// Caches a single instrument.
