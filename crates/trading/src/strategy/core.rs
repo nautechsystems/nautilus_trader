@@ -61,6 +61,8 @@ pub struct StrategyCore {
     pub market_exit_attempts: u64,
     /// The timer name for market exit checks.
     pub market_exit_timer_name: Ustr,
+    /// The tag applied to market exit orders.
+    pub market_exit_tag: Ustr,
 }
 
 impl Debug for StrategyCore {
@@ -105,6 +107,7 @@ impl StrategyCore {
             pending_stop: false,
             market_exit_attempts: 0,
             market_exit_timer_name,
+            market_exit_tag: Ustr::from("MARKET_EXIT"),
         }
     }
 

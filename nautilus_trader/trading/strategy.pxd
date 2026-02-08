@@ -67,7 +67,10 @@ cdef class Strategy(Actor):
     cdef bint _is_exiting
     cdef bint _pending_stop
     cdef int _market_exit_attempts
+    cdef str _market_exit_tag
     cdef str _market_exit_timer_name
+    cdef TimeInForce _market_exit_time_in_force
+    cdef bint _market_exit_reduce_only
     cdef bint _log_events
     cdef bint _log_commands
     cdef bint _log_rejected_due_post_only_as_warning
