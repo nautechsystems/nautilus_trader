@@ -103,3 +103,8 @@ harness = false
 name = "f64_vs_decimal_to_price_quantity"
 path = "benches/f64_vs_decimal_to_price_quantity.rs"
 harness = false
+
+[[bench]]
+name = "money_criterion"
+path = "benches/money_criterion.rs"
+harness = false

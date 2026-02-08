@@ -137,6 +137,9 @@ cdef class Money:
     cdef Money from_raw_c(MoneyRaw raw, Currency currency)
 
     @staticmethod
+    cdef Money from_decimal_c(amount, Currency currency)
+
+    @staticmethod
     cdef Money from_str_c(str value)
 
     @staticmethod

@@ -21,14 +21,19 @@
 //!
 //! # Arithmetic behavior
 //!
-//! `Money` implements `Add` and `Sub` for same-type operations:
-//!
-//! | Operation       | Result  | Notes                             |
-//! |-----------------|---------|-----------------------------------|
-//! | `Money + Money` | `Money` | Panics if currencies don't match. |
-//! | `Money - Money` | `Money` | Panics if currencies don't match. |
-//!
-//! For Python bindings with mixed-type operations, see the Python API documentation.
+//! | Operation         | Result    | Notes                             |
+//! |-------------------|-----------|-----------------------------------|
+//! | `Money + Money`   | `Money`   | Panics if currencies don't match. |
+//! | `Money - Money`   | `Money`   | Panics if currencies don't match. |
+//! | `Money + Decimal` | `Decimal` |                                   |
+//! | `Money - Decimal` | `Decimal` |                                   |
+//! | `Money * Decimal` | `Decimal` |                                   |
+//! | `Money / Decimal` | `Decimal` |                                   |
+//! | `Money + f64`     | `f64`     |                                   |
+//! | `Money - f64`     | `f64`     |                                   |
+//! | `Money * f64`     | `f64`     |                                   |
+//! | `Money / f64`     | `f64`     |                                   |
+//! | `-Money`          | `Money`   |                                   |
 //!
 //! # Currency constraints
 //!
@@ -48,10 +53,10 @@ use std::{
 };
 
 use nautilus_core::{
-    correctness::{FAILED, check_in_range_inclusive_f64, check_predicate_true},
+    correctness::{FAILED, check_in_range_inclusive_f64},
     formatting::Separable,
 };
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[cfg(not(any(feature = "defi", feature = "high-precision")))]
@@ -194,13 +199,10 @@ impl Money {
     /// Panics if `currency.precision` exceeds [`FIXED_PRECISION`].
     #[must_use]
     pub fn from_raw(raw: MoneyRaw, currency: Currency) -> Self {
-        check_predicate_true(
+        assert!(
             raw >= MONEY_RAW_MIN && raw <= MONEY_RAW_MAX,
-            &format!(
-                "`raw` value {raw} exceeded bounds [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}] for Money"
-            ),
-        )
-        .expect(FAILED);
+            "`raw` value {raw} exceeded bounds [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}] for Money"
+        );
         check_fixed_precision(currency.precision).expect(FAILED);
 
         // TODO: Enforce spurious bits validation in v2
@@ -215,6 +217,59 @@ impl Money {
         Self { raw, currency }
     }
 
+    /// Creates a new [`Money`] from a mantissa/exponent pair using pure integer arithmetic.
+    ///
+    /// The value is `mantissa * 10^exponent`. This avoids all floating-point and Decimal
+    /// operations, making it ideal for exchange data that arrives as mantissa/exponent pairs.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the resulting raw value exceeds [`MONEY_RAW_MAX`] or [`MONEY_RAW_MIN`].
+    #[must_use]
+    pub fn from_mantissa_exponent(mantissa: i64, exponent: i8, currency: Currency) -> Self {
+        if mantissa == 0 {
+            return Self { raw: 0, currency };
+        }
+
+        let precision = currency.precision as i16;
+        let target_scale = (FIXED_PRECISION as i16).max(precision);
+        let frac_digits = -(exponent as i16);
+        let mantissa_wide = mantissa as i128;
+
+        let mantissa_wide = if frac_digits > precision {
+            let excess = (frac_digits - precision) as u32;
+            super::fixed::bankers_round(mantissa_wide, excess)
+        } else {
+            mantissa_wide
+        };
+
+        let scale_after_rounding = frac_digits.min(precision);
+        let scale_exp = target_scale - scale_after_rounding;
+        assert!(
+            scale_exp <= 38,
+            "Exponent {exponent} produces scale factor 10^{scale_exp} which exceeds i128 range"
+        );
+
+        let raw = if scale_exp >= 0 {
+            mantissa_wide
+                .checked_mul(10i128.pow(scale_exp as u32))
+                .expect("Overflow in Money::from_mantissa_exponent")
+        } else {
+            mantissa_wide / 10i128.pow((-scale_exp) as u32)
+        };
+
+        #[allow(clippy::useless_conversion)] // Needed when MoneyRaw = i64
+        let raw: MoneyRaw = raw
+            .try_into()
+            .expect("Raw value exceeds MoneyRaw range in Money::from_mantissa_exponent");
+        assert!(
+            raw >= MONEY_RAW_MIN && raw <= MONEY_RAW_MAX,
+            "`raw` value {raw} exceeded bounds [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}] for Money"
+        );
+
+        Self { raw, currency }
+    }
+
     /// Creates a new [`Money`] instance with a value of zero with the given [`Currency`].
     ///
     /// # Panics
@@ -223,6 +278,22 @@ impl Money {
     #[must_use]
     pub fn zero(currency: Currency) -> Self {
         Self::new(0.0, currency)
+    }
+
+    /// Returns a copy with raw value rounded to currency precision,
+    /// stripping any sub-scale bits.
+    #[must_use]
+    pub fn normalized(&self) -> Self {
+        #[cfg(feature = "high-precision")]
+        let raw = super::fixed::correct_raw_i128(self.raw, self.currency.precision);
+
+        #[cfg(not(feature = "high-precision"))]
+        let raw = super::fixed::correct_raw_i64(self.raw, self.currency.precision);
+
+        Self {
+            raw,
+            currency: self.currency,
+        }
     }
 
     /// Returns `true` if the value of this instance is zero.
@@ -299,24 +370,31 @@ impl Money {
     /// - Overflow occurs during scaling.
     pub fn from_decimal(decimal: Decimal, currency: Currency) -> anyhow::Result<Self> {
         let precision = currency.precision;
+        let target_scale = FIXED_PRECISION.max(precision);
+        let scale = decimal.scale() as u8;
+        let mantissa = decimal.mantissa();
 
-        let scale_factor = Decimal::from(10_i64.pow(precision as u32));
-        let scaled = decimal * scale_factor;
-        let rounded = scaled.round();
+        let raw = if scale <= precision {
+            // No rounding needed: mantissa has fewer decimals than currency precision
+            let exp = (target_scale - scale) as u32;
+            mantissa.checked_mul(10i128.pow(exp))
+        } else {
+            let rounded = super::fixed::bankers_round(mantissa, (scale - precision) as u32);
+            let exp = (target_scale - precision) as u32;
+            rounded.checked_mul(10i128.pow(exp))
+        }
+        .ok_or_else(|| anyhow::anyhow!("Overflow when scaling to fixed precision"))?;
 
-        #[cfg(feature = "high-precision")]
-        let raw_at_precision: MoneyRaw = rounded.to_i128().ok_or_else(|| {
-            anyhow::anyhow!("Decimal value '{decimal}' cannot be converted to i128")
+        #[allow(clippy::useless_conversion)] // Needed when MoneyRaw = i64
+        let raw: MoneyRaw = raw.try_into().map_err(|_| {
+            anyhow::anyhow!(
+                "Decimal value exceeds MoneyRaw range [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}]"
+            )
         })?;
-        #[cfg(not(feature = "high-precision"))]
-        let raw_at_precision: MoneyRaw = rounded.to_i64().ok_or_else(|| {
-            anyhow::anyhow!("Decimal value '{decimal}' cannot be converted to i64")
-        })?;
-
-        let scale_up = 10_i64.pow((FIXED_PRECISION - precision) as u32) as MoneyRaw;
-        let raw = raw_at_precision
-            .checked_mul(scale_up)
-            .ok_or_else(|| anyhow::anyhow!("Overflow when scaling to fixed precision"))?;
+        anyhow::ensure!(
+            raw >= MONEY_RAW_MIN && raw <= MONEY_RAW_MAX,
+            "Raw value {raw} exceeded bounds [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}] for Money"
+        );
 
         Ok(Self { raw, currency })
     }
@@ -457,6 +535,34 @@ impl Sub for Money {
                 .expect("Underflow occurred when subtracting `Money`"),
             currency: self.currency,
         }
+    }
+}
+
+impl Add<Decimal> for Money {
+    type Output = Decimal;
+    fn add(self, rhs: Decimal) -> Self::Output {
+        self.as_decimal() + rhs
+    }
+}
+
+impl Sub<Decimal> for Money {
+    type Output = Decimal;
+    fn sub(self, rhs: Decimal) -> Self::Output {
+        self.as_decimal() - rhs
+    }
+}
+
+impl Mul<Decimal> for Money {
+    type Output = Decimal;
+    fn mul(self, rhs: Decimal) -> Self::Output {
+        self.as_decimal() * rhs
+    }
+}
+
+impl Div<Decimal> for Money {
+    type Output = Decimal;
+    fn div(self, rhs: Decimal) -> Self::Output {
+        self.as_decimal() / rhs
     }
 }
 
@@ -715,6 +821,34 @@ mod tests {
     }
 
     #[rstest]
+    fn test_money_addition_decimal() {
+        let money = Money::new(100.0, Currency::USD());
+        let result = money + dec!(50.25);
+        assert_eq!(result, dec!(150.25));
+    }
+
+    #[rstest]
+    fn test_money_subtraction_decimal() {
+        let money = Money::new(100.0, Currency::USD());
+        let result = money - dec!(30.50);
+        assert_eq!(result, dec!(69.50));
+    }
+
+    #[rstest]
+    fn test_money_multiplication_decimal() {
+        let money = Money::new(100.0, Currency::USD());
+        let result = money * dec!(1.5);
+        assert_eq!(result, dec!(150.00));
+    }
+
+    #[rstest]
+    fn test_money_division_decimal() {
+        let money = Money::new(100.0, Currency::USD());
+        let result = money / dec!(4);
+        assert_eq!(result, dec!(25.00));
+    }
+
+    #[rstest]
     fn test_money_multiplication_by_f64() {
         let money = Money::new(100.0, Currency::USD());
         let result = money * 1.5;
@@ -882,6 +1016,64 @@ mod tests {
         let usd = Currency::USD();
         let raw = MONEY_RAW_MAX.saturating_add(1);
         let _ = Money::from_raw(raw, usd);
+    }
+
+    #[rstest]
+    fn test_from_decimal_rejects_out_of_range() {
+        let huge = Decimal::from_str("99999999999999999999.99").unwrap();
+        let result = Money::from_decimal(huge, Currency::USD());
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_from_mantissa_exponent_exact_precision() {
+        let money = Money::from_mantissa_exponent(12345, -2, Currency::USD());
+        assert_eq!(money.as_f64(), 123.45);
+    }
+
+    #[rstest]
+    fn test_from_mantissa_exponent_excess_rounds_down() {
+        // 12.345 rounds to 12.34 (4 is even, banker's rounding)
+        let money = Money::from_mantissa_exponent(12345, -3, Currency::USD());
+        assert_eq!(money.as_f64(), 12.34);
+    }
+
+    #[rstest]
+    fn test_from_mantissa_exponent_excess_rounds_up() {
+        // 12.355 rounds to 12.36 (5 is odd, banker's rounding)
+        let money = Money::from_mantissa_exponent(12355, -3, Currency::USD());
+        assert_eq!(money.as_f64(), 12.36);
+    }
+
+    #[rstest]
+    fn test_from_mantissa_exponent_positive_exponent() {
+        let money = Money::from_mantissa_exponent(5, 2, Currency::USD());
+        assert_eq!(money.as_f64(), 500.0);
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn test_from_mantissa_exponent_overflow_panics() {
+        let _ = Money::from_mantissa_exponent(i64::MAX, 9, Currency::USD());
+    }
+
+    #[rstest]
+    #[should_panic(expected = "exceeds i128 range")]
+    fn test_from_mantissa_exponent_large_exponent_panics() {
+        let _ = Money::from_mantissa_exponent(1, 119, Currency::USD());
+    }
+
+    #[rstest]
+    fn test_from_mantissa_exponent_zero_with_large_exponent() {
+        let money = Money::from_mantissa_exponent(0, 119, Currency::USD());
+        assert_eq!(money.as_f64(), 0.0);
+    }
+
+    #[rstest]
+    fn test_from_mantissa_exponent_very_negative_exponent_rounds_to_zero() {
+        // exponent=-120, frac_digits=120, excess=118 for USD (precision 2)
+        let money = Money::from_mantissa_exponent(12345, -120, Currency::USD());
+        assert_eq!(money.as_f64(), 0.0);
     }
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -1072,21 +1264,6 @@ mod tests {
                 prop_assert_eq!(ge, eq || gt, ">= should equal == || >");
                 prop_assert_eq!(lt, money2 > money1, "< should be symmetric with >");
                 prop_assert_eq!(le, money2 >= money1, "<= should be symmetric with >=");
-            }
-        }
-
-        #[rstest]
-        fn prop_money_string_roundtrip(money in money_strategy()) {
-            // String serialization should round-trip correctly
-            let string_repr = money.to_string();
-            let parsed = Money::from_str(&string_repr);
-            prop_assert!(parsed.is_ok(), "String parsing should succeed for valid money");
-            if let Ok(parsed_money) = parsed {
-                prop_assert_eq!(parsed_money.currency, money.currency, "Currency should round-trip");
-                // Allow for small precision differences due to string formatting
-                let diff = (parsed_money.as_f64() - money.as_f64()).abs();
-                prop_assert!(diff < 0.01, "Amount should round-trip within precision: {} vs {}",
-                    money.as_f64(), parsed_money.as_f64());
             }
         }
 

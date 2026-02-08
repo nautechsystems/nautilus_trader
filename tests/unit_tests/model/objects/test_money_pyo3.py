@@ -15,6 +15,7 @@
 
 import math
 import pickle
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -209,6 +210,47 @@ class TestMoney:
         # Assert
         assert result1 == result2
         assert result1 == expected
+
+    def test_from_decimal_returns_expected_value(self):
+        money = Money.from_decimal(Decimal("100.50"), USD)
+
+        assert money == Money(100.50, USD)
+        assert str(money) == "100.50 USD"
+
+    def test_from_decimal_with_zero(self):
+        money = Money.from_decimal(Decimal(0), USD)
+
+        assert money.as_double() == 0
+        assert str(money) == "0.00 USD"
+
+    def test_from_decimal_with_negative_value(self):
+        money = Money.from_decimal(Decimal("-50.25"), USD)
+
+        assert money.as_double() == -50.25
+        assert str(money) == "-50.25 USD"
+
+    def test_from_decimal_rounds_to_currency_precision(self):
+        money = Money.from_decimal(Decimal("100.123"), USD)
+
+        assert str(money) == "100.12 USD"
+
+    def test_from_decimal_with_high_precision_currency(self):
+        money = Money.from_decimal(Decimal("100.12345678"), USDT)
+
+        assert str(money) == "100.12345678 USDT"
+
+    def test_from_decimal_equivalent_to_from_str(self):
+        test_values = [
+            (Decimal(1), USD),
+            (Decimal("0.5"), USD),
+            (Decimal("100.25"), USD),
+            (Decimal("-99.99"), USD),
+            (Decimal("100.12345678"), USDT),
+        ]
+        for decimal_val, currency in test_values:
+            money_from_decimal = Money.from_decimal(decimal_val, currency)
+            money_from_str = Money.from_str(f"{decimal_val} {currency.code}")
+            assert money_from_decimal == money_from_str
 
 
 class TestMoneyArithmetic:
