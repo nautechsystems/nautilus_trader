@@ -57,6 +57,7 @@ from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
@@ -298,6 +299,7 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
                 self._handle_account_state(raw)
             elif isinstance(raw, nautilus_pyo3.OrderStatusReport):
                 report = OrderStatusReport.from_pyo3(raw)
+                self._cleanup_order_context(report)
                 self._send_order_status_report(report)
             elif isinstance(raw, nautilus_pyo3.FillReport):
                 report = FillReport.from_pyo3(raw)
@@ -334,6 +336,28 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             reported=account_state.is_reported,
             ts_event=account_state.ts_event,
         )
+
+    _TERMINAL_STATUSES = frozenset(
+        {
+            OrderStatus.FILLED,
+            OrderStatus.CANCELED,
+            OrderStatus.EXPIRED,
+            OrderStatus.REJECTED,
+            OrderStatus.DENIED,
+        },
+    )
+
+    def _cleanup_order_context(self, report: OrderStatusReport) -> None:
+        if report.order_status not in self._TERMINAL_STATUSES:
+            return
+        if self._encoder is None or report.client_order_id is None:
+            return
+        client_order_id_u32, _ = self._encoder.encode(str(report.client_order_id))
+        if self._order_contexts.pop(client_order_id_u32, None) is not None:
+            self._log.debug(
+                f"Cleaned up order context for {report.client_order_id} "
+                f"(status={report.order_status.name})",
+            )
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         if self._order_submitter is None:
