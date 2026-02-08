@@ -351,8 +351,9 @@ impl DydxExecutionClient {
                         let ts_init = clock.get_time_ns();
                         let ts_event = ts_init;
 
+                        if let Some(ref subaccount) = msg.contents.subaccount {
                         match parse_account_state(
-                            &msg.contents.subaccount,
+                            subaccount,
                             account_id,
                             &inst_map,
                             &oracle_map,
@@ -360,7 +361,6 @@ impl DydxExecutionClient {
                             ts_init,
                         ) {
                             Ok(account_state) => {
-                                println!("PARSED ACCOUNT STATE: {account_state:?}");
                                 log::debug!(
                                     "Parsed account state: {} balance(s), {} margin(s)",
                                     account_state.balances.len(),
@@ -375,7 +375,7 @@ impl DydxExecutionClient {
 
                         // Parse positions from the subscription
                         if let Some(ref positions) =
-                            msg.contents.subaccount.open_perpetual_positions
+                            subaccount.open_perpetual_positions
                         {
                             log::debug!(
                                 "Parsing {} position(s) from subscription",
@@ -406,6 +406,9 @@ impl DydxExecutionClient {
                                     }
                                 }
                             }
+                        }
+                        } else {
+                            log::warn!("Subaccount subscription without initial state (new/empty subaccount)");
                         }
                     }
                     NautilusWsMessage::SubaccountsChannelData(data) => {

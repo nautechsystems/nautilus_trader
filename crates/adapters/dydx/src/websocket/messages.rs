@@ -738,7 +738,7 @@ pub struct DydxWsFillSubaccountMessageContents {
 /// Subaccount subscription contents.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DydxWsSubaccountsSubscribedContents {
-    pub subaccount: DydxSubaccountInfo,
+    pub subaccount: Option<DydxSubaccountInfo>,
 }
 
 /// Subaccounts subscription confirmed message.
