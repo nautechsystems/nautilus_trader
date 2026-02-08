@@ -152,8 +152,8 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
         self._order_submitter: nautilus_pyo3.DydxOrderSubmitter | None = None  # type: ignore[name-defined]
         self._grpc_urls = grpc_urls
 
-        # Bidirectional client order ID encoder
-        self._encoder = nautilus_pyo3.DydxClientOrderIdEncoder()  # type: ignore[attr-defined]
+        # Bidirectional client order ID encoder (set from WS client in _connect)
+        self._encoder: nautilus_pyo3.DydxClientOrderIdEncoder | None = None  # type: ignore[name-defined]
 
         # Order context for cancellation (client_id_u32 -> (tif_value, expire_time_ns))
         self._order_contexts: dict[int, tuple[int | None, int | None]] = {}
@@ -179,6 +179,9 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
         # Load instruments
         await self._instrument_provider.initialize()
 
+        # Fetch and cache instruments with full market params (needed for order quantization)
+        await self._http_client.fetch_and_cache_instruments()
+
         # Initialize wallet from private key
         private_key = self._config.private_key
         if not private_key:
@@ -192,9 +195,17 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             )
             return
 
-        # Derive wallet address (needed before submitter creation)
+        # Resolve wallet address: config → env var → derived from private key
         temp_wallet = nautilus_pyo3.DydxWallet.from_private_key(private_key)  # type: ignore[attr-defined]
-        self._wallet_address = self._config.wallet_address or temp_wallet.address()
+        wallet_address = self._config.wallet_address
+        if not wallet_address:
+            wallet_env = (
+                "DYDX_TESTNET_WALLET_ADDRESS" if self._is_testnet else "DYDX_WALLET_ADDRESS"
+            )
+            wallet_address = os.environ.get(wallet_env)
+        if not wallet_address:
+            wallet_address = temp_wallet.address()
+        self._wallet_address = wallet_address
 
         # Set account ID based on wallet address
         account_id = AccountId(f"{DYDX_VENUE.value}-{self._wallet_address}-{self._subaccount}")
@@ -237,6 +248,9 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             heartbeat=20,
         )
 
+        self._encoder = self._ws_client.encoder()
+        self._ws_client.share_instrument_cache(self._http_client)
+
         instruments = self._instrument_provider.instruments_pyo3()
         await self._ws_client.connect(
             instruments=instruments,
@@ -263,6 +277,8 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             self._log.info(f"Initial block height: {initial_height}", LogColor.BLUE)
         except Exception as e:
             self._log.warning(f"Failed to fetch initial block height: {e}")
+
+        await self._await_account_registered(timeout_secs=30.0)
 
     async def _disconnect(self) -> None:
         # Delay to allow websocket to send any unsubscribe messages
@@ -359,12 +375,8 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             )
             return
 
-        # Cache instruments in HTTP client for order quantization
-        instruments_pyo3 = self._instrument_provider.instruments_pyo3()
-        for inst in instruments_pyo3:
-            self._http_client.cache_instrument(inst)
-
         # Encode client_order_id to (u32, u32) pair using bidirectional encoder
+        assert self._encoder is not None
         client_order_id_u32, client_metadata = self._encoder.encode(str(order.client_order_id))
 
         # Register order context for cancellation
@@ -372,7 +384,7 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
         expire_ns = order.expire_time_ns if hasattr(order, "expire_time_ns") else None
         self._order_contexts[client_order_id_u32] = (tif_value, expire_ns)
 
-        self._log.info(f"Submit {order}", LogColor.BLUE)
+        self._log.info(f"Submit {order}", LogColor.NORMAL)
 
         # Generate OrderSubmitted event before dispatch
         self.generate_order_submitted(
@@ -449,7 +461,7 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
         self._log.info(
             f"Submitting limit order: "
             f"price={order.price}, qty={order.quantity}, tif={order.time_in_force}",
-            LogColor.MAGENTA,
+            LogColor.NORMAL,
         )
 
         await self._order_submitter.submit_limit_order(
@@ -598,6 +610,7 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             return
 
         # Encode client_order_id using bidirectional encoder
+        assert self._encoder is not None
         client_order_id_u32, _ = self._encoder.encode(str(command.client_order_id))
 
         # Get order context for time_in_force/expire_time_ns
@@ -636,25 +649,26 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             self._log.info("No open orders to cancel")
             return
 
-        # Build batch cancel list: (instrument_id, client_order_id_u32, tif, expire_ns)
-        cancel_list = []
+        # Cancel each order individually (dYdX does not allow batching short-term cancels)
+        assert self._encoder is not None
+        self._log.info(
+            f"Cancelling {len(open_orders)} orders individually for "
+            f"{command.instrument_id or 'all instruments'}",
+        )
         for order in open_orders:
             client_order_id_u32, _ = self._encoder.encode(str(order.client_order_id))
             tif_value, expire_ns = self._order_contexts.get(client_order_id_u32, (None, None))
-            cancel_list.append(
-                (str(order.instrument_id), client_order_id_u32, tif_value, expire_ns),
-            )
-
-        try:
-            await self._order_submitter.cancel_orders_batch(
-                orders=cancel_list,
-            )
-            self._log.debug(
-                f"Cancelled {len(cancel_list)} orders for "
-                f"{command.instrument_id or 'all instruments'}",
-            )
-        except Exception as e:
-            self._log.error(f"Cancel all orders failed: {e}")
+            try:
+                await self._order_submitter.cancel_order(
+                    instrument_id=str(order.instrument_id),
+                    client_order_id=client_order_id_u32,
+                    time_in_force=tif_value,
+                    expire_time_ns=expire_ns,
+                )
+            except Exception as e:
+                self._log.error(
+                    f"Failed to cancel order {order.client_order_id}: {e}",
+                )
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
         if self._order_submitter is None:
@@ -665,10 +679,10 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             self._log.info("No orders to cancel in batch")
             return
 
-        # Build batch cancel list: (instrument_id, client_order_id_u32, tif, expire_ns)
-        cancel_list = []
+        # Cancel each order individually (dYdX does not allow batching short-term cancels)
+        assert self._encoder is not None
+        self._log.info(f"Cancelling {len(command.cancels)} orders individually")
         for cancel in command.cancels:
-            # Get the order from cache to get instrument_id
             order = self._cache.order(cancel.client_order_id)
             if order is None:
                 self._log.warning(
@@ -677,21 +691,17 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
                 continue
             client_order_id_u32, _ = self._encoder.encode(str(cancel.client_order_id))
             tif_value, expire_ns = self._order_contexts.get(client_order_id_u32, (None, None))
-            cancel_list.append(
-                (str(order.instrument_id), client_order_id_u32, tif_value, expire_ns),
-            )
-
-        if not cancel_list:
-            self._log.warning("No valid orders to cancel in batch")
-            return
-
-        try:
-            await self._order_submitter.cancel_orders_batch(
-                orders=cancel_list,
-            )
-            self._log.debug(f"Batch cancelled {len(cancel_list)} orders")
-        except Exception as e:
-            self._log.error(f"Batch cancel orders failed: {e}")
+            try:
+                await self._order_submitter.cancel_order(
+                    instrument_id=str(order.instrument_id),
+                    client_order_id=client_order_id_u32,
+                    time_in_force=tif_value,
+                    expire_time_ns=expire_ns,
+                )
+            except Exception as e:
+                self._log.error(
+                    f"Failed to cancel order {cancel.client_order_id}: {e}",
+                )
 
     async def generate_order_status_report(
         self,
@@ -706,7 +716,7 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
                 start=None,
                 end=None,
                 open_only=False,
-                command_id=command.command_id,
+                command_id=command.id,
                 ts_init=command.ts_init,
             ),
         )
@@ -755,7 +765,7 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
 
             for pyo3_report in pyo3_reports:
                 report = OrderStatusReport.from_pyo3(pyo3_report)
-                self._log.debug(f"Received {report}", LogColor.MAGENTA)
+                self._log.debug(f"Received {report}", LogColor.NORMAL)
                 reports.append(report)
         except (asyncio.CancelledError, Exception) as e:
             self._log_report_error(e, "OrderStatusReports")
@@ -803,7 +813,7 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
 
             for pyo3_report in pyo3_reports:
                 report = FillReport.from_pyo3(pyo3_report)
-                self._log.debug(f"Received {report}", LogColor.MAGENTA)
+                self._log.debug(f"Received {report}", LogColor.NORMAL)
                 reports.append(report)
         except (asyncio.CancelledError, Exception) as e:
             self._log_report_error(e, "FillReports")
@@ -847,7 +857,7 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
 
             for pyo3_report in pyo3_reports:
                 report = PositionStatusReport.from_pyo3(pyo3_report)
-                self._log.debug(f"Received {report}", LogColor.MAGENTA)
+                self._log.debug(f"Received {report}", LogColor.NORMAL)
                 reports.append(report)
         except (asyncio.CancelledError, Exception) as e:
             self._log_report_error(e, "PositionStatusReports")
