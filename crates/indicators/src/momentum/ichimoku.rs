@@ -98,7 +98,12 @@ impl Indicator for IchimokuCloud {
 }
 
 impl IchimokuCloud {
-    /// Creates a new [`IchimokuCloud`] instance with standard periods (9, 26, 52, 26).
+    /// Creates a new [`IchimokuCloud`] instance.
+    ///
+    /// The indicator becomes `initialized` after `senkou_period` bars,
+    /// at which point `tenkan_sen` and `kijun_sen` are valid. The displaced
+    /// outputs (`senkou_span_a`, `senkou_span_b`, `chikou_span`) require an
+    /// additional `displacement` bars before they become non-zero.
     ///
     /// # Panics
     ///
@@ -292,6 +297,25 @@ mod tests {
         assert_eq!(ich_default.senkou_span_a, 0.0);
         assert_eq!(ich_default.senkou_span_b, 0.0);
         assert_eq!(ich_default.chikou_span, 0.0);
+    }
+
+    #[rstest]
+    fn test_tenkan_sen_updates_with_varying_data() {
+        let mut ich = IchimokuCloud::new(3, 3, 3, 2);
+
+        // Fill the window: highs=[10, 12, 14], lows=[5, 6, 7]
+        ich.update_raw(10.0, 5.0, 8.0);
+        ich.update_raw(12.0, 6.0, 9.0);
+        ich.update_raw(14.0, 7.0, 10.0);
+        assert_eq!(ich.tenkan_sen, (14.0 + 5.0) / 2.0); // 9.5
+
+        // Push a new bar that evicts the (10, 5) pair: highs=[12, 14, 8], lows=[6, 7, 3]
+        ich.update_raw(8.0, 3.0, 6.0);
+        assert_eq!(ich.tenkan_sen, (14.0 + 3.0) / 2.0); // 8.5
+
+        // Push another bar that evicts the (12, 6) pair: highs=[14, 8, 20], lows=[7, 3, 4]
+        ich.update_raw(20.0, 4.0, 12.0);
+        assert_eq!(ich.tenkan_sen, (20.0 + 3.0) / 2.0); // 11.5
     }
 
     #[rstest]

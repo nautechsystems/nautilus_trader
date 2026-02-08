@@ -478,6 +478,11 @@ cdef class IchimokuCloud(Indicator):
     - Senkou Span B (Leading Span B): (senkou_period high + senkou_period low) / 2, displaced forward by displacement.
     - Chikou Span (Lagging Span): Close displaced backward by displacement.
 
+    The indicator becomes ``initialized`` after ``senkou_period`` bars,
+    at which point tenkan_sen, kijun_sen are valid. The displaced outputs
+    (senkou_span_a, senkou_span_b, chikou_span) require an additional
+    ``displacement`` bars before they become non-zero.
+
     Parameters
     ----------
     tenkan_period : int
@@ -523,12 +528,12 @@ cdef class IchimokuCloud(Indicator):
         self.senkou_period = senkou_period
         self.displacement = displacement
 
-        self._highs_9 = deque(maxlen=tenkan_period)
-        self._lows_9 = deque(maxlen=tenkan_period)
-        self._highs_26 = deque(maxlen=kijun_period)
-        self._lows_26 = deque(maxlen=kijun_period)
-        self._highs_52 = deque(maxlen=senkou_period)
-        self._lows_52 = deque(maxlen=senkou_period)
+        self._highs_tenkan = deque(maxlen=tenkan_period)
+        self._lows_tenkan = deque(maxlen=tenkan_period)
+        self._highs_kijun = deque(maxlen=kijun_period)
+        self._lows_kijun = deque(maxlen=kijun_period)
+        self._highs_senkou = deque(maxlen=senkou_period)
+        self._lows_senkou = deque(maxlen=senkou_period)
         self._senkou_a = deque(maxlen=displacement)
         self._senkou_b = deque(maxlen=displacement)
         self._chikou = deque(maxlen=displacement)
@@ -548,32 +553,32 @@ cdef class IchimokuCloud(Indicator):
         )
 
     cpdef void update_raw(self, double high, double low, double close):
-        self._highs_9.append(high)
-        self._lows_9.append(low)
-        self._highs_26.append(high)
-        self._lows_26.append(low)
-        self._highs_52.append(high)
-        self._lows_52.append(low)
+        self._highs_tenkan.append(high)
+        self._lows_tenkan.append(low)
+        self._highs_kijun.append(high)
+        self._lows_kijun.append(low)
+        self._highs_senkou.append(high)
+        self._lows_senkou.append(low)
 
         if not self.initialized:
             self._set_has_inputs(True)
 
             if (
-                len(self._highs_9) >= self.tenkan_period
-                and len(self._highs_26) >= self.kijun_period
-                and len(self._highs_52) >= self.senkou_period
+                len(self._highs_tenkan) >= self.tenkan_period
+                and len(self._highs_kijun) >= self.kijun_period
+                and len(self._highs_senkou) >= self.senkou_period
             ):
                 self._set_initialized(True)
 
-        if len(self._highs_9) >= self.tenkan_period:
-            self.tenkan_sen = (max(self._highs_9) + min(self._lows_9)) / 2.0
+        if len(self._highs_tenkan) >= self.tenkan_period:
+            self.tenkan_sen = (max(self._highs_tenkan) + min(self._lows_tenkan)) / 2.0
 
-        if len(self._highs_26) >= self.kijun_period:
-            self.kijun_sen = (max(self._highs_26) + min(self._lows_26)) / 2.0
+        if len(self._highs_kijun) >= self.kijun_period:
+            self.kijun_sen = (max(self._highs_kijun) + min(self._lows_kijun)) / 2.0
 
         cdef double mid52 = 0.0
-        if len(self._highs_52) >= self.senkou_period:
-            mid52 = (max(self._highs_52) + min(self._lows_52)) / 2.0
+        if len(self._highs_senkou) >= self.senkou_period:
+            mid52 = (max(self._highs_senkou) + min(self._lows_senkou)) / 2.0
 
         if self.initialized:
             if len(self._senkou_a) == self.displacement:
@@ -592,12 +597,12 @@ cdef class IchimokuCloud(Indicator):
             self._chikou.append(close)
 
     cpdef void _reset(self):
-        self._highs_9.clear()
-        self._lows_9.clear()
-        self._highs_26.clear()
-        self._lows_26.clear()
-        self._highs_52.clear()
-        self._lows_52.clear()
+        self._highs_tenkan.clear()
+        self._lows_tenkan.clear()
+        self._highs_kijun.clear()
+        self._lows_kijun.clear()
+        self._highs_senkou.clear()
+        self._lows_senkou.clear()
         self._senkou_a.clear()
         self._senkou_b.clear()
         self._chikou.clear()

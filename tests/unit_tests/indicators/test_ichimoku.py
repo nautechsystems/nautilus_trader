@@ -120,6 +120,23 @@ class TestIchimokuCloud:
         assert ich.tenkan_sen == 1.0
         assert ich.kijun_sen == 1.0
 
+    def test_tenkan_sen_updates_with_varying_data(self):
+        ich = IchimokuCloud(tenkan_period=3, kijun_period=3, senkou_period=3, displacement=2)
+
+        # Fill the window: highs=[10, 12, 14], lows=[5, 6, 7]
+        ich.update_raw(10.0, 5.0, 8.0)
+        ich.update_raw(12.0, 6.0, 9.0)
+        ich.update_raw(14.0, 7.0, 10.0)
+        assert ich.tenkan_sen == (14.0 + 5.0) / 2.0  # 9.5
+
+        # Push a new bar that evicts the (10, 5) pair: highs=[12, 14, 8], lows=[6, 7, 3]
+        ich.update_raw(8.0, 3.0, 6.0)
+        assert ich.tenkan_sen == (14.0 + 3.0) / 2.0  # 8.5
+
+        # Push another bar that evicts the (12, 6) pair: highs=[14, 8, 20], lows=[7, 3, 4]
+        ich.update_raw(20.0, 4.0, 12.0)
+        assert ich.tenkan_sen == (20.0 + 3.0) / 2.0  # 11.5
+
     def test_invalid_periods_raises(self):
         with pytest.raises(ValueError):
             IchimokuCloud(9, 5, 52, 26)

@@ -81,12 +81,12 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
 
 
 cdef class IchimokuCloud(Indicator):
-    cdef object _highs_9
-    cdef object _lows_9
-    cdef object _highs_26
-    cdef object _lows_26
-    cdef object _highs_52
-    cdef object _lows_52
+    cdef object _highs_tenkan
+    cdef object _lows_tenkan
+    cdef object _highs_kijun
+    cdef object _lows_kijun
+    cdef object _highs_senkou
+    cdef object _lows_senkou
     cdef object _senkou_a
     cdef object _senkou_b
     cdef object _chikou
