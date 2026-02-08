@@ -20,6 +20,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use dashmap::DashMap;
 use nautilus_common::live::get_runtime;
 use nautilus_core::{python::to_pyvalue_err, time::get_atomic_clock_realtime};
 use nautilus_model::{
@@ -32,10 +33,15 @@ use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
     common::{credential::DydxCredential, enums::DydxCandleResolution, parse::extract_raw_symbol},
-    http::parse::parse_account_state,
+    execution::types::OrderContext,
+    http::{client::DydxHttpClient, parse::parse_account_state},
+    python::encoder::PyDydxClientOrderIdEncoder,
     websocket::{
-        client::DydxWebSocketClient, enums::NautilusWsMessage, error::DydxWsError,
-        handler::HandlerCommand, parse::parse_ws_position_report,
+        client::DydxWebSocketClient,
+        enums::NautilusWsMessage,
+        error::DydxWsError,
+        handler::HandlerCommand,
+        parse::{parse_ws_fill_report, parse_ws_order_report, parse_ws_position_report},
     },
 };
 
@@ -80,9 +86,25 @@ impl DydxWebSocketClient {
         self.set_account_id(account_id);
     }
 
+    /// Share the HTTP client's instrument cache with this WebSocket client.
+    ///
+    /// The HTTP client's cache includes CLOB pair ID and market ticker indices
+    /// needed for parsing SubaccountsChannelData into typed execution events.
+    /// Must be called before `connect()`.
+    #[pyo3(name = "share_instrument_cache")]
+    fn py_share_instrument_cache(&mut self, http_client: &DydxHttpClient) {
+        self.set_instrument_cache(http_client.instrument_cache().clone());
+    }
+
     #[pyo3(name = "account_id")]
     fn py_account_id(&self) -> Option<AccountId> {
         self.account_id()
+    }
+
+    /// Returns the shared client order ID encoder.
+    #[pyo3(name = "encoder")]
+    fn py_encoder(&self) -> PyDydxClientOrderIdEncoder {
+        PyDydxClientOrderIdEncoder::from_arc(self.encoder().clone())
     }
 
     #[getter]
@@ -118,6 +140,7 @@ impl DydxWebSocketClient {
                 // Spawn task to process messages and call Python callback
                 get_runtime().spawn(async move {
                     let _client = client; // Keep client alive in spawned task
+                    let order_contexts: DashMap<u32, OrderContext> = DashMap::new();
 
                     while let Some(msg) = rx.recv().await {
                         match msg {
@@ -171,32 +194,33 @@ impl DydxWebSocketClient {
                                 let inst_map = instrument_cache.to_instrument_id_map();
                                 let oracle_map = instrument_cache.to_oracle_prices_map();
 
-                                // Parse and emit AccountState
-                                match parse_account_state(
-                                    &data.contents.subaccount,
-                                    account_id,
-                                    &inst_map,
-                                    &oracle_map,
-                                    ts_init,
-                                    ts_init,
-                                ) {
-                                    Ok(account_state) => {
-                                        Python::attach(|py| {
-                                            match account_state.into_py_any(py) {
-                                                Ok(py_obj) => {
-                                                    if let Err(e) = callback.call1(py, (py_obj,)) {
-                                                        log::error!("Error calling Python callback for AccountState: {e}");
+                                // Parse and emit AccountState + PositionStatusReports
+                                if let Some(ref subaccount) = data.contents.subaccount {
+                                    match parse_account_state(
+                                        subaccount,
+                                        account_id,
+                                        &inst_map,
+                                        &oracle_map,
+                                        ts_init,
+                                        ts_init,
+                                    ) {
+                                        Ok(account_state) => {
+                                            Python::attach(|py| {
+                                                match account_state.into_py_any(py) {
+                                                    Ok(py_obj) => {
+                                                        if let Err(e) = callback.call1(py, (py_obj,)) {
+                                                            log::error!("Error calling Python callback for AccountState: {e}");
+                                                        }
                                                     }
+                                                    Err(e) => log::error!("Failed to convert AccountState to Python: {e}"),
                                                 }
-                                                Err(e) => log::error!("Failed to convert AccountState to Python: {e}"),
-                                            }
-                                        });
-                                    }
+                                            });
+                                        }
                                     Err(e) => log::error!("Failed to parse account state: {e}"),
                                 }
 
                                 // Parse and emit PositionStatusReports
-                                if let Some(ref positions) = data.contents.subaccount.open_perpetual_positions {
+                                if let Some(ref positions) = subaccount.open_perpetual_positions {
                                     for (market, ws_position) in positions {
                                         match parse_ws_position_report(
                                             ws_position,
@@ -220,22 +244,73 @@ impl DydxWebSocketClient {
                                         }
                                     }
                                 }
+                                } else {
+                                    log::warn!("Subaccount subscription without initial state (new/empty subaccount)");
+                                }
                             }
                             NautilusWsMessage::SubaccountsChannelData(data) => {
-                                Python::attach(|py| {
-                                    use pyo3::types::PyDict;
-                                    let json_str = serde_json::to_string(&*data)
-                                        .unwrap_or_else(|e| {
-                                            log::error!("Failed to serialize SubaccountsChannelData: {e}");
-                                            "{}".to_string()
-                                        });
-                                    let dict = PyDict::new(py);
-                                    let _ = dict.set_item("type", "subaccounts_channel_data");
-                                    let _ = dict.set_item("data", json_str);
-                                    if let Err(e) = callback.call1(py, (dict,)) {
-                                        log::error!("Error calling Python callback for subaccounts_channel_data: {e}");
+                                let Some(account_id) = _client.account_id() else {
+                                    log::warn!("Cannot parse SubaccountsChannelData: account_id not set");
+                                    continue;
+                                };
+
+                                let instrument_cache = _client.instrument_cache();
+                                let encoder = _client.encoder();
+                                let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+                                // Process orders -> OrderStatusReport
+                                if let Some(ref orders) = data.contents.orders {
+                                    for ws_order in orders {
+                                        match parse_ws_order_report(
+                                            ws_order,
+                                            instrument_cache,
+                                            &order_contexts,
+                                            encoder,
+                                            account_id,
+                                            ts_init,
+                                        ) {
+                                            Ok(report) => {
+                                                Python::attach(|py| {
+                                                    match pyo3::Py::new(py, report) {
+                                                        Ok(py_obj) => {
+                                                            if let Err(e) = callback.call1(py, (py_obj.into_any(),)) {
+                                                                log::error!("Error calling callback for OrderStatusReport: {e}");
+                                                            }
+                                                        }
+                                                        Err(e) => log::error!("Failed to convert OrderStatusReport: {e}"),
+                                                    }
+                                                });
+                                            }
+                                            Err(e) => log::error!("Failed to parse WS order: {e}"),
+                                        }
                                     }
-                                });
+                                }
+
+                                // Process fills -> FillReport
+                                if let Some(ref fills) = data.contents.fills {
+                                    for ws_fill in fills {
+                                        match parse_ws_fill_report(
+                                            ws_fill,
+                                            instrument_cache,
+                                            account_id,
+                                            ts_init,
+                                        ) {
+                                            Ok(report) => {
+                                                Python::attach(|py| {
+                                                    match pyo3::Py::new(py, report) {
+                                                        Ok(py_obj) => {
+                                                            if let Err(e) = callback.call1(py, (py_obj.into_any(),)) {
+                                                                log::error!("Error calling callback for FillReport: {e}");
+                                                            }
+                                                        }
+                                                        Err(e) => log::error!("Failed to convert FillReport: {e}"),
+                                                    }
+                                                });
+                                            }
+                                            Err(e) => log::error!("Failed to parse WS fill: {e}"),
+                                        }
+                                    }
+                                }
                             }
                             NautilusWsMessage::MarkPrice(mark_price) => {
                                 Python::attach(|py| {
