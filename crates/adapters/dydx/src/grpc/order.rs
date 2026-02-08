@@ -42,9 +42,9 @@ use crate::proto::dydxprotocol::{
 /// See also [short-term vs long-term orders](https://help.dydx.trade/en/articles/166985-short-term-vs-long-term-order-types).
 pub const SHORT_TERM_ORDER_MAXIMUM_LIFETIME: u32 = 20;
 
-/// Default slippage (5%) applied to oracle price for market order worst-case price.
-// Decimal::new(5, 2) = 0.05
-pub const DEFAULT_MARKET_ORDER_SLIPPAGE: Decimal = Decimal::from_parts(5, 0, 0, false, 2);
+/// Default slippage (1%) applied to oracle price for market order worst-case price.
+// Decimal::new(1, 2) = 0.01
+pub const DEFAULT_MARKET_ORDER_SLIPPAGE: Decimal = Decimal::from_parts(1, 0, 0, false, 2);
 
 /// Value used to identify the Rust client in order metadata.
 pub const DEFAULT_RUST_CLIENT_METADATA: u32 = 4;
@@ -251,11 +251,13 @@ impl OrderBuilder {
     /// Set as Market order.
     ///
     /// An instruction to immediately buy or sell an asset at the best available price when the order is placed.
+    /// dYdX implements market orders as IOC limit orders with a slippage-adjusted worst-case price.
     #[must_use]
     pub fn market(mut self, side: OrderSide, size: Decimal) -> Self {
         self.order_type = Some(OrderType::Market);
         self.side = Some(side);
         self.size = Some(size);
+        self.time_in_force = Some(OrderTimeInForce::Ioc);
         self
     }
 
@@ -637,7 +639,8 @@ mod tests {
 
         assert_eq!(order.side, OrderSide::Buy as i32);
         assert_eq!(order.quantums, 100_000_000); // 0.01 BTC quantized
-        assert_eq!(order.subticks, 5_250_000_000); // 50000 * 1.05 = 52500 worst-case buy price
+        assert_eq!(order.subticks, 5_050_000_000); // 50000 * 1.01 = 50500 worst-case buy price
+        assert_eq!(order.time_in_force, OrderTimeInForce::Ioc as i32);
         assert!(!order.reduce_only);
         assert_eq!(order.client_metadata, DEFAULT_RUST_CLIENT_METADATA);
     }
@@ -661,7 +664,8 @@ mod tests {
 
         assert_eq!(order.side, OrderSide::Sell as i32);
         assert_eq!(order.quantums, 200_000_000); // 0.02 BTC quantized
-        assert_eq!(order.subticks, 4_750_000_000); // 50000 * 0.95 = 47500 worst-case sell price
+        assert_eq!(order.subticks, 4_950_000_000); // 50000 * 0.99 = 49500 worst-case sell price
+        assert_eq!(order.time_in_force, OrderTimeInForce::Ioc as i32);
     }
 
     #[rstest]

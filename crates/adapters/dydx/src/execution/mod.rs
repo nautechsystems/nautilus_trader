@@ -154,6 +154,9 @@ pub struct DydxExecutionClient {
     /// Wrapped in Arc for sharing with async WebSocket handler.
     encoder: Arc<ClientOrderIdEncoder>,
     order_contexts: Arc<DashMap<u32, OrderContext>>,
+    /// Reverse mapping: dYdX order ID → (client_id, client_metadata) for fill correlation.
+    /// Fills don't carry client_id, so we map via order_id from order updates.
+    order_id_map: Arc<DashMap<String, (u32, u32)>>,
     wallet_address: String,
     subaccount_number: u32,
     tx_manager: Option<Arc<TransactionManager>>,
@@ -234,6 +237,7 @@ impl DydxExecutionClient {
             oracle_prices: Arc::new(DashMap::new()),
             encoder: Arc::new(ClientOrderIdEncoder::new()),
             order_contexts: Arc::new(DashMap::new()),
+            order_id_map: Arc::new(DashMap::new()),
             wallet_address,
             subaccount_number,
             tx_manager: None,
@@ -310,6 +314,7 @@ impl DydxExecutionClient {
         let oracle_prices = self.oracle_prices.clone();
         let encoder = self.encoder.clone();
         let order_contexts = self.order_contexts.clone();
+        let order_id_map = self.order_id_map.clone();
         let block_time_monitor = self.block_time_monitor.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -419,7 +424,13 @@ impl DydxExecutionClient {
                         );
                         let ts_init = clock.get_time_ns();
 
-                        // Process orders
+                        // Track terminal orders for deferred cleanup (after fills)
+                        let mut terminal_orders: Vec<(u32, u32)> = Vec::new();
+
+                        // Phase 1: Parse orders and build order_id_map (needed for fill correlation)
+                        // but DON'T send order reports yet — fills must be sent first
+                        // to prevent reconciliation from inferring fills at the limit price.
+                        let mut pending_order_reports = Vec::new();
                         if let Some(ref orders) = data.contents.orders {
                             log::info!(
                                 "Processing {} orders from SubaccountsChannelData",
@@ -432,6 +443,17 @@ impl DydxExecutionClient {
                                     ws_order.status,
                                     ws_order.client_id
                                 );
+
+                                // Build order_id → (client_id, client_metadata) mapping for fill correlation
+                                // (fills don't carry client_id, only order_id)
+                                if let Ok(client_id_u32) = ws_order.client_id.parse::<u32>() {
+                                    let client_meta = ws_order.client_metadata
+                                        .as_ref()
+                                        .and_then(|s| s.parse::<u32>().ok())
+                                        .unwrap_or(crate::grpc::DEFAULT_RUST_CLIENT_METADATA);
+                                    order_id_map.insert(ws_order.id.clone(), (client_id_u32, client_meta));
+                                }
+
                                 match parse_ws_order_report(
                                     ws_order,
                                     &instrument_cache,
@@ -441,6 +463,16 @@ impl DydxExecutionClient {
                                     ts_init,
                                 ) {
                                     Ok(report) => {
+                                        // Collect terminal orders for deferred cleanup
+                                        if !report.order_status.is_open()
+                                            && let Ok(cid) = ws_order.client_id.parse::<u32>()
+                                        {
+                                            let meta = ws_order.client_metadata
+                                                .as_ref()
+                                                .and_then(|s| s.parse::<u32>().ok())
+                                                .unwrap_or(crate::grpc::DEFAULT_RUST_CLIENT_METADATA);
+                                            terminal_orders.push((cid, meta));
+                                        }
                                         log::info!(
                                             "Parsed order report: {} {} {:?} qty={} client_order_id={:?}",
                                             report.instrument_id,
@@ -449,7 +481,7 @@ impl DydxExecutionClient {
                                             report.quantity,
                                             report.client_order_id
                                         );
-                                        emitter.send_order_status_report(report);
+                                        pending_order_reports.push(report);
                                     }
                                     Err(e) => {
                                         log::error!("Failed to parse WebSocket order: {e}");
@@ -458,22 +490,27 @@ impl DydxExecutionClient {
                             }
                         }
 
-                        // Process fills
+                        // Phase 2: Send fills FIRST so reconciliation sees them before
+                        // the terminal order status (prevents inferred fills at limit price)
                         if let Some(ref fills) = data.contents.fills {
                             for ws_fill in fills {
                                 match parse_ws_fill_report(
                                     ws_fill,
                                     &instrument_cache,
+                                    &order_id_map,
+                                    &order_contexts,
+                                    &encoder,
                                     account_id,
                                     ts_init,
                                 ) {
                                     Ok(report) => {
-                                        log::debug!(
-                                            "Parsed fill report: {} {} {} @ {}",
+                                        log::info!(
+                                            "Parsed fill report: {} {} {} @ {} client_order_id={:?}",
                                             report.instrument_id,
                                             report.venue_order_id,
                                             report.last_qty,
-                                            report.last_px
+                                            report.last_px,
+                                            report.client_order_id
                                         );
                                         emitter.send_fill_report(report);
                                     }
@@ -482,6 +519,18 @@ impl DydxExecutionClient {
                                     }
                                 }
                             }
+                        }
+
+                        // Phase 3: Now send order status reports
+                        for report in pending_order_reports {
+                            emitter.send_order_status_report(report);
+                        }
+
+                        // Deferred cleanup: remove mappings for terminal orders
+                        // after fills have been correlated
+                        for (client_id, client_metadata) in terminal_orders {
+                            order_contexts.remove(&client_id);
+                            encoder.remove(client_id, client_metadata);
                         }
                     }
                     NautilusWsMessage::MarkPrice(mark_price) => {

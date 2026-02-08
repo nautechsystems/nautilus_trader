@@ -141,6 +141,7 @@ impl DydxWebSocketClient {
                 get_runtime().spawn(async move {
                     let _client = client; // Keep client alive in spawned task
                     let order_contexts: DashMap<u32, OrderContext> = DashMap::new();
+                    let order_id_map: DashMap<String, (u32, u32)> = DashMap::new();
 
                     while let Some(msg) = rx.recv().await {
                         match msg {
@@ -258,9 +259,23 @@ impl DydxWebSocketClient {
                                 let encoder = _client.encoder();
                                 let ts_init = get_atomic_clock_realtime().get_time_ns();
 
-                                // Process orders -> OrderStatusReport
+                                let mut terminal_orders: Vec<(u32, u32)> = Vec::new();
+
+                                // Phase 1: Parse orders and build order_id_map (needed for fill correlation)
+                                // but DON'T send order reports yet — fills must be sent first
+                                // to prevent reconciliation from inferring fills at the limit price.
+                                let mut pending_order_reports = Vec::new();
                                 if let Some(ref orders) = data.contents.orders {
                                     for ws_order in orders {
+                                        // Build order_id → (client_id, client_metadata) for fill correlation
+                                        if let Ok(client_id_u32) = ws_order.client_id.parse::<u32>() {
+                                            let client_meta = ws_order.client_metadata
+                                                .as_ref()
+                                                .and_then(|s| s.parse::<u32>().ok())
+                                                .unwrap_or(crate::grpc::DEFAULT_RUST_CLIENT_METADATA);
+                                            order_id_map.insert(ws_order.id.clone(), (client_id_u32, client_meta));
+                                        }
+
                                         match parse_ws_order_report(
                                             ws_order,
                                             instrument_cache,
@@ -270,28 +285,32 @@ impl DydxWebSocketClient {
                                             ts_init,
                                         ) {
                                             Ok(report) => {
-                                                Python::attach(|py| {
-                                                    match pyo3::Py::new(py, report) {
-                                                        Ok(py_obj) => {
-                                                            if let Err(e) = callback.call1(py, (py_obj.into_any(),)) {
-                                                                log::error!("Error calling callback for OrderStatusReport: {e}");
-                                                            }
-                                                        }
-                                                        Err(e) => log::error!("Failed to convert OrderStatusReport: {e}"),
-                                                    }
-                                                });
+                                                if !report.order_status.is_open()
+                                                    && let Ok(cid) = ws_order.client_id.parse::<u32>()
+                                                {
+                                                    let meta = ws_order.client_metadata
+                                                        .as_ref()
+                                                        .and_then(|s| s.parse::<u32>().ok())
+                                                        .unwrap_or(crate::grpc::DEFAULT_RUST_CLIENT_METADATA);
+                                                    terminal_orders.push((cid, meta));
+                                                }
+                                                pending_order_reports.push(report);
                                             }
                                             Err(e) => log::error!("Failed to parse WS order: {e}"),
                                         }
                                     }
                                 }
 
-                                // Process fills -> FillReport
+                                // Phase 2: Send fills FIRST so reconciliation sees them before
+                                // the terminal order status (prevents inferred fills at limit price)
                                 if let Some(ref fills) = data.contents.fills {
                                     for ws_fill in fills {
                                         match parse_ws_fill_report(
                                             ws_fill,
                                             instrument_cache,
+                                            &order_id_map,
+                                            &order_contexts,
+                                            encoder,
                                             account_id,
                                             ts_init,
                                         ) {
@@ -310,6 +329,26 @@ impl DydxWebSocketClient {
                                             Err(e) => log::error!("Failed to parse WS fill: {e}"),
                                         }
                                     }
+                                }
+
+                                // Phase 3: Now send order status reports
+                                for report in pending_order_reports {
+                                    Python::attach(|py| {
+                                        match pyo3::Py::new(py, report) {
+                                            Ok(py_obj) => {
+                                                if let Err(e) = callback.call1(py, (py_obj.into_any(),)) {
+                                                    log::error!("Error calling callback for OrderStatusReport: {e}");
+                                                }
+                                            }
+                                            Err(e) => log::error!("Failed to convert OrderStatusReport: {e}"),
+                                        }
+                                    });
+                                }
+
+                                // Deferred cleanup after fills are correlated
+                                for (client_id, client_metadata) in terminal_orders {
+                                    order_contexts.remove(&client_id);
+                                    encoder.remove(client_id, client_metadata);
                                 }
                             }
                             NautilusWsMessage::MarkPrice(mark_price) => {
