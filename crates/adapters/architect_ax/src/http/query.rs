@@ -23,6 +23,7 @@
 //! `AxRawHttpClient` methods where they are automatically serialized.
 
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
 use crate::common::enums::AxCandleWidth;
 
@@ -33,16 +34,14 @@ use crate::common::enums::AxCandleWidth;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GetTickerParams {
     /// Instrument symbol, e.g. "GBPUSD-PERP", "EURUSD-PERP".
-    pub symbol: String,
+    pub symbol: Ustr,
 }
 
 impl GetTickerParams {
     /// Creates a new [`GetTickerParams`] with the given symbol.
     #[must_use]
-    pub fn new(symbol: impl Into<String>) -> Self {
-        Self {
-            symbol: symbol.into(),
-        }
+    pub fn new(symbol: Ustr) -> Self {
+        Self { symbol }
     }
 }
 
@@ -53,16 +52,14 @@ impl GetTickerParams {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GetInstrumentParams {
     /// Instrument symbol, e.g. "GBPUSD-PERP", "EURUSD-PERP".
-    pub symbol: String,
+    pub symbol: Ustr,
 }
 
 impl GetInstrumentParams {
     /// Creates a new [`GetInstrumentParams`] with the given symbol.
     #[must_use]
-    pub fn new(symbol: impl Into<String>) -> Self {
-        Self {
-            symbol: symbol.into(),
-        }
+    pub fn new(symbol: Ustr) -> Self {
+        Self { symbol }
     }
 }
 
@@ -73,7 +70,7 @@ impl GetInstrumentParams {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GetCandlesParams {
     /// Instrument symbol.
-    pub symbol: String,
+    pub symbol: Ustr,
     /// Start timestamp in nanoseconds.
     pub start_timestamp_ns: i64,
     /// End timestamp in nanoseconds.
@@ -86,13 +83,13 @@ impl GetCandlesParams {
     /// Creates a new [`GetCandlesParams`].
     #[must_use]
     pub fn new(
-        symbol: impl Into<String>,
+        symbol: Ustr,
         start_timestamp_ns: i64,
         end_timestamp_ns: i64,
         candle_width: AxCandleWidth,
     ) -> Self {
         Self {
-            symbol: symbol.into(),
+            symbol,
             start_timestamp_ns,
             end_timestamp_ns,
             candle_width,
@@ -108,7 +105,7 @@ impl GetCandlesParams {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GetCandleParams {
     /// Instrument symbol.
-    pub symbol: String,
+    pub symbol: Ustr,
     /// Candle width/interval.
     pub candle_width: AxCandleWidth,
 }
@@ -116,9 +113,9 @@ pub struct GetCandleParams {
 impl GetCandleParams {
     /// Creates a new [`GetCandleParams`].
     #[must_use]
-    pub fn new(symbol: impl Into<String>, candle_width: AxCandleWidth) -> Self {
+    pub fn new(symbol: Ustr, candle_width: AxCandleWidth) -> Self {
         Self {
-            symbol: symbol.into(),
+            symbol,
             candle_width,
         }
     }
@@ -131,7 +128,7 @@ impl GetCandleParams {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GetFundingRatesParams {
     /// Instrument symbol.
-    pub symbol: String,
+    pub symbol: Ustr,
     /// Start timestamp in nanoseconds.
     pub start_timestamp_ns: i64,
     /// End timestamp in nanoseconds.
@@ -141,9 +138,9 @@ pub struct GetFundingRatesParams {
 impl GetFundingRatesParams {
     /// Creates a new [`GetFundingRatesParams`].
     #[must_use]
-    pub fn new(symbol: impl Into<String>, start_timestamp_ns: i64, end_timestamp_ns: i64) -> Self {
+    pub fn new(symbol: Ustr, start_timestamp_ns: i64, end_timestamp_ns: i64) -> Self {
         Self {
-            symbol: symbol.into(),
+            symbol,
             start_timestamp_ns,
             end_timestamp_ns,
         }
@@ -171,19 +168,20 @@ impl GetTransactionsParams {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::*;
 
     #[rstest]
     fn test_get_ticker_params_serialization() {
-        let params = GetTickerParams::new("GBPUSD-PERP");
+        let params = GetTickerParams::new(Ustr::from("GBPUSD-PERP"));
         let qs = serde_urlencoded::to_string(&params).unwrap();
         assert_eq!(qs, "symbol=GBPUSD-PERP");
     }
 
     #[rstest]
     fn test_get_instrument_params_serialization() {
-        let params = GetInstrumentParams::new("EURUSD-PERP");
+        let params = GetInstrumentParams::new(Ustr::from("EURUSD-PERP"));
         let qs = serde_urlencoded::to_string(&params).unwrap();
         assert_eq!(qs, "symbol=EURUSD-PERP");
     }
@@ -191,7 +189,7 @@ mod tests {
     #[rstest]
     fn test_get_candles_params_serialization() {
         let params = GetCandlesParams::new(
-            "GBPUSD-PERP",
+            Ustr::from("GBPUSD-PERP"),
             1000000000,
             2000000000,
             AxCandleWidth::Minutes1,
@@ -205,7 +203,7 @@ mod tests {
 
     #[rstest]
     fn test_get_candle_params_serialization() {
-        let params = GetCandleParams::new("GBPUSD-PERP", AxCandleWidth::Hours1);
+        let params = GetCandleParams::new(Ustr::from("GBPUSD-PERP"), AxCandleWidth::Hours1);
         let qs = serde_urlencoded::to_string(&params).unwrap();
         assert!(qs.contains("symbol=GBPUSD-PERP"));
         assert!(qs.contains("candle_width=1h"));
@@ -213,7 +211,7 @@ mod tests {
 
     #[rstest]
     fn test_get_funding_rates_params_serialization() {
-        let params = GetFundingRatesParams::new("GBPUSD-PERP", 1000000000, 2000000000);
+        let params = GetFundingRatesParams::new(Ustr::from("GBPUSD-PERP"), 1000000000, 2000000000);
         let qs = serde_urlencoded::to_string(&params).unwrap();
         assert!(qs.contains("symbol=GBPUSD-PERP"));
         assert!(qs.contains("start_timestamp_ns=1000000000"));

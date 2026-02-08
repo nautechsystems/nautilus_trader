@@ -54,8 +54,9 @@ use super::{
         AxBatchCancelOrdersResponse, AxCancelAllOrdersResponse, AxCancelOrderResponse, AxCandle,
         AxCandleResponse, AxCandlesResponse, AxFillsResponse, AxFundingRatesResponse, AxInstrument,
         AxInstrumentsResponse, AxOpenOrdersResponse, AxPlaceOrderResponse, AxPositionsResponse,
-        AxRiskSnapshotResponse, AxTicker, AxTickersResponse, AxTransactionsResponse, AxWhoAmI,
-        BatchCancelOrdersRequest, CancelAllOrdersRequest, CancelOrderRequest, PlaceOrderRequest,
+        AxPreviewAggressiveLimitOrderResponse, AxRiskSnapshotResponse, AxTicker, AxTickersResponse,
+        AxTransactionsResponse, AxWhoAmI, BatchCancelOrdersRequest, CancelAllOrdersRequest,
+        CancelOrderRequest, PlaceOrderRequest, PreviewAggressiveLimitOrderRequest,
     },
     parse::{
         parse_account_state, parse_bar, parse_fill_report, parse_order_status_report,
@@ -476,7 +477,7 @@ impl AxRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if the request fails or the response cannot be parsed.
-    pub async fn get_ticker(&self, symbol: &str) -> Result<AxTicker, AxHttpError> {
+    pub async fn get_ticker(&self, symbol: Ustr) -> Result<AxTicker, AxHttpError> {
         let params = GetTickerParams::new(symbol);
         self.send_request::<AxTicker, _>(Method::GET, "/ticker", Some(&params), None, true)
             .await
@@ -490,7 +491,7 @@ impl AxRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if the request fails or the response cannot be parsed.
-    pub async fn get_instrument(&self, symbol: &str) -> Result<AxInstrument, AxHttpError> {
+    pub async fn get_instrument(&self, symbol: Ustr) -> Result<AxInstrument, AxHttpError> {
         let params = GetInstrumentParams::new(symbol);
         self.send_request::<AxInstrument, _>(Method::GET, "/instrument", Some(&params), None, false)
             .await
@@ -726,7 +727,7 @@ impl AxRawHttpClient {
     /// Returns an error if the request fails or the response cannot be parsed.
     pub async fn get_candles(
         &self,
-        symbol: &str,
+        symbol: Ustr,
         start_timestamp_ns: i64,
         end_timestamp_ns: i64,
         candle_width: AxCandleWidth,
@@ -753,7 +754,7 @@ impl AxRawHttpClient {
     /// Returns an error if the request fails or the response cannot be parsed.
     pub async fn get_current_candle(
         &self,
-        symbol: &str,
+        symbol: Ustr,
         candle_width: AxCandleWidth,
     ) -> Result<AxCandle, AxHttpError> {
         let params = GetCandleParams::new(symbol, candle_width);
@@ -779,7 +780,7 @@ impl AxRawHttpClient {
     /// Returns an error if the request fails or the response cannot be parsed.
     pub async fn get_last_candle(
         &self,
-        symbol: &str,
+        symbol: Ustr,
         candle_width: AxCandleWidth,
     ) -> Result<AxCandle, AxHttpError> {
         let params = GetCandleParams::new(symbol, candle_width);
@@ -805,7 +806,7 @@ impl AxRawHttpClient {
     /// Returns an error if the request fails or the response cannot be parsed.
     pub async fn get_funding_rates(
         &self,
-        symbol: &str,
+        symbol: Ustr,
         start_timestamp_ns: i64,
         end_timestamp_ns: i64,
     ) -> Result<AxFundingRatesResponse, AxHttpError> {
@@ -834,6 +835,34 @@ impl AxRawHttpClient {
             "/risk-snapshot",
             None,
             None,
+            true,
+        )
+        .await
+    }
+
+    /// Previews an aggressive limit order to get the "take through" price.
+    ///
+    /// This endpoint calculates the price needed to sweep the order book for a given
+    /// quantity, which is used to simulate market orders on AX (which only supports
+    /// limit orders natively).
+    ///
+    /// # Endpoint
+    /// `POST /preview-aggressive-limit-order`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn preview_aggressive_limit_order(
+        &self,
+        request: &PreviewAggressiveLimitOrderRequest,
+    ) -> Result<AxPreviewAggressiveLimitOrderResponse, AxHttpError> {
+        let body = serde_json::to_vec(request)
+            .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
+        self.send_request::<AxPreviewAggressiveLimitOrderResponse, ()>(
+            Method::POST,
+            "/preview-aggressive-limit-order",
+            None,
+            Some(body),
             true,
         )
         .await
@@ -1149,7 +1178,7 @@ impl AxHttpClient {
     /// Returns an error if the HTTP request fails or instrument parsing fails.
     pub async fn request_instrument(
         &self,
-        symbol: &str,
+        symbol: Ustr,
         maker_fee: Option<Decimal>,
         taker_fee: Option<Decimal>,
     ) -> anyhow::Result<InstrumentAny> {
@@ -1173,7 +1202,7 @@ impl AxHttpClient {
     /// Returns an error if the HTTP request fails.
     pub async fn request_funding_rates(
         &self,
-        symbol: &str,
+        symbol: Ustr,
         start_timestamp_ns: i64,
         end_timestamp_ns: i64,
     ) -> Result<AxFundingRatesResponse, AxHttpError> {
@@ -1194,14 +1223,13 @@ impl AxHttpClient {
     /// - Bar parsing fails.
     pub async fn request_bars(
         &self,
-        symbol: &str,
+        symbol: Ustr,
         start_timestamp_ns: i64,
         end_timestamp_ns: i64,
         width: AxCandleWidth,
     ) -> anyhow::Result<Vec<Bar>> {
-        let symbol_ustr = ustr::Ustr::from(symbol);
         let instrument = self
-            .get_instrument(&symbol_ustr)
+            .get_instrument(&symbol)
             .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not found in cache"))?;
 
         let resp = self

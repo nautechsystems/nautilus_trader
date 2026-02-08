@@ -617,7 +617,7 @@ impl AxOrdersWebSocketClient {
         let order = AxWsPlaceOrder {
             rid: request_id,
             t: "p".to_string(),
-            s: symbol.to_string(),
+            s: symbol,
             d: ax_side,
             q: qty_contracts,
             p: ax_price,

@@ -659,6 +659,9 @@ pub enum AxOrderWsMessageType {
 pub enum AxCancelReason {
     /// User requested cancellation.
     UserRequested,
+    /// Unrecognized or empty reason from the server.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Reason for cancel rejection.
@@ -688,6 +691,9 @@ pub enum AxCancelReason {
 pub enum AxCancelRejectionReason {
     /// Order not found or already canceled.
     OrderNotFound,
+    /// Unrecognized reason from the server.
+    #[serde(other)]
+    Unknown,
 }
 
 #[cfg(test)]

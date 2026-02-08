@@ -22,11 +22,13 @@ WebSocket clients exposed via PyO3 for performance.
 """
 
 import asyncio
-from decimal import Decimal
 from typing import Any
 
 from nautilus_trader.adapters.architect_ax.config import AxExecClientConfig
+from nautilus_trader.adapters.architect_ax.constants import AX_SUPPORTED_ORDER_TYPES
 from nautilus_trader.adapters.architect_ax.constants import AX_VENUE
+from nautilus_trader.adapters.architect_ax.constants import AX_WS_ORDERS_PRODUCTION_URL
+from nautilus_trader.adapters.architect_ax.constants import AX_WS_ORDERS_SANDBOX_URL
 from nautilus_trader.adapters.architect_ax.providers import AxInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
@@ -51,7 +53,6 @@ from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
-from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.events import AccountState
@@ -69,11 +70,6 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.orders import Order
-
-
-# WebSocket URLs for orders
-AX_WS_ORDERS_SANDBOX_URL = "wss://gateway.sandbox.architect.exchange/orders/ws"
-AX_WS_ORDERS_PRODUCTION_URL = "wss://gateway.architect.exchange/orders/ws"
 
 
 class AxExecutionClient(LiveExecutionClient):
@@ -227,18 +223,41 @@ class AxExecutionClient(LiveExecutionClient):
             )
             return
 
+        if order.order_type not in AX_SUPPORTED_ORDER_TYPES:
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=f"Unsupported order type: {order.order_type.name}. "
+                "AX supports MARKET, LIMIT and STOP_LIMIT.",
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
         pyo3_price = None
         if order.has_price:
             pyo3_price = nautilus_pyo3.Price.from_str(str(order.price))
         elif order.order_type == OrderType.MARKET:
-            # AX does not support native market orders - need aggressive price
-            pyo3_price = self._calculate_market_order_price(order)
+            # AX does not support native market orders, use preview endpoint
+            # to get the take-through price for an aggressive IOC limit order
+            try:
+                pyo3_price = await self._get_market_order_price(order)
+            except Exception as e:
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=f"Market order preview failed: {e}",
+                    ts_event=self._clock.timestamp_ns(),
+                )
+                return
+
             if pyo3_price is None:
                 self.generate_order_denied(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
-                    reason="No quote available for market order price calculation",
+                    reason="No liquidity available for market order",
                     ts_event=self._clock.timestamp_ns(),
                 )
                 return
@@ -287,28 +306,24 @@ class AxExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
-    def _calculate_market_order_price(self, order: Order) -> nautilus_pyo3.Price | None:
-        """
-        Calculate aggressive price for market order simulation.
-        """
-        quote = self._cache.quote_tick(order.instrument_id)
-        if quote is None:
-            return None
+    async def _get_market_order_price(self, order: Order) -> nautilus_pyo3.Price | None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
+        pyo3_quantity = nautilus_pyo3.Quantity.from_str(str(order.quantity))
+        pyo3_side = order_side_to_pyo3(order.side)
 
-        instrument = self._cache.instrument(order.instrument_id)
-        if instrument is None:
-            return None
-
-        MARKET_ORDER_BUFFER = Decimal("0.01")
-
-        if order.side == OrderSide.BUY:
-            aggressive_price = quote.ask_price.as_decimal() * (1 + MARKET_ORDER_BUFFER)
-        else:
-            aggressive_price = quote.bid_price.as_decimal() * (1 - MARKET_ORDER_BUFFER)
-
-        return nautilus_pyo3.Price.from_str(
-            str(round(aggressive_price, instrument.price_precision)),
+        price = await self._http_client.preview_aggressive_limit_order(
+            instrument_id=pyo3_instrument_id,
+            quantity=pyo3_quantity,
+            side=pyo3_side,
         )
+
+        if price is None:
+            return None
+
+        self._log.info(
+            f"Market order take-through price: {price} for {order.instrument_id}",
+        )
+        return price
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
         self._log.warning("Order list submission not yet implemented for AX Exchange")
@@ -514,6 +529,7 @@ class AxExecutionClient(LiveExecutionClient):
             client_order_id=event.client_order_id,
             reason=event.reason,
             ts_event=event.ts_event,
+            due_post_only=event.due_post_only,
         )
 
     def _handle_order_cancel_rejected(self, msg: nautilus_pyo3.OrderCancelRejected) -> None:

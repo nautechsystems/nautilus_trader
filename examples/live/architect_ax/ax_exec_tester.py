@@ -40,7 +40,7 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # Configuration
 symbol = "XAU-PERP"
 instrument_id = InstrumentId.from_str(f"{symbol}.{AX}")
-order_qty = Decimal(1000)
+order_qty = Decimal(10)
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -90,12 +90,17 @@ node = TradingNode(config=config_node)
 config_tester = ExecTesterConfig(
     instrument_id=instrument_id,
     external_order_claims=[instrument_id],
-    enable_limit_buys=True,
-    enable_limit_sells=True,
+    # enable_limit_buys=False,
+    # enable_limit_sells=False,
+    # enable_stop_buys=True,
+    # enable_stop_sells=True,
     order_qty=order_qty,
     open_position_on_start_qty=order_qty,
-    tob_offset_ticks=10,
+    # stop_order_type=OrderType.STOP_LIMIT,
+    # tob_offset_ticks=0,
     use_post_only=True,
+    # manage_stop=True,
+    # test_reject_post_only=True,
     log_data=False,
     dry_run=False,
 )

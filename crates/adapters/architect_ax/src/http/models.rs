@@ -688,7 +688,7 @@ pub struct PlaceOrderRequest {
     /// Order quantity in contracts.
     pub q: u64,
     /// Order symbol.
-    pub s: String,
+    pub s: Ustr,
     /// Time in force.
     pub tif: AxTimeInForce,
     /// Optional order tag (max 10 alphanumeric characters).
@@ -712,7 +712,7 @@ impl PlaceOrderRequest {
         side: AxOrderSide,
         price: Decimal,
         quantity: u64,
-        symbol: impl Into<String>,
+        symbol: Ustr,
         time_in_force: AxTimeInForce,
         post_only: bool,
     ) -> Self {
@@ -721,7 +721,7 @@ impl PlaceOrderRequest {
             p: price,
             po: post_only,
             q: quantity,
-            s: symbol.into(),
+            s: symbol,
             tif: time_in_force,
             tag: None,
             order_type: None,
@@ -736,7 +736,7 @@ impl PlaceOrderRequest {
         limit_price: Decimal,
         trigger_price: Decimal,
         quantity: u64,
-        symbol: impl Into<String>,
+        symbol: Ustr,
         time_in_force: AxTimeInForce,
     ) -> Self {
         Self {
@@ -744,7 +744,7 @@ impl PlaceOrderRequest {
             p: limit_price,
             po: false,
             q: quantity,
-            s: symbol.into(),
+            s: symbol,
             tif: time_in_force,
             tag: None,
             order_type: Some(AxOrderType::StopLossLimit),
@@ -772,6 +772,50 @@ impl PlaceOrderRequest {
         self.trigger_price = Some(trigger_price);
         self
     }
+}
+
+/// Request body for `POST /preview-aggressive-limit-order`.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/marketdata/preview-aggressive-limit-order>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PreviewAggressiveLimitOrderRequest {
+    /// Trading symbol.
+    pub symbol: Ustr,
+    /// Order quantity in contracts.
+    pub quantity: u64,
+    /// Order side: "B" (buy) or "S" (sell).
+    pub side: AxOrderSide,
+}
+
+impl PreviewAggressiveLimitOrderRequest {
+    /// Creates a new [`PreviewAggressiveLimitOrderRequest`].
+    #[must_use]
+    pub fn new(symbol: Ustr, quantity: u64, side: AxOrderSide) -> Self {
+        Self {
+            symbol,
+            quantity,
+            side,
+        }
+    }
+}
+
+/// Response payload returned by `POST /preview-aggressive-limit-order`.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/marketdata/preview-aggressive-limit-order>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxPreviewAggressiveLimitOrderResponse {
+    /// Quantity that would be filled at the aggressive price.
+    pub filled_quantity: u64,
+    /// Quantity that cannot be filled (insufficient book depth).
+    pub remaining_quantity: u64,
+    /// The aggressive limit price ("take through" price), or None if no liquidity.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub limit_price: Option<Decimal>,
+    /// Volume-weighted average price of expected fills.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub vwap: Option<Decimal>,
 }
 
 /// Request body for `POST /cancel_order`.
@@ -802,10 +846,10 @@ impl CancelOrderRequest {
 pub struct CancelAllOrdersRequest {
     /// Optional symbol filter - only cancel orders for this symbol.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub symbol: Option<String>,
+    pub symbol: Option<Ustr>,
     /// Optional execution venue filter.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub execution_venue: Option<String>,
+    pub execution_venue: Option<Ustr>,
 }
 
 impl CancelAllOrdersRequest {
@@ -817,15 +861,15 @@ impl CancelAllOrdersRequest {
 
     /// Sets the symbol filter.
     #[must_use]
-    pub fn with_symbol(mut self, symbol: impl Into<String>) -> Self {
-        self.symbol = Some(symbol.into());
+    pub fn with_symbol(mut self, symbol: Ustr) -> Self {
+        self.symbol = Some(symbol);
         self
     }
 
     /// Sets the execution venue filter.
     #[must_use]
-    pub fn with_venue(mut self, venue: impl Into<String>) -> Self {
-        self.execution_venue = Some(venue.into());
+    pub fn with_venue(mut self, venue: Ustr) -> Self {
+        self.execution_venue = Some(venue);
         self
     }
 }

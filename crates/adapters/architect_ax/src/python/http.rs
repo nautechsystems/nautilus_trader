@@ -17,13 +17,18 @@
 
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
-    identifiers::{AccountId, ClientOrderId},
+    enums::OrderSide,
+    identifiers::{AccountId, ClientOrderId, InstrumentId},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
+    types::{Price, Quantity},
 };
 use pyo3::{IntoPyObjectExt, prelude::*, types::PyList};
 use rust_decimal::Decimal;
 
-use crate::http::{client::AxHttpClient, error::AxHttpError};
+use crate::{
+    common::{enums::AxOrderSide, parse::quantity_to_contracts},
+    http::{client::AxHttpClient, error::AxHttpError, models::PreviewAggressiveLimitOrderRequest},
+};
 
 #[pymethods]
 impl AxHttpClient {
@@ -117,8 +122,6 @@ impl AxHttpClient {
         self.cancel_all_requests();
     }
 
-    /// Caches a single instrument for use in parsing responses.
-    ///
     /// # Errors
     ///
     /// Returns an error if the instrument cannot be converted from Python.
@@ -128,9 +131,6 @@ impl AxHttpClient {
         Ok(())
     }
 
-    /// Authenticates with Ax and stores the session token for subsequent requests.
-    ///
-    /// Returns the session token string.
     #[pyo3(name = "authenticate")]
     #[pyo3(signature = (api_key, api_secret, expiration_seconds=86400))]
     fn py_authenticate<'py>(
@@ -150,13 +150,6 @@ impl AxHttpClient {
         })
     }
 
-    /// Authenticates using stored credentials or environment variables.
-    ///
-    /// Credentials are resolved in the following order:
-    /// 1. Stored credentials (from `with_credentials` constructor)
-    /// 2. Environment variables (`AX_API_KEY` and `AX_API_SECRET`)
-    ///
-    /// Returns the session token string.
     #[pyo3(name = "authenticate_auto")]
     #[pyo3(signature = (expiration_seconds=86400))]
     fn py_authenticate_auto<'py>(
@@ -174,9 +167,6 @@ impl AxHttpClient {
         })
     }
 
-    /// Request all instruments from Ax.
-    ///
-    /// Returns a list of instrument definitions.
     #[pyo3(name = "request_instruments")]
     #[pyo3(signature = (maker_fee=None, taker_fee=None))]
     fn py_request_instruments<'py>(
@@ -207,9 +197,6 @@ impl AxHttpClient {
         })
     }
 
-    /// Request account state from Ax.
-    ///
-    /// Returns an `AccountState` with current balances and margins.
     #[pyo3(name = "request_account_state")]
     fn py_request_account_state<'py>(
         &self,
@@ -228,9 +215,6 @@ impl AxHttpClient {
         })
     }
 
-    /// Request order status reports from Ax.
-    ///
-    /// Returns a list of `OrderStatusReport` for all open orders.
     #[pyo3(name = "request_order_status_reports")]
     fn py_request_order_status_reports<'py>(
         &self,
@@ -256,9 +240,6 @@ impl AxHttpClient {
         })
     }
 
-    /// Request fill reports from Ax.
-    ///
-    /// Returns a list of `FillReport` for recent fills.
     #[pyo3(name = "request_fill_reports")]
     fn py_request_fill_reports<'py>(
         &self,
@@ -284,9 +265,6 @@ impl AxHttpClient {
         })
     }
 
-    /// Request position reports from Ax.
-    ///
-    /// Returns a list of `PositionStatusReport` for current positions.
     #[pyo3(name = "request_position_reports")]
     fn py_request_position_reports<'py>(
         &self,
@@ -309,6 +287,36 @@ impl AxHttpClient {
                 let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
                 Ok(pylist)
             })
+        })
+    }
+
+    #[pyo3(name = "preview_aggressive_limit_order")]
+    fn py_preview_aggressive_limit_order<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        quantity: Quantity,
+        side: OrderSide,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let symbol = instrument_id.symbol.inner();
+        let ax_side = AxOrderSide::try_from(side).map_err(to_pyvalue_err)?;
+        let qty_contracts = quantity_to_contracts(quantity).map_err(to_pyvalue_err)?;
+
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let request = PreviewAggressiveLimitOrderRequest::new(symbol, qty_contracts, ax_side);
+            let response = client
+                .inner
+                .preview_aggressive_limit_order(&request)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            let price = response
+                .limit_price
+                .map(|p| Price::from(p.to_string().as_str()));
+
+            Python::attach(|py| price.into_py_any(py))
         })
     }
 }

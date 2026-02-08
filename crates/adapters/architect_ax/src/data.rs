@@ -626,14 +626,14 @@ impl DataClient for AxDataClient {
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let instrument_id = request.instrument_id;
-        let symbol = instrument_id.symbol.to_string();
+        let symbol = instrument_id.symbol.inner();
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
         let params = request.params;
         let clock = self.clock;
 
         get_runtime().spawn(async move {
-            match http.request_instrument(&symbol, None, None).await {
+            match http.request_instrument(symbol, None, None).await {
                 Ok(instrument) => {
                     log::debug!("Fetched instrument {symbol} from Ax");
                     http.cache_instrument(instrument.clone());
@@ -668,7 +668,7 @@ impl DataClient for AxDataClient {
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let bar_type = request.bar_type;
-        let symbol = bar_type.instrument_id().symbol.to_string();
+        let symbol = bar_type.instrument_id().symbol.inner();
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
         let params = request.params;
@@ -685,7 +685,7 @@ impl DataClient for AxDataClient {
             let start_ns = start_nanos.map_or(0, |n| n.as_i64());
             let end_ns = end_nanos.map_or(clock.get_time_ns().as_i64(), |n| n.as_i64());
 
-            match http.request_bars(&symbol, start_ns, end_ns, width).await {
+            match http.request_bars(symbol, start_ns, end_ns, width).await {
                 Ok(bars) => {
                     log::debug!("Fetched {} bars for {symbol}", bars.len());
 

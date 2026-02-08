@@ -5751,6 +5751,12 @@ class AxHttpClient:
         self,
         account_id: AccountId,
     ) -> list[PositionStatusReport]: ...
+    async def preview_aggressive_limit_order(
+        self,
+        instrument_id: InstrumentId,
+        quantity: Quantity,
+        side: OrderSide,
+    ) -> Price | None: ...
 
 class AxMdWebSocketClient:
     def __init__(
