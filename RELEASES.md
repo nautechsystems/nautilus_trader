@@ -47,6 +47,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 ### Security
 - Upgraded `arc-swap` to 1.8.1 fixing potential use-after-free in debt mechanism (memory ordering fix)
 - Fixed `CVec::empty()` to use dangling pointer instead of null, avoiding undefined behavior in `Vec::from_raw_parts`
+- Fixed credential and auth header leaks in trace logging
 - Masked Binance listen keys in execution client logs
 - Refactored supply chain security checks and update dependencies
 - Improved TLS cert loading and socket suffix validation
