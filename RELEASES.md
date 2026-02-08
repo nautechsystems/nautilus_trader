@@ -174,6 +174,8 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Refined `OptionExerciseModule` (#3423), thanks @faysou
 - Refined instrument `is_spread()` method (#3434), thanks @faysou
 - Refined `OrderBookDeltas.batch` (#3437), thanks @faysou
+- Optimized `Price::from_decimal` with integer arithmetic
+- Optimized `Quantity::from_decimal` with integer arithmetic
 - Optimized `Money::from_decimal` with integer arithmetic
 - Optimized message bus publish with thread-local `SmallVec` buffers in Rust
 - Optimized message bus pattern matching with greedy algorithm

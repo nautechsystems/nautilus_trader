@@ -108,3 +108,13 @@ harness = false
 name = "money_criterion"
 path = "benches/money_criterion.rs"
 harness = false
+
+[[bench]]
+name = "price_criterion"
+path = "benches/price_criterion.rs"
+harness = false
+
+[[bench]]
+name = "quantity_criterion"
+path = "benches/quantity_criterion.rs"
+harness = false

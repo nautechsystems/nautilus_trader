@@ -745,6 +745,58 @@ fn test_symbol_is_composite(#[case] input: &str, #[case] expected: bool) {
 }
 ```
 
+#### Property-based testing
+
+Use the `proptest` crate for property-based tests. Place these in a separate
+`property_tests` module (not inside `mod tests`) to keep deterministic unit
+tests separate from randomized property tests:
+
+```rust
+#[cfg(test)]
+mod property_tests {
+    use proptest::prelude::*;
+    use rstest::rstest;
+
+    use super::*;
+
+    // Define strategies for generating test inputs
+    fn my_strategy() -> impl Strategy<Value = MyType> {
+        prop_oneof![
+            Just(MyType::VariantA),
+            Just(MyType::VariantB),
+        ]
+    }
+
+    fn value_strategy() -> impl Strategy<Value = f64> {
+        prop_oneof![
+            -1000.0..1000.0,
+            Just(0.0),
+        ]
+    }
+
+    // Group all property tests inside the proptest! macro
+    proptest! {
+        #[rstest]
+        fn prop_construction_roundtrip(
+            value in value_strategy(),
+            variant in my_strategy()
+        ) {
+            // Test invariants that should hold for all generated inputs
+        }
+    }
+}
+```
+
+Conventions:
+
+- Name the module `property_tests`, separate from `mod tests`.
+- Import `proptest::prelude::*` and `rstest::rstest`.
+- Define strategy functions returning `impl Strategy<Value = T>`.
+- Combine value ranges with edge cases using `prop_oneof!`.
+- Filter invalid combinations with `prop_filter_map`.
+- Prefix test names with `prop_`.
+- Mark each test inside `proptest!` with `#[rstest]`.
+
 #### Test naming
 
 Use descriptive test names that explain the scenario:

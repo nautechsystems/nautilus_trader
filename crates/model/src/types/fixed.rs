@@ -571,6 +571,53 @@ pub fn bankers_round(mantissa: i128, excess: u32) -> i128 {
     }
 }
 
+/// Converts a mantissa/exponent pair to a raw fixed-point `i128` value at the given precision.
+///
+/// The value is `mantissa * 10^exponent`. Uses pure integer arithmetic with banker's rounding
+/// when fractional digits exceed `precision`. The result is scaled to [`FIXED_PRECISION`].
+///
+/// This is the shared core for `from_decimal`, `from_decimal_dp`, and `from_mantissa_exponent`
+/// across Money, Price, and Quantity.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `precision` exceeds the maximum allowed by [`check_fixed_precision`].
+/// - The scale factor exceeds `10^38` (i128 range).
+/// - Overflow occurs during multiplication.
+pub fn mantissa_exponent_to_fixed_i128(
+    mantissa: i128,
+    exponent: i8,
+    precision: u8,
+) -> anyhow::Result<i128> {
+    check_fixed_precision(precision)?;
+
+    let precision_i16 = precision as i16;
+    let target_scale = (FIXED_PRECISION as i16).max(precision_i16);
+    let frac_digits = -(exponent as i16);
+
+    let mantissa = if frac_digits > precision_i16 {
+        let excess = (frac_digits - precision_i16) as u32;
+        bankers_round(mantissa, excess)
+    } else {
+        mantissa
+    };
+
+    let scale_after_rounding = frac_digits.min(precision_i16);
+    let scale_exp = target_scale - scale_after_rounding;
+    anyhow::ensure!(
+        scale_exp <= 38,
+        "Exponent {exponent} produces scale factor 10^{scale_exp} which exceeds i128 range"
+    );
+
+    if scale_exp >= 0 {
+        mantissa.checked_mul(10i128.pow(scale_exp as u32))
+    } else {
+        Some(mantissa / 10i128.pow((-scale_exp) as u32))
+    }
+    .ok_or_else(|| anyhow::anyhow!("Overflow when scaling mantissa to fixed precision"))
+}
+
 /// Converts an `f64` value to a raw fixed-point `i64` representation with a specified precision.
 ///
 /// # Precision and Rounding
