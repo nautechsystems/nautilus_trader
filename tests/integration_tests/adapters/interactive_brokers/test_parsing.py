@@ -88,6 +88,7 @@ simplified_symbology_params = [
     ),
     (IBContract(secType="CRYPTO", exchange="PAXOS", localSymbol="BTC.USD"), "BTC/USD.PAXOS"),
     (IBContract(secType="IND", exchange="CBOE", localSymbol="SPX"), "^SPX.CBOE"),
+    (IBContract(secType="IND", exchange="EUREX", localSymbol="ESTX50"), "^ESTX50.EUREX"),
     (IBContract(secType="IND", exchange="ASX", localSymbol="XJO"), "^XJO.ASX"),
 ]
 
