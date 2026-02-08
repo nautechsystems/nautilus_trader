@@ -1212,6 +1212,12 @@ def instrument_id_to_ib_contract_simplified_symbology(  # noqa: C901 (too comple
             exchange=exchange,
             localSymbol=f"{m['symbol'].ljust(6)}{m['expiry']}{m['right']}{m['strike']}{m['decimal']}",
         )
+    elif str(instrument_id.symbol).startswith("^"):
+        return IBContract(
+            secType="IND",
+            exchange=exchange,
+            localSymbol=instrument_id.symbol.value[1:],
+        )
     elif exchange in VENUES_FUT:
         if m := RE_FUT_ORIGINAL.match(instrument_id.symbol.value):
             return IBContract(
@@ -1252,12 +1258,6 @@ def instrument_id_to_ib_contract_simplified_symbology(  # noqa: C901 (too comple
             secType="CMDTY",
             exchange="SMART",
             symbol=f"{instrument_id.symbol.value}".replace("-", " "),
-        )
-    elif str(instrument_id.symbol).startswith("^"):
-        return IBContract(
-            secType="IND",
-            exchange=exchange,
-            localSymbol=instrument_id.symbol.value[1:],
         )
 
     # Default to Stock
