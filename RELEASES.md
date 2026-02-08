@@ -18,8 +18,9 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Added `request_funding_rates` and `FundingRateUpdate` Arrow serialization (#3467), thanks @dxwil
 - Added `optimize_file_loading` as BacktestDataConfig parameter (#3518), thanks @faysou
 - Added `bulk_read_batch_size` option to `CacheConfig` for batched Redis bulk reads (#3535), thanks @shzhng
+- Added Ichimoku Cloud indicator (#3552), thanks @faysou
 - Added Betfair RCM parsing for TPD race data
-- Added `BetfairOrderVoided` custom data type for VAR voids
+- Added Betfair `BetfairOrderVoided` custom data type for VAR voids
 - Added BitMEX trailing stop support
 - Added Bybit mark price subscriptions support
 - Added Bybit index price subscriptions support
@@ -119,6 +120,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed Interactive Brokers position reconciliation double-counting partial fills from open orders (#3476), thanks @shzhng
 - Fixed Interactive Brokers future chain building for index instruments (#3483), thanks @davidsblom
 - Fixed Interactive Brokers options missing `^` prefix on index underlying symbols with simplified symbology (#3540), thanks @shzhng
+- Fixed Interactive Brokers contract for ESTX50 IND contract (#3556), thanks @davidsblom
 - Fixed Kraken spot instrument fee/margin parsing where parameters were incorrectly swapped
 - Fixed Kraken spot XBT to BTC symbol normalization (#3509), thanks for reporting @chester0
 - Fixed Polymarket order state race condition where `PLACEMENT` events could arrive late

@@ -582,6 +582,10 @@ criteria = "safe-to-deploy"
 version = "1.1.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.chacha20]]
+version = "0.10.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.chrono]]
 version = "0.4.43"
 criteria = "safe-to-deploy"
@@ -696,6 +700,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.cpufeatures]]
 version = "0.2.17"
+criteria = "safe-to-deploy"
+
+[[exemptions.cpufeatures]]
+version = "0.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.crc]]
@@ -1156,6 +1164,10 @@ criteria = "safe-to-deploy"
 version = "0.3.4"
 criteria = "safe-to-deploy"
 
+[[exemptions.getrandom]]
+version = "0.4.1"
+criteria = "safe-to-deploy"
+
 [[exemptions.group]]
 version = "0.13.0"
 criteria = "safe-to-deploy"
@@ -1250,6 +1262,10 @@ criteria = "safe-to-run"
 
 [[exemptions.iana-time-zone]]
 version = "0.1.65"
+criteria = "safe-to-deploy"
+
+[[exemptions.id-arena]]
+version = "2.3.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.impl-codec]]
@@ -1873,6 +1889,14 @@ criteria = "safe-to-deploy"
 version = "0.7.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.rand]]
+version = "0.10.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.rand_core]]
+version = "0.10.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.rand_xorshift]]
 version = "0.4.0"
 criteria = "safe-to-deploy"
@@ -2054,7 +2078,7 @@ version = "0.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.ryu]]
-version = "1.0.22"
+version = "1.0.23"
 criteria = "safe-to-deploy"
 
 [[exemptions.same-file]]
@@ -2494,7 +2518,7 @@ version = "0.9.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.unicode-ident]]
-version = "1.0.22"
+version = "1.0.23"
 criteria = "safe-to-deploy"
 
 [[exemptions.unicode-properties]]
@@ -2874,7 +2898,7 @@ version = "0.6.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.zmij]]
-version = "1.0.19"
+version = "1.0.20"
 criteria = "safe-to-deploy"
 
 [[exemptions.zstd]]

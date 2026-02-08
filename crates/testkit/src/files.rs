@@ -25,7 +25,7 @@ use std::{
 
 use aws_lc_rs::digest::{self, Context};
 use nautilus_network::retry::RetryConfig;
-use rand::{Rng, rng};
+use rand::{RngExt, rng};
 use reqwest::blocking::Client;
 use serde_json::Value;
 
