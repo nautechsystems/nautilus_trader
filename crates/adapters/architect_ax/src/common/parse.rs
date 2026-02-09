@@ -23,7 +23,6 @@ pub use nautilus_core::serialization::{
 };
 use nautilus_model::{
     data::BarSpecification,
-    enums::BarAggregation,
     identifiers::ClientOrderId,
     types::{Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw},
 };
@@ -42,28 +41,7 @@ const HASH_SEED_3: u64 = 0x14057b7ef767814f;
 ///
 /// Returns an error if the bar specification is not supported by Ax.
 pub fn map_bar_spec_to_candle_width(spec: &BarSpecification) -> anyhow::Result<AxCandleWidth> {
-    match spec.step.get() {
-        1 => match spec.aggregation {
-            BarAggregation::Second => Ok(AxCandleWidth::Seconds1),
-            BarAggregation::Minute => Ok(AxCandleWidth::Minutes1),
-            BarAggregation::Hour => Ok(AxCandleWidth::Hours1),
-            BarAggregation::Day => Ok(AxCandleWidth::Days1),
-            _ => anyhow::bail!("Unsupported bar aggregation: {:?}", spec.aggregation),
-        },
-        5 => match spec.aggregation {
-            BarAggregation::Second => Ok(AxCandleWidth::Seconds5),
-            BarAggregation::Minute => Ok(AxCandleWidth::Minutes5),
-            _ => anyhow::bail!(
-                "Unsupported bar step 5 with aggregation {:?}",
-                spec.aggregation
-            ),
-        },
-        15 if spec.aggregation == BarAggregation::Minute => Ok(AxCandleWidth::Minutes15),
-        step => anyhow::bail!(
-            "Unsupported bar step: {step} with aggregation {:?}",
-            spec.aggregation
-        ),
-    }
+    AxCandleWidth::try_from(spec)
 }
 
 /// Converts a [`Quantity`] to an i64 contract count for AX orders.
@@ -88,6 +66,7 @@ pub fn quantity_to_contracts(quantity: Quantity) -> anyhow::Result<u64> {
         );
     }
 
+    #[allow(clippy::unnecessary_cast)]
     let contracts = (raw / scale) as u64;
     if contracts == 0 {
         anyhow::bail!("Order quantity must be at least 1 contract");
@@ -116,7 +95,11 @@ pub fn cid_to_client_order_id(cid: u64) -> ClientOrderId {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::{enums::PriceType, identifiers::ClientOrderId, types::Quantity};
+    use nautilus_model::{
+        enums::{BarAggregation, PriceType},
+        identifiers::ClientOrderId,
+        types::Quantity,
+    };
     use rstest::rstest;
 
     use super::*;

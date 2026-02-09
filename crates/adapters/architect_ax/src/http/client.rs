@@ -25,6 +25,7 @@ use std::{
     },
 };
 
+use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_core::{
     consts::NAUTILUS_USER_AGENT, nanos::UnixNanos, time::get_atomic_clock_realtime,
@@ -1195,33 +1196,6 @@ impl AxHttpClient {
         parse_perp_instrument(&resp, maker_fee, taker_fee, ts_init, ts_init)
     }
 
-    /// Requests funding rates from Ax and parses them to Nautilus types.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the HTTP request fails.
-    pub async fn request_funding_rates(
-        &self,
-        instrument_id: InstrumentId,
-        start_timestamp_ns: i64,
-        end_timestamp_ns: i64,
-    ) -> Result<Vec<FundingRateUpdate>, AxHttpError> {
-        let symbol = instrument_id.symbol.inner();
-        let response = self
-            .inner
-            .get_funding_rates(symbol, start_timestamp_ns, end_timestamp_ns)
-            .await?;
-
-        let ts_init = self.generate_ts_init();
-        let funding_rates = response
-            .funding_rates
-            .iter()
-            .map(|r| parse_funding_rate(r, instrument_id, ts_init))
-            .collect();
-
-        Ok(funding_rates)
-    }
-
     /// Requests historical bars from Ax and parses them to Nautilus Bar types.
     ///
     /// Requires the instrument to be cached (call `request_instruments` first).
@@ -1235,17 +1209,21 @@ impl AxHttpClient {
     pub async fn request_bars(
         &self,
         symbol: Ustr,
-        start_timestamp_ns: i64,
-        end_timestamp_ns: i64,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         width: AxCandleWidth,
     ) -> anyhow::Result<Vec<Bar>> {
         let instrument = self
             .get_instrument(&symbol)
             .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not found in cache"))?;
 
+        let start_ns = start.and_then(|dt| dt.timestamp_nanos_opt()).unwrap_or(0);
+        let end_ns = end
+            .and_then(|dt| dt.timestamp_nanos_opt())
+            .unwrap_or_else(|| self.generate_ts_init().as_i64());
         let resp = self
             .inner
-            .get_candles(symbol, start_timestamp_ns, end_timestamp_ns, width)
+            .get_candles(symbol, start_ns, end_ns, width)
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
@@ -1262,6 +1240,37 @@ impl AxHttpClient {
         }
 
         Ok(bars)
+    }
+
+    /// Requests funding rates from Ax and parses them to Nautilus types.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails.
+    pub async fn request_funding_rates(
+        &self,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+    ) -> Result<Vec<FundingRateUpdate>, AxHttpError> {
+        let symbol = instrument_id.symbol.inner();
+        let start_ns = start.and_then(|dt| dt.timestamp_nanos_opt()).unwrap_or(0);
+        let end_ns = end
+            .and_then(|dt| dt.timestamp_nanos_opt())
+            .unwrap_or_else(|| self.generate_ts_init().as_i64());
+        let response = self
+            .inner
+            .get_funding_rates(symbol, start_ns, end_ns)
+            .await?;
+
+        let ts_init = self.generate_ts_init();
+        let funding_rates = response
+            .funding_rates
+            .iter()
+            .map(|r| parse_funding_rate(r, instrument_id, ts_init))
+            .collect();
+
+        Ok(funding_rates)
     }
 
     /// Requests account state from Ax and parses to a Nautilus [`AccountState`].

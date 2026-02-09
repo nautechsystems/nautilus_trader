@@ -67,7 +67,7 @@ async fn test_handler_parses_l1_to_quote_tick() {
 
     // Subscribe triggers mock server to send L1 book message
     client
-        .subscribe("BTCUSD-PERP", AxMarketDataLevel::Level1)
+        .subscribe_quotes("BTCUSD-PERP")
         .await
         .expect("Subscribe failed");
 
@@ -111,7 +111,7 @@ async fn test_handler_parses_trade_tick() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe("BTCUSD-PERP", AxMarketDataLevel::Level1)
+        .subscribe_trades("BTCUSD-PERP")
         .await
         .expect("Subscribe failed");
 
@@ -160,7 +160,7 @@ async fn test_handler_parses_l2_to_order_book_deltas() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe("BTCUSD-PERP", AxMarketDataLevel::Level2)
+        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level2)
         .await
         .expect("Subscribe failed");
 
@@ -239,7 +239,7 @@ async fn test_handler_ignores_unknown_symbol() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe("BTCUSD-PERP", AxMarketDataLevel::Level1)
+        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level1)
         .await
         .expect("Subscribe failed");
 

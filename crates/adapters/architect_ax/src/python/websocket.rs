@@ -19,7 +19,7 @@ use futures_util::StreamExt;
 use nautilus_common::live::get_runtime;
 use nautilus_core::python::{call_python, to_pyruntime_err};
 use nautilus_model::{
-    data::{Data, OrderBookDeltas_API},
+    data::{BarType, Data, OrderBookDeltas_API},
     enums::{OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
@@ -28,7 +28,7 @@ use nautilus_model::{
 use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
-    common::enums::AxMarketDataLevel,
+    common::enums::{AxCandleWidth, AxMarketDataLevel},
     websocket::{
         data::AxMdWebSocketClient,
         messages::{AxOrdersWsMessage, NautilusDataWsMessage, NautilusExecWsMessage},
@@ -145,29 +145,142 @@ impl AxMdWebSocketClient {
         })
     }
 
-    #[pyo3(name = "subscribe")]
-    fn py_subscribe<'py>(
+    #[pyo3(name = "subscribe_book_deltas")]
+    fn py_subscribe_book_deltas<'py>(
         &self,
         py: Python<'py>,
-        symbol: String,
+        instrument_id: InstrumentId,
         level: AxMarketDataLevel,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+        let symbol = instrument_id.symbol.to_string();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .subscribe(&symbol, level)
+                .subscribe_book_deltas(&symbol, level)
                 .await
                 .map_err(to_pyruntime_err)
         })
     }
 
-    #[pyo3(name = "unsubscribe")]
-    fn py_unsubscribe<'py>(&self, py: Python<'py>, symbol: String) -> PyResult<Bound<'py, PyAny>> {
+    #[pyo3(name = "subscribe_quotes")]
+    fn py_subscribe_quotes<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+        let symbol = instrument_id.symbol.to_string();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client.unsubscribe(&symbol).await.map_err(to_pyruntime_err)
+            client
+                .subscribe_quotes(&symbol)
+                .await
+                .map_err(to_pyruntime_err)
+        })
+    }
+
+    #[pyo3(name = "subscribe_trades")]
+    fn py_subscribe_trades<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let symbol = instrument_id.symbol.to_string();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_trades(&symbol)
+                .await
+                .map_err(to_pyruntime_err)
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_book_deltas")]
+    fn py_unsubscribe_book_deltas<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let symbol = instrument_id.symbol.to_string();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_book_deltas(&symbol)
+                .await
+                .map_err(to_pyruntime_err)
+        })
+    }
+
+    #[pyo3(name = "subscribe_bars")]
+    fn py_subscribe_bars<'py>(
+        &self,
+        py: Python<'py>,
+        bar_type: BarType,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let symbol = bar_type.instrument_id().symbol.to_string();
+        let width = AxCandleWidth::try_from(&bar_type.spec()).map_err(to_pyruntime_err)?;
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_candles(&symbol, width)
+                .await
+                .map_err(to_pyruntime_err)
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_quotes")]
+    fn py_unsubscribe_quotes<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let symbol = instrument_id.symbol.to_string();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_quotes(&symbol)
+                .await
+                .map_err(to_pyruntime_err)
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_trades")]
+    fn py_unsubscribe_trades<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let symbol = instrument_id.symbol.to_string();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_trades(&symbol)
+                .await
+                .map_err(to_pyruntime_err)
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_bars")]
+    fn py_unsubscribe_bars<'py>(
+        &self,
+        py: Python<'py>,
+        bar_type: BarType,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let symbol = bar_type.instrument_id().symbol.to_string();
+        let width = AxCandleWidth::try_from(&bar_type.spec()).map_err(to_pyruntime_err)?;
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_candles(&symbol, width)
+                .await
+                .map_err(to_pyruntime_err)
         })
     }
 

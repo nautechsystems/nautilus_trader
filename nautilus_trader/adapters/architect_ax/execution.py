@@ -326,10 +326,27 @@ class AxExecutionClient(LiveExecutionClient):
         return price
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
-        self._log.warning("Order list submission not yet implemented for AX Exchange")
+        for order in command.order_list.orders:
+            submit_cmd = SubmitOrder(
+                trader_id=command.trader_id,
+                strategy_id=command.strategy_id,
+                order=order,
+                command_id=command.id,
+                ts_init=command.ts_init,
+                position_id=command.position_id,
+                client_id=command.client_id,
+            )
+            await self._submit_order(submit_cmd)
 
     async def _modify_order(self, command: ModifyOrder) -> None:
-        self._log.warning("Order modification not yet implemented for AX Exchange")
+        self.generate_order_modify_rejected(
+            strategy_id=command.strategy_id,
+            instrument_id=command.instrument_id,
+            client_order_id=command.client_order_id,
+            venue_order_id=command.venue_order_id,
+            reason="AX does not support order modification. Use cancel and resubmit instead.",
+            ts_event=self._clock.timestamp_ns(),
+        )
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         order: Order | None = self._cache.order(command.client_order_id)
@@ -399,7 +416,10 @@ class AxExecutionClient(LiveExecutionClient):
                 self._log.error(f"Failed to cancel order {order.client_order_id}: {e}")
 
     async def _query_account(self, command: QueryAccount) -> None:
-        self._log.warning("Account query not yet implemented for AX Exchange")
+        try:
+            await self._update_account_state()
+        except Exception as e:
+            self._log.error(f"Failed to query account state: {e}")
 
     def _handle_msg(self, msg: Any) -> None:
         if isinstance(msg, nautilus_pyo3.OrderAccepted):

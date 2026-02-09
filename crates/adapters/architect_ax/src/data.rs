@@ -24,9 +24,10 @@ use std::{
     time::Duration,
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 use anyhow::Context;
 use async_trait::async_trait;
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use dashmap::DashMap;
 use futures_util::StreamExt;
 use nautilus_common::{
@@ -93,7 +94,6 @@ pub struct AxDataClient {
     instruments: Arc<DashMap<Ustr, InstrumentAny>>,
     /// High-resolution clock for timestamps.
     clock: &'static AtomicTime,
-    subscribed_symbols: Arc<Mutex<AHashSet<String>>>,
     funding_rate_tasks: AHashMap<InstrumentId, JoinHandle<()>>,
     funding_rate_cache: Arc<Mutex<AHashMap<InstrumentId, FundingRateUpdate>>>,
 }
@@ -127,7 +127,6 @@ impl AxDataClient {
             data_sender,
             instruments,
             clock,
-            subscribed_symbols: Arc::new(Mutex::new(AHashSet::new())),
             funding_rate_tasks: AHashMap::new(),
             funding_rate_cache: Arc::new(Mutex::new(AHashMap::new())),
         })
@@ -230,33 +229,6 @@ impl AxDataClient {
                 log::error!("{context}: {e:?}");
             }
         });
-    }
-
-    fn spawn_subscribe<F>(&self, fut: F, symbol: String, context: &'static str)
-    where
-        F: Future<Output = anyhow::Result<()>> + Send + 'static,
-    {
-        let subscribed_symbols = Arc::clone(&self.subscribed_symbols);
-        get_runtime().spawn(async move {
-            if let Err(e) = fut.await {
-                log::error!("{context}: {e:?}");
-
-                // Rollback on failure to allow retry
-                if let Ok(mut guard) = subscribed_symbols.lock() {
-                    guard.remove(&symbol);
-                }
-            }
-        });
-    }
-
-    fn mark_symbol_subscribed(&self, symbol: &str) -> bool {
-        let mut guard = self.subscribed_symbols.lock().unwrap();
-        guard.insert(symbol.to_string())
-    }
-
-    fn mark_symbol_unsubscribed(&self, symbol: &str) -> bool {
-        let mut guard = self.subscribed_symbols.lock().unwrap();
-        guard.remove(symbol)
     }
 }
 
@@ -403,25 +375,16 @@ impl DataClient for AxDataClient {
 
     fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
         let symbol = cmd.instrument_id.symbol.to_string();
-
-        // Architect allows only one subscription per symbol
-        if !self.mark_symbol_subscribed(&symbol) {
-            log::debug!("Symbol {symbol} already subscribed, skipping book deltas subscription");
-            return Ok(());
-        }
-
         let level = AxMarketDataLevel::Level2;
         log::debug!("Subscribing to book deltas for {symbol} at {level:?}");
 
         let ws = self.ws_client.clone();
-        let symbol_clone = symbol.clone();
-        self.spawn_subscribe(
+        self.spawn_ws(
             async move {
-                ws.subscribe(&symbol_clone, level)
+                ws.subscribe_book_deltas(&symbol, level)
                     .await
                     .map_err(|e| anyhow::anyhow!(e))
             },
-            symbol,
             "subscribe book deltas",
         );
 
@@ -430,23 +393,15 @@ impl DataClient for AxDataClient {
 
     fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> anyhow::Result<()> {
         let symbol = cmd.instrument_id.symbol.to_string();
-
-        // Architect allows only one subscription per symbol
-        if !self.mark_symbol_subscribed(&symbol) {
-            log::debug!("Symbol {symbol} already subscribed, skipping quotes subscription");
-            return Ok(());
-        }
-
         log::debug!("Subscribing to quotes for {symbol}");
+
         let ws = self.ws_client.clone();
-        let symbol_clone = symbol.clone();
-        self.spawn_subscribe(
+        self.spawn_ws(
             async move {
-                ws.subscribe(&symbol_clone, AxMarketDataLevel::Level1)
+                ws.subscribe_quotes(&symbol)
                     .await
                     .map_err(|e| anyhow::anyhow!(e))
             },
-            symbol,
             "subscribe quotes",
         );
 
@@ -455,25 +410,15 @@ impl DataClient for AxDataClient {
 
     fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
         let symbol = cmd.instrument_id.symbol.to_string();
-
-        // Architect allows only one subscription per symbol
-        if !self.mark_symbol_subscribed(&symbol) {
-            log::debug!("Symbol {symbol} already subscribed, skipping trades subscription");
-            return Ok(());
-        }
-
         log::debug!("Subscribing to trades for {symbol}");
 
-        // Trades come with Level1 subscription
         let ws = self.ws_client.clone();
-        let symbol_clone = symbol.clone();
-        self.spawn_subscribe(
+        self.spawn_ws(
             async move {
-                ws.subscribe(&symbol_clone, AxMarketDataLevel::Level1)
+                ws.subscribe_trades(&symbol)
                     .await
                     .map_err(|e| anyhow::anyhow!(e))
             },
-            symbol,
             "subscribe trades",
         );
 
@@ -504,7 +449,7 @@ impl DataClient for AxDataClient {
         const POLL_INTERVAL_SECS: u64 = 900; // 15 minutes
 
         // Use 7-day lookback to capture latest rate across weekends/holidays
-        const LOOKBACK_NS: i64 = 7 * 24 * 60 * 60 * 1_000_000_000;
+        let lookback = ChronoDuration::days(7);
 
         let instrument_id = cmd.instrument_id;
 
@@ -518,9 +463,9 @@ impl DataClient for AxDataClient {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let symbol = instrument_id.symbol.inner();
-        let clock = self.clock;
         let cancel = self.cancellation_token.clone();
         let cache = Arc::clone(&self.funding_rate_cache);
+        let clock = self.clock;
 
         let handle = get_runtime().spawn(async move {
             // First tick fires immediately for initial emission
@@ -533,10 +478,10 @@ impl DataClient for AxDataClient {
                         break;
                     }
                     _ = interval.tick() => {
-                        let now_ns = clock.get_time_ns().as_i64();
-                        let start_ns = now_ns - LOOKBACK_NS;
+                        let now: DateTime<Utc> = clock.get_time_ns().into();
+                        let start = now - lookback;
 
-                        match http.request_funding_rates(instrument_id, start_ns, now_ns).await {
+                        match http.request_funding_rates(instrument_id, Some(start), Some(now)).await {
                             Ok(funding_rates) => {
                                 if funding_rates.is_empty() {
                                     log::warn!(
@@ -590,18 +535,12 @@ impl DataClient for AxDataClient {
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
         let symbol = cmd.instrument_id.symbol.to_string();
-
-        // Architect allows only one subscription per symbol
-        if !self.mark_symbol_unsubscribed(&symbol) {
-            log::debug!("Symbol {symbol} not subscribed, skipping book deltas unsubscription");
-            return Ok(());
-        }
-
         log::debug!("Unsubscribing from book deltas for {symbol}");
+
         let ws = self.ws_client.clone();
         self.spawn_ws(
             async move {
-                ws.unsubscribe(&symbol)
+                ws.unsubscribe_book_deltas(&symbol)
                     .await
                     .map_err(|e| anyhow::anyhow!(e))
             },
@@ -613,18 +552,12 @@ impl DataClient for AxDataClient {
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
         let symbol = cmd.instrument_id.symbol.to_string();
-
-        // Architect allows only one subscription per symbol
-        if !self.mark_symbol_unsubscribed(&symbol) {
-            log::debug!("Symbol {symbol} not subscribed, skipping quotes unsubscription");
-            return Ok(());
-        }
-
         log::debug!("Unsubscribing from quotes for {symbol}");
+
         let ws = self.ws_client.clone();
         self.spawn_ws(
             async move {
-                ws.unsubscribe(&symbol)
+                ws.unsubscribe_quotes(&symbol)
                     .await
                     .map_err(|e| anyhow::anyhow!(e))
             },
@@ -636,18 +569,12 @@ impl DataClient for AxDataClient {
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
         let symbol = cmd.instrument_id.symbol.to_string();
-
-        // Architect allows only one subscription per symbol
-        if !self.mark_symbol_unsubscribed(&symbol) {
-            log::debug!("Symbol {symbol} not subscribed, skipping trades unsubscription");
-            return Ok(());
-        }
-
         log::debug!("Unsubscribing from trades for {symbol}");
+
         let ws = self.ws_client.clone();
         self.spawn_ws(
             async move {
-                ws.unsubscribe(&symbol)
+                ws.unsubscribe_trades(&symbol)
                     .await
                     .map_err(|e| anyhow::anyhow!(e))
             },
@@ -783,8 +710,10 @@ impl DataClient for AxDataClient {
         let client_id = request.client_id.unwrap_or(self.client_id);
         let bar_type = request.bar_type;
         let symbol = bar_type.instrument_id().symbol.inner();
-        let start_nanos = datetime_to_unix_nanos(request.start);
-        let end_nanos = datetime_to_unix_nanos(request.end);
+        let start = request.start;
+        let end = request.end;
+        let start_nanos = datetime_to_unix_nanos(start);
+        let end_nanos = datetime_to_unix_nanos(end);
         let params = request.params;
         let clock = self.clock;
         let width = match map_bar_spec_to_candle_width(&bar_type.spec()) {
@@ -796,10 +725,7 @@ impl DataClient for AxDataClient {
         };
 
         get_runtime().spawn(async move {
-            let start_ns = start_nanos.map_or(0, |n| n.as_i64());
-            let end_ns = end_nanos.map_or(clock.get_time_ns().as_i64(), |n| n.as_i64());
-
-            match http.request_bars(symbol, start_ns, end_ns, width).await {
+            match http.request_bars(symbol, start, end, width).await {
                 Ok(bars) => {
                     log::debug!("Fetched {} bars for {symbol}", bars.len());
 
@@ -834,19 +760,15 @@ impl DataClient for AxDataClient {
         let client_id = request.client_id.unwrap_or(self.client_id);
         let instrument_id = request.instrument_id;
         let symbol = instrument_id.symbol.inner();
-        let start_nanos = datetime_to_unix_nanos(request.start);
-        let end_nanos = datetime_to_unix_nanos(request.end);
+        let start = request.start;
+        let end = request.end;
+        let start_nanos = datetime_to_unix_nanos(start);
+        let end_nanos = datetime_to_unix_nanos(end);
         let params = request.params;
         let clock = self.clock;
 
         get_runtime().spawn(async move {
-            let start_ns = start_nanos.map_or(0, |n| n.as_i64());
-            let end_ns = end_nanos.map_or(clock.get_time_ns().as_i64(), |n| n.as_i64());
-
-            match http
-                .request_funding_rates(instrument_id, start_ns, end_ns)
-                .await
-            {
+            match http.request_funding_rates(instrument_id, start, end).await {
                 Ok(funding_rates) => {
                     log::debug!("Fetched {} funding rates for {symbol}", funding_rates.len());
 

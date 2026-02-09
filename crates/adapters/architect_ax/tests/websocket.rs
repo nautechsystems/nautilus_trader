@@ -575,7 +575,7 @@ async fn test_md_subscribe_l1() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe("BTCUSD-PERP", AxMarketDataLevel::Level1)
+        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level1)
         .await
         .unwrap();
 
@@ -606,7 +606,7 @@ async fn test_md_subscribe_l2() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe("BTCUSD-PERP", AxMarketDataLevel::Level2)
+        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level2)
         .await
         .unwrap();
 
@@ -637,7 +637,7 @@ async fn test_md_subscribe_l3() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe("BTCUSD-PERP", AxMarketDataLevel::Level3)
+        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level3)
         .await
         .unwrap();
 
@@ -668,15 +668,15 @@ async fn test_md_subscribe_multiple_symbols() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe("BTCUSD-PERP", AxMarketDataLevel::Level1)
+        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level1)
         .await
         .unwrap();
     client
-        .subscribe("ETHUSD-PERP", AxMarketDataLevel::Level2)
+        .subscribe_book_deltas("ETHUSD-PERP", AxMarketDataLevel::Level2)
         .await
         .unwrap();
     client
-        .subscribe("EURUSD-PERP", AxMarketDataLevel::Level1)
+        .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level1)
         .await
         .unwrap();
 
@@ -706,7 +706,7 @@ async fn test_md_unsubscribe() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe("BTCUSD-PERP", AxMarketDataLevel::Level1)
+        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level1)
         .await
         .unwrap();
 
@@ -716,7 +716,7 @@ async fn test_md_unsubscribe() {
     )
     .await;
 
-    client.unsubscribe("BTCUSD-PERP").await.unwrap();
+    client.unsubscribe_book_deltas("BTCUSD-PERP").await.unwrap();
 
     wait_until_async(
         || async { state.subscriptions.lock().await.is_empty() },
@@ -907,7 +907,7 @@ async fn test_md_server_disconnect_handling() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe("BTCUSD-PERP", AxMarketDataLevel::Level1)
+        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level1)
         .await
         .unwrap();
 
@@ -976,14 +976,14 @@ async fn test_md_rapid_subscribe_unsubscribe() {
 
     for _ in 0..5 {
         client
-            .subscribe("BTCUSD-PERP", AxMarketDataLevel::Level1)
+            .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level1)
             .await
             .unwrap();
-        client.unsubscribe("BTCUSD-PERP").await.unwrap();
+        client.unsubscribe_book_deltas("BTCUSD-PERP").await.unwrap();
     }
 
     client
-        .subscribe("BTCUSD-PERP", AxMarketDataLevel::Level1)
+        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level1)
         .await
         .unwrap();
 
@@ -1010,11 +1010,11 @@ async fn test_md_subscribe_same_symbol_different_levels() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe("BTCUSD-PERP", AxMarketDataLevel::Level1)
+        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level1)
         .await
         .unwrap();
     client
-        .subscribe("BTCUSD-PERP", AxMarketDataLevel::Level2)
+        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level2)
         .await
         .unwrap();
 
@@ -1278,7 +1278,7 @@ async fn test_md_subscription_events_tracking() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe("BTCUSD-PERP", AxMarketDataLevel::Level1)
+        .subscribe_book_deltas("BTCUSD-PERP", AxMarketDataLevel::Level1)
         .await
         .unwrap();
 
@@ -1314,7 +1314,7 @@ async fn test_md_subscription_failure_tracking() {
     wait_for_connection(&state).await;
 
     client
-        .subscribe("FAIL-SYMBOL", AxMarketDataLevel::Level1)
+        .subscribe_book_deltas("FAIL-SYMBOL", AxMarketDataLevel::Level1)
         .await
         .unwrap();
 
@@ -1441,7 +1441,7 @@ async fn test_md_many_subscriptions() {
 
     for symbol in symbols {
         client
-            .subscribe(symbol, AxMarketDataLevel::Level1)
+            .subscribe_book_deltas(symbol, AxMarketDataLevel::Level1)
             .await
             .unwrap();
     }

@@ -22,6 +22,9 @@ PyO3 for performance.
 """
 
 import asyncio
+from datetime import timedelta
+
+import pandas as pd
 
 from nautilus_trader.adapters.architect_ax.config import AxDataClientConfig
 from nautilus_trader.adapters.architect_ax.constants import AX_VENUE
@@ -31,7 +34,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
+from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestFundingRates
 from nautilus_trader.data.messages import RequestQuoteTicks
@@ -47,6 +50,7 @@ from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
@@ -149,6 +153,7 @@ class AxDataClient(LiveMarketDataClient):
 
         for inst in self._instrument_provider.instruments_pyo3():
             self._ws_client.cache_instrument(inst)
+            self._http_client.cache_instrument(inst)
 
         await self._ws_client.connect(self._handle_msg)
         self._log.info("Connected to AX Exchange market data WebSocket", LogColor.BLUE)
@@ -194,6 +199,11 @@ class AxDataClient(LiveMarketDataClient):
                 await asyncio.sleep(interval_mins * 60)
                 await self._instrument_provider.initialize(reload=True)
                 self._send_all_instruments_to_data_engine()
+
+                for inst in self._instrument_provider.instruments_pyo3():
+                    if self._ws_client:
+                        self._ws_client.cache_instrument(inst)
+                    self._http_client.cache_instrument(inst)
                 self._log.info(
                     f"Scheduled task 'update_instruments' to run in {interval_mins} minutes",
                     LogColor.BLUE,
@@ -204,8 +214,11 @@ class AxDataClient(LiveMarketDataClient):
             except Exception as e:
                 self._log.error(f"Error updating instruments: {e}")
 
-    def _get_symbol_from_instrument_id(self, instrument_id: InstrumentId) -> str:
-        return instrument_id.symbol.value
+    def _get_pyo3_instrument_id(
+        self,
+        instrument_id: InstrumentId,
+    ) -> nautilus_pyo3.InstrumentId:
+        return nautilus_pyo3.InstrumentId.from_str(str(instrument_id))
 
     async def _subscribe_instruments(self, command) -> None:
         if self._update_instruments_interval_mins:
@@ -242,7 +255,7 @@ class AxDataClient(LiveMarketDataClient):
             self._log.warning("WebSocket not connected, cannot subscribe to order book")
             return
 
-        symbol = self._get_symbol_from_instrument_id(command.instrument_id)
+        instrument_id = self._get_pyo3_instrument_id(command.instrument_id)
 
         if command.book_type == BookType.L3_MBO:
             level = nautilus_pyo3.AxMarketDataLevel.LEVEL_3
@@ -254,58 +267,69 @@ class AxDataClient(LiveMarketDataClient):
             )
             level = nautilus_pyo3.AxMarketDataLevel.LEVEL_2
 
-        await self._ws_client.subscribe(symbol, level)
-        self._log.debug(f"Subscribed to order book for {symbol} at {level}")
+        await self._ws_client.subscribe_book_deltas(instrument_id, level)
+        self._log.debug(f"Subscribed to order book for {command.instrument_id} at {level}")
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         if not self._ws_client:
             self._log.warning("WebSocket not connected, cannot subscribe to quotes")
             return
 
-        symbol = self._get_symbol_from_instrument_id(command.instrument_id)
-        await self._ws_client.subscribe(symbol, nautilus_pyo3.AxMarketDataLevel.LEVEL_1)
-        self._log.debug(f"Subscribed to quotes for {symbol}")
+        instrument_id = self._get_pyo3_instrument_id(command.instrument_id)
+        await self._ws_client.subscribe_quotes(instrument_id)
+        self._log.debug(f"Subscribed to quotes for {command.instrument_id}")
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         if not self._ws_client:
             self._log.warning("WebSocket not connected, cannot subscribe to trades")
             return
 
-        symbol = self._get_symbol_from_instrument_id(command.instrument_id)
-        await self._ws_client.subscribe(symbol, nautilus_pyo3.AxMarketDataLevel.LEVEL_1)
-        self._log.debug(f"Subscribed to trades for {symbol}")
+        instrument_id = self._get_pyo3_instrument_id(command.instrument_id)
+        await self._ws_client.subscribe_trades(instrument_id)
+        self._log.debug(f"Subscribed to trades for {command.instrument_id}")
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
-        # TODO: Implement when candle subscription is exposed via PyO3
-        self._log.warning("Bar subscription not yet implemented for AX Exchange")
+        if not self._ws_client:
+            self._log.warning("WebSocket not connected, cannot subscribe to bars")
+            return
+
+        bar_type = command.bar_type
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(bar_type))
+        await self._ws_client.subscribe_bars(pyo3_bar_type)
+        self._log.debug(f"Subscribed to bars for {bar_type}")
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         if not self._ws_client:
             return
 
-        symbol = self._get_symbol_from_instrument_id(command.instrument_id)
-        await self._ws_client.unsubscribe(symbol)
-        self._log.debug(f"Unsubscribed from order book for {symbol}")
+        instrument_id = self._get_pyo3_instrument_id(command.instrument_id)
+        await self._ws_client.unsubscribe_book_deltas(instrument_id)
+        self._log.debug(f"Unsubscribed from order book for {command.instrument_id}")
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         if not self._ws_client:
             return
 
-        symbol = self._get_symbol_from_instrument_id(command.instrument_id)
-        await self._ws_client.unsubscribe(symbol)
-        self._log.debug(f"Unsubscribed from quotes for {symbol}")
+        instrument_id = self._get_pyo3_instrument_id(command.instrument_id)
+        await self._ws_client.unsubscribe_quotes(instrument_id)
+        self._log.debug(f"Unsubscribed from quotes for {command.instrument_id}")
 
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         if not self._ws_client:
             return
 
-        symbol = self._get_symbol_from_instrument_id(command.instrument_id)
-        await self._ws_client.unsubscribe(symbol)
-        self._log.debug(f"Unsubscribed from trades for {symbol}")
+        instrument_id = self._get_pyo3_instrument_id(command.instrument_id)
+        await self._ws_client.unsubscribe_trades(instrument_id)
+        self._log.debug(f"Unsubscribed from trades for {command.instrument_id}")
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
-        # TODO: Implement when candle unsubscription is exposed via PyO3
-        pass
+        if not self._ws_client:
+            return
+
+        bar_type = command.bar_type
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(bar_type))
+        await self._ws_client.unsubscribe_bars(pyo3_bar_type)
+        self._log.debug(f"Unsubscribed from bars for {bar_type}")
 
     async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
         instrument_id = command.instrument_id
@@ -328,21 +352,21 @@ class AxDataClient(LiveMarketDataClient):
             self._last_funding_rates.pop(instrument_id, None)
 
     async def _poll_funding_rates(self, instrument_id: InstrumentId) -> None:
-        symbol = self._get_symbol_from_instrument_id(instrument_id)
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(str(instrument_id))
+        symbol = instrument_id.symbol.value
+        pyo3_instrument_id = self._get_pyo3_instrument_id(instrument_id)
         poll_interval_secs = 900  # 15 minutes
-        lookback_ns = 7 * 24 * 60 * 60 * 1_000_000_000  # 7 days
+        lookback = timedelta(days=7)
 
         try:
             while True:
                 try:
-                    now_ns = self._clock.timestamp_ns()
-                    start_ns = now_ns - lookback_ns
+                    now = ensure_pydatetime_utc(self._clock.utc_now())
+                    start = now - lookback  # type: ignore[operator]
 
                     pyo3_rates = await self._http_client.request_funding_rates(
                         pyo3_instrument_id,
-                        start_ns,
-                        now_ns,
+                        start,  # type: ignore[arg-type]
+                        now,
                     )
 
                     if not pyo3_rates:
@@ -365,17 +389,15 @@ class AxDataClient(LiveMarketDataClient):
 
     async def _request_funding_rates(self, request: RequestFundingRates) -> None:
         instrument_id = request.instrument_id
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(str(instrument_id))
-        now_ns = self._clock.timestamp_ns()
-
-        start_ns = maybe_dt_to_unix_nanos(request.start) or 0
-        end_ns = maybe_dt_to_unix_nanos(request.end) or now_ns
+        pyo3_instrument_id = self._get_pyo3_instrument_id(instrument_id)
+        start = ensure_pydatetime_utc(pd.Timestamp(request.start)) if request.start else None
+        end = ensure_pydatetime_utc(pd.Timestamp(request.end)) if request.end else None
 
         try:
             pyo3_rates = await self._http_client.request_funding_rates(
                 pyo3_instrument_id,
-                start_ns,
-                end_ns,
+                start,
+                end,
             )
             funding_rates = FundingRateUpdate.from_pyo3_list(pyo3_rates)
 
@@ -397,7 +419,29 @@ class AxDataClient(LiveMarketDataClient):
         self._log.error("Cannot request historical trades: not yet implemented for AX Exchange")
 
     async def _request_bars(self, request: RequestBars) -> None:
-        self._log.error("Cannot request historical bars: not yet implemented for AX Exchange")
+        bar_type = request.bar_type
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(bar_type))
+        start = ensure_pydatetime_utc(pd.Timestamp(request.start)) if request.start else None
+        end = ensure_pydatetime_utc(pd.Timestamp(request.end)) if request.end else None
+
+        try:
+            pyo3_bars = await self._http_client.request_bars(
+                pyo3_bar_type,
+                start,
+                end,
+            )
+            bars = [Bar.from_pyo3(bar) for bar in pyo3_bars]
+
+            self._handle_bars(
+                bar_type,
+                bars,
+                request.id,
+                request.start,
+                request.end,
+                request.params,
+            )
+        except Exception as e:
+            self._log.error(f"Failed to request bars for {bar_type}: {e}")
 
     def _handle_msg(self, msg) -> None:
         try:

@@ -601,17 +601,42 @@ impl ExecutionClient for AxExecutionClient {
     }
 
     fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
-        log::warn!(
-            "submit_order_list not yet implemented for AX execution client (got {} orders)",
-            cmd.order_list.client_order_ids.len()
-        );
+        for (client_order_id, order_init) in cmd
+            .order_list
+            .client_order_ids
+            .iter()
+            .zip(cmd.order_inits.iter())
+        {
+            let submit_cmd = SubmitOrder::new(
+                cmd.trader_id,
+                cmd.client_id,
+                cmd.strategy_id,
+                cmd.instrument_id,
+                *client_order_id,
+                order_init.clone(),
+                cmd.exec_algorithm_id,
+                cmd.position_id,
+                cmd.params.clone(),
+                UUID4::new(),
+                cmd.ts_init,
+            );
+            self.submit_order(&submit_cmd)?;
+        }
         Ok(())
     }
 
     fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
-        log::warn!(
-            "modify_order not yet implemented for AX execution client (client_order_id={})",
-            cmd.client_order_id
+        let reason = "AX does not support order modification. Use cancel and resubmit instead.";
+        log::error!("{reason}");
+
+        let ts_event = self.clock.get_time_ns();
+        self.emitter.emit_order_modify_rejected_event(
+            cmd.strategy_id,
+            cmd.instrument_id,
+            cmd.client_order_id,
+            cmd.venue_order_id,
+            reason,
+            ts_event,
         );
         Ok(())
     }

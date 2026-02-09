@@ -15,8 +15,11 @@
 
 //! Enumerations that model Ax string enums across HTTP and WebSocket payloads.
 
-use nautilus_model::enums::{
-    AggressorSide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+use nautilus_model::{
+    data::BarSpecification,
+    enums::{
+        AggressorSide, BarAggregation, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+    },
 };
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
@@ -479,10 +482,6 @@ pub enum AxMarketDataLevel {
     Serialize,
     Deserialize,
 )]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.architect")
-)]
 pub enum AxCandleWidth {
     /// 1-second candles.
     #[serde(rename = "1s")]
@@ -512,6 +511,27 @@ pub enum AxCandleWidth {
     #[serde(rename = "1d")]
     #[strum(serialize = "1d")]
     Days1,
+}
+
+impl TryFrom<&BarSpecification> for AxCandleWidth {
+    type Error = anyhow::Error;
+
+    fn try_from(spec: &BarSpecification) -> Result<Self, Self::Error> {
+        let step = spec.step.get();
+        match (step, spec.aggregation) {
+            (1, BarAggregation::Second) => Ok(Self::Seconds1),
+            (5, BarAggregation::Second) => Ok(Self::Seconds5),
+            (1, BarAggregation::Minute) => Ok(Self::Minutes1),
+            (5, BarAggregation::Minute) => Ok(Self::Minutes5),
+            (15, BarAggregation::Minute) => Ok(Self::Minutes15),
+            (1, BarAggregation::Hour) => Ok(Self::Hours1),
+            (1, BarAggregation::Day) => Ok(Self::Days1),
+            _ => anyhow::bail!(
+                "Unsupported bar specification for AX: {step}-{:?}",
+                spec.aggregation,
+            ),
+        }
+    }
 }
 
 /// WebSocket market data message type (server to client).

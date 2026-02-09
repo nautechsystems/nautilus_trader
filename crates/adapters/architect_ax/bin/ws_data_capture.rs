@@ -158,7 +158,14 @@ async fn capture_level(
     );
 
     client.connect().await?;
-    client.subscribe(TEST_SYMBOL, level).await?;
+    match level {
+        AxMarketDataLevel::Level1 => {
+            client.subscribe_quotes(TEST_SYMBOL).await?;
+        }
+        _ => {
+            client.subscribe_book_deltas(TEST_SYMBOL, level).await?;
+        }
+    }
 
     {
         let stream = client.stream();

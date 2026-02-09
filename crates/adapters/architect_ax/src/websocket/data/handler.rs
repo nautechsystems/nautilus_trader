@@ -24,6 +24,7 @@ use std::{
 };
 
 use ahash::AHashMap;
+use dashmap::DashMap;
 use nautilus_core::{
     nanos::UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
@@ -36,9 +37,12 @@ use nautilus_network::websocket::{SubscriptionState, WebSocketClient};
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
-use super::parse::{
-    parse_book_l1_quote, parse_book_l2_deltas, parse_book_l3_deltas, parse_candle_bar,
-    parse_trade_tick,
+use super::{
+    client::SymbolDataTypes,
+    parse::{
+        parse_book_l1_quote, parse_book_l2_deltas, parse_book_l3_deltas, parse_candle_bar,
+        parse_trade_tick,
+    },
 };
 use crate::{
     common::enums::{AxCandleWidth, AxMarketDataLevel},
@@ -109,6 +113,7 @@ pub(crate) struct FeedHandler {
     #[allow(dead_code)]
     out_tx: tokio::sync::mpsc::UnboundedSender<NautilusDataWsMessage>,
     subscriptions: SubscriptionState,
+    symbol_data_types: Arc<DashMap<String, SymbolDataTypes>>,
     instruments: AHashMap<Ustr, InstrumentAny>,
     message_queue: VecDeque<NautilusDataWsMessage>,
     replay_request_id: i64,
@@ -126,6 +131,7 @@ impl FeedHandler {
         raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
         out_tx: tokio::sync::mpsc::UnboundedSender<NautilusDataWsMessage>,
         subscriptions: SubscriptionState,
+        symbol_data_types: Arc<DashMap<String, SymbolDataTypes>>,
     ) -> Self {
         Self {
             clock: get_atomic_clock_realtime(),
@@ -135,6 +141,7 @@ impl FeedHandler {
             raw_rx,
             out_tx,
             subscriptions,
+            symbol_data_types,
             instruments: AHashMap::new(),
             message_queue: VecDeque::new(),
             replay_request_id: -1,
@@ -458,6 +465,15 @@ impl FeedHandler {
             AxMdMessage::BookL1(book) => {
                 log::debug!("Received book L1: {}", book.s);
 
+                let l1_subscribed = self
+                    .symbol_data_types
+                    .get(book.s.as_str())
+                    .is_some_and(|e| e.quotes || e.book_level == Some(AxMarketDataLevel::Level1));
+
+                if !l1_subscribed {
+                    return None;
+                }
+
                 let Some(instrument) = self.instruments.get(&book.s) else {
                     log::error!(
                         "No instrument cached for symbol '{}' - cannot parse L1 book",
@@ -543,6 +559,15 @@ impl FeedHandler {
                 }
                 AxMdTickerOrTrade::Trade(trade) => {
                     log::debug!("Received trade: {} {} @ {}", trade.s, trade.q, trade.p);
+
+                    let trades_subscribed = self
+                        .symbol_data_types
+                        .get(trade.s.as_str())
+                        .is_some_and(|e| e.trades);
+
+                    if !trades_subscribed {
+                        return None;
+                    }
 
                     let Some(instrument) = self.instruments.get(&trade.s) else {
                         log::error!(

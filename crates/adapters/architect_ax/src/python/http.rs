@@ -15,8 +15,10 @@
 
 //! Python bindings for the Ax HTTP client.
 
+use chrono::{DateTime, Utc};
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
+    data::BarType,
     enums::OrderSide,
     identifiers::{AccountId, ClientOrderId, InstrumentId},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
@@ -26,7 +28,10 @@ use pyo3::{IntoPyObjectExt, prelude::*, types::PyList};
 use rust_decimal::Decimal;
 
 use crate::{
-    common::{enums::AxOrderSide, parse::quantity_to_contracts},
+    common::{
+        enums::{AxCandleWidth, AxOrderSide},
+        parse::quantity_to_contracts,
+    },
     http::{client::AxHttpClient, error::AxHttpError, models::PreviewAggressiveLimitOrderRequest},
 };
 
@@ -124,7 +129,7 @@ impl AxHttpClient {
 
     /// # Errors
     ///
-    /// Returns an error if the instrument cannot be converted from Python.
+    /// Returns a `PyErr` if the instrument cannot be converted from Python.
     #[pyo3(name = "cache_instrument")]
     pub fn py_cache_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
         self.cache_instrument(pyobject_to_instrument_any(py, instrument)?);
@@ -197,19 +202,48 @@ impl AxHttpClient {
         })
     }
 
+    #[pyo3(name = "request_bars")]
+    #[pyo3(signature = (bar_type, start=None, end=None))]
+    fn py_request_bars<'py>(
+        &self,
+        py: Python<'py>,
+        bar_type: BarType,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let symbol = bar_type.instrument_id().symbol.inner();
+        let width = AxCandleWidth::try_from(&bar_type.spec()).map_err(to_pyvalue_err)?;
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let bars = client
+                .request_bars(symbol, start, end, width)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let py_bars: PyResult<Vec<_>> =
+                    bars.into_iter().map(|bar| bar.into_py_any(py)).collect();
+                let pylist = PyList::new(py, py_bars?).unwrap().into_any().unbind();
+                Ok(pylist)
+            })
+        })
+    }
+
     #[pyo3(name = "request_funding_rates")]
+    #[pyo3(signature = (instrument_id, start=None, end=None))]
     fn py_request_funding_rates<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start_timestamp_ns: i64,
-        end_timestamp_ns: i64,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let funding_rates = client
-                .request_funding_rates(instrument_id, start_timestamp_ns, end_timestamp_ns)
+                .request_funding_rates(instrument_id, start, end)
                 .await
                 .map_err(to_pyvalue_err)?;
 

@@ -37,7 +37,7 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use nautilus_architect_ax::{
-    common::enums::{AxEnvironment, AxMarketDataLevel},
+    common::enums::AxEnvironment,
     http::{client::AxRawHttpClient, error::AxHttpError},
     websocket::{NautilusDataWsMessage, data::AxMdWebSocketClient},
 };
@@ -159,10 +159,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("Connected");
 
     let test_symbol = "EURUSD-PERP";
-    log::info!("Subscribing to {test_symbol} L1 data...");
-    client
-        .subscribe(test_symbol, AxMarketDataLevel::Level1)
-        .await?;
+    log::info!("Subscribing to {test_symbol} quotes and trades...");
+    client.subscribe_quotes(test_symbol).await?;
+    client.subscribe_trades(test_symbol).await?;
     log::info!("Subscribed");
 
     log::info!("Listening for messages (30 seconds)...");
