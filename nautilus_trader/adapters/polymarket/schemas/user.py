@@ -18,6 +18,7 @@ from typing import Any
 
 import msgspec
 import pandas as pd
+import logging
 
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketEventType
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketLiquiditySide
@@ -172,14 +173,23 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
         return msgspec.json.decode(msgspec.json.encode(self))
 
     def get_maker_order(self, maker_address: str) -> PolymarketMakerOrder:
+        # Normalize addresses to lowercase for comparison (Ethereum addresses are case-insensitive)
+        maker_address_lower = maker_address.lower()
+
         # First try with the provided address
         for order in self.maker_orders:
-            if order.maker_address == maker_address:
+            if order.maker_address.lower() == maker_address_lower:
                 return order
 
         # If not found and we have maker_orders, return the first one
         # This handles the case where the funder address owns the order
         if self.maker_orders:
+            # Log warning about falling back to first order
+            logging.warning(
+                f"Maker address {maker_address} not found in maker_orders "
+                f"{[o.maker_address for o in self.maker_orders]}, "
+                f"returning first order {self.maker_orders[0].order_id}"
+            )
             return self.maker_orders[0]
 
         raise ValueError("Invalid trade with no maker order owned my `maker_address`")
