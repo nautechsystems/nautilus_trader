@@ -286,12 +286,12 @@ webpki-roots = "1.0.6"
 # -----------------------------------------------------------------------------
 # Adapter dependencies
 # -----------------------------------------------------------------------------
-alloy = { version = "1.6.1", default-features = false, features = [
+alloy = { version = "1.6.3", default-features = false, features = [
   "sol-types",
   "contract",
 ] }
-alloy-signer = { version = "1.6.1", default-features = false }
-alloy-signer-local = { version = "1.6.1", default-features = false, features = [
+alloy-signer = { version = "1.6.3", default-features = false }
+alloy-signer-local = { version = "1.6.3", default-features = false, features = [
   "mnemonic",
 ] }
 alloy-sol-types = "1.5.4"
@@ -344,7 +344,7 @@ iai = "0.1.1"
 pretty_assertions = "1.4.1"
 proptest = { version = "1.10.0", default-features = false, features = ["std"] }
 rstest = "0.26.1"
-tempfile = "3.24.0"
+tempfile = "3.25.0"
 turmoil = "0.7.1"
 
 # -----------------------------------------------------------------------------

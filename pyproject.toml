@@ -104,12 +104,12 @@ dev = [
 ]
 test = [
   "aiohttp>=3.13.3,<4.0.0",
-  "coverage>=7.13.3,<8.0.0",
+  "coverage>=7.13.4,<8.0.0",
   "pytest>=7.4.4,<8.0.0", # Intentionally held at 7.x
   "pytest-aiohttp>=1.1.0,<2.0.0",
   "pytest-asyncio==0.23.8", # Pinned to 0.23.8 for stability
   "pytest-benchmark==5.0.1", # Pinned to 5.0.1 due pytest 8.x requirement
-  "pytest-codspeed==4.2.0", # Pinned to 4.2.0 for stability
+  "pytest-codspeed==4.3.0", # Pinned to 4.3.0 for stability
   "pytest-cov==6.3.0", # Pinned to 6.3.0 due pytest 8.x requirement
   "pytest-mock>=3.15.1,<4.0.0",
   "pytest-rerunfailures>=16.1,<17.0.0",

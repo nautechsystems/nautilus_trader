@@ -77,8 +77,9 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed remaining `F_LAST` flag checks to use proper bitmask comparison
 - Fixed `MarketIfTouchedOrder` (MIT) filling at bar extremes instead of trigger price during backtesting (#3461, #3462), thanks @HaakonFlaaronning
 - Fixed OTO child order sizing with rapid parent fills (#3435), thanks for reporting @dxwil
-- Fixed `GreeksCalculator` to use index price for index instruments
 - Fixed `ExecAlgorithm` spawn quantity accounting (will now restore quantity from denied/rejected spawned orders)
+- Fixed `GreeksCalculator` to use index price for index instruments (#3541), thanks @shzhng
+- Fixed `itm_prob` calculation to use N(d2) instead of normalized delta (#3554), thanks @shzhng
 - Fixed reconciliation `venue_order_id` indexing and validation
 - Fixed analyzer epoch timestamp from empty shell positions
 - Fixed backtest clock monotonicity with time alerts (#3384), thanks @draphi
@@ -129,6 +130,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed Interactive Brokers future chain building for index instruments (#3483), thanks @davidsblom
 - Fixed Interactive Brokers options missing `^` prefix on index underlying symbols with simplified symbology (#3540), thanks @shzhng
 - Fixed Interactive Brokers contract for ESTX50 IND contract (#3556), thanks @davidsblom
+- Fixed Interactive Brokers parsing options for Stoxx50 (#3562), thanks @davidsblom
 - Fixed Kraken spot instrument fee/margin parsing where parameters were incorrectly swapped
 - Fixed Kraken spot XBT to BTC symbol normalization (#3509), thanks for reporting @chester0
 - Fixed Polymarket cancel-rejection loop for done orders
@@ -163,6 +165,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Refactored dYdX v4 execution client in Rust (#3477), thanks @filipmacek
 - Refactored dYdX v4 adapter (#3521), thanks @filipmacek
 - Refactored dYdX v4 data client (#3547), thanks @filipmacek
+- Refactored dYdX v4 execution client (#3557), thanks @filipmacek
 - Refactored Kraken spot quotes to use dedicated Ticker channel
 - Refactored Polymarket WebSocket to multi-client pool pattern
 - Improved `cancel_all_orders` to include inflight orders
