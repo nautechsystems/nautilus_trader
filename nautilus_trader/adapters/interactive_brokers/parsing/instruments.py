@@ -270,7 +270,7 @@ RE_EUREX_OPT = re.compile(
     r"(?P<tradingClass>[A-Z0-9]{3,6})\s+"
     r"(?P<expiry>\d{8})\s+"
     r"(?P<strike>\d+(?:\.\d+)?)"
-    r"(?:\s+(?P<style>[A-Z]))?$"
+    r"(?:\s+(?P<style>[A-Z]))?$",
 )
 
 
