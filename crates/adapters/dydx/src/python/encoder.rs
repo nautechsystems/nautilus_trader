@@ -34,6 +34,13 @@ pub struct PyDydxClientOrderIdEncoder {
     inner: Arc<ClientOrderIdEncoder>,
 }
 
+impl PyDydxClientOrderIdEncoder {
+    /// Creates a Python encoder wrapping an existing shared `Arc<ClientOrderIdEncoder>`.
+    pub fn from_arc(inner: Arc<ClientOrderIdEncoder>) -> Self {
+        Self { inner }
+    }
+}
+
 #[pymethods]
 impl PyDydxClientOrderIdEncoder {
     /// Create a new ClientOrderIdEncoder.

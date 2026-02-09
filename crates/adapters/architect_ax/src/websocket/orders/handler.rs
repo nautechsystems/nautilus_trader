@@ -46,6 +46,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
+        consts::AX_POST_ONLY_REJECT,
         enums::{AxOrderSide, AxTimeInForce},
         parse::cid_to_client_order_id,
     },
@@ -680,7 +681,7 @@ impl FeedHandler {
                 metadata.strategy_id,
                 metadata.instrument_id,
                 metadata.client_order_id,
-                msg.r.into(),
+                Ustr::from(msg.r.as_ref()),
                 UUID4::new(),
                 self.generate_ts_init(),
                 metadata.ts_init,
@@ -907,6 +908,7 @@ impl FeedHandler {
         }
 
         let ts_event = UnixNanos::from(event_ts as u64 * 1_000_000_000);
+        let due_post_only = reason.contains(AX_POST_ONLY_REJECT);
 
         Some(OrderRejected::new(
             trader_id,
@@ -919,7 +921,7 @@ impl FeedHandler {
             ts_event,
             self.generate_ts_init(),
             false,
-            false,
+            due_post_only,
         ))
     }
 

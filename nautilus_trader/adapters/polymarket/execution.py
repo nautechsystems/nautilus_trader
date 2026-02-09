@@ -32,6 +32,7 @@ from py_clob_client.clob_types import PostOrdersArgs
 from py_clob_client.exceptions import PolyApiException
 
 from nautilus_trader.adapters.polymarket.common.cache import get_polymarket_trades_key
+from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_CANCEL_ALREADY_DONE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_FINALIZED_TRADE_STATUSES
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_INVALID_API_KEY
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
@@ -800,6 +801,33 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
+    def _generate_cancel_event(
+        self,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+        reason: str,
+        ts_event: int,
+    ) -> None:
+        # Venue says order is gone (canceled or matched) - suppress event
+        # and let WS deliver the correct terminal event (CANCELLATION or TRADE)
+        if POLYMARKET_CANCEL_ALREADY_DONE in reason:
+            self._log.info(
+                f"Cancel rejected for {client_order_id!r}: {reason} "
+                "- awaiting WS event for terminal state",
+            )
+            return
+
+        self.generate_order_cancel_rejected(
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            reason=reason,
+            ts_event=ts_event,
+        )
+
     def _get_neg_risk_for_instrument(self, instrument) -> bool:
         if instrument is None or instrument.info is None:
             return False
@@ -845,7 +873,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 reason = response.get("not_canceled")
 
             if reason:
-                self.generate_order_cancel_rejected(
+                self._generate_cancel_event(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
@@ -898,7 +926,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 venue_order_id = VenueOrderId(order_id)
                 client_order_id = self._cache.client_order_id(venue_order_id)
                 if client_order_id:
-                    self.generate_order_cancel_rejected(
+                    self._generate_cancel_event(
                         strategy_id=command.strategy_id,
                         instrument_id=command.instrument_id,
                         client_order_id=client_order_id,
@@ -947,7 +975,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 venue_order_id = VenueOrderId(order_id)
                 client_order_id = self._cache.client_order_id(venue_order_id)
                 if client_order_id:
-                    self.generate_order_cancel_rejected(
+                    self._generate_cancel_event(
                         strategy_id=command.strategy_id,
                         instrument_id=command.instrument_id,
                         client_order_id=client_order_id,

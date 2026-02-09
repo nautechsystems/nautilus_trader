@@ -85,20 +85,28 @@ pub fn create_tx_retry_manager() -> RetryManager<DydxError> {
 /// Works with `TransactionManager` to handle sequence mismatch errors gracefully.
 /// Uses [`RetryManager`] with exponential backoff for reliable delivery.
 ///
-/// # Serialization
+/// # Broadcast Modes
 ///
-/// All broadcasts are serialized through a semaphore to prevent sequence races.
-/// Cosmos SDK requires transactions to be broadcast in sequence order - if tx with
-/// sequence 11 arrives before sequence 10, it will fail. The semaphore ensures
-/// allocate → build → broadcast happens atomically for each operation.
+/// ## Stateful Orders (long-term/conditional): `broadcast_with_retry`
 ///
-/// # Retry Strategy
+/// Serialized through a semaphore to prevent sequence races. Cosmos SDK requires
+/// stateful transactions to have unique, incrementing sequence numbers. The semaphore
+/// ensures allocate → build → broadcast happens atomically for each operation.
 ///
-/// On sequence mismatch (Cosmos SDK error code 32):
+/// On sequence mismatch (Cosmos SDK error code 32 or dYdX code 104):
 /// 1. The `should_retry` callback sets a flag indicating resync is needed
 /// 2. The `RetryManager` applies exponential backoff
 /// 3. On next attempt, the operation checks the flag and resyncs sequence from chain
 /// 4. A new transaction is built with the fresh sequence and broadcast
+///
+/// ## Short-term Orders: `broadcast_short_term`
+///
+/// dYdX short-term orders use Good-Til-Block (GTB) for replay protection instead of
+/// Cosmos SDK sequences. The chain's `ClobDecorator` ante handler skips sequence
+/// checking for short-term messages. This means:
+/// - No semaphore needed (fully concurrent)
+/// - Cached sequence used (no increment, no allocation)
+/// - No sequence-based retry logic needed
 #[derive(Debug)]
 pub struct TxBroadcaster {
     /// gRPC client for broadcasting transactions.
@@ -220,6 +228,32 @@ impl TxBroadcaster {
         self.retry_manager
             .execute_with_retry(operation_name, operation, should_retry, create_error)
             .await
+    }
+
+    /// Broadcasts a short-term order transaction without sequence management.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if building or broadcasting fails.
+    pub async fn broadcast_short_term(
+        &self,
+        tx_manager: &TransactionManager,
+        msgs: Vec<Any>,
+        operation_name: &str,
+    ) -> Result<String, DydxError> {
+        let cached_sequence = tx_manager.get_cached_sequence().await?;
+        let prepared = tx_manager
+            .build_transaction(msgs, cached_sequence, operation_name)
+            .await?;
+
+        let mut grpc = self.grpc_client.clone();
+        let tx_hash = grpc.broadcast_tx(prepared.tx_bytes).await.map_err(|e| {
+            log::error!("gRPC broadcast failed for {operation_name}: {e}");
+            DydxError::Nautilus(e)
+        })?;
+
+        log::info!("{operation_name} successfully: tx_hash={tx_hash}");
+        Ok(tx_hash)
     }
 
     /// Broadcasts a prepared transaction without retry.

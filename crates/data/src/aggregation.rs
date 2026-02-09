@@ -1132,9 +1132,7 @@ impl BarAggregator for ValueImbalanceBarAggregator {
         let mut size_remaining = trade.size.as_f64();
         while size_remaining > 0.0 {
             let value_remaining = price_f64 * size_remaining;
-            let current_sign = self.imbalance_value.signum();
-
-            if current_sign == 0.0 || current_sign == side_sign {
+            if self.imbalance_value == 0.0 || self.imbalance_value.signum() == side_sign {
                 let needed = self.step_value - self.imbalance_value.abs();
                 if value_remaining <= needed {
                     self.imbalance_value += side_sign * value_remaining;
@@ -1143,6 +1141,11 @@ impl BarAggregator for ValueImbalanceBarAggregator {
                         Quantity::new(size_remaining, trade.size.precision),
                         trade.ts_init,
                     );
+
+                    if self.imbalance_value.abs() >= self.step_value {
+                        self.core.build_now_and_send();
+                        self.imbalance_value = 0.0;
+                    }
                     break;
                 }
 
@@ -1658,7 +1661,7 @@ impl TimeBarAggregator {
                 self.next_close_ns = UnixNanos::from(start_time + interval_duration);
             }
 
-            self.stored_open_ns = self.next_close_ns - self.interval_ns;
+            self.stored_open_ns = self.next_close_ns.saturating_sub_ns(self.interval_ns);
         } else {
             // The monthly/yearly alert time is defined iteratively at each alert time as there is no regular interval
             let alert_time = if fire_immediately {
@@ -2760,7 +2763,7 @@ mod tests {
         aggregator.handle_trade(sell);
 
         let handler_guard = handler.lock().expect(MUTEX_POISONED);
-        assert!(handler_guard.is_empty());
+        assert_eq!(handler_guard.len(), 2);
     }
 
     #[rstest]

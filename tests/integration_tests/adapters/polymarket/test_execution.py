@@ -27,6 +27,7 @@ import pytest
 from py_clob_client.client import ClobClient
 
 from nautilus_trader.adapters.polymarket.common.cache import get_polymarket_trades_key
+from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_CANCEL_ALREADY_DONE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
 from nautilus_trader.adapters.polymarket.common.credentials import PolymarketWebSocketAuth
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStatus
@@ -3296,3 +3297,139 @@ class TestPolymarketCancelAndPostOnly:
         rejected_call = mock_generate_rejected.call_args
         assert rejected_call.kwargs["client_order_id"] == order2.client_order_id
         assert "not included in API response" in rejected_call.kwargs["reason"]
+
+
+class TestPolymarketGenerateCancelEvent:
+    """
+    Tests for _generate_cancel_event which suppresses cancel rejections when Polymarket
+    reports the order is already canceled or matched.
+    """
+
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
+        self.loop = request.getfixturevalue("event_loop")
+        self.clock = LiveClock()
+        self.trader_id = TestIdStubs.trader_id()
+        self.venue = POLYMARKET_VENUE
+        self.account_id = AccountId(f"{self.venue.value}-001")
+
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+        self.cache = TestComponentStubs.cache()
+
+        self.http_client = MagicMock(spec=ClobClient)
+        self.http_client.get_address.return_value = "0xa3D82Ed56F4c68d2328Fb8c29e568Ba2cAF7d7c8"
+        mock_creds = MagicMock()
+        mock_creds.api_key = "test_api_key"
+        self.http_client.creds = mock_creds
+
+        self.provider = MagicMock(spec=PolymarketInstrumentProvider)
+        self.provider.initialize = AsyncMock()
+        self.ws_auth = MagicMock(spec=PolymarketWebSocketAuth)
+
+        self.portfolio = Portfolio(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        self.data_engine = DataEngine(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        self.exec_engine = ExecutionEngine(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        self.risk_engine = RiskEngine(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        config = PolymarketExecClientConfig()
+        self.exec_client = PolymarketExecutionClient(
+            loop=self.loop,
+            http_client=self.http_client,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            instrument_provider=self.provider,
+            ws_auth=self.ws_auth,
+            config=config,
+            name=None,
+        )
+
+        mock_ws_client = MagicMock()
+        mock_ws_client.is_disconnected.return_value = False
+        mock_ws_client.is_connected.return_value = True
+        mock_ws_client.has_subscriptions = True
+        mock_ws_client.subscriptions = []
+        mock_ws_client.market_subscriptions.return_value = []
+        mock_ws_client.connect = AsyncMock()
+        mock_ws_client.disconnect = AsyncMock()
+        mock_ws_client.subscribe = AsyncMock()
+        mock_ws_client.unsubscribe = AsyncMock()
+        mock_ws_client.add_subscription = MagicMock()
+        self.exec_client._ws_client = mock_ws_client
+
+        self.exec_engine.register_client(self.exec_client)
+
+        self.strategy = Strategy()
+        self.strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        self.cache.add_instrument(ELECTION_INSTRUMENT)
+
+    def test_already_done_reason_suppresses_cancel_rejected(self, mocker):
+        """
+        Test that "already canceled or matched" reason suppresses event generation
+        rather than emitting OrderCancelRejected.
+        """
+        # Arrange
+        cancel_rejected_spy = mocker.spy(self.exec_client, "generate_order_cancel_rejected")
+        canceled_spy = mocker.spy(self.exec_client, "generate_order_canceled")
+
+        # Act
+        self.exec_client._generate_cancel_event(
+            strategy_id=self.strategy.id,
+            instrument_id=ELECTION_INSTRUMENT.id,
+            client_order_id=ClientOrderId("O-TEST-001"),
+            venue_order_id=VenueOrderId("0xabc123"),
+            reason=f"order can't be found - {POLYMARKET_CANCEL_ALREADY_DONE}",
+            ts_event=self.clock.timestamp_ns(),
+        )
+
+        # Assert - neither event generated
+        cancel_rejected_spy.assert_not_called()
+        canceled_spy.assert_not_called()
+
+    def test_other_reason_generates_cancel_rejected(self, mocker):
+        """
+        Test that other rejection reasons still generate OrderCancelRejected.
+        """
+        # Arrange
+        cancel_rejected_spy = mocker.spy(self.exec_client, "generate_order_cancel_rejected")
+
+        # Act
+        self.exec_client._generate_cancel_event(
+            strategy_id=self.strategy.id,
+            instrument_id=ELECTION_INSTRUMENT.id,
+            client_order_id=ClientOrderId("O-TEST-002"),
+            venue_order_id=VenueOrderId("0xdef456"),
+            reason="insufficient balance",
+            ts_event=self.clock.timestamp_ns(),
+        )
+
+        # Assert
+        cancel_rejected_spy.assert_called_once()
+        call_kwargs = cancel_rejected_spy.call_args.kwargs
+        assert call_kwargs["reason"] == "insufficient balance"

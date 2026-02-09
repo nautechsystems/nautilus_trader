@@ -162,10 +162,58 @@ user-id = 1
 user-login = "alexcrichton"
 user-name = "Alex Crichton"
 
+[[publisher.wasip3]]
+version = "0.4.0+wasi-0.3.0-rc-2026-01-06"
+when = "2026-01-15"
+user-id = 1
+user-login = "alexcrichton"
+user-name = "Alex Crichton"
+
+[[publisher.wasm-encoder]]
+version = "0.244.0"
+when = "2026-01-06"
+trusted-publisher = "github:bytecodealliance/wasm-tools"
+
+[[publisher.wasm-metadata]]
+version = "0.236.0"
+when = "2025-07-28"
+user-id = 73222
+user-login = "wasmtime-publish"
+
+[[publisher.wasmparser]]
+version = "0.244.0"
+when = "2026-01-06"
+trusted-publisher = "github:bytecodealliance/wasm-tools"
+
 [[publisher.wit-bindgen]]
 version = "0.51.0"
 when = "2026-01-12"
 trusted-publisher = "github:bytecodealliance/wit-bindgen"
+
+[[publisher.wit-bindgen-core]]
+version = "0.51.0"
+when = "2026-01-12"
+trusted-publisher = "github:bytecodealliance/wit-bindgen"
+
+[[publisher.wit-bindgen-rust]]
+version = "0.51.0"
+when = "2026-01-12"
+trusted-publisher = "github:bytecodealliance/wit-bindgen"
+
+[[publisher.wit-bindgen-rust-macro]]
+version = "0.51.0"
+when = "2026-01-12"
+trusted-publisher = "github:bytecodealliance/wit-bindgen"
+
+[[publisher.wit-component]]
+version = "0.244.0"
+when = "2026-01-06"
+trusted-publisher = "github:bytecodealliance/wasm-tools"
+
+[[publisher.wit-parser]]
+version = "0.244.0"
+when = "2026-01-06"
+trusted-publisher = "github:bytecodealliance/wasm-tools"
 
 [[audits.bytecode-alliance.wildcard-audits.bumpalo]]
 who = "Nick Fitzgerald <fitzgen@gmail.com>"
@@ -184,11 +232,89 @@ notes = """
 This is a Bytecode Alliance authored crate.
 """
 
+[[audits.bytecode-alliance.wildcard-audits.wasip3]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+user-id = 1 # Alex Crichton (alexcrichton)
+start = "2025-09-10"
+end = "2026-08-21"
+notes = """
+This is a Bytecode Alliance authored crate.
+"""
+
+[[audits.bytecode-alliance.wildcard-audits.wasm-encoder]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+trusted-publisher = "github:bytecodealliance/wasm-tools"
+start = "2025-08-14"
+end = "2027-01-08"
+notes = "The Bytecode Alliance is the author of this crate"
+
+[[audits.bytecode-alliance.wildcard-audits.wasm-metadata]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+user-id = 73222 # wasmtime-publish
+start = "2023-01-01"
+end = "2026-06-03"
+notes = """
+The Bytecode Alliance uses the `wasmtime-publish` crates.io account to automate
+publication of this crate from CI. This repository requires all PRs are reviewed
+by a Bytecode Alliance maintainer and it owned by the Bytecode Alliance itself.
+"""
+
+[[audits.bytecode-alliance.wildcard-audits.wasmparser]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+trusted-publisher = "github:bytecodealliance/wasm-tools"
+start = "2025-08-14"
+end = "2027-01-08"
+notes = "The Bytecode Alliance is the author of this crate"
+
 [[audits.bytecode-alliance.wildcard-audits.wit-bindgen]]
 who = "Alex Crichton <alex@alexcrichton.com>"
 criteria = "safe-to-deploy"
 trusted-publisher = "github:bytecodealliance/wit-bindgen"
 start = "2025-08-13"
+end = "2027-01-08"
+notes = "The Bytecode Alliance is the author of this crate"
+
+[[audits.bytecode-alliance.wildcard-audits.wit-bindgen-core]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+trusted-publisher = "github:bytecodealliance/wit-bindgen"
+start = "2025-08-13"
+end = "2027-01-08"
+notes = "The Bytecode Alliance is the author of this crate"
+
+[[audits.bytecode-alliance.wildcard-audits.wit-bindgen-rust]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+trusted-publisher = "github:bytecodealliance/wit-bindgen"
+start = "2025-08-13"
+end = "2027-01-12"
+notes = "The Bytecode Alliance is the author of this crate"
+
+[[audits.bytecode-alliance.wildcard-audits.wit-bindgen-rust-macro]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+trusted-publisher = "github:bytecodealliance/wit-bindgen"
+start = "2025-08-13"
+end = "2027-01-08"
+notes = "The Bytecode Alliance is the author of this crate"
+
+[[audits.bytecode-alliance.wildcard-audits.wit-component]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+trusted-publisher = "github:bytecodealliance/wasm-tools"
+start = "2025-08-14"
+end = "2027-01-08"
+notes = "The Bytecode Alliance is the author of this crate"
+
+[[audits.bytecode-alliance.wildcard-audits.wit-parser]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+trusted-publisher = "github:bytecodealliance/wasm-tools"
+start = "2025-08-14"
 end = "2027-01-08"
 notes = "The Bytecode Alliance is the author of this crate"
 
@@ -430,6 +556,12 @@ Lots of new iterators and shuffling some things around. Some new unsafe code but
 it's well-documented and well-tested. Nothing suspicious.
 """
 
+[[audits.bytecode-alliance.audits.leb128fmt]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+version = "0.1.0"
+notes = "Well-scoped crate do doing LEB encoding with no `unsafe` code and does what it says on the tin."
+
 [[audits.bytecode-alliance.audits.matchers]]
 who = "Pat Hickey <phickey@fastly.com>"
 criteria = "safe-to-deploy"
@@ -564,6 +696,54 @@ notes = "no build.rs, no macros, no unsafe. It reads the filesystem and makes co
 who = "Pat Hickey <phickey@fastly.com>"
 criteria = "safe-to-deploy"
 version = "0.3.0"
+
+[[audits.bytecode-alliance.audits.wasm-metadata]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "0.236.0 -> 0.237.0"
+notes = "The Bytecode Alliance is the author of this crate"
+
+[[audits.bytecode-alliance.audits.wasm-metadata]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "0.237.0 -> 0.238.1"
+notes = "The Bytecode Alliance is the author of this crate"
+
+[[audits.bytecode-alliance.audits.wasm-metadata]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "0.238.1 -> 0.239.0"
+notes = "The Bytecode Alliance is the author of this crate"
+
+[[audits.bytecode-alliance.audits.wasm-metadata]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "0.239.0 -> 0.240.0"
+notes = "The Bytecode Alliance is the author of this crate"
+
+[[audits.bytecode-alliance.audits.wasm-metadata]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "0.240.0 -> 0.241.2"
+notes = "The Bytecode Alliance is the author of this crate"
+
+[[audits.bytecode-alliance.audits.wasm-metadata]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "0.241.2 -> 0.242.0"
+notes = "The Bytecode Alliance is the author of this crate"
+
+[[audits.bytecode-alliance.audits.wasm-metadata]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "0.242.0 -> 0.243.0"
+notes = "The Bytecode Alliance is the author of this crate"
+
+[[audits.bytecode-alliance.audits.wasm-metadata]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "0.243.0 -> 0.244.0"
+notes = "The Bytecode Alliance is the author of this crate"
 
 [[audits.embark-studios.audits.cfg_aliases]]
 who = "Johan Andersson <opensource@embark-studios.com>"

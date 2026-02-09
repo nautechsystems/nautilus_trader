@@ -177,7 +177,10 @@ cdef class Strategy(Actor):
         self._is_exiting = False
         self._pending_stop = False
         self._market_exit_attempts = 0
+        self._market_exit_tag = "MARKET_EXIT"
         self._market_exit_timer_name = f"MARKET_EXIT_CHECK:{self.id}"
+        self._market_exit_time_in_force = <TimeInForce>config.market_exit_time_in_force
+        self._market_exit_reduce_only = config.market_exit_reduce_only
 
         # Register warning events
         self.register_warning_event(OrderDenied)
@@ -855,7 +858,7 @@ cdef class Strategy(Actor):
             msg=order.init_event_c(),
         )
 
-        if self._is_exiting and not order.is_reduce_only:
+        if self._is_exiting and not order.is_reduce_only and self._market_exit_tag not in (order.tags or []):
             self._deny_order(order, "MARKET_EXIT_IN_PROGRESS")
             return
 
@@ -949,7 +952,7 @@ cdef class Strategy(Actor):
 
         if self._is_exiting:
             for order in order_list.orders:
-                if not order.is_reduce_only:
+                if not order.is_reduce_only and self._market_exit_tag not in (order.tags or []):
                     self._deny_order_list(order_list, reason="MARKET_EXIT_IN_PROGRESS")
                     return
 
@@ -1751,6 +1754,9 @@ cdef class Strategy(Actor):
         all in-flight orders to resolve and positions to close. The strategy
         remains running after the exit completes.
 
+        Uses `market_exit_time_in_force` and `market_exit_reduce_only` from
+        the strategy config for closing market orders.
+
         The `on_market_exit` hook is called when the exit process begins.
         The `post_market_exit` hook is called when the exit process completes.
 
@@ -1789,13 +1795,13 @@ cdef class Strategy(Actor):
         cdef InstrumentId instrument_id
         for instrument_id in instruments:
             self.cancel_all_orders(instrument_id)
-            self.close_all_positions(instrument_id)
+            self.close_all_positions(instrument_id, tags=[self._market_exit_tag], time_in_force=self._market_exit_time_in_force, reduce_only=self._market_exit_reduce_only)
 
         # Start iterative check
-        self._log.info(f"Setting market exit timer at {self.config.inflight_check_interval_ms}ms intervals", LogColor.BLUE)
+        self._log.info(f"Setting market exit timer at {self.config.market_exit_interval_ms}ms intervals", LogColor.BLUE)
         self._clock.set_timer(
             self._market_exit_timer_name,
-            pd.Timedelta(milliseconds=self.config.inflight_check_interval_ms),
+            pd.Timedelta(milliseconds=self.config.market_exit_interval_ms),
             None,
             None,
             self._check_market_exit,
@@ -1846,7 +1852,7 @@ cdef class Strategy(Actor):
         if open_positions:
             # If there are open positions but no orders, re-send close orders
             for position in open_positions:
-                self.close_position(position)
+                self.close_position(position, tags=[self._market_exit_tag], time_in_force=self._market_exit_time_in_force, reduce_only=self._market_exit_reduce_only)
 
             return
 
@@ -1873,6 +1879,8 @@ cdef class Strategy(Actor):
         self._is_exiting = False
         self._pending_stop = False
         self._market_exit_attempts = 0
+        self._market_exit_time_in_force = <TimeInForce>self.config.market_exit_time_in_force
+        self._market_exit_reduce_only = self.config.market_exit_reduce_only
 
     cpdef void handle_event(self, Event event):
         """

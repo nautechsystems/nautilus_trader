@@ -202,8 +202,10 @@ class TestStrategy:
             "log_events": True,
             "log_commands": True,
             "log_rejected_due_post_only_as_warning": True,
-            "inflight_check_interval_ms": 100,
+            "market_exit_interval_ms": 100,
             "market_exit_max_attempts": 100,
+            "market_exit_time_in_force": TimeInForce.GTC,
+            "market_exit_reduce_only": True,
         }
 
     def test_strategy_to_importable_config(self) -> None:
@@ -239,8 +241,10 @@ class TestStrategy:
             "log_events": False,
             "log_commands": True,
             "log_rejected_due_post_only_as_warning": True,
-            "inflight_check_interval_ms": 100,
+            "market_exit_interval_ms": 100,
             "market_exit_max_attempts": 100,
+            "market_exit_time_in_force": TimeInForce.GTC,
+            "market_exit_reduce_only": True,
         }
 
     def test_strategy_equality(self) -> None:
@@ -2099,7 +2103,7 @@ class TestStrategy:
 
     def test_market_exit(self) -> None:
         # Arrange
-        config = StrategyConfig(inflight_check_interval_ms=10)
+        config = StrategyConfig(market_exit_interval_ms=10)
         strategy = Strategy(config=config)
         strategy.register(
             trader_id=self.trader_id,
@@ -2139,7 +2143,7 @@ class TestStrategy:
 
     def test_market_exit_with_position(self) -> None:
         # Arrange
-        config = StrategyConfig(inflight_check_interval_ms=10)
+        config = StrategyConfig(market_exit_interval_ms=10)
         strategy = Strategy(config=config)
         strategy.register(
             trader_id=self.trader_id,
@@ -2176,10 +2180,44 @@ class TestStrategy:
         # Assert - strategy stays running after market exit
         assert strategy.state == ComponentState.RUNNING
 
+    def test_market_exit_with_time_in_force(self) -> None:
+        # Arrange
+        config = StrategyConfig(
+            market_exit_interval_ms=10,
+            market_exit_time_in_force=TimeInForce.IOC,
+        )
+        strategy = Strategy(config=config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        strategy.start()
+
+        # Open a position
+        order = strategy.order_factory.market(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Act
+        strategy.market_exit()
+
+        # Assert - closing order uses specified time_in_force
+        self.exchange.process(0)
+        closing_order = self.cache.orders()[-1]
+        assert closing_order.time_in_force == TimeInForce.IOC
+        assert strategy.portfolio.is_completely_flat()
+
     def test_market_exit_max_attempts_reached(self) -> None:
         # Arrange
         config = StrategyConfig(
-            inflight_check_interval_ms=10,
+            market_exit_interval_ms=10,
             market_exit_max_attempts=3,
         )
         strategy = Strategy(config=config)
@@ -2220,7 +2258,7 @@ class TestStrategy:
         # Arrange
         config = StrategyConfig(
             manage_stop=True,
-            inflight_check_interval_ms=10,
+            market_exit_interval_ms=10,
         )
         strategy = Strategy(config=config)
         strategy.register(
@@ -2262,7 +2300,7 @@ class TestStrategy:
         # Arrange
         config = StrategyConfig(
             manage_stop=True,
-            inflight_check_interval_ms=10,
+            market_exit_interval_ms=10,
         )
         strategy = Strategy(config=config)
         strategy.register(
@@ -2309,7 +2347,7 @@ class TestStrategy:
         # Arrange
         config = StrategyConfig(
             manage_stop=True,
-            inflight_check_interval_ms=10,
+            market_exit_interval_ms=10,
         )
         strategy = Strategy(config=config)
         strategy.register(
@@ -2364,7 +2402,7 @@ class TestStrategy:
             def post_market_exit(self):
                 self.post_market_exit_called = True
 
-        config = StrategyConfig(inflight_check_interval_ms=10)
+        config = StrategyConfig(market_exit_interval_ms=10)
         strategy = HookTrackingStrategy(config=config)
         strategy.register(
             trader_id=self.trader_id,
@@ -2393,7 +2431,7 @@ class TestStrategy:
 
     def test_market_exit_when_already_in_progress_logs_warning(self) -> None:
         # Arrange
-        config = StrategyConfig(inflight_check_interval_ms=10)
+        config = StrategyConfig(market_exit_interval_ms=10)
         strategy = Strategy(config=config)
         strategy.register(
             trader_id=self.trader_id,
@@ -2418,7 +2456,7 @@ class TestStrategy:
 
     def test_market_exit_when_not_running_logs_warning(self) -> None:
         # Arrange
-        config = StrategyConfig(inflight_check_interval_ms=10)
+        config = StrategyConfig(market_exit_interval_ms=10)
         strategy = Strategy(config=config)
         strategy.register(
             trader_id=self.trader_id,
@@ -2437,7 +2475,7 @@ class TestStrategy:
 
     def test_submit_order_denied_during_market_exit_when_not_reduce_only(self) -> None:
         # Arrange
-        config = StrategyConfig(inflight_check_interval_ms=10)
+        config = StrategyConfig(market_exit_interval_ms=10)
         strategy = Strategy(config=config)
         strategy.register(
             trader_id=self.trader_id,
@@ -2462,7 +2500,7 @@ class TestStrategy:
 
     def test_submit_order_allowed_during_market_exit_when_reduce_only(self) -> None:
         # Arrange
-        config = StrategyConfig(inflight_check_interval_ms=10)
+        config = StrategyConfig(market_exit_interval_ms=10)
         strategy = Strategy(config=config)
         strategy.register(
             trader_id=self.trader_id,
@@ -2486,9 +2524,35 @@ class TestStrategy:
         # Assert - order should be submitted (not denied)
         assert order.status != OrderStatus.DENIED
 
+    def test_submit_order_allowed_during_market_exit_when_tagged(self) -> None:
+        # Arrange
+        config = StrategyConfig(market_exit_interval_ms=10)
+        strategy = Strategy(config=config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        strategy.start()
+        strategy.market_exit()
+
+        # Act - submit non-reduce-only order tagged as market exit
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            tags=["MARKET_EXIT"],
+        )
+        strategy.submit_order(order)
+
+        # Assert - order should be submitted (not denied)
+        assert order.status != OrderStatus.DENIED
+
     def test_submit_order_list_denied_during_market_exit_when_not_all_reduce_only(self) -> None:
         # Arrange
-        config = StrategyConfig(inflight_check_interval_ms=10)
+        config = StrategyConfig(market_exit_interval_ms=10)
         strategy = Strategy(config=config)
         strategy.register(
             trader_id=self.trader_id,
@@ -2524,7 +2588,7 @@ class TestStrategy:
 
     def test_submit_order_list_allowed_during_market_exit_when_all_reduce_only(self) -> None:
         # Arrange
-        config = StrategyConfig(inflight_check_interval_ms=10)
+        config = StrategyConfig(market_exit_interval_ms=10)
         strategy = Strategy(config=config)
         strategy.register(
             trader_id=self.trader_id,
@@ -2567,7 +2631,7 @@ class TestStrategy:
 
         config = StrategyConfig(
             manage_stop=True,
-            inflight_check_interval_ms=10,
+            market_exit_interval_ms=10,
         )
         strategy = FailingPostExitStrategy(config=config)
         strategy.register(
@@ -2593,7 +2657,7 @@ class TestStrategy:
 
     def test_stop_during_market_exit_with_manage_stop_false_cleans_up_state(self) -> None:
         # Arrange - manage_stop=False (default)
-        config = StrategyConfig(inflight_check_interval_ms=10)
+        config = StrategyConfig(market_exit_interval_ms=10)
         strategy = Strategy(config=config)
         strategy.register(
             trader_id=self.trader_id,

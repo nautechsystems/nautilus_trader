@@ -41,7 +41,8 @@ use ustr::Ustr;
 use super::error::AxWsErrorResponse;
 use crate::common::{
     enums::{
-        AxCandleWidth, AxMarketDataLevel, AxOrderSide, AxOrderStatus, AxOrderType, AxTimeInForce,
+        AxCancelReason, AxCancelRejectionReason, AxCandleWidth, AxMarketDataLevel, AxOrderSide,
+        AxOrderStatus, AxOrderType, AxTimeInForce,
     },
     parse::deserialize_decimal_or_zero,
 };
@@ -102,7 +103,7 @@ pub struct AxMdSubscribe {
     #[serde(rename = "type")]
     pub msg_type: String,
     /// Instrument symbol.
-    pub symbol: String,
+    pub symbol: Ustr,
     /// Market data level (LEVEL_1, LEVEL_2, LEVEL_3).
     pub level: AxMarketDataLevel,
 }
@@ -119,7 +120,7 @@ pub struct AxMdUnsubscribe {
     #[serde(rename = "type")]
     pub msg_type: String,
     /// Instrument symbol.
-    pub symbol: String,
+    pub symbol: Ustr,
 }
 
 /// Subscribe request for candle data.
@@ -134,7 +135,7 @@ pub struct AxMdSubscribeCandles {
     #[serde(rename = "type")]
     pub msg_type: String,
     /// Instrument symbol.
-    pub symbol: String,
+    pub symbol: Ustr,
     /// Candle width/interval.
     pub width: AxCandleWidth,
 }
@@ -151,7 +152,7 @@ pub struct AxMdUnsubscribeCandles {
     #[serde(rename = "type")]
     pub msg_type: String,
     /// Instrument symbol.
-    pub symbol: String,
+    pub symbol: Ustr,
     /// Candle width/interval.
     pub width: AxCandleWidth,
 }
@@ -484,7 +485,7 @@ pub struct AxWsPlaceOrder {
     /// Message type (always "p").
     pub t: String,
     /// Instrument symbol.
-    pub s: String,
+    pub s: Ustr,
     /// Order side: "B" (buy) or "S" (sell).
     pub d: AxOrderSide,
     /// Order quantity.
@@ -773,7 +774,7 @@ pub struct AxWsOrderCanceled {
     /// Order details.
     pub o: AxWsOrder,
     /// Cancellation reason.
-    pub xr: String,
+    pub xr: AxCancelReason,
     /// Cancellation text/description.
     #[serde(default)]
     pub txt: Option<String>,
@@ -862,7 +863,7 @@ pub struct AxWsCancelRejected {
     /// Order ID that failed to cancel.
     pub oid: String,
     /// Rejection reason code.
-    pub r: String,
+    pub r: AxCancelRejectionReason,
     /// Rejection text/description.
     #[serde(default)]
     pub txt: Option<String>,
@@ -1046,7 +1047,7 @@ mod tests {
         let msg = AxMdSubscribe {
             request_id: 2,
             msg_type: "subscribe".to_string(),
-            symbol: "BTCUSD-PERP".to_string(),
+            symbol: Ustr::from("BTCUSD-PERP"),
             level: AxMarketDataLevel::Level2,
         };
         let json = serde_json::to_string(&msg).unwrap();
@@ -1063,7 +1064,7 @@ mod tests {
         let msg = AxMdUnsubscribe {
             request_id: 3,
             msg_type: "unsubscribe".to_string(),
-            symbol: "BTCUSD-PERP".to_string(),
+            symbol: Ustr::from("BTCUSD-PERP"),
         };
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -1078,7 +1079,7 @@ mod tests {
         let msg = AxMdSubscribeCandles {
             request_id: 4,
             msg_type: "subscribe_candles".to_string(),
-            symbol: "BTCUSD-PERP".to_string(),
+            symbol: Ustr::from("BTCUSD-PERP"),
             width: AxCandleWidth::Minutes1,
         };
         let json = serde_json::to_string(&msg).unwrap();
@@ -1095,7 +1096,7 @@ mod tests {
         let msg = AxMdUnsubscribeCandles {
             request_id: 5,
             msg_type: "unsubscribe_candles".to_string(),
-            symbol: "BTCUSD-PERP".to_string(),
+            symbol: Ustr::from("BTCUSD-PERP"),
             width: AxCandleWidth::Minutes1,
         };
         let json = serde_json::to_string(&msg).unwrap();
@@ -1112,7 +1113,7 @@ mod tests {
         let msg = AxWsPlaceOrder {
             rid: 1,
             t: "p".to_string(),
-            s: "BTCUSD-PERP".to_string(),
+            s: Ustr::from("BTCUSD-PERP"),
             d: AxOrderSide::Buy,
             q: 100,
             p: dec!(50000.50),
@@ -1146,7 +1147,7 @@ mod tests {
         let msg = AxWsPlaceOrder {
             rid: 2,
             t: "p".to_string(),
-            s: "BTCUSD-PERP".to_string(),
+            s: Ustr::from("BTCUSD-PERP"),
             d: AxOrderSide::Sell,
             q: 50,
             p: dec!(48000.00),
@@ -1299,7 +1300,7 @@ mod tests {
     fn test_load_order_canceled_from_file() {
         let json = include_str!("../../test_data/ws_order_canceled.json");
         let msg: AxWsOrderCanceled = serde_json::from_str(json).unwrap();
-        assert_eq!(msg.xr, "USER_REQUESTED");
+        assert_eq!(msg.xr, AxCancelReason::UserRequested);
     }
 
     #[rstest]
@@ -1334,7 +1335,7 @@ mod tests {
     fn test_load_cancel_rejected_from_file() {
         let json = include_str!("../../test_data/ws_cancel_rejected.json");
         let msg: AxWsCancelRejected = serde_json::from_str(json).unwrap();
-        assert_eq!(msg.r, "ORDER_NOT_FOUND");
+        assert_eq!(msg.r, AxCancelRejectionReason::OrderNotFound);
     }
 
     #[rstest]

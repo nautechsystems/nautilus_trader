@@ -549,7 +549,7 @@ impl MessageBus {
 
 #[cfg(test)]
 mod tests {
-    use rand::{Rng, SeedableRng, rngs::StdRng};
+    use rand::{RngExt, SeedableRng, rngs::StdRng};
     use rstest::rstest;
     use ustr::Ustr;
 

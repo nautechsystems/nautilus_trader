@@ -556,7 +556,7 @@ The market exit process:
 
 1. Cancels all open and in-flight orders for the strategy.
 2. Closes all open positions with market orders.
-3. Periodically checks (at `inflight_check_interval_ms`) until all orders resolve and positions close.
+3. Periodically checks (at `market_exit_interval_ms`) until all orders resolve and positions close.
 4. Calls `post_market_exit()` once flat, or after `market_exit_max_attempts` is reached.
 
 Two hooks are available for custom logic:
@@ -598,8 +598,10 @@ once flat.
 Configuration options in `StrategyConfig`:
 
 - `manage_stop` (default: False) - If True, `stop()` performs a market exit before stopping.
-- `inflight_check_interval_ms` (default: 100) - Interval between exit completion checks.
+- `market_exit_interval_ms` (default: 100) - Interval between exit completion checks.
 - `market_exit_max_attempts` (default: 100) - Maximum checks before completing the exit.
+- `market_exit_time_in_force` (default: None/GTC) - Time in force for closing market orders.
+- `market_exit_reduce_only` (default: True) - If closing market orders should be reduce only.
 
 ## Strategy configuration
 

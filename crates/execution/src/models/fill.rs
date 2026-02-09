@@ -16,16 +16,29 @@
 use std::fmt::Display;
 
 use nautilus_core::correctness::{FAILED, check_in_range_inclusive_f64};
-use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct FillModel {
     /// The probability of limit order filling if the market rests on its price.
     prob_fill_on_limit: f64,
     /// The probability of order fill prices slipping by one tick.
     prob_slippage: f64,
+    /// Optional seed for reproducible results
+    random_seed: Option<u64>,
     /// Random number generator
     rng: StdRng,
+}
+
+impl Clone for FillModel {
+    fn clone(&self) -> Self {
+        Self::new(
+            self.prob_fill_on_limit,
+            self.prob_slippage,
+            self.random_seed,
+        )
+        .expect("FillModel clone should not fail with valid parameters")
+    }
 }
 
 impl FillModel {
@@ -48,11 +61,12 @@ impl FillModel {
         check_in_range_inclusive_f64(prob_slippage, 0.0, 1.0, "prob_slippage").expect(FAILED);
         let rng = match random_seed {
             Some(seed) => StdRng::seed_from_u64(seed),
-            None => StdRng::from_os_rng(),
+            None => StdRng::from_rng(&mut rand::rng()),
         };
         Ok(Self {
             prob_fill_on_limit,
             prob_slippage,
+            random_seed,
             rng,
         })
     }

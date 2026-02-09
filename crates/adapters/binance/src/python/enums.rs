@@ -90,12 +90,19 @@ impl BinanceEnvironment {
         Self::Testnet
     }
 
+    #[classattr]
+    #[pyo3(name = "DEMO")]
+    const fn py_demo() -> Self {
+        Self::Demo
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "BinanceEnvironment.{}",
             match self {
                 Self::Mainnet => "MAINNET",
                 Self::Testnet => "TESTNET",
+                Self::Demo => "DEMO",
             }
         )
     }
@@ -104,6 +111,7 @@ impl BinanceEnvironment {
         match self {
             Self::Mainnet => "MAINNET",
             Self::Testnet => "TESTNET",
+            Self::Demo => "DEMO",
         }
         .to_string()
     }

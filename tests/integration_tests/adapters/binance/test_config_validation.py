@@ -15,8 +15,10 @@
 
 import pytest
 
+from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
+from nautilus_trader.adapters.binance.factories import _resolve_environment
 
 
 @pytest.fixture
@@ -35,6 +37,7 @@ def test_data_client_config_documentation_accuracy(default_data_config):
     # Verify default values are as documented
     assert config.api_key is None
     assert config.api_secret is None
+    assert config.environment is None
     assert config.testnet is False
     assert config.us is False
     assert config.update_instruments_interval_mins == 60
@@ -47,6 +50,7 @@ def test_exec_client_config_documentation_accuracy(default_exec_config):
     # Verify default values are as documented
     assert config.api_key is None
     assert config.api_secret is None
+    assert config.environment is None
     assert config.testnet is False
     assert config.us is False
     assert config.use_gtd is True
@@ -125,3 +129,23 @@ def test_exec_config_optional_parameters_none():
     assert config.retry_delay_max_ms is None
     assert config.futures_leverages is None
     assert config.futures_margin_types is None
+
+
+def test_resolve_environment_defaults_to_live():
+    assert _resolve_environment(None, False) == BinanceEnvironment.LIVE
+
+
+def test_resolve_environment_from_environment_field():
+    assert _resolve_environment(BinanceEnvironment.DEMO, False) == BinanceEnvironment.DEMO
+    assert _resolve_environment(BinanceEnvironment.TESTNET, False) == BinanceEnvironment.TESTNET
+
+
+def test_resolve_environment_testnet_deprecated():
+    with pytest.warns(DeprecationWarning, match="testnet"):
+        result = _resolve_environment(None, True)
+    assert result == BinanceEnvironment.TESTNET
+
+
+def test_resolve_environment_both_raises():
+    with pytest.raises(ValueError, match="Cannot set both"):
+        _resolve_environment(BinanceEnvironment.DEMO, True)

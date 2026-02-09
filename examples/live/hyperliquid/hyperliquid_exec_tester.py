@@ -149,6 +149,7 @@ strat_config = ExecTesterConfig(
     # cancel_orders_on_stop=False,
     # close_positions_on_stop=False,
     reduce_only_on_stop=reduce_only_on_stop,
+    # test_reject_post_only=True,
     log_data=False,  # Set to True for verbose data logging
 )
 

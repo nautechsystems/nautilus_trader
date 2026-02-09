@@ -18,7 +18,7 @@
 use anyhow::Context;
 use nautilus_core::{UUID4, nanos::UnixNanos};
 use nautilus_model::{
-    data::{Bar, BarSpecification, BarType},
+    data::{Bar, BarSpecification, BarType, FundingRateUpdate},
     enums::{
         AccountType, AggregationSource, BarAggregation, CurrencyType, LiquiditySide, OrderSide,
         OrderType, PositionSideSpecified, PriceType,
@@ -31,7 +31,9 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 
-use super::models::{AxBalancesResponse, AxCandle, AxFill, AxInstrument, AxOpenOrder, AxPosition};
+use super::models::{
+    AxBalancesResponse, AxCandle, AxFill, AxFundingRate, AxInstrument, AxOpenOrder, AxPosition,
+};
 use crate::common::{consts::AX_VENUE, enums::AxCandleWidth, parse::cid_to_client_order_id};
 
 fn decimal_to_price(value: Decimal, field_name: &str) -> anyhow::Result<Price> {
@@ -116,6 +118,22 @@ pub fn parse_bar(
 
     Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init)
         .context("Failed to construct Bar from Ax candle")
+}
+
+/// Parses an Ax funding rate into a Nautilus [`FundingRateUpdate`].
+#[must_use]
+pub fn parse_funding_rate(
+    ax_rate: &AxFundingRate,
+    instrument_id: InstrumentId,
+    ts_init: UnixNanos,
+) -> FundingRateUpdate {
+    FundingRateUpdate::new(
+        instrument_id,
+        ax_rate.funding_rate,
+        None, // AX doesn't provide next funding time
+        UnixNanos::from(ax_rate.timestamp_ns as u64),
+        ts_init,
+    )
 }
 
 /// Parses an Ax perpetual futures instrument into a Nautilus CryptoPerpetual.
@@ -454,7 +472,10 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::{common::enums::AxInstrumentState, http::models::AxInstrumentsResponse};
+    use crate::{
+        common::enums::AxInstrumentState,
+        http::models::{AxFundingRatesResponse, AxInstrumentsResponse},
+    };
 
     fn create_test_instrument() -> AxInstrument {
         AxInstrument {
@@ -590,5 +611,27 @@ mod tests {
                 result.err()
             );
         }
+    }
+
+    #[rstest]
+    fn test_deserialize_and_parse_funding_rates() {
+        let test_data = include_str!("../../test_data/http_get_funding_rates.json");
+        let response: AxFundingRatesResponse =
+            serde_json::from_str(test_data).expect("Failed to deserialize test data");
+
+        assert_eq!(response.funding_rates.len(), 2);
+        assert_eq!(response.funding_rates[0].symbol.as_str(), "JPYUSD-PERP");
+        assert_eq!(response.funding_rates[0].funding_rate, dec!(0.001234560000));
+
+        let instrument_id = InstrumentId::new(Symbol::new("JPYUSD-PERP"), *AX_VENUE);
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let update = parse_funding_rate(&response.funding_rates[1], instrument_id, ts_init);
+
+        assert_eq!(update.instrument_id, instrument_id);
+        assert_eq!(update.rate, dec!(0.003558290026));
+        assert_eq!(update.next_funding_ns, None);
+        assert_eq!(update.ts_event, UnixNanos::from(1770393600000000000u64));
+        assert_eq!(update.ts_init, ts_init);
     }
 }

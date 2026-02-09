@@ -351,6 +351,12 @@ impl Money {
     }
 
     #[staticmethod]
+    #[pyo3(name = "from_decimal")]
+    fn py_from_decimal(value: Decimal, currency: Currency) -> PyResult<Self> {
+        Self::from_decimal(value, currency).map_err(to_pyvalue_err)
+    }
+
+    #[staticmethod]
     #[pyo3(name = "from_str")]
     fn py_from_str(value: &str) -> PyResult<Self> {
         Self::from_str(value).map_err(to_pyvalue_err)

@@ -726,6 +726,8 @@ class ParquetDataCatalog(BaseDataCatalog):
             pq.read_table(file, memory_map=True, pre_buffer=False, filesystem=self.fs)
             for file in file_list
         ]
+        self._validate_table_metadata(tables, file_list)
+
         combined_table = pa.concat_tables(tables)
 
         if deduplicate:
@@ -736,6 +738,45 @@ class ParquetDataCatalog(BaseDataCatalog):
         for file in file_list:
             if file != new_file:
                 self.fs.rm(file)
+
+    @staticmethod
+    def _validate_table_metadata(
+        tables: list[pa.Table],
+        file_list: list[str],
+    ) -> None:
+        if len(tables) <= 1:
+            return
+
+        reference_metadata = tables[0].schema.metadata or {}
+        reference_keys = set(reference_metadata.keys())
+
+        for i, table in enumerate(tables[1:], start=1):
+            metadata = table.schema.metadata or {}
+            metadata_keys = set(metadata.keys())
+
+            missing = reference_keys - metadata_keys
+            if missing:
+                raise ValueError(
+                    f"Cannot consolidate parquet files with mismatched metadata: "
+                    f"keys {missing!r} present in '{file_list[0]}' "
+                    f"but missing from '{file_list[i]}'",
+                )
+
+            extra = metadata_keys - reference_keys
+            if extra:
+                raise ValueError(
+                    f"Cannot consolidate parquet files with mismatched metadata: "
+                    f"keys {extra!r} present in '{file_list[i]}' "
+                    f"but missing from '{file_list[0]}'",
+                )
+
+            for key in reference_keys:
+                if reference_metadata[key] != metadata[key]:
+                    raise ValueError(
+                        f"Cannot consolidate parquet files with conflicting metadata: "
+                        f"key {key!r} has value {reference_metadata[key]!r} in "
+                        f"'{file_list[0]}' but {metadata[key]!r} in '{file_list[i]}'",
+                    )
 
     @staticmethod
     def _deduplicate_table(table: pa.Table) -> pa.Table:

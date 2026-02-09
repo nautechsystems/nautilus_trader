@@ -30,9 +30,12 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.rust.model import AggressorSide
 from nautilus_trader.core.rust.model import BookAction
+from nautilus_trader.core.rust.model import OrderSide
 from nautilus_trader.model.custom import customdataclass
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import CustomData
+from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import TradeId
@@ -1241,6 +1244,56 @@ class TestConsolidateDataByPeriod:
 
         retrieved_timestamps = sorted([bar.ts_init for bar in bars])
         assert retrieved_timestamps == sorted(boundary_timestamps)
+
+    def test_consolidate_rejects_conflicting_metadata(self):
+        """
+        Test that consolidation raises when parquet files have different precision
+        metadata.
+        """
+        # Arrange
+        instrument_id = self.audusd_sim.id
+
+        # Write batch with price_precision=2, size_precision=4
+        deltas_batch1 = [
+            OrderBookDelta(
+                instrument_id=instrument_id,
+                action=BookAction.UPDATE,
+                order=BookOrder(
+                    OrderSide.BUY,
+                    Price(1.11, 2),
+                    Quantity(10.0001, 4),
+                    1,
+                ),
+                flags=0,
+                sequence=0,
+                ts_event=100,
+                ts_init=100,
+            ),
+        ]
+        self.catalog.write_data(deltas_batch1)
+
+        # Write batch with price_precision=3, size_precision=6
+        deltas_batch2 = [
+            OrderBookDelta(
+                instrument_id=instrument_id,
+                action=BookAction.UPDATE,
+                order=BookOrder(
+                    OrderSide.BUY,
+                    Price(1.123, 3),
+                    Quantity(10.000001, 6),
+                    2,
+                ),
+                flags=0,
+                sequence=0,
+                ts_event=200,
+                ts_init=200,
+            ),
+        ]
+        self.catalog.write_data(deltas_batch2, skip_disjoint_check=True)
+
+        # Act & Assert
+        with pytest.raises(ValueError, match="conflicting metadata"):
+            self.catalog.consolidate_catalog(ensure_contiguous_files=False)
 
 
 def test_consolidate_catalog_by_period(catalog: ParquetDataCatalog) -> None:

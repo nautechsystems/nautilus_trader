@@ -5751,6 +5751,18 @@ class AxHttpClient:
         self,
         account_id: AccountId,
     ) -> list[PositionStatusReport]: ...
+    async def request_funding_rates(
+        self,
+        instrument_id: InstrumentId,
+        start_timestamp_ns: int,
+        end_timestamp_ns: int,
+    ) -> list[FundingRateUpdate]: ...
+    async def preview_aggressive_limit_order(
+        self,
+        instrument_id: InstrumentId,
+        quantity: Quantity,
+        side: OrderSide,
+    ) -> Price | None: ...
 
 class AxMdWebSocketClient:
     def __init__(
@@ -8178,14 +8190,6 @@ class HyperliquidProductType(Enum):
     @classmethod
     def from_str(cls, value: str) -> HyperliquidProductType: ...
 
-class HyperliquidTriggerPriceType(Enum):
-    LAST = "LAST"
-    MARK = "MARK"
-    ORACLE = "ORACLE"
-
-    @classmethod
-    def from_str(cls, value: str) -> HyperliquidTriggerPriceType: ...
-
 class HyperliquidTpSl(Enum):
     TP = "TP"
     SL = "SL"
@@ -9140,6 +9144,7 @@ class BinanceProductType(Enum):
 class BinanceEnvironment(Enum):
     MAINNET = "MAINNET"
     TESTNET = "TESTNET"
+    DEMO = "DEMO"
 
 class BinanceSpotHttpClient:
     def __init__(

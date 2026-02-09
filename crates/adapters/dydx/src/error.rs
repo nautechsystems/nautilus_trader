@@ -101,26 +101,35 @@ pub enum DydxError {
 /// See: https://github.com/cosmos/cosmos-sdk/blob/main/types/errors/errors.go
 const COSMOS_ERROR_CODE_SEQUENCE_MISMATCH: u32 = 32;
 
+/// dYdX AllOf authenticator error code (ErrAllOfVerification).
+/// On dYdX v4, sequence mismatches surface as code=104 when using permissioned keys:
+/// the AllOf composite authenticator wraps the inner SignatureVerification failure
+/// (code=100) which includes "please verify sequence" in its diagnostic message.
+const DYDX_ERROR_CODE_ALL_OF_FAILED: u32 = 104;
+
 impl DydxError {
-    /// Returns true if this error is a Cosmos SDK account sequence mismatch (code 32).
+    /// Returns true if this error is a sequence mismatch (code=32 or code=104 with sequence hint).
     ///
     /// Sequence mismatch occurs when:
     /// - Multiple transactions race for the same sequence number
     /// - A transaction was submitted but not yet included in a block
     /// - The local sequence counter is out of sync with chain state
     ///
+    /// On dYdX v4, sequence mismatches can manifest as either:
+    /// - code=32: Standard Cosmos SDK "account sequence mismatch"
+    /// - code=104: dYdX authenticator "signature verification failed; please verify sequence"
+    ///
     /// These errors are typically recoverable by resyncing the sequence from chain
     /// and rebuilding the transaction.
     #[must_use]
     pub fn is_sequence_mismatch(&self) -> bool {
         match self {
-            // Check for code=32 pattern in error messages
             Self::Grpc(status) => {
                 let msg = status.message();
                 Self::message_indicates_sequence_mismatch(msg)
             }
             Self::Nautilus(e) => {
-                let msg = format!("{e:?}");
+                let msg = e.to_string();
                 Self::message_indicates_sequence_mismatch(&msg)
             }
             _ => false,
@@ -129,11 +138,19 @@ impl DydxError {
 
     /// Checks if an error message indicates a sequence mismatch.
     ///
-    /// Matches both the error code pattern (code=32) and the descriptive text.
+    /// Matches:
+    /// - code=32 (standard Cosmos SDK sequence mismatch)
+    /// - code=104 with "sequence" (dYdX authenticator failure due to wrong sequence)
+    /// - "account sequence mismatch" text
     fn message_indicates_sequence_mismatch(msg: &str) -> bool {
-        // Check for Cosmos SDK error code 32
-        msg.contains(&format!("code={COSMOS_ERROR_CODE_SEQUENCE_MISMATCH}"))
+        // Standard Cosmos SDK error code 32
+        if msg.contains(&format!("code={COSMOS_ERROR_CODE_SEQUENCE_MISMATCH}"))
             || msg.contains("account sequence mismatch")
+        {
+            return true;
+        }
+        // dYdX authenticator error code 104 with sequence hint
+        msg.contains(&format!("code={DYDX_ERROR_CODE_ALL_OF_FAILED}")) && msg.contains("sequence")
     }
 
     /// Returns true if this error is likely transient and worth retrying.
@@ -191,6 +208,26 @@ mod tests {
             tonic::Status::invalid_argument("account sequence mismatch, expected 42, received 41");
         let err = DydxError::Grpc(Box::new(status));
         assert!(err.is_sequence_mismatch());
+    }
+
+    #[rstest]
+    fn test_sequence_mismatch_dydx_authenticator_code_104() {
+        let err = DydxError::Nautilus(anyhow::anyhow!(
+            "Transaction broadcast failed: code=104, log=authentication failed for message 0, \
+             authenticator id 966, type AllOf: signature verification failed; \
+             please verify account number (0), sequence (545) and chain-id (dydx-mainnet-1): \
+             Signature verification failed: AllOf verification failed"
+        ));
+        assert!(err.is_sequence_mismatch());
+    }
+
+    #[rstest]
+    fn test_code_104_without_sequence_not_matched() {
+        // code=104 without "sequence" in the message should NOT match
+        let err = DydxError::Nautilus(anyhow::anyhow!(
+            "Transaction broadcast failed: code=104, log=authentication failed: invalid pubkey"
+        ));
+        assert!(!err.is_sequence_mismatch());
     }
 
     #[rstest]

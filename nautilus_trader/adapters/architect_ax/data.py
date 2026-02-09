@@ -31,18 +31,23 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import RequestFundingRates
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeFundingRates
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import book_type_to_str
@@ -115,6 +120,8 @@ class AxDataClient(LiveMarketDataClient):
 
         self._update_instruments_interval_mins = config.update_instruments_interval_mins
         self._update_instruments_task: asyncio.Task | None = None
+        self._funding_rate_tasks: dict[InstrumentId, asyncio.Task] = {}
+        self._last_funding_rates: dict[InstrumentId, FundingRateUpdate] = {}
 
     @property
     def instrument_provider(self) -> AxInstrumentProvider:
@@ -158,6 +165,12 @@ class AxDataClient(LiveMarketDataClient):
             self._log.debug("Canceling task 'update_instruments'")
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
+
+        for instrument_id, task in self._funding_rate_tasks.items():
+            self._log.debug(f"Canceling funding rate polling for {instrument_id}")
+            task.cancel()
+        self._funding_rate_tasks.clear()
+        self._last_funding_rates.clear()
 
         # Allow time for any pending unsubscribe messages
         await asyncio.sleep(0.5)
@@ -293,6 +306,89 @@ class AxDataClient(LiveMarketDataClient):
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         # TODO: Implement when candle unsubscription is exposed via PyO3
         pass
+
+    async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
+        instrument_id = command.instrument_id
+
+        if instrument_id in self._funding_rate_tasks:
+            self._log.debug(f"Already subscribed to funding rates for {instrument_id}")
+            return
+
+        self._log.debug(f"Subscribing to funding rates for {instrument_id} (HTTP polling)")
+
+        task = self.create_task(self._poll_funding_rates(instrument_id))
+        self._funding_rate_tasks[instrument_id] = task  # type: ignore [assignment]
+
+    async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
+        instrument_id = command.instrument_id
+        task = self._funding_rate_tasks.pop(instrument_id, None)
+        if task is not None:
+            self._log.debug(f"Unsubscribing from funding rates for {instrument_id}")
+            task.cancel()
+            self._last_funding_rates.pop(instrument_id, None)
+
+    async def _poll_funding_rates(self, instrument_id: InstrumentId) -> None:
+        symbol = self._get_symbol_from_instrument_id(instrument_id)
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(str(instrument_id))
+        poll_interval_secs = 900  # 15 minutes
+        lookback_ns = 7 * 24 * 60 * 60 * 1_000_000_000  # 7 days
+
+        try:
+            while True:
+                try:
+                    now_ns = self._clock.timestamp_ns()
+                    start_ns = now_ns - lookback_ns
+
+                    pyo3_rates = await self._http_client.request_funding_rates(
+                        pyo3_instrument_id,
+                        start_ns,
+                        now_ns,
+                    )
+
+                    if not pyo3_rates:
+                        self._log.warning(f"No funding rates returned for {symbol}")
+                    else:
+                        latest = FundingRateUpdate.from_pyo3(pyo3_rates[-1])
+
+                        # Only emit if rate changed
+                        last = self._last_funding_rates.get(instrument_id)
+                        if last is None or last.rate != latest.rate:
+                            self._log.info(f"Funding rate for {symbol}: {latest.rate}")
+                            self._last_funding_rates[instrument_id] = latest
+                            self._handle_data(latest)
+                except Exception as e:
+                    self._log.error(f"Failed to poll funding rates for {symbol}: {e}")
+
+                await asyncio.sleep(poll_interval_secs)
+        except asyncio.CancelledError:
+            self._log.debug(f"Funding rate polling cancelled for {symbol}")
+
+    async def _request_funding_rates(self, request: RequestFundingRates) -> None:
+        instrument_id = request.instrument_id
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(str(instrument_id))
+        now_ns = self._clock.timestamp_ns()
+
+        start_ns = maybe_dt_to_unix_nanos(request.start) or 0
+        end_ns = maybe_dt_to_unix_nanos(request.end) or now_ns
+
+        try:
+            pyo3_rates = await self._http_client.request_funding_rates(
+                pyo3_instrument_id,
+                start_ns,
+                end_ns,
+            )
+            funding_rates = FundingRateUpdate.from_pyo3_list(pyo3_rates)
+
+            self._handle_funding_rates(
+                instrument_id,
+                funding_rates,
+                request.id,
+                request.start,
+                request.end,
+                request.params,
+            )
+        except Exception as e:
+            self._log.error(f"Failed to request funding rates for {instrument_id}: {e}")
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         self._log.error("Cannot request historical quotes: not published by AX Exchange")

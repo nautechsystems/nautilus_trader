@@ -21,9 +21,10 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -34,10 +35,11 @@ use nautilus_common::{
     messages::{
         DataEvent, DataResponse,
         data::{
-            BarsResponse, InstrumentResponse, InstrumentsResponse, RequestBars, RequestInstrument,
-            RequestInstruments, SubscribeBars, SubscribeBookDeltas, SubscribeInstrument,
-            SubscribeInstruments, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeInstrument, UnsubscribeInstruments,
+            BarsResponse, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
+            RequestBars, RequestFundingRates, RequestInstrument, RequestInstruments, SubscribeBars,
+            SubscribeBookDeltas, SubscribeFundingRates, SubscribeInstrument, SubscribeInstruments,
+            SubscribeQuotes, SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas,
+            UnsubscribeFundingRates, UnsubscribeInstrument, UnsubscribeInstruments,
             UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
@@ -47,8 +49,8 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Data, OrderBookDeltas_API},
-    identifiers::{ClientId, Venue},
+    data::{Data, FundingRateUpdate, OrderBookDeltas_API},
+    identifiers::{ClientId, InstrumentId, Venue},
     instruments::InstrumentAny,
 };
 use tokio::task::JoinHandle;
@@ -92,6 +94,8 @@ pub struct AxDataClient {
     /// High-resolution clock for timestamps.
     clock: &'static AtomicTime,
     subscribed_symbols: Arc<Mutex<AHashSet<String>>>,
+    funding_rate_tasks: AHashMap<InstrumentId, JoinHandle<()>>,
+    funding_rate_cache: Arc<Mutex<AHashMap<InstrumentId, FundingRateUpdate>>>,
 }
 
 impl AxDataClient {
@@ -124,6 +128,8 @@ impl AxDataClient {
             instruments,
             clock,
             subscribed_symbols: Arc::new(Mutex::new(AHashSet::new())),
+            funding_rate_tasks: AHashMap::new(),
+            funding_rate_cache: Arc::new(Mutex::new(AHashMap::new())),
         })
     }
 
@@ -278,7 +284,13 @@ impl DataClient for AxDataClient {
     fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting {}", self.client_id);
         self.cancellation_token.cancel();
-        self.tasks.clear();
+        for task in self.tasks.drain(..) {
+            task.abort();
+        }
+        for (_, task) in self.funding_rate_tasks.drain() {
+            task.abort();
+        }
+        self.funding_rate_cache.lock().unwrap().clear();
         self.cancellation_token = CancellationToken::new();
         Ok(())
     }
@@ -366,6 +378,10 @@ impl DataClient for AxDataClient {
         for task in self.tasks.drain(..) {
             task.abort();
         }
+        for (_, task) in self.funding_rate_tasks.drain() {
+            task.abort();
+        }
+        self.funding_rate_cache.lock().unwrap().clear();
 
         self.is_connected.store(false, Ordering::Release);
         log::info!("Disconnected {}", self.client_id);
@@ -379,17 +395,36 @@ impl DataClient for AxDataClient {
         Ok(())
     }
 
-    fn unsubscribe_instruments(&mut self, _cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
-        Ok(())
-    }
-
     fn subscribe_instrument(&mut self, _cmd: &SubscribeInstrument) -> anyhow::Result<()> {
         // AX does not have a real-time instrument channel; instruments are fetched via HTTP
         log::debug!("Instrument subscription not applicable for AX (use request_instrument)");
         Ok(())
     }
 
-    fn unsubscribe_instrument(&mut self, _cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
+    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
+        let symbol = cmd.instrument_id.symbol.to_string();
+
+        // Architect allows only one subscription per symbol
+        if !self.mark_symbol_subscribed(&symbol) {
+            log::debug!("Symbol {symbol} already subscribed, skipping book deltas subscription");
+            return Ok(());
+        }
+
+        let level = AxMarketDataLevel::Level2;
+        log::debug!("Subscribing to book deltas for {symbol} at {level:?}");
+
+        let ws = self.ws_client.clone();
+        let symbol_clone = symbol.clone();
+        self.spawn_subscribe(
+            async move {
+                ws.subscribe(&symbol_clone, level)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))
+            },
+            symbol,
+            "subscribe book deltas",
+        );
+
         Ok(())
     }
 
@@ -413,29 +448,6 @@ impl DataClient for AxDataClient {
             },
             symbol,
             "subscribe quotes",
-        );
-
-        Ok(())
-    }
-
-    fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        let symbol = cmd.instrument_id.symbol.to_string();
-
-        // Architect allows only one subscription per symbol
-        if !self.mark_symbol_unsubscribed(&symbol) {
-            log::debug!("Symbol {symbol} not subscribed, skipping quotes unsubscription");
-            return Ok(());
-        }
-
-        log::debug!("Unsubscribing from quotes for {symbol}");
-        let ws = self.ws_client.clone();
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe(&symbol)
-                    .await
-                    .map_err(|e| anyhow::anyhow!(e))
-            },
-            "unsubscribe quotes",
         );
 
         Ok(())
@@ -468,53 +480,111 @@ impl DataClient for AxDataClient {
         Ok(())
     }
 
-    fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        let symbol = cmd.instrument_id.symbol.to_string();
+    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+        let bar_type = cmd.bar_type;
+        let symbol = bar_type.instrument_id().symbol.to_string();
+        let width = map_bar_spec_to_candle_width(&bar_type.spec())?;
+        log::debug!("Subscribing to bars for {bar_type} (width: {width:?})");
 
-        // Architect allows only one subscription per symbol
-        if !self.mark_symbol_unsubscribed(&symbol) {
-            log::debug!("Symbol {symbol} not subscribed, skipping trades unsubscription");
-            return Ok(());
-        }
-
-        log::debug!("Unsubscribing from trades for {symbol}");
         let ws = self.ws_client.clone();
         self.spawn_ws(
             async move {
-                ws.unsubscribe(&symbol)
+                ws.subscribe_candles(&symbol, width)
                     .await
                     .map_err(|e| anyhow::anyhow!(e))
             },
-            "unsubscribe trades",
+            "subscribe bars",
         );
 
         Ok(())
     }
 
-    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
-        let symbol = cmd.instrument_id.symbol.to_string();
+    fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
+        // TODO: Hardcoded for now
+        const POLL_INTERVAL_SECS: u64 = 900; // 15 minutes
 
-        // Architect allows only one subscription per symbol
-        if !self.mark_symbol_subscribed(&symbol) {
-            log::debug!("Symbol {symbol} already subscribed, skipping book deltas subscription");
+        // Use 7-day lookback to capture latest rate across weekends/holidays
+        const LOOKBACK_NS: i64 = 7 * 24 * 60 * 60 * 1_000_000_000;
+
+        let instrument_id = cmd.instrument_id;
+
+        if self.funding_rate_tasks.contains_key(&instrument_id) {
+            log::debug!("Already subscribed to funding rates for {instrument_id}");
             return Ok(());
         }
 
-        let level = AxMarketDataLevel::Level2;
-        log::debug!("Subscribing to book deltas for {symbol} at {level:?}");
+        log::debug!("Subscribing to funding rates for {instrument_id} (HTTP polling)");
 
-        let ws = self.ws_client.clone();
-        let symbol_clone = symbol.clone();
-        self.spawn_subscribe(
-            async move {
-                ws.subscribe(&symbol_clone, level)
-                    .await
-                    .map_err(|e| anyhow::anyhow!(e))
-            },
-            symbol,
-            "subscribe book deltas",
-        );
+        let http = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let symbol = instrument_id.symbol.inner();
+        let clock = self.clock;
+        let cancel = self.cancellation_token.clone();
+        let cache = Arc::clone(&self.funding_rate_cache);
 
+        let handle = get_runtime().spawn(async move {
+            // First tick fires immediately for initial emission
+            let mut interval = tokio::time::interval(Duration::from_secs(POLL_INTERVAL_SECS));
+
+            loop {
+                tokio::select! {
+                    () = cancel.cancelled() => {
+                        log::debug!("Funding rate polling cancelled for {symbol}");
+                        break;
+                    }
+                    _ = interval.tick() => {
+                        let now_ns = clock.get_time_ns().as_i64();
+                        let start_ns = now_ns - LOOKBACK_NS;
+
+                        match http.request_funding_rates(instrument_id, start_ns, now_ns).await {
+                            Ok(funding_rates) => {
+                                if funding_rates.is_empty() {
+                                    log::warn!(
+                                        "No funding rates returned for {symbol}"
+                                    );
+                                } else if let Some(update) = funding_rates.last() {
+                                    // Only emit if rate changed
+                                    let should_emit = cache.lock().unwrap()
+                                        .get(&instrument_id) != Some(update);
+
+                                    if should_emit {
+                                        log::info!(
+                                            "Funding rate for {symbol}: {}",
+                                            update.rate,
+                                        );
+                                        let update = *update;
+                                        cache.lock().unwrap()
+                                            .insert(instrument_id, update);
+                                        if let Err(e) = sender.send(
+                                            DataEvent::FundingRate(update),
+                                        ) {
+                                            log::error!(
+                                                "Failed to send funding rate for {symbol}: {e}"
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::error!(
+                                    "Failed to poll funding rates for {symbol}: {e}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        self.funding_rate_tasks.insert(instrument_id, handle);
+        Ok(())
+    }
+
+    fn unsubscribe_instruments(&mut self, _cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_instrument(&mut self, _cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -541,20 +611,47 @@ impl DataClient for AxDataClient {
         Ok(())
     }
 
-    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
-        let bar_type = cmd.bar_type;
-        let symbol = bar_type.instrument_id().symbol.to_string();
-        let width = map_bar_spec_to_candle_width(&bar_type.spec())?;
-        log::debug!("Subscribing to bars for {bar_type} (width: {width:?})");
+    fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
+        let symbol = cmd.instrument_id.symbol.to_string();
 
+        // Architect allows only one subscription per symbol
+        if !self.mark_symbol_unsubscribed(&symbol) {
+            log::debug!("Symbol {symbol} not subscribed, skipping quotes unsubscription");
+            return Ok(());
+        }
+
+        log::debug!("Unsubscribing from quotes for {symbol}");
         let ws = self.ws_client.clone();
         self.spawn_ws(
             async move {
-                ws.subscribe_candles(&symbol, width)
+                ws.unsubscribe(&symbol)
                     .await
                     .map_err(|e| anyhow::anyhow!(e))
             },
-            "subscribe bars",
+            "unsubscribe quotes",
+        );
+
+        Ok(())
+    }
+
+    fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
+        let symbol = cmd.instrument_id.symbol.to_string();
+
+        // Architect allows only one subscription per symbol
+        if !self.mark_symbol_unsubscribed(&symbol) {
+            log::debug!("Symbol {symbol} not subscribed, skipping trades unsubscription");
+            return Ok(());
+        }
+
+        log::debug!("Unsubscribing from trades for {symbol}");
+        let ws = self.ws_client.clone();
+        self.spawn_ws(
+            async move {
+                ws.unsubscribe(&symbol)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))
+            },
+            "unsubscribe trades",
         );
 
         Ok(())
@@ -575,6 +672,23 @@ impl DataClient for AxDataClient {
             },
             "unsubscribe bars",
         );
+
+        Ok(())
+    }
+
+    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+
+        if let Some(task) = self.funding_rate_tasks.remove(&instrument_id) {
+            log::debug!("Unsubscribing from funding rates for {instrument_id}");
+            task.abort();
+            self.funding_rate_cache
+                .lock()
+                .unwrap()
+                .remove(&instrument_id);
+        } else {
+            log::debug!("Not subscribed to funding rates for {instrument_id}");
+        }
 
         Ok(())
     }
@@ -626,14 +740,14 @@ impl DataClient for AxDataClient {
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let instrument_id = request.instrument_id;
-        let symbol = instrument_id.symbol.to_string();
+        let symbol = instrument_id.symbol.inner();
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
         let params = request.params;
         let clock = self.clock;
 
         get_runtime().spawn(async move {
-            match http.request_instrument(&symbol, None, None).await {
+            match http.request_instrument(symbol, None, None).await {
                 Ok(instrument) => {
                     log::debug!("Fetched instrument {symbol} from Ax");
                     http.cache_instrument(instrument.clone());
@@ -668,7 +782,7 @@ impl DataClient for AxDataClient {
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let bar_type = request.bar_type;
-        let symbol = bar_type.instrument_id().symbol.to_string();
+        let symbol = bar_type.instrument_id().symbol.inner();
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
         let params = request.params;
@@ -685,7 +799,7 @@ impl DataClient for AxDataClient {
             let start_ns = start_nanos.map_or(0, |n| n.as_i64());
             let end_ns = end_nanos.map_or(clock.get_time_ns().as_i64(), |n| n.as_i64());
 
-            match http.request_bars(&symbol, start_ns, end_ns, width).await {
+            match http.request_bars(symbol, start_ns, end_ns, width).await {
                 Ok(bars) => {
                     log::debug!("Fetched {} bars for {symbol}", bars.len());
 
@@ -706,6 +820,54 @@ impl DataClient for AxDataClient {
                 }
                 Err(e) => {
                     log::error!("Failed to request bars for {symbol}: {e}");
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
+        let http = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let instrument_id = request.instrument_id;
+        let symbol = instrument_id.symbol.inner();
+        let start_nanos = datetime_to_unix_nanos(request.start);
+        let end_nanos = datetime_to_unix_nanos(request.end);
+        let params = request.params;
+        let clock = self.clock;
+
+        get_runtime().spawn(async move {
+            let start_ns = start_nanos.map_or(0, |n| n.as_i64());
+            let end_ns = end_nanos.map_or(clock.get_time_ns().as_i64(), |n| n.as_i64());
+
+            match http
+                .request_funding_rates(instrument_id, start_ns, end_ns)
+                .await
+            {
+                Ok(funding_rates) => {
+                    log::debug!("Fetched {} funding rates for {symbol}", funding_rates.len());
+
+                    let ts_init = clock.get_time_ns();
+                    let response = DataResponse::FundingRates(FundingRatesResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        funding_rates,
+                        start_nanos,
+                        end_nanos,
+                        ts_init,
+                        params,
+                    ));
+
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send funding rates response: {e}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to request funding rates for {symbol}: {e}");
                 }
             }
         });

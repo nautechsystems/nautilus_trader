@@ -235,6 +235,17 @@ impl<T: 'static> TopicRouter<T> {
             .map_or_else(|| self.find_matches(topic).len(), |indices| indices.len())
     }
 
+    /// Returns the count of subscribers with an exact topic match,
+    /// excluding wildcard pattern subscriptions.
+    #[must_use]
+    pub fn exact_subscriber_count(&self, topic: MStr<Topic>) -> usize {
+        let pattern: MStr<Pattern> = topic.into();
+        self.subscriptions
+            .iter()
+            .filter(|s| s.pattern == pattern)
+            .count()
+    }
+
     /// Publishes a message to all handlers subscribed to matching patterns.
     pub fn publish(&mut self, topic: MStr<Topic>, message: &T) {
         // Split borrow to avoid copying indices

@@ -20,7 +20,7 @@
 
 use ahash::AHashMap;
 use nautilus_core::{UnixNanos, datetime::secs_to_nanos_unchecked};
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -43,7 +43,7 @@ pub struct BaseAccount {
     pub base_currency: Option<Currency>,
     pub calculate_account_state: bool,
     pub events: Vec<AccountState>,
-    pub commissions: AHashMap<Currency, f64>,
+    pub commissions: AHashMap<Currency, Money>,
     pub balances: AHashMap<Currency, AccountBalance>,
     pub balances_starting: AHashMap<Currency, Money>,
 }
@@ -166,32 +166,28 @@ impl BaseAccount {
     }
 
     pub fn update_commissions(&mut self, commission: Money) {
-        if commission.as_decimal() == Decimal::ZERO {
+        // TODO: Remove once from_raw enforces canonical precision alignment (v2)
+        let commission = commission.normalized();
+        if commission.is_zero() {
             return;
         }
-
         let currency = commission.currency;
-        let total_commissions = self.commissions.get(&currency).unwrap_or(&0.0);
-
         self.commissions
-            .insert(currency, total_commissions + commission.as_f64());
+            .entry(currency)
+            .and_modify(|total| *total = *total + commission)
+            .or_insert(commission);
     }
 
     /// Returns the total commission for the specified currency.
     #[must_use]
     pub fn commission(&self, currency: &Currency) -> Option<Money> {
-        self.commissions
-            .get(currency)
-            .map(|&amount| Money::new(amount, *currency))
+        self.commissions.get(currency).copied()
     }
 
     /// Returns a map of all commissions by currency.
     #[must_use]
     pub fn commissions(&self) -> AHashMap<Currency, Money> {
-        self.commissions
-            .iter()
-            .map(|(currency, &amount)| (*currency, Money::new(amount, *currency)))
-            .collect()
+        self.commissions.clone()
     }
 
     pub fn base_apply(&mut self, event: AccountState) {
@@ -431,5 +427,21 @@ mod tests {
         assert_eq!(account.events.len(), 1);
         assert_eq!(account.events[0].ts_event, event3.ts_event);
         assert_eq!(account.base_last_event().unwrap().ts_event, event3.ts_event);
+    }
+
+    #[rstest]
+    fn test_update_commissions_sub_canonical_raw_skipped() {
+        use crate::{
+            events::account::stubs::cash_account_state,
+            types::{Currency, Money},
+        };
+
+        let mut account = BaseAccount::new(cash_account_state(), true);
+        let usd = Currency::USD();
+
+        // Sub-canonical raw (1 < tick size for USD precision 2) normalizes to zero
+        account.update_commissions(Money::from_raw(1, usd));
+
+        assert!(account.commission(&usd).is_none());
     }
 }

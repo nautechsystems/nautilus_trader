@@ -73,12 +73,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ))];
 
     let tester_config = DataTesterConfig::new(client_id, instrument_ids)
+        .with_bar_types(bar_types)
         .with_subscribe_quotes(true)
         .with_subscribe_trades(true)
-        .with_subscribe_book_deltas(true)
+        .with_subscribe_funding_rates(true)
+        // .with_subscribe_book_deltas(true)
         .with_subscribe_bars(true)
-        .with_bar_types(bar_types)
-        .with_request_instruments(true);
+        // .with_request_instruments(true)
+        // .with_request_bars(true)
+        .with_request_funding_rates(true);
     let tester = DataTester::new(tester_config);
 
     node.add_actor(tester)?;

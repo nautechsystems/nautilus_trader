@@ -53,7 +53,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     common::{
-        consts::BINANCE_VENUE, credential::resolve_ed25519_credentials, enums::BinanceProductType,
+        consts::BINANCE_VENUE, credential::resolve_credentials, enums::BinanceProductType,
         parse::bar_spec_to_binance_interval,
     },
     config::BinanceDataClientConfig,
@@ -104,18 +104,19 @@ impl BinanceSpotDataClient {
             .copied()
             .unwrap_or(BinanceProductType::Spot);
 
-        let ed25519_creds = resolve_ed25519_credentials(
-            config.ed25519_api_key.clone(),
-            config.ed25519_api_secret.clone(),
+        let creds = resolve_credentials(
+            config.api_key.clone(),
+            config.api_secret.clone(),
             config.environment,
             product_type,
-        );
+        )
+        .ok();
 
         // SBE streams require Ed25519 authentication
         let ws_client = BinanceSpotWebSocketClient::new(
             config.base_url_ws.clone(),
-            ed25519_creds.as_ref().map(|(k, _)| k.clone()),
-            ed25519_creds.as_ref().map(|(_, s)| s.clone()),
+            creds.as_ref().map(|(k, _)| k.clone()),
+            creds.as_ref().map(|(_, s)| s.clone()),
             Some(20), // Heartbeat interval
         )?;
 

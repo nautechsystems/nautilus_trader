@@ -179,7 +179,6 @@ pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::websocket::HyperliquidWebSocketClient>()?;
     m.add_class::<crate::common::enums::HyperliquidProductType>()?;
     m.add_class::<crate::common::enums::HyperliquidTpSl>()?;
-    m.add_class::<crate::common::enums::HyperliquidTriggerPriceType>()?;
     m.add_class::<crate::common::enums::HyperliquidConditionalOrderType>()?;
     m.add_class::<crate::common::enums::HyperliquidTrailingOffsetType>()?;
     m.add_function(wrap_pyfunction!(urls::py_get_hyperliquid_http_base_url, m)?)?;

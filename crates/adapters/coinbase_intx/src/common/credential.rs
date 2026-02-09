@@ -99,8 +99,6 @@ impl Credential {
     /// Panics if signature generation fails due to key or cryptographic errors.
     pub fn sign_ws(&self, timestamp: &str) -> String {
         let message = format!("{timestamp}{}CBINTLMD{}", self.api_key, self.api_passphrase);
-        log::trace!("Signing message: {message}");
-
         let key = hmac::Key::new(hmac::HMAC_SHA256, &self.api_secret[..]);
         let tag = hmac::sign(&key, message.as_bytes());
         BASE64_STANDARD.encode(tag.as_ref())

@@ -56,10 +56,7 @@
 //!
 //! ## Trigger Type Support
 //!
-//! Currently, Hyperliquid uses **last traded price** for all trigger evaluations.
-//!
-//! Future enhancement: Add support for mark/index price triggers if Hyperliquid API adds this feature.
-//! See OKX's `OKXTriggerType` and Bybit's `BybitTriggerType` for reference implementations.
+//! Hyperliquid uses **mark price** for all trigger evaluations (TP/SL orders).
 
 use anyhow::Context;
 use nautilus_core::UnixNanos;
@@ -205,7 +202,9 @@ pub fn time_in_force_to_hyperliquid_tif(
         (_, true) => Ok(HyperliquidExecTif::Alo), // Always use ALO for post-only orders
         (TimeInForce::Gtc, false) => Ok(HyperliquidExecTif::Gtc),
         (TimeInForce::Ioc, false) => Ok(HyperliquidExecTif::Ioc),
-        (TimeInForce::Fok, false) => Ok(HyperliquidExecTif::Ioc), // FOK maps to IOC in Hyperliquid
+        (TimeInForce::Fok, false) => {
+            anyhow::bail!("FOK time in force is not supported by Hyperliquid")
+        }
         _ => anyhow::bail!("Unsupported time in force for Hyperliquid: {tif:?}"),
     }
 }
@@ -604,7 +603,7 @@ pub fn parse_account_balances_and_margins(
     let mut margins = Vec::new();
 
     // Parse balance from cross margin summary
-    let currency = Currency::USD(); // Hyperliquid uses USDC/USD
+    let currency = Currency::USDC();
 
     // Account value represents total collateral
     let total_value = cross_margin_summary

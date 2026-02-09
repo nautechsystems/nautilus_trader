@@ -170,6 +170,9 @@ skip = [
   { crate = "thiserror" },
   { crate = "thiserror-impl" },
 
+  # CPU feature detection - cpufeatures 0.2 vs 0.3 (const-hex vs chacha20/rand)
+  { crate = "cpufeatures" },
+
   # HTTP client - reqwest 0.12 vs 0.13 transition (databento, hypersync, object_store on 0.12)
   { crate = "reqwest" },
   { crate = "wasm-streams" },
@@ -181,10 +184,6 @@ skip = [
   { crate = "webpki-roots" },
 
   # Windows platform crates - notoriously fragmented across Windows SDK versions
-  { crate = "windows-core" },
-  { crate = "windows-link" },
-  { crate = "windows-result" },
-  { crate = "windows-strings" },
   { crate = "windows-sys" },
   { crate = "windows-targets" },
   { crate = "windows_aarch64_gnullvm" },

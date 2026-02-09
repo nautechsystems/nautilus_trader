@@ -446,7 +446,7 @@ impl AxMdWebSocketClient {
         if let Err(e) = self
             .send_cmd(HandlerCommand::Subscribe {
                 request_id,
-                symbol: symbol.to_string(),
+                symbol: Ustr::from(symbol),
                 level,
             })
             .await
@@ -487,7 +487,7 @@ impl AxMdWebSocketClient {
 
         self.send_cmd(HandlerCommand::Unsubscribe {
             request_id,
-            symbol: symbol.to_string(),
+            symbol: Ustr::from(symbol),
         })
         .await
     }
@@ -516,7 +516,7 @@ impl AxMdWebSocketClient {
         if let Err(e) = self
             .send_cmd(HandlerCommand::SubscribeCandles {
                 request_id,
-                symbol: symbol.to_string(),
+                symbol: Ustr::from(symbol),
                 width,
             })
             .await
@@ -542,7 +542,7 @@ impl AxMdWebSocketClient {
 
         self.send_cmd(HandlerCommand::UnsubscribeCandles {
             request_id,
-            symbol: symbol.to_string(),
+            symbol: Ustr::from(symbol),
             width,
         })
         .await

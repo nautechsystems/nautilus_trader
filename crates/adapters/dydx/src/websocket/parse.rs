@@ -37,7 +37,10 @@ use rust_decimal::Decimal;
 
 use super::{DydxWsError, DydxWsResult};
 use crate::{
-    common::{enums::DydxOrderStatus, instrument_cache::InstrumentCache},
+    common::{
+        enums::{DydxOrderStatus, DydxTickerType},
+        instrument_cache::InstrumentCache,
+    },
     execution::{encoder::ClientOrderIdEncoder, types::OrderContext},
     http::{
         models::{Fill, Order, PerpetualPosition},
@@ -146,23 +149,6 @@ pub fn parse_ws_order_report(
     // enum mapping.
     if matches!(ws_order.status, DydxOrderStatus::Untriggered) && ws_order.trigger_price.is_some() {
         report.order_status = OrderStatus::PendingUpdate;
-    }
-
-    // Clean up order context and encoder mapping when order reaches terminal state
-    if let Some(client_id) = dydx_client_id
-        && !report.order_status.is_open()
-    {
-        log::info!(
-            "[WS_ORDER_RECV] TERMINAL STATE: dYdX u32={} meta={:#x} status={:?} -> cleaning up mappings",
-            client_id,
-            dydx_client_metadata,
-            report.order_status
-        );
-        if order_contexts.remove(&client_id).is_some() {
-            log::info!("[WS_ORDER_RECV] Cleaned up order_contexts for dYdX client_id={client_id}");
-        }
-        // Also clean up encoder mapping using both client_id and client_metadata
-        encoder.remove(client_id, dydx_client_metadata);
     }
 
     Ok(report)
@@ -281,7 +267,8 @@ fn convert_ws_order_to_http(
 /// Parses a WebSocket fill update into a FillReport.
 ///
 /// Converts the WebSocket fill format to the HTTP Fill format, then delegates
-/// to the existing HTTP parser for consistency.
+/// to the existing HTTP parser for consistency. Correlates the fill back to the
+/// originating order using the `order_id_map` (built from WS order updates).
 ///
 /// # Errors
 ///
@@ -292,6 +279,9 @@ fn convert_ws_order_to_http(
 pub fn parse_ws_fill_report(
     ws_fill: &DydxWsFillSubaccountMessageContents,
     instrument_cache: &InstrumentCache,
+    order_id_map: &DashMap<String, (u32, u32)>,
+    order_contexts: &DashMap<u32, OrderContext>,
+    encoder: &ClientOrderIdEncoder,
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
@@ -311,7 +301,29 @@ pub fn parse_ws_fill_report(
         })?;
 
     let http_fill = convert_ws_fill_to_http(ws_fill)?;
-    parse_fill_report(&http_fill, &instrument, account_id, ts_init)
+    let mut report = parse_fill_report(&http_fill, &instrument, account_id, ts_init)?;
+
+    // Correlate fill to order via order_id → (client_id, client_metadata) → client_order_id
+    if let Some(ref order_id) = ws_fill.order_id {
+        if let Some(entry) = order_id_map.get(order_id) {
+            let (client_id, client_metadata) = *entry.value();
+            if let Some(ctx) = order_contexts.get(&client_id) {
+                report.client_order_id = Some(ctx.client_order_id);
+            } else if let Some(client_order_id) = encoder.decode(client_id, client_metadata) {
+                report.client_order_id = Some(client_order_id);
+            } else {
+                log::warn!(
+                    "[WS_FILL_RECV] DECODE FAILED: order_id={order_id} -> client_id={client_id} meta={client_metadata:#x} not decodable",
+                );
+            }
+        } else {
+            log::warn!(
+                "[WS_FILL_RECV] No order_id mapping for '{order_id}', fill cannot be correlated",
+            );
+        }
+    }
+
+    Ok(report)
 }
 
 /// Converts a WebSocket fill message to HTTP Fill format.
@@ -354,7 +366,7 @@ fn convert_ws_fill_to_http(ws_fill: &DydxWsFillSubaccountMessageContents) -> any
         liquidity: ws_fill.liquidity,
         fill_type: ws_fill.fill_type,
         market: ws_fill.market,
-        market_type: ws_fill.market_type,
+        market_type: ws_fill.market_type.unwrap_or(DydxTickerType::Perpetual),
         price,
         size,
         fee,
@@ -1083,7 +1095,7 @@ mod tests {
             liquidity: DydxLiquidity::Maker,
             fill_type: DydxFillType::Limit,
             market: "BTC-USD".into(),
-            market_type: DydxTickerType::Perpetual,
+            market_type: Some(DydxTickerType::Perpetual),
             price: "50000.5".to_string(),
             size: "0.1".to_string(),
             fee: "-2.5".to_string(), // Negative for maker rebate
@@ -1122,7 +1134,7 @@ mod tests {
             liquidity: DydxLiquidity::Taker,
             fill_type: DydxFillType::Limit,
             market: "BTC-USD".into(),
-            market_type: DydxTickerType::Perpetual,
+            market_type: Some(DydxTickerType::Perpetual),
             price: "49500.0".to_string(),
             size: "0.5".to_string(),
             fee: "12.375".to_string(), // Positive for taker fee
@@ -1134,8 +1146,19 @@ mod tests {
 
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
+        let order_id_map = DashMap::new();
+        let order_contexts = DashMap::new();
+        let encoder = ClientOrderIdEncoder::new();
 
-        let result = parse_ws_fill_report(&ws_fill, &instrument_cache, account_id, ts_init);
+        let result = parse_ws_fill_report(
+            &ws_fill,
+            &instrument_cache,
+            &order_id_map,
+            &order_contexts,
+            &encoder,
+            account_id,
+            ts_init,
+        );
         assert!(result.is_ok());
 
         let fill_report = result.unwrap();
@@ -1157,7 +1180,7 @@ mod tests {
             liquidity: DydxLiquidity::Maker,
             fill_type: DydxFillType::Limit,
             market: "ETH-USD-PERP".into(),
-            market_type: DydxTickerType::Perpetual,
+            market_type: Some(DydxTickerType::Perpetual),
             price: "3000.0".to_string(),
             size: "1.0".to_string(),
             fee: "-1.5".to_string(),
@@ -1169,8 +1192,19 @@ mod tests {
 
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
+        let order_id_map = DashMap::new();
+        let order_contexts = DashMap::new();
+        let encoder = ClientOrderIdEncoder::new();
 
-        let result = parse_ws_fill_report(&ws_fill, &instrument_cache, account_id, ts_init);
+        let result = parse_ws_fill_report(
+            &ws_fill,
+            &instrument_cache,
+            &order_id_map,
+            &order_contexts,
+            &encoder,
+            account_id,
+            ts_init,
+        );
         assert!(result.is_err());
         assert!(
             result
@@ -1589,7 +1623,7 @@ mod tests {
             liquidity: DydxLiquidity::Maker,
             fill_type: DydxFillType::Limit,
             market: "BTC-USD".into(),
-            market_type: DydxTickerType::Perpetual,
+            market_type: Some(DydxTickerType::Perpetual),
             price: "50000.0".to_string(),
             size: "1.0".to_string(),
             fee: "-15.0".to_string(), // Negative fee = rebate
@@ -1601,8 +1635,19 @@ mod tests {
 
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
+        let order_id_map = DashMap::new();
+        let order_contexts = DashMap::new();
+        let encoder = ClientOrderIdEncoder::new();
 
-        let result = parse_ws_fill_report(&ws_fill, &instrument_cache, account_id, ts_init);
+        let result = parse_ws_fill_report(
+            &ws_fill,
+            &instrument_cache,
+            &order_id_map,
+            &order_contexts,
+            &encoder,
+            account_id,
+            ts_init,
+        );
         assert!(result.is_ok());
 
         let fill_report = result.unwrap();
@@ -1621,7 +1666,7 @@ mod tests {
             liquidity: DydxLiquidity::Taker,
             fill_type: DydxFillType::Limit,
             market: "BTC-USD".into(),
-            market_type: DydxTickerType::Perpetual,
+            market_type: Some(DydxTickerType::Perpetual),
             price: "49800.0".to_string(),
             size: "0.75".to_string(),
             fee: "18.675".to_string(), // Positive fee for taker
@@ -1633,8 +1678,19 @@ mod tests {
 
         let account_id = AccountId::new("DYDX-001");
         let ts_init = UnixNanos::default();
+        let order_id_map = DashMap::new();
+        let order_contexts = DashMap::new();
+        let encoder = ClientOrderIdEncoder::new();
 
-        let result = parse_ws_fill_report(&ws_fill, &instrument_cache, account_id, ts_init);
+        let result = parse_ws_fill_report(
+            &ws_fill,
+            &instrument_cache,
+            &order_id_map,
+            &order_contexts,
+            &encoder,
+            account_id,
+            ts_init,
+        );
         assert!(result.is_ok());
 
         let fill_report = result.unwrap();

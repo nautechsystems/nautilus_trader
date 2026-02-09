@@ -29,6 +29,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
+use ustr::Ustr;
 
 /// Wait for the test server to be ready by polling a health endpoint.
 async fn wait_for_server(addr: SocketAddr, path: &str) {
@@ -157,7 +158,10 @@ async fn test_raw_http_get_instrument_returns_data() {
         AxRawHttpClient::new(Some(base_url), None, Some(60), None, None, None, None).unwrap();
 
     // Mock server returns first instrument from list (BTCUSD-PERP)
-    let instrument = client.get_instrument("BTCUSD-PERP").await.unwrap();
+    let instrument = client
+        .get_instrument(Ustr::from("BTCUSD-PERP"))
+        .await
+        .unwrap();
 
     assert_eq!(instrument.symbol.as_str(), "BTCUSD-PERP");
     assert_eq!(instrument.tick_size, dec!(0.5));
@@ -259,7 +263,7 @@ async fn test_raw_http_get_ticker_returns_data() {
     .unwrap();
     client.set_session_token("test_session_token".to_string());
 
-    let ticker = client.get_ticker("BTC-PERP").await.unwrap();
+    let ticker = client.get_ticker(Ustr::from("BTC-PERP")).await.unwrap();
 
     assert_eq!(ticker.symbol.as_str(), "BTC-PERP");
     assert_eq!(ticker.bid, Some(dec!(45000.00)));
@@ -293,7 +297,7 @@ async fn test_domain_http_request_instrument_returns_nautilus_type() {
 
     // Mock server returns first instrument (BTCUSD-PERP) regardless of request
     let instrument = client
-        .request_instrument("BTCUSD-PERP", None, None)
+        .request_instrument(Ustr::from("BTCUSD-PERP"), None, None)
         .await
         .unwrap();
 
@@ -339,15 +343,15 @@ async fn test_domain_http_get_cached_instrument() {
     let instruments = client.request_instruments(None, None).await.unwrap();
     client.cache_instruments(instruments);
 
-    let btc_symbol = ustr::Ustr::from("BTC-PERP");
+    let btc_symbol = Ustr::from("BTC-PERP");
     let cached = client.get_instrument(&btc_symbol);
     assert!(cached.is_some());
 
-    let eth_symbol = ustr::Ustr::from("ETH-PERP");
+    let eth_symbol = Ustr::from("ETH-PERP");
     let cached = client.get_instrument(&eth_symbol);
     assert!(cached.is_some());
 
-    let unknown_symbol = ustr::Ustr::from("UNKNOWN-PERP");
+    let unknown_symbol = Ustr::from("UNKNOWN-PERP");
     let cached = client.get_instrument(&unknown_symbol);
     assert!(cached.is_none());
 }

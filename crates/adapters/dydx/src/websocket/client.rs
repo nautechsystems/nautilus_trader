@@ -72,7 +72,10 @@ use super::{
     handler::{FeedHandler, HandlerCommand},
     messages::DydxSubscription,
 };
-use crate::common::{credential::DydxCredential, instrument_cache::InstrumentCache};
+use crate::{
+    common::{credential::DydxCredential, instrument_cache::InstrumentCache},
+    execution::encoder::ClientOrderIdEncoder,
+};
 
 /// WebSocket client for dYdX v4 market data and account streams.
 ///
@@ -134,6 +137,8 @@ pub struct DydxWebSocketClient {
     handler_task: Option<tokio::task::JoinHandle<()>>,
     /// Whether to timestamp bars at close time (open + interval).
     bars_timestamp_on_close: bool,
+    /// Shared client order ID encoder for bidirectional mapping.
+    encoder: Arc<ClientOrderIdEncoder>,
 }
 
 impl Clone for DydxWebSocketClient {
@@ -153,6 +158,7 @@ impl Clone for DydxWebSocketClient {
             out_rx: None,       // Cannot clone receiver - only one owner allowed
             handler_task: None, // Cannot clone task handle
             bars_timestamp_on_close: self.bars_timestamp_on_close,
+            encoder: self.encoder.clone(),
         }
     }
 }
@@ -196,6 +202,7 @@ impl DydxWebSocketClient {
             out_rx: None,
             handler_task: None,
             bars_timestamp_on_close: true,
+            encoder: Arc::new(ClientOrderIdEncoder::new()),
         }
     }
 
@@ -250,6 +257,7 @@ impl DydxWebSocketClient {
             out_rx: None,
             handler_task: None,
             bars_timestamp_on_close: true,
+            encoder: Arc::new(ClientOrderIdEncoder::new()),
         }
     }
 
@@ -300,6 +308,15 @@ impl DydxWebSocketClient {
         self.account_id
     }
 
+    /// Replaces the instrument cache with an externally shared one.
+    ///
+    /// Use this to share the HTTP client's cache (which includes CLOB pair ID
+    /// and market ticker indices) with the WebSocket client. Must be called
+    /// before `connect()`.
+    pub fn set_instrument_cache(&mut self, cache: Arc<InstrumentCache>) {
+        self.instrument_cache = cache;
+    }
+
     /// Caches a single instrument.
     ///
     /// Any existing instrument with the same ID will be replaced.
@@ -343,6 +360,12 @@ impl DydxWebSocketClient {
     #[must_use]
     pub fn instrument_cache(&self) -> &Arc<InstrumentCache> {
         &self.instrument_cache
+    }
+
+    /// Returns a reference to the shared client order ID encoder.
+    #[must_use]
+    pub fn encoder(&self) -> &Arc<ClientOrderIdEncoder> {
+        &self.encoder
     }
 
     /// Returns all cached instruments.

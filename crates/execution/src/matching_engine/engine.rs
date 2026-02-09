@@ -278,7 +278,7 @@ impl OrderMatchingEngine {
     }
 
     /// Sets the fill model for the matching engine.
-    pub const fn set_fill_model(&mut self, fill_model: FillModel) {
+    pub fn set_fill_model(&mut self, fill_model: FillModel) {
         self.fill_model = fill_model;
     }
 

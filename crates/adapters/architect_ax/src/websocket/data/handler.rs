@@ -62,7 +62,7 @@ pub enum HandlerCommand {
         /// Request ID for correlation.
         request_id: i64,
         /// Instrument symbol.
-        symbol: String,
+        symbol: Ustr,
         /// Market data level.
         level: AxMarketDataLevel,
     },
@@ -71,14 +71,14 @@ pub enum HandlerCommand {
         /// Request ID for correlation.
         request_id: i64,
         /// Instrument symbol.
-        symbol: String,
+        symbol: Ustr,
     },
     /// Subscribe to candle data for a symbol.
     SubscribeCandles {
         /// Request ID for correlation.
         request_id: i64,
         /// Instrument symbol.
-        symbol: String,
+        symbol: Ustr,
         /// Candle width/interval.
         width: AxCandleWidth,
     },
@@ -87,7 +87,7 @@ pub enum HandlerCommand {
         /// Request ID for correlation.
         request_id: i64,
         /// Instrument symbol.
-        symbol: String,
+        symbol: Ustr,
         /// Candle width/interval.
         width: AxCandleWidth,
     },
@@ -172,7 +172,8 @@ impl FeedHandler {
                         log::debug!(
                             "Replaying candle subscription: symbol={symbol}, width={width:?}"
                         );
-                        self.send_subscribe_candles(request_id, symbol, width).await;
+                        self.send_subscribe_candles(request_id, Ustr::from(symbol), width)
+                            .await;
                     } else {
                         log::warn!("Failed to parse candle width from topic: {topic}");
                     }
@@ -185,7 +186,8 @@ impl FeedHandler {
                     log::debug!(
                         "Replaying market data subscription: symbol={symbol}, level={level:?}"
                     );
-                    self.send_subscribe(request_id, symbol, level).await;
+                    self.send_subscribe(request_id, Ustr::from(symbol), level)
+                        .await;
                 } else {
                     log::warn!("Failed to parse market data level from topic: {topic}");
                 }
@@ -314,13 +316,13 @@ impl FeedHandler {
                 log::debug!(
                     "Subscribe command received: request_id={request_id}, symbol={symbol}, level={level:?}"
                 );
-                self.send_subscribe(request_id, &symbol, level).await;
+                self.send_subscribe(request_id, symbol, level).await;
             }
             HandlerCommand::Unsubscribe { request_id, symbol } => {
                 log::debug!(
                     "Unsubscribe command received: request_id={request_id}, symbol={symbol}"
                 );
-                self.send_unsubscribe(request_id, &symbol).await;
+                self.send_unsubscribe(request_id, symbol).await;
             }
             HandlerCommand::SubscribeCandles {
                 request_id,
@@ -330,8 +332,7 @@ impl FeedHandler {
                 log::debug!(
                     "SubscribeCandles command received: request_id={request_id}, symbol={symbol}, width={width:?}"
                 );
-                self.send_subscribe_candles(request_id, &symbol, width)
-                    .await;
+                self.send_subscribe_candles(request_id, symbol, width).await;
             }
             HandlerCommand::UnsubscribeCandles {
                 request_id,
@@ -341,8 +342,8 @@ impl FeedHandler {
                 log::debug!(
                     "UnsubscribeCandles command received: request_id={request_id}, symbol={symbol}, width={width:?}"
                 );
-                self.candle_cache.remove(&(Ustr::from(&symbol), width));
-                self.send_unsubscribe_candles(request_id, &symbol, width)
+                self.candle_cache.remove(&(symbol, width));
+                self.send_unsubscribe_candles(request_id, symbol, width)
                     .await;
             }
             HandlerCommand::InitializeInstruments(instruments) => {
@@ -356,11 +357,11 @@ impl FeedHandler {
         }
     }
 
-    async fn send_subscribe(&self, request_id: i64, symbol: &str, level: AxMarketDataLevel) {
+    async fn send_subscribe(&self, request_id: i64, symbol: Ustr, level: AxMarketDataLevel) {
         let msg = AxMdSubscribe {
             request_id,
             msg_type: "subscribe".to_string(),
-            symbol: symbol.to_string(),
+            symbol,
             level,
         };
 
@@ -369,11 +370,11 @@ impl FeedHandler {
         }
     }
 
-    async fn send_unsubscribe(&self, request_id: i64, symbol: &str) {
+    async fn send_unsubscribe(&self, request_id: i64, symbol: Ustr) {
         let msg = AxMdUnsubscribe {
             request_id,
             msg_type: "unsubscribe".to_string(),
-            symbol: symbol.to_string(),
+            symbol,
         };
 
         if let Err(e) = self.send_json(&msg).await {
@@ -381,11 +382,11 @@ impl FeedHandler {
         }
     }
 
-    async fn send_subscribe_candles(&self, request_id: i64, symbol: &str, width: AxCandleWidth) {
+    async fn send_subscribe_candles(&self, request_id: i64, symbol: Ustr, width: AxCandleWidth) {
         let msg = AxMdSubscribeCandles {
             request_id,
             msg_type: "subscribe_candles".to_string(),
-            symbol: symbol.to_string(),
+            symbol,
             width,
         };
 
@@ -394,11 +395,11 @@ impl FeedHandler {
         }
     }
 
-    async fn send_unsubscribe_candles(&self, request_id: i64, symbol: &str, width: AxCandleWidth) {
+    async fn send_unsubscribe_candles(&self, request_id: i64, symbol: Ustr, width: AxCandleWidth) {
         let msg = AxMdUnsubscribeCandles {
             request_id,
             msg_type: "unsubscribe_candles".to_string(),
-            symbol: symbol.to_string(),
+            symbol,
             width,
         };
 

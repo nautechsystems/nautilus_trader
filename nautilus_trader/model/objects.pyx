@@ -366,6 +366,27 @@ cdef class Quantity:
         return quantity
 
     @staticmethod
+    cdef Quantity from_decimal_c(amount, uint8_t precision):
+        if precision > FIXED_PRECISION:
+            raise ValueError(
+                f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}"
+            )
+        if amount < 0:
+            raise ValueError(
+                f"invalid negative quantity, was {amount}"
+            )
+        cdef uint8_t precision_diff = FIXED_PRECISION - precision
+        scaled = amount * (10 ** precision)
+        integral = scaled.to_integral_value(rounding=decimal.ROUND_HALF_EVEN)
+        raw_py = int(integral) * (10 ** precision_diff)
+        if raw_py > QUANTITY_RAW_MAX:
+            raise ValueError(
+                f"invalid raw quantity value exceeds max {QUANTITY_RAW_MAX}, was {raw_py}"
+            )
+        cdef QuantityRaw raw = <QuantityRaw>(raw_py)
+        return Quantity.from_raw_c(raw, precision)
+
+    @staticmethod
     cdef object _extract_decimal(object obj):
         assert not isinstance(obj, float)  # Design-time error
         if hasattr(obj, "as_decimal"):
@@ -588,7 +609,13 @@ cdef class Quantity:
         """
         Condition.not_none(value, "value")
 
-        return Quantity.from_str_c(str(value))
+        sign, digits, exponent = value.as_tuple()
+        precision_int = max(0, -exponent)
+        if precision_int > FIXED_PRECISION:
+            raise ValueError(
+                f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision_int}"
+            )
+        return Quantity.from_decimal_c(value, <uint8_t>precision_int)
 
     cpdef str to_formatted_str(self):
         """
@@ -838,6 +865,23 @@ cdef class Price:
         return price
 
     @staticmethod
+    cdef Price from_decimal_c(amount, uint8_t precision):
+        if precision > FIXED_PRECISION:
+            raise ValueError(
+                f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}"
+            )
+        cdef uint8_t precision_diff = FIXED_PRECISION - precision
+        scaled = amount * (10 ** precision)
+        integral = scaled.to_integral_value(rounding=decimal.ROUND_HALF_EVEN)
+        raw_py = int(integral) * (10 ** precision_diff)
+        if raw_py < PRICE_RAW_MIN or raw_py > PRICE_RAW_MAX:
+            raise ValueError(
+                f"invalid raw price value outside range [{PRICE_RAW_MIN}, {PRICE_RAW_MAX}], was {raw_py}"
+            )
+        cdef PriceRaw raw = <PriceRaw>(raw_py)
+        return Price.from_raw_c(raw, precision)
+
+    @staticmethod
     cdef object _extract_decimal(object obj):
         assert not isinstance(obj, float)  # Design-time error
         if hasattr(obj, "as_decimal"):
@@ -1074,7 +1118,13 @@ cdef class Price:
         """
         Condition.not_none(value, "value")
 
-        return Price.from_str_c(str(value))
+        sign, digits, exponent = value.as_tuple()
+        precision_int = max(0, -exponent)
+        if precision_int > FIXED_PRECISION:
+            raise ValueError(
+                f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision_int}"
+            )
+        return Price.from_decimal_c(value, <uint8_t>precision_int)
 
     cpdef str to_formatted_str(self):
         """
@@ -1319,6 +1369,20 @@ cdef class Money:
         return money
 
     @staticmethod
+    cdef Money from_decimal_c(amount, Currency currency):
+        cdef uint8_t precision = currency._mem.precision
+        cdef uint8_t precision_diff = FIXED_PRECISION - precision
+        scaled = amount * (10 ** precision)
+        integral = scaled.to_integral_value(rounding=decimal.ROUND_HALF_EVEN)
+        raw_py = int(integral) * (10 ** precision_diff)
+        if raw_py < MONEY_RAW_MIN or raw_py > MONEY_RAW_MAX:
+            raise ValueError(
+                f"invalid raw money value outside range [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}], was {raw_py}"
+            )
+        cdef MoneyRaw raw = <MoneyRaw>(raw_py)
+        return Money.from_raw_c(raw, currency)
+
+    @staticmethod
     cdef object _extract_decimal(object obj):
         assert not isinstance(obj, float)  # Design-time error
         if hasattr(obj, "as_decimal"):
@@ -1476,7 +1540,7 @@ cdef class Money:
         Condition.not_none(amount, "amount")
         Condition.not_none(currency, "currency")
 
-        return Money.from_str_c(f"{amount} {currency.code}")
+        return Money.from_decimal_c(amount, currency)
 
     cpdef str to_formatted_str(self):
         """

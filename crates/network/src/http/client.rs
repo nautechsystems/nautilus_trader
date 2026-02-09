@@ -384,7 +384,7 @@ impl InnerHttpClient {
             None => request_builder.build().map_err(HttpClientError::from)?,
         };
 
-        log::trace!("{request:?}");
+        log::trace!("{} {}", request.method(), request.url());
 
         let response = self
             .client

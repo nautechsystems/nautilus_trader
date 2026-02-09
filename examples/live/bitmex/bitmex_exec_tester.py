@@ -126,7 +126,9 @@ config_tester = ExecTesterConfig(
     # use_individual_cancels_on_stop=True,
     # cancel_orders_on_stop=False,
     # close_positions_on_stop=False,
-    # manage_stop=True,
+    manage_stop=True,
+    market_exit_time_in_force=TimeInForce.IOC,
+    market_exit_reduce_only=True,
     log_data=False,
     # dry_run=True,
 )

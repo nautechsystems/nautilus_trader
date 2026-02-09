@@ -15,7 +15,7 @@
 
 use nautilus_core::serialization::{default_false, default_true};
 use nautilus_model::{
-    enums::OmsType,
+    enums::{OmsType, TimeInForce},
     identifiers::{InstrumentId, StrategyId},
 };
 use serde::{Deserialize, Serialize};
@@ -59,13 +59,19 @@ pub struct StrategyConfig {
     pub manage_stop: bool,
     /// The interval in milliseconds to check for in-flight orders and open positions
     /// during a market exit.
-    #[serde(default = "default_inflight_check_interval_ms")]
-    pub inflight_check_interval_ms: u64,
+    #[serde(default = "default_market_exit_interval_ms")]
+    pub market_exit_interval_ms: u64,
     /// The maximum number of attempts to wait for orders and positions to close
     /// during a market exit before completing. Defaults to 100 attempts
     /// (10 seconds at 100ms intervals).
     #[serde(default = "default_market_exit_max_attempts")]
     pub market_exit_max_attempts: u64,
+    /// The time in force for closing market orders during a market exit.
+    #[serde(default = "default_market_exit_time_in_force")]
+    pub market_exit_time_in_force: TimeInForce,
+    /// If closing market orders during a market exit should be reduce only.
+    #[serde(default = "default_true")]
+    pub market_exit_reduce_only: bool,
     /// If events should be logged by the strategy.
     /// If False, then only warning events and above are logged.
     #[serde(default = "default_true")]
@@ -78,12 +84,16 @@ pub struct StrategyConfig {
     pub log_rejected_due_post_only_as_warning: bool,
 }
 
-const fn default_inflight_check_interval_ms() -> u64 {
+const fn default_market_exit_interval_ms() -> u64 {
     100
 }
 
 const fn default_market_exit_max_attempts() -> u64 {
     100
+}
+
+const fn default_market_exit_time_in_force() -> TimeInForce {
+    TimeInForce::Gtc
 }
 
 impl Default for StrategyConfig {
@@ -98,8 +108,10 @@ impl Default for StrategyConfig {
             manage_contingent_orders: false,
             manage_gtd_expiry: false,
             manage_stop: false,
-            inflight_check_interval_ms: default_inflight_check_interval_ms(),
+            market_exit_interval_ms: default_market_exit_interval_ms(),
             market_exit_max_attempts: default_market_exit_max_attempts(),
+            market_exit_time_in_force: TimeInForce::Gtc,
+            market_exit_reduce_only: true,
             log_events: true,
             log_commands: true,
             log_rejected_due_post_only_as_warning: true,
@@ -126,8 +138,10 @@ mod tests {
         assert!(!config.manage_contingent_orders);
         assert!(!config.manage_gtd_expiry);
         assert!(!config.manage_stop);
-        assert_eq!(config.inflight_check_interval_ms, 100);
+        assert_eq!(config.market_exit_interval_ms, 100);
         assert_eq!(config.market_exit_max_attempts, 100);
+        assert_eq!(config.market_exit_time_in_force, TimeInForce::Gtc);
+        assert!(config.market_exit_reduce_only);
         assert!(config.log_events);
         assert!(config.log_commands);
         assert!(config.log_rejected_due_post_only_as_warning);

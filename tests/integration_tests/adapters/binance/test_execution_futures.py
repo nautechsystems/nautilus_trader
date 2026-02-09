@@ -22,6 +22,7 @@ import pytest
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.futures.execution import BinanceFuturesExecutionClient
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
@@ -124,6 +125,9 @@ class TestBinanceFuturesExecutionClient:
             clock=self.clock,
         )
 
+        # Base64-encoded 32 zero bytes for Ed25519 private key (test only)
+        dummy_api_secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
         self.exec_client = BinanceFuturesExecutionClient(
             loop=self.loop,
             client=self.http_client,
@@ -134,6 +138,9 @@ class TestBinanceFuturesExecutionClient:
             base_url_ws="",
             config=BinanceExecClientConfig(),
             account_type=BinanceAccountType.USDT_FUTURES,
+            environment=BinanceEnvironment.LIVE,
+            api_key="SOME_BINANCE_API_KEY",
+            api_secret=dummy_api_secret,
         )
 
         self.strategy = Strategy()
