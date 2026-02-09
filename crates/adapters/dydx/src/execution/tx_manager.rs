@@ -16,21 +16,25 @@
 //! Transaction manager for dYdX v4 protocol.
 //!
 //! This module provides centralized transaction management including:
-//! - Atomic sequence number tracking across all order operations
+//! - Atomic sequence number tracking for stateful (long-term/conditional) orders
 //! - Transaction building and signing
 //! - Chain synchronization for sequence recovery
 //!
 //! # Sequence Management
 //!
-//! dYdX (Cosmos SDK) requires each transaction to have a unique, incrementing sequence number.
-//! When multiple transactions are submitted in parallel, they can race for the same sequence,
-//! causing "account sequence mismatch" errors.
+//! dYdX has two transaction types with different sequence behavior:
 //!
-//! This module solves this by:
-//! 1. Using `AtomicU64` for lock-free sequence allocation
-//! 2. Initializing from chain on first use (lazy initialization)
-//! 3. Providing `resync_sequence()` for recovery after errors
-//! 4. Supporting batch sequence allocation for optimistic parallel broadcasts
+//! - **Stateful orders** (long-term, conditional): Use Cosmos SDK sequences for replay
+//!   protection. Each transaction requires a unique, incrementing sequence number.
+//! - **Short-term orders**: Use Good-Til-Block (GTB) for replay protection. The chain's
+//!   `ClobDecorator` ante handler skips sequence checking, so sequences are not consumed.
+//!   Use [`get_cached_sequence`] for these — it returns the current value without incrementing.
+//!
+//! For stateful orders, this module provides:
+//! 1. `AtomicU64` for lock-free sequence allocation via [`allocate_sequence`]
+//! 2. Lazy initialization from chain on first use
+//! 3. [`resync_sequence`] for recovery after mismatch errors
+//! 4. Batch allocation via [`allocate_sequences`] for parallel stateful broadcasts
 
 use std::sync::{
     Arc, RwLock,
@@ -436,6 +440,20 @@ impl TransactionManager {
     #[must_use]
     pub fn current_sequence(&self) -> u64 {
         self.sequence_number.load(Ordering::SeqCst)
+    }
+
+    /// Returns the cached sequence for short-term orders without incrementing.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if chain query fails during initialization.
+    pub async fn get_cached_sequence(&self) -> Result<u64, DydxError> {
+        let current = self.sequence_number.load(Ordering::SeqCst);
+        if current == SEQUENCE_UNINITIALIZED {
+            self.initialize_sequence_from_chain().await?;
+            return Ok(self.sequence_number.load(Ordering::SeqCst));
+        }
+        Ok(current)
     }
 
     /// Builds and signs a transaction with the given messages and sequence.

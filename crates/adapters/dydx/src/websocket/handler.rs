@@ -264,8 +264,18 @@ impl FeedHandler {
                 }
 
                 // Hot path: zero-copy parse for feed messages (orderbook/trades/candles)
-                if let Ok(feed_msg) = serde_json::from_str::<DydxWsFeedMessage>(&txt) {
-                    return self.handle_feed_message(feed_msg);
+                match serde_json::from_str::<DydxWsFeedMessage>(&txt) {
+                    Ok(feed_msg) => {
+                        return self.handle_feed_message(feed_msg);
+                    }
+                    Err(e) => {
+                        // Log subaccounts channel failures at warn level for diagnosis
+                        if txt.contains("v4_subaccounts") {
+                            log::warn!(
+                                "[WS_DESER] Failed to parse v4_subaccounts as DydxWsFeedMessage: {e}\nRaw: {txt}"
+                            );
+                        }
+                    }
                 }
 
                 // Cold path: infrequent control messages (connected/subscribed/error)

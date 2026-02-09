@@ -800,7 +800,7 @@ impl OrderMessageBuilder {
         Ok(OrderMarketParams {
             atomic_resolution: market.atomic_resolution,
             clob_pair_id: market.clob_pair_id,
-            oracle_price: None,
+            oracle_price: Some(market.oracle_price),
             quantum_conversion_exponent: market.quantum_conversion_exponent,
             step_base_quantums: market.step_base_quantums,
             subticks_per_tick: market.subticks_per_tick,

@@ -193,16 +193,15 @@ impl InstrumentCache {
         &self,
         instrument_id: &InstrumentId,
     ) -> Option<OrderMarketParams> {
-        self.get_market_params(instrument_id).map(|market| {
-            OrderMarketParams {
+        self.get_market_params(instrument_id)
+            .map(|market| OrderMarketParams {
                 atomic_resolution: market.atomic_resolution,
                 clob_pair_id: market.clob_pair_id,
-                oracle_price: None, // Oracle price is fetched separately for conditional orders
+                oracle_price: Some(market.oracle_price),
                 quantum_conversion_exponent: market.quantum_conversion_exponent,
                 step_base_quantums: market.step_base_quantums,
                 subticks_per_tick: market.subticks_per_tick,
-            }
-        })
+            })
     }
 
     /// Updates oracle price for a market.

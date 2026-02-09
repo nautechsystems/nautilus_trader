@@ -42,6 +42,10 @@ use crate::proto::dydxprotocol::{
 /// See also [short-term vs long-term orders](https://help.dydx.trade/en/articles/166985-short-term-vs-long-term-order-types).
 pub const SHORT_TERM_ORDER_MAXIMUM_LIFETIME: u32 = 20;
 
+/// Default slippage (1%) applied to oracle price for market order worst-case price.
+// Decimal::new(1, 2) = 0.01
+pub const DEFAULT_MARKET_ORDER_SLIPPAGE: Decimal = Decimal::from_parts(1, 0, 0, false, 2);
+
 /// Value used to identify the Rust client in order metadata.
 pub const DEFAULT_RUST_CLIENT_METADATA: u32 = 4;
 
@@ -152,6 +156,23 @@ impl OrderMarketParams {
         (value / fraction).round() * fraction
     }
 
+    /// Compute worst-case subticks for a market order using oracle price + slippage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if oracle price is not available or conversion fails.
+    pub fn market_order_subticks(&self, side: OrderSide) -> Result<u64, anyhow::Error> {
+        let oracle = self
+            .oracle_price
+            .ok_or_else(|| anyhow::anyhow!("Oracle price required for market orders"))?;
+        let worst_price = match side {
+            OrderSide::Buy => oracle * (Decimal::ONE + DEFAULT_MARKET_ORDER_SLIPPAGE),
+            OrderSide::Sell => oracle * (Decimal::ONE - DEFAULT_MARKET_ORDER_SLIPPAGE),
+            _ => oracle,
+        };
+        self.quantize_price(worst_price)
+    }
+
     /// Get orderbook pair id.
     #[must_use]
     pub fn clob_pair_id(&self) -> u32 {
@@ -230,11 +251,13 @@ impl OrderBuilder {
     /// Set as Market order.
     ///
     /// An instruction to immediately buy or sell an asset at the best available price when the order is placed.
+    /// dYdX implements market orders as IOC limit orders with a slippage-adjusted worst-case price.
     #[must_use]
     pub fn market(mut self, side: OrderSide, size: Decimal) -> Self {
         self.order_type = Some(OrderType::Market);
         self.side = Some(side);
         self.size = Some(size);
+        self.time_in_force = Some(OrderTimeInForce::Ioc);
         self
     }
 
@@ -421,9 +444,17 @@ impl OrderBuilder {
             }
         };
 
-        // Quantize price if provided
+        // Quantize price: use explicit price if set, otherwise compute worst-case for market orders
         let subticks = if let Some(price) = self.price {
             self.market_params.quantize_price(price)?
+        } else if matches!(
+            self.order_type,
+            Some(OrderType::Market | OrderType::StopMarket | OrderType::MarketIfTouched)
+        ) {
+            let side = self
+                .side
+                .ok_or_else(|| anyhow::anyhow!("Order side not set"))?;
+            self.market_params.market_order_subticks(side)?
         } else {
             0
         };
@@ -456,7 +487,7 @@ impl Default for OrderBuilder {
             market_params: OrderMarketParams {
                 atomic_resolution: -10,
                 clob_pair_id: 0,
-                oracle_price: None,
+                oracle_price: Some(Decimal::from(50_000)),
                 quantum_conversion_exponent: -9,
                 step_base_quantums: 1_000_000,
                 subticks_per_tick: 100_000,
@@ -608,7 +639,8 @@ mod tests {
 
         assert_eq!(order.side, OrderSide::Buy as i32);
         assert_eq!(order.quantums, 100_000_000); // 0.01 BTC quantized
-        assert_eq!(order.subticks, 0); // Market orders use 0 subticks initially
+        assert_eq!(order.subticks, 5_050_000_000); // 50000 * 1.01 = 50500 worst-case buy price
+        assert_eq!(order.time_in_force, OrderTimeInForce::Ioc as i32);
         assert!(!order.reduce_only);
         assert_eq!(order.client_metadata, DEFAULT_RUST_CLIENT_METADATA);
     }
@@ -632,6 +664,35 @@ mod tests {
 
         assert_eq!(order.side, OrderSide::Sell as i32);
         assert_eq!(order.quantums, 200_000_000); // 0.02 BTC quantized
+        assert_eq!(order.subticks, 4_950_000_000); // 50000 * 0.99 = 49500 worst-case sell price
+        assert_eq!(order.time_in_force, OrderTimeInForce::Ioc as i32);
+    }
+
+    #[rstest]
+    fn test_order_builder_market_no_oracle_price_error() {
+        let mut market = sample_market_params();
+        market.oracle_price = None;
+
+        let builder = OrderBuilder::new(
+            market,
+            "dydx1test".to_string(),
+            0,
+            13,
+            DEFAULT_RUST_CLIENT_METADATA,
+        );
+
+        let result = builder
+            .market(OrderSide::Buy, dec!(0.01))
+            .until(OrderGoodUntil::Block(100))
+            .build();
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Oracle price required")
+        );
     }
 
     #[rstest]

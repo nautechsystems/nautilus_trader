@@ -154,6 +154,9 @@ pub struct DydxExecutionClient {
     /// Wrapped in Arc for sharing with async WebSocket handler.
     encoder: Arc<ClientOrderIdEncoder>,
     order_contexts: Arc<DashMap<u32, OrderContext>>,
+    /// Reverse mapping: dYdX order ID → (client_id, client_metadata) for fill correlation.
+    /// Fills don't carry client_id, so we map via order_id from order updates.
+    order_id_map: Arc<DashMap<String, (u32, u32)>>,
     wallet_address: String,
     subaccount_number: u32,
     tx_manager: Option<Arc<TransactionManager>>,
@@ -234,6 +237,7 @@ impl DydxExecutionClient {
             oracle_prices: Arc::new(DashMap::new()),
             encoder: Arc::new(ClientOrderIdEncoder::new()),
             order_contexts: Arc::new(DashMap::new()),
+            order_id_map: Arc::new(DashMap::new()),
             wallet_address,
             subaccount_number,
             tx_manager: None,
@@ -310,6 +314,7 @@ impl DydxExecutionClient {
         let oracle_prices = self.oracle_prices.clone();
         let encoder = self.encoder.clone();
         let order_contexts = self.order_contexts.clone();
+        let order_id_map = self.order_id_map.clone();
         let block_time_monitor = self.block_time_monitor.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -351,8 +356,9 @@ impl DydxExecutionClient {
                         let ts_init = clock.get_time_ns();
                         let ts_event = ts_init;
 
+                        if let Some(ref subaccount) = msg.contents.subaccount {
                         match parse_account_state(
-                            &msg.contents.subaccount,
+                            subaccount,
                             account_id,
                             &inst_map,
                             &oracle_map,
@@ -360,7 +366,6 @@ impl DydxExecutionClient {
                             ts_init,
                         ) {
                             Ok(account_state) => {
-                                println!("PARSED ACCOUNT STATE: {account_state:?}");
                                 log::debug!(
                                     "Parsed account state: {} balance(s), {} margin(s)",
                                     account_state.balances.len(),
@@ -375,7 +380,7 @@ impl DydxExecutionClient {
 
                         // Parse positions from the subscription
                         if let Some(ref positions) =
-                            msg.contents.subaccount.open_perpetual_positions
+                            subaccount.open_perpetual_positions
                         {
                             log::debug!(
                                 "Parsing {} position(s) from subscription",
@@ -407,6 +412,9 @@ impl DydxExecutionClient {
                                 }
                             }
                         }
+                        } else {
+                            log::warn!("Subaccount subscription without initial state (new/empty subaccount)");
+                        }
                     }
                     NautilusWsMessage::SubaccountsChannelData(data) => {
                         log::debug!(
@@ -416,7 +424,13 @@ impl DydxExecutionClient {
                         );
                         let ts_init = clock.get_time_ns();
 
-                        // Process orders
+                        // Track terminal orders for deferred cleanup (after fills)
+                        let mut terminal_orders: Vec<(u32, u32)> = Vec::new();
+
+                        // Phase 1: Parse orders and build order_id_map (needed for fill correlation)
+                        // but DON'T send order reports yet — fills must be sent first
+                        // to prevent reconciliation from inferring fills at the limit price.
+                        let mut pending_order_reports = Vec::new();
                         if let Some(ref orders) = data.contents.orders {
                             log::info!(
                                 "Processing {} orders from SubaccountsChannelData",
@@ -429,6 +443,17 @@ impl DydxExecutionClient {
                                     ws_order.status,
                                     ws_order.client_id
                                 );
+
+                                // Build order_id → (client_id, client_metadata) mapping for fill correlation
+                                // (fills don't carry client_id, only order_id)
+                                if let Ok(client_id_u32) = ws_order.client_id.parse::<u32>() {
+                                    let client_meta = ws_order.client_metadata
+                                        .as_ref()
+                                        .and_then(|s| s.parse::<u32>().ok())
+                                        .unwrap_or(crate::grpc::DEFAULT_RUST_CLIENT_METADATA);
+                                    order_id_map.insert(ws_order.id.clone(), (client_id_u32, client_meta));
+                                }
+
                                 match parse_ws_order_report(
                                     ws_order,
                                     &instrument_cache,
@@ -438,6 +463,16 @@ impl DydxExecutionClient {
                                     ts_init,
                                 ) {
                                     Ok(report) => {
+                                        // Collect terminal orders for deferred cleanup
+                                        if !report.order_status.is_open()
+                                            && let Ok(cid) = ws_order.client_id.parse::<u32>()
+                                        {
+                                            let meta = ws_order.client_metadata
+                                                .as_ref()
+                                                .and_then(|s| s.parse::<u32>().ok())
+                                                .unwrap_or(crate::grpc::DEFAULT_RUST_CLIENT_METADATA);
+                                            terminal_orders.push((cid, meta));
+                                        }
                                         log::info!(
                                             "Parsed order report: {} {} {:?} qty={} client_order_id={:?}",
                                             report.instrument_id,
@@ -446,7 +481,7 @@ impl DydxExecutionClient {
                                             report.quantity,
                                             report.client_order_id
                                         );
-                                        emitter.send_order_status_report(report);
+                                        pending_order_reports.push(report);
                                     }
                                     Err(e) => {
                                         log::error!("Failed to parse WebSocket order: {e}");
@@ -455,22 +490,27 @@ impl DydxExecutionClient {
                             }
                         }
 
-                        // Process fills
+                        // Phase 2: Send fills FIRST so reconciliation sees them before
+                        // the terminal order status (prevents inferred fills at limit price)
                         if let Some(ref fills) = data.contents.fills {
                             for ws_fill in fills {
                                 match parse_ws_fill_report(
                                     ws_fill,
                                     &instrument_cache,
+                                    &order_id_map,
+                                    &order_contexts,
+                                    &encoder,
                                     account_id,
                                     ts_init,
                                 ) {
                                     Ok(report) => {
-                                        log::debug!(
-                                            "Parsed fill report: {} {} {} @ {}",
+                                        log::info!(
+                                            "Parsed fill report: {} {} {} @ {} client_order_id={:?}",
                                             report.instrument_id,
                                             report.venue_order_id,
                                             report.last_qty,
-                                            report.last_px
+                                            report.last_px,
+                                            report.client_order_id
                                         );
                                         emitter.send_fill_report(report);
                                     }
@@ -479,6 +519,18 @@ impl DydxExecutionClient {
                                     }
                                 }
                             }
+                        }
+
+                        // Phase 3: Now send order status reports
+                        for report in pending_order_reports {
+                            emitter.send_order_status_report(report);
+                        }
+
+                        // Deferred cleanup: remove mappings for terminal orders
+                        // after fills have been correlated
+                        for (client_id, client_metadata) in terminal_orders {
+                            order_contexts.remove(&client_id);
+                            encoder.remove(client_id, client_metadata);
                         }
                     }
                     NautilusWsMessage::MarkPrice(mark_price) => {
@@ -1077,11 +1129,18 @@ impl ExecutionClient for DydxExecutionClient {
                     _ => unreachable!("Order type already validated"),
                 };
 
-                // Broadcast with retry
+                // Broadcast: short-term orders use cached sequence (no increment),
+                // stateful orders use broadcast_with_retry (proper sequence management)
                 let operation = format!("Submit {order_type_str} order {client_order_id}");
-                broadcaster
-                    .broadcast_with_retry(&tx_manager, vec![msg], &operation)
-                    .await?;
+                if order_flags == types::ORDER_FLAG_SHORT_TERM {
+                    broadcaster
+                        .broadcast_short_term(&tx_manager, vec![msg], &operation)
+                        .await?;
+                } else {
+                    broadcaster
+                        .broadcast_with_retry(&tx_manager, vec![msg], &operation)
+                        .await?;
+                }
                 log::debug!("Successfully submitted {order_type_str} order: {client_order_id}");
 
                 Ok(())
@@ -1276,15 +1335,17 @@ impl ExecutionClient for DydxExecutionClient {
         let clock = self.clock;
 
         if has_short_term {
-            // Submit each order individually (short-term orders cannot be batched)
-            log::info!(
-                "Submitting {} limit orders individually (short-term orders cannot be batched)",
+            // Submit each order individually (short-term orders cannot be batched).
+            log::debug!(
+                "Submitting {} short-term limit orders concurrently (sequence not consumed)",
                 order_params.len()
             );
 
-            // Submit each order in parallel using separate transactions
+            let order_count = order_params.len();
             let handle = get_runtime().spawn(async move {
-                let mut handles = Vec::with_capacity(order_params.len());
+                // Build and broadcast all orders concurrently — no sequence coordination needed.
+                // Short-term orders use cached sequence (not incremented) via broadcast_short_term.
+                let mut handles = Vec::with_capacity(order_count);
 
                 for (params, (client_order_id, instrument_id, strategy_id)) in
                     order_params.into_iter().zip(order_info.into_iter())
@@ -1316,10 +1377,10 @@ impl ExecutionClient for DydxExecutionClient {
                             }
                         };
 
-                        // Broadcast with retry (single message per transaction)
-                        let operation = format!("Submit order {client_order_id}");
+                        // Broadcast with cached sequence (short-term orders don't consume sequences)
+                        let operation = format!("Submit short-term order {client_order_id}");
                         if let Err(e) = broadcaster
-                            .broadcast_with_retry(&tx_manager, vec![msg], &operation)
+                            .broadcast_short_term(&tx_manager, vec![msg], &operation)
                             .await
                         {
                             let error_msg = format!("Order submission failed: {e:?}");
@@ -1573,15 +1634,18 @@ impl ExecutionClient for DydxExecutionClient {
                 }
             };
 
-            // Broadcast cancel with retry
-            match broadcaster
-                .broadcast_with_retry(
-                    &tx_manager,
-                    vec![cancel_msg],
-                    &format!("Cancel order {client_order_id}"),
-                )
-                .await
-            {
+            // Broadcast cancel: short-term uses cached sequence, stateful uses retry
+            let cancel_op = format!("Cancel order {client_order_id}");
+            let result = if order_flags == types::ORDER_FLAG_SHORT_TERM {
+                broadcaster
+                    .broadcast_short_term(&tx_manager, vec![cancel_msg], &cancel_op)
+                    .await
+            } else {
+                broadcaster
+                    .broadcast_with_retry(&tx_manager, vec![cancel_msg], &cancel_op)
+                    .await
+            };
+            match result {
                 Ok(_) => {
                     log::debug!("Successfully cancelled order: {client_order_id}");
                 }
@@ -1735,15 +1799,18 @@ impl ExecutionClient for DydxExecutionClient {
                             }
                         };
 
-                        // Broadcast cancel (single message per transaction)
-                        if let Err(e) = broadcaster
-                            .broadcast_with_retry(
-                                &tx_manager,
-                                vec![msg],
-                                &format!("Cancel order {client_id}"),
-                            )
-                            .await
-                        {
+                        // Short-term: cached sequence, no retry. Stateful: proper sequence management.
+                        let cancel_op = format!("Cancel order {client_id}");
+                        let result = if order_flags == types::ORDER_FLAG_SHORT_TERM {
+                            broadcaster
+                                .broadcast_short_term(&tx_manager, vec![msg], &cancel_op)
+                                .await
+                        } else {
+                            broadcaster
+                                .broadcast_with_retry(&tx_manager, vec![msg], &cancel_op)
+                                .await
+                        };
+                        if let Err(e) = result {
                             log::error!("Failed to cancel order client_id={client_id}: {e:?}");
                         }
                     });
@@ -1923,15 +1990,18 @@ impl ExecutionClient for DydxExecutionClient {
                             }
                         };
 
-                        // Broadcast cancel (single message per transaction)
-                        if let Err(e) = broadcaster
-                            .broadcast_with_retry(
-                                &tx_manager,
-                                vec![msg],
-                                &format!("Cancel order {client_id}"),
-                            )
-                            .await
-                        {
+                        // Short-term: cached sequence, no retry. Stateful: proper sequence management.
+                        let cancel_op = format!("Cancel order {client_id}");
+                        let result = if order_flags == types::ORDER_FLAG_SHORT_TERM {
+                            broadcaster
+                                .broadcast_short_term(&tx_manager, vec![msg], &cancel_op)
+                                .await
+                        } else {
+                            broadcaster
+                                .broadcast_with_retry(&tx_manager, vec![msg], &cancel_op)
+                                .await
+                        };
+                        if let Err(e) = result {
                             log::error!("Failed to cancel order client_id={client_id}: {e:?}");
                         }
                     });
@@ -2418,7 +2488,23 @@ impl ExecutionClient for DydxExecutionClient {
             };
 
             match parse_order_status_report(&order, &instrument, self.core.account_id, ts_init) {
-                Ok(r) => order_reports.push(r),
+                Ok(mut r) => {
+                    // Decode dYdX u32 client_id back to Nautilus format using bidirectional encoder
+                    if !order.client_id.is_empty()
+                        && let Ok(client_id_u32) = order.client_id.parse::<u32>()
+                        && let Some(decoded) =
+                            self.encoder.decode(client_id_u32, order.client_metadata)
+                    {
+                        log::debug!(
+                            "Decoded reconciliation order: dYdX client_id={} meta={:#x} -> '{}'",
+                            client_id_u32,
+                            order.client_metadata,
+                            decoded,
+                        );
+                        r.client_order_id = Some(decoded);
+                    }
+                    order_reports.push(r);
+                }
                 Err(e) => {
                     log::warn!("Failed to parse order status report: {e}");
                     orders_filtered += 1;
@@ -2470,22 +2556,39 @@ impl ExecutionClient for DydxExecutionClient {
             }
         }
 
-        if lookback_mins.is_some() {
+        // Apply lookback filter to orders and fills (positions are always current state)
+        if let Some(mins) = lookback_mins {
+            let now_ns = get_atomic_clock_realtime().get_time_ns();
+            let cutoff_ns = now_ns.as_u64().saturating_sub(mins * 60 * 1_000_000_000);
+            let cutoff = UnixNanos::from(cutoff_ns);
+
+            let orders_before = order_reports.len();
+            order_reports.retain(|r| r.ts_last >= cutoff);
+            let orders_removed = orders_before - order_reports.len();
+
+            let fills_before = fill_reports.len();
+            fill_reports.retain(|r| r.ts_event >= cutoff);
+            let fills_removed = fills_before - fill_reports.len();
+
+            log::info!(
+                "Lookback filter ({}min): orders {}->{} (removed {}), fills {}->{} (removed {}), positions {} (unfiltered)",
+                mins,
+                orders_before,
+                order_reports.len(),
+                orders_removed,
+                fills_before,
+                fill_reports.len(),
+                fills_removed,
+                position_reports.len(),
+            );
+        } else {
             log::debug!(
-                "lookback_mins={:?} filtering not yet implemented. Returning all: {} orders ({} filtered), {} positions, {} fills ({} filtered)",
-                lookback_mins,
+                "Generated mass status: {} orders ({} filtered), {} positions, {} fills ({} filtered)",
                 order_reports.len(),
                 orders_filtered,
                 position_reports.len(),
                 fill_reports.len(),
-                fills_filtered
-            );
-        } else {
-            log::debug!(
-                "Generated mass status: {} orders, {} positions, {} fills",
-                order_reports.len(),
-                position_reports.len(),
-                fill_reports.len()
+                fills_filtered,
             );
         }
 

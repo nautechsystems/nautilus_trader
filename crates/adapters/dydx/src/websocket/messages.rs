@@ -719,9 +719,10 @@ pub struct DydxWsFillSubaccountMessageContents {
     pub liquidity: DydxLiquidity,
     #[serde(rename = "type")]
     pub fill_type: DydxFillType,
+    #[serde(alias = "ticker")]
     pub market: Ustr,
-    #[serde(rename = "marketType")]
-    pub market_type: DydxTickerType,
+    #[serde(rename = "marketType", default)]
+    pub market_type: Option<DydxTickerType>,
     pub price: String,
     pub size: String,
     pub fee: String,
@@ -738,7 +739,7 @@ pub struct DydxWsFillSubaccountMessageContents {
 /// Subaccount subscription contents.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DydxWsSubaccountsSubscribedContents {
-    pub subaccount: DydxSubaccountInfo,
+    pub subaccount: Option<DydxSubaccountInfo>,
 }
 
 /// Subaccounts subscription confirmed message.

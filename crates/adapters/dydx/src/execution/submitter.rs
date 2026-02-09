@@ -40,7 +40,7 @@ use crate::{
         broadcaster::TxBroadcaster,
         order_builder::OrderMessageBuilder,
         tx_manager::TransactionManager,
-        types::{ConditionalOrderType, LimitOrderParams},
+        types::{ConditionalOrderType, LimitOrderParams, OrderLifetime},
     },
     grpc::{DydxGrpcClient, types::ChainId},
     http::client::DydxHttpClient,
@@ -211,11 +211,11 @@ impl OrderSubmitter {
             block_height,
         )?;
 
-        // Broadcast with retry
+        // Market orders are always short-term — use cached sequence (no increment)
         let operation = format!("Submit market order {client_order_id}");
         let tx_hash = self
             .broadcaster
-            .broadcast_with_retry(&self.tx_manager, vec![msg], &operation)
+            .broadcast_short_term(&self.tx_manager, vec![msg], &operation)
             .await?;
 
         Ok(tx_hash)
@@ -269,12 +269,26 @@ impl OrderSubmitter {
             expire_time,
         )?;
 
-        // Broadcast with retry
+        // Determine if short-term based on time_in_force and expire_time
+        let is_short_term = OrderLifetime::from_time_in_force(
+            time_in_force,
+            expire_time,
+            false,
+            self.order_builder.max_short_term_secs(),
+        )
+        .is_short_term();
+
+        // Short-term: cached sequence, no retry. Stateful: proper sequence management.
         let operation = format!("Submit limit order {client_order_id}");
-        let tx_hash = self
-            .broadcaster
-            .broadcast_with_retry(&self.tx_manager, vec![msg], &operation)
-            .await?;
+        let tx_hash = if is_short_term {
+            self.broadcaster
+                .broadcast_short_term(&self.tx_manager, vec![msg], &operation)
+                .await?
+        } else {
+            self.broadcaster
+                .broadcast_with_retry(&self.tx_manager, vec![msg], &operation)
+                .await?
+        };
 
         Ok(tx_hash)
     }
@@ -310,9 +324,11 @@ impl OrderSubmitter {
             .any(|params| self.order_builder.is_short_term_order(params));
 
         if has_short_term {
-            // Short-term orders must be submitted individually
-            log::info!(
-                "Submitting {} limit orders individually (short-term orders cannot be batched)",
+            // Short-term orders must be submitted individually.
+            // They don't consume Cosmos SDK sequences (GTB replay protection),
+            // so we use broadcast_short_term for concurrent submission.
+            log::debug!(
+                "Submitting {} short-term limit orders concurrently (sequence not consumed)",
                 orders.len()
             );
 
@@ -326,9 +342,9 @@ impl OrderSubmitter {
 
                 let handle = get_runtime().spawn(async move {
                     let msg = order_builder.build_limit_order_from_params(&params, block_height)?;
-                    let operation = format!("Submit limit order {}", params.client_order_id);
+                    let operation = format!("Submit short-term order {}", params.client_order_id);
                     broadcaster
-                        .broadcast_with_retry(&tx_manager, vec![msg], &operation)
+                        .broadcast_short_term(&tx_manager, vec![msg], &operation)
                         .await
                 });
 
@@ -399,12 +415,22 @@ impl OrderSubmitter {
             block_height,
         )?;
 
-        // Broadcast with retry
+        // Determine if this is a short-term cancel
+        let is_short_term = self
+            .order_builder
+            .is_short_term_cancel(time_in_force, expire_time_ns);
+
+        // Short-term: cached sequence, no retry. Stateful: proper sequence management.
         let operation = format!("Cancel order {client_order_id}");
-        let tx_hash = self
-            .broadcaster
-            .broadcast_with_retry(&self.tx_manager, vec![msg], &operation)
-            .await?;
+        let tx_hash = if is_short_term {
+            self.broadcaster
+                .broadcast_short_term(&self.tx_manager, vec![msg], &operation)
+                .await?
+        } else {
+            self.broadcaster
+                .broadcast_with_retry(&self.tx_manager, vec![msg], &operation)
+                .await?
+        };
 
         Ok(tx_hash)
     }
