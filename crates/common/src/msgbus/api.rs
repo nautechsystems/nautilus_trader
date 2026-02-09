@@ -761,6 +761,15 @@ pub fn subscriber_count_book_snapshots(topic: MStr<Topic>) -> usize {
         .subscriber_count(topic)
 }
 
+/// Returns the exact subscriber count for bars on a topic,
+/// excluding wildcard pattern subscriptions.
+pub fn exact_subscriber_count_bars(topic: MStr<Topic>) -> usize {
+    get_message_bus()
+        .borrow()
+        .router_bars
+        .exact_subscriber_count(topic)
+}
+
 /// Publishes a message to the topic using runtime type dispatch (Any).
 pub fn publish_any(topic: MStr<Topic>, message: &dyn Any) {
     // SAFETY: Take buffer (re-entrancy safe)
