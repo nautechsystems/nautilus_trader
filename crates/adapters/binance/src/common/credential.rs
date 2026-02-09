@@ -17,7 +17,11 @@
 //!
 //! This module provides two types of credentials:
 //! - [`Credential`]: HMAC SHA256 signing for REST API and standard WebSocket
-//! - [`Ed25519Credential`]: Ed25519 signing for SBE market data streams
+//! - [`Ed25519Credential`]: Ed25519 signing for WebSocket API and SBE streams
+//!
+//! Ed25519 keys are required. Credentials are resolved from standard
+//! environment variables (`BINANCE_API_KEY`/`BINANCE_API_SECRET`), falling
+//! back to deprecated `*_ED25519_*` variables with a warning.
 
 #![allow(unused_assignments)] // Fields are used in methods; false positive on some toolchains
 
@@ -32,13 +36,20 @@ use super::enums::{BinanceEnvironment, BinanceProductType};
 
 /// Resolves API credentials from config or environment variables.
 ///
-/// For live environments, uses shared env vars:
-/// - `BINANCE_API_KEY`
-/// - `BINANCE_API_SECRET`
+/// Checks standard environment variables first, then falls back to
+/// deprecated `*_ED25519_*` variables with a deprecation warning.
 ///
-/// For testnet environments, uses product-specific env vars:
-/// - Spot: `BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`
-/// - Futures: `BINANCE_FUTURES_TESTNET_API_KEY` / `BINANCE_FUTURES_TESTNET_API_SECRET`
+/// For live environments:
+/// - Deprecated: `BINANCE_ED25519_API_KEY` / `BINANCE_ED25519_API_SECRET`
+/// - Standard: `BINANCE_API_KEY` / `BINANCE_API_SECRET`
+///
+/// For testnet environments (Spot):
+/// - Deprecated: `BINANCE_TESTNET_ED25519_API_KEY` / `BINANCE_TESTNET_ED25519_API_SECRET`
+/// - Standard: `BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`
+///
+/// For testnet environments (Futures):
+/// - Deprecated: `BINANCE_FUTURES_TESTNET_ED25519_API_KEY` / `BINANCE_FUTURES_TESTNET_ED25519_API_SECRET`
+/// - Standard: `BINANCE_FUTURES_TESTNET_API_KEY` / `BINANCE_FUTURES_TESTNET_API_SECRET`
 ///
 /// # Errors
 ///
@@ -49,69 +60,66 @@ pub fn resolve_credentials(
     environment: BinanceEnvironment,
     product_type: BinanceProductType,
 ) -> anyhow::Result<(String, String)> {
-    let (key_var, secret_var) = match environment {
-        BinanceEnvironment::Testnet => match product_type {
-            BinanceProductType::Spot | BinanceProductType::Margin | BinanceProductType::Options => {
-                ("BINANCE_TESTNET_API_KEY", "BINANCE_TESTNET_API_SECRET")
-            }
-            BinanceProductType::UsdM | BinanceProductType::CoinM => (
-                "BINANCE_FUTURES_TESTNET_API_KEY",
-                "BINANCE_FUTURES_TESTNET_API_SECRET",
-            ),
-        },
-        BinanceEnvironment::Mainnet => ("BINANCE_API_KEY", "BINANCE_API_SECRET"),
-    };
+    if let (Some(key), Some(secret)) = (config_api_key.clone(), config_api_secret.clone()) {
+        return Ok((key, secret));
+    }
 
-    let api_key = config_api_key
-        .or_else(|| std::env::var(key_var).ok())
-        .ok_or_else(|| anyhow::anyhow!("{key_var} not found in config or environment"))?;
-
-    let api_secret = config_api_secret
-        .or_else(|| std::env::var(secret_var).ok())
-        .ok_or_else(|| anyhow::anyhow!("{secret_var} not found in config or environment"))?;
-
-    Ok((api_key, api_secret))
-}
-
-/// Resolves optional Ed25519 credentials from config or environment variables.
-///
-/// Ed25519 credentials are used for SBE market data streams and are optional.
-///
-/// For live environments:
-/// - `BINANCE_ED25519_API_KEY` / `BINANCE_ED25519_API_SECRET`
-///
-/// For testnet environments:
-/// - Spot: `BINANCE_TESTNET_ED25519_API_KEY` / `BINANCE_TESTNET_ED25519_API_SECRET`
-/// - Futures: `BINANCE_FUTURES_TESTNET_ED25519_API_KEY` / `BINANCE_FUTURES_TESTNET_ED25519_API_SECRET`
-///
-/// Returns `None` if credentials are not configured.
-#[must_use]
-pub fn resolve_ed25519_credentials(
-    config_api_key: Option<String>,
-    config_api_secret: Option<String>,
-    environment: BinanceEnvironment,
-    product_type: BinanceProductType,
-) -> Option<(String, String)> {
-    let (key_var, secret_var) = match environment {
-        BinanceEnvironment::Testnet => match product_type {
-            BinanceProductType::Spot | BinanceProductType::Margin | BinanceProductType::Options => {
-                (
+    let (deprecated_key_var, deprecated_secret_var, standard_key_var, standard_secret_var) =
+        match environment {
+            BinanceEnvironment::Testnet => match product_type {
+                BinanceProductType::Spot
+                | BinanceProductType::Margin
+                | BinanceProductType::Options => (
                     "BINANCE_TESTNET_ED25519_API_KEY",
                     "BINANCE_TESTNET_ED25519_API_SECRET",
-                )
-            }
-            BinanceProductType::UsdM | BinanceProductType::CoinM => (
-                "BINANCE_FUTURES_TESTNET_ED25519_API_KEY",
-                "BINANCE_FUTURES_TESTNET_ED25519_API_SECRET",
+                    "BINANCE_TESTNET_API_KEY",
+                    "BINANCE_TESTNET_API_SECRET",
+                ),
+                BinanceProductType::UsdM | BinanceProductType::CoinM => (
+                    "BINANCE_FUTURES_TESTNET_ED25519_API_KEY",
+                    "BINANCE_FUTURES_TESTNET_ED25519_API_SECRET",
+                    "BINANCE_FUTURES_TESTNET_API_KEY",
+                    "BINANCE_FUTURES_TESTNET_API_SECRET",
+                ),
+            },
+
+            // Demo shares API keys across all product types
+            BinanceEnvironment::Demo => ("", "", "BINANCE_DEMO_API_KEY", "BINANCE_DEMO_API_SECRET"),
+            BinanceEnvironment::Mainnet => (
+                "BINANCE_ED25519_API_KEY",
+                "BINANCE_ED25519_API_SECRET",
+                "BINANCE_API_KEY",
+                "BINANCE_API_SECRET",
             ),
-        },
-        BinanceEnvironment::Mainnet => ("BINANCE_ED25519_API_KEY", "BINANCE_ED25519_API_SECRET"), // gitleaks:allow
-    };
+        };
 
-    let api_key = config_api_key.or_else(|| std::env::var(key_var).ok())?;
-    let api_secret = config_api_secret.or_else(|| std::env::var(secret_var).ok())?;
+    let api_key = config_api_key
+        .or_else(|| std::env::var(standard_key_var).ok())
+        .or_else(|| {
+            std::env::var(deprecated_key_var).ok().inspect(|_| {
+                log::warn!(
+                    "'{deprecated_key_var}' is deprecated, \
+                     use '{standard_key_var}' instead"
+                );
+            })
+        })
+        .ok_or_else(|| anyhow::anyhow!("{standard_key_var} not found in config or environment"))?;
 
-    Some((api_key, api_secret))
+    let api_secret = config_api_secret
+        .or_else(|| std::env::var(standard_secret_var).ok())
+        .or_else(|| {
+            std::env::var(deprecated_secret_var).ok().inspect(|_| {
+                log::warn!(
+                    "'{deprecated_secret_var}' is deprecated, \
+                     use '{standard_secret_var}' instead"
+                );
+            })
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!("{standard_secret_var} not found in config or environment")
+        })?;
+
+    Ok((api_key, api_secret))
 }
 
 /// Binance API credentials for signing requests (HMAC SHA256).
@@ -124,10 +132,10 @@ pub struct Credential {
     api_secret: Box<[u8]>,
 }
 
-/// Binance Ed25519 credentials for SBE market data streams.
+/// Binance Ed25519 credentials for WebSocket API authentication.
 ///
-/// SBE market data streams at `stream-sbe.binance.com` require Ed25519 API key
-/// authentication via the `X-MBX-APIKEY` header.
+/// Ed25519 is required for WebSocket API authentication (`session.logon`).
+/// This is the only key type supported for execution clients.
 #[derive(ZeroizeOnDrop)]
 pub struct Ed25519Credential {
     #[zeroize(skip)]

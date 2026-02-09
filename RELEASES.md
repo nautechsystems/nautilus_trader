@@ -21,6 +21,10 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Added Ichimoku Cloud indicator (#3552), thanks @faysou
 - Added Betfair RCM parsing for TPD race data
 - Added Betfair `BetfairOrderVoided` custom data type for VAR voids
+- Added `BetfairOrderVoided` custom data type for VAR voids
+- Added Binance `BinanceEnvironment` enum with `LIVE`, `TESTNET`, `DEMO` variants for explicit environment selection
+- Added Binance `environment` config field to `BinanceDataClientConfig` and `BinanceExecClientConfig`
+- Added Binance Demo environment support with `BINANCE_DEMO_API_KEY`/`BINANCE_DEMO_API_SECRET` env vars
 - Added BitMEX trailing stop support
 - Added Bybit mark price subscriptions support
 - Added Bybit index price subscriptions support
@@ -39,12 +43,15 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Removed `AddAssign`, `SubAssign`, `MulAssign` trait implementations from `Price`, `Quantity`, and `Money` types (Rust); use `x = x + y` instead of `x += y`
 - Removed `add_assign` and `sub_assign` cdef methods from `Price`, `Quantity`, and `Money` types (Cython); use `x = x + y` instead
 - Renamed `subscribed_order_book_snapshots` to `subscribed_order_book_depth` for consistency with data engine routing
+- Removed `listen_key_ping_max_failures` from `BinanceExecClientConfig` (listenKey flow replaced by WebSocket API)
 - Changed `Price`, `Quantity`, and `Money` arithmetic to use max precision instead of panicking on precision mismatch
 - Changed `Quantity + Quantity`, `Quantity - Quantity`, `Price + Price`, `Price - Price`, `Money + Money`, and `Money - Money` Python operators to return the same type instead of `Decimal` (`Quantity - Quantity` raises `ValueError` if result would be negative)
 - Changed `trade_execution` default from `False` to `True` for consistency with `bar_execution`; users who want to isolate execution to L1 book data only must now explicitly set `trade_execution=False`
 - Changed price-protected market orders to no longer emit `OrderAccepted` by default; set `use_market_order_acks=True` to restore previous behavior
+- Changed adapter implementations should now override `_subscribe_order_book_depth` and `_unsubscribe_order_book_depth` for `OrderBookDepth10` subscriptions
+- Changed Binance execution clients now use WebSocket API authentication instead of listenKey REST API; both HMAC and Ed25519 keys are auto-detected from the `api_secret` format (no `key_type` config needed)
+- Changed Binance execution clients now source credentials from the standard `BINANCE_API_KEY`/`BINANCE_API_SECRET` environment variables (or testnet equivalents)
 - Changed Polymarket instrument provider config from `instrument_provider` to `instrument_config` on `PolymarketDataClientConfig` and `PolymarketExecClientConfig`; use `PolymarketInstrumentProviderConfig` instead of `InstrumentProviderConfig`
-- Adapter implementations should now override `_subscribe_order_book_depth` and `_unsubscribe_order_book_depth` for `OrderBookDepth10` subscriptions
 
 ### Security
 - Upgraded `arc-swap` to 1.8.1 fixing potential use-after-free in debt mechanism (memory ordering fix)
@@ -196,6 +203,9 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 
 ### Deprecations
 - Deprecated Betfair legacy `customer_order_ref` truncation (first 32 characters); the adapter now uses last 32 characters for better entropy. Legacy truncation support during startup reconciliation will be removed in a future version.
+- Deprecated Binance `key_type` config field; key type is now auto-detected (only needed if explicitly using RSA keys)
+- Deprecated Binance `testnet` config field; use `environment=BinanceEnvironment.TESTNET` instead
+- Deprecated Binance `BINANCE_ED25519_*` and `BINANCE_*_ED25519_*` environment variables; migrate to the standard `BINANCE_API_KEY`/`BINANCE_API_SECRET` variables
 
 ---
 

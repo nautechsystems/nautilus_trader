@@ -118,6 +118,8 @@ pub enum BinanceEnvironment {
     Mainnet,
     /// Testnet environment.
     Testnet,
+    /// Demo trading environment.
+    Demo,
 }
 
 impl BinanceEnvironment {
@@ -125,6 +127,12 @@ impl BinanceEnvironment {
     #[must_use]
     pub const fn is_testnet(self) -> bool {
         matches!(self, Self::Testnet)
+    }
+
+    /// Returns true for any non-production environment.
+    #[must_use]
+    pub const fn is_sandbox(self) -> bool {
+        matches!(self, Self::Testnet | Self::Demo)
     }
 }
 
@@ -585,6 +593,7 @@ impl Display for BinanceEnvironment {
         match self {
             Self::Mainnet => write!(f, "Mainnet"),
             Self::Testnet => write!(f, "Testnet"),
+            Self::Demo => write!(f, "Demo"),
         }
     }
 }

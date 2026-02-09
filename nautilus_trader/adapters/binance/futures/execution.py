@@ -22,6 +22,7 @@ import msgspec
 from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.adapters.binance.common.constants import BINANCE_FUTURES_ALGO_ORDER_TYPES
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
 from nautilus_trader.adapters.binance.common.enums import BinanceExecutionType
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
@@ -30,18 +31,17 @@ from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEnumPar
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEventType
 from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
-from nautilus_trader.adapters.binance.futures.http.user import BinanceFuturesUserDataHttpAPI
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAccountInfo
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAlgoOrder
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesDualSidePosition
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesLeverage
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesPositionRisk
-from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesAccountUpdateWrapper
-from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesAlgoUpdateWrapper
-from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesOrderUpdateWrapper
-from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesTradeLiteWrapper
-from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesUserMsgWrapper
+from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesAccountUpdateMsg
+from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesAlgoUpdateMsg
+from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesOrderUpdateMsg
+from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesTradeLiteMsg
+from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesUserMsgData
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.cache.cache import Cache
@@ -86,13 +86,19 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
     instrument_provider : BinanceFuturesInstrumentProvider
         The instrument provider.
     base_url_ws : str
-        The base URL for the WebSocket client.
+        The base URL for the WebSocket client (unused, kept for backward compatibility).
     config : BinanceExecClientConfig
         The configuration for the client.
     account_type : BinanceAccountType, default 'USDT_FUTURES'
         The account type for the client.
     name : str, optional
         The custom client ID.
+    environment : BinanceEnvironment
+        The resolved Binance environment.
+    api_key : str
+        The Binance API key.
+    api_secret : str
+        The Binance API secret.
 
     """
 
@@ -108,6 +114,10 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         config: BinanceExecClientConfig,
         account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURES,
         name: str | None = None,
+        *,
+        environment: BinanceEnvironment,
+        api_key: str,
+        api_secret: str,
     ) -> None:
         PyCondition.is_true(
             account_type.is_futures,
@@ -117,7 +127,6 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         # Futures HTTP API
         self._futures_http_account = BinanceFuturesAccountHttpAPI(client, clock, account_type)
         self._futures_http_market = BinanceFuturesMarketHttpAPI(client, account_type)
-        self._futures_http_user = BinanceFuturesUserDataHttpAPI(client, account_type)
 
         # Futures enum parser
         self._futures_enum_parser = BinanceFuturesEnumParser()
@@ -128,7 +137,6 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             client=client,
             account=self._futures_http_account,
             market=self._futures_http_market,
-            user=self._futures_http_user,
             enum_parser=self._futures_enum_parser,
             msgbus=msgbus,
             cache=cache,
@@ -138,6 +146,9 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             base_url_ws=base_url_ws,
             name=name,
             config=config,
+            environment=environment,
+            api_key=api_key,
+            api_secret=api_secret,
         )
 
         # Register additional futures websocket user data event handlers
@@ -158,20 +169,11 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         self._leverages = config.futures_leverages
         self._margin_types = config.futures_margin_types
 
-        # WebSocket futures schema decoders
-        self._decoder_futures_user_msg_wrapper = msgspec.json.Decoder(BinanceFuturesUserMsgWrapper)
-        self._decoder_futures_order_update_wrapper = msgspec.json.Decoder(
-            BinanceFuturesOrderUpdateWrapper,
-        )
-        self._decoder_futures_account_update_wrapper = msgspec.json.Decoder(
-            BinanceFuturesAccountUpdateWrapper,
-        )
-        self._decoder_futures_trade_lite_wrapper = msgspec.json.Decoder(
-            BinanceFuturesTradeLiteWrapper,
-        )
-        self._decoder_futures_algo_update_wrapper = msgspec.json.Decoder(
-            BinanceFuturesAlgoUpdateWrapper,
-        )
+        self._decoder_futures_user_msg = msgspec.json.Decoder(BinanceFuturesUserMsgData)
+        self._decoder_futures_order_update = msgspec.json.Decoder(BinanceFuturesOrderUpdateMsg)
+        self._decoder_futures_account_update = msgspec.json.Decoder(BinanceFuturesAccountUpdateMsg)
+        self._decoder_futures_trade_lite = msgspec.json.Decoder(BinanceFuturesTradeLiteMsg)
+        self._decoder_futures_algo_update = msgspec.json.Decoder(BinanceFuturesAlgoUpdateMsg)
 
     async def _update_account_state(self) -> None:
         account_info: BinanceFuturesAccountInfo = (
@@ -251,8 +253,6 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
                 "Cannot use `reduce_only` with Binance Hedge Mode",
             )
         self._log.info(f"Dual side position: {self._is_dual_side_position}", LogColor.BLUE)
-
-    # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
     async def _get_binance_position_status_reports(
         self,
@@ -447,8 +447,6 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
 
         self._log.debug(f"Received algo {report}")
         return report
-
-    # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
     def _check_order_validity(self, order: Order) -> str | None:
         # Check order type valid
@@ -655,26 +653,21 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
                 self._clock.timestamp_ns(),
             )
 
-    # -- WEBSOCKET EVENT HANDLERS --------------------------------------------------------------------
-
     def _handle_user_ws_message(self, raw: bytes) -> None:
         try:
-            wrapper = self._decoder_futures_user_msg_wrapper.decode(raw)
-            if not wrapper.stream or not wrapper.data:
-                return  # Control message response
-
-            self._futures_user_ws_handlers[wrapper.data.e](raw)
+            msg = self._decoder_futures_user_msg.decode(raw)
+            self._futures_user_ws_handlers[msg.e](raw)
         except Exception as e:
             self._log.exception(f"Error on handling {raw!r}", e)
 
     def _handle_account_update(self, raw: bytes) -> None:
-        account_update = self._decoder_futures_account_update_wrapper.decode(raw)
-        account_update.data.handle_account_update(self)
+        account_update = self._decoder_futures_account_update.decode(raw)
+        account_update.handle_account_update(self)
 
     def _handle_order_trade_update(self, raw: bytes) -> None:
-        order_update = self._decoder_futures_order_update_wrapper.decode(raw)
-        if not (self._use_trade_lite and order_update.data.o.x == BinanceExecutionType.TRADE):
-            order_update.data.o.handle_order_trade_update(self)
+        order_update = self._decoder_futures_order_update.decode(raw)
+        if not (self._use_trade_lite and order_update.o.x == BinanceExecutionType.TRADE):
+            order_update.o.handle_order_trade_update(self)
 
     def _handle_margin_call(self, raw: bytes) -> None:
         self._log.warning("MARGIN CALL received")  # Implement
@@ -683,24 +676,24 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         self._log.info("Account config updated", LogColor.BLUE)  # Implement
 
     def _handle_listen_key_expired(self, raw: bytes) -> None:
-        self._log.warning("Listen key expired")  # Implement
+        self._log.warning("Listen key expired")
 
     def _handle_trade_lite(self, raw: bytes) -> None:
-        trade_lite = self._decoder_futures_trade_lite_wrapper.decode(raw)
+        trade_lite = self._decoder_futures_trade_lite.decode(raw)
         if not self._use_trade_lite:
             self._log.debug(
                 "TradeLite event received but not enabled in config",
             )
             return
-        order_data = trade_lite.data.to_order_data()
+        order_data = trade_lite.to_order_data()
         order_data.handle_order_trade_update(self)
 
     def _handle_algo_update(self, raw: bytes) -> None:
-        algo_update = self._decoder_futures_algo_update_wrapper.decode(raw)
-        order_data = algo_update.data.o
+        algo_update = self._decoder_futures_algo_update.decode(raw)
+        order_data = algo_update.o
         self._log.debug(
             f"ALGO_UPDATE received: caid={order_data.caid}, aid={order_data.aid}, "
             f"status={order_data.X}, symbol={order_data.s}",
         )
-        ts_event = millis_to_nanos(algo_update.data.T)
+        ts_event = millis_to_nanos(algo_update.T)
         order_data.handle_algo_update(self, ts_event)

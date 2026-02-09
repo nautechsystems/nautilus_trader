@@ -20,6 +20,7 @@ import pytest
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.execution import BinanceSpotExecutionClient
@@ -109,6 +110,9 @@ class TestBinanceSpotExecutionClient:
             clock=self.clock,
         )
 
+        # Base64-encoded 32 zero bytes for Ed25519 private key (test only)
+        dummy_api_secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
         self.exec_client = BinanceSpotExecutionClient(
             loop=self.loop,
             client=self.http_client,
@@ -119,6 +123,9 @@ class TestBinanceSpotExecutionClient:
             base_url_ws="",  # Not required for testing
             config=BinanceExecClientConfig(),
             account_type=BinanceAccountType.SPOT,
+            environment=BinanceEnvironment.LIVE,
+            api_key="SOME_BINANCE_API_KEY",
+            api_secret=dummy_api_secret,
         )
 
         self.exec_engine.register_client(self.exec_client)

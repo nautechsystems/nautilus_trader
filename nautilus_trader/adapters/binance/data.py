@@ -159,7 +159,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         # Configuration
         self._binance_account_type = account_type
         self._use_agg_trade_ticks = config.use_agg_trade_ticks
-        self._log.info(f"Key type: {config.key_type.value}", LogColor.BLUE)
         self._log.info(f"Account type: {self._binance_account_type.value}", LogColor.BLUE)
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.use_agg_trade_ticks=}", LogColor.BLUE)

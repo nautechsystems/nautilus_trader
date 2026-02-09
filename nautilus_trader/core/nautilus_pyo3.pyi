@@ -9143,6 +9143,7 @@ class BinanceProductType(Enum):
 class BinanceEnvironment(Enum):
     MAINNET = "MAINNET"
     TESTNET = "TESTNET"
+    DEMO = "DEMO"
 
 class BinanceSpotHttpClient:
     def __init__(

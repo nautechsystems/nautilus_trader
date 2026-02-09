@@ -55,7 +55,7 @@ config_node = TradingNodeConfig(
         # snapshot_orders=True,
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,
-        open_check_interval_secs=5.0,
+        open_check_interval_secs=0.0,
         # manage_own_order_books=True,
     ),
     # cache=CacheConfig(
@@ -120,7 +120,7 @@ config_strat = ExecTesterConfig(
     order_qty=order_qty,
     # open_position_on_start_qty=order_qty,
     enable_limit_buys=True,
-    enable_limit_sells=True,
+    enable_limit_sells=False,
     # enable_stop_buys=True,
     # enable_stop_sells=True,
     # tob_offset_ticks=0,
