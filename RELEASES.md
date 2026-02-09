@@ -136,7 +136,6 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed Polymarket duplicate trade_id for multi-order fills (#3450), thanks for reporting @santivazq
 - Fixed Polymarket `load_all_async` ignoring time-based filters (#3475), thanks @Coyote-Den
 - Fixed Tardis deltas snapshot boundaries with CLEAR (#3530), thanks @Arandott
-- Fixed cache loading when flush_on_start set to True
 - Fixed `itm_prob` calculation to use N(d2) instead of normalized delta, thanks @shzhng
 
 ### Internal Improvements
