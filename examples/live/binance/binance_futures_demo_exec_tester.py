@@ -20,13 +20,17 @@ from nautilus_trader.adapters.binance import BINANCE
 from nautilus_trader.adapters.binance import BinanceAccountType
 from nautilus_trader.adapters.binance import BinanceDataClientConfig
 from nautilus_trader.adapters.binance import BinanceExecClientConfig
+from nautilus_trader.adapters.binance import BinanceInstrumentProviderConfig
 from nautilus_trader.adapters.binance import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance import BinanceLiveExecClientFactory
-from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
+from nautilus_trader.config import CacheConfig
+from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.test_kit.strategies.tester_exec import ExecTester
@@ -37,7 +41,7 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 # Strategy config params
-symbol = "ETHUSDT"
+symbol = "ETHUSDT-PERP"
 instrument_id = InstrumentId.from_str(f"{symbol}.{BINANCE}")
 order_qty = Decimal("0.02")
 
@@ -48,49 +52,68 @@ config_node = TradingNodeConfig(
         log_level="INFO",
         # log_level_file="DEBUG",
         # log_file_format="json",
+        log_colors=True,
         use_pyo3=True,
+    ),
+    data_engine=LiveDataEngineConfig(
+        external_clients=[ClientId(BINANCE)],
     ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
+        # open_check_interval_secs=5.0,
+        open_check_open_only=False,
         # snapshot_orders=True,
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,
-        open_check_interval_secs=5.0,
-        # manage_own_order_books=True,
+        purge_closed_orders_interval_mins=1,
+        purge_closed_orders_buffer_mins=0,
+        purge_closed_positions_interval_mins=1,
+        purge_closed_positions_buffer_mins=0,
+        purge_account_events_interval_mins=1,
+        purge_account_events_lookback_mins=0,
+        purge_from_database=True,
+        graceful_shutdown_on_exception=True,
     ),
-    # cache=CacheConfig(
-    #     # database=DatabaseConfig(),
-    #     timestamps_as_iso8601=True,
-    #     buffer_interval_ms=100,
-    #     flush_on_start=False,
-    # ),
+    cache=CacheConfig(
+        # database=DatabaseConfig(),
+        timestamps_as_iso8601=True,
+        flush_on_start=False,
+    ),
     # message_bus=MessageBusConfig(
-    #     database=DatabaseConfig(),
-    #     encoding="json",
+    #     database=DatabaseConfig(timeout=2),
     #     timestamps_as_iso8601=True,
-    #     buffer_interval_ms=100,
-    #     streams_prefix="quoters",
     #     use_instance_id=False,
-    #     types_filter=[QuoteTick],
+    #     # types_filter=[QuoteTick],
+    #     stream_per_topic=False,
+    #     external_streams=["bybit"],
     #     autotrim_mins=30,
     #     heartbeat_interval_secs=1,
     # ),
     # streaming=StreamingConfig(catalog_path="catalog"),
     data_clients={
         BINANCE: BinanceDataClientConfig(
-            api_key=None,  # 'BINANCE_API_KEY' env var
-            api_secret=None,  # 'BINANCE_API_SECRET' env var
-            account_type=BinanceAccountType.SPOT,
-            instrument_provider=InstrumentProviderConfig(load_all=True),
+            api_key=None,  # 'BINANCE_DEMO_API_KEY' env var
+            api_secret=None,  # 'BINANCE_DEMO_API_SECRET' env var
+            account_type=BinanceAccountType.USDT_FUTURES,
+            environment=BinanceEnvironment.DEMO,
+            instrument_provider=BinanceInstrumentProviderConfig(
+                load_ids=frozenset([instrument_id]),
+                query_commission_rates=True,
+            ),
         ),
     },
     exec_clients={
         BINANCE: BinanceExecClientConfig(
-            api_key=None,  # 'BINANCE_API_KEY' env var
-            api_secret=None,  # 'BINANCE_API_SECRET' env var
-            account_type=BinanceAccountType.SPOT,
-            instrument_provider=InstrumentProviderConfig(load_all=True),
+            api_key=None,  # 'BINANCE_DEMO_API_KEY' env var
+            api_secret=None,  # 'BINANCE_DEMO_API_SECRET' env var
+            account_type=BinanceAccountType.USDT_FUTURES,
+            environment=BinanceEnvironment.DEMO,
+            instrument_provider=BinanceInstrumentProviderConfig(
+                load_ids=frozenset([instrument_id]),
+                query_commission_rates=True,
+            ),
             max_retries=3,
+            log_rejected_due_post_only_as_warning=False,
         ),
     },
     timeout_connection=30.0,
@@ -104,21 +127,36 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-config_strat = ExecTesterConfig(
+strat_config = ExecTesterConfig(
     instrument_id=instrument_id,
     external_order_claims=[instrument_id],
+    # subscribe_book=True,
+    subscribe_quotes=True,
+    subscribe_trades=True,
     order_qty=order_qty,
-    # open_position_on_start_qty=order_qty,
-    enable_limit_buys=True,
-    enable_limit_sells=False,
+    open_position_on_start_qty=order_qty,
+    # order_params={"price_match": "QUEUE_5"},
+    # enable_limit_buys=False,
+    # enable_limit_sells=False,
+    # tob_offset_ticks=0,
+    # stop_offset_ticks=1,
     # enable_stop_buys=True,
     # enable_stop_sells=True,
-    # tob_offset_ticks=0,
+    # order_expire_time_delta_mins=11,
+    # modify_orders_to_maintain_tob_offset=True,
+    # modify_stop_orders_to_maintain_offset=True,
+    # use_batch_cancel_on_stop=True,
+    # use_individual_cancels_on_stop=True,
+    use_post_only=True,
+    # cancel_orders_on_stop=False,
+    # close_positions_on_stop=False,
+    # log_rejected_due_post_only_as_warning=False,
+    # test_reject_post_only=True,
     log_data=False,
 )
 
 # Instantiate your strategy
-strategy = ExecTester(config=config_strat)
+strategy = ExecTester(config=strat_config)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)

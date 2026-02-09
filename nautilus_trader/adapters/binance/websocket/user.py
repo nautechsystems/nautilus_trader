@@ -19,8 +19,10 @@ This client uses the authenticated WebSocket API endpoint with
 `session.logon`. Supports both Ed25519 and HMAC API keys.
 
 Spot uses `userDataStream.subscribe` — events arrive inline on the same connection.
-Futures uses `userDataStream.start` — events are delivered on a separate stream
-connection at `{stream_base_url}/ws/{listenKey}`.
+Futures + Ed25519 uses `userDataStream.start` via WS API — events are delivered on
+a separate stream connection at `{stream_base_url}/ws/{listenKey}`.
+Futures + HMAC uses REST API for listenKey management (Binance Futures WS API
+`session.logon` only accepts Ed25519).
 
 """
 
@@ -32,6 +34,9 @@ import msgspec
 
 from nautilus_trader.adapters.binance.common.credentials import extract_ed25519_private_key
 from nautilus_trader.adapters.binance.common.credentials import is_ed25519_private_key
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.http.user import BinanceUserDataHttpAPI
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.enums import LogColor
@@ -77,6 +82,11 @@ class BinanceUserDataWebSocketClient:
     is_ed25519 : bool, optional
         Force Ed25519 signing when True. When None (default), auto-detects
         from the api_secret format (PEM header or PKCS#8 OID).
+    http_client : BinanceHttpClient, optional
+        HTTP client for REST listenKey management. Required for HMAC Futures
+        (Binance Futures WS API `session.logon` only accepts Ed25519).
+    account_type : BinanceAccountType, optional
+        The account type, required when `http_client` is provided.
 
     """
 
@@ -93,6 +103,8 @@ class BinanceUserDataWebSocketClient:
         is_futures: bool = False,
         stream_base_url: str | None = None,
         is_ed25519: bool | None = None,
+        http_client: BinanceHttpClient | None = None,
+        account_type: BinanceAccountType | None = None,
     ) -> None:
         self._clock = clock
         self._log: Logger = Logger(type(self).__name__)
@@ -115,12 +127,23 @@ class BinanceUserDataWebSocketClient:
             self._ed25519_key = None
             self._hmac_secret = api_secret
 
+        # REST listenKey API for HMAC Futures
+        # (Binance Futures WS API session.logon only accepts Ed25519)
+        if http_client is not None and account_type is not None:
+            self._http_user: BinanceUserDataHttpAPI | None = BinanceUserDataHttpAPI(
+                client=http_client,
+                account_type=account_type,
+            )
+        else:
+            self._http_user = None
+
         # WebSocket API connection (auth + requests)
         self._client: WebSocketClient | None = None
         self._msg_id: int = 0
         self._pending_requests: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self._subscription_id: str | None = None
         self._is_authenticated: bool = False
+        self._is_recovery_failed: bool = False
         self._reconnect_task: asyncio.Task | None = None
         self._keepalive_task: asyncio.Task | None = None
 
@@ -140,6 +163,10 @@ class BinanceUserDataWebSocketClient:
         Return whether the session is authenticated.
         """
         return self._is_authenticated
+
+    @property
+    def _use_rest_listen_key(self) -> bool:
+        return self._is_futures and self._http_user is not None
 
     def _get_sign(self, data: str) -> str:
         if self._ed25519_key is not None:
@@ -194,6 +221,12 @@ class BinanceUserDataWebSocketClient:
         """
         Connect to the WebSocket API server.
         """
+        self._is_recovery_failed = False
+
+        if self._use_rest_listen_key:
+            self._log.info("Using REST listenKey mode (HMAC Futures)", LogColor.BLUE)
+            return
+
         self._log.debug(f"Connecting to {self._base_url}...")
 
         config = WebSocketConfig(
@@ -229,12 +262,31 @@ class BinanceUserDataWebSocketClient:
             await self.subscribe_user_data_stream()
             self._log.warning("Re-authenticated and resubscribed after reconnect")
         except Exception as e:
-            self._log.error(f"Failed to re-authenticate after reconnect: {e}")
+            self._is_recovery_failed = True
+            self._log.error(
+                f"Failed to re-authenticate after reconnect: {e}. "
+                "User data stream is NOT active, disconnecting",
+            )
+            await self.disconnect()
 
     async def _resubscribe(self) -> None:
         self._subscription_id = None
         self._cancel_keepalive()
         await self._disconnect_stream()
+
+        if self._use_rest_listen_key:
+            try:
+                await self._subscribe_rest()
+                self._log.warning("Resubscribed after listenKey expiry (REST)")
+            except Exception as e:
+                self._is_recovery_failed = True
+                self._log.error(
+                    f"Failed to recover REST listenKey: {e}. "
+                    "User data stream is NOT active, disconnecting",
+                )
+                await self.disconnect()
+            return
+
         try:
             await self.subscribe_user_data_stream()
             self._log.warning("Resubscribed after stream termination")
@@ -246,7 +298,12 @@ class BinanceUserDataWebSocketClient:
                 await self.subscribe_user_data_stream()
                 self._log.warning("Re-authenticated and resubscribed after stream termination")
             except Exception as e:
-                self._log.error(f"Failed to recover after stream termination: {e}")
+                self._is_recovery_failed = True
+                self._log.error(
+                    f"Failed to recover after stream termination: {e}. "
+                    "User data stream is NOT active, disconnecting",
+                )
+                await self.disconnect()
 
     async def _disconnect_stream(self) -> None:
         if self._stream_client is not None:
@@ -265,6 +322,9 @@ class BinanceUserDataWebSocketClient:
         self._is_authenticated = False
 
         await self._disconnect_stream()
+
+        if self._use_rest_listen_key:
+            return
 
         if self._client is None:
             return
@@ -288,6 +348,10 @@ class BinanceUserDataWebSocketClient:
         params: dict[str, Any] | None = None,
         timeout: float = 10.0,
     ) -> dict[str, Any]:
+        if self._is_recovery_failed:
+            raise RuntimeError(
+                "User data stream recovery failed, cannot send requests",
+            )
         if self._client is None:
             raise RuntimeError("WebSocket client not connected")
 
@@ -327,6 +391,12 @@ class BinanceUserDataWebSocketClient:
         Returns the session logon response.
 
         """
+        if self._use_rest_listen_key:
+            # REST listenKey auth is per-request via API key header
+            self._is_authenticated = True
+            self._log.info("Session authenticated (REST listenKey mode)", LogColor.GREEN)
+            return {}
+
         timestamp = self._clock.timestamp_ms()
         sign_params = f"apiKey={self._api_key}&timestamp={timestamp}"
         signature = self._get_sign(sign_params)
@@ -362,12 +432,15 @@ class BinanceUserDataWebSocketClient:
         Subscribe to the user data stream.
 
         For Spot, sends `userDataStream.subscribe` — events arrive inline.
-        For Futures, sends `userDataStream.start` and connects a separate
-        stream to receive events.
+        For Futures + Ed25519, sends `userDataStream.start` via WS API.
+        For Futures + HMAC, creates listenKey via REST API.
 
         """
         if not self._is_authenticated:
             raise RuntimeError("Session not authenticated, call session_logon first")
+
+        if self._use_rest_listen_key:
+            return await self._subscribe_rest()
 
         if self._is_futures:
             response = await self._send_request("userDataStream.start")
@@ -392,9 +465,22 @@ class BinanceUserDataWebSocketClient:
             self._subscription_id = str(subscription_id)
             self._log.info(
                 f"Subscribed to user data stream: {subscription_id}",
-                LogColor.GREEN,
+                LogColor.BLUE,
             )
             return str(subscription_id)
+
+    async def _subscribe_rest(self) -> str:
+        response = await self._http_user.create_listen_key()
+        listen_key = response.listenKey
+        self._subscription_id = listen_key
+        self._log.info(
+            f"Created listenKey (REST): {mask_api_key(listen_key)}",
+            LogColor.GREEN,
+        )
+
+        await self._connect_stream(listen_key)
+        self._keepalive_task = self._loop.create_task(self._keepalive_loop())
+        return listen_key
 
     async def _connect_stream(self, listen_key: str) -> None:
         if self._stream_base_url is None:
@@ -411,15 +497,24 @@ class BinanceUserDataWebSocketClient:
             heartbeat=60,
         )
 
+        # REST mode needs reconnection handling on the stream client
+        # (WS API mode handles reconnection via the WS API client)
+        post_reconnection = self._handle_stream_reconnect if self._use_rest_listen_key else None
+
         self._stream_client = await WebSocketClient.connect(
             loop_=self._loop,
             config=config,
             handler=self._handle_stream_message,
+            post_reconnection=post_reconnection,
         )
         self._log.info(
             f"Connected stream to {self._stream_base_url}/ws/{mask_api_key(listen_key)}",
             LogColor.BLUE,
         )
+
+    def _handle_stream_reconnect(self) -> None:
+        self._log.warning("Stream reconnected, creating new listenKey...")
+        self._loop.create_task(self._resubscribe())
 
     async def unsubscribe_user_data_stream(self) -> None:
         """
@@ -431,7 +526,14 @@ class BinanceUserDataWebSocketClient:
             self._log.warning("No active subscription to unsubscribe from")
             return
 
-        if self._is_futures:
+        if self._use_rest_listen_key:
+            await self._disconnect_stream()
+            try:
+                await self._http_user.close_listen_key()
+            except Exception as e:
+                self._log.warning(f"Error closing REST listenKey: {e}")
+            self._log.info("Closed user data stream (REST)")
+        elif self._is_futures:
             await self._disconnect_stream()
             await self._send_request(
                 "userDataStream.stop",
@@ -453,10 +555,13 @@ class BinanceUserDataWebSocketClient:
             while True:
                 await asyncio.sleep(self._KEEPALIVE_INTERVAL_SECS)
                 try:
-                    await self._send_request(
-                        "userDataStream.ping",
-                        {"listenKey": self._subscription_id},
-                    )
+                    if self._use_rest_listen_key:
+                        await self._http_user.keepalive_listen_key()
+                    else:
+                        await self._send_request(
+                            "userDataStream.ping",
+                            {"listenKey": self._subscription_id},
+                        )
                     self._log.debug("User data stream keepalive sent")
                 except Exception as e:
                     self._log.error(f"Failed to send keepalive: {e}")

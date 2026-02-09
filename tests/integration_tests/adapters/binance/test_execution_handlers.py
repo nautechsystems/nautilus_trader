@@ -238,6 +238,10 @@ class TestBinanceSpotExecutionHandlers:
         exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
         exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
 
+        mock_order = mocker.MagicMock()
+        mock_order.is_closed = False
+        exec_client._cache.order.return_value = mock_order
+
         # Act
         wrapper.data.handle_execution_report(exec_client)
 

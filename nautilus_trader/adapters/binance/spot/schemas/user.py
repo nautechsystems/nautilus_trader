@@ -44,11 +44,6 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
 
-################################################################################
-# WebSocket messages
-################################################################################
-
-
 class BinanceSpotUserMsgData(msgspec.Struct, frozen=True):
     """
     Inner struct for execution WebSocket messages from Binance.
@@ -171,16 +166,13 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
         ts_init: int,
         enum_parser: BinanceEnumParser,
     ) -> OrderStatusReport:
-        price = Price.from_str(self.p) if self.p is not None else None
-        trigger_price = Price.from_str(self.P) if self.P is not None else None
+        price = Price.from_str(self.p) if Decimal(self.p) != 0 else None
+        trigger_price = Price.from_str(self.P) if Decimal(self.P) != 0 else None
         order_side = OrderSide.BUY if self.S == BinanceOrderSide.BUY else OrderSide.SELL
         post_only = self.f == BinanceTimeInForce.GTX
+        iceberg_qty = Decimal(self.F)
         display_qty = (
-            Quantity.from_str(
-                str(Decimal(self.q) - Decimal(self.F)),
-            )
-            if self.F is not None
-            else None
+            Quantity.from_str(str(Decimal(self.q) - iceberg_qty)) if iceberg_qty != 0 else None
         )
 
         filled_qty_decimal = Decimal(self.z)
@@ -219,9 +211,12 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
         """
         Handle BinanceSpotOrderUpdateData as payload of executionReport event.
         """
-        client_order_id_str: str = self.c
-        if not client_order_id_str:
+        # For cancel events, `c` is the cancel request's auto-generated ID
+        # and `C` is the original order's client order ID
+        if self.x == BinanceExecutionType.CANCELED and self.C:
             client_order_id_str = self.C
+        else:
+            client_order_id_str = self.c if self.c else self.C
         client_order_id = ClientOrderId(client_order_id_str) if client_order_id_str else None
         ts_event = millis_to_nanos(self.T)
         venue_order_id = VenueOrderId(str(self.i))
@@ -355,6 +350,15 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
                 ts_event=ts_event,
             )
         elif self.x == BinanceExecutionType.CANCELED:
+            # Guard against duplicate cancel events with different venue_order_ids
+            # (can occur from Binance cancel-replace producing multiple events)
+            order = exec_client._cache.order(client_order_id)
+            if order is not None and order.is_closed:
+                exec_client._log.warning(
+                    f"Skipping duplicate cancel for already closed order {client_order_id}",
+                )
+                return
+
             exec_client.generate_order_canceled(
                 strategy_id=strategy_id,
                 instrument_id=instrument_id,

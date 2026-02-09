@@ -44,7 +44,7 @@ and won't need to necessarily work with these lower level components directly.
 
 :::note
 Margin trading (cross & isolated) is not implemented at this time.
-Contributions via [GitHub issue #2631](https://github.com/nautechsystems/nautilus_trader/issues/#2631)
+Contributions via [GitHub issue #2631](https://github.com/nautechsystems/nautilus_trader/issues/2631)
 or pull requests to add margin trading functionality are welcome.
 :::
 
@@ -77,54 +77,54 @@ The following tables detail the order types, execution instructions, and time-in
 
 | Order Type             | Spot | Margin | USDT Futures | Coin Futures | Notes                   |
 |------------------------|------|--------|--------------|--------------|-------------------------|
-| `MARKET`               | ✓    | ✓      | ✓            | ✓            | Quote quantity support: Spot/Margin only. |
-| `LIMIT`                | ✓    | ✓      | ✓            | ✓            |                         |
-| `STOP_MARKET`          | -    | ✓      | ✓            | ✓            | Not supported for Spot. |
-| `STOP_LIMIT`           | ✓    | ✓      | ✓            | ✓            |                         |
+| `MARKET`               | ✓    | -      | ✓            | ✓            | Quote quantity support: Spot only. |
+| `LIMIT`                | ✓    | -      | ✓            | ✓            |                         |
+| `STOP_MARKET`          | -    | -      | ✓            | ✓            | Futures only.           |
+| `STOP_LIMIT`           | ✓    | -      | ✓            | ✓            |                         |
 | `MARKET_IF_TOUCHED`    | -    | -      | ✓            | ✓            | Futures only.           |
-| `LIMIT_IF_TOUCHED`     | ✓    | ✓      | ✓            | ✓            |                         |
+| `LIMIT_IF_TOUCHED`     | ✓    | -      | ✓            | ✓            |                         |
 | `TRAILING_STOP_MARKET` | -    | -      | ✓            | ✓            | Futures only.           |
 
 ### Execution instructions
 
 | Instruction   | Spot | Margin | USDT Futures | Coin Futures | Notes                                 |
 |---------------|------|--------|--------------|--------------|---------------------------------------|
-| `post_only`   | ✓    | ✓      | ✓            | ✓            | See restrictions below.               |
+| `post_only`   | ✓    | -      | ✓            | ✓            | See restrictions below.               |
 | `reduce_only` | -    | -      | ✓            | ✓            | Futures only; disabled in Hedge Mode. |
 
 #### Post-only restrictions
 
 Only *limit* order types support `post_only`.
 
-| Order Type               | Spot | Margin | USDT Futures | Coin Futures | Notes                                                      |
-|--------------------------|------|--------|--------------|--------------|------------------------------------------------------------|
-| `LIMIT`                  | ✓    | ✓      | ✓            | ✓            | Uses `LIMIT_MAKER` for Spot/Margin, `GTX` TIF for Futures. |
-| `STOP_LIMIT`             | -    | -      | ✓            | ✓            | Not supported for Spot/Margin.                             |
+| Order Type               | Spot | Margin | USDT Futures | Coin Futures | Notes                                               |
+|--------------------------|------|--------|--------------|--------------|-----------------------------------------------------|
+| `LIMIT`                  | ✓    | -      | ✓            | ✓            | Uses `LIMIT_MAKER` for Spot, `GTX` TIF for Futures. |
+| `STOP_LIMIT`             | -    | -      | ✓            | ✓            | Futures only.                                       |
 
 ### Time in force
 
-| Time in force | Spot | Margin | USDT Futures | Coin Futures | Notes                                           |
-|---------------|------|--------|--------------|--------------|-------------------------------------------------|
-| `GTC`         | ✓    | ✓      | ✓            | ✓            | Good Till Canceled.                             |
-| `GTD`         | ✓*   | ✓*     | ✓            | ✓            | *Converted to GTC for Spot/Margin with warning. |
-| `FOK`         | ✓    | ✓      | ✓            | ✓            | Fill or Kill.                                   |
-| `IOC`         | ✓    | ✓      | ✓            | ✓            | Immediate or Cancel.                            |
+| Time in force | Spot | Margin | USDT Futures | Coin Futures | Notes                                      |
+|---------------|------|--------|--------------|--------------|--------------------------------------------|
+| `GTC`         | ✓    | -      | ✓            | ✓            | Good Till Canceled.                        |
+| `GTD`         | ✓*   | -      | ✓            | ✓            | *Converted to GTC for Spot with warning.   |
+| `FOK`         | ✓    | -      | ✓            | ✓            | Fill or Kill.                              |
+| `IOC`         | ✓    | -      | ✓            | ✓            | Immediate or Cancel.                       |
 
 ### Advanced order features
 
 | Feature            | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
 |--------------------|------|--------|--------------|--------------|----------------------------------------------|
-| Order Modification | ✓    | ✓      | ✓            | ✓            | Price and quantity for `LIMIT` orders only.  |
-| Bracket/OCO Orders | ✓    | ✓      | ✓            | ✓            | One-Cancels-Other for stop loss/take profit. |
-| Iceberg Orders     | ✓    | ✓      | ✓            | ✓            | Large orders split into visible portions.    |
+| Order Modification | ✓    | -      | ✓            | ✓            | Price and quantity for `LIMIT` orders only.  |
+| Bracket/OCO Orders | -    | -      | -            | -            | *Planned*. Currently denied at submission.   |
+| Iceberg Orders     | ✓    | -      | ✓            | ✓            | Large orders split into visible portions.    |
 
 ### Batch operations
 
 | Operation          | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
 |--------------------|------|--------|--------------|--------------|----------------------------------------------|
-| Batch Submit       | ✓    | ✓      | ✓            | ✓            | Submit multiple orders in single request.    |
-| Batch Modify       | -    | -      | ✓            | ✓            | Modify multiple orders in single request. Futures only. |
-| Batch Cancel       | ✓    | ✓      | ✓            | ✓            | Cancel multiple orders in single request.    |
+| Batch Submit       | ✓    | -      | ✓            | ✓            | Orders submitted individually (no batch API call). |
+| Batch Modify       | -    | -      | -            | -            | Not implemented.                             |
+| Batch Cancel       | -*   | -      | ✓            | ✓            | *Spot falls back to individual cancels.      |
 
 #### Cancel all orders behavior
 
@@ -146,12 +146,12 @@ The adapter automatically routes these "algo" orders through the correct endpoin
 
 ### Position management
 
-| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                      |
+| Feature             | Spot | Margin | USDT Futures | Coin Futures | Notes                                       |
 |---------------------|------|--------|--------------|--------------|---------------------------------------------|
-| Query positions     | -    | ✓      | ✓            | ✓            | Real-time position updates.                 |
+| Query positions     | -    | -      | ✓            | ✓            | Real-time position updates.                 |
 | Position mode       | -    | -      | ✓            | ✓            | One-Way vs Hedge mode (position IDs).       |
-| Leverage control    | -    | ✓      | ✓            | ✓            | Dynamic leverage adjustment per symbol.     |
-| Margin mode         | -    | ✓      | ✓            | ✓            | Cross vs Isolated margin per symbol.        |
+| Leverage control    | -    | -      | ✓            | ✓            | Dynamic leverage adjustment per symbol.     |
+| Margin mode         | -    | -      | ✓            | ✓            | Cross vs Isolated margin per symbol.        |
 
 ### Risk events
 
@@ -176,7 +176,7 @@ This ensures liquidation and ADL events are properly reflected in portfolio stat
 
 ### Order querying
 
-| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                      |
+| Feature             | Spot | Margin | USDT Futures | Coin Futures | Notes                                       |
 |---------------------|------|--------|--------------|--------------|---------------------------------------------|
 | Query open orders   | ✓    | ✓      | ✓            | ✓            | List all active orders.                     |
 | Query order history | ✓    | ✓      | ✓            | ✓            | Historical order data.                      |
@@ -185,11 +185,11 @@ This ensures liquidation and ADL events are properly reflected in portfolio stat
 
 ### Contingent orders
 
-| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                       |
+| Feature             | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
 |---------------------|------|--------|--------------|--------------|----------------------------------------------|
 | Order lists         | -    | -      | -            | -            | *Not supported*.                             |
-| OCO orders          | ✓    | ✓      | ✓            | ✓            | One-Cancels-Other for stop loss/take profit. |
-| Bracket orders      | ✓    | ✓      | ✓            | ✓            | Stop loss + take profit combinations.        |
+| OCO orders          | -    | -      | -            | -            | *Planned*. Currently denied at submission.   |
+| Bracket orders      | -    | -      | -            | -            | *Planned*. Currently denied at submission.   |
 | Conditional orders  | ✓    | ✓      | ✓            | ✓            | Stop and market-if-touched orders.           |
 
 ### Order parameters
@@ -271,10 +271,6 @@ Do not use `trigger_price` for trailing stop orders - it will fail with an error
 
 ## Order books
 
-Order books can be maintained at full or partial depths depending on the
-subscription. WebSocket stream throttling is different between Spot and Futures exchanges,
-Nautilus will use the highest streaming rate possible:
-
 Order books can be maintained at full or partial depths based on the subscription settings.
 WebSocket stream update rates differ between Spot and Futures exchanges, with Nautilus using the
 highest available streaming rate:
@@ -319,7 +315,7 @@ methods may eventually become first-class (not requiring custom/generic subscrip
 
 ### `BinanceFuturesMarkPriceUpdate`
 
-You can subscribe to `BinanceFuturesMarkPriceUpdate` (including funding rating info)
+You can subscribe to `BinanceFuturesMarkPriceUpdate` (including funding rate info)
 data streams by subscribing in the following way from your actor or strategy:
 
 ```python
@@ -432,7 +428,8 @@ For the latest rate limits, query `/api/v3/exchangeInfo` (Spot) or `/fapi/v1/exc
 | `key_type`                           | `HMAC`    | **Deprecated**: key type is now auto-detected from the API secret format. Only needed to force `RSA` (data clients only — RSA is not supported for execution). |
 | `account_type`                       | `SPOT`    | Account type for order placement (spot, margin, USDT futures, coin futures). |
 | `base_url_http`                      | `None`    | Override for the HTTP REST base URL. |
-| `base_url_ws`                        | `None`    | Override for the WebSocket base URL. |
+| `base_url_ws`                        | `None`    | Override for the WebSocket API base URL. |
+| `base_url_ws_stream`                 | `None`    | Override for the WebSocket stream URL (futures user data event delivery). |
 | `proxy_url`                          | `None`    | Optional proxy URL for HTTP requests. |
 | `us`                                 | `False`   | Route requests to Binance US endpoints when `True`. |
 | `environment`                        | `None`    | Binance environment: `LIVE`, `TESTNET`, or `DEMO`. Defaults to `LIVE` when `None`. |
@@ -464,7 +461,7 @@ config = TradingNodeConfig(
         BINANCE: {
             "api_key": "YOUR_BINANCE_API_KEY",
             "api_secret": "YOUR_BINANCE_API_SECRET",
-            "account_type": "spot",  # {spot, margin, usdt_future, coin_future}
+            "account_type": "spot",  # {spot, usdt_futures, coin_futures}
             "base_url_http": None,  # Override with custom endpoint
             "base_url_ws": None,  # Override with custom endpoint
             "us": False,  # If client is for Binance US
@@ -474,7 +471,7 @@ config = TradingNodeConfig(
         BINANCE: {
             "api_key": "YOUR_BINANCE_API_KEY",
             "api_secret": "YOUR_BINANCE_API_SECRET",
-            "account_type": "spot",  # {spot, margin, usdt_future, coin_future}
+            "account_type": "spot",  # {spot, usdt_futures, coin_futures}
             "base_url_http": None,  # Override with custom endpoint
             "base_url_ws": None,  # Override with custom endpoint
             "us": False,  # If client is for Binance US
@@ -512,10 +509,10 @@ its superior performance and security, and a future version of NautilusTrader wi
 require Ed25519 exclusively.
 
 | Key Type | Data Clients | Execution Clients | Status |
-|----------|-------------|-------------------|--------|
-| Ed25519  | ✓           | ✓                 | **Recommended** |
-| HMAC     | ✓           | ✓                 | Deprecated — will be removed in a future version |
-| RSA      | ✓           | -                 | Deprecated — not supported for execution |
+|----------|--------------|-------------------|--------|
+| Ed25519  | ✓            | ✓                 | **Recommended** |
+| HMAC     | ✓            | ✓                 | Deprecated — will be removed in a future version. |
+| RSA      | ✓            | -                 | Deprecated — not supported for execution. |
 
 :::tip
 **We strongly recommend switching to Ed25519 keys now.** Generate an Ed25519 keypair and register
@@ -569,27 +566,7 @@ Keep your private key secure. Never share it or commit it to version control.
 
 There are multiple options for supplying your credentials to the Binance clients.
 Either pass the corresponding values to the configuration objects, or
-set the following environment variables:
-
-For Binance live clients:
-
-- `BINANCE_API_KEY`
-- `BINANCE_API_SECRET`
-
-For Binance Spot/Margin testnet clients:
-
-- `BINANCE_TESTNET_API_KEY`
-- `BINANCE_TESTNET_API_SECRET`
-
-For Binance Futures testnet clients:
-
-- `BINANCE_FUTURES_TESTNET_API_KEY`
-- `BINANCE_FUTURES_TESTNET_API_SECRET`
-
-For Binance Demo clients (shared across Spot and Futures):
-
-- `BINANCE_DEMO_API_KEY`
-- `BINANCE_DEMO_API_SECRET`
+set the appropriate environment variables (see [Environments](#environments) for per-environment variables).
 
 :::tip
 We recommend using Ed25519 keys for all clients. HMAC keys still work for both data and
@@ -608,17 +585,15 @@ credentials are valid and have trading permissions.
 
 ### Account type
 
-All the Binance account types will be supported for live trading. Set the `account_type`
-using the `BinanceAccountType` enum. The account type options are:
+Set the `account_type` using the `BinanceAccountType` enum. The supported account types are:
 
 - `SPOT`
-- `MARGIN` (Margin shared between open positions)
-- `ISOLATED_MARGIN` (Margin assigned to a single position)
 - `USDT_FUTURES` (USDT or BUSD stablecoins as collateral)
 - `COIN_FUTURES` (other cryptocurrency as collateral)
 
-:::tip
-We recommend using environment variables to manage your credentials.
+:::note
+`MARGIN` and `ISOLATED_MARGIN` account types exist in the enum but margin trading
+is not yet implemented. See [Product support](#product-support).
 :::
 
 ### Base URL overrides
@@ -635,66 +610,74 @@ should behave identically to standard Binance.
 
 ### Environments
 
-Binance provides three environments, configured via the `environment` option:
+Binance provides three trading environments, configured via the `environment` option:
 
-- **`LIVE`** (default) — Production trading
-- **`TESTNET`** — Spot testnet at `testnet.binance.vision`, Futures testnet at `testnet.binancefuture.com`
-- **`DEMO`** — Spot demo at `demo-api.binance.com` (Futures demo shares testnet endpoints)
+| Environment  | Config                   | Description                                                         |
+|--------------|--------------------------|---------------------------------------------------------------------|
+| **Live**     | `environment="LIVE"`     | Production trading with real funds (default).                       |
+| **Demo**     | `environment="DEMO"`     | Practice trading with simulated funds on production infrastructure. |
+| **Testnet**  | `environment="TESTNET"`  | Separate test network for development and integration testing.      |
 
-**Testnet example:**
+#### Live (production)
+
+The default environment for live trading with real funds.
 
 ```python
-from nautilus_trader.adapters.binance import BINANCE
-
-config = TradingNodeConfig(
-    ...,  # Omitted
-    data_clients={
-        BINANCE: {
-            "api_key": "YOUR_BINANCE_TESTNET_API_KEY",
-            "api_secret": "YOUR_BINANCE_TESTNET_API_SECRET",
-            "account_type": "spot",  # {spot, margin, usdt_future}
-            "environment": "TESTNET",
-        },
-    },
-    exec_clients={
-        BINANCE: {
-            "api_key": "YOUR_BINANCE_TESTNET_API_KEY",
-            "api_secret": "YOUR_BINANCE_TESTNET_API_SECRET",
-            "account_type": "spot",  # {spot, margin, usdt_future}
-            "environment": "TESTNET",
-        },
-    },
+config = BinanceExecClientConfig(
+    api_key="YOUR_API_KEY",
+    api_secret="YOUR_API_SECRET",
+    account_type=BinanceAccountType.SPOT,
+    # environment=BinanceEnvironment.LIVE (default)
 )
 ```
 
-**Demo example:**
+Environment variables: `BINANCE_API_KEY`, `BINANCE_API_SECRET`
+
+#### Demo trading
+
+Practice trading with simulated funds. Spot demo uses dedicated production infrastructure (`demo-api.binance.com`), while Futures demo shares testnet endpoints. Create demo API keys from the [Binance Demo Trading page](https://www.binance.com/en/demo-trading).
 
 ```python
-from nautilus_trader.adapters.binance import BINANCE
-
-config = TradingNodeConfig(
-    ...,  # Omitted
-    data_clients={
-        BINANCE: {
-            "api_key": "YOUR_BINANCE_DEMO_API_KEY",
-            "api_secret": "YOUR_BINANCE_DEMO_API_SECRET",
-            "account_type": "spot",
-            "environment": "DEMO",
-        },
-    },
-    exec_clients={
-        BINANCE: {
-            "api_key": "YOUR_BINANCE_DEMO_API_KEY",
-            "api_secret": "YOUR_BINANCE_DEMO_API_SECRET",
-            "account_type": "spot",
-            "environment": "DEMO",
-        },
-    },
+config = BinanceExecClientConfig(
+    api_key="YOUR_DEMO_API_KEY",
+    api_secret="YOUR_DEMO_API_SECRET",
+    account_type=BinanceAccountType.SPOT,
+    environment=BinanceEnvironment.DEMO,
 )
 ```
+
+Environment variables: `BINANCE_DEMO_API_KEY`, `BINANCE_DEMO_API_SECRET` (shared across Spot and Futures)
+
+:::warning
+**Demo environment limitations:**
+
+- COIN-M Futures are **not supported** in demo mode.
+- Futures demo shares testnet infrastructure, so market data and liquidity may differ from production.
+
+:::
+
+#### Testnet
+
+A separate test network for development and integration testing. Spot testnet is at `testnet.binance.vision`, Futures testnet at `testnet.binancefuture.com`.
+
+```python
+config = BinanceExecClientConfig(
+    api_key="YOUR_TESTNET_API_KEY",
+    api_secret="YOUR_TESTNET_API_SECRET",
+    account_type=BinanceAccountType.SPOT,
+    environment=BinanceEnvironment.TESTNET,
+)
+```
+
+Environment variables (Spot/Margin): `BINANCE_TESTNET_API_KEY`, `BINANCE_TESTNET_API_SECRET`
+Environment variables (Futures): `BINANCE_FUTURES_TESTNET_API_KEY`, `BINANCE_FUTURES_TESTNET_API_SECRET`
 
 :::note
-The `testnet` option is deprecated. Use `environment="TESTNET"` instead.
+Testnet uses completely separate infrastructure from production. Market data and liquidity differ significantly from live.
+:::
+
+:::warning
+The `testnet` config option is deprecated and will be removed in a future version. Use `environment="TESTNET"` instead.
 :::
 
 ### Aggregated trades

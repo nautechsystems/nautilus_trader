@@ -24,6 +24,7 @@ from nautilus_trader.adapters.binance.common.constants import BINANCE_MIN_CALLBA
 from nautilus_trader.adapters.binance.common.constants import BINANCE_PRICE_MATCH_ORDER_TYPES
 from nautilus_trader.adapters.binance.common.constants import BINANCE_PRICE_MATCH_VALUES
 from nautilus_trader.adapters.binance.common.constants import BINANCE_RETRY_WARNINGS
+from nautilus_trader.adapters.binance.common.credentials import is_ed25519_private_key
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
@@ -218,14 +219,25 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         # Futures events arrive on a separate stream (different endpoint)
         stream_base_url: str | None = None
         if account_type.is_futures:
-            stream_base_url = get_ws_base_url(
+            stream_base_url = config.base_url_ws_stream or get_ws_base_url(
                 account_type=account_type,
                 environment=environment,
                 is_us=config.us,
             )
 
         # Force Ed25519 when explicitly configured, otherwise auto-detect
-        is_ed25519 = True if config.key_type == BinanceKeyType.ED25519 else None
+        if config.key_type == BinanceKeyType.ED25519:
+            is_ed25519 = True
+        else:
+            is_ed25519 = is_ed25519_private_key(api_secret)
+
+        # Futures + HMAC needs REST listenKey fallback
+        # (Binance Futures WS API session.logon only accepts Ed25519)
+        http_client_for_ws: BinanceHttpClient | None = None
+        account_type_for_ws: BinanceAccountType | None = None
+        if account_type.is_futures and not is_ed25519:
+            http_client_for_ws = client
+            account_type_for_ws = account_type
 
         self._ws_client = BinanceUserDataWebSocketClient(
             clock=clock,
@@ -237,6 +249,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             is_futures=account_type.is_futures,
             stream_base_url=stream_base_url,
             is_ed25519=is_ed25519,
+            http_client=http_client_for_ws,
+            account_type=account_type_for_ws,
         )
 
         self._submit_order_method: dict[

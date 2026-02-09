@@ -146,7 +146,10 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_http : str, optional
         The HTTP client custom endpoint override.
     base_url_ws : str, optional
-        The WebSocket client custom endpoint override.
+        The WebSocket API client custom endpoint override.
+    base_url_ws_stream : str, optional
+        The WebSocket stream custom endpoint override for futures user data event delivery.
+        Only applicable to futures account types. When ``None``, derived from the environment.
     proxy_url : str, optional
         The proxy URL for HTTP requests.
     environment : BinanceEnvironment, optional
@@ -200,6 +203,7 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     account_type: BinanceAccountType = BinanceAccountType.SPOT
     base_url_http: str | None = None
     base_url_ws: str | None = None
+    base_url_ws_stream: str | None = None
     proxy_url: str | None = None
     environment: BinanceEnvironment | None = None
     us: bool = False
