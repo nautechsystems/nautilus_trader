@@ -90,6 +90,19 @@ simplified_symbology_params = [
     (IBContract(secType="IND", exchange="CBOE", localSymbol="SPX"), "^SPX.CBOE"),
     (IBContract(secType="IND", exchange="EUREX", localSymbol="ESTX50"), "^ESTX50.EUREX"),
     (IBContract(secType="IND", exchange="ASX", localSymbol="XJO"), "^XJO.ASX"),
+    (
+        IBContract(
+            secType="OPT",
+            exchange="EUREX",
+            symbol="OESX",
+            currency="EUR",
+            tradingClass="OESX",
+            right="C",
+            strike="4775",
+            lastTradeDateOrContractMonth="20260213",
+        ),
+        "C OESX 20260213 4775.EUREX",
+    ),
 ]
 
 

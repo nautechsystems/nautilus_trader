@@ -235,6 +235,7 @@ VENUES_FUT = [
 VENUES_CASH = ["IDEALPRO"]
 VENUES_CRYPTO = ["PAXOS"]
 VENUES_OPT = ["SMART"]
+VENUES_EUREX_OPT = ["EUREX"]
 VENUES_CFD = ["IBCFD"]  # self named, in fact mapping to "SMART" when parsing
 VENUES_CMDTY = ["IBCMDTY"]  # self named, in fact mapping to "SMART" when parsing
 
@@ -264,6 +265,13 @@ RE_FOP_ORIGINAL = re.compile(
     r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d)\s(?P<right>[CP])(?P<strike>\d{1,6}(?:\.\d+)?)$",
 )  # "ESM3 C4420"
 RE_CRYPTO = re.compile(r"^(?P<symbol>[A-Z]*)\/(?P<currency>[A-Z]{3})$")  # "BTC/USD"
+RE_EUREX_OPT = re.compile(
+    r"^(?P<right>[CP])\s+"
+    r"(?P<tradingClass>[A-Z0-9]{3,6})\s+"
+    r"(?P<expiry>\d{8})\s+"
+    r"(?P<strike>\d+(?:\.\d+)?)"
+    r"(?:\s+(?P<style>[A-Z]))?$"
+)
 
 
 def sec_type_to_asset_class(sec_type: str) -> AssetClass:
@@ -1058,8 +1066,10 @@ def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too comple
         symbol = (contract.localSymbol or contract.symbol).replace(" ", "-")
     elif security_type == "IND":
         symbol = f"^{(contract.localSymbol or contract.symbol)}"
-    elif security_type == "OPT":
+    elif security_type == "OPT" and contract.localSymbol:
         symbol = contract.localSymbol
+    elif security_type == "OPT":
+        symbol = f"{contract.right} {contract.tradingClass} {contract.lastTradeDateOrContractMonth} {contract.strike}"
     elif security_type == "CONTFUT":
         symbol = contract.symbol
     elif security_type == "FUT" and (m := RE_FUT_ORIGINAL.match(contract.localSymbol)):
@@ -1211,6 +1221,17 @@ def instrument_id_to_ib_contract_simplified_symbology(  # noqa: C901 (too comple
             secType="OPT",
             exchange=exchange,
             localSymbol=f"{m['symbol'].ljust(6)}{m['expiry']}{m['right']}{m['strike']}{m['decimal']}",
+        )
+    elif exchange in VENUES_EUREX_OPT and (m := RE_EUREX_OPT.match(instrument_id.symbol.value)):
+        return IBContract(
+            secType="OPT",
+            exchange=exchange,
+            symbol=m["tradingClass"],
+            currency="EUR",
+            tradingClass=m["tradingClass"],
+            right=m["right"],
+            strike=m["strike"],
+            lastTradeDateOrContractMonth=m["expiry"],
         )
     elif str(instrument_id.symbol).startswith("^"):
         return IBContract(
