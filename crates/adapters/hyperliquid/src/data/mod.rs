@@ -29,8 +29,10 @@ use nautilus_common::{
         data::{
             BarsResponse, DataResponse, InstrumentResponse, InstrumentsResponse, RequestBars,
             RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
-            SubscribeBookDeltas, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeBookDeltas, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
+            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
+            UnsubscribeBookDeltas, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -231,10 +233,26 @@ impl HyperliquidDataClient {
                                         log::error!("Failed to send bar: {e}");
                                     }
                                 }
-                                NautilusWsMessage::MarkPrice(_)
-                                | NautilusWsMessage::IndexPrice(_)
-                                | NautilusWsMessage::FundingRate(_) => {
-                                    // TODO: Route mark/index/funding data when supported
+                                NautilusWsMessage::MarkPrice(update) => {
+                                    if let Err(e) = data_sender
+                                        .send(DataEvent::Data(Data::MarkPriceUpdate(update)))
+                                    {
+                                        log::error!("Failed to send mark price update: {e}");
+                                    }
+                                }
+                                NautilusWsMessage::IndexPrice(update) => {
+                                    if let Err(e) = data_sender
+                                        .send(DataEvent::Data(Data::IndexPriceUpdate(update)))
+                                    {
+                                        log::error!("Failed to send index price update: {e}");
+                                    }
+                                }
+                                NautilusWsMessage::FundingRate(update) => {
+                                    if let Err(e) = data_sender
+                                        .send(DataEvent::FundingRate(update))
+                                    {
+                                        log::error!("Failed to send funding rate update: {e}");
+                                    }
                                 }
                                 NautilusWsMessage::Reconnected => {
                                     log::info!("WebSocket reconnected");
@@ -661,6 +679,21 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
+    fn subscribe_instrument(&mut self, cmd: &SubscribeInstrument) -> anyhow::Result<()> {
+        let instruments = self.instruments.read().unwrap();
+        if let Some(instrument) = instruments.get(&cmd.instrument_id) {
+            if let Err(e) = self
+                .data_sender
+                .send(DataEvent::Instrument(instrument.clone()))
+            {
+                log::error!("Failed to send instrument {}: {e}", cmd.instrument_id);
+            }
+        } else {
+            log::warn!("Instrument {} not found in cache", cmd.instrument_id);
+        }
+        Ok(())
+    }
+
     fn subscribe_trades(&mut self, subscription: &SubscribeTrades) -> anyhow::Result<()> {
         log::debug!("Subscribing to trades: {}", subscription.instrument_id);
 
@@ -690,11 +723,6 @@ impl DataClient for HyperliquidDataClient {
                 log::error!("Failed to unsubscribe from trades: {e:?}");
             }
         });
-
-        log::info!(
-            "Unsubscribed from trades for {}",
-            unsubscription.instrument_id
-        );
 
         Ok(())
     }
@@ -769,10 +797,83 @@ impl DataClient for HyperliquidDataClient {
             }
         });
 
-        log::info!(
-            "Unsubscribed from quotes for {}",
-            unsubscription.instrument_id
-        );
+        Ok(())
+    }
+
+    fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
+        let ws = self.ws_client.clone();
+        let instrument_id = cmd.instrument_id;
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_mark_prices(instrument_id).await {
+                log::error!("Failed to subscribe to mark prices: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
+        let ws = self.ws_client.clone();
+        let instrument_id = cmd.instrument_id;
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_mark_prices(instrument_id).await {
+                log::error!("Failed to unsubscribe from mark prices: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
+        let ws = self.ws_client.clone();
+        let instrument_id = cmd.instrument_id;
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_index_prices(instrument_id).await {
+                log::error!("Failed to subscribe to index prices: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
+        let ws = self.ws_client.clone();
+        let instrument_id = cmd.instrument_id;
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_index_prices(instrument_id).await {
+                log::error!("Failed to unsubscribe from index prices: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
+        let ws = self.ws_client.clone();
+        let instrument_id = cmd.instrument_id;
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_funding_rates(instrument_id).await {
+                log::error!("Failed to subscribe to funding rates: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
+        let ws = self.ws_client.clone();
+        let instrument_id = cmd.instrument_id;
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_funding_rates(instrument_id).await {
+                log::error!("Failed to unsubscribe from funding rates: {e:?}");
+            }
+        });
 
         Ok(())
     }
@@ -797,8 +898,6 @@ impl DataClient for HyperliquidDataClient {
             }
         });
 
-        log::info!("Subscribed to bars for {}", subscription.bar_type);
-
         Ok(())
     }
 
@@ -813,8 +912,6 @@ impl DataClient for HyperliquidDataClient {
                 log::error!("Failed to unsubscribe from bars: {e:?}");
             }
         });
-
-        log::info!("Unsubscribed from bars for {}", unsubscription.bar_type);
 
         Ok(())
     }

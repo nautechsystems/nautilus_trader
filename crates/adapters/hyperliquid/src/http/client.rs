@@ -1809,8 +1809,8 @@ impl HyperliquidHttpClient {
                     match time_in_force {
                         TimeInForce::Gtc => HyperliquidExecTif::Gtc,
                         TimeInForce::Ioc => HyperliquidExecTif::Ioc,
-                        TimeInForce::Fok => HyperliquidExecTif::Ioc, // Hyperliquid doesn't have FOK
-                        TimeInForce::Day
+                        TimeInForce::Fok
+                        | TimeInForce::Day
                         | TimeInForce::Gtd
                         | TimeInForce::AtTheOpen
                         | TimeInForce::AtTheClose => {

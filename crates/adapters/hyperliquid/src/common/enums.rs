@@ -15,7 +15,7 @@
 
 use std::{fmt::Display, str::FromStr};
 
-use nautilus_model::enums::{AggressorSide, OrderSide, OrderStatus, OrderType, TriggerType};
+use nautilus_model::enums::{AggressorSide, OrderSide, OrderStatus, OrderType};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
@@ -227,62 +227,6 @@ pub enum HyperliquidTpSl {
     Tp,
     /// Stop Loss.
     Sl,
-}
-
-/// Represents trigger price types for conditional orders.
-///
-/// Hyperliquid supports different price references for trigger evaluation:
-/// - Last: Last traded price (most common)
-/// - Mark: Mark price (for risk management)
-/// - Oracle: Oracle/index price (for some perpetuals)
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Display,
-    PartialEq,
-    Eq,
-    Hash,
-    AsRefStr,
-    EnumIter,
-    EnumString,
-    Serialize,
-    Deserialize,
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.hyperliquid")
-)]
-#[serde(rename_all = "lowercase")]
-#[strum(serialize_all = "lowercase")]
-pub enum HyperliquidTriggerPriceType {
-    /// Last traded price.
-    Last,
-    /// Mark price.
-    Mark,
-    /// Oracle/index price.
-    Oracle,
-}
-
-impl From<HyperliquidTriggerPriceType> for TriggerType {
-    fn from(value: HyperliquidTriggerPriceType) -> Self {
-        match value {
-            HyperliquidTriggerPriceType::Last => Self::LastPrice,
-            HyperliquidTriggerPriceType::Mark => Self::MarkPrice,
-            HyperliquidTriggerPriceType::Oracle => Self::IndexPrice,
-        }
-    }
-}
-
-impl From<TriggerType> for HyperliquidTriggerPriceType {
-    fn from(value: TriggerType) -> Self {
-        match value {
-            TriggerType::LastPrice => Self::Last,
-            TriggerType::MarkPrice => Self::Mark,
-            TriggerType::IndexPrice => Self::Oracle,
-            _ => Self::Last, // Default fallback
-        }
-    }
 }
 
 /// Represents conditional/trigger order types.
@@ -957,7 +901,7 @@ impl HyperliquidProductType {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::enums::{OrderType, TriggerType};
+    use nautilus_model::enums::OrderType;
     use rstest::rstest;
     use serde_json;
 
@@ -1287,49 +1231,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_hyperliquid_trigger_price_type_serialization() {
-        let last = HyperliquidTriggerPriceType::Last;
-        let mark = HyperliquidTriggerPriceType::Mark;
-        let oracle = HyperliquidTriggerPriceType::Oracle;
-
-        assert_eq!(serde_json::to_string(&last).unwrap(), r#""last""#);
-        assert_eq!(serde_json::to_string(&mark).unwrap(), r#""mark""#);
-        assert_eq!(serde_json::to_string(&oracle).unwrap(), r#""oracle""#);
-    }
-
-    #[rstest]
-    fn test_hyperliquid_trigger_price_type_to_nautilus() {
-        assert_eq!(
-            TriggerType::from(HyperliquidTriggerPriceType::Last),
-            TriggerType::LastPrice
-        );
-        assert_eq!(
-            TriggerType::from(HyperliquidTriggerPriceType::Mark),
-            TriggerType::MarkPrice
-        );
-        assert_eq!(
-            TriggerType::from(HyperliquidTriggerPriceType::Oracle),
-            TriggerType::IndexPrice
-        );
-    }
-
-    #[rstest]
-    fn test_nautilus_trigger_type_to_hyperliquid() {
-        assert_eq!(
-            HyperliquidTriggerPriceType::from(TriggerType::LastPrice),
-            HyperliquidTriggerPriceType::Last
-        );
-        assert_eq!(
-            HyperliquidTriggerPriceType::from(TriggerType::MarkPrice),
-            HyperliquidTriggerPriceType::Mark
-        );
-        assert_eq!(
-            HyperliquidTriggerPriceType::from(TriggerType::IndexPrice),
-            HyperliquidTriggerPriceType::Oracle
-        );
-    }
-
-    #[rstest]
     fn test_conditional_order_type_conversions() {
         // Test all conditional order types
         assert_eq!(
@@ -1634,21 +1535,6 @@ mod tests {
             let order_type = OrderType::from(cond_type);
             let back_to_cond = HyperliquidConditionalOrderType::from(order_type);
             assert_eq!(cond_type, back_to_cond, "Roundtrip conversion failed");
-        }
-    }
-
-    #[rstest]
-    fn test_all_trigger_price_types() {
-        let trigger_types = vec![
-            HyperliquidTriggerPriceType::Last,
-            HyperliquidTriggerPriceType::Mark,
-            HyperliquidTriggerPriceType::Oracle,
-        ];
-
-        for trigger_type in trigger_types {
-            let nautilus_type = TriggerType::from(trigger_type);
-            let back_to_hl = HyperliquidTriggerPriceType::from(nautilus_type);
-            assert_eq!(trigger_type, back_to_hl, "Trigger type roundtrip failed");
         }
     }
 }

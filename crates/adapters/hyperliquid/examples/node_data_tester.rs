@@ -62,9 +62,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
 
     let tester_config = DataTesterConfig::new(client_id, instrument_ids)
-        // .with_subscribe_quotes(true)
-        // .with_subscribe_trades(true);
-        .with_subscribe_book_at_interval(true)
+        .with_subscribe_quotes(true)
+        .with_subscribe_trades(true)
+        .with_subscribe_mark_prices(true)
+        .with_subscribe_index_prices(true)
+        .with_subscribe_funding_rates(true)
+        // .with_subscribe_book_at_interval(true)
         .with_book_interval_ms(NonZeroUsize::new(10).unwrap());
     let tester = DataTester::new(tester_config);
 

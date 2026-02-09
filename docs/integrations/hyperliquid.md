@@ -178,13 +178,13 @@ The adapter automatically loads these when `testnet=True` in the configuration.
 
 Hyperliquid offers linear perpetual futures and native spot markets.
 
-| Product Type        | Data Feed | Trading | Notes                      |
-|---------------------|-----------|---------|----------------------------|
-| Perpetual Futures   | ✓         | ✓       | USDC-settled linear perps. |
-| Spot                | ✓         | ✓       | Native spot markets.       |
+| Product Type      | Data Feed | Trading | Notes                      |
+|-------------------|-----------|---------|----------------------------|
+| Perpetual Futures | ✓         | ✓       | USDC-settled linear perps. |
+| Spot              | ✓         | ✓       | Native spot markets.       |
 
 :::note
-All instruments on Hyperliquid are settled in USDC.
+Perpetual futures on Hyperliquid are settled in USDC. Spot markets are standard currency pairs.
 :::
 
 ## Symbology
@@ -228,24 +228,89 @@ Spot instruments may include vault tokens (prefixed with `vntls:`). These are au
 handled by the instrument provider.
 :::
 
+## Instrument provider
+
+The instrument provider supports filtering when loading instruments via
+`InstrumentProviderConfig(filters=...)`:
+
+| Filter key                  | Type        | Description                                 |
+|-----------------------------|-------------|---------------------------------------------|
+| `market_types` (or `kinds`) | `list[str]` | `"perp"` or `"spot"`.                       |
+| `bases`                     | `list[str]` | Base currency codes, e.g. `["BTC", "ETH"]`. |
+| `quotes`                    | `list[str]` | Quote currency codes, e.g. `["USDC"]`.      |
+| `symbols`                   | `list[str]` | Full symbols, e.g. `["BTC-USD-PERP"]`.      |
+
+Example loading only perpetual instruments:
+
+```python
+instrument_provider=InstrumentProviderConfig(
+    load_all=True,
+    filters={"market_types": ["perp"]},
+)
+```
+
+## Data subscriptions
+
+The adapter supports the following data subscriptions:
+
+| Data type         | Subscription | Historical | Nautilus type      | Notes                                          |
+|-------------------|--------------|------------|--------------------|------------------------------------------------|
+| Trade ticks       | ✓            | -          | `TradeTick`        | Via WebSocket trades channel.                  |
+| Quote ticks       | ✓            | -          | `QuoteTick`        | Best bid/offer from WebSocket.                 |
+| Order book deltas | ✓            | -          | `OrderBookDelta`   | L2 depth. Snapshot on subscribe and reconnect. |
+| Bars              | ✓            | ✓          | `Bar`              | See supported intervals below.                 |
+| Mark prices       | ✓            | -          | `MarkPriceUpdate`  | Perpetual mark price ticks.                    |
+| Index prices      | ✓            | -          | `IndexPriceUpdate` | Underlying index reference prices.             |
+| Funding rates     | ✓            | -          | `FundingRate`      | Perpetual funding rate updates.                |
+
+:::note
+Historical quote tick and trade tick requests are not yet supported by this adapter.
+:::
+
+### Supported bar intervals
+
+| Resolution | Hyperliquid candle |
+|------------|--------------------|
+| 1-MINUTE   | `1m`               |
+| 3-MINUTE   | `3m`               |
+| 5-MINUTE   | `5m`               |
+| 15-MINUTE  | `15m`              |
+| 30-MINUTE  | `30m`              |
+| 1-HOUR     | `1h`               |
+| 2-HOUR     | `2h`               |
+| 4-HOUR     | `4h`               |
+| 8-HOUR     | `8h`               |
+| 12-HOUR    | `12h`              |
+| 1-DAY      | `1d`               |
+| 3-DAY      | `3d`               |
+| 1-WEEK     | `1w`               |
+| 1-MONTH    | `1M`               |
+
 ## Orders capability
 
 Hyperliquid supports a comprehensive set of order types and execution options.
 
 ### Order types
 
-| Order Type             | Perpetuals | Spot | Notes                                  |
-|------------------------|------------|------|----------------------------------------|
-| `MARKET`               | ✓          | ✓    | Executed as IOC limit order.           |
-| `LIMIT`                | ✓          | ✓    |                                        |
-| `STOP_MARKET`          | ✓          | ✓    | Stop loss orders.                      |
-| `STOP_LIMIT`           | ✓          | ✓    | Stop loss with limit execution.        |
-| `MARKET_IF_TOUCHED`    | ✓          | ✓    | Take profit at market.                 |
-| `LIMIT_IF_TOUCHED`     | ✓          | ✓    | Take profit with limit execution.      |
+| Order Type          | Perpetuals | Spot | Notes                                     |
+|---------------------|------------|------|-------------------------------------------|
+| `MARKET`            | ✓          | ✓    | IOC limit at 0.5% slippage from best BBO. |
+| `LIMIT`             | ✓          | ✓    |                                           |
+| `STOP_MARKET`       | ✓          | ✓    | Stop loss orders.                         |
+| `STOP_LIMIT`        | ✓          | ✓    | Stop loss with limit execution.           |
+| `MARKET_IF_TOUCHED` | ✓          | ✓    | Take profit at market.                    |
+| `LIMIT_IF_TOUCHED`  | ✓          | ✓    | Take profit with limit execution.         |
 
 :::info
 Conditional orders (stop and if-touched) are implemented using Hyperliquid's native trigger
-order functionality with automatic TP/SL mode detection.
+order functionality with automatic TP/SL mode detection. All trigger orders are evaluated
+against the [mark price](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/robust-price-indices).
+:::
+
+:::note
+Market orders require cached quote data. The adapter uses the best ask (for buys) or best bid
+(for sells) with 0.5% slippage, rounded to 5 significant figures. Ensure you subscribe to
+quotes for any instrument you intend to trade with market orders.
 :::
 
 ### Time in force
@@ -264,21 +329,31 @@ order functionality with automatic TP/SL mode detection.
 | `post_only`   | ✓          | ✓    | Equivalent to ALO time in force.   |
 | `reduce_only` | ✓          | ✓    | Close-only orders.                 |
 
+:::info
+Post-only orders that would immediately match are rejected by Hyperliquid. The adapter detects
+this and generates an `OrderRejected` event. Post-only orders are routed through Hyperliquid's
+ALO (Add-Liquidity-Only) lane.
+:::
+
 ### Order operations
 
-| Operation        | Perpetuals | Spot | Notes                                  |
-|------------------|------------|------|----------------------------------------|
-| Submit order     | ✓          | ✓    | Single order submission.               |
-| Submit order list| ✓          | ✓    | Batch order submission.                |
-| Modify order     | ✓          | ✓    | Price and quantity modification.       |
-| Cancel order     | ✓          | ✓    | Cancel by client order ID.             |
-| Cancel all orders| ✓          | ✓    | Cancel all orders for instrument/side. |
-| Batch cancel     | ✓          | ✓    | Cancel multiple orders in one request. |
+| Operation         | Perpetuals | Spot | Notes                                           |
+|-------------------|------------|------|-------------------------------------------------|
+| Submit order      | ✓          | ✓    | Single order submission.                        |
+| Submit order list | ✓          | ✓    | Batch order submission (single API call).       |
+| Modify order      | -          | -    | *Not yet exposed via Python bindings*.          |
+| Cancel order      | ✓          | ✓    | Cancel by client order ID.                      |
+| Cancel all orders | ✓          | ✓    | Iterates cached open orders by instrument/side. |
+| Batch cancel      | ✓          | ✓    | Iterates provided cancel list.                  |
+
+:::note
+Order modification exists in the Rust layer but is not yet wired through to the Python
+execution client. Cancel all and batch cancel issue individual cancel requests per order.
+:::
 
 ## Order books
 
-Order books can be maintained at full depth based on WebSocket subscription.
-Hyperliquid provides real-time order book updates via WebSocket streams.
+Order books are maintained via L2 WebSocket subscription with delta updates.
 
 Order book snapshot rebuilds are triggered on:
 
@@ -309,34 +384,55 @@ For Hyperliquid testnet clients, you can set:
 We recommend using environment variables to manage your credentials.
 :::
 
+## Vault trading
+
+Hyperliquid supports [vault trading](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/vaults),
+where a wallet operates on behalf of a vault (sub-account). Orders are signed with the
+wallet's private key but include the vault address in the signature payload.
+
+To trade via a vault, set the `vault_address` in your execution client config (or set the
+`HYPERLIQUID_VAULT` / `HYPERLIQUID_TESTNET_VAULT` environment variable).
+
+:::warning
+When vault trading is enabled, WebSocket subscriptions for order and fill updates automatically
+use the vault address instead of the wallet address. This is required to receive the vault's
+order and fill events.
+:::
+
+## Rate limiting
+
+The adapter implements a token bucket rate limiter for Hyperliquid's REST API with a capacity
+of 1200 weight per minute. HTTP info requests are automatically retried with exponential
+backoff (full jitter) on rate limit (429) and server error (5xx) responses.
+
 ## Configuration
 
 ### Data client configuration options
 
-| Option                   | Default | Description                                      |
-|--------------------------|---------|--------------------------------------------------|
-| `base_url_http`          | `None`  | Override for the REST base URL.                  |
-| `base_url_ws`            | `None`  | Override for the WebSocket base URL.             |
-| `testnet`                | `False` | Connect to the Hyperliquid testnet when `True`.  |
-| `http_timeout_secs`      | `10`    | Timeout (seconds) applied to REST calls.         |
-| `http_proxy_url`         | `None`  | Optional HTTP proxy URL.                         |
-| `ws_proxy_url`           | `None`  | Optional WebSocket proxy URL.                    |
+| Option              | Default | Description                                    |
+|---------------------|---------|------------------------------------------------|
+| `base_url_http`     | `None`  | Override for the REST base URL.                |
+| `base_url_ws`       | `None`  | Override for the WebSocket base URL.           |
+| `testnet`           | `False` | Connect to the Hyperliquid testnet when `True`.|
+| `http_timeout_secs` | `10`    | Timeout (seconds) applied to REST calls.       |
+| `http_proxy_url`    | `None`  | Optional HTTP proxy URL.                       |
+| `ws_proxy_url`      | `None`  | Reserved; WebSocket proxy not yet implemented. |
 
 ### Execution client configuration options
 
-| Option                   | Default | Description                                                |
-|--------------------------|---------|-------------------------------------------------------------|
-| `private_key`            | `None`  | EVM private key; loaded from `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK` when omitted. |
-| `vault_address`          | `None`  | Vault address for delegated trading; loaded from `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT` when omitted. |
-| `base_url_http`          | `None`  | Override for the REST base URL.                             |
-| `base_url_ws`            | `None`  | Override for the WebSocket base URL.                        |
-| `testnet`                | `False` | Connect to the Hyperliquid testnet when `True`.             |
-| `max_retries`            | `None`  | Maximum retry attempts for order submission/cancel/modify.  |
-| `retry_delay_initial_ms` | `None`  | Initial delay (milliseconds) between retries.               |
-| `retry_delay_max_ms`     | `None`  | Maximum delay (milliseconds) between retries.               |
-| `http_timeout_secs`      | `10`    | Timeout (seconds) applied to REST calls.                    |
-| `http_proxy_url`         | `None`  | Optional HTTP proxy URL.                                    |
-| `ws_proxy_url`           | `None`  | Optional WebSocket proxy URL.                               |
+| Option                   | Default | Description                                                                                |
+|--------------------------|---------|--------------------------------------------------------------------------------------------|
+| `private_key`            | `None`  | EVM private key; loaded from `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK` when omitted.    |
+| `vault_address`          | `None`  | Vault address; loaded from `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT` if omitted.  |
+| `base_url_http`          | `None`  | Override for the REST base URL.                                                            |
+| `base_url_ws`            | `None`  | Override for the WebSocket base URL.                                                       |
+| `testnet`                | `False` | Connect to the Hyperliquid testnet when `True`.                                            |
+| `max_retries`            | `None`  | Maximum retry attempts for info requests.                                                  |
+| `retry_delay_initial_ms` | `None`  | Initial delay (milliseconds) between retries.                                              |
+| `retry_delay_max_ms`     | `None`  | Maximum delay (milliseconds) between retries.                                              |
+| `http_timeout_secs`      | `10`    | Timeout (seconds) applied to REST calls.                                                   |
+| `http_proxy_url`         | `None`  | Optional HTTP proxy URL.                                                                   |
+| `ws_proxy_url`           | `None`  | Reserved; WebSocket proxy not yet implemented.                                             |
 
 ### Configuration example
 

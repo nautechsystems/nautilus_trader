@@ -496,13 +496,17 @@ pub fn parse_fill_report(
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(fill.oid.to_string());
 
-    // Use last 36 chars of hash for TradeId (max length constraint)
-    let trade_id_str = if fill.hash.len() > 36 {
-        &fill.hash[fill.hash.len() - 36..]
+    // Combine hash + oid for unique TradeId (max 36 chars).
+    // Multiple fills can share the same hash (same transaction, funding fills)
+    // so the oid suffix ensures uniqueness per fill.
+    let oid_str = fill.oid.to_string();
+    let hash_budget = 36 - oid_str.len() - 1; // -1 for separator
+    let hash_part = if fill.hash.len() > hash_budget {
+        &fill.hash[fill.hash.len() - hash_budget..]
     } else {
         &fill.hash
     };
-    let trade_id = TradeId::new(trade_id_str);
+    let trade_id = TradeId::new(format!("{hash_part}-{oid_str}"));
     let order_side = parse_fill_side(&fill.side);
 
     let price_precision = instrument.price_precision();

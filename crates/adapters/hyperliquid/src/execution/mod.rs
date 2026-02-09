@@ -37,7 +37,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, UnixNanos,
+    MUTEX_POISONED, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
@@ -49,7 +49,6 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance},
 };
-use serde_json;
 use tokio::task::JoinHandle;
 use ustr::Ustr;
 
@@ -60,13 +59,16 @@ use crate::{
         parse::{
             client_order_id_to_cancel_request_with_asset, extract_error_message,
             is_response_successful, order_to_hyperliquid_request_with_asset,
+            parse_account_balances_and_margins,
         },
     },
     config::HyperliquidExecClientConfig,
     http::{
         client::HyperliquidHttpClient,
-        models::{ClearinghouseState, Cloid, HyperliquidExecBuilderFee},
-        query::ExchangeAction,
+        models::{
+            ClearinghouseState, Cloid, HyperliquidExecAction, HyperliquidExecBuilderFee,
+            HyperliquidExecGrouping, HyperliquidExecModifyOrderRequest,
+        },
     },
     websocket::{ExecutionReport, NautilusWsMessage, client::HyperliquidWebSocketClient},
 };
@@ -89,20 +91,6 @@ impl HyperliquidExecutionClient {
         &self.config
     }
 
-    /// Validates order before submission to catch issues early.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the order cannot be submitted to Hyperliquid.
-    ///
-    /// # Supported Order Types
-    ///
-    /// - `Market`: Standard market orders
-    /// - `Limit`: Limit orders with GTC/IOC/ALO time-in-force
-    /// - `StopMarket`: Stop loss / protective stop with market execution
-    /// - `StopLimit`: Stop loss / protective stop with limit price
-    /// - `MarketIfTouched`: Profit taking / entry order with market execution
-    /// - `LimitIfTouched`: Profit taking / entry order with limit price
     fn validate_order_submission(&self, order: &OrderAny) -> anyhow::Result<()> {
         // Check if instrument symbol is supported
         // Hyperliquid instruments: {base}-USD-PERP or {base}-{quote}-SPOT
@@ -177,12 +165,14 @@ impl HyperliquidExecutionClient {
         ))
         .context("failed to create secrets from private key")?;
 
-        let http_client = HyperliquidHttpClient::with_secrets(
+        let mut http_client = HyperliquidHttpClient::with_secrets(
             &secrets,
             Some(config.http_timeout_secs),
             config.http_proxy_url.clone(),
         )
         .context("failed to create Hyperliquid HTTP client")?;
+
+        http_client.set_account_id(core.account_id);
 
         // Create WebSocket client for order/execution updates
         let ws_client =
@@ -257,9 +247,8 @@ impl HyperliquidExecutionClient {
 
         // Parse balances and margins from cross margin summary
         if let Some(ref cross_margin_summary) = state.cross_margin_summary {
-            let (balances, margins) =
-                crate::common::parse::parse_account_balances_and_margins(cross_margin_summary)
-                    .context("failed to parse account balances and margins")?;
+            let (balances, margins) = parse_account_balances_and_margins(cross_margin_summary)
+                .context("failed to parse account balances and margins")?;
 
             // Generate account state event
             let ts_event = self.clock.get_time_ns();
@@ -274,10 +263,6 @@ impl HyperliquidExecutionClient {
         Ok(())
     }
 
-    /// Waits for the account to be registered in the cache.
-    ///
-    /// Polls the cache until the account is registered, ensuring that
-    /// position and fill processing can access the account correctly.
     async fn await_account_registered(&self, timeout_secs: f64) -> anyhow::Result<()> {
         let account_id = self.core.account_id;
 
@@ -498,9 +483,13 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let cloid_hex = Ustr::from(&cloid.to_hex());
 
         self.spawn_task("submit_order", async move {
-            let action = ExchangeAction::order(vec![hyperliquid_order], Some(builder_fee));
+            let action = HyperliquidExecAction::Order {
+                orders: vec![hyperliquid_order],
+                grouping: HyperliquidExecGrouping::Na,
+                builder: Some(builder_fee),
+            };
 
-            match http_client.post_action(&action).await {
+            match http_client.post_action_exec(&action).await {
                 Ok(response) => {
                     if is_response_successful(&response) {
                         log::info!("Order submitted successfully: {response:?}");
@@ -589,8 +578,12 @@ impl ExecutionClient for HyperliquidExecutionClient {
             .collect();
 
         self.spawn_task("submit_order_list", async move {
-            let action = ExchangeAction::order(hyperliquid_orders, Some(builder_fee));
-            match http_client.post_action(&action).await {
+            let action = HyperliquidExecAction::Order {
+                orders: hyperliquid_orders,
+                grouping: HyperliquidExecGrouping::Na,
+                builder: Some(builder_fee),
+            };
+            match http_client.post_action_exec(&action).await {
                 Ok(response) => {
                     if is_response_successful(&response) {
                         log::info!("Order list submitted successfully: {response:?}");
@@ -647,8 +640,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let symbol = cmd.instrument_id.symbol.to_string();
 
         self.spawn_task("modify_order", async move {
-            use crate::http::models::HyperliquidExecModifyOrderRequest;
-
             let asset = match http_client.get_asset_index(&symbol) {
                 Some(a) => a,
                 None => {
@@ -669,9 +660,11 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 kind: None,
             };
 
-            let action = ExchangeAction::modify(oid, modify_request);
+            let action = HyperliquidExecAction::Modify {
+                modify: modify_request,
+            };
 
-            match http_client.post_action(&action).await {
+            match http_client.post_action_exec(&action).await {
                 Ok(response) => {
                     if is_response_successful(&response) {
                         log::info!("Order modified successfully: {response:?}");
@@ -714,9 +707,11 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
             let cancel_request =
                 client_order_id_to_cancel_request_with_asset(&client_order_id, asset);
-            let action = ExchangeAction::cancel_by_cloid(vec![cancel_request]);
+            let action = HyperliquidExecAction::CancelByCloid {
+                cancels: vec![cancel_request],
+            };
 
-            match http_client.post_action(&action).await {
+            match http_client.post_action_exec(&action).await {
                 Ok(response) => {
                     if is_response_successful(&response) {
                         log::info!("Order cancelled successfully: {response:?}");
@@ -782,8 +777,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 return Ok(());
             }
 
-            let action = ExchangeAction::cancel_by_cloid(cancel_requests);
-            if let Err(e) = http_client.post_action(&action).await {
+            let action = HyperliquidExecAction::CancelByCloid {
+                cancels: cancel_requests,
+            };
+            if let Err(e) = http_client.post_action_exec(&action).await {
                 log::warn!("Failed to send cancel all orders request: {e}");
             }
 
@@ -836,8 +833,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 return Ok(());
             }
 
-            let action = ExchangeAction::cancel_by_cloid(cancel_requests);
-            if let Err(e) = http_client.post_action(&action).await {
+            let action = HyperliquidExecAction::CancelByCloid {
+                cancels: cancel_requests,
+            };
+            if let Err(e) = http_client.post_action_exec(&action).await {
                 log::warn!("Failed to send batch cancel orders request: {e}");
             }
 
@@ -1053,13 +1052,57 @@ impl ExecutionClient for HyperliquidExecutionClient {
         &self,
         lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-        log::warn!("generate_mass_status not yet implemented (lookback_mins={lookback_mins:?})");
-        // Full implementation would require:
-        // 1. Query all orders within lookback window
-        // 2. Query all fills within lookback window
-        // 3. Query all positions
-        // 4. Combine into ExecutionMassStatus
-        Ok(None)
+        let ts_init = self.clock.get_time_ns();
+
+        let order_cmd = GenerateOrderStatusReports::new(
+            UUID4::new(),
+            ts_init,
+            true, // open_only
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let fill_cmd =
+            GenerateFillReports::new(UUID4::new(), ts_init, None, None, None, None, None, None);
+        let position_cmd =
+            GeneratePositionStatusReports::new(UUID4::new(), ts_init, None, None, None, None, None);
+
+        let order_reports = self.generate_order_status_reports(&order_cmd).await?;
+        let mut fill_reports = self.generate_fill_reports(fill_cmd).await?;
+        let position_reports = self.generate_position_status_reports(&position_cmd).await?;
+
+        // Apply lookback filter to fills only (positions are current state,
+        // and open orders must always be included for correct reconciliation)
+        if let Some(mins) = lookback_mins {
+            let cutoff_ns = ts_init
+                .as_u64()
+                .saturating_sub(mins.saturating_mul(60).saturating_mul(1_000_000_000));
+            let cutoff = UnixNanos::from(cutoff_ns);
+
+            fill_reports.retain(|r| r.ts_event >= cutoff);
+        }
+
+        let mut mass_status = ExecutionMassStatus::new(
+            self.core.client_id,
+            self.core.account_id,
+            self.core.venue,
+            ts_init,
+            None,
+        );
+        mass_status.add_order_reports(order_reports);
+        mass_status.add_fill_reports(fill_reports);
+        mass_status.add_position_reports(position_reports);
+
+        log::info!(
+            "Generated mass status: {} orders, {} fills, {} positions",
+            mass_status.order_reports().len(),
+            mass_status.fill_reports().len(),
+            mass_status.position_reports().len(),
+        );
+
+        Ok(Some(mass_status))
     }
 }
 

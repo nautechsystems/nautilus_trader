@@ -8184,14 +8184,6 @@ class HyperliquidProductType(Enum):
     @classmethod
     def from_str(cls, value: str) -> HyperliquidProductType: ...
 
-class HyperliquidTriggerPriceType(Enum):
-    LAST = "LAST"
-    MARK = "MARK"
-    ORACLE = "ORACLE"
-
-    @classmethod
-    def from_str(cls, value: str) -> HyperliquidTriggerPriceType: ...
-
 class HyperliquidTpSl(Enum):
     TP = "TP"
     SL = "SL"
