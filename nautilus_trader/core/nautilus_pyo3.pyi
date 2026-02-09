@@ -5751,6 +5751,12 @@ class AxHttpClient:
         self,
         account_id: AccountId,
     ) -> list[PositionStatusReport]: ...
+    async def request_funding_rates(
+        self,
+        instrument_id: InstrumentId,
+        start_timestamp_ns: int,
+        end_timestamp_ns: int,
+    ) -> list[FundingRateUpdate]: ...
     async def preview_aggressive_limit_order(
         self,
         instrument_id: InstrumentId,

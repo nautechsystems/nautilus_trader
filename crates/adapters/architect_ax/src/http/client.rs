@@ -30,9 +30,9 @@ use nautilus_core::{
     consts::NAUTILUS_USER_AGENT, nanos::UnixNanos, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    data::Bar,
+    data::{Bar, FundingRateUpdate},
     events::AccountState,
-    identifiers::{AccountId, ClientOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId},
     instruments::{Instrument, any::InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
@@ -59,8 +59,8 @@ use super::{
         CancelOrderRequest, PlaceOrderRequest, PreviewAggressiveLimitOrderRequest,
     },
     parse::{
-        parse_account_state, parse_bar, parse_fill_report, parse_order_status_report,
-        parse_perp_instrument, parse_position_status_report,
+        parse_account_state, parse_bar, parse_fill_report, parse_funding_rate,
+        parse_order_status_report, parse_perp_instrument, parse_position_status_report,
     },
     query::{
         GetCandleParams, GetCandlesParams, GetFundingRatesParams, GetInstrumentParams,
@@ -1195,20 +1195,31 @@ impl AxHttpClient {
         parse_perp_instrument(&resp, maker_fee, taker_fee, ts_init, ts_init)
     }
 
-    /// Requests funding rates from Ax.
+    /// Requests funding rates from Ax and parses them to Nautilus types.
     ///
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails.
     pub async fn request_funding_rates(
         &self,
-        symbol: Ustr,
+        instrument_id: InstrumentId,
         start_timestamp_ns: i64,
         end_timestamp_ns: i64,
-    ) -> Result<AxFundingRatesResponse, AxHttpError> {
-        self.inner
+    ) -> Result<Vec<FundingRateUpdate>, AxHttpError> {
+        let symbol = instrument_id.symbol.inner();
+        let response = self
+            .inner
             .get_funding_rates(symbol, start_timestamp_ns, end_timestamp_ns)
-            .await
+            .await?;
+
+        let ts_init = self.generate_ts_init();
+        let funding_rates = response
+            .funding_rates
+            .iter()
+            .map(|r| parse_funding_rate(r, instrument_id, ts_init))
+            .collect();
+
+        Ok(funding_rates)
     }
 
     /// Requests historical bars from Ax and parses them to Nautilus Bar types.

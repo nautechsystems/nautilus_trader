@@ -1389,7 +1389,7 @@ impl Cache {
     ///
     /// Returns an error if persisting the trade ticks to the backing database fails.
     pub fn add_funding_rates(&mut self, funding_rates: &[FundingRateUpdate]) -> anyhow::Result<()> {
-        check_slice_not_empty(funding_rates, stringify!(trades))?;
+        check_slice_not_empty(funding_rates, stringify!(funding_rates))?;
 
         let instrument_id = funding_rates[0].instrument_id;
         log::debug!(

@@ -36,7 +36,7 @@ mod handlers;
 pub mod pool;
 
 use std::{
-    any::Any,
+    any::{Any, type_name},
     cell::{Ref, RefCell},
     collections::hash_map::Entry,
     fmt::{Debug, Display},
@@ -877,10 +877,26 @@ impl DataEngine {
             DataResponse::Instruments(r) => {
                 self.handle_instruments(&r.data);
             }
-            DataResponse::Quotes(r) => self.handle_quotes(&r.data),
-            DataResponse::Trades(r) => self.handle_trades(&r.data),
-            DataResponse::FundingRates(r) => self.handle_funding_rates(&r.data),
-            DataResponse::Bars(r) => self.handle_bars(&r.data),
+            DataResponse::Quotes(r) => {
+                if !log_if_empty_response(&r.data, &r.instrument_id, &correlation_id) {
+                    self.handle_quotes(&r.data);
+                }
+            }
+            DataResponse::Trades(r) => {
+                if !log_if_empty_response(&r.data, &r.instrument_id, &correlation_id) {
+                    self.handle_trades(&r.data);
+                }
+            }
+            DataResponse::FundingRates(r) => {
+                if !log_if_empty_response(&r.data, &r.instrument_id, &correlation_id) {
+                    self.handle_funding_rates(&r.data);
+                }
+            }
+            DataResponse::Bars(r) => {
+                if !log_if_empty_response(&r.data, &r.bar_type, &correlation_id) {
+                    self.handle_bars(&r.data);
+                }
+            }
             DataResponse::Book(r) => self.handle_book_response(&r.data),
             _ => todo!("Handle other response types"),
         }
@@ -1779,4 +1795,15 @@ impl DataEngine {
 #[inline(always)]
 fn log_error_on_cache_insert<T: Display>(e: &T) {
     log::error!("Error on cache insert: {e}");
+}
+
+#[inline(always)]
+fn log_if_empty_response<T, I: Display>(data: &[T], id: &I, correlation_id: &UUID4) -> bool {
+    if data.is_empty() {
+        let name = type_name::<T>();
+        let short_name = name.rsplit("::").next().unwrap_or(name);
+        log::warn!("Received empty {short_name} response for {id} {correlation_id}");
+        return true;
+    }
+    false
 }

@@ -197,6 +197,33 @@ impl AxHttpClient {
         })
     }
 
+    #[pyo3(name = "request_funding_rates")]
+    fn py_request_funding_rates<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        start_timestamp_ns: i64,
+        end_timestamp_ns: i64,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let funding_rates = client
+                .request_funding_rates(instrument_id, start_timestamp_ns, end_timestamp_ns)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let py_rates: PyResult<Vec<_>> = funding_rates
+                    .into_iter()
+                    .map(|rate| rate.into_py_any(py))
+                    .collect();
+                let pylist = PyList::new(py, py_rates?).unwrap().into_any().unbind();
+                Ok(pylist)
+            })
+        })
+    }
+
     #[pyo3(name = "request_account_state")]
     fn py_request_account_state<'py>(
         &self,
