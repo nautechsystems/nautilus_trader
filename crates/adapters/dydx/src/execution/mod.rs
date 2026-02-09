@@ -64,13 +64,14 @@ use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce},
+    events::AccountState,
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, MarginBalance},
+    types::{AccountBalance, Currency, MarginBalance, Money},
 };
 use nautilus_network::retry::RetryConfig;
 use rust_decimal::Decimal;
@@ -414,6 +415,24 @@ impl DydxExecutionClient {
                         }
                         } else {
                             log::warn!("Subaccount subscription without initial state (new/empty subaccount)");
+
+                            // Emit zero-balance account state so account gets registered
+                            let currency = Currency::get_or_create_crypto_with_context("USDC", None);
+                            let zero = Money::zero(currency);
+                            let balance = AccountBalance::new_checked(zero, zero, zero)
+                                .expect("zero balance should always be valid");
+                            let account_state = AccountState::new(
+                                account_id,
+                                AccountType::Margin,
+                                vec![balance],
+                                vec![],
+                                true,
+                                UUID4::new(),
+                                ts_init,
+                                ts_init,
+                                None,
+                            );
+                            emitter.send_account_state(account_state);
                         }
                     }
                     NautilusWsMessage::SubaccountsChannelData(data) => {
@@ -425,7 +444,7 @@ impl DydxExecutionClient {
                         let ts_init = clock.get_time_ns();
 
                         // Track terminal orders for deferred cleanup (after fills)
-                        let mut terminal_orders: Vec<(u32, u32)> = Vec::new();
+                        let mut terminal_orders: Vec<(u32, u32, String)> = Vec::new();
 
                         // Phase 1: Parse orders and build order_id_map (needed for fill correlation)
                         // but DON'T send order reports yet — fills must be sent first
@@ -471,7 +490,7 @@ impl DydxExecutionClient {
                                                 .as_ref()
                                                 .and_then(|s| s.parse::<u32>().ok())
                                                 .unwrap_or(crate::grpc::DEFAULT_RUST_CLIENT_METADATA);
-                                            terminal_orders.push((cid, meta));
+                                            terminal_orders.push((cid, meta, ws_order.id.clone()));
                                         }
                                         log::info!(
                                             "Parsed order report: {} {} {:?} qty={} client_order_id={:?}",
@@ -528,9 +547,10 @@ impl DydxExecutionClient {
 
                         // Deferred cleanup: remove mappings for terminal orders
                         // after fills have been correlated
-                        for (client_id, client_metadata) in terminal_orders {
+                        for (client_id, client_metadata, order_id) in terminal_orders {
                             order_contexts.remove(&client_id);
                             encoder.remove(client_id, client_metadata);
+                            order_id_map.remove(&order_id);
                         }
                     }
                     NautilusWsMessage::MarkPrice(mark_price) => {

@@ -22,11 +22,14 @@ use std::{
 
 use dashmap::DashMap;
 use nautilus_common::live::get_runtime;
-use nautilus_core::{python::to_pyvalue_err, time::get_atomic_clock_realtime};
+use nautilus_core::{UUID4, python::to_pyvalue_err, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::BarType,
+    enums::AccountType,
+    events::AccountState,
     identifiers::{AccountId, InstrumentId},
     python::instruments::pyobject_to_instrument_any,
+    types::{AccountBalance, Currency, Money},
 };
 use nautilus_network::mode::ConnectionMode;
 use pyo3::{IntoPyObjectExt, prelude::*};
@@ -247,6 +250,33 @@ impl DydxWebSocketClient {
                                 }
                                 } else {
                                     log::warn!("Subaccount subscription without initial state (new/empty subaccount)");
+
+                                    // Emit zero-balance account state so account gets registered
+                                    let currency = Currency::get_or_create_crypto_with_context("USDC", None);
+                                    let zero = Money::zero(currency);
+                                    let balance = AccountBalance::new_checked(zero, zero, zero)
+                                        .expect("zero balance should always be valid");
+                                    let account_state = AccountState::new(
+                                        account_id,
+                                        AccountType::Margin,
+                                        vec![balance],
+                                        vec![],
+                                        true,
+                                        UUID4::new(),
+                                        ts_init,
+                                        ts_init,
+                                        None,
+                                    );
+                                    Python::attach(|py| {
+                                        match account_state.into_py_any(py) {
+                                            Ok(py_obj) => {
+                                                if let Err(e) = callback.call1(py, (py_obj,)) {
+                                                    log::error!("Error calling Python callback for AccountState: {e}");
+                                                }
+                                            }
+                                            Err(e) => log::error!("Failed to convert AccountState to Python: {e}"),
+                                        }
+                                    });
                                 }
                             }
                             NautilusWsMessage::SubaccountsChannelData(data) => {
@@ -259,7 +289,7 @@ impl DydxWebSocketClient {
                                 let encoder = _client.encoder();
                                 let ts_init = get_atomic_clock_realtime().get_time_ns();
 
-                                let mut terminal_orders: Vec<(u32, u32)> = Vec::new();
+                                let mut terminal_orders: Vec<(u32, u32, String)> = Vec::new();
 
                                 // Phase 1: Parse orders and build order_id_map (needed for fill correlation)
                                 // but DON'T send order reports yet — fills must be sent first
@@ -292,7 +322,7 @@ impl DydxWebSocketClient {
                                                         .as_ref()
                                                         .and_then(|s| s.parse::<u32>().ok())
                                                         .unwrap_or(crate::grpc::DEFAULT_RUST_CLIENT_METADATA);
-                                                    terminal_orders.push((cid, meta));
+                                                    terminal_orders.push((cid, meta, ws_order.id.clone()));
                                                 }
                                                 pending_order_reports.push(report);
                                             }
@@ -346,9 +376,10 @@ impl DydxWebSocketClient {
                                 }
 
                                 // Deferred cleanup after fills are correlated
-                                for (client_id, client_metadata) in terminal_orders {
+                                for (client_id, client_metadata, order_id) in terminal_orders {
                                     order_contexts.remove(&client_id);
                                     encoder.remove(client_id, client_metadata);
+                                    order_id_map.remove(&order_id);
                                 }
                             }
                             NautilusWsMessage::MarkPrice(mark_price) => {
