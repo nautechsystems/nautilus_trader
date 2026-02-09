@@ -38,6 +38,7 @@ VALID_POLYMARKET_TIME_IN_FORCE: Final[set[TimeInForce]] = {
 }
 
 POLYMARKET_INVALID_API_KEY: Final[str] = "Unauthorized/Invalid api key"
+POLYMARKET_CANCEL_ALREADY_DONE: Final[str] = "already canceled or matched"
 
 POLYMARKET_FINALIZED_TRADE_STATUSES: Final[tuple[PolymarketTradeStatus, ...]] = (
     PolymarketTradeStatus.MINED,
