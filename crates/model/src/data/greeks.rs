@@ -53,6 +53,7 @@ pub struct BlackScholesGreeksResult {
     pub gamma: f64,
     pub vega: f64,
     pub theta: f64,
+    pub itm_prob: f64,
 }
 
 // dS_t = S_t * (b * dt + vol * dW_t) (stock)
@@ -95,6 +96,7 @@ pub fn black_scholes_greeks_exact(
         gamma,
         vega,
         theta,
+        itm_prob: cdf_phi_d2,
     }
 }
 
@@ -144,6 +146,7 @@ pub fn black_scholes_greeks(
         gamma: (greeks.gamma as f64) * multiplier,
         vega: (greeks.vega as f64) * multiplier * 0.01, // Convert to absolute percent change
         theta: (greeks.theta as f64) * multiplier * daily_factor, // Convert to daily changes
+        itm_prob: greeks.itm_prob as f64,
     }
 }
 
@@ -207,6 +210,7 @@ pub fn refine_vol_and_greeks(
         gamma: (greeks.gamma as f64) * multiplier,
         vega: (greeks.vega as f64) * multiplier * 0.01, // Convert to absolute percent change
         theta: (greeks.theta as f64) * multiplier * daily_factor, // Convert to daily changes
+        itm_prob: greeks.itm_prob as f64,
     }
 }
 
@@ -642,6 +646,7 @@ mod tests {
             gamma: 0.003,
             vega: 15.2,
             theta: -0.08,
+            itm_prob: 0.55,
         };
 
         assert_eq!(result.price, 25.5);
@@ -649,6 +654,7 @@ mod tests {
         assert_eq!(result.gamma, 0.003);
         assert_eq!(result.vega, 15.2);
         assert_eq!(result.theta, -0.08);
+        assert_eq!(result.itm_prob, 0.55);
     }
 
     #[rstest]
@@ -660,6 +666,7 @@ mod tests {
             gamma: 0.003,
             vega: 15.2,
             theta: -0.08,
+            itm_prob: 0.55,
         };
         let result2 = result1;
         let result3 = result1;
@@ -677,6 +684,7 @@ mod tests {
             gamma: 0.003,
             vega: 15.2,
             theta: -0.08,
+            itm_prob: 0.55,
         };
         let debug_str = format!("{result:?}");
 
@@ -694,6 +702,7 @@ mod tests {
             gamma: 0.003,
             vega: 15.2,
             theta: -0.08,
+            itm_prob: 0.55,
         };
 
         assert_eq!(result.vol, 0.2);

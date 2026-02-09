@@ -172,6 +172,7 @@ pub struct Greeks<T> {
     pub gamma: T,
     pub vega: T,
     pub theta: T,
+    pub itm_prob: T,
 }
 
 /// Lightweight kernel for IV search - only computes price and vega
@@ -237,6 +238,7 @@ fn pricing_kernel<T: BlackScholesReal>(
         gamma,
         vega,
         theta: T::select(is_call, c_theta, p_theta),
+        itm_prob: T::select(is_call, n_d2, T::splat(1.0) - n_d2),
     }
 }
 

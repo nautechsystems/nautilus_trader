@@ -8700,6 +8700,7 @@ class BlackScholesGreeksResult:
     gamma: float
     vega: float
     theta: float
+    itm_prob: float
 
 def black_scholes_greeks(
     s: float,

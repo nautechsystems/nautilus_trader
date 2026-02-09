@@ -250,7 +250,7 @@ cdef class GreeksCalculator:
 
             greeks_data = GreeksData(utc_now_ns, utc_now_ns, instrument_id, is_call, strike, expiry_int, expiry_in_days, expiry_in_years, multiplier, 1.0,
                                      underlying_price, interest_rate, cost_of_carry, greeks.vol, 0., greeks.price, delta, gamma, vega, greeks.theta,
-                                     abs(greeks.delta / multiplier))
+                                     greeks.itm_prob)
 
             # adding greeks to cache
             if cache_greeks:
@@ -277,7 +277,7 @@ cdef class GreeksCalculator:
                                      greeks_data.instrument_id, greeks_data.is_call, greeks_data.strike, greeks_data.expiry,
                                      int(shocked_time_to_expiry * 365.25), shocked_time_to_expiry, greeks_data.multiplier, greeks_data.quantity, shocked_underlying_price,
                                      greeks_data.interest_rate, greeks_data.cost_of_carry, shocked_vol, 0., greeks.price, delta, gamma, vega,
-                                     greeks.theta, abs(greeks.delta / greeks_data.multiplier))
+                                     greeks.theta, greeks.itm_prob)
 
         if position is not None:
             greeks_data.pnl = greeks_data.price - greeks_data.multiplier * position.avg_px_open
