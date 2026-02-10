@@ -601,9 +601,6 @@ pub struct AuthenticateApiKeyRequest {
     pub api_secret: String,
     /// Token expiration in seconds.
     pub expiration_seconds: i32,
-    /// Optional 2FA code.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub totp: Option<String>,
 }
 
 impl AuthenticateApiKeyRequest {
@@ -618,15 +615,7 @@ impl AuthenticateApiKeyRequest {
             api_key: api_key.into(),
             api_secret: api_secret.into(),
             expiration_seconds,
-            totp: None,
         }
-    }
-
-    /// Sets the optional 2FA code.
-    #[must_use]
-    pub fn with_totp(mut self, totp: impl Into<String>) -> Self {
-        self.totp = Some(totp.into());
-        self
     }
 }
 
@@ -643,9 +632,6 @@ pub struct AuthenticateUserRequest {
     pub password: String,
     /// Token expiration in seconds.
     pub expiration_seconds: i32,
-    /// Optional 2FA code.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub totp: Option<String>,
 }
 
 impl AuthenticateUserRequest {
@@ -660,15 +646,7 @@ impl AuthenticateUserRequest {
             username: username.into(),
             password: password.into(),
             expiration_seconds,
-            totp: None,
         }
-    }
-
-    /// Sets the optional 2FA code.
-    #[must_use]
-    pub fn with_totp(mut self, totp: impl Into<String>) -> Self {
-        self.totp = Some(totp.into());
-        self
     }
 }
 

@@ -512,31 +512,7 @@ impl AxRawHttpClient {
         api_secret: &str,
         expiration_seconds: i32,
     ) -> Result<AxAuthenticateResponse, AxHttpError> {
-        self.authenticate_with_totp(api_key, api_secret, expiration_seconds, None)
-            .await
-    }
-
-    /// Authenticates with the AX Exchange API using API key credentials and optional 2FA.
-    ///
-    /// # Endpoint
-    /// `POST /authenticate`
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - 400: 2FA is required but `totp` was not provided.
-    /// - 401: Invalid credentials.
-    pub async fn authenticate_with_totp(
-        &self,
-        api_key: &str,
-        api_secret: &str,
-        expiration_seconds: i32,
-        totp: Option<&str>,
-    ) -> Result<AxAuthenticateResponse, AxHttpError> {
-        let mut request = AuthenticateApiKeyRequest::new(api_key, api_secret, expiration_seconds);
-        if let Some(code) = totp {
-            request = request.with_totp(code);
-        }
+        let request = AuthenticateApiKeyRequest::new(api_key, api_secret, expiration_seconds);
 
         let body = serde_json::to_vec(&request)
             .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
@@ -1072,28 +1048,6 @@ impl AxHttpClient {
         let resp = self
             .inner
             .authenticate(api_key, api_secret, expiration_seconds)
-            .await?;
-        self.inner.set_session_token(resp.token.clone());
-        Ok(resp.token)
-    }
-
-    /// Authenticates with Ax using API credentials and TOTP.
-    ///
-    /// On success, the session token is automatically stored for subsequent authenticated requests.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the HTTP request fails or credentials are invalid.
-    pub async fn authenticate_with_totp(
-        &self,
-        api_key: &str,
-        api_secret: &str,
-        expiration_seconds: i32,
-        totp_code: Option<&str>,
-    ) -> Result<String, AxHttpError> {
-        let resp = self
-            .inner
-            .authenticate_with_totp(api_key, api_secret, expiration_seconds, totp_code)
             .await?;
         self.inner.set_session_token(resp.token.clone());
         Ok(resp.token)

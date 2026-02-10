@@ -79,9 +79,6 @@ class AxExecClientConfig(LiveExecClientConfig, frozen=True):
     api_secret : str, optional
         The AX Exchange API secret.
         If ``None`` then will source the `AX_API_SECRET` environment variable.
-    totp_secret : str, optional
-        The TOTP secret for order API authentication.
-        If ``None`` then will source the `AX_TOTP_SECRET` environment variable.
     environment : AxEnvironment, default AxEnvironment.SANDBOX
         The AX Exchange environment to connect to (Sandbox or Production).
     base_url_http : str, optional
@@ -105,7 +102,6 @@ class AxExecClientConfig(LiveExecClientConfig, frozen=True):
 
     api_key: str | None = None
     api_secret: str | None = None
-    totp_secret: str | None = None
     environment: AxEnvironment = AxEnvironment.SANDBOX
     base_url_http: str | None = None
     base_url_ws: str | None = None

@@ -50,7 +50,6 @@ use nautilus_model::{
     types::{AccountBalance, MarginBalance, Price},
 };
 use tokio::task::JoinHandle;
-use totp_rs::{Algorithm, Secret, TOTP};
 
 use crate::{
     common::{consts::AX_VENUE, enums::AxOrderSide, parse::quantity_to_contracts},
@@ -130,43 +129,10 @@ impl AxExecutionClient {
             .or_else(|| std::env::var("AX_API_SECRET").ok())
             .context("AX_API_SECRET not configured")?;
 
-        match self
-            .http_client
+        self.http_client
             .authenticate(&api_key, &api_secret, 3600)
             .await
-        {
-            Ok(token) => Ok(token),
-            Err(e) => {
-                let totp_secret = self
-                    .config
-                    .totp_secret
-                    .clone()
-                    .or_else(|| std::env::var("AX_TOTP_SECRET").ok());
-
-                if let Some(secret) = totp_secret {
-                    log::info!("2FA required, generating TOTP code...");
-                    let code = self.generate_totp(&secret)?;
-                    self.http_client
-                        .authenticate_with_totp(&api_key, &api_secret, 3600, Some(&code))
-                        .await
-                        .map_err(|e| anyhow::anyhow!("Authentication with 2FA failed: {e}"))
-                } else {
-                    Err(anyhow::anyhow!("Authentication failed: {e}"))
-                }
-            }
-        }
-    }
-
-    fn generate_totp(&self, secret: &str) -> anyhow::Result<String> {
-        let secret_bytes = Secret::Encoded(secret.to_string())
-            .to_bytes()
-            .map_err(|e| anyhow::anyhow!("Invalid TOTP secret: {e}"))?;
-
-        let totp = TOTP::new(Algorithm::SHA1, 6, 1, 30, secret_bytes)
-            .map_err(|e| anyhow::anyhow!("Invalid TOTP configuration: {e}"))?;
-
-        totp.generate_current()
-            .map_err(|e| anyhow::anyhow!("Failed to generate TOTP: {e}"))
+            .map_err(|e| anyhow::anyhow!("Authentication failed: {e}"))
     }
 
     async fn refresh_account_state(&self) -> anyhow::Result<()> {

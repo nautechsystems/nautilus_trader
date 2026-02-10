@@ -44,7 +44,7 @@ This crate provides feature flags to control source code inclusion during compil
 
 AX Exchange uses bearer token authentication via HTTP headers:
 
-1. API key and secret (with optional TOTP) obtain a session token via `/authenticate`.
+1. API key and secret obtain a session token via `/authenticate`.
 2. The session token is used as a bearer token for subsequent REST and WebSocket requests.
 
 ## API endpoints

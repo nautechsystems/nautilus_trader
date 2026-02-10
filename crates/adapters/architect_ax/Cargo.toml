@@ -75,7 +75,6 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
-totp-rs = { workspace = true }
 ustr = { workspace = true }
 zeroize = { workspace = true }
 

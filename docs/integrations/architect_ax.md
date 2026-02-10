@@ -207,7 +207,7 @@ AX Exchange supports market and limit order types with stop triggers.
 
 AX Exchange uses bearer token authentication:
 
-1. API key and secret (with optional TOTP for 2FA) obtain a session token via `/authenticate`.
+1. API key and secret obtain a session token via `/authenticate`.
 2. The session token is used as a bearer token for subsequent REST and WebSocket requests.
 3. Session tokens expire after a configurable period (default: 86400 seconds).
 
@@ -242,7 +242,6 @@ AX Exchange uses bearer token authentication:
 |--------------------------|-----------|---------------------------------------------------------------------|
 | `api_key`                | `None`    | API key; loaded from `AX_API_KEY` env var when omitted.             |
 | `api_secret`             | `None`    | API secret; loaded from `AX_API_SECRET` env var when omitted.       |
-| `totp_secret`            | `None`    | TOTP secret for 2FA; loaded from `AX_TOTP_SECRET` env var when omitted. |
 | `environment`            | `SANDBOX` | Trading environment (`SANDBOX` or `PRODUCTION`).                    |
 | `base_url_http`          | `None`    | Override for the REST base URL.                                     |
 | `base_url_ws`            | `None`    | Override for the orders WebSocket URL.                              |
@@ -308,13 +307,6 @@ set the following environment variables:
 
 - `AX_API_KEY`
 - `AX_API_SECRET`
-
-For accounts with two-factor authentication (2FA) enabled, also set:
-
-- `AX_TOTP_SECRET`
-
-This is the base32 TOTP secret displayed when you set up 2FA (often shown as a QR code or text
-string).
 
 :::tip
 We recommend using environment variables to manage your credentials.

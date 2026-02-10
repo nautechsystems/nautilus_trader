@@ -20,7 +20,6 @@
 //! Environment variables:
 //! - `AX_API_KEY`: Your API key
 //! - `AX_API_SECRET`: Your API secret
-//! - `AX_TOTP_SECRET`: Base32 TOTP secret (if 2FA enabled)
 
 use nautilus_architect_ax::{
     config::{AxDataClientConfig, AxExecClientConfig},
@@ -56,10 +55,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let exec_config = AxExecClientConfig {
         trader_id,
         account_id,
-        api_key: None,     // Will use 'AX_API_KEY' env var
-        api_secret: None,  // Will use 'AX_API_SECRET' env var
-        totp_secret: None, // Will use 'AX_TOTP_SECRET' env var
-        is_sandbox: true,  // Use sandbox environment for testing
+        api_key: None,    // Will use 'AX_API_KEY' env var
+        api_secret: None, // Will use 'AX_API_SECRET' env var
+        is_sandbox: true, // Use sandbox environment for testing
         ..Default::default()
     };
 

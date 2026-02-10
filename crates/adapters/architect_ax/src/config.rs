@@ -137,8 +137,6 @@ pub struct AxExecClientConfig {
     pub api_key: Option<String>,
     /// API secret for authenticated requests.
     pub api_secret: Option<String>,
-    /// TOTP secret for 2FA authentication.
-    pub totp_secret: Option<String>,
     /// Use sandbox environment (default: true).
     pub is_sandbox: bool,
     /// Optional override for the REST base URL.
@@ -172,7 +170,6 @@ impl Default for AxExecClientConfig {
             account_id: AccountId::from("AX-001"),
             api_key: None,
             api_secret: None,
-            totp_secret: None,
             is_sandbox: true,
             base_url_http: None,
             base_url_orders: None,

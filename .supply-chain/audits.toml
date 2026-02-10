@@ -16,9 +16,3 @@ delta = "0.23.2 -> 0.24.1"
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
 delta = "0.23.3 -> 0.24.1"
-
-[[audits.totp-rs]]
-who = "Nautech Systems <info@nautechsystems.io>"
-criteria = "safe-to-deploy"
-version = "5.7.0"
-notes = "TOTP token generation library using hmac/sha crates. No unsafe code."
