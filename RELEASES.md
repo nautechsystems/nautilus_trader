@@ -8,6 +8,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Added `bulk_read_batch_size` option to `CacheConfig` for batched Redis bulk reads, thanks @shzhng
 - Added sandbox execution adapter in Rust
 - Added multi-account execution support (#3194), thanks @faysou
+- Added NASDAQ ITCH 5.0 parser
 - Added `OrderBookDeltas` historical request support (#3438), thanks @faysou
 - Added `market_exit()` method for `Strategy` with configurable `market_exit_time_in_force` and `market_exit_reduce_only` options (supports venues requiring IOC for market orders)
 - Added `manage_stop` config option to `StrategyConfig` for automatic market exit on stop
@@ -206,6 +207,11 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Upgraded `tokio` crate to v1.49.0
 
 ### Documentation Updates
+- Added related guides sections to concepts
+- Added developer guide for test dataset standards
+- Added AX Exchange adapter integration guides
+- Added Deribit adapter integration guides
+- Split dYdX v3/v4 adapter integration guides
 
 ### Deprecations
 - Deprecated Betfair legacy `customer_order_ref` truncation (first 32 characters); the adapter now uses last 32 characters for better entropy. Legacy truncation support during startup reconciliation will be removed in a future version.

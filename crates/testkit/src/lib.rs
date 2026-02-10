@@ -57,6 +57,7 @@
 
 pub mod common;
 pub mod files;
+pub mod itch;
 pub mod testers;
 
 // Re-export for convenience
