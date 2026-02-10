@@ -562,7 +562,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         max_expiry = utc_now + pd.Timedelta(days=max_expiry_days)
 
         if (
-            contract.secType in {"CONTFUT", "IND"}
+            contract.secType == "CONTFUT"
             and (contract.build_futures_chain or contract.build_options_chain)
         ) or (self._build_futures_chain or self._build_options_chain):
             # Return Underlying contract details with Future Chains

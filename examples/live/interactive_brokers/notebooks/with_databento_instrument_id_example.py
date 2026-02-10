@@ -85,7 +85,6 @@ class DemoStrategy(Strategy):
         #                 "secType": "IND",
         #                 "symbol": "SPX",
         #                 "exchange": "CBOE",
-        #                 "currency": "USD",
         #                 "build_options_chain": True,
         #                 "min_expiry_days": 0,
         #                 "max_expiry_days": 5,
@@ -102,6 +101,21 @@ class DemoStrategy(Strategy):
         #                 "exchange": "CME",
         #                 "symbol": "ES",
         #                 "build_futures_chain": True,
+        #                 "build_options_chain": True,
+        #                 "min_expiry_days": 0,
+        #                 "max_expiry_days": 2,
+        #             },
+        #         ),
+        #     },
+        # )
+        # self.request_instruments(
+        #     venue=IB_VENUE,
+        #     params={
+        #         "ib_contracts": (
+        #             {
+        #                 "secType": "IND",
+        #                 "exchange": "EUREX",
+        #                 "symbol": "ESTX50",
         #                 "build_options_chain": True,
         #                 "min_expiry_days": 0,
         #                 "max_expiry_days": 2,
@@ -315,7 +329,7 @@ data_engine_config = LiveDataEngineConfig(
     validate_data_sequence=True,  # Will make sure DataEngine discards any Bars received out of sequence
 )
 
-logging_config = LoggingConfig(log_level="WARNING")
+logging_config = LoggingConfig(log_level="INFO")
 
 # Configure the trading node
 config_node = TradingNodeConfig(
