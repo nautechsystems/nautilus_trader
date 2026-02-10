@@ -433,9 +433,10 @@ impl BitmexWebSocketClient {
                             resubscribe_all();
                         }
 
-                        // TODO: Implement proper Reconnected event forwarding to consumers.
-                        // Currently intercepted for internal housekeeping only. Will add new
-                        // message type from WebSocketClient to notify consumers of reconnections.
+                        if handler.send(NautilusWsMessage::Reconnected).is_err() {
+                            log::error!("Failed to forward reconnect event (receiver dropped)");
+                            break;
+                        }
 
                         continue;
                     }

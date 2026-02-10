@@ -35,9 +35,10 @@ use nautilus_common::{
             BarsResponse, DataResponse, InstrumentResponse, InstrumentsResponse, RequestBars,
             RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
             SubscribeBookDeltas, SubscribeBookDepth10, SubscribeFundingRates, SubscribeIndexPrices,
-            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeFundingRates,
-            UnsubscribeIndexPrices, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeInstrument, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
+            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+            UnsubscribeBookDepth10, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -468,6 +469,51 @@ impl DataClient for BitmexDataClient {
         self.is_disconnected()
     }
 
+    fn subscribe_instruments(&mut self, _cmd: &SubscribeInstruments) -> anyhow::Result<()> {
+        let ws = self.ws_client()?.clone();
+
+        self.spawn_ws(
+            async move {
+                ws.subscribe_instruments()
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))
+            },
+            "BitMEX instruments subscription",
+        );
+        Ok(())
+    }
+
+    fn subscribe_instrument(&mut self, cmd: &SubscribeInstrument) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+
+        if let Some(instrument) = self
+            .instruments
+            .read()
+            .expect("instrument cache lock poisoned")
+            .get(&instrument_id)
+            .cloned()
+        {
+            if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
+                log::error!("Failed to send instrument event for {instrument_id}: {e}");
+            }
+            return Ok(());
+        }
+
+        log::warn!("Instrument {instrument_id} not found in BitMEX cache");
+
+        let ws = self.ws_client()?.clone();
+        self.spawn_ws(
+            async move {
+                ws.subscribe_instrument(instrument_id)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))
+            },
+            "BitMEX instrument subscription",
+        );
+
+        Ok(())
+    }
+
     fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
         if cmd.book_type != BookType::L2_MBP {
             anyhow::bail!("BitMEX only supports L2_MBP order book deltas");
@@ -646,7 +692,11 @@ impl DataClient for BitmexDataClient {
                         .unsubscribe_book_25(instrument_id)
                         .await
                         .map_err(|e| anyhow::anyhow!(e))?,
-                    Some(BitmexBookChannel::OrderBook10) | None => ws
+                    Some(BitmexBookChannel::OrderBook10) => ws
+                        .unsubscribe_book_depth10(instrument_id)
+                        .await
+                        .map_err(|e| anyhow::anyhow!(e))?,
+                    None => ws
                         .unsubscribe_book(instrument_id)
                         .await
                         .map_err(|e| anyhow::anyhow!(e))?,

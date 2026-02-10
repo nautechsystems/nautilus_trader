@@ -20,6 +20,12 @@ use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::identifiers::{ClientId, ClientOrderId, InstrumentId, TraderId, Venue};
 use serde::{Deserialize, Serialize};
 
+use crate::enums::LogLevel;
+
+const fn default_report_log_level() -> LogLevel {
+    LogLevel::Info
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Builder)]
 pub struct GenerateOrderStatusReport {
     #[builder(default = "UUID4::new()")]
@@ -88,6 +94,10 @@ pub struct GenerateOrderStatusReports {
     pub end: Option<UnixNanos>,
     #[builder(default)]
     pub params: Option<Params>,
+    /// The log level for receipt logging.
+    #[builder(default = "default_report_log_level()")]
+    #[serde(default = "default_report_log_level")]
+    pub log_receipt_level: LogLevel,
     #[builder(default)]
     pub correlation_id: Option<UUID4>,
 }
@@ -113,6 +123,7 @@ impl GenerateOrderStatusReports {
             start,
             end,
             params,
+            log_receipt_level: LogLevel::Info,
             correlation_id,
         }
     }
@@ -146,6 +157,10 @@ pub struct GenerateFillReports {
     pub end: Option<UnixNanos>,
     #[builder(default)]
     pub params: Option<Params>,
+    /// The log level for receipt logging.
+    #[builder(default = "default_report_log_level()")]
+    #[serde(default = "default_report_log_level")]
+    pub log_receipt_level: LogLevel,
     #[builder(default)]
     pub correlation_id: Option<UUID4>,
 }
@@ -171,6 +186,7 @@ impl GenerateFillReports {
             start,
             end,
             params,
+            log_receipt_level: LogLevel::Info,
             correlation_id,
         }
     }
@@ -202,6 +218,10 @@ pub struct GeneratePositionStatusReports {
     pub end: Option<UnixNanos>,
     #[builder(default)]
     pub params: Option<Params>,
+    /// The log level for receipt logging.
+    #[builder(default = "default_report_log_level()")]
+    #[serde(default = "default_report_log_level")]
+    pub log_receipt_level: LogLevel,
     #[builder(default)]
     pub correlation_id: Option<UUID4>,
 }
@@ -224,6 +244,7 @@ impl GeneratePositionStatusReports {
             start,
             end,
             params,
+            log_receipt_level: LogLevel::Info,
             correlation_id,
         }
     }

@@ -1749,12 +1749,13 @@ impl BitmexHttpClient {
 
         if let Some(side) = order_side {
             if side == OrderSide::NoOrderSide {
-                anyhow::bail!("Cannot filter by NoOrderSide");
+                log::debug!("Ignoring NoOrderSide filter for cancel_all_orders on {instrument_id}",);
+            } else {
+                let side = BitmexSide::from(side.as_specified());
+                params.filter(serde_json::json!({
+                    "side": side
+                }));
             }
-            let side = BitmexSide::from(side.as_specified());
-            params.filter(serde_json::json!({
-                "side": side
-            }));
         }
 
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
@@ -1950,8 +1951,17 @@ impl BitmexHttpClient {
         &self,
         instrument_id: Option<InstrumentId>,
         open_only: bool,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        if let (Some(start), Some(end)) = (start, end) {
+            anyhow::ensure!(
+                start < end,
+                "Invalid time range: start={start:?} end={end:?}",
+            );
+        }
+
         let mut params = GetOrderParamsBuilder::default();
 
         if let Some(instrument_id) = &instrument_id {
@@ -1962,6 +1972,14 @@ impl BitmexHttpClient {
             params.filter(serde_json::json!({
                 "open": true
             }));
+        }
+
+        if let Some(start) = start {
+            params.start_time(start);
+        }
+
+        if let Some(end) = end {
+            params.end_time(end);
         }
 
         if let Some(limit) = limit {
@@ -1981,6 +1999,28 @@ impl BitmexHttpClient {
         let mut reports = Vec::new();
 
         for order in response {
+            if let Some(start) = start {
+                match order.timestamp {
+                    Some(timestamp) if timestamp < start => continue,
+                    Some(_) => {}
+                    None => {
+                        log::debug!("Skipping order report without timestamp for bounded query");
+                        continue;
+                    }
+                }
+            }
+
+            if let Some(end) = end {
+                match order.timestamp {
+                    Some(timestamp) if timestamp > end => continue,
+                    Some(_) => {}
+                    None => {
+                        log::debug!("Skipping order report without timestamp for bounded query");
+                        continue;
+                    }
+                }
+            }
+
             // Skip orders without symbol (can happen with query responses)
             let Some(symbol) = order.symbol else {
                 log::warn!("Order response missing symbol, skipping");
@@ -2194,11 +2234,26 @@ impl BitmexHttpClient {
     pub async fn request_fill_reports(
         &self,
         instrument_id: Option<InstrumentId>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<FillReport>> {
+        if let (Some(start), Some(end)) = (start, end) {
+            anyhow::ensure!(
+                start < end,
+                "Invalid time range: start={start:?} end={end:?}",
+            );
+        }
+
         let mut params = GetExecutionParamsBuilder::default();
         if let Some(instrument_id) = instrument_id {
             params.symbol(instrument_id.symbol.as_str());
+        }
+        if let Some(start) = start {
+            params.start_time(start);
+        }
+        if let Some(end) = end {
+            params.end_time(end);
         }
         if let Some(limit) = limit {
             params.count(limit as i32);
@@ -2216,6 +2271,28 @@ impl BitmexHttpClient {
         let mut reports = Vec::new();
 
         for exec in response {
+            if let Some(start) = start {
+                match exec.transact_time {
+                    Some(timestamp) if timestamp < start => continue,
+                    Some(_) => {}
+                    None => {
+                        log::debug!("Skipping fill report without transact_time for bounded query");
+                        continue;
+                    }
+                }
+            }
+
+            if let Some(end) = end {
+                match exec.transact_time {
+                    Some(timestamp) if timestamp > end => continue,
+                    Some(_) => {}
+                    None => {
+                        log::debug!("Skipping fill report without transact_time for bounded query");
+                        continue;
+                    }
+                }
+            }
+
             // Skip executions without symbol (e.g., CancelReject)
             let Some(symbol) = exec.symbol else {
                 log::debug!("Skipping execution without symbol: {:?}", exec.exec_type);

@@ -449,6 +449,7 @@ pub struct ExecTester {
     config: ExecTesterConfig,
     instrument: Option<InstrumentAny>,
     price_offset: Option<f64>,
+    preinitialized_market_data: bool,
 
     // Order tracking
     buy_order: Option<OrderAny>,
@@ -484,7 +485,7 @@ impl DataActor for ExecTester {
         };
 
         if let Some(inst) = instrument {
-            self.initialize_with_instrument(inst)?;
+            self.initialize_with_instrument(inst, true)?;
         } else {
             log::info!("Instrument {instrument_id} not in cache, subscribing...");
             self.subscribe_instrument(instrument_id, client_id, None);
@@ -497,6 +498,8 @@ impl DataActor for ExecTester {
             if self.config.subscribe_trades {
                 self.subscribe_trades(instrument_id, client_id, None);
             }
+            self.preinitialized_market_data =
+                self.config.subscribe_quotes || self.config.subscribe_trades;
         }
 
         Ok(())
@@ -506,7 +509,7 @@ impl DataActor for ExecTester {
         if instrument.id() == self.config.instrument_id && self.instrument.is_none() {
             let id = instrument.id();
             log::info!("Received instrument {id}, initializing...");
-            self.initialize_with_instrument(instrument.clone())?;
+            self.initialize_with_instrument(instrument.clone(), !self.preinitialized_market_data)?;
         }
         Ok(())
     }
@@ -696,6 +699,7 @@ impl ExecTester {
             config,
             instrument: None,
             price_offset: None,
+            preinitialized_market_data: false,
             buy_order: None,
             sell_order: None,
             buy_stop_order: None,
@@ -703,18 +707,22 @@ impl ExecTester {
         }
     }
 
-    fn initialize_with_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
+    fn initialize_with_instrument(
+        &mut self,
+        instrument: InstrumentAny,
+        subscribe_market_data: bool,
+    ) -> anyhow::Result<()> {
         let instrument_id = self.config.instrument_id;
         let client_id = self.config.client_id;
 
         self.price_offset = Some(self.get_price_offset(&instrument));
         self.instrument = Some(instrument);
 
-        if self.config.subscribe_quotes {
+        if subscribe_market_data && self.config.subscribe_quotes {
             self.subscribe_quotes(instrument_id, client_id, None);
         }
 
-        if self.config.subscribe_trades {
+        if subscribe_market_data && self.config.subscribe_trades {
             self.subscribe_trades(instrument_id, client_id, None);
         }
 

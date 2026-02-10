@@ -273,7 +273,7 @@ impl BitmexHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let reports = client
-                .request_order_status_reports(instrument_id, open_only, limit)
+                .request_order_status_reports(instrument_id, open_only, None, None, limit)
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -300,7 +300,7 @@ impl BitmexHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let reports = client
-                .request_fill_reports(instrument_id, limit)
+                .request_fill_reports(instrument_id, None, None, limit)
                 .await
                 .map_err(to_pyvalue_err)?;
 

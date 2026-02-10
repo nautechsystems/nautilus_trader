@@ -26,7 +26,7 @@ use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
     clock::Clock,
-    enums::LogColor,
+    enums::{LogColor, LogLevel},
     log_info,
     messages::execution::report::{GenerateOrderStatusReports, GeneratePositionStatusReports},
 };
@@ -929,7 +929,7 @@ impl ExecutionManager {
         let mut venue_reported_ids = AHashSet::new();
 
         for client in clients {
-            let cmd = GenerateOrderStatusReports::new(
+            let mut cmd = GenerateOrderStatusReports::new(
                 UUID4::new(),
                 self.clock.borrow().timestamp_ns(),
                 true, // open_only
@@ -939,6 +939,7 @@ impl ExecutionManager {
                 None, // params
                 None, // correlation_id
             );
+            cmd.log_receipt_level = LogLevel::Debug;
 
             match client.generate_order_status_reports(&cmd).await {
                 Ok(reports) => {
@@ -1051,7 +1052,7 @@ impl ExecutionManager {
         let mut venue_positions = AHashMap::new();
 
         for client in clients {
-            let cmd = GeneratePositionStatusReports::new(
+            let mut cmd = GeneratePositionStatusReports::new(
                 UUID4::new(),
                 self.clock.borrow().timestamp_ns(),
                 None, // instrument_id - query all
@@ -1060,6 +1061,7 @@ impl ExecutionManager {
                 None, // params
                 None, // correlation_id
             );
+            cmd.log_receipt_level = LogLevel::Debug;
 
             match client.generate_position_status_reports(&cmd).await {
                 Ok(reports) => {
