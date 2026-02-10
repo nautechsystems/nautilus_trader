@@ -192,6 +192,11 @@ impl Trader {
         self.exec_algorithm_ids.len()
     }
 
+    /// Returns references to all component clocks for backtest time advancement.
+    pub fn get_component_clocks(&self) -> Vec<Rc<RefCell<dyn Clock>>> {
+        self.clocks.values().cloned().collect()
+    }
+
     /// Returns the total number of registered components.
     #[must_use]
     pub const fn component_count(&self) -> usize {

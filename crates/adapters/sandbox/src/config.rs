@@ -109,6 +109,7 @@ impl SandboxExecutionClientConfig {
     pub fn to_matching_engine_config(&self) -> OrderMatchingEngineConfig {
         OrderMatchingEngineConfig::new(
             self.bar_execution,
+            false, // bar_adaptive_high_low_ordering
             self.trade_execution,
             false, // liquidity_consumption
             self.reject_stop_orders,

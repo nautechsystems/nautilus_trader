@@ -231,9 +231,12 @@ fn process_order_event_handler() -> TypedIntoMessageSavingHandler<OrderEventAny>
 #[fixture]
 fn execute_order_event_handler() -> TypedIntoMessageSavingHandler<TradingCommand> {
     let (handler, saving_handler) = get_typed_into_message_saving_handler::<TradingCommand>(Some(
-        Ustr::from("ExecEngine.execute"),
+        Ustr::from("ExecEngine.queue_execute"),
     ));
-    msgbus::register_trading_command_endpoint(MessagingSwitchboard::exec_engine_execute(), handler);
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::exec_engine_queue_execute(),
+        handler,
+    );
     saving_handler
 }
 

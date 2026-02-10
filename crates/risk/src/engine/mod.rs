@@ -124,7 +124,7 @@ impl RiskEngine {
     ) -> Throttler<SubmitOrder, SubmitOrderFn> {
         let success_handler = {
             Box::new(move |submit_order: SubmitOrder| {
-                let endpoint = MessagingSwitchboard::exec_engine_execute();
+                let endpoint = MessagingSwitchboard::exec_engine_queue_execute();
                 msgbus::send_trading_command(endpoint, TradingCommand::SubmitOrder(submit_order));
             }) as Box<dyn Fn(SubmitOrder)>
         };
@@ -167,7 +167,7 @@ impl RiskEngine {
     ) -> Throttler<ModifyOrder, ModifyOrderFn> {
         let success_handler = {
             Box::new(move |order: ModifyOrder| {
-                let endpoint = MessagingSwitchboard::exec_engine_execute();
+                let endpoint = MessagingSwitchboard::exec_engine_queue_execute();
                 msgbus::send_trading_command(endpoint, TradingCommand::ModifyOrder(order));
             }) as Box<dyn Fn(ModifyOrder)>
         };
@@ -1385,7 +1385,7 @@ impl RiskEngine {
     }
 
     fn send_to_execution(&self, command: TradingCommand) {
-        let endpoint = MessagingSwitchboard::exec_engine_execute();
+        let endpoint = MessagingSwitchboard::exec_engine_queue_execute();
         msgbus::send_trading_command(endpoint, command);
     }
 

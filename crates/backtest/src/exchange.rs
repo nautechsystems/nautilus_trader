@@ -15,10 +15,6 @@
 
 //! Provides a `SimulatedExchange` venue for backtesting on historical data.
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 use std::{
     cell::RefCell,
     collections::{BinaryHeap, VecDeque},
@@ -129,6 +125,7 @@ pub struct SimulatedExchange {
     inflight_queue: BinaryHeap<InflightCommand>,
     inflight_counter: AHashMap<UnixNanos, u32>,
     bar_execution: bool,
+    bar_adaptive_high_low_ordering: bool,
     trade_execution: bool,
     liquidity_consumption: bool,
     reject_stop_orders: bool,
@@ -139,7 +136,7 @@ pub struct SimulatedExchange {
     use_reduce_only: bool,
     use_message_queue: bool,
     use_market_order_acks: bool,
-    allow_cash_borrowing: bool,
+    _allow_cash_borrowing: bool,
     frozen_account: bool,
     price_protection_points: u32,
 }
@@ -178,6 +175,7 @@ impl SimulatedExchange {
         book_type: BookType,
         latency_model: Option<Box<dyn LatencyModel>>,
         bar_execution: Option<bool>,
+        bar_adaptive_high_low_ordering: Option<bool>,
         trade_execution: Option<bool>,
         liquidity_consumption: Option<bool>,
         reject_stop_orders: Option<bool>,
@@ -221,6 +219,7 @@ impl SimulatedExchange {
             inflight_queue: BinaryHeap::new(),
             inflight_counter: AHashMap::new(),
             bar_execution: bar_execution.unwrap_or(true),
+            bar_adaptive_high_low_ordering: bar_adaptive_high_low_ordering.unwrap_or(false),
             trade_execution: trade_execution.unwrap_or(true),
             liquidity_consumption: liquidity_consumption.unwrap_or(true),
             reject_stop_orders: reject_stop_orders.unwrap_or(true),
@@ -231,7 +230,7 @@ impl SimulatedExchange {
             use_reduce_only: use_reduce_only.unwrap_or(true),
             use_message_queue: use_message_queue.unwrap_or(true),
             use_market_order_acks: use_market_order_acks.unwrap_or(false),
-            allow_cash_borrowing: allow_cash_borrowing.unwrap_or(false),
+            _allow_cash_borrowing: allow_cash_borrowing.unwrap_or(false),
             frozen_account: frozen_account.unwrap_or(false),
             price_protection_points: price_protection_points.unwrap_or(0),
         })
@@ -296,6 +295,7 @@ impl SimulatedExchange {
 
         let matching_engine_config = OrderMatchingEngineConfig::new(
             self.bar_execution,
+            self.bar_adaptive_high_low_ordering,
             self.trade_execution,
             self.liquidity_consumption,
             self.reject_stop_orders,
@@ -894,6 +894,7 @@ mod tests {
                 book_type,
                 None, // latency_model
                 None, // bar_execution
+                None, // bar_adaptive_high_low_ordering
                 None, // trade_execution
                 None, // liquidity_consumption
                 None, // reject_stop_orders

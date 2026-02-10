@@ -15,10 +15,6 @@
 
 //! Provides a `BacktestDataClient` implementation for backtesting.
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 use std::{cell::RefCell, rc::Rc};
 
 use nautilus_common::{
@@ -37,17 +33,17 @@ use nautilus_common::{
 };
 use nautilus_model::identifiers::{ClientId, Venue};
 
-#[derive(Debug)]
 /// Data client implementation for backtesting market data operations.
 ///
 /// The `BacktestDataClient` provides a data client interface specifically designed
 /// for backtesting environments. It handles market data subscriptions and requests
 /// during backtesting, coordinating with the backtesting engine to provide
 /// historical data replay functionality.
+#[derive(Debug)]
 pub struct BacktestDataClient {
     pub client_id: ClientId,
     pub venue: Venue,
-    cache: Rc<RefCell<Cache>>,
+    _cache: Rc<RefCell<Cache>>,
 }
 
 impl BacktestDataClient {
@@ -55,7 +51,7 @@ impl BacktestDataClient {
         Self {
             client_id,
             venue,
-            cache,
+            _cache: cache,
         }
     }
 }
@@ -93,8 +89,6 @@ impl DataClient for BacktestDataClient {
     fn is_disconnected(&self) -> bool {
         false
     }
-
-    // -- COMMAND HANDLERS ---------------------------------------------------------------------------
 
     fn subscribe(&mut self, _cmd: &SubscribeCustomData) -> anyhow::Result<()> {
         Ok(())
@@ -203,8 +197,6 @@ impl DataClient for BacktestDataClient {
     ) -> anyhow::Result<()> {
         Ok(())
     }
-
-    // -- DATA REQUEST HANDLERS ---------------------------------------------------------------------------
 
     fn request_data(&self, _request: RequestCustomData) -> anyhow::Result<()> {
         todo!()

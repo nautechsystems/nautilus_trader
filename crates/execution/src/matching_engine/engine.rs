@@ -192,7 +192,7 @@ impl OrderMatchingEngine {
     /// internal components. This is typically used for backtesting scenarios
     /// where the engine needs to be reset between test runs.
     pub fn reset(&mut self) {
-        self.book.clear(0, UnixNanos::default());
+        self.book.reset();
         self.execution_bar_types.clear();
         self.execution_bar_deltas.clear();
         self.account_ids.clear();
@@ -595,30 +595,17 @@ impl OrderMatchingEngine {
             self.core.set_last_raw(trade_tick.price);
         }
 
-        // High: fill at trigger price (market moving through prices)
-        if self.core.last.is_some_and(|last| bar.high > last) {
-            self.fill_at_market = false;
-            trade_tick.price = bar.high;
-            trade_tick.aggressor_side = AggressorSide::Buyer;
-            trade_tick.trade_id = self.ids_generator.generate_trade_id();
+        // Determine high/low processing order.
+        // Default: O→H→L→C. With adaptive ordering, swap if low is closer to open.
+        let high_first = !self.config.bar_adaptive_high_low_ordering
+            || (bar.high.raw - bar.open.raw).abs() < (bar.low.raw - bar.open.raw).abs();
 
-            self.book.update_trade_tick(&trade_tick).unwrap();
-            self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
-
-            self.core.set_last_raw(trade_tick.price);
-        }
-
-        // Low: fill at trigger price (market moving through prices)
-        if self.core.last.is_some_and(|last| bar.low < last) {
-            self.fill_at_market = false;
-            trade_tick.price = bar.low;
-            trade_tick.aggressor_side = AggressorSide::Seller;
-            trade_tick.trade_id = self.ids_generator.generate_trade_id();
-
-            self.book.update_trade_tick(&trade_tick).unwrap();
-            self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
-
-            self.core.set_last_raw(trade_tick.price);
+        if high_first {
+            self.process_bar_high(&mut trade_tick, bar);
+            self.process_bar_low(&mut trade_tick, bar);
+        } else {
+            self.process_bar_low(&mut trade_tick, bar);
+            self.process_bar_high(&mut trade_tick, bar);
         }
 
         // Close: fill at trigger price (market moving through prices)
@@ -640,6 +627,34 @@ impl OrderMatchingEngine {
         }
 
         self.fill_at_market = true;
+    }
+
+    fn process_bar_high(&mut self, trade_tick: &mut TradeTick, bar: &Bar) {
+        if self.core.last.is_some_and(|last| bar.high > last) {
+            self.fill_at_market = false;
+            trade_tick.price = bar.high;
+            trade_tick.aggressor_side = AggressorSide::Buyer;
+            trade_tick.trade_id = self.ids_generator.generate_trade_id();
+
+            self.book.update_trade_tick(trade_tick).unwrap();
+            self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
+
+            self.core.set_last_raw(trade_tick.price);
+        }
+    }
+
+    fn process_bar_low(&mut self, trade_tick: &mut TradeTick, bar: &Bar) {
+        if self.core.last.is_some_and(|last| bar.low < last) {
+            self.fill_at_market = false;
+            trade_tick.price = bar.low;
+            trade_tick.aggressor_side = AggressorSide::Seller;
+            trade_tick.trade_id = self.ids_generator.generate_trade_id();
+
+            self.book.update_trade_tick(trade_tick).unwrap();
+            self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
+
+            self.core.set_last_raw(trade_tick.price);
+        }
     }
 
     fn process_quote_ticks_from_bar(&mut self, bar: &Bar) {
@@ -2651,11 +2666,13 @@ impl OrderMatchingEngine {
             }
 
             self.generate_order_updated(order, quantity, Some(price), None, None);
-            order.set_liquidity_side(LiquiditySide::Taker);
-            if let Err(e) = self.cache.borrow_mut().update_order(order) {
-                log::debug!("Failed to update order in cache: {e}");
+
+            // Re-read from cache to get the order with events applied
+            let client_order_id = order.client_order_id();
+            if let Some(cached) = self.cache.borrow_mut().mut_order(&client_order_id) {
+                cached.set_liquidity_side(LiquiditySide::Taker);
             }
-            self.fill_limit_order(order.client_order_id());
+            self.fill_limit_order(client_order_id);
             return;
         }
         self.generate_order_updated(order, quantity, Some(price), None, None);
@@ -3283,11 +3300,6 @@ impl OrderMatchingEngine {
             false,
         ));
 
-        // TODO: Remove when tests wire up ExecutionEngine to process events
-        order
-            .apply(event.clone())
-            .expect("Failed to apply order event");
-
         let endpoint = MessagingSwitchboard::exec_engine_process();
         msgbus::send_order_event(endpoint, event);
     }
@@ -3375,11 +3387,6 @@ impl OrderMatchingEngine {
             trigger_price,
             protection_price,
         ));
-
-        // TODO: Remove when tests wire up ExecutionEngine to process events
-        order
-            .apply(event.clone())
-            .expect("Failed to apply order event");
 
         let endpoint = MessagingSwitchboard::exec_engine_process();
         msgbus::send_order_event(endpoint, event);
@@ -3483,11 +3490,6 @@ impl OrderMatchingEngine {
             venue_position_id,
             Some(commission),
         ));
-
-        // TODO: Remove when tests wire up ExecutionEngine to process events
-        order
-            .apply(event.clone())
-            .expect("Failed to apply order event");
 
         let endpoint = MessagingSwitchboard::exec_engine_process();
         msgbus::send_order_event(endpoint, event);
