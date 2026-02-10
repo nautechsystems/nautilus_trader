@@ -111,7 +111,7 @@ pub fn parse_bar(
     // Ax provides volume as i64 contracts
     let volume = Quantity::new(candle.volume as f64, size_precision);
 
-    let ts_event = UnixNanos::from(candle.tn.timestamp_nanos_opt().unwrap_or(0) as u64);
+    let ts_event = UnixNanos::from((candle.ts as u64) * 1_000_000_000);
 
     let bar_spec = candle_width_to_bar_spec(candle.width);
     let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::External);
@@ -224,7 +224,7 @@ pub fn parse_account_state(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<AccountState> {
-    let mut balances = Vec::new();
+    let mut balances = Vec::with_capacity(response.balances.len());
 
     for balance in &response.balances {
         let symbol_str = balance.symbol.as_str().trim();

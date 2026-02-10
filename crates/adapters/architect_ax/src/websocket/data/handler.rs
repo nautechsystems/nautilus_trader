@@ -45,10 +45,13 @@ use super::{
     },
 };
 use crate::{
-    common::enums::{AxCandleWidth, AxMarketDataLevel},
-    websocket::messages::{
-        AxMdCandle, AxMdMessage, AxMdSubscribe, AxMdSubscribeCandles, AxMdTickerOrTrade,
-        AxMdUnsubscribe, AxMdUnsubscribeCandles, NautilusDataWsMessage,
+    common::enums::{AxCandleWidth, AxMarketDataLevel, AxMdRequestType},
+    websocket::{
+        messages::{
+            AxMdCandle, AxMdMessage, AxMdSubscribe, AxMdSubscribeCandles, AxMdUnsubscribe,
+            AxMdUnsubscribeCandles, NautilusDataWsMessage,
+        },
+        parse::parse_md_message,
     },
 };
 
@@ -367,7 +370,7 @@ impl FeedHandler {
     async fn send_subscribe(&self, request_id: i64, symbol: Ustr, level: AxMarketDataLevel) {
         let msg = AxMdSubscribe {
             request_id,
-            msg_type: "subscribe".to_string(),
+            msg_type: AxMdRequestType::Subscribe,
             symbol,
             level,
         };
@@ -380,7 +383,7 @@ impl FeedHandler {
     async fn send_unsubscribe(&self, request_id: i64, symbol: Ustr) {
         let msg = AxMdUnsubscribe {
             request_id,
-            msg_type: "unsubscribe".to_string(),
+            msg_type: AxMdRequestType::Unsubscribe,
             symbol,
         };
 
@@ -392,7 +395,7 @@ impl FeedHandler {
     async fn send_subscribe_candles(&self, request_id: i64, symbol: Ustr, width: AxCandleWidth) {
         let msg = AxMdSubscribeCandles {
             request_id,
-            msg_type: "subscribe_candles".to_string(),
+            msg_type: AxMdRequestType::SubscribeCandles,
             symbol,
             width,
         };
@@ -405,7 +408,7 @@ impl FeedHandler {
     async fn send_unsubscribe_candles(&self, request_id: i64, symbol: Ustr, width: AxCandleWidth) {
         let msg = AxMdUnsubscribeCandles {
             request_id,
-            msg_type: "unsubscribe_candles".to_string(),
+            msg_type: AxMdRequestType::UnsubscribeCandles,
             symbol,
             width,
         };
@@ -440,7 +443,7 @@ impl FeedHandler {
 
                 log::trace!("Raw websocket message: {text}");
 
-                match serde_json::from_str::<AxMdMessage>(&text) {
+                match parse_md_message(&text) {
                     Ok(message) => self.handle_message(message),
                     Err(e) => {
                         log::error!("Failed to parse WebSocket message: {e}: {text}");
@@ -545,50 +548,46 @@ impl FeedHandler {
                     }
                 }
             }
-            AxMdMessage::TickerOrTrade(ticker_or_trade) => match ticker_or_trade {
-                AxMdTickerOrTrade::Ticker(ticker) => {
-                    // Ticker lacks bid/ask, L1 book subscription provides actual quotes
-                    log::debug!(
-                        "Received ticker: {} last={} vol={} oi={:?}",
-                        ticker.s,
-                        ticker.p,
-                        ticker.v,
-                        ticker.oi
+            AxMdMessage::Ticker(ticker) => {
+                // Ticker lacks bid/ask, L1 book subscription provides actual quotes
+                log::debug!(
+                    "Received ticker: {} last={} vol={} oi={:?}",
+                    ticker.s,
+                    ticker.p,
+                    ticker.v,
+                    ticker.oi
+                );
+                None
+            }
+            AxMdMessage::Trade(trade) => {
+                log::debug!("Received trade: {} {} @ {}", trade.s, trade.q, trade.p);
+
+                let trades_subscribed = self
+                    .symbol_data_types
+                    .get(trade.s.as_str())
+                    .is_some_and(|e| e.trades);
+
+                if !trades_subscribed {
+                    return None;
+                }
+
+                let Some(instrument) = self.instruments.get(&trade.s) else {
+                    log::error!(
+                        "No instrument cached for symbol '{}' - cannot parse trade",
+                        trade.s
                     );
-                    None
-                }
-                AxMdTickerOrTrade::Trade(trade) => {
-                    log::debug!("Received trade: {} {} @ {}", trade.s, trade.q, trade.p);
+                    return None;
+                };
 
-                    let trades_subscribed = self
-                        .symbol_data_types
-                        .get(trade.s.as_str())
-                        .is_some_and(|e| e.trades);
-
-                    if !trades_subscribed {
-                        return None;
-                    }
-
-                    let Some(instrument) = self.instruments.get(&trade.s) else {
-                        log::error!(
-                            "No instrument cached for symbol '{}' - cannot parse trade",
-                            trade.s
-                        );
-                        return None;
-                    };
-
-                    let ts_init = self.generate_ts_init();
-                    match parse_trade_tick(&trade, instrument, ts_init) {
-                        Ok(tick) => {
-                            Some(vec![NautilusDataWsMessage::Data(vec![Data::Trade(tick)])])
-                        }
-                        Err(e) => {
-                            log::error!("Failed to parse trade to TradeTick: {e}");
-                            None
-                        }
+                let ts_init = self.generate_ts_init();
+                match parse_trade_tick(&trade, instrument, ts_init) {
+                    Ok(tick) => Some(vec![NautilusDataWsMessage::Data(vec![Data::Trade(tick)])]),
+                    Err(e) => {
+                        log::error!("Failed to parse trade to TradeTick: {e}");
+                        None
                     }
                 }
-            },
+            }
             AxMdMessage::Candle(candle) => self.handle_candle(candle),
             AxMdMessage::Heartbeat(heartbeat) => {
                 log::trace!("Received heartbeat ts={}", heartbeat.ts);

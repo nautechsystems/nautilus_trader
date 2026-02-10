@@ -51,7 +51,7 @@ use super::handler::{FeedHandler, HandlerCommand, WsOrderInfo};
 use crate::{
     common::{
         consts::AX_NAUTILUS_TAG,
-        enums::{AxOrderSide, AxOrderType, AxTimeInForce},
+        enums::{AxOrderRequestType, AxOrderSide, AxOrderType, AxTimeInForce},
         parse::{client_order_id_to_cid, quantity_to_contracts},
     },
     websocket::messages::{AxOrdersWsMessage, AxWsPlaceOrder, OrderMetadata},
@@ -616,7 +616,7 @@ impl AxOrdersWebSocketClient {
 
         let order = AxWsPlaceOrder {
             rid: request_id,
-            t: "p".to_string(),
+            t: AxOrderRequestType::PlaceOrder,
             s: symbol,
             d: ax_side,
             q: qty_contracts,

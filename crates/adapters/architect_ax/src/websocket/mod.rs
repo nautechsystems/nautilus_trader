@@ -31,6 +31,7 @@ pub mod data;
 pub mod error;
 pub mod messages;
 pub mod orders;
+pub mod parse;
 
 pub use data::{
     AxMdWebSocketClient, AxWsClientError, AxWsResult, HandlerCommand as DataHandlerCommand,

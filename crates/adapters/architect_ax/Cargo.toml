@@ -62,6 +62,7 @@ chrono = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
 futures-util = { workspace = true }
+itoa = { workspace = true }
 log = { workspace = true }
 reqwest = { workspace = true }
 rust_decimal = { workspace = true }
@@ -91,6 +92,18 @@ rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 url = { workspace = true }
 
+# cargo bench -p nautilus-architect-ax --bench deserialization
+[[bench]]
+name = "deserialization"
+path = "benches/deserialization.rs"
+harness = false
+
+# cargo bench -p nautilus-architect-ax --bench parsing
+[[bench]]
+name = "parsing"
+path = "benches/parsing.rs"
+harness = false
+
 # cargo run -p nautilus-architect-ax --bin ax-http-public
 [[bin]]
 name = "ax-http-public"
@@ -101,12 +114,6 @@ doc = false
 [[bin]]
 name = "ax-ws-data"
 path = "bin/ws_data.rs"
-doc = false
-
-# cargo run -p nautilus-architect-ax --bin ax-ws-data-capture
-[[bin]]
-name = "ax-ws-data-capture"
-path = "bin/ws_data_capture.rs"
 doc = false
 
 # cargo run -p nautilus-architect-ax --bin ax-ws-orders

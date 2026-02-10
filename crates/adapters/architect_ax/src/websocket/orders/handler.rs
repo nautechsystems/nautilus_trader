@@ -47,15 +47,18 @@ use ustr::Ustr;
 use crate::{
     common::{
         consts::AX_POST_ONLY_REJECT,
-        enums::{AxOrderSide, AxTimeInForce},
+        enums::{AxOrderRequestType, AxOrderSide, AxTimeInForce},
         parse::cid_to_client_order_id,
     },
-    websocket::messages::{
-        AxOrdersWsMessage, AxWsCancelOrder, AxWsCancelRejected, AxWsGetOpenOrders, AxWsOrder,
-        AxWsOrderAcknowledged, AxWsOrderCanceled, AxWsOrderDoneForDay, AxWsOrderEvent,
-        AxWsOrderExpired, AxWsOrderFilled, AxWsOrderPartiallyFilled, AxWsOrderRejected,
-        AxWsOrderReplaced, AxWsOrderResponse, AxWsPlaceOrder, AxWsRawMessage, AxWsTradeExecution,
-        NautilusExecWsMessage, OrderMetadata,
+    websocket::{
+        messages::{
+            AxOrdersWsMessage, AxWsCancelOrder, AxWsCancelRejected, AxWsGetOpenOrders, AxWsOrder,
+            AxWsOrderAcknowledged, AxWsOrderCanceled, AxWsOrderDoneForDay, AxWsOrderEvent,
+            AxWsOrderExpired, AxWsOrderFilled, AxWsOrderPartiallyFilled, AxWsOrderRejected,
+            AxWsOrderReplaced, AxWsOrderResponse, AxWsPlaceOrder, AxWsRawMessage,
+            AxWsTradeExecution, NautilusExecWsMessage, OrderMetadata,
+        },
+        parse::parse_order_message,
     },
 };
 
@@ -335,7 +338,7 @@ impl FeedHandler {
     async fn send_cancel_order(&self, request_id: i64, order_id: &str) {
         let msg = AxWsCancelOrder {
             rid: request_id,
-            t: "x".to_string(),
+            t: AxOrderRequestType::CancelOrder,
             oid: order_id.to_string(),
         };
 
@@ -347,7 +350,7 @@ impl FeedHandler {
     async fn send_get_open_orders(&self, request_id: i64) {
         let msg = AxWsGetOpenOrders {
             rid: request_id,
-            t: "o".to_string(),
+            t: AxOrderRequestType::GetOpenOrders,
         };
 
         if let Err(e) = self.send_json(&msg).await {
@@ -381,7 +384,7 @@ impl FeedHandler {
 
                 log::trace!("Raw websocket message: {text}");
 
-                let raw_msg: AxWsRawMessage = match serde_json::from_str(&text) {
+                let raw_msg: AxWsRawMessage = match parse_order_message(&text) {
                     Ok(v) => v,
                     Err(e) => {
                         log::error!("Failed to parse WebSocket message: {e}: {text}");
@@ -916,7 +919,7 @@ impl FeedHandler {
             instrument_id,
             client_order_id,
             self.account_id,
-            reason.to_string().into(),
+            Ustr::from(reason),
             UUID4::new(),
             ts_event,
             self.generate_ts_init(),

@@ -15,6 +15,8 @@
 
 //! Conversion functions that translate AX API schemas into Nautilus types.
 
+use std::sync::LazyLock;
+
 use ahash::RandomState;
 pub use nautilus_core::serialization::{
     deserialize_decimal_or_zero, deserialize_optional_decimal_from_str,
@@ -29,11 +31,15 @@ use nautilus_model::{
 
 use super::enums::AxCandleWidth;
 
-// Fixed seeds for deterministic hashing across sessions
-const HASH_SEED_0: u64 = 0x517cc1b727220a95;
-const HASH_SEED_1: u64 = 0x9b5c18c90c3c314d;
-const HASH_SEED_2: u64 = 0x5851f42d4c957f2d;
-const HASH_SEED_3: u64 = 0x14057b7ef767814f;
+/// Cached hasher state for deterministic client order ID to cid conversion
+static CID_HASHER: LazyLock<RandomState> = LazyLock::new(|| {
+    RandomState::with_seeds(
+        0x517cc1b727220a95,
+        0x9b5c18c90c3c314d,
+        0x5851f42d4c957f2d,
+        0x14057b7ef767814f,
+    )
+});
 
 /// Maps a Nautilus [`BarSpecification`] to an [`AxCandleWidth`].
 ///
@@ -80,8 +86,7 @@ pub fn quantity_to_contracts(quantity: Quantity) -> anyhow::Result<u64> {
 /// a u64 value that can be used for order correlation.
 #[must_use]
 pub fn client_order_id_to_cid(client_order_id: &ClientOrderId) -> u64 {
-    let state = RandomState::with_seeds(HASH_SEED_0, HASH_SEED_1, HASH_SEED_2, HASH_SEED_3);
-    state.hash_one(client_order_id.inner())
+    CID_HASHER.hash_one(client_order_id.inner())
 }
 
 /// Creates a [`ClientOrderId`] from a cid value.

@@ -4886,6 +4886,7 @@ dependencies = [
  "derive_builder",
  "dotenvy",
  "futures-util",
+ "itoa",
  "log",
  "nautilus-common",
  "nautilus-core",

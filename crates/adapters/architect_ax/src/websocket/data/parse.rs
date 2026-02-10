@@ -326,8 +326,9 @@ pub fn parse_trade_tick(
     let size = Quantity::new(trade.q as f64, size_precision);
     let aggressor_side: AggressorSide = trade.d.map_or(AggressorSide::NoAggressor, |d| d.into());
 
-    // Use transaction number as trade ID
-    let trade_id = TradeId::new_checked(trade.tn.to_string())
+    // Use transaction number as trade ID (stack-formatted to avoid heap alloc)
+    let mut buf = itoa::Buffer::new();
+    let trade_id = TradeId::new_checked(buf.format(trade.tn))
         .context("Failed to create TradeId from transaction number")?;
 
     let ts_event = UnixNanos::from((trade.ts as u64) * NANOSECONDS_IN_SECOND);

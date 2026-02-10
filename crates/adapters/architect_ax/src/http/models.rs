@@ -386,8 +386,8 @@ pub struct AxFillsResponse {
 pub struct AxCandle {
     /// Instrument symbol.
     pub symbol: Ustr,
-    /// Candle timestamp.
-    pub tn: DateTime<Utc>,
+    /// Candle timestamp (Unix epoch seconds).
+    pub ts: i64,
     /// Open price.
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub open: Decimal,
@@ -915,4 +915,172 @@ pub struct AxBatchCancelOrdersResponse {
     /// Order IDs that failed to cancel.
     #[serde(default)]
     pub failed_order_ids: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_deserialize_authenticate_response() {
+        let json = include_str!("../../test_data/http_authenticate.json");
+        let response: AxAuthenticateResponse = serde_json::from_str(json).unwrap();
+        assert!(response.token.starts_with("test-token"));
+    }
+
+    #[rstest]
+    fn test_deserialize_whoami_response() {
+        let json = include_str!("../../test_data/http_get_whoami.json");
+        let response: AxWhoAmI = serde_json::from_str(json).unwrap();
+        assert_eq!(response.username, "test_user");
+        assert!(response.enabled_2fa);
+    }
+
+    #[rstest]
+    fn test_deserialize_instruments_response() {
+        let json = include_str!("../../test_data/http_get_instruments.json");
+        let response: AxInstrumentsResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.instruments.len(), 4);
+        assert_eq!(response.instruments[0].symbol, "BTCUSD-PERP");
+    }
+
+    #[rstest]
+    fn test_deserialize_balances_response() {
+        let json = include_str!("../../test_data/http_get_balances.json");
+        let response: AxBalancesResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.balances.len(), 3);
+        assert_eq!(response.balances[0].symbol, "USD");
+    }
+
+    #[rstest]
+    fn test_deserialize_positions_response() {
+        let json = include_str!("../../test_data/http_get_positions.json");
+        let response: AxPositionsResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.positions.len(), 2);
+        assert_eq!(response.positions[0].symbol, "BTC-PERP");
+        assert_eq!(response.positions[1].signed_quantity, -5);
+    }
+
+    #[rstest]
+    fn test_deserialize_tickers_response() {
+        let json = include_str!("../../test_data/http_get_tickers.json");
+        let response: AxTickersResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.tickers.len(), 3);
+        assert_eq!(response.tickers[0].symbol, "EURUSD-PERP");
+        assert!(response.tickers[0].bid.is_some());
+        assert!(response.tickers[2].bid.is_none());
+    }
+
+    #[rstest]
+    fn test_deserialize_funding_rates_response() {
+        let json = include_str!("../../test_data/http_get_funding_rates.json");
+        let response: AxFundingRatesResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.funding_rates.len(), 2);
+        assert_eq!(response.funding_rates[0].symbol, "JPYUSD-PERP");
+    }
+
+    #[rstest]
+    fn test_deserialize_open_orders_response() {
+        let json = include_str!("../../test_data/http_get_open_orders.json");
+        let response: AxOpenOrdersResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.orders.len(), 2);
+        assert_eq!(response.orders[0].oid, "O-01ARZ3NDEKTSV4RRFFQ69G5FAV");
+        assert_eq!(response.orders[0].d, AxOrderSide::Buy);
+        assert_eq!(response.orders[0].o, AxOrderStatus::Accepted);
+        assert_eq!(response.orders[1].xq, 300);
+    }
+
+    #[rstest]
+    fn test_deserialize_fills_response() {
+        let json = include_str!("../../test_data/http_get_fills.json");
+        let response: AxFillsResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.fills.len(), 2);
+        assert_eq!(response.fills[0].side, AxOrderSide::Buy);
+        assert!(response.fills[0].is_taker);
+        assert!(!response.fills[1].is_taker);
+    }
+
+    #[rstest]
+    fn test_deserialize_candles_response() {
+        let json = include_str!("../../test_data/http_get_candles.json");
+        let response: AxCandlesResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.candles.len(), 2);
+        assert_eq!(response.candles[0].symbol, "EURUSD-PERP");
+        assert_eq!(response.candles[0].width, AxCandleWidth::Minutes1);
+    }
+
+    #[rstest]
+    fn test_deserialize_candle_response() {
+        let json = include_str!("../../test_data/http_get_candle.json");
+        let response: AxCandleResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.candle.symbol, "EURUSD-PERP");
+        assert_eq!(response.candle.width, AxCandleWidth::Minutes1);
+    }
+
+    #[rstest]
+    fn test_deserialize_risk_snapshot_response() {
+        let json = include_str!("../../test_data/http_get_risk_snapshot.json");
+        let response: AxRiskSnapshotResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            response.risk_snapshot.user_id,
+            "3c90c3cc-0d44-4b50-8888-8dd25736052a"
+        );
+        assert_eq!(response.risk_snapshot.per_symbol.len(), 2);
+        assert!(
+            response
+                .risk_snapshot
+                .per_symbol
+                .contains_key("EURUSD-PERP")
+        );
+    }
+
+    #[rstest]
+    fn test_deserialize_transactions_response() {
+        let json = include_str!("../../test_data/http_get_transactions.json");
+        let response: AxTransactionsResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.transactions.len(), 2);
+        assert_eq!(response.transactions[0].transaction_type, "deposit");
+        assert!(response.transactions[1].reference_id.is_none());
+    }
+
+    #[rstest]
+    fn test_deserialize_preview_aggressive_limit_order_response() {
+        let json = include_str!("../../test_data/http_preview_aggressive_limit_order.json");
+        let response: AxPreviewAggressiveLimitOrderResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.filled_quantity, 1000);
+        assert_eq!(response.remaining_quantity, 0);
+        assert!(response.limit_price.is_some());
+        assert!(response.vwap.is_some());
+    }
+
+    #[rstest]
+    fn test_deserialize_place_order_response() {
+        let json = include_str!("../../test_data/http_place_order.json");
+        let response: AxPlaceOrderResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.oid, "O-01ARZ3NDEKTSV4RRFFQ69G5FAV");
+    }
+
+    #[rstest]
+    fn test_deserialize_cancel_order_response() {
+        let json = include_str!("../../test_data/http_cancel_order.json");
+        let response: AxCancelOrderResponse = serde_json::from_str(json).unwrap();
+        assert!(response.cxl_rx);
+    }
+
+    #[rstest]
+    fn test_deserialize_cancel_all_orders_response() {
+        let json = include_str!("../../test_data/http_cancel_all_orders.json");
+        let response: AxCancelAllOrdersResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.canceled_count, 3);
+    }
+
+    #[rstest]
+    fn test_deserialize_batch_cancel_orders_response() {
+        let json = include_str!("../../test_data/http_batch_cancel_orders.json");
+        let response: AxBatchCancelOrdersResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.canceled_count, 2);
+        assert_eq!(response.failed_order_ids.len(), 1);
+    }
 }
