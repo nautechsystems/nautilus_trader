@@ -13,6 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Redis-backed message bus database for the system.
+//!
+//! # Architecture
+//!
+//! Runs background tasks on `get_runtime()` for publishing, stream reading,
+//! and heartbeats. Messages are sent via an unbounded `tokio::sync::mpsc`
+//! channel to the publish task, which buffers and writes them to Redis
+//! streams. Each background task owns its own Redis connection created on
+//! the Nautilus runtime.
+//!
+//! Handles are stored as `Option<JoinHandle>` for idempotent shutdown via
+//! `close_async()`. The synchronous `close()` uses `block_in_place` to
+//! bridge into the async shutdown path and must be called from outside any
+//! `current_thread` Tokio runtime.
+
 use std::{
     collections::{HashMap, VecDeque},
     fmt::Debug,

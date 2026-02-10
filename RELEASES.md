@@ -96,6 +96,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed `request_order_book_snapshot` and add Bybit support (#3416), thanks @dxwil
 - Fixed Arrow serialization encoding for custom Nautilus types (#3515), thanks @dennisnissle
 - Fixed Redis cache buffer flushing during idle periods (#3426), thanks for reporting @santivazq
+- Fixed Redis cache flush no-op and harden close lifecycle
 - Fixed cache loading when flush_on_start set to True (#3551), thanks @HaakonFlaaronning
 - Fixed Betfair dropped fills from premature cache update
 - Fixed Betfair duplicate cancel event race condition(s)

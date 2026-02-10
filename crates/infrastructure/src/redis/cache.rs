@@ -13,7 +13,34 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::VecDeque, fmt::Debug, ops::ControlFlow, pin::Pin, time::Duration};
+//! Redis-backed cache database for the system.
+//!
+//! # Architecture
+//!
+//! Uses two Redis connections with distinct roles:
+//! - **READ** (`self.con`): synchronous queries (`keys`, `read`, `load_all`),
+//!   owned by the main struct.
+//! - **WRITE**: owned by a background task on `get_runtime()`, receives
+//!   commands via an unbounded `tokio::sync::mpsc` channel.
+//!
+//! All write operations (`insert`, `update`, `delete`, `flush`) are routed
+//! through the command channel so they execute on the WRITE connection. This
+//! avoids cross-runtime I/O issues since the WRITE connection is always
+//! created on the Nautilus runtime.
+//!
+//! Synchronous callers (`close`, `flushdb_sync`) use `std::sync::mpsc` reply
+//! channels to block until the background task confirms completion. When
+//! called from the Nautilus runtime itself, `block_in_place` is used
+//! automatically to avoid stalling the worker thread.
+
+use std::{
+    collections::VecDeque,
+    fmt::Debug,
+    ops::ControlFlow,
+    pin::Pin,
+    sync::mpsc::{self, SyncSender},
+    time::Duration,
+};
 
 use ahash::AHashMap;
 use bytes::Bytes;
@@ -91,6 +118,7 @@ pub enum DatabaseOperation {
     Insert,
     Update,
     Delete,
+    Flush(SyncSender<()>),
     Close,
 }
 
@@ -138,7 +166,7 @@ pub struct RedisCacheDatabase {
     pub encoding: SerializationEncoding,
     pub bulk_read_batch_size: Option<usize>,
     tx: tokio::sync::mpsc::UnboundedSender<DatabaseCommand>,
-    handle: tokio::task::JoinHandle<()>,
+    handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Debug for RedisCacheDatabase {
@@ -191,7 +219,7 @@ impl RedisCacheDatabase {
             encoding,
             bulk_read_batch_size,
             tx,
-            handle,
+            handle: Some(handle),
         })
     }
 
@@ -208,17 +236,26 @@ impl RedisCacheDatabase {
     pub fn close(&mut self) {
         log::debug!("Closing");
 
+        let Some(handle) = self.handle.take() else {
+            log::debug!("Already closed");
+            return;
+        };
+
         if let Err(e) = self.tx.send(DatabaseCommand::close()) {
             log::debug!("Error sending close command: {e:?}");
         }
 
         log_task_awaiting(CACHE_PROCESS);
 
-        tokio::task::block_in_place(|| {
-            if let Err(e) = get_runtime().block_on(&mut self.handle) {
+        let (tx, rx) = mpsc::sync_channel(1);
+
+        get_runtime().spawn(async move {
+            if let Err(e) = handle.await {
                 log::error!("Error awaiting task '{CACHE_PROCESS}': {e:?}");
             }
+            let _ = tx.send(());
         });
+        let _ = blocking_recv(&rx);
 
         log::debug!("Closed");
     }
@@ -230,6 +267,26 @@ impl RedisCacheDatabase {
         {
             log::error!("Failed to flush database: {e:?}");
         }
+    }
+
+    /// Sends a flush command through the background task channel and blocks
+    /// until it completes. Safe to call from any runtime context.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the command channel is closed or the reply is lost.
+    pub fn flushdb_sync(&self) -> anyhow::Result<()> {
+        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+        let cmd = DatabaseCommand {
+            op_type: DatabaseOperation::Flush(reply_tx),
+            key: None,
+            payload: None,
+        };
+        self.tx
+            .send(cmd)
+            .map_err(|e| anyhow::anyhow!("{FAILED_TX_CHANNEL}: {e}"))?;
+        blocking_recv(&reply_rx).map_err(|e| anyhow::anyhow!("Failed to flush database: {e}"))?;
+        Ok(())
     }
 
     /// Retrieves all keys matching the given `pattern` from Redis for this trader.
@@ -401,6 +458,18 @@ impl RedisCacheDatabase {
     }
 }
 
+fn blocking_recv<T>(rx: &mpsc::Receiver<T>) -> Result<T, mpsc::RecvError> {
+    let on_nautilus_runtime = tokio::runtime::Handle::try_current()
+        .ok()
+        .is_some_and(|h| h.id() == get_runtime().handle().id());
+
+    if on_nautilus_runtime {
+        tokio::task::block_in_place(|| rx.recv())
+    } else {
+        rx.recv()
+    }
+}
+
 async fn process_commands(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<DatabaseCommand>,
     trader_key: String,
@@ -468,11 +537,24 @@ async fn handle_command(
 
     log::trace!("Received {cmd:?}");
 
-    if matches!(cmd.op_type, DatabaseOperation::Close) {
-        if !buffer.is_empty() {
-            drain_buffer(con, trader_key, buffer).await;
+    match cmd.op_type {
+        DatabaseOperation::Close => {
+            if !buffer.is_empty() {
+                drain_buffer(con, trader_key, buffer).await;
+            }
+            return ControlFlow::Break(());
         }
-        return ControlFlow::Break(());
+        DatabaseOperation::Flush(reply_tx) => {
+            if !buffer.is_empty() {
+                drain_buffer(con, trader_key, buffer).await;
+            }
+            if let Err(e) = redis::cmd(REDIS_FLUSHDB).query_async::<()>(con).await {
+                log::error!("Failed to flush database: {e:?}");
+            }
+            let _ = reply_tx.send(());
+            return ControlFlow::Continue(());
+        }
+        _ => {}
     }
 
     buffer.push_back(cmd);
@@ -558,6 +640,7 @@ async fn drain_buffer(
                 }
             }
             DatabaseOperation::Close => panic!("Close command should not be drained"),
+            DatabaseOperation::Flush(_) => panic!("Flush command should not be drained"),
         }
     }
 
@@ -870,8 +953,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn flush(&mut self) -> anyhow::Result<()> {
-        self.database.flushdb();
-        Ok(())
+        self.database.flushdb_sync()
     }
 
     async fn load_all(&self) -> anyhow::Result<CacheMap> {
