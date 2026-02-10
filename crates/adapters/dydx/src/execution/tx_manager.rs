@@ -28,13 +28,15 @@
 //!   protection. Each transaction requires a unique, incrementing sequence number.
 //! - **Short-term orders**: Use Good-Til-Block (GTB) for replay protection. The chain's
 //!   `ClobDecorator` ante handler skips sequence checking, so sequences are not consumed.
-//!   Use [`get_cached_sequence`] for these — it returns the current value without incrementing.
+//!   Use [`TransactionManager::get_cached_sequence`] for these — it returns the current value
+//!   without incrementing.
 //!
 //! For stateful orders, this module provides:
-//! 1. `AtomicU64` for lock-free sequence allocation via [`allocate_sequence`]
+//! 1. `AtomicU64` for lock-free sequence allocation via [`TransactionManager::allocate_sequence`]
 //! 2. Lazy initialization from chain on first use
-//! 3. [`resync_sequence`] for recovery after mismatch errors
-//! 4. Batch allocation via [`allocate_sequences`] for parallel stateful broadcasts
+//! 3. [`TransactionManager::resync_sequence`] for recovery after mismatch errors
+//! 4. Batch allocation via [`TransactionManager::allocate_sequences`] for parallel stateful
+//!    broadcasts
 
 use std::sync::{
     Arc, RwLock,
