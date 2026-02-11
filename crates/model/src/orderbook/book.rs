@@ -486,12 +486,20 @@ impl OrderBook {
                 continue;
             }
 
-            debug_assert_eq!(
-                order.side,
-                OrderSide::Buy,
-                "Bid order must have Buy side, was {:?}",
-                order.side
-            );
+            if order.side != OrderSide::Buy {
+                debug_assert_eq!(
+                    order.side,
+                    OrderSide::Buy,
+                    "Bid order must have Buy side, was {:?}",
+                    order.side
+                );
+                log::warn!(
+                    "Skipping bid order with wrong side {:?} (instrument_id={})",
+                    order.side,
+                    self.instrument_id
+                );
+                continue;
+            }
 
             let order = pre_process_order(self.book_type, order, depth.flags);
             self.bids.add(order, depth.flags);
@@ -503,12 +511,20 @@ impl OrderBook {
                 continue;
             }
 
-            debug_assert_eq!(
-                order.side,
-                OrderSide::Sell,
-                "Ask order must have Sell side, was {:?}",
-                order.side
-            );
+            if order.side != OrderSide::Sell {
+                debug_assert_eq!(
+                    order.side,
+                    OrderSide::Sell,
+                    "Ask order must have Sell side, was {:?}",
+                    order.side
+                );
+                log::warn!(
+                    "Skipping ask order with wrong side {:?} (instrument_id={})",
+                    order.side,
+                    self.instrument_id
+                );
+                continue;
+            }
 
             let order = pre_process_order(self.book_type, order, depth.flags);
             self.asks.add(order, depth.flags);
@@ -853,34 +869,29 @@ impl OrderBook {
     }
 
     fn increment(&mut self, sequence: u64, ts_event: UnixNanos) {
-        // Critical invariant checks: panic in debug, warn in release
-        if sequence < self.sequence {
-            let msg = format!(
-                "Sequence number should not go backwards: old={}, new={}",
-                self.sequence, sequence
+        if sequence > 0 && sequence < self.sequence {
+            log::warn!(
+                "Out-of-order update: sequence {} < {} (instrument_id={})",
+                sequence,
+                self.sequence,
+                self.instrument_id
             );
-            debug_assert!(sequence >= self.sequence, "{}", msg);
-            log::warn!("{msg}");
         }
-
         if ts_event < self.ts_last {
-            let msg = format!(
-                "Timestamp should not go backwards: old={}, new={}",
-                self.ts_last, ts_event
+            log::warn!(
+                "Out-of-order update: ts_event {} < {} (instrument_id={})",
+                ts_event,
+                self.ts_last,
+                self.instrument_id
             );
-            debug_assert!(ts_event >= self.ts_last, "{}", msg);
-            log::warn!("{msg}");
         }
 
         if self.update_count == u64::MAX {
-            // Debug assert to catch in development
             debug_assert!(
                 self.update_count < u64::MAX,
                 "Update count at u64::MAX limit (about to overflow): {}",
                 self.update_count
             );
-
-            // Spam warnings in production when at/near u64::MAX
             log::warn!(
                 "Update count at u64::MAX: {} (instrument_id={})",
                 self.update_count,
@@ -888,8 +899,9 @@ impl OrderBook {
             );
         }
 
-        self.sequence = sequence;
-        self.ts_last = ts_event;
+        // High-water mark prevents metadata regression from out-of-order updates
+        self.sequence = sequence.max(self.sequence);
+        self.ts_last = ts_event.max(self.ts_last);
         self.update_count = self.update_count.saturating_add(1);
     }
 

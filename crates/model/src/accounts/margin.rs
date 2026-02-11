@@ -36,6 +36,7 @@ use std::{
 };
 
 use ahash::AHashMap;
+use nautilus_core::correctness::{FAILED, check_positive_decimal};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -72,11 +73,23 @@ impl MarginAccount {
         }
     }
 
+    /// Sets the default leverage for the account.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `leverage` is not positive.
     pub fn set_default_leverage(&mut self, leverage: Decimal) {
+        check_positive_decimal(leverage, "leverage").expect(FAILED);
         self.default_leverage = leverage;
     }
 
+    /// Sets the leverage for a specific instrument.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `leverage` is not positive.
     pub fn set_leverage(&mut self, instrument_id: InstrumentId, leverage: Decimal) {
+        check_positive_decimal(leverage, "leverage").expect(FAILED);
         self.leverages.insert(instrument_id, leverage);
     }
 
@@ -229,7 +242,8 @@ impl MarginAccount {
     ///
     /// # Errors
     ///
-    /// Returns an error if the margin calculation produces a value that cannot be represented as `Money`.
+    /// Returns an error if leverage is not positive, or if the result cannot be represented
+    /// as `Money`.
     ///
     /// # Panics
     ///
@@ -242,11 +256,9 @@ impl MarginAccount {
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
         let notional = instrument.calculate_notional_value(quantity, price, use_quote_for_inverse);
-        let mut leverage = self.get_leverage(&instrument.id());
-        if leverage == Decimal::ZERO {
-            self.leverages
-                .insert(instrument.id(), self.default_leverage);
-            leverage = self.default_leverage;
+        let leverage = self.get_leverage(&instrument.id());
+        if leverage <= Decimal::ZERO {
+            anyhow::bail!("Invalid leverage {leverage} for {}", instrument.id());
         }
         let notional_decimal = notional.as_decimal();
         let adjusted_notional = notional_decimal / leverage;
@@ -266,7 +278,8 @@ impl MarginAccount {
     ///
     /// # Errors
     ///
-    /// Returns an error if the margin calculation produces a value that cannot be represented as `Money`.
+    /// Returns an error if leverage is not positive, or if the result cannot be represented
+    /// as `Money`.
     ///
     /// # Panics
     ///
@@ -279,11 +292,9 @@ impl MarginAccount {
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
         let notional = instrument.calculate_notional_value(quantity, price, use_quote_for_inverse);
-        let mut leverage = self.get_leverage(&instrument.id());
-        if leverage == Decimal::ZERO {
-            self.leverages
-                .insert(instrument.id(), self.default_leverage);
-            leverage = self.default_leverage;
+        let leverage = self.get_leverage(&instrument.id());
+        if leverage <= Decimal::ZERO {
+            anyhow::bail!("Invalid leverage {leverage} for {}", instrument.id());
         }
         let notional_decimal = notional.as_decimal();
         let adjusted_notional = notional_decimal / leverage;
@@ -333,9 +344,10 @@ impl MarginAccount {
 
         // Clamp margin to total balance if it would result in negative free balance.
         // This can occur transiently when venue and client state are out of sync.
+        // Locked margin must never be negative (even if total balance is negative).
         let total_free = if total_margin > current_balance.total.raw {
-            total_margin = current_balance.total.raw;
-            0
+            total_margin = current_balance.total.raw.max(0);
+            current_balance.total.raw - total_margin
         } else {
             current_balance.total.raw - total_margin
         };
@@ -899,67 +911,24 @@ mod tests {
     }
 
     #[rstest]
-    fn test_calculate_initial_margin_with_zero_leverage_falls_back_to_default(
-        mut margin_account: MarginAccount,
-        audusd_sim: CurrencyPair,
-    ) {
-        // Set default leverage
-        margin_account.set_default_leverage(Decimal::from(10));
-
-        // Set instrument-specific leverage to 0.0 (invalid)
+    #[should_panic(expected = "not positive")]
+    fn test_set_leverage_zero_panics(mut margin_account: MarginAccount, audusd_sim: CurrencyPair) {
         margin_account.set_leverage(audusd_sim.id, Decimal::ZERO);
-
-        // Should not panic, should use default leverage instead
-        let result = margin_account
-            .calculate_initial_margin(
-                audusd_sim,
-                Quantity::from(100_000),
-                Price::from("0.8"),
-                None,
-            )
-            .unwrap();
-
-        // With default leverage of 10.0, notional of 80,000 / 10 = 8,000
-        // Initial margin rate is 0.03, so 8,000 * 0.03 = 240.00
-        assert_eq!(result, Money::from("240.00 USD"));
-
-        // Verify that the hashmap was updated with default leverage
-        assert_eq!(
-            margin_account.get_leverage(&audusd_sim.id),
-            Decimal::from(10)
-        );
     }
 
     #[rstest]
-    fn test_calculate_maintenance_margin_with_zero_leverage_falls_back_to_default(
+    #[should_panic(expected = "not positive")]
+    fn test_set_default_leverage_zero_panics(mut margin_account: MarginAccount) {
+        margin_account.set_default_leverage(Decimal::ZERO);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "not positive")]
+    fn test_set_leverage_negative_panics(
         mut margin_account: MarginAccount,
         audusd_sim: CurrencyPair,
     ) {
-        // Set default leverage
-        margin_account.set_default_leverage(Decimal::from(50));
-
-        // Set instrument-specific leverage to 0.0 (invalid)
-        margin_account.set_leverage(audusd_sim.id, Decimal::ZERO);
-
-        // Should not panic, should use default leverage instead
-        let result = margin_account
-            .calculate_maintenance_margin(
-                audusd_sim,
-                Quantity::from(1_000_000),
-                Price::from("1"),
-                None,
-            )
-            .unwrap();
-
-        // With default leverage of 50.0, notional of 1,000,000 / 50 = 20,000
-        // Maintenance margin rate is 0.03, so 20,000 * 0.03 = 600.00
-        assert_eq!(result, Money::from("600.00 USD"));
-
-        // Verify that the hashmap was updated with default leverage
-        assert_eq!(
-            margin_account.get_leverage(&audusd_sim.id),
-            Decimal::from(50)
-        );
+        margin_account.set_leverage(audusd_sim.id, Decimal::from(-1));
     }
 
     #[rstest]

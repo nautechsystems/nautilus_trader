@@ -797,10 +797,16 @@ impl Position {
     ///
     /// # Panics
     ///
-    /// Panics if `self.base_currency` is `None`.
+    /// Panics if `self.base_currency` is `None`, or if `last` is not a positive price for
+    /// inverse instruments.
     #[must_use]
     pub fn notional_value(&self, last: Price) -> Money {
         if self.is_inverse {
+            check_predicate_true(
+                last.is_positive(),
+                "last price must be positive for inverse instrument",
+            )
+            .expect(FAILED);
             Money::new(
                 self.quantity.as_f64() * self.multiplier.as_f64() * (1.0 / last.as_f64()),
                 self.base_currency.unwrap(),

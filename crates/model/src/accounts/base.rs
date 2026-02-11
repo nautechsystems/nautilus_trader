@@ -19,7 +19,11 @@
 //! in this file.
 
 use ahash::AHashMap;
-use nautilus_core::{UnixNanos, datetime::secs_to_nanos_unchecked};
+use nautilus_core::{
+    UnixNanos,
+    correctness::{FAILED, check_equal},
+    datetime::secs_to_nanos_unchecked,
+};
 use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
@@ -190,7 +194,13 @@ impl BaseAccount {
         self.commissions.clone()
     }
 
+    /// Applies an [`AccountState`] event, updating balances.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `event.account_id` does not match this account's ID.
     pub fn base_apply(&mut self, event: AccountState) {
+        check_equal(&event.account_id, &self.id, "event.account_id", "self.id").expect(FAILED);
         self.update_balances(&event.balances);
         self.events.push(event);
     }
