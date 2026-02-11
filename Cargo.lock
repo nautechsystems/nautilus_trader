@@ -4912,6 +4912,7 @@ dependencies = [
  "async-trait",
  "cbindgen",
  "log",
+ "nautilus-analysis",
  "nautilus-common",
  "nautilus-core",
  "nautilus-data",

@@ -39,7 +39,7 @@ use nautilus_model::{
     accounts::AccountAny,
     data::{
         Bar, Data, InstrumentStatus, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API,
-        QuoteTick, TradeTick,
+        OrderBookDepth10, QuoteTick, TradeTick,
     },
     enums::{AccountType, BookType, OmsType},
     identifiers::{InstrumentId, Venue},
@@ -588,6 +588,37 @@ impl SimulatedExchange {
 
     /// # Panics
     ///
+    /// Panics if adding a missing instrument during depth10 processing fails.
+    pub fn process_order_book_depth10(&mut self, depth: &OrderBookDepth10) {
+        for module in &self.modules {
+            module.pre_process(Data::Depth10(Box::new(*depth)));
+        }
+
+        if !self.matching_engines.contains_key(&depth.instrument_id) {
+            let instrument = {
+                let cache = self.cache.as_ref().borrow();
+                cache.instrument(&depth.instrument_id).cloned()
+            };
+
+            if let Some(instrument) = instrument {
+                self.add_instrument(instrument).unwrap();
+            } else {
+                panic!(
+                    "No matching engine found for instrument {}",
+                    depth.instrument_id
+                );
+            }
+        }
+
+        if let Some(matching_engine) = self.matching_engines.get_mut(&depth.instrument_id) {
+            matching_engine.process_order_book_depth10(depth).unwrap();
+        } else {
+            panic!("Matching engine should be initialized");
+        }
+    }
+
+    /// # Panics
+    ///
     /// Panics if adding a missing instrument during quote tick processing fails.
     pub fn process_quote_tick(&mut self, quote: &QuoteTick) {
         for module in &self.modules {
@@ -742,7 +773,9 @@ impl SimulatedExchange {
             matching_engine.reset();
         }
 
-        // TODO Clear the inflight and message queues
+        self.message_queue.clear();
+        self.inflight_queue.clear();
+
         log::info!("Resetting exchange state");
     }
 

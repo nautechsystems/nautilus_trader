@@ -18,8 +18,10 @@
 use std::{any::Any, cell::RefCell, fmt::Debug, rc::Rc, sync::Arc};
 
 use ahash::{AHashMap, AHashSet};
+use nautilus_analysis::analyzer::PortfolioAnalyzer;
 use nautilus_common::{
     actor::DataActor,
+    cache::Cache,
     clock::{Clock, TestClock},
     component::Component,
     logging::{
@@ -36,10 +38,12 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::models::{fee::FeeModelAny, fill::FillModel, latency::LatencyModel};
 use nautilus_model::{
+    accounts::{Account, AccountAny},
     data::{Data, HasTsInit},
     enums::{AccountType, BookType, OmsType},
     identifiers::{AccountId, ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
+    position::Position,
     types::{Currency, Money},
 };
 use nautilus_system::{config::NautilusKernelConfig, kernel::NautilusKernel};
@@ -67,8 +71,12 @@ pub struct BacktestResult {
     pub backtest_end: Option<UnixNanos>,
     pub elapsed_time_secs: f64,
     pub iterations: usize,
+    pub total_events: usize,
     pub total_orders: usize,
     pub total_positions: usize,
+    pub stats_pnls: AHashMap<String, AHashMap<String, f64>>,
+    pub stats_returns: AHashMap<String, f64>,
+    pub stats_general: AHashMap<String, f64>,
 }
 
 /// Core backtesting engine for running event-driven strategy backtests on historical data.
@@ -681,13 +689,21 @@ impl BacktestEngine {
     }
 
     /// Clear all trading strategies from the engine's internal trader.
-    pub fn clear_strategies(&mut self) {
-        todo!("Requires Trader::clear_strategies()")
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any strategy fails to dispose.
+    pub fn clear_strategies(&mut self) -> anyhow::Result<()> {
+        self.kernel.trader.clear_strategies()
     }
 
     /// Clear all execution algorithms from the engine's internal trader.
-    pub fn clear_exec_algorithms(&mut self) {
-        todo!("Requires Trader::clear_exec_algorithms()")
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any execution algorithm fails to dispose.
+    pub fn clear_exec_algorithms(&mut self) -> anyhow::Result<()> {
+        self.kernel.trader.clear_exec_algorithms()
     }
 
     /// Dispose of the backtest engine, releasing all resources.
@@ -708,7 +724,19 @@ impl BacktestEngine {
 
         let cache = self.kernel.cache.borrow();
         let total_orders = cache.orders_total_count(None, None, None, None, None);
-        let total_positions = cache.positions(None, None, None, None, None).len();
+        let positions = cache.positions(None, None, None, None, None);
+        let total_positions = positions.len();
+
+        let analyzer = self.build_analyzer(&cache, &positions);
+        let mut stats_pnls = AHashMap::new();
+        for currency in analyzer.currencies() {
+            if let Ok(pnls) = analyzer.get_performance_stats_pnls(Some(currency), None) {
+                stats_pnls.insert(currency.code.to_string(), pnls);
+            }
+        }
+
+        let stats_returns = analyzer.get_performance_stats_returns();
+        let stats_general = analyzer.get_performance_stats_general();
 
         BacktestResult {
             trader_id: self.config.trader_id().to_string(),
@@ -722,9 +750,45 @@ impl BacktestEngine {
             backtest_end: self.backtest_end,
             elapsed_time_secs,
             iterations: self.iteration,
+            total_events: self.iteration,
             total_orders,
             total_positions,
+            stats_pnls,
+            stats_returns,
+            stats_general,
         }
+    }
+
+    fn build_analyzer(&self, cache: &Cache, positions: &[&Position]) -> PortfolioAnalyzer {
+        let mut analyzer = PortfolioAnalyzer::default();
+        let positions_owned: Vec<_> = positions.iter().map(|p| (*p).clone()).collect();
+
+        // Aggregate starting and current balances across all venue accounts
+        for venue in self.venues.keys() {
+            if let Some(account) = cache.account_for_venue(venue) {
+                let account_ref: &dyn Account = match account {
+                    AccountAny::Cash(cash) => cash,
+                    AccountAny::Margin(margin) => margin,
+                };
+                for (currency, money) in account_ref.starting_balances() {
+                    analyzer
+                        .account_balances_starting
+                        .entry(currency)
+                        .and_modify(|existing| *existing = *existing + money)
+                        .or_insert(money);
+                }
+                for (currency, money) in account_ref.balances_total() {
+                    analyzer
+                        .account_balances
+                        .entry(currency)
+                        .and_modify(|existing| *existing = *existing + money)
+                        .or_insert(money);
+                }
+            }
+        }
+
+        analyzer.add_positions(&positions_owned);
+        analyzer
     }
 
     fn route_data_to_exchange(&self, data: &Data) {
@@ -740,9 +804,7 @@ impl BacktestEngine {
                 Data::InstrumentClose(_) => {
                     // TODO: Add process_instrument_close to SimulatedExchange
                 }
-                Data::Depth10(_) => {
-                    // TODO: Add process_order_book_depth10 to SimulatedExchange
-                }
+                Data::Depth10(depth) => ex.process_order_book_depth10(depth),
                 Data::MarkPriceUpdate(_) | Data::IndexPriceUpdate(_) => {
                     // Not routed to exchange — processed by data engine only
                 }
@@ -940,7 +1002,8 @@ impl BacktestEngine {
     fn log_post_run(&self) {
         let cache = self.kernel.cache.borrow();
         let total_orders = cache.orders_total_count(None, None, None, None, None);
-        let total_positions = cache.positions(None, None, None, None, None).len();
+        let positions = cache.positions(None, None, None, None, None);
+        let total_positions = positions.len();
 
         log::info!("=================================================================");
         log::info!(" BACKTEST POST-RUN");
@@ -954,6 +1017,34 @@ impl BacktestEngine {
         log::info!("Iterations:     {}", self.iteration);
         log::info!("Total orders:   {total_orders}");
         log::info!("Total positions:{total_positions}");
+
+        if self.config.run_analysis {
+            let analyzer = self.build_analyzer(&cache, &positions);
+
+            for currency in analyzer.currencies() {
+                log::info!("-----------------------------------------------------------------");
+                log::info!(" PnL Statistics ({})", currency.code);
+
+                if let Ok(pnl_lines) = analyzer.get_stats_pnls_formatted(Some(currency), None) {
+                    for line in &pnl_lines {
+                        log::info!(" {line}");
+                    }
+                }
+            }
+
+            log::info!("-----------------------------------------------------------------");
+            log::info!(" Returns Statistics");
+            for line in &analyzer.get_stats_returns_formatted() {
+                log::info!(" {line}");
+            }
+
+            log::info!("-----------------------------------------------------------------");
+            log::info!(" General Statistics");
+            for line in &analyzer.get_stats_general_formatted() {
+                log::info!(" {line}");
+            }
+        }
+
         log::info!("=================================================================");
     }
 

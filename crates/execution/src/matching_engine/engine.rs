@@ -35,7 +35,10 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
-    data::{Bar, BarType, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, order::BookOrder},
+    data::{
+        Bar, BarType, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        order::BookOrder,
+    },
     enums::{
         AccountType, AggregationSource, AggressorSide, BookAction, BookType, ContingencyType,
         LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OrderSide, OrderSideSpecified,
@@ -342,6 +345,28 @@ impl OrderMatchingEngine {
 
     // -- DATA PROCESSING -------------------------------------------------------------------------
 
+    fn check_price_precision(&self, actual: u8, field: &str) -> anyhow::Result<()> {
+        let expected = self.instrument.price_precision();
+        if actual != expected {
+            anyhow::bail!(
+                "Invalid {field} precision {actual}, expected {expected} for {}",
+                self.instrument.id()
+            );
+        }
+        Ok(())
+    }
+
+    fn check_size_precision(&self, actual: u8, field: &str) -> anyhow::Result<()> {
+        let expected = self.instrument.size_precision();
+        if actual != expected {
+            anyhow::bail!(
+                "Invalid {field} precision {actual}, expected {expected} for {}",
+                self.instrument.id()
+            );
+        }
+        Ok(())
+    }
+
     /// Process the venues market for the given order book delta.
     ///
     /// # Errors
@@ -354,22 +379,8 @@ impl OrderMatchingEngine {
 
         // Validate precision for Add and Update actions (Delete/Clear may have NULL_ORDER)
         if matches!(delta.action, BookAction::Add | BookAction::Update) {
-            let price_prec = self.instrument.price_precision();
-            let size_prec = self.instrument.size_precision();
-            let instrument_id = self.instrument.id();
-
-            if delta.order.price.precision != price_prec {
-                anyhow::bail!(
-                    "Invalid delta order price precision {prec}, expected {price_prec} for {instrument_id}",
-                    prec = delta.order.price.precision
-                );
-            }
-            if delta.order.size.precision != size_prec {
-                anyhow::bail!(
-                    "Invalid delta order size precision {prec}, expected {size_prec} for {instrument_id}",
-                    prec = delta.order.size.precision
-                );
-            }
+            self.check_price_precision(delta.order.price.precision, "delta order price")?;
+            self.check_size_precision(delta.order.size.precision, "delta order size")?;
         }
 
         if self.book_type == BookType::L2_MBP || self.book_type == BookType::L3_MBO {
@@ -391,24 +402,10 @@ impl OrderMatchingEngine {
         log::debug!("Processing {deltas}");
 
         // Validate precision for Add and Update actions (Delete/Clear may have NULL_ORDER)
-        let price_prec = self.instrument.price_precision();
-        let size_prec = self.instrument.size_precision();
-        let instrument_id = self.instrument.id();
-
         for delta in &deltas.deltas {
             if matches!(delta.action, BookAction::Add | BookAction::Update) {
-                if delta.order.price.precision != price_prec {
-                    anyhow::bail!(
-                        "Invalid delta order price precision {prec}, expected {price_prec} for {instrument_id}",
-                        prec = delta.order.price.precision
-                    );
-                }
-                if delta.order.size.precision != size_prec {
-                    anyhow::bail!(
-                        "Invalid delta order size precision {prec}, expected {size_prec} for {instrument_id}",
-                        prec = delta.order.size.precision
-                    );
-                }
+                self.check_price_precision(delta.order.price.precision, "delta order price")?;
+                self.check_size_precision(delta.order.size.precision, "delta order size")?;
             }
         }
 
@@ -420,6 +417,57 @@ impl OrderMatchingEngine {
         Ok(())
     }
 
+    /// Process the venues market for the given order book depth10.
+    ///
+    /// # Errors
+    ///
+    /// - If any bid/ask price precision does not match the instrument.
+    /// - If any bid/ask size precision does not match the instrument.
+    /// - If applying the depth to the book fails.
+    ///
+    /// # Panics
+    ///
+    /// - If updating the L1 order book with the top-of-book quote fails.
+    pub fn process_order_book_depth10(&mut self, depth: &OrderBookDepth10) -> anyhow::Result<()> {
+        log::debug!("Processing OrderBookDepth10 for {}", depth.instrument_id);
+
+        // Validate precision for non-padding entries
+        for order in &depth.bids {
+            if order.side == OrderSide::NoOrderSide || !order.size.is_positive() {
+                continue;
+            }
+            self.check_price_precision(order.price.precision, "bid price")?;
+            self.check_size_precision(order.size.precision, "bid size")?;
+        }
+        for order in &depth.asks {
+            if order.side == OrderSide::NoOrderSide || !order.size.is_positive() {
+                continue;
+            }
+            self.check_price_precision(order.price.precision, "ask price")?;
+            self.check_size_precision(order.size.precision, "ask size")?;
+        }
+
+        // For L1 books, only apply top-of-book to avoid mispricing
+        // against worst-level entries when full depth is applied
+        if self.book_type == BookType::L1_MBP {
+            let quote = QuoteTick::new(
+                depth.instrument_id,
+                depth.bids[0].price,
+                depth.asks[0].price,
+                depth.bids[0].size,
+                depth.asks[0].size,
+                depth.ts_event,
+                depth.ts_init,
+            );
+            self.book.update_quote_tick(&quote).unwrap();
+        } else {
+            self.book.apply_depth(depth)?;
+        }
+
+        self.iterate(depth.ts_init, AggressorSide::NoAggressor);
+        Ok(())
+    }
+
     /// # Panics
     ///
     /// - If updating the order book with the quote tick fails.
@@ -428,30 +476,14 @@ impl OrderMatchingEngine {
     pub fn process_quote_tick(&mut self, quote: &QuoteTick) {
         log::debug!("Processing {quote}");
 
-        let price_prec = self.instrument.price_precision();
-        let size_prec = self.instrument.size_precision();
-        let instrument_id = self.instrument.id();
-
-        assert!(
-            quote.bid_price.precision == price_prec,
-            "Invalid bid_price precision {}, expected {price_prec} for {instrument_id}",
-            quote.bid_price.precision
-        );
-        assert!(
-            quote.ask_price.precision == price_prec,
-            "Invalid ask_price precision {}, expected {price_prec} for {instrument_id}",
-            quote.ask_price.precision
-        );
-        assert!(
-            quote.bid_size.precision == size_prec,
-            "Invalid bid_size precision {}, expected {size_prec} for {instrument_id}",
-            quote.bid_size.precision
-        );
-        assert!(
-            quote.ask_size.precision == size_prec,
-            "Invalid ask_size precision {}, expected {size_prec} for {instrument_id}",
-            quote.ask_size.precision
-        );
+        self.check_price_precision(quote.bid_price.precision, "bid_price")
+            .unwrap();
+        self.check_price_precision(quote.ask_price.precision, "ask_price")
+            .unwrap();
+        self.check_size_precision(quote.bid_size.precision, "bid_size")
+            .unwrap();
+        self.check_size_precision(quote.ask_size.precision, "ask_size")
+            .unwrap();
 
         if self.book_type == BookType::L1_MBP {
             self.book.update_quote_tick(quote).unwrap();
@@ -484,35 +516,16 @@ impl OrderMatchingEngine {
             return;
         }
 
-        let price_prec = self.instrument.price_precision();
-        let size_prec = self.instrument.size_precision();
-        let instrument_id = self.instrument.id();
-
-        assert!(
-            bar.open.precision == price_prec,
-            "Invalid bar open precision {}, expected {price_prec} for {instrument_id}",
-            bar.open.precision
-        );
-        assert!(
-            bar.high.precision == price_prec,
-            "Invalid bar high precision {}, expected {price_prec} for {instrument_id}",
-            bar.high.precision
-        );
-        assert!(
-            bar.low.precision == price_prec,
-            "Invalid bar low precision {}, expected {price_prec} for {instrument_id}",
-            bar.low.precision
-        );
-        assert!(
-            bar.close.precision == price_prec,
-            "Invalid bar close precision {}, expected {price_prec} for {instrument_id}",
-            bar.close.precision
-        );
-        assert!(
-            bar.volume.precision == size_prec,
-            "Invalid bar volume precision {}, expected {size_prec} for {instrument_id}",
-            bar.volume.precision
-        );
+        self.check_price_precision(bar.open.precision, "bar open")
+            .unwrap();
+        self.check_price_precision(bar.high.precision, "bar high")
+            .unwrap();
+        self.check_price_precision(bar.low.precision, "bar low")
+            .unwrap();
+        self.check_price_precision(bar.close.precision, "bar close")
+            .unwrap();
+        self.check_size_precision(bar.volume.precision, "bar volume")
+            .unwrap();
 
         let execution_bar_type =
             if let Some(execution_bar_type) = self.execution_bar_types.get(&bar.instrument_id()) {
@@ -738,20 +751,10 @@ impl OrderMatchingEngine {
     pub fn process_trade_tick(&mut self, trade: &TradeTick) {
         log::debug!("Processing {trade}");
 
-        let price_prec = self.instrument.price_precision();
-        let size_prec = self.instrument.size_precision();
-        let instrument_id = self.instrument.id();
-
-        assert!(
-            trade.price.precision == price_prec,
-            "Invalid trade price precision {}, expected {price_prec} for {instrument_id}",
-            trade.price.precision
-        );
-        assert!(
-            trade.size.precision == size_prec,
-            "Invalid trade size precision {}, expected {size_prec} for {instrument_id}",
-            trade.size.precision
-        );
+        self.check_price_precision(trade.price.precision, "trade price")
+            .unwrap();
+        self.check_size_precision(trade.size.precision, "trade size")
+            .unwrap();
 
         let price_raw = trade.price.raw;
 
@@ -2469,13 +2472,8 @@ impl OrderMatchingEngine {
         venue_position_id: Option<PositionId>,
         position: Option<Position>,
     ) {
-        let size_prec = self.instrument.size_precision();
-        let instrument_id = self.instrument.id();
-        assert!(
-            last_qty.precision == size_prec,
-            "Invalid fill quantity precision {}, expected {size_prec} for {instrument_id}",
-            last_qty.precision
-        );
+        self.check_size_precision(last_qty.precision, "fill quantity")
+            .unwrap();
 
         match self.cached_filled_qty.get(&order.client_order_id()) {
             Some(filled_qty) => {

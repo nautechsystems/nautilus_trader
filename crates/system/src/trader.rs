@@ -45,6 +45,7 @@ use nautilus_model::{
 };
 use nautilus_portfolio::portfolio::Portfolio;
 use nautilus_trading::strategy::Strategy;
+use ustr::Ustr;
 
 /// Central orchestrator for managing trading components.
 ///
@@ -82,6 +83,8 @@ pub struct Trader {
     strategy_ids: Vec<StrategyId>,
     /// Strategy stop functions for managed stop behavior.
     strategy_stop_fns: AHashMap<StrategyId, Box<dyn FnMut() -> bool>>,
+    /// Msgbus handler IDs for strategy event subscriptions (order, position).
+    strategy_handler_ids: AHashMap<StrategyId, (Ustr, Ustr)>,
     /// Registered exec algorithm IDs (algorithms stored in global registry).
     exec_algorithm_ids: Vec<ExecAlgorithmId>,
     /// Component clocks for individual components.
@@ -124,6 +127,7 @@ impl Trader {
             actor_ids: Vec::new(),
             strategy_ids: Vec::new(),
             strategy_stop_fns: AHashMap::new(),
+            strategy_handler_ids: AHashMap::new(),
             exec_algorithm_ids: Vec::new(),
             clocks: AHashMap::new(),
             ts_created,
@@ -392,26 +396,30 @@ impl Trader {
 
         let order_topic = get_event_orders_topic(strategy_id);
         let order_actor_id = actor_id;
-        let handler = TypedHandler::from(move |event: &OrderEventAny| {
+        let order_handler = TypedHandler::from(move |event: &OrderEventAny| {
             if let Some(mut strategy) = try_get_actor_unchecked::<T>(&order_actor_id) {
                 strategy.handle_order_event(event.clone());
             } else {
                 log::error!("Strategy {order_actor_id} not found for order event handling");
             }
         });
-        msgbus::subscribe_order_events(order_topic.into(), handler, None);
+        let order_handler_id = order_handler.id();
+        msgbus::subscribe_order_events(order_topic.into(), order_handler, None);
 
         let position_topic = get_event_positions_topic(strategy_id);
-        let handler = TypedHandler::from(move |event: &PositionEvent| {
+        let position_handler = TypedHandler::from(move |event: &PositionEvent| {
             if let Some(mut strategy) = try_get_actor_unchecked::<T>(&actor_id) {
                 strategy.handle_position_event(event.clone());
             } else {
                 log::error!("Strategy {actor_id} not found for position event handling");
             }
         });
-        msgbus::subscribe_position_events(position_topic.into(), handler, None);
+        let position_handler_id = position_handler.id();
+        msgbus::subscribe_position_events(position_topic.into(), position_handler, None);
 
         self.strategy_ids.push(strategy_id);
+        self.strategy_handler_ids
+            .insert(strategy_id, (order_handler_id, position_handler_id));
 
         let stop_actor_id = actor_id;
         let stop_fn = Box::new(move || -> bool {
@@ -598,6 +606,52 @@ impl Trader {
         Ok(())
     }
 
+    /// Clears all registered strategies, disposing each and removing their clocks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any strategy fails to dispose.
+    pub fn clear_strategies(&mut self) -> anyhow::Result<()> {
+        for strategy_id in &self.strategy_ids {
+            log::debug!("Disposing strategy {strategy_id}");
+            dispose_component(&strategy_id.inner())?;
+            let component_id = ComponentId::new(strategy_id.inner().as_str());
+            self.clocks.remove(&component_id);
+
+            // Remove only this strategy's own msgbus handlers
+            if let Some((order_hid, position_hid)) = self.strategy_handler_ids.get(strategy_id) {
+                let order_topic = get_event_orders_topic(*strategy_id);
+                let position_topic = get_event_positions_topic(*strategy_id);
+                msgbus::remove_order_event_handler(order_topic.into(), *order_hid);
+                msgbus::remove_position_event_handler(position_topic.into(), *position_hid);
+            }
+        }
+
+        self.strategy_ids.clear();
+        self.strategy_stop_fns.clear();
+        self.strategy_handler_ids.clear();
+
+        Ok(())
+    }
+
+    /// Clears all registered execution algorithms, disposing each and removing their clocks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any execution algorithm fails to dispose.
+    pub fn clear_exec_algorithms(&mut self) -> anyhow::Result<()> {
+        for exec_algorithm_id in &self.exec_algorithm_ids {
+            log::debug!("Disposing execution algorithm {exec_algorithm_id}");
+            dispose_component(&exec_algorithm_id.inner())?;
+            let component_id = ComponentId::new(exec_algorithm_id.inner().as_str());
+            self.clocks.remove(&component_id);
+        }
+
+        self.exec_algorithm_ids.clear();
+
+        Ok(())
+    }
+
     /// Initializes the trader, transitioning from `PreInitialized` to `Ready` state.
     ///
     /// This method must be called before starting the trader.
@@ -703,12 +757,14 @@ mod tests {
         cache::Cache,
         clock::TestClock,
         enums::{ComponentState, Environment},
-        msgbus::MessageBus,
+        msgbus,
+        msgbus::{MessageBus, TypedHandler, switchboard::get_event_orders_topic},
     };
     use nautilus_core::UUID4;
     use nautilus_data::engine::{DataEngine, config::DataEngineConfig};
     use nautilus_execution::engine::{ExecutionEngine, config::ExecutionEngineConfig};
     use nautilus_model::{
+        events::OrderAccepted,
         identifiers::{ActorId, ComponentId, TraderId},
         stubs::TestDefault,
     };
@@ -1203,5 +1259,47 @@ mod tests {
         let live_clock = trader_live.create_component_clock();
         // In live, component clock should be same as system clock
         assert_eq!(live_clock.as_ptr() as *const _, clock.as_ptr() as *const _);
+    }
+
+    #[rstest]
+    fn test_clear_strategies_preserves_other_handlers() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+            create_trader_components();
+        let trader_id = TraderId::test_default();
+        let instance_id = UUID4::new();
+
+        let mut trader = Trader::new(
+            trader_id,
+            instance_id,
+            Environment::Backtest,
+            clock,
+            cache,
+            portfolio,
+        );
+
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("Test-Strategy")),
+            ..Default::default()
+        };
+        let strategy = TestStrategy::new(config);
+        let strategy_id = StrategyId::from(strategy.actor_id().inner().as_str());
+        trader.add_strategy(strategy).unwrap();
+
+        // Simulate an exec algorithm subscribing to the same strategy topic
+        let ext_received = Rc::new(RefCell::new(0));
+        let ext_clone = ext_received.clone();
+        let ext_handler =
+            TypedHandler::from_with_id("exec-algo-handler", move |_: &OrderEventAny| {
+                *ext_clone.borrow_mut() += 1;
+            });
+        let order_topic = get_event_orders_topic(strategy_id);
+        msgbus::subscribe_order_events(order_topic.into(), ext_handler, None);
+
+        trader.clear_strategies().unwrap();
+        assert_eq!(trader.strategy_count(), 0);
+
+        let event = OrderEventAny::Accepted(OrderAccepted::test_default());
+        msgbus::publish_order_event(order_topic, &event);
+        assert_eq!(*ext_received.borrow(), 1);
     }
 }

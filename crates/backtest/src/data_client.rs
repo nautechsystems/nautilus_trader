@@ -199,30 +199,37 @@ impl DataClient for BacktestDataClient {
     }
 
     fn request_data(&self, _request: RequestCustomData) -> anyhow::Result<()> {
-        todo!()
+        // No-op in backtest: data is replayed by the engine
+        Ok(())
     }
 
     fn request_instruments(&self, _request: RequestInstruments) -> anyhow::Result<()> {
-        todo!()
+        // No-op in backtest: instruments are pre-loaded
+        Ok(())
     }
 
     fn request_instrument(&self, _request: RequestInstrument) -> anyhow::Result<()> {
-        todo!()
+        // No-op in backtest: instruments are pre-loaded
+        Ok(())
     }
 
     fn request_book_snapshot(&self, _request: RequestBookSnapshot) -> anyhow::Result<()> {
-        todo!()
+        // No-op in backtest
+        Ok(())
     }
 
     fn request_quotes(&self, _request: RequestQuotes) -> anyhow::Result<()> {
-        todo!()
+        // No-op in backtest: quotes are replayed by the engine
+        Ok(())
     }
 
     fn request_trades(&self, _request: RequestTrades) -> anyhow::Result<()> {
-        todo!()
+        // No-op in backtest: trades are replayed by the engine
+        Ok(())
     }
 
     fn request_bars(&self, _request: RequestBars) -> anyhow::Result<()> {
-        todo!()
+        // No-op in backtest: bars are replayed by the engine
+        Ok(())
     }
 }

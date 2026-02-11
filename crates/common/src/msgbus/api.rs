@@ -41,6 +41,7 @@ use nautilus_model::{
     position::Position,
 };
 use smallvec::SmallVec;
+use ustr::Ustr;
 
 use super::{
     ACCOUNT_STATE_HANDLERS, ANY_HANDLERS, BAR_HANDLERS, BOOK_HANDLERS, DELTAS_HANDLERS,
@@ -616,6 +617,22 @@ pub fn unsubscribe_position_events(pattern: MStr<Pattern>, handler: &TypedHandle
         .borrow_mut()
         .router_position_events
         .unsubscribe(pattern, handler);
+}
+
+/// Removes a specific order event handler by pattern and handler ID.
+pub fn remove_order_event_handler(pattern: MStr<Pattern>, handler_id: Ustr) {
+    get_message_bus()
+        .borrow_mut()
+        .router_order_events
+        .remove_handler(pattern, handler_id);
+}
+
+/// Removes a specific position event handler by pattern and handler ID.
+pub fn remove_position_event_handler(pattern: MStr<Pattern>, handler_id: Ustr) {
+    get_message_bus()
+        .borrow_mut()
+        .router_position_events
+        .remove_handler(pattern, handler_id);
 }
 
 /// Unsubscribes a handler from orders.
