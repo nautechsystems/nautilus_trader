@@ -536,7 +536,7 @@ impl FeedHandler {
     fn handle_order_filled(&mut self, msg: AxWsOrderFilled) -> Option<Vec<AxOrdersWsMessage>> {
         log::debug!("Order filled: {} {} @ {}", msg.o.oid, msg.xs.q, msg.xs.p);
 
-        let result = if let Some(event) = self.create_order_filled(&msg.o, &msg.xs, msg.ts) {
+        let message = if let Some(event) = self.create_order_filled(&msg.o, &msg.xs, msg.ts) {
             Some(vec![AxOrdersWsMessage::Nautilus(
                 NautilusExecWsMessage::OrderFilled(Box::new(event)),
             )])
@@ -550,16 +550,8 @@ impl FeedHandler {
             None
         };
 
-        // Clean up tracking maps for fully filled order
-        let venue_order_id = VenueOrderId::new(&msg.o.oid);
-        if let Some((_, client_order_id)) = self.venue_to_client_id.remove(&venue_order_id) {
-            self.orders_metadata.remove(&client_order_id);
-        }
-        if let Some(cid) = msg.o.cid {
-            self.cid_to_client_order_id.remove(&cid);
-        }
-
-        result
+        self.cleanup_terminal_order_tracking(&msg.o);
+        message
     }
 
     fn handle_order_canceled(&mut self, msg: AxWsOrderCanceled) -> Option<Vec<AxOrdersWsMessage>> {
@@ -907,6 +899,7 @@ impl FeedHandler {
         reason: &str,
         event_ts: i64,
     ) -> Option<OrderRejected> {
+        let venue_order_id = VenueOrderId::new(&order.oid);
         let metadata = self.lookup_order_metadata(order)?;
 
         let client_order_id = metadata.client_order_id;
@@ -918,6 +911,7 @@ impl FeedHandler {
         drop(metadata);
 
         self.orders_metadata.remove(&client_order_id);
+        self.venue_to_client_id.remove(&venue_order_id);
         if let Some(cid) = order.cid {
             self.cid_to_client_order_id.remove(&cid);
         }
@@ -938,6 +932,28 @@ impl FeedHandler {
             false,
             due_post_only,
         ))
+    }
+
+    fn cleanup_terminal_order_tracking(&self, order: &AxWsOrder) {
+        let venue_order_id = VenueOrderId::new(&order.oid);
+        let client_order_id = self
+            .venue_to_client_id
+            .get(&venue_order_id)
+            .map(|entry| *entry)
+            .or_else(|| {
+                order
+                    .cid
+                    .and_then(|cid| self.cid_to_client_order_id.get(&cid).map(|entry| *entry))
+            });
+
+        if let Some(client_order_id) = client_order_id {
+            self.orders_metadata.remove(&client_order_id);
+        }
+
+        self.venue_to_client_id.remove(&venue_order_id);
+        if let Some(cid) = order.cid {
+            self.cid_to_client_order_id.remove(&cid);
+        }
     }
 
     fn create_order_status_report(
@@ -1037,5 +1053,159 @@ impl FeedHandler {
             ts_init,
             Some(UUID4::new()),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        Arc,
+        atomic::AtomicBool,
+    };
+
+    use dashmap::DashMap;
+    use nautilus_model::{
+        identifiers::{InstrumentId, StrategyId, TraderId},
+        types::Currency,
+    };
+    use nautilus_network::websocket::AuthTracker;
+    use rust_decimal_macros::dec;
+    use ustr::Ustr;
+
+    use super::*;
+    use crate::common::enums::{AxOrderStatus, AxOrderSide, AxTimeInForce};
+
+    fn test_handler() -> FeedHandler {
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        FeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            AuthTracker::default(),
+            AccountId::from("AX-001"),
+            Arc::new(DashMap::new()),
+            Arc::new(DashMap::new()),
+            Arc::new(DashMap::new()),
+        )
+    }
+
+    fn sample_order(cid: u64) -> AxWsOrder {
+        AxWsOrder {
+            oid: "OID-1".to_string(),
+            u: "user-1".to_string(),
+            s: Ustr::from("BTCUSD-PERP"),
+            p: dec!(50000),
+            q: 100,
+            xq: 100,
+            rq: 0,
+            o: AxOrderStatus::Filled,
+            d: AxOrderSide::Buy,
+            tif: AxTimeInForce::Gtc,
+            ts: 1_700_000_000,
+            tn: 1,
+            cid: Some(cid),
+            tag: None,
+            txt: None,
+        }
+    }
+
+    fn sample_metadata(client_order_id: ClientOrderId, venue_order_id: VenueOrderId) -> OrderMetadata {
+        OrderMetadata {
+            trader_id: TraderId::from("TRADER-001"),
+            strategy_id: StrategyId::from("S-001"),
+            instrument_id: InstrumentId::from("BTCUSD-PERP.AX"),
+            client_order_id,
+            venue_order_id: Some(venue_order_id),
+            ts_init: UnixNanos::from(1_700_000_000_000_000_000u64),
+            size_precision: 8,
+            price_precision: 2,
+            quote_currency: Currency::USD(),
+        }
+    }
+
+    #[test]
+    fn test_place_order_response_cleans_pending_order() {
+        let mut handler = test_handler();
+        let request_id = 11;
+        handler.pending_orders.insert(
+            request_id,
+            WsOrderInfo {
+                client_order_id: ClientOrderId::from("CID-11"),
+                symbol: Ustr::from("BTCUSD-PERP"),
+            },
+        );
+
+        let response = AxWsOrderResponse::PlaceOrder(AxWsPlaceOrderResponse {
+            rid: request_id,
+            res: AxWsPlaceOrderResult {
+                oid: "OID-11".to_string(),
+            },
+        });
+
+        let messages = handler.handle_response(response).unwrap();
+        assert_eq!(messages.len(), 1);
+        assert!(handler.pending_orders.get(&request_id).is_none());
+    }
+
+    #[test]
+    fn test_handle_order_filled_cleans_tracking_maps() {
+        let mut handler = test_handler();
+
+        let client_order_id = ClientOrderId::from("CID-22");
+        let venue_order_id = VenueOrderId::new("OID-1");
+        let cid = 22_u64;
+
+        handler
+            .orders_metadata
+            .insert(client_order_id, sample_metadata(client_order_id, venue_order_id));
+        handler
+            .venue_to_client_id
+            .insert(venue_order_id, client_order_id);
+        handler.cid_to_client_order_id.insert(cid, client_order_id);
+
+        let msg = AxWsOrderFilled {
+            ts: 1_700_000_001,
+            tn: 2,
+            eid: "EID-1".to_string(),
+            o: sample_order(cid),
+            xs: AxWsTradeExecution {
+                tid: "T-1".to_string(),
+                s: Ustr::from("BTCUSD-PERP"),
+                q: 100,
+                p: dec!(50000),
+                d: AxOrderSide::Buy,
+                agg: true,
+            },
+        };
+
+        let messages = handler.handle_order_filled(msg).unwrap();
+        assert_eq!(messages.len(), 1);
+        assert!(handler.orders_metadata.get(&client_order_id).is_none());
+        assert!(handler.venue_to_client_id.get(&venue_order_id).is_none());
+        assert!(handler.cid_to_client_order_id.get(&cid).is_none());
+    }
+
+    #[test]
+    fn test_create_order_rejected_cleans_venue_mapping() {
+        let mut handler = test_handler();
+
+        let client_order_id = ClientOrderId::from("CID-33");
+        let venue_order_id = VenueOrderId::new("OID-1");
+        let cid = 33_u64;
+
+        handler
+            .orders_metadata
+            .insert(client_order_id, sample_metadata(client_order_id, venue_order_id));
+        handler
+            .venue_to_client_id
+            .insert(venue_order_id, client_order_id);
+        handler.cid_to_client_order_id.insert(cid, client_order_id);
+
+        let rejected = handler.create_order_rejected(&sample_order(cid), "rejected", 1_700_000_002);
+        assert!(rejected.is_some());
+        assert!(handler.orders_metadata.get(&client_order_id).is_none());
+        assert!(handler.venue_to_client_id.get(&venue_order_id).is_none());
+        assert!(handler.cid_to_client_order_id.get(&cid).is_none());
     }
 }
