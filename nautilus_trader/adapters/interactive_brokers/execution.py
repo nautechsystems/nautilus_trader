@@ -226,6 +226,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self._set_account_id(account_id)
         self._account_summary_tags = {
             "NetLiquidation",
+            "TotalCashValue",
             "FullAvailableFunds",
             "FullInitMarginReq",
             "FullMaintMarginReq",
@@ -1358,6 +1359,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                     margins=[margin_balance],
                     reported=True,
                     ts_event=self._clock.timestamp_ns(),
+                    info={
+                        "TotalCashValue": self._account_summary[currency]["TotalCashValue"],
+                    },
                 )
 
                 # Store all available fields to Cache (for now until permanent solution)

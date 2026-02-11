@@ -36,6 +36,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Added Polymarket `event_slug_builder` support (#3501), thanks @jsemldonado
 - Added Polymarket batch order support (#3506), thanks @loafer-19
 - Improved tearsheet with dynamic Nautilus version and refined run info table (#3396), thanks @KaulSe
+- Added `TotalCashValue` to IB account summary `info` dict to expose actual cash balance (#3567), thanks @shzhng
 
 ### Breaking Changes
 - Removed dead `subscribe_order_book_snapshots` and `unsubscribe_order_book_snapshots` methods from `LiveMarketDataClient` (were never called by the data engine)
