@@ -1074,6 +1074,7 @@ mod tests {
 
     use super::*;
     use crate::common::enums::{AxOrderStatus, AxOrderSide, AxTimeInForce};
+    use crate::websocket::messages::{AxWsPlaceOrderResponse, AxWsPlaceOrderResult};
 
     fn test_handler() -> FeedHandler {
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();

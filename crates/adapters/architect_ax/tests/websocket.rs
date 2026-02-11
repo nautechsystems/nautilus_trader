@@ -40,7 +40,9 @@ use nautilus_architect_ax::{
 use nautilus_common::testing::wait_until_async;
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, Venue},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, Venue, VenueOrderId,
+    },
     instruments::{CryptoPerpetual, Instrument, InstrumentAny},
     types::{Currency, Price, Quantity},
 };
@@ -1180,7 +1182,7 @@ async fn test_orders_submit_order() {
 
 #[rstest]
 #[tokio::test]
-async fn test_orders_cancel_order() {
+async fn test_orders_cancel_order_rejects_without_venue_order_id() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/orders/ws");
     let account_id = AccountId::from("AX-001");
@@ -1192,7 +1194,34 @@ async fn test_orders_cancel_order() {
     wait_for_connection(&state).await;
 
     let client_order_id = ClientOrderId::from("O-123");
-    let request_id = client.cancel_order(client_order_id, None).await.unwrap();
+    let result = client.cancel_order(client_order_id, None).await;
+    assert!(result.is_err());
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(state.get_messages().await.is_empty());
+
+    client.close().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_orders_cancel_order_with_venue_order_id() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/orders/ws");
+    let account_id = AccountId::from("AX-001");
+    let trader_id = TraderId::from("TESTER-001");
+
+    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, None);
+
+    client.connect("test_token").await.unwrap();
+    wait_for_connection(&state).await;
+
+    let client_order_id = ClientOrderId::from("O-123");
+    let venue_order_id = VenueOrderId::new("OID-123");
+    let request_id = client
+        .cancel_order(client_order_id, Some(venue_order_id))
+        .await
+        .unwrap();
 
     assert!(request_id > 0);
 
