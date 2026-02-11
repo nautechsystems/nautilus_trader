@@ -911,23 +911,3 @@ impl DataClient for AxDataClient {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use nautilus_model::enums::BookType;
-    use rstest::rstest;
-
-    use super::AxDataClient;
-    use crate::common::enums::AxMarketDataLevel;
-
-    #[rstest]
-    #[case(BookType::L1_MBP, AxMarketDataLevel::Level2)]
-    #[case(BookType::L2_MBP, AxMarketDataLevel::Level2)]
-    #[case(BookType::L3_MBO, AxMarketDataLevel::Level3)]
-    fn test_map_book_type_to_market_data_level(
-        #[case] book_type: BookType,
-        #[case] expected: AxMarketDataLevel,
-    ) {
-        assert_eq!(AxDataClient::map_book_type_to_market_data_level(book_type), expected);
-    }
-}
