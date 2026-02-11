@@ -24,7 +24,7 @@ pub struct AxDataClientConfig {
     pub api_key: Option<String>,
     /// Optional API secret for authenticated REST/WebSocket requests.
     pub api_secret: Option<String>,
-    /// Use sandbox environment (default: false).
+    /// Use sandbox environment (default: true).
     pub is_sandbox: bool,
     /// Optional override for the REST base URL.
     pub base_url_http: Option<String>,
@@ -57,7 +57,7 @@ impl Default for AxDataClientConfig {
         Self {
             api_key: None,
             api_secret: None,
-            is_sandbox: false,
+            is_sandbox: true,
             base_url_http: None,
             base_url_ws_public: None,
             base_url_ws_private: None,
@@ -123,6 +123,49 @@ impl AxDataClientConfig {
                 "wss://gateway.architect.exchange/orders/ws".to_string()
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AxDataClientConfig, AxExecClientConfig};
+
+    #[test]
+    fn test_data_client_defaults_to_sandbox_urls() {
+        let config = AxDataClientConfig::default();
+
+        assert!(config.is_sandbox);
+        assert_eq!(
+            config.http_base_url(),
+            "https://gateway.sandbox.architect.exchange/api"
+        );
+        assert_eq!(
+            config.ws_public_url(),
+            "wss://gateway.sandbox.architect.exchange/md/ws"
+        );
+        assert_eq!(
+            config.ws_private_url(),
+            "wss://gateway.sandbox.architect.exchange/orders/ws"
+        );
+    }
+
+    #[test]
+    fn test_exec_client_defaults_to_sandbox_urls() {
+        let config = AxExecClientConfig::default();
+
+        assert!(config.is_sandbox);
+        assert_eq!(
+            config.http_base_url(),
+            "https://gateway.sandbox.architect.exchange/api"
+        );
+        assert_eq!(
+            config.orders_base_url(),
+            "https://gateway.sandbox.architect.exchange/orders"
+        );
+        assert_eq!(
+            config.ws_private_url(),
+            "wss://gateway.sandbox.architect.exchange/orders/ws"
+        );
     }
 }
 
