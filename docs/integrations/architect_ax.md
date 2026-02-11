@@ -181,7 +181,7 @@ AX Exchange supports market and limit order types with stop triggers.
 
 | Feature            | Supported | Notes                                     |
 |--------------------|-----------|-------------------------------------------|
-| Order modification | ✓         | Price and quantity modification.          |
+| Order modification | -         | Not supported; use cancel and resubmit.   |
 | Cancel order       | ✓         | Single order cancellation.                |
 | Cancel all orders  | ✓         | Cancel all open orders for an instrument. |
 | Batch cancel       | ✓         | Cancel multiple specified orders.         |
