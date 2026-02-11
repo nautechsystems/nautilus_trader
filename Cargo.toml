@@ -132,7 +132,7 @@ chrono = { version = "0.4.43", default-features = false, features = [
 ] }
 chrono-tz = "0.10.4"
 clap = { version = "4.5.57", features = ["derive", "env"] }
-ctrlc = "3.5.1"
+ctrlc = "3.5.2"
 dashmap = "6.1.0"
 datafusion = { version = "52.1.0", default-features = false, features = [
   "parquet",
@@ -267,7 +267,7 @@ tokio-tungstenite = { version = "0.28.0", features = [
   "rustls-tls-webpki-roots",
 ] }
 tokio-util = { version = "0.7.18", default-features = false, features = ["io"] }
-toml = { version = "0.9.11", default-features = false, features = [
+toml = { version = "0.9.12", default-features = false, features = [
   "parse",
   "serde",
 ] }

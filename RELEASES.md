@@ -31,12 +31,12 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Added Bybit index price subscriptions support
 - Added Databento bulk subscription and historical request support (#3490), thanks @shzhng
 - Added Interactive Brokers subscribe index price functionality (#3514), thanks @Murph24
+- Added Interactive Brokers `TotalCashValue` to account summary `info` dict, exposing actual cash balance (#3567), thanks @shzhng
 - Added OKX batch cancel support for conditional (algo) orders
 - Added Polymarket data loader event-level API support (#3484), thanks @jsemldonado
 - Added Polymarket `event_slug_builder` support (#3501), thanks @jsemldonado
 - Added Polymarket batch order support (#3506), thanks @loafer-19
 - Improved tearsheet with dynamic Nautilus version and refined run info table (#3396), thanks @KaulSe
-- Added `TotalCashValue` to IB account summary `info` dict to expose actual cash balance (#3567), thanks @shzhng
 
 ### Breaking Changes
 - Removed dead `subscribe_order_book_snapshots` and `unsubscribe_order_book_snapshots` methods from `LiveMarketDataClient` (were never called by the data engine)
@@ -187,11 +187,12 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Refined greeks safeguards and docs (#3407), thanks @faysou
 - Refined processing of gaps in aggregated historical bars (#3412), thanks @faysou
 - Refined exercise and settlement of expiring instruments (#3531), thanks @faysou
-- Refined Interactive Brokers adapter (#3195), thanks @faysou
-- Refined Interactive Brokers query of option chains (#3481), thanks @faysou
 - Refined `OptionExerciseModule` (#3423), thanks @faysou
 - Refined instrument `is_spread()` method (#3434), thanks @faysou
 - Refined `OrderBookDeltas.batch` (#3437), thanks @faysou
+- Refined Interactive Brokers adapter (#3195), thanks @faysou
+- Refined Interactive Brokers query of option chains (#3481), thanks @faysou
+- Refined Interactive Brokers parsing of alternative option symbol format (#3564), thanks @faysou
 - Optimized `Price::from_decimal` with integer arithmetic
 - Optimized `Quantity::from_decimal` with integer arithmetic
 - Optimized `Money::from_decimal` with integer arithmetic
