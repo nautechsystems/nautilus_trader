@@ -66,12 +66,8 @@ pyo3-stub-gen = { workspace = true, optional = true }
 rstest = { workspace = true, optional = true }
 
 [dev-dependencies]
-arrow = { workspace = true }
 criterion = { workspace = true }
 iai = { workspace = true }
-nautilus-serialization = { workspace = true }
-nautilus-testkit = { workspace = true }
-parquet = { workspace = true, features = ["zstd"] }
 proptest = { workspace = true }
 rstest = { workspace = true }
 

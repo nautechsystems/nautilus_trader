@@ -17,17 +17,18 @@
 
 use std::{fs::File, path::PathBuf, sync::OnceLock};
 
+use indexmap::IndexMap;
 use nautilus_model::{
     data::OrderBookDelta,
     enums::{BookAction, BookType},
     identifiers::InstrumentId,
     orderbook::{OrderBook, analysis::book_check_integrity},
-    types::{Price, Quantity},
 };
 use nautilus_serialization::arrow::DecodeFromRecordBatch;
 use nautilus_testkit::common::ensure_tardis_deribit_deltas_parquet;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use rstest::rstest;
+use rust_decimal_macros::dec;
 
 // Nextest runs tests within a binary in parallel; serialize the download
 static PARQUET_PATH: OnceLock<PathBuf> = OnceLock::new();
@@ -56,46 +57,15 @@ fn load_deltas_from_parquet(limit: Option<usize>) -> Vec<OrderBookDelta> {
 const CI_DELTA_LIMIT: usize = 100_000;
 
 #[rstest]
-#[ignore]
 fn test_apply_tardis_deribit_deltas_full_replay() {
     let deltas = load_deltas_from_parquet(Some(CI_DELTA_LIMIT));
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
-    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
-    for delta in &deltas {
-        book.apply_delta(delta).unwrap();
-    }
-
-    book_check_integrity(&book).unwrap();
-
-    assert_eq!(book.instrument_id, instrument_id);
-    assert_eq!(book.best_bid_price().unwrap(), Price::from("6424.5"));
-    assert_eq!(book.best_ask_price().unwrap(), Price::from("6425.0"));
-    assert_eq!(book.best_bid_size().unwrap(), Quantity::from("4030"));
-    assert_eq!(book.best_ask_size().unwrap(), Quantity::from("84750"));
-    assert_eq!(book.spread().unwrap(), 0.5);
-    assert_eq!(book.midpoint().unwrap(), 6424.75);
-    assert_eq!(book.bids(None).count(), 1157);
-    assert_eq!(book.asks(None).count(), 956);
-    assert_eq!(book.update_count, 100_000);
-    assert_eq!(book.sequence, 0);
-    assert_eq!(book.ts_last.as_u64(), 1_585_699_686_323_000_000);
-
-    println!("{}", book.pprint(5, None));
-}
-
-#[rstest]
-#[ignore]
-fn test_tardis_deribit_snapshot_boundaries() {
-    let deltas = load_deltas_from_parquet(Some(CI_DELTA_LIMIT));
-
-    let mut clear_count = 0;
+    // Validate dataset preconditions
+    assert_eq!(deltas[0].action, BookAction::Clear);
+    assert_eq!(deltas[0].instrument_id, instrument_id);
     let mut last_ts = deltas[0].ts_event;
-
     for delta in &deltas {
-        if delta.action == BookAction::Clear {
-            clear_count += 1;
-        }
         assert!(
             delta.ts_event >= last_ts,
             "Timestamps not monotonic: {} < {}",
@@ -105,26 +75,43 @@ fn test_tardis_deribit_snapshot_boundaries() {
         last_ts = delta.ts_event;
     }
 
-    assert!(clear_count > 0, "Expected at least one CLEAR delta");
-    println!("CLEAR deltas: {clear_count}");
-}
+    // Replay through order book
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+    for delta in &deltas {
+        book.apply_delta(delta).unwrap();
+    }
 
-#[rstest]
-#[ignore]
-fn test_tardis_deribit_spot_checks() {
-    let deltas = load_deltas_from_parquet(Some(CI_DELTA_LIMIT));
+    book_check_integrity(&book).unwrap();
 
-    assert!(
-        deltas.len() >= 100_000,
-        "Expected >=100K deltas, found {}",
-        deltas.len(),
-    );
+    assert_eq!(book.instrument_id, instrument_id);
+    assert_eq!(book.spread().unwrap(), 0.5);
+    assert_eq!(book.midpoint().unwrap(), 6424.75);
+    assert_eq!(book.bids(None).count(), 1157);
+    assert_eq!(book.asks(None).count(), 956);
+    assert_eq!(book.update_count, 100_000);
+    assert_eq!(book.sequence, 0);
+    assert_eq!(book.ts_last.as_u64(), 1_585_699_686_323_000_000);
 
-    assert_eq!(deltas[0].action, BookAction::Clear);
     assert_eq!(
-        deltas[0].instrument_id,
-        InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+        book.bids_as_map(Some(5)),
+        IndexMap::from([
+            (dec!(6424.5), dec!(4030)),
+            (dec!(6423.5), dec!(20)),
+            (dec!(6423.0), dec!(2800)),
+            (dec!(6422.5), dec!(390)),
+            (dec!(6422.0), dec!(15730)),
+        ]),
+    );
+    assert_eq!(
+        book.asks_as_map(Some(5)),
+        IndexMap::from([
+            (dec!(6425.0), dec!(84750)),
+            (dec!(6425.5), dec!(27740)),
+            (dec!(6426.0), dec!(1440)),
+            (dec!(6426.5), dec!(12980)),
+            (dec!(6427.0), dec!(20800)),
+        ]),
     );
 
-    println!("Total deltas: {}", deltas.len());
+    println!("{}", book.pprint(5, None));
 }
