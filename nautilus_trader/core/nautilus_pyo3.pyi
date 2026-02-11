@@ -5735,6 +5735,13 @@ class AxHttpClient:
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
     ) -> list[Any]: ...
+    async def request_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        limit: int | None = None,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
+    ) -> list[TradeTick]: ...
     async def request_bars(
         self,
         bar_type: BarType,
@@ -5745,6 +5752,16 @@ class AxHttpClient:
         self,
         account_id: AccountId,
     ) -> AccountState: ...
+    async def request_order_status(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        time_in_force: TimeInForce,
+        client_order_id: ClientOrderId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+    ) -> OrderStatusReport: ...
     async def request_order_status_reports(
         self,
         account_id: AccountId,

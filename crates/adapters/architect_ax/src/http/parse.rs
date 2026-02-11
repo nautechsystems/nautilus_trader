@@ -18,10 +18,10 @@
 use anyhow::Context;
 use nautilus_core::{UUID4, nanos::UnixNanos};
 use nautilus_model::{
-    data::{Bar, BarSpecification, BarType, FundingRateUpdate},
+    data::{Bar, BarSpecification, BarType, FundingRateUpdate, TradeTick},
     enums::{
-        AccountType, AggregationSource, BarAggregation, CurrencyType, LiquiditySide, OrderSide,
-        OrderType, PositionSideSpecified, PriceType,
+        AccountType, AggregationSource, AggressorSide, BarAggregation, CurrencyType, LiquiditySide,
+        OrderSide, OrderType, PositionSideSpecified, PriceType,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
@@ -33,8 +33,13 @@ use rust_decimal::Decimal;
 
 use super::models::{
     AxBalancesResponse, AxCandle, AxFill, AxFundingRate, AxInstrument, AxOpenOrder, AxPosition,
+    AxRestTrade,
 };
-use crate::common::{consts::AX_VENUE, enums::AxCandleWidth, parse::cid_to_client_order_id};
+use crate::common::{
+    consts::AX_VENUE,
+    enums::AxCandleWidth,
+    parse::{ax_timestamp_ns_to_unix_nanos, ax_timestamp_s_to_unix_nanos, cid_to_client_order_id},
+};
 
 fn decimal_to_price(value: Decimal, field_name: &str) -> anyhow::Result<Price> {
     Price::from_decimal(value)
@@ -111,7 +116,7 @@ pub fn parse_bar(
     // Ax provides volume as i64 contracts
     let volume = Quantity::new(candle.volume as f64, size_precision);
 
-    let ts_event = UnixNanos::from((candle.ts as u64) * 1_000_000_000);
+    let ts_event = ax_timestamp_s_to_unix_nanos(candle.ts);
 
     let bar_spec = candle_width_to_bar_spec(candle.width);
     let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::External);
@@ -131,7 +136,7 @@ pub fn parse_funding_rate(
         instrument_id,
         ax_rate.funding_rate,
         None, // AX doesn't provide next funding time
-        UnixNanos::from(ax_rate.timestamp_ns as u64),
+        ax_timestamp_ns_to_unix_nanos(ax_rate.timestamp_ns),
         ts_init,
     )
 }
@@ -300,7 +305,7 @@ where
     let price = decimal_to_price_dp(order.p, instrument.price_precision(), "order.p")?;
 
     // Ax timestamps are in Unix epoch seconds
-    let ts_event = UnixNanos::from((order.ts as u64) * 1_000_000_000);
+    let ts_event = ax_timestamp_s_to_unix_nanos(order.ts);
 
     let mut report = OrderStatusReport::new(
         account_id,
@@ -462,6 +467,40 @@ pub fn parse_position_status_report(
         None,
         avg_px_open,
     ))
+}
+
+/// Parses an Ax REST trade into a Nautilus [`TradeTick`].
+///
+/// # Errors
+///
+/// Returns an error if any field cannot be parsed.
+pub fn parse_trade_tick(
+    trade: &AxRestTrade,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<TradeTick> {
+    let price = decimal_to_price_dp(trade.p, instrument.price_precision(), "trade.p")?;
+    let size = Quantity::new(trade.q as f64, instrument.size_precision());
+    let aggressor_side: AggressorSide = trade.d.into();
+
+    // Combine seconds + nanoseconds into full timestamp
+    let ts_event = UnixNanos::from(trade.ts as u64 * 1_000_000_000 + trade.tn as u64);
+
+    // Use nanosecond timestamp as trade ID (unique per trade)
+    let mut buf = itoa::Buffer::new();
+    let trade_id =
+        TradeId::new_checked(buf.format(ts_event.as_u64())).context("Failed to create TradeId")?;
+
+    TradeTick::new_checked(
+        instrument.id(),
+        price,
+        size,
+        aggressor_side,
+        trade_id,
+        ts_event,
+        ts_init,
+    )
+    .context("Failed to construct TradeTick from Ax REST trade")
 }
 
 #[cfg(test)]

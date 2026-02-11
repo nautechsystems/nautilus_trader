@@ -123,6 +123,8 @@ pub(crate) struct FeedHandler {
     needs_subscription_replay: bool,
     book_sequences: AHashMap<Ustr, u64>,
     candle_cache: AHashMap<(Ustr, AxCandleWidth), AxMdCandle>,
+    /// Maps request_id -> subscription topic for pending subscribe requests
+    pending_subscribe_requests: AHashMap<i64, String>,
 }
 
 impl FeedHandler {
@@ -151,6 +153,7 @@ impl FeedHandler {
             needs_subscription_replay: false,
             book_sequences: AHashMap::new(),
             candle_cache: AHashMap::new(),
+            pending_subscribe_requests: AHashMap::new(),
         }
     }
 
@@ -326,6 +329,8 @@ impl FeedHandler {
                 log::debug!(
                     "Subscribe command received: request_id={request_id}, symbol={symbol}, level={level:?}"
                 );
+                let topic = format!("{symbol}:{level:?}");
+                self.pending_subscribe_requests.insert(request_id, topic);
                 self.send_subscribe(request_id, symbol, level).await;
             }
             HandlerCommand::Unsubscribe { request_id, symbol } => {
@@ -342,6 +347,8 @@ impl FeedHandler {
                 log::debug!(
                     "SubscribeCandles command received: request_id={request_id}, symbol={symbol}, width={width:?}"
                 );
+                let topic = format!("candles:{symbol}:{width:?}");
+                self.pending_subscribe_requests.insert(request_id, topic);
                 self.send_subscribe_candles(request_id, symbol, width).await;
             }
             HandlerCommand::UnsubscribeCandles {
@@ -594,18 +601,34 @@ impl FeedHandler {
                 Some(vec![NautilusDataWsMessage::Heartbeat])
             }
             AxMdMessage::Error(error) => {
-                // Subscription state messages are benign (e.g. duplicate subscribe/unsubscribe)
-                if error.message.contains("already subscribed")
-                    || error.message.contains("not subscribed")
-                {
+                let is_benign = error.message.contains("already subscribed")
+                    || error.message.contains("not subscribed");
+
+                if is_benign {
+                    // Benign: venue state matches intent, just clean up tracking
+                    if let Some(rid) = error.request_id {
+                        self.pending_subscribe_requests.remove(&rid);
+                    }
                     log::warn!("Subscription state: {}", error.message);
                 } else {
+                    // Real error: roll back subscription state
+                    if let Some(rid) = error.request_id
+                        && let Some(topic) = self.pending_subscribe_requests.remove(&rid)
+                    {
+                        log::warn!(
+                            "Rolling back subscription for topic '{topic}' \
+                             due to error: {}",
+                            error.message
+                        );
+                        self.subscriptions.mark_unsubscribe(&topic);
+                    }
                     log::error!("Received error from exchange: {}", error.message);
                 }
                 Some(vec![NautilusDataWsMessage::Error(error)])
             }
             AxMdMessage::SubscriptionResponse(response) => {
-                // Log subscription confirmations at debug level
+                self.pending_subscribe_requests.remove(&response.rid);
+
                 if let Some(symbol) = &response.result.subscribed {
                     log::debug!("Subscription confirmed for symbol: {symbol}");
                 } else if let Some(candle) = &response.result.subscribed_candle {

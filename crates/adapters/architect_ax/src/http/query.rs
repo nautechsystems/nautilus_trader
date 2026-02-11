@@ -25,7 +25,7 @@
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use crate::common::enums::AxCandleWidth;
+use crate::common::enums::{AxCandleWidth, AxOrderStatus};
 
 /// Parameters for the GET /ticker endpoint.
 ///
@@ -165,6 +165,118 @@ impl GetTransactionsParams {
     }
 }
 
+/// Parameters for the GET /trades endpoint.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/market-data/get-trades>
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct GetTradesParams {
+    /// Instrument symbol, e.g. "BTC-PERP".
+    pub symbol: Ustr,
+    /// Maximum number of trades to return (max 100, default 10).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<i32>,
+}
+
+impl GetTradesParams {
+    /// Creates a new [`GetTradesParams`].
+    #[must_use]
+    pub fn new(symbol: Ustr, limit: Option<i32>) -> Self {
+        Self { symbol, limit }
+    }
+}
+
+/// Parameters for the GET /book endpoint.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/market-data/get-book>
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct GetBookParams {
+    /// Instrument symbol, e.g. "BTC-PERP".
+    pub symbol: Ustr,
+    /// Book depth level: 2 (aggregated) or 3 (individual orders). Defaults to 2.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub level: Option<i32>,
+}
+
+impl GetBookParams {
+    /// Creates a new [`GetBookParams`].
+    #[must_use]
+    pub fn new(symbol: Ustr, level: Option<i32>) -> Self {
+        Self { symbol, level }
+    }
+}
+
+/// Parameters for the GET /order-status endpoint.
+///
+/// Exactly one of `order_id` or `client_order_id` must be provided.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/order-management/get-order-status>
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct GetOrderStatusParams {
+    /// Order ID (e.g. "O-01ARZ3NDEKTSV4RRFFQ69G5FAV").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_id: Option<String>,
+    /// Client order ID (64-bit integer).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_order_id: Option<u64>,
+}
+
+impl GetOrderStatusParams {
+    /// Creates params to look up by venue order ID.
+    #[must_use]
+    pub fn by_order_id(order_id: impl Into<String>) -> Self {
+        Self {
+            order_id: Some(order_id.into()),
+            client_order_id: None,
+        }
+    }
+
+    /// Creates params to look up by client order ID.
+    #[must_use]
+    pub fn by_client_order_id(cid: u64) -> Self {
+        Self {
+            order_id: None,
+            client_order_id: Some(cid),
+        }
+    }
+}
+
+/// Parameters for the GET /orders endpoint.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/order-management/get-orders>
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct GetOrdersParams {
+    /// Filter by trading symbol.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<Ustr>,
+    /// Beginning of time range (ISO 8601).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<String>,
+    /// End of time range (ISO 8601).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_time: Option<String>,
+    /// Maximum results returned.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<i32>,
+    /// Pagination offset.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<i32>,
+    /// Filter by order state.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_state: Option<AxOrderStatus>,
+}
+
+impl GetOrdersParams {
+    /// Creates a new empty [`GetOrdersParams`].
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -216,5 +328,43 @@ mod tests {
         assert!(qs.contains("symbol=GBPUSD-PERP"));
         assert!(qs.contains("start_timestamp_ns=1000000000"));
         assert!(qs.contains("end_timestamp_ns=2000000000"));
+    }
+
+    #[rstest]
+    fn test_get_trades_params_serialization() {
+        let params = GetTradesParams::new(Ustr::from("BTC-PERP"), Some(50));
+        let qs = serde_urlencoded::to_string(&params).unwrap();
+        assert!(qs.contains("symbol=BTC-PERP"));
+        assert!(qs.contains("limit=50"));
+    }
+
+    #[rstest]
+    fn test_get_trades_params_serialization_no_limit() {
+        let params = GetTradesParams::new(Ustr::from("BTC-PERP"), None);
+        let qs = serde_urlencoded::to_string(&params).unwrap();
+        assert_eq!(qs, "symbol=BTC-PERP");
+    }
+
+    #[rstest]
+    fn test_get_book_params_serialization() {
+        let params = GetBookParams::new(Ustr::from("EURUSD-PERP"), Some(3));
+        let qs = serde_urlencoded::to_string(&params).unwrap();
+        assert!(qs.contains("symbol=EURUSD-PERP"));
+        assert!(qs.contains("level=3"));
+    }
+
+    #[rstest]
+    fn test_get_order_status_by_order_id_serialization() {
+        let params = GetOrderStatusParams::by_order_id("O-01ARZ3NDEKTSV4RRFFQ69G5FAV");
+        let qs = serde_urlencoded::to_string(&params).unwrap();
+        assert!(qs.contains("order_id=O-01ARZ3NDEKTSV4RRFFQ69G5FAV"));
+        assert!(!qs.contains("client_order_id"));
+    }
+
+    #[rstest]
+    fn test_get_order_status_by_client_order_id_serialization() {
+        let params = GetOrderStatusParams::by_client_order_id(12345);
+        let qs = serde_urlencoded::to_string(&params).unwrap();
+        assert_eq!(qs, "client_order_id=12345");
     }
 }

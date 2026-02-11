@@ -112,7 +112,7 @@ pub struct AxMdWebSocketClient {
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<NautilusDataWsMessage>>>,
     signal: Arc<AtomicBool>,
-    task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
+    task_handle: Option<tokio::task::JoinHandle<()>>,
     subscriptions: SubscriptionState,
     instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
     request_id_counter: Arc<AtomicI64>,
@@ -138,9 +138,9 @@ impl Clone for AxMdWebSocketClient {
             auth_token: self.auth_token.clone(),
             connection_mode: Arc::clone(&self.connection_mode),
             cmd_tx: Arc::clone(&self.cmd_tx),
-            out_rx: None, // Each clone gets its own receiver
+            out_rx: None,
             signal: Arc::clone(&self.signal),
-            task_handle: None, // Each clone gets its own task handle
+            task_handle: None,
             subscriptions: self.subscriptions.clone(),
             subscribe_lock: Arc::clone(&self.subscribe_lock),
             instruments_cache: Arc::clone(&self.instruments_cache),
@@ -428,7 +428,7 @@ impl AxMdWebSocketClient {
             log::debug!("Handler loop exited");
         });
 
-        self.task_handle = Some(Arc::new(stream_handle));
+        self.task_handle = Some(stream_handle);
 
         Ok(())
     }
@@ -736,6 +736,7 @@ impl AxMdWebSocketClient {
     ///
     /// Returns an error if the subscription command cannot be sent.
     pub async fn subscribe_candles(&self, symbol: &str, width: AxCandleWidth) -> AxWsResult<()> {
+        let _guard = self.subscribe_lock.lock().await;
         let topic = format!("candles:{symbol}:{width:?}");
 
         // Skip if already subscribed or pending
@@ -821,21 +822,14 @@ impl AxMdWebSocketClient {
 
         if let Some(handle) = self.task_handle.take() {
             const CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
+            let abort_handle = handle.abort_handle();
 
-            match tokio::time::timeout(CLOSE_TIMEOUT, async {
-                loop {
-                    if Arc::strong_count(&handle) == 1 {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                }
-            })
-            .await
-            {
-                Ok(()) => log::debug!("Handler task completed gracefully"),
+            match tokio::time::timeout(CLOSE_TIMEOUT, handle).await {
+                Ok(Ok(())) => log::debug!("Handler task completed gracefully"),
+                Ok(Err(e)) => log::warn!("Handler task panicked: {e}"),
                 Err(_) => {
                     log::warn!("Handler task did not complete within timeout, aborting");
-                    handle.abort();
+                    abort_handle.abort();
                 }
             }
         }

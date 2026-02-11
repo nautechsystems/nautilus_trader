@@ -28,14 +28,17 @@ use std::{
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_core::{
-    consts::NAUTILUS_USER_AGENT, nanos::UnixNanos, time::get_atomic_clock_realtime,
+    UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    data::{Bar, FundingRateUpdate},
+    data::{Bar, BookOrder, FundingRateUpdate, TradeTick},
+    enums::{BookType, OrderSide, OrderType, TimeInForce},
     events::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument, any::InstrumentAny},
+    orderbook::OrderBook,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
+    types::{Price, Quantity},
 };
 use nautilus_network::{
     http::HttpClient,
@@ -52,26 +55,31 @@ use super::{
     error::AxHttpError,
     models::{
         AuthenticateApiKeyRequest, AxAuthenticateResponse, AxBalancesResponse,
-        AxBatchCancelOrdersResponse, AxCancelAllOrdersResponse, AxCancelOrderResponse, AxCandle,
-        AxCandleResponse, AxCandlesResponse, AxFillsResponse, AxFundingRatesResponse, AxInstrument,
-        AxInstrumentsResponse, AxOpenOrdersResponse, AxPlaceOrderResponse, AxPositionsResponse,
-        AxPreviewAggressiveLimitOrderResponse, AxRiskSnapshotResponse, AxTicker, AxTickersResponse,
+        AxBatchCancelOrdersResponse, AxBookResponse, AxCancelAllOrdersResponse,
+        AxCancelOrderResponse, AxCandle, AxCandleResponse, AxCandlesResponse, AxFillsResponse,
+        AxFundingRatesResponse, AxInitialMarginRequirementResponse, AxInstrument,
+        AxInstrumentsResponse, AxOpenOrdersResponse, AxOrderStatusQueryResponse, AxOrdersResponse,
+        AxPlaceOrderResponse, AxPositionsResponse, AxPreviewAggressiveLimitOrderResponse,
+        AxRiskSnapshotResponse, AxTicker, AxTickersResponse, AxTradesResponse,
         AxTransactionsResponse, AxWhoAmI, BatchCancelOrdersRequest, CancelAllOrdersRequest,
         CancelOrderRequest, PlaceOrderRequest, PreviewAggressiveLimitOrderRequest,
     },
     parse::{
         parse_account_state, parse_bar, parse_fill_report, parse_funding_rate,
         parse_order_status_report, parse_perp_instrument, parse_position_status_report,
+        parse_trade_tick,
     },
     query::{
-        GetCandleParams, GetCandlesParams, GetFundingRatesParams, GetInstrumentParams,
-        GetTickerParams, GetTransactionsParams,
+        GetBookParams, GetCandleParams, GetCandlesParams, GetFundingRatesParams,
+        GetInstrumentParams, GetOrderStatusParams, GetOrdersParams, GetTickerParams,
+        GetTradesParams, GetTransactionsParams,
     },
 };
 use crate::common::{
     consts::{AX_HTTP_URL, AX_ORDERS_URL},
     credential::Credential,
     enums::{AxCandleWidth, AxInstrumentState},
+    parse::client_order_id_to_cid,
 };
 
 /// Default Ax REST API rate limit.
@@ -94,7 +102,7 @@ pub struct AxRawHttpClient {
     credential: Option<Credential>,
     session_token: RwLock<Option<String>>,
     retry_manager: RetryManager<AxHttpError>,
-    cancellation_token: CancellationToken,
+    cancellation_token: RwLock<CancellationToken>,
 }
 
 impl Default for AxRawHttpClient {
@@ -132,13 +140,36 @@ impl AxRawHttpClient {
     }
 
     /// Cancel all pending HTTP requests.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cancellation token lock is poisoned.
     pub fn cancel_all_requests(&self) {
-        self.cancellation_token.cancel();
+        self.cancellation_token
+            .read()
+            .expect("Lock poisoned")
+            .cancel();
     }
 
-    /// Get the cancellation token for this client.
-    pub fn cancellation_token(&self) -> &CancellationToken {
-        &self.cancellation_token
+    /// Replaces the cancelled token so new requests can proceed after reconnect.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cancellation token lock is poisoned.
+    pub fn reset_cancellation_token(&self) {
+        *self.cancellation_token.write().expect("Lock poisoned") = CancellationToken::new();
+    }
+
+    /// Get a clone of the current cancellation token.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cancellation token lock is poisoned.
+    pub fn cancellation_token(&self) -> CancellationToken {
+        self.cancellation_token
+            .read()
+            .expect("Lock poisoned")
+            .clone()
     }
 
     /// Creates a new [`AxRawHttpClient`] using the default Ax HTTP URL.
@@ -184,7 +215,7 @@ impl AxRawHttpClient {
             credential: None,
             session_token: RwLock::new(None),
             retry_manager,
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: RwLock::new(CancellationToken::new()),
         })
     }
 
@@ -233,7 +264,7 @@ impl AxRawHttpClient {
             credential: Some(Credential::new(api_key, api_secret)),
             session_token: RwLock::new(None),
             retry_manager,
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: RwLock::new(CancellationToken::new()),
         })
     }
 
@@ -388,13 +419,19 @@ impl AxRawHttpClient {
             }
         };
 
+        let cancel_token = self
+            .cancellation_token
+            .read()
+            .expect("Lock poisoned")
+            .clone();
+
         self.retry_manager
             .execute_with_retry_with_cancel(
                 endpoint.as_str(),
                 operation,
                 should_retry,
                 create_error,
-                &self.cancellation_token,
+                &cancel_token,
             )
             .await
     }
@@ -867,6 +904,138 @@ impl AxRawHttpClient {
         )
         .await
     }
+
+    /// Fetches recent trades for a symbol.
+    ///
+    /// # Endpoint
+    /// `GET /trades`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_trades(
+        &self,
+        symbol: Ustr,
+        limit: Option<i32>,
+    ) -> Result<AxTradesResponse, AxHttpError> {
+        let params = GetTradesParams::new(symbol, limit);
+        self.send_request::<AxTradesResponse, _>(Method::GET, "/trades", Some(&params), None, true)
+            .await
+    }
+
+    /// Fetches an order book snapshot for a symbol.
+    ///
+    /// # Endpoint
+    /// `GET /book`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_book(
+        &self,
+        symbol: Ustr,
+        level: Option<i32>,
+    ) -> Result<AxBookResponse, AxHttpError> {
+        let params = GetBookParams::new(symbol, level);
+        self.send_request::<AxBookResponse, _>(Method::GET, "/book", Some(&params), None, false)
+            .await
+    }
+
+    /// Fetches the status of a single order by order ID.
+    ///
+    /// # Endpoint
+    /// `GET /order-status` (orders base URL)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_order_status_by_id(
+        &self,
+        order_id: &str,
+    ) -> Result<AxOrderStatusQueryResponse, AxHttpError> {
+        let params = GetOrderStatusParams::by_order_id(order_id);
+        self.send_request_to_url::<AxOrderStatusQueryResponse, _>(
+            &self.orders_base_url,
+            Method::GET,
+            "/order-status",
+            Some(&params),
+            None,
+            true,
+        )
+        .await
+    }
+
+    /// Fetches the status of a single order by client order ID.
+    ///
+    /// # Endpoint
+    /// `GET /order-status` (orders base URL)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_order_status_by_cid(
+        &self,
+        client_order_id: u64,
+    ) -> Result<AxOrderStatusQueryResponse, AxHttpError> {
+        let params = GetOrderStatusParams::by_client_order_id(client_order_id);
+        self.send_request_to_url::<AxOrderStatusQueryResponse, _>(
+            &self.orders_base_url,
+            Method::GET,
+            "/order-status",
+            Some(&params),
+            None,
+            true,
+        )
+        .await
+    }
+
+    /// Fetches historical orders with optional filters.
+    ///
+    /// # Endpoint
+    /// `GET /orders` (orders base URL)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_orders(
+        &self,
+        params: &GetOrdersParams,
+    ) -> Result<AxOrdersResponse, AxHttpError> {
+        self.send_request_to_url::<AxOrdersResponse, _>(
+            &self.orders_base_url,
+            Method::GET,
+            "/orders",
+            Some(params),
+            None,
+            true,
+        )
+        .await
+    }
+
+    /// Checks the initial margin requirement for a proposed order.
+    ///
+    /// # Endpoint
+    /// `POST /initial-margin-requirement` (orders base URL)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn check_initial_margin(
+        &self,
+        request: &PlaceOrderRequest,
+    ) -> Result<AxInitialMarginRequirementResponse, AxHttpError> {
+        let body = serde_json::to_vec(request)
+            .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
+        self.send_request_to_url::<AxInitialMarginRequirementResponse, ()>(
+            &self.orders_base_url,
+            Method::POST,
+            "/initial-margin-requirement",
+            None,
+            Some(body),
+            true,
+        )
+        .await
+    }
 }
 
 /// High-level HTTP client for the Ax REST API.
@@ -981,6 +1150,11 @@ impl AxHttpClient {
     /// Cancel all pending HTTP requests.
     pub fn cancel_all_requests(&self) {
         self.inner.cancel_all_requests();
+    }
+
+    /// Replaces the cancelled token so new requests can proceed after reconnect.
+    pub fn reset_cancellation_token(&self) {
+        self.inner.reset_cancellation_token();
     }
 
     /// Sets the session token for authenticated requests.
@@ -1150,6 +1324,116 @@ impl AxHttpClient {
         parse_perp_instrument(&resp, maker_fee, taker_fee, ts_init, ts_init)
     }
 
+    /// Requests an order book snapshot from Ax and builds a Nautilus [`OrderBook`].
+    ///
+    /// Requires the instrument to be cached.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The instrument is not found in the cache.
+    /// - The HTTP request fails.
+    pub async fn request_book_snapshot(
+        &self,
+        symbol: Ustr,
+        depth: Option<usize>,
+    ) -> anyhow::Result<OrderBook> {
+        let instrument = self
+            .get_instrument(&symbol)
+            .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not found in cache"))?;
+
+        let resp = self
+            .inner
+            .get_book(symbol, Some(2))
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        let instrument_id = instrument.id();
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+        let price_precision = instrument.price_precision();
+        let size_precision = instrument.size_precision();
+        let ts_event = UnixNanos::from(resp.book.ts as u64 * 1_000_000_000 + resp.book.tn as u64);
+
+        for (i, level) in resp.book.b.iter().enumerate() {
+            if depth.is_some_and(|d| i >= d) {
+                break;
+            }
+            let price = Price::from_decimal_dp(level.p, price_precision)
+                .unwrap_or_else(|_| Price::from(level.p.to_string().as_str()));
+            let size = Quantity::new(level.q as f64, size_precision);
+            let order = BookOrder::new(OrderSide::Buy, price, size, i as u64);
+            book.add(order, 0, i as u64, ts_event);
+        }
+
+        let bids_len = resp.book.b.len();
+        for (i, level) in resp.book.a.iter().enumerate() {
+            if depth.is_some_and(|d| i >= d) {
+                break;
+            }
+            let price = Price::from_decimal_dp(level.p, price_precision)
+                .unwrap_or_else(|_| Price::from(level.p.to_string().as_str()));
+            let size = Quantity::new(level.q as f64, size_precision);
+            let order = BookOrder::new(OrderSide::Sell, price, size, (bids_len + i) as u64);
+            book.add(order, 0, (bids_len + i) as u64, ts_event);
+        }
+
+        Ok(book)
+    }
+
+    /// Requests recent trades from Ax and parses them to Nautilus [`TradeTick`].
+    ///
+    /// The AX trades endpoint does not accept time range parameters, so
+    /// `start` and `end` are applied as client-side filters after fetching.
+    ///
+    /// Requires the instrument to be cached.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The instrument is not found in the cache.
+    /// - The HTTP request fails.
+    /// - Trade parsing fails.
+    pub async fn request_trade_ticks(
+        &self,
+        symbol: Ustr,
+        limit: Option<i32>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<TradeTick>> {
+        let instrument = self
+            .get_instrument(&symbol)
+            .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not found in cache"))?;
+
+        let resp = self
+            .inner
+            .get_trades(symbol, limit)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        let ts_init = self.generate_ts_init();
+        let mut ticks = Vec::with_capacity(resp.trades.len());
+
+        for trade in &resp.trades {
+            match parse_trade_tick(trade, &instrument, ts_init) {
+                Ok(tick) => {
+                    if start.is_some_and(|s| tick.ts_event < s) {
+                        continue;
+                    }
+                    if end.is_some_and(|e| tick.ts_event > e) {
+                        continue;
+                    }
+                    ticks.push(tick);
+                }
+                Err(e) => {
+                    log::warn!("Failed to parse trade for {symbol}: {e}");
+                }
+            }
+        }
+
+        Ok(ticks)
+    }
+
     /// Requests historical bars from Ax and parses them to Nautilus Bar types.
     ///
     /// Requires the instrument to be cached (call `request_instruments` first).
@@ -1244,6 +1528,89 @@ impl AxHttpClient {
 
         let ts_init = self.generate_ts_init();
         parse_account_state(&response, account_id, ts_init, ts_init)
+    }
+
+    /// Checks the initial margin requirement for a proposed order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails.
+    pub async fn check_initial_margin(
+        &self,
+        request: &PlaceOrderRequest,
+    ) -> anyhow::Result<Decimal> {
+        let resp = self
+            .inner
+            .check_initial_margin(request)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        Ok(resp.im)
+    }
+
+    /// Queries a single order by venue order ID or client order ID using the
+    /// dedicated `/order-status` endpoint, which works for any order state.
+    ///
+    /// The caller must supply `order_side`, `order_type`, and `time_in_force`
+    /// because the endpoint does not return these fields.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Neither `venue_order_id` nor `client_order_id` is provided.
+    /// - The HTTP request fails.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn request_order_status(
+        &self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+        order_side: OrderSide,
+        order_type: OrderType,
+        time_in_force: TimeInForce,
+    ) -> anyhow::Result<OrderStatusReport> {
+        let resp = if let Some(ref voi) = venue_order_id {
+            self.inner.get_order_status_by_id(voi.as_str()).await
+        } else if let Some(ref coid) = client_order_id {
+            let cid = client_order_id_to_cid(coid);
+            self.inner.get_order_status_by_cid(cid).await
+        } else {
+            anyhow::bail!("Either venue_order_id or client_order_id must be provided")
+        }
+        .map_err(|e| anyhow::anyhow!(e))?;
+
+        let detail = resp.status;
+        let size_precision = self
+            .get_instrument(&detail.symbol)
+            .map_or(0, |i| i.size_precision());
+
+        let voi = VenueOrderId::new(&detail.order_id);
+        let order_status = detail.state.into();
+        let filled = detail.filled_quantity.unwrap_or(0);
+        let remaining = detail.remaining_quantity.unwrap_or(0);
+        let quantity = Quantity::new((filled + remaining) as f64, size_precision);
+        let filled_qty = Quantity::new(filled as f64, size_precision);
+        let ts_init = self.generate_ts_init();
+
+        let resolved_coid = client_order_id
+            .unwrap_or_else(|| ClientOrderId::new(format!("CID-{}", detail.clord_id.unwrap_or(0))));
+
+        Ok(OrderStatusReport::new(
+            account_id,
+            instrument_id,
+            Some(resolved_coid),
+            voi,
+            order_side,
+            order_type,
+            time_in_force,
+            order_status,
+            quantity,
+            filled_qty,
+            ts_init,
+            ts_init,
+            ts_init,
+            Some(UUID4::new()),
+        ))
     }
 
     /// Requests open orders from Ax and parses them to Nautilus [`OrderStatusReport`].

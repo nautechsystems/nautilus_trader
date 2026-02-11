@@ -286,6 +286,209 @@ pub struct AxCancelOrderResponse {
     pub cxl_rx: bool,
 }
 
+/// Individual trade entry from the REST API.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/market-data/get-trades>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxRestTrade {
+    /// Timestamp (Unix epoch seconds).
+    pub ts: i64,
+    /// Nanosecond component of the timestamp.
+    pub tn: i64,
+    /// Trade price (decimal string).
+    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
+    pub p: Decimal,
+    /// Trade quantity.
+    pub q: i64,
+    /// Symbol.
+    pub s: Ustr,
+    /// Trade direction (aggressor side).
+    pub d: AxOrderSide,
+}
+
+/// Response payload returned by `GET /trades`.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/market-data/get-trades>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxTradesResponse {
+    /// List of trades.
+    pub trades: Vec<AxRestTrade>,
+}
+
+/// Individual price level in the order book.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/market-data/get-book>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxBookLevel {
+    /// Price (decimal string).
+    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
+    pub p: Decimal,
+    /// Quantity at this price level.
+    pub q: i64,
+    /// Individual order IDs (Level 3 only).
+    #[serde(default)]
+    pub o: Option<Vec<i64>>,
+}
+
+/// Order book snapshot.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/market-data/get-book>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxBook {
+    /// Timestamp (Unix epoch seconds).
+    pub ts: i64,
+    /// Nanosecond component of the timestamp.
+    pub tn: i64,
+    /// Symbol.
+    pub s: String,
+    /// Bid levels (best to worst).
+    pub b: Vec<AxBookLevel>,
+    /// Ask levels (best to worst).
+    pub a: Vec<AxBookLevel>,
+}
+
+/// Response payload returned by `GET /book`.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/market-data/get-book>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxBookResponse {
+    /// The order book snapshot.
+    pub book: AxBook,
+}
+
+/// Detailed order status from single-order lookup.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/order-management/get-order-status>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxOrderStatusDetail {
+    /// Trading symbol.
+    pub symbol: Ustr,
+    /// Order ID.
+    pub order_id: String,
+    /// Current order state.
+    pub state: AxOrderStatus,
+    /// Client order ID.
+    #[serde(default)]
+    pub clord_id: Option<u64>,
+    /// Filled quantity.
+    #[serde(default)]
+    pub filled_quantity: Option<i64>,
+    /// Remaining quantity.
+    #[serde(default)]
+    pub remaining_quantity: Option<i64>,
+}
+
+/// Response payload returned by `GET /order-status`.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/order-management/get-order-status>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxOrderStatusQueryResponse {
+    /// The order status detail.
+    pub status: AxOrderStatusDetail,
+}
+
+/// Reason for order rejection from the exchange.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/order-management/get-orders>
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AxOrderRejectReason {
+    CloseOnly,
+    InsufficientMargin,
+    MaxOpenOrdersExceeded,
+    UnknownSymbol,
+    ExchangeClosed,
+    IncorrectQuantity,
+    InvalidPriceIncrement,
+    IncorrectOrderType,
+    PriceOutOfBounds,
+    NoLiquidity,
+    InsufficientCreditLimit,
+    #[serde(other)]
+    Unknown,
+}
+
+/// Detailed order entry from historical orders query.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/order-management/get-orders>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxOrderDetail {
+    /// Timestamp (Unix epoch seconds).
+    pub ts: i64,
+    /// Nanosecond component.
+    #[serde(default)]
+    pub tn: i64,
+    /// Order ID.
+    pub oid: String,
+    /// User ID.
+    pub u: String,
+    /// Symbol.
+    pub s: Ustr,
+    /// Price.
+    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
+    pub p: Decimal,
+    /// Order quantity.
+    pub q: u64,
+    /// Executed quantity.
+    pub xq: u64,
+    /// Remaining quantity.
+    pub rq: u64,
+    /// Order state.
+    pub o: AxOrderStatus,
+    /// Order side.
+    pub d: AxOrderSide,
+    /// Time in force.
+    pub tif: AxTimeInForce,
+    /// Client order ID.
+    #[serde(default)]
+    pub cid: Option<u64>,
+    /// Reject reason.
+    #[serde(default)]
+    pub r: Option<AxOrderRejectReason>,
+    /// Order tag.
+    #[serde(default)]
+    pub tag: Option<String>,
+    /// Text note.
+    #[serde(default)]
+    pub txt: Option<String>,
+}
+
+/// Response payload returned by `GET /orders`.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/order-management/get-orders>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxOrdersResponse {
+    /// List of order details.
+    pub orders: Vec<AxOrderDetail>,
+    /// Total matching records (for pagination).
+    pub total_count: i64,
+    /// Applied limit.
+    pub limit: i32,
+    /// Applied offset.
+    pub offset: i32,
+}
+
+/// Response payload returned by `POST /initial-margin-requirement`.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/portfolio-management/post-initial-margin-requirement>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxInitialMarginRequirementResponse {
+    /// Initial margin requirement.
+    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
+    pub im: Decimal,
+}
+
 /// Individual open order entry.
 ///
 /// # References
@@ -1060,5 +1263,58 @@ mod tests {
         let response: AxBatchCancelOrdersResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.canceled_count, 2);
         assert_eq!(response.failed_order_ids.len(), 1);
+    }
+
+    #[rstest]
+    fn test_deserialize_trades_response() {
+        let json = include_str!("../../test_data/http_get_trades.json");
+        let response: AxTradesResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.trades.len(), 2);
+        assert_eq!(response.trades[0].s, "EURUSD-PERP");
+        assert_eq!(response.trades[0].d, AxOrderSide::Buy);
+        assert_eq!(response.trades[0].q, 100);
+        assert_eq!(response.trades[1].d, AxOrderSide::Sell);
+    }
+
+    #[rstest]
+    fn test_deserialize_book_response() {
+        let json = include_str!("../../test_data/http_get_book.json");
+        let response: AxBookResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.book.s, "EURUSD-PERP");
+        assert_eq!(response.book.b.len(), 3);
+        assert_eq!(response.book.a.len(), 3);
+        assert_eq!(response.book.b[0].q, 500);
+        assert_eq!(response.book.a[0].q, 400);
+    }
+
+    #[rstest]
+    fn test_deserialize_order_status_query_response() {
+        let json = include_str!("../../test_data/http_get_order_status.json");
+        let response: AxOrderStatusQueryResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.status.symbol, "EURUSD-PERP");
+        assert_eq!(response.status.order_id, "O-01ARZ3NDEKTSV4RRFFQ69G5FAV");
+        assert_eq!(response.status.state, AxOrderStatus::PartiallyFilled);
+        assert_eq!(response.status.clord_id, Some(12345));
+        assert_eq!(response.status.filled_quantity, Some(300));
+        assert_eq!(response.status.remaining_quantity, Some(700));
+    }
+
+    #[rstest]
+    fn test_deserialize_orders_response() {
+        let json = include_str!("../../test_data/http_get_orders.json");
+        let response: AxOrdersResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.orders.len(), 2);
+        assert_eq!(response.total_count, 2);
+        assert_eq!(response.orders[0].o, AxOrderStatus::PartiallyFilled);
+        assert_eq!(response.orders[0].xq, 300);
+        assert_eq!(response.orders[1].o, AxOrderStatus::Filled);
+        assert_eq!(response.orders[1].d, AxOrderSide::Sell);
+    }
+
+    #[rstest]
+    fn test_deserialize_initial_margin_requirement_response() {
+        let json = include_str!("../../test_data/http_initial_margin_requirement.json");
+        let response: AxInitialMarginRequirementResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.im, Decimal::new(125050, 2));
     }
 }

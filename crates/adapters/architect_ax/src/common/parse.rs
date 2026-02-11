@@ -18,6 +18,7 @@
 use std::sync::LazyLock;
 
 use ahash::RandomState;
+use nautilus_core::nanos::UnixNanos;
 pub use nautilus_core::serialization::{
     deserialize_decimal_or_zero, deserialize_optional_decimal_from_str,
     deserialize_optional_decimal_or_zero, deserialize_optional_decimal_str, parse_decimal,
@@ -30,6 +31,36 @@ use nautilus_model::{
 };
 
 use super::enums::AxCandleWidth;
+
+const NANOSECONDS_IN_SECOND: u64 = 1_000_000_000;
+
+/// Converts an AX epoch-seconds timestamp to [`UnixNanos`].
+///
+/// # Panics
+///
+/// Panics if `seconds` is negative (malformed data from AX).
+#[must_use]
+pub fn ax_timestamp_s_to_unix_nanos(seconds: i64) -> UnixNanos {
+    assert!(
+        seconds >= 0,
+        "AX timestamp must be non-negative, was {seconds}"
+    );
+    UnixNanos::from(seconds as u64 * NANOSECONDS_IN_SECOND)
+}
+
+/// Converts an AX nanosecond timestamp to [`UnixNanos`].
+///
+/// # Panics
+///
+/// Panics if `nanos` is negative (malformed data from AX).
+#[must_use]
+pub fn ax_timestamp_ns_to_unix_nanos(nanos: i64) -> UnixNanos {
+    assert!(
+        nanos >= 0,
+        "AX timestamp_ns must be non-negative, was {nanos}"
+    );
+    UnixNanos::from(nanos as u64)
+}
 
 /// Cached hasher state for deterministic client order ID to cid conversion
 static CID_HASHER: LazyLock<RandomState> = LazyLock::new(|| {

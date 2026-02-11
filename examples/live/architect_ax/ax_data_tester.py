@@ -76,6 +76,7 @@ config_tester = DataTesterConfig(
     subscribe_trades=True,
     subscribe_bars=True,
     subscribe_funding_rates=True,
+    request_trades=True,
     request_bars=True,
     request_funding_rates=True,
     book_type=BookType.L2_MBP,

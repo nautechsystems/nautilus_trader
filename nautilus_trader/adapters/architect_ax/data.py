@@ -52,6 +52,7 @@ from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import FundingRateUpdate
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import book_type_to_str
@@ -416,7 +417,31 @@ class AxDataClient(LiveMarketDataClient):
         self._log.error("Cannot request historical quotes: not published by AX Exchange")
 
     async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
-        self._log.error("Cannot request historical trades: not yet implemented for AX Exchange")
+        instrument_id = request.instrument_id
+        pyo3_instrument_id = self._get_pyo3_instrument_id(instrument_id)
+        limit = request.limit if request.limit else None
+        start = ensure_pydatetime_utc(pd.Timestamp(request.start)) if request.start else None
+        end = ensure_pydatetime_utc(pd.Timestamp(request.end)) if request.end else None
+
+        try:
+            pyo3_trades = await self._http_client.request_trade_ticks(
+                pyo3_instrument_id,
+                limit,
+                start,
+                end,
+            )
+            trades = TradeTick.from_pyo3_list(pyo3_trades)
+
+            self._handle_trade_ticks(
+                instrument_id,
+                trades,
+                request.id,
+                request.start,
+                request.end,
+                request.params,
+            )
+        except Exception as e:
+            self._log.error(f"Failed to request trade ticks for {instrument_id}: {e}")
 
     async def _request_bars(self, request: RequestBars) -> None:
         bar_type = request.bar_type

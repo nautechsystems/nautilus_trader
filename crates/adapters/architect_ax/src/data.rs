@@ -36,12 +36,13 @@ use nautilus_common::{
     messages::{
         DataEvent, DataResponse,
         data::{
-            BarsResponse, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
-            RequestBars, RequestFundingRates, RequestInstrument, RequestInstruments, SubscribeBars,
+            BarsResponse, BookResponse, FundingRatesResponse, InstrumentResponse,
+            InstrumentsResponse, RequestBars, RequestBookSnapshot, RequestFundingRates,
+            RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
             SubscribeBookDeltas, SubscribeFundingRates, SubscribeInstrument, SubscribeInstruments,
-            SubscribeQuotes, SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas,
-            UnsubscribeFundingRates, UnsubscribeInstrument, UnsubscribeInstruments,
-            UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
+            UnsubscribeBookDeltas, UnsubscribeFundingRates, UnsubscribeInstrument,
+            UnsubscribeInstruments, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -250,6 +251,7 @@ impl DataClient for AxDataClient {
     fn stop(&mut self) -> anyhow::Result<()> {
         log::debug!("Stopping {}", self.client_id);
         self.cancellation_token.cancel();
+        self.is_connected.store(false, Ordering::Release);
         Ok(())
     }
 
@@ -270,6 +272,7 @@ impl DataClient for AxDataClient {
     fn dispose(&mut self) -> anyhow::Result<()> {
         log::debug!("Disposing {}", self.client_id);
         self.cancellation_token.cancel();
+        self.is_connected.store(false, Ordering::Release);
         Ok(())
     }
 
@@ -283,6 +286,9 @@ impl DataClient for AxDataClient {
 
     async fn connect(&mut self) -> anyhow::Result<()> {
         log::info!("Connecting {}", self.client_id);
+
+        // Recreate token so a previous disconnect/stop doesn't block new operations
+        self.cancellation_token = CancellationToken::new();
 
         if self.config.has_api_credentials() {
             let api_key = self
@@ -622,6 +628,7 @@ impl DataClient for AxDataClient {
 
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
         let http = self.http_client.clone();
+        let ws = self.ws_client.clone();
         let sender = self.data_sender.clone();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
@@ -635,6 +642,9 @@ impl DataClient for AxDataClient {
             match http.request_instruments(None, None).await {
                 Ok(instruments) => {
                     log::info!("Fetched {} instruments from Ax", instruments.len());
+                    for inst in &instruments {
+                        ws.cache_instrument(inst.clone());
+                    }
                     http.cache_instruments(instruments.clone());
 
                     let response = DataResponse::Instruments(InstrumentsResponse::new(
@@ -663,6 +673,7 @@ impl DataClient for AxDataClient {
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
         let http = self.http_client.clone();
+        let ws = self.ws_client.clone();
         let sender = self.data_sender.clone();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
@@ -677,6 +688,7 @@ impl DataClient for AxDataClient {
             match http.request_instrument(symbol, None, None).await {
                 Ok(instrument) => {
                     log::debug!("Fetched instrument {symbol} from Ax");
+                    ws.cache_instrument(instrument.clone());
                     http.cache_instrument(instrument.clone());
 
                     let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
@@ -696,6 +708,95 @@ impl DataClient for AxDataClient {
                 }
                 Err(e) => {
                     log::error!("Failed to request instrument {symbol}: {e}");
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
+        let http = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let instrument_id = request.instrument_id;
+        let symbol = instrument_id.symbol.inner();
+        let depth = request.depth.map(|n| n.get());
+        let params = request.params;
+        let clock = self.clock;
+
+        get_runtime().spawn(async move {
+            match http.request_book_snapshot(symbol, depth).await {
+                Ok(book) => {
+                    log::debug!(
+                        "Fetched book snapshot for {symbol} ({} bids, {} asks)",
+                        book.bids(None).count(),
+                        book.asks(None).count(),
+                    );
+
+                    let response = DataResponse::Book(BookResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        book,
+                        None,
+                        None,
+                        clock.get_time_ns(),
+                        params,
+                    ));
+
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send book snapshot response: {e}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to request book snapshot for {symbol}: {e}");
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
+        let http = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let instrument_id = request.instrument_id;
+        let symbol = instrument_id.symbol.inner();
+        let limit = request.limit.map(|n| n.get() as i32);
+        let start_nanos = datetime_to_unix_nanos(request.start);
+        let end_nanos = datetime_to_unix_nanos(request.end);
+        let params = request.params;
+        let clock = self.clock;
+
+        get_runtime().spawn(async move {
+            match http
+                .request_trade_ticks(symbol, limit, start_nanos, end_nanos)
+                .await
+            {
+                Ok(ticks) => {
+                    log::debug!("Fetched {} trades for {symbol}", ticks.len());
+
+                    let response = DataResponse::Trades(TradesResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        ticks,
+                        start_nanos,
+                        end_nanos,
+                        clock.get_time_ns(),
+                        params,
+                    ));
+
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send trades response: {e}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to request trades for {symbol}: {e}");
                 }
             }
         });

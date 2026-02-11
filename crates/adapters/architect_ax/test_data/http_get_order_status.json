@@ -1,0 +1,10 @@
+{
+  "status": {
+    "symbol": "EURUSD-PERP",
+    "order_id": "O-01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    "state": "PARTIALLY_FILLED",
+    "clord_id": 12345,
+    "filled_quantity": 300,
+    "remaining_quantity": 700
+  }
+}

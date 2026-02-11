@@ -48,7 +48,7 @@ use crate::{
     common::{
         consts::AX_POST_ONLY_REJECT,
         enums::{AxOrderRequestType, AxOrderSide, AxTimeInForce},
-        parse::cid_to_client_order_id,
+        parse::{ax_timestamp_s_to_unix_nanos, cid_to_client_order_id},
     },
     websocket::{
         messages::{
@@ -435,6 +435,7 @@ impl FeedHandler {
         match resp {
             AxWsOrderResponse::PlaceOrder(msg) => {
                 log::debug!("Place order response: rid={} oid={}", msg.rid, msg.res.oid);
+                self.pending_orders.remove(&msg.rid);
                 Some(vec![AxOrdersWsMessage::PlaceOrderResponse(msg)])
             }
             AxWsOrderResponse::CancelOrder(msg) => {
@@ -535,7 +536,7 @@ impl FeedHandler {
     fn handle_order_filled(&mut self, msg: AxWsOrderFilled) -> Option<Vec<AxOrdersWsMessage>> {
         log::debug!("Order filled: {} {} @ {}", msg.o.oid, msg.xs.q, msg.xs.p);
 
-        if let Some(event) = self.create_order_filled(&msg.o, &msg.xs, msg.ts) {
+        let result = if let Some(event) = self.create_order_filled(&msg.o, &msg.xs, msg.ts) {
             Some(vec![AxOrdersWsMessage::Nautilus(
                 NautilusExecWsMessage::OrderFilled(Box::new(event)),
             )])
@@ -547,7 +548,18 @@ impl FeedHandler {
         } else {
             log::warn!("Could not create OrderFilled event for order {}", msg.o.oid);
             None
+        };
+
+        // Clean up tracking maps for fully filled order
+        let venue_order_id = VenueOrderId::new(&msg.o.oid);
+        if let Some((_, client_order_id)) = self.venue_to_client_id.remove(&venue_order_id) {
+            self.orders_metadata.remove(&client_order_id);
         }
+        if let Some(cid) = msg.o.cid {
+            self.cid_to_client_order_id.remove(&cid);
+        }
+
+        result
     }
 
     fn handle_order_canceled(&mut self, msg: AxWsOrderCanceled) -> Option<Vec<AxOrdersWsMessage>> {
@@ -750,7 +762,7 @@ impl FeedHandler {
             entry.venue_order_id = Some(venue_order_id);
         }
 
-        let ts_event = UnixNanos::from(event_ts as u64 * 1_000_000_000);
+        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts);
 
         Some(OrderAccepted::new(
             trader_id,
@@ -775,7 +787,7 @@ impl FeedHandler {
         let venue_order_id = VenueOrderId::new(&order.oid);
         let metadata = self.lookup_order_metadata(order)?;
 
-        let ts_event = UnixNanos::from(event_ts as u64 * 1_000_000_000);
+        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts);
 
         // AX uses u64 contracts - use instrument precision from metadata
         let last_qty = Quantity::new(execution.q as f64, metadata.size_precision);
@@ -838,7 +850,7 @@ impl FeedHandler {
             self.cid_to_client_order_id.remove(&cid);
         }
 
-        let ts_event = UnixNanos::from(event_ts as u64 * 1_000_000_000);
+        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts);
 
         Some(OrderCanceled::new(
             trader_id,
@@ -873,7 +885,7 @@ impl FeedHandler {
             self.cid_to_client_order_id.remove(&cid);
         }
 
-        let ts_event = UnixNanos::from(event_ts as u64 * 1_000_000_000);
+        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts);
 
         Some(OrderExpired::new(
             trader_id,
@@ -910,7 +922,7 @@ impl FeedHandler {
             self.cid_to_client_order_id.remove(&cid);
         }
 
-        let ts_event = UnixNanos::from(event_ts as u64 * 1_000_000_000);
+        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts);
         let due_post_only = reason.contains(AX_POST_ONLY_REJECT);
 
         Some(OrderRejected::new(
@@ -943,7 +955,7 @@ impl FeedHandler {
         let quantity = Quantity::new(order.q as f64, instrument.size_precision());
         let filled_qty = Quantity::new(order.xq as f64, instrument.size_precision());
 
-        let ts_event = UnixNanos::from(event_ts as u64 * 1_000_000_000);
+        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts);
         let ts_init = self.generate_ts_init();
 
         let client_order_id = order.cid.map(|cid| {
@@ -997,7 +1009,7 @@ impl FeedHandler {
             LiquiditySide::Maker
         };
 
-        let ts_event = UnixNanos::from(event_ts as u64 * 1_000_000_000);
+        let ts_event = ax_timestamp_s_to_unix_nanos(event_ts);
         let ts_init = self.generate_ts_init();
 
         let client_order_id = order.cid.map(|cid| {

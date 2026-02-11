@@ -206,6 +206,136 @@ class AxExecutionClient(LiveExecutionClient):
 
         self._log.info("Disconnected from AX Exchange execution API", LogColor.BLUE)
 
+    async def generate_order_status_report(
+        self,
+        command: GenerateOrderStatusReport,
+    ) -> OrderStatusReport | None:
+        self._log.debug(f"Generating OrderStatusReport for {command}")
+
+        # Read immutable order fields from cache
+        order = self._cache.order(command.client_order_id) if command.client_order_id else None
+        if order is not None:
+            pyo3_side = order_side_to_pyo3(order.side)
+            pyo3_type = order_type_to_pyo3(order.order_type)
+            pyo3_tif = time_in_force_to_pyo3(order.time_in_force)
+        else:
+            pyo3_side = nautilus_pyo3.OrderSide.NO_ORDER_SIDE
+            pyo3_type = nautilus_pyo3.OrderType.LIMIT
+            pyo3_tif = nautilus_pyo3.TimeInForce.GTC
+
+        instrument_id = command.instrument_id or (order.instrument_id if order else None)
+        if instrument_id is None:
+            self._log.error(
+                "Cannot generate OrderStatusReport: no instrument_id on command or cached order",
+            )
+            return None
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
+        pyo3_client_order_id = (
+            nautilus_pyo3.ClientOrderId(command.client_order_id.value)
+            if command.client_order_id
+            else None
+        )
+        pyo3_venue_order_id = (
+            nautilus_pyo3.VenueOrderId(command.venue_order_id.value)
+            if command.venue_order_id
+            else None
+        )
+
+        try:
+            pyo3_report = await self._http_client.request_order_status(
+                self.pyo3_account_id,
+                pyo3_instrument_id,
+                pyo3_side,
+                pyo3_type,
+                pyo3_tif,
+                pyo3_client_order_id,
+                pyo3_venue_order_id,
+            )
+            return OrderStatusReport.from_pyo3(pyo3_report)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "OrderStatusReport")
+
+        return None
+
+    async def generate_order_status_reports(
+        self,
+        command: GenerateOrderStatusReports,
+    ) -> list[OrderStatusReport]:
+        self._log.debug("Requesting OrderStatusReports...")
+        reports: list[OrderStatusReport] = []
+
+        try:
+            pyo3_reports = await self._http_client.request_order_status_reports(
+                self.pyo3_account_id,
+            )
+            for pyo3_report in pyo3_reports:
+                report = OrderStatusReport.from_pyo3(pyo3_report)
+                self._log.debug(f"Received {report}", LogColor.MAGENTA)
+                reports.append(report)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "OrderStatusReports")
+
+        self._log_report_receipt(
+            len(reports),
+            "OrderStatusReport",
+            command.log_receipt_level,
+        )
+
+        return reports
+
+    async def generate_fill_reports(
+        self,
+        command: GenerateFillReports,
+    ) -> list[FillReport]:
+        self._log.debug("Requesting FillReports...")
+        reports: list[FillReport] = []
+
+        try:
+            pyo3_reports = await self._http_client.request_fill_reports(
+                self.pyo3_account_id,
+            )
+            for pyo3_report in pyo3_reports:
+                report = FillReport.from_pyo3(pyo3_report)
+                self._log.debug(f"Received {report}", LogColor.MAGENTA)
+                reports.append(report)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "FillReports")
+
+        self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
+
+        return reports
+
+    async def generate_position_status_reports(
+        self,
+        command: GeneratePositionStatusReports,
+    ) -> list[PositionStatusReport]:
+        self._log.debug("Requesting PositionStatusReports...")
+        reports: list[PositionStatusReport] = []
+
+        try:
+            pyo3_reports = await self._http_client.request_position_reports(
+                self.pyo3_account_id,
+            )
+            for pyo3_report in pyo3_reports:
+                report = PositionStatusReport.from_pyo3(pyo3_report)
+                self._log.info(
+                    f"Position: {report.instrument_id} side={report.position_side} "
+                    f"qty={report.quantity} avg_px={report.avg_px_open}",
+                    LogColor.MAGENTA,
+                )
+                reports.append(report)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "PositionStatusReports")
+
+        self._log_report_receipt(
+            len(reports),
+            "PositionStatusReport",
+            command.log_receipt_level,
+        )
+
+        return reports
+
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
 
@@ -646,102 +776,3 @@ class AxExecutionClient(LiveExecutionClient):
             liquidity_side=report.liquidity_side,
             ts_event=report.ts_event,
         )
-
-    async def generate_order_status_report(
-        self,
-        command: GenerateOrderStatusReport,
-    ) -> OrderStatusReport | None:
-        self._log.debug(f"Generating OrderStatusReport for {command}")
-
-        try:
-            pyo3_reports = await self._http_client.request_order_status_reports(
-                self.pyo3_account_id,
-            )
-            for pyo3_report in pyo3_reports:
-                report = OrderStatusReport.from_pyo3(pyo3_report)
-                if command.client_order_id and report.client_order_id == command.client_order_id:
-                    return report
-                if command.venue_order_id and report.venue_order_id == command.venue_order_id:
-                    return report
-        except (asyncio.CancelledError, Exception) as e:
-            self._log_report_error(e, "OrderStatusReport")
-
-        return None
-
-    async def generate_order_status_reports(
-        self,
-        command: GenerateOrderStatusReports,
-    ) -> list[OrderStatusReport]:
-        self._log.debug("Requesting OrderStatusReports...")
-        reports: list[OrderStatusReport] = []
-
-        try:
-            pyo3_reports = await self._http_client.request_order_status_reports(
-                self.pyo3_account_id,
-            )
-            for pyo3_report in pyo3_reports:
-                report = OrderStatusReport.from_pyo3(pyo3_report)
-                self._log.debug(f"Received {report}", LogColor.MAGENTA)
-                reports.append(report)
-        except (asyncio.CancelledError, Exception) as e:
-            self._log_report_error(e, "OrderStatusReports")
-
-        self._log_report_receipt(
-            len(reports),
-            "OrderStatusReport",
-            command.log_receipt_level,
-        )
-
-        return reports
-
-    async def generate_fill_reports(
-        self,
-        command: GenerateFillReports,
-    ) -> list[FillReport]:
-        self._log.debug("Requesting FillReports...")
-        reports: list[FillReport] = []
-
-        try:
-            pyo3_reports = await self._http_client.request_fill_reports(
-                self.pyo3_account_id,
-            )
-            for pyo3_report in pyo3_reports:
-                report = FillReport.from_pyo3(pyo3_report)
-                self._log.debug(f"Received {report}", LogColor.MAGENTA)
-                reports.append(report)
-        except (asyncio.CancelledError, Exception) as e:
-            self._log_report_error(e, "FillReports")
-
-        self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
-
-        return reports
-
-    async def generate_position_status_reports(
-        self,
-        command: GeneratePositionStatusReports,
-    ) -> list[PositionStatusReport]:
-        self._log.debug("Requesting PositionStatusReports...")
-        reports: list[PositionStatusReport] = []
-
-        try:
-            pyo3_reports = await self._http_client.request_position_reports(
-                self.pyo3_account_id,
-            )
-            for pyo3_report in pyo3_reports:
-                report = PositionStatusReport.from_pyo3(pyo3_report)
-                self._log.info(
-                    f"Position: {report.instrument_id} side={report.position_side} "
-                    f"qty={report.quantity} avg_px={report.avg_px_open}",
-                    LogColor.MAGENTA,
-                )
-                reports.append(report)
-        except (asyncio.CancelledError, Exception) as e:
-            self._log_report_error(e, "PositionStatusReports")
-
-        self._log_report_receipt(
-            len(reports),
-            "PositionStatusReport",
-            command.log_receipt_level,
-        )
-
-        return reports

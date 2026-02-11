@@ -111,7 +111,7 @@ pub struct AxOrdersWebSocketClient {
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<AxOrdersWsMessage>>>,
     signal: Arc<AtomicBool>,
-    task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
+    task_handle: Option<tokio::task::JoinHandle<()>>,
     auth_tracker: AuthTracker,
     instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
     orders_metadata: Arc<DashMap<ClientOrderId, OrderMetadata>>,
@@ -142,7 +142,7 @@ impl Clone for AxOrdersWebSocketClient {
             cmd_tx: Arc::clone(&self.cmd_tx),
             out_rx: None, // Each clone gets its own receiver
             signal: Arc::clone(&self.signal),
-            task_handle: None, // Each clone gets its own task handle
+            task_handle: None,
             auth_tracker: self.auth_tracker.clone(),
             instruments_cache: Arc::clone(&self.instruments_cache),
             orders_metadata: Arc::clone(&self.orders_metadata),
@@ -487,7 +487,7 @@ impl AxOrdersWebSocketClient {
             log::debug!("Handler loop exited");
         });
 
-        self.task_handle = Some(Arc::new(stream_handle));
+        self.task_handle = Some(stream_handle);
 
         Ok(())
     }
@@ -728,21 +728,14 @@ impl AxOrdersWebSocketClient {
 
         if let Some(handle) = self.task_handle.take() {
             const CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
+            let abort_handle = handle.abort_handle();
 
-            match tokio::time::timeout(CLOSE_TIMEOUT, async {
-                loop {
-                    if Arc::strong_count(&handle) == 1 {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                }
-            })
-            .await
-            {
-                Ok(()) => log::debug!("Handler task completed gracefully"),
+            match tokio::time::timeout(CLOSE_TIMEOUT, handle).await {
+                Ok(Ok(())) => log::debug!("Handler task completed gracefully"),
+                Ok(Err(e)) => log::warn!("Handler task panicked: {e}"),
                 Err(_) => {
                     log::warn!("Handler task did not complete within timeout, aborting");
-                    handle.abort();
+                    abort_handle.abort();
                 }
             }
         }
