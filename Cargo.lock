@@ -5984,6 +5984,7 @@ dependencies = [
  "nautilus-common",
  "nautilus-core",
  "nautilus-execution",
+ "nautilus-indicators",
  "nautilus-model",
  "nautilus-portfolio",
  "pyo3",
