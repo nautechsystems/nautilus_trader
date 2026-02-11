@@ -209,6 +209,13 @@ impl BitmexWebSocketClient {
                                 call_python(py, &callback, py_obj);
                             }
                         }
+                        NautilusWsMessage::OrderUpdates(events) => {
+                            for event in events {
+                                if let Ok(py_obj) = event.into_py_any(py) {
+                                    call_python(py, &callback, py_obj);
+                                }
+                            }
+                        }
                         NautilusWsMessage::Reconnected => {}
                         NautilusWsMessage::Authenticated => {}
                     });

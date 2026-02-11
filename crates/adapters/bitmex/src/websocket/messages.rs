@@ -100,6 +100,7 @@ pub enum NautilusWsMessage {
     Instruments(Vec<InstrumentAny>),
     OrderStatusReports(Vec<OrderStatusReport>),
     OrderUpdated(Box<OrderUpdated>),
+    OrderUpdates(Vec<OrderUpdated>),
     FillReports(Vec<FillReport>),
     PositionStatusReports(Vec<PositionStatusReport>),
     FundingRateUpdates(Vec<FundingRateUpdate>),

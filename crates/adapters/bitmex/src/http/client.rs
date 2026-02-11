@@ -26,7 +26,7 @@ use std::{
     collections::HashMap,
     num::NonZeroU32,
     sync::{
-        Arc, LazyLock,
+        Arc, LazyLock, RwLock,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -143,7 +143,7 @@ pub struct BitmexRawHttpClient {
     credential: Option<Credential>,
     recv_window_ms: u64,
     retry_manager: RetryManager<BitmexHttpError>,
-    cancellation_token: CancellationToken,
+    cancellation_token: Arc<RwLock<CancellationToken>>,
 }
 
 impl Default for BitmexRawHttpClient {
@@ -209,7 +209,7 @@ impl BitmexRawHttpClient {
             credential: None,
             recv_window_ms: recv_window_ms.unwrap_or(10_000),
             retry_manager,
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: Arc::new(RwLock::new(CancellationToken::new())),
         })
     }
 
@@ -267,7 +267,7 @@ impl BitmexRawHttpClient {
             credential: Some(Credential::new(api_key, api_secret)),
             recv_window_ms: recv_window_ms.unwrap_or(10_000),
             retry_manager,
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: Arc::new(RwLock::new(CancellationToken::new())),
         })
     }
 
@@ -306,13 +306,39 @@ impl BitmexRawHttpClient {
     }
 
     /// Cancel all pending HTTP requests.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cancellation token lock is poisoned.
     pub fn cancel_all_requests(&self) {
-        self.cancellation_token.cancel();
+        self.cancellation_token
+            .read()
+            .expect("cancellation token lock poisoned")
+            .cancel();
     }
 
-    /// Get the cancellation token for this client.
-    pub fn cancellation_token(&self) -> &CancellationToken {
-        &self.cancellation_token
+    /// Replace the cancellation token so new requests can proceed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cancellation token lock is poisoned.
+    pub fn reset_cancellation_token(&self) {
+        *self
+            .cancellation_token
+            .write()
+            .expect("cancellation token lock poisoned") = CancellationToken::new();
+    }
+
+    /// Get a clone of the cancellation token for this client.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cancellation token lock is poisoned.
+    pub fn cancellation_token(&self) -> CancellationToken {
+        self.cancellation_token
+            .read()
+            .expect("cancellation token lock poisoned")
+            .clone()
     }
 
     fn sign_request(
@@ -464,13 +490,15 @@ impl BitmexRawHttpClient {
             }
         };
 
+        let cancel_token = self.cancellation_token();
+
         self.retry_manager
             .execute_with_retry_with_cancel(
                 endpoint.as_str(),
                 operation,
                 should_retry,
                 create_error,
-                &self.cancellation_token,
+                &cancel_token,
             )
             .await
     }
@@ -855,7 +883,12 @@ impl BitmexHttpClient {
                 max_requests_per_minute,
                 proxy_url,
             )?,
-            _ => BitmexRawHttpClient::new(
+            (Some(_), None) | (None, Some(_)) => {
+                return Err(BitmexHttpError::ValidationError(
+                    "Both api_key and api_secret must be provided, or neither".to_string(),
+                ));
+            }
+            (None, None) => BitmexRawHttpClient::new(
                 Some(url),
                 timeout_secs,
                 max_retries,
@@ -1163,9 +1196,14 @@ impl BitmexHttpClient {
         self.inner.cancel_all_requests();
     }
 
-    /// Get the cancellation token for this client.
+    /// Replace the cancellation token so new requests can proceed.
+    pub fn reset_cancellation_token(&self) {
+        self.inner.reset_cancellation_token();
+    }
+
+    /// Get a clone of the cancellation token for this client.
     pub fn cancellation_token(&self) -> CancellationToken {
-        self.inner.cancellation_token().clone()
+        self.inner.cancellation_token()
     }
 
     /// Caches a single instrument.
@@ -1910,6 +1948,10 @@ impl BitmexHttpClient {
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
     ) -> anyhow::Result<OrderStatusReport> {
+        if venue_order_id.is_none() && client_order_id.is_none() {
+            anyhow::bail!("Either venue_order_id or client_order_id must be provided");
+        }
+
         let mut params = GetOrderParamsBuilder::default();
         params.symbol(instrument_id.symbol.as_str());
 

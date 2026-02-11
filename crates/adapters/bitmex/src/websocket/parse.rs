@@ -163,13 +163,12 @@ pub fn parse_book10_msg_vec(
         if let Some(instrument) = instruments.get(&msg.symbol) {
             let instrument_id = instrument.id();
             let price_precision = instrument.price_precision();
-            depths.push(Data::Depth10(Box::new(parse_book10_msg(
-                &msg,
-                instrument,
-                instrument_id,
-                price_precision,
-                ts_init,
-            ))));
+            match parse_book10_msg(&msg, instrument, instrument_id, price_precision, ts_init) {
+                Ok(depth) => depths.push(Data::Depth10(Box::new(depth))),
+                Err(e) => {
+                    log::error!("Failed to parse orderBook10 for symbol={}: {e}", msg.symbol);
+                }
+            }
         } else {
             log::error!(
                 "Instrument cache miss: depth10 message dropped for symbol={}",
@@ -281,18 +280,17 @@ pub fn parse_book_msg(
 
 /// Parses an `OrderBook10` message into an `OrderBookDepth10` object.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if the bid or ask arrays cannot be converted to exactly 10 elements.
+/// Returns an error if the bid or ask arrays are not exactly 10 elements.
 #[allow(clippy::too_many_arguments)]
-#[must_use]
 pub fn parse_book10_msg(
     msg: &BitmexOrderBook10Msg,
     instrument: &InstrumentAny,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: UnixNanos,
-) -> OrderBookDepth10 {
+) -> anyhow::Result<OrderBookDepth10> {
     let mut bids = Vec::with_capacity(DEPTH10_LEN);
     let mut asks = Vec::with_capacity(DEPTH10_LEN);
 
@@ -324,22 +322,22 @@ pub fn parse_book10_msg(
         ask_counts[i] = 1;
     }
 
-    let bids: [BookOrder; DEPTH10_LEN] = bids
-        .try_into()
-        .inspect_err(|v: &Vec<BookOrder>| {
-            log::error!("Bids length mismatch: expected 10, was {}", v.len());
-        })
-        .expect("BitMEX orderBook10 should always have exactly 10 bid levels");
-    let asks: [BookOrder; DEPTH10_LEN] = asks
-        .try_into()
-        .inspect_err(|v: &Vec<BookOrder>| {
-            log::error!("Asks length mismatch: expected 10, was {}", v.len());
-        })
-        .expect("BitMEX orderBook10 should always have exactly 10 ask levels");
+    let bids: [BookOrder; DEPTH10_LEN] = bids.try_into().map_err(|v: Vec<BookOrder>| {
+        anyhow::anyhow!(
+            "Bids length mismatch: expected {DEPTH10_LEN}, was {}",
+            v.len()
+        )
+    })?;
+    let asks: [BookOrder; DEPTH10_LEN] = asks.try_into().map_err(|v: Vec<BookOrder>| {
+        anyhow::anyhow!(
+            "Asks length mismatch: expected {DEPTH10_LEN}, was {}",
+            v.len()
+        )
+    })?;
 
     let ts_event = UnixNanos::from(msg.timestamp);
 
-    OrderBookDepth10::new(
+    Ok(OrderBookDepth10::new(
         instrument_id,
         bids,
         asks,
@@ -349,7 +347,7 @@ pub fn parse_book10_msg(
         0, // Not applicable for BitMEX L2 books
         ts_event,
         ts_init,
-    )
+    ))
 }
 
 /// Converts a BitMEX quote message into a `QuoteTick`, filling missing data from cache.
@@ -1204,7 +1202,8 @@ mod tests {
             instrument.id(),
             instrument.price_precision(),
             UnixNanos::from(3),
-        );
+        )
+        .unwrap();
 
         assert_eq!(depth10.instrument_id, instrument_id);
 

@@ -15,9 +15,12 @@
 
 //! WebSocket message handler for BitMEX.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    collections::VecDeque,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use ahash::AHashMap;
@@ -99,6 +102,7 @@ pub(super) struct FeedHandler {
     order_type_cache: Arc<DashMap<ClientOrderId, OrderType>>,
     order_symbol_cache: Arc<DashMap<ClientOrderId, Ustr>>,
     quote_cache: QuoteCache,
+    pending_msgs: VecDeque<NautilusWsMessage>,
 }
 
 impl FeedHandler {
@@ -129,6 +133,7 @@ impl FeedHandler {
             order_type_cache,
             order_symbol_cache,
             quote_cache: QuoteCache::new(),
+            pending_msgs: VecDeque::new(),
         }
     }
 
@@ -173,6 +178,10 @@ impl FeedHandler {
     }
 
     pub(super) async fn next(&mut self) -> Option<NautilusWsMessage> {
+        if let Some(msg) = self.pending_msgs.pop_front() {
+            return Some(msg);
+        }
+
         let clock = get_atomic_clock_realtime();
 
         loop {
@@ -320,7 +329,15 @@ impl FeedHandler {
                         // Note: BitMEX may send duplicate order status updates for the same order
                         // (e.g., immediate response + stream update). This is expected behavior.
                         BitmexTableMessage::Order { data, .. } => {
-                            self.handle_order(data)
+                            let mut msgs = self.handle_order(data);
+                            if msgs.is_empty() {
+                                None
+                            } else {
+                                // Buffer overflow messages for subsequent next() calls
+                                let first = msgs.remove(0);
+                                self.pending_msgs.extend(msgs);
+                                Some(first)
+                            }
                         }
                         BitmexTableMessage::Execution { data, .. } => {
                             self.handle_execution(data)
@@ -620,9 +637,9 @@ impl FeedHandler {
         Some(NautilusWsMessage::Data(data))
     }
 
-    fn handle_order(&mut self, data: Vec<OrderData>) -> Option<NautilusWsMessage> {
-        // Process all orders in the message
+    fn handle_order(&mut self, data: Vec<OrderData>) -> Vec<NautilusWsMessage> {
         let mut reports = Vec::with_capacity(data.len());
+        let mut updates = Vec::new();
 
         for order_data in data {
             match order_data {
@@ -701,7 +718,7 @@ impl FeedHandler {
                         continue;
                     };
 
-                    // Populate cache for execution message routing (handles edge case where update arrives before full snapshot)
+                    // Populate cache for execution message routing
                     if let Some(cl_ord_id) = &msg.cl_ord_id {
                         let client_order_id = ClientOrderId::new(cl_ord_id);
                         self.order_symbol_cache.insert(client_order_id, msg.symbol);
@@ -709,7 +726,7 @@ impl FeedHandler {
 
                     if let Some(event) = parse_order_update_msg(&msg, &instrument, self.account_id)
                     {
-                        return Some(NautilusWsMessage::OrderUpdated(Box::new(event)));
+                        updates.push(event);
                     } else {
                         log::warn!(
                             "Skipped order update message (insufficient data): \
@@ -722,11 +739,17 @@ impl FeedHandler {
             }
         }
 
-        if reports.is_empty() {
-            return None;
+        let mut msgs = Vec::new();
+
+        if !reports.is_empty() {
+            msgs.push(NautilusWsMessage::OrderStatusReports(reports));
         }
 
-        Some(NautilusWsMessage::OrderStatusReports(reports))
+        if !updates.is_empty() {
+            msgs.push(NautilusWsMessage::OrderUpdates(updates));
+        }
+
+        msgs
     }
 
     fn handle_execution(&mut self, data: Vec<BitmexExecutionMsg>) -> Option<NautilusWsMessage> {

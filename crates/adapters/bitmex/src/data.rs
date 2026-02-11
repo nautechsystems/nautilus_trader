@@ -229,6 +229,7 @@ impl BitmexDataClient {
             }
             NautilusWsMessage::OrderStatusReports(_)
             | NautilusWsMessage::OrderUpdated(_)
+            | NautilusWsMessage::OrderUpdates(_)
             | NautilusWsMessage::FillReports(_)
             | NautilusWsMessage::PositionStatusReports(_)
             | NautilusWsMessage::AccountStates(_) => {

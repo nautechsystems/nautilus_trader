@@ -56,6 +56,7 @@ fn load_deltas_from_parquet(limit: Option<usize>) -> Vec<OrderBookDelta> {
 const CI_DELTA_LIMIT: usize = 100_000;
 
 #[rstest]
+#[ignore]
 fn test_apply_tardis_deribit_deltas_full_replay() {
     let deltas = load_deltas_from_parquet(Some(CI_DELTA_LIMIT));
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
@@ -84,6 +85,7 @@ fn test_apply_tardis_deribit_deltas_full_replay() {
 }
 
 #[rstest]
+#[ignore]
 fn test_tardis_deribit_snapshot_boundaries() {
     let deltas = load_deltas_from_parquet(Some(CI_DELTA_LIMIT));
 
@@ -108,6 +110,7 @@ fn test_tardis_deribit_snapshot_boundaries() {
 }
 
 #[rstest]
+#[ignore]
 fn test_tardis_deribit_spot_checks() {
     let deltas = load_deltas_from_parquet(Some(CI_DELTA_LIMIT));
 

@@ -490,6 +490,9 @@ impl ExecutionClient for BitmexExecutionClient {
             return Ok(());
         }
 
+        // Reset cancellation token so HTTP requests succeed after reconnect
+        self.http_client.reset_cancellation_token();
+
         self.ensure_instruments_initialized_async().await?;
 
         self.ws_client.connect().await?;
@@ -935,6 +938,11 @@ fn dispatch_ws_message(message: NautilusWsMessage, emitter: &ExecutionEventEmitt
         }
         NautilusWsMessage::OrderUpdated(event) => {
             emitter.send_order_event(OrderEventAny::Updated(*event));
+        }
+        NautilusWsMessage::OrderUpdates(events) => {
+            for event in events {
+                emitter.send_order_event(OrderEventAny::Updated(event));
+            }
         }
         NautilusWsMessage::Data(_)
         | NautilusWsMessage::Instruments(_)
