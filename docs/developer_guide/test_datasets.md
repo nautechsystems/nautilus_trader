@@ -46,7 +46,7 @@ This ensures:
 - No vendor format parsing at test time.
 - Clear derivative-work status for licensing.
 
-Use SNAPPY compression (the default for `write_batch_to_parquet`).
+Use ZSTD compression (level 3) with 1M row groups.
 
 ## Naming convention
 
@@ -97,8 +97,9 @@ These datasets predate this policy and use raw vendor formats (CSV/CSV.gz)
 without `metadata.json`. They remain valid for existing tests. New datasets
 should follow the Parquet standard above.
 
-| Dataset                  | Source | Format           | Location                  | Status |
-|--------------------------|--------|------------------|---------------------------|--------|
-| Tardis Deribit L2        | Tardis | CSV (checked in) | `tests/test_data/tardis/` | Legacy |
-| Tardis Binance snapshots | Tardis | CSV.gz (large)   | `tests/test_data/large/`  | Legacy |
-| Tardis Bitmex trades     | Tardis | CSV.gz (large)   | `tests/test_data/large/`  | Legacy |
+| Dataset                  | Source | Format           | Location                  | Status  |
+|--------------------------|--------|------------------|---------------------------|---------|
+| Tardis Deribit L2 deltas | Tardis | Parquet (large)  | `tests/test_data/large/`  | Curated |
+| Tardis Deribit L2        | Tardis | CSV (checked in) | `tests/test_data/tardis/` | Legacy  |
+| Tardis Binance snapshots | Tardis | CSV.gz (large)   | `tests/test_data/large/`  | Legacy  |
+| Tardis Bitmex trades     | Tardis | CSV.gz (large)   | `tests/test_data/large/`  | Legacy  |

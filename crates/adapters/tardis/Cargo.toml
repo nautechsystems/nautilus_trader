@@ -85,6 +85,7 @@ pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-persistence = { workspace = true }
 nautilus-testkit = { workspace = true }
 rstest = { workspace = true }
 

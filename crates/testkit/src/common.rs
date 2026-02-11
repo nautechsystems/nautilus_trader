@@ -74,6 +74,19 @@ pub fn ensure_test_data_exists(filename: &str, url: &str) -> PathBuf {
     filepath
 }
 
+/// Ensures the Tardis Deribit BTC-PERPETUAL deltas Parquet file exists locally, downloading from R2 if necessary.
+///
+/// # Panics
+///
+/// Panics if the download or checksum verification fails.
+#[must_use]
+pub fn ensure_tardis_deribit_deltas_parquet() -> PathBuf {
+    ensure_test_data_exists(
+        "tardis_BTC-PERPETUAL.DERIBIT_2020-04-01_deltas.parquet",
+        "https://test-data.nautechsystems.io/large/tardis_BTC-PERPETUAL.DERIBIT_2020-04-01_deltas.parquet",
+    )
+}
+
 /// Returns the path to the Tardis Deribit incremental book L2 test data.
 #[must_use]
 pub fn get_tardis_deribit_book_l2_path() -> PathBuf {
