@@ -52,6 +52,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{Data, FundingRateUpdate, OrderBookDeltas_API},
+    enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::InstrumentAny,
 };
@@ -137,6 +138,13 @@ impl AxDataClient {
     #[must_use]
     pub fn venue(&self) -> Venue {
         *AX_VENUE
+    }
+
+    fn map_book_type_to_market_data_level(book_type: BookType) -> AxMarketDataLevel {
+        match book_type {
+            BookType::L3_MBO => AxMarketDataLevel::Level3,
+            BookType::L1_MBP | BookType::L2_MBP => AxMarketDataLevel::Level2,
+        }
     }
 
     /// Returns a reference to the instruments cache.
@@ -381,7 +389,12 @@ impl DataClient for AxDataClient {
 
     fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
         let symbol = cmd.instrument_id.symbol.to_string();
-        let level = AxMarketDataLevel::Level2;
+        let level = Self::map_book_type_to_market_data_level(cmd.book_type);
+        if cmd.book_type == BookType::L1_MBP {
+            log::warn!(
+                "Book type L1_MBP not supported by AX for deltas, downgrading {symbol} to LEVEL_2"
+            );
+        }
         log::debug!("Subscribing to book deltas for {symbol} at {level:?}");
 
         let ws = self.ws_client.clone();
@@ -896,5 +909,25 @@ impl DataClient for AxDataClient {
         });
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::enums::BookType;
+    use rstest::rstest;
+
+    use super::AxDataClient;
+    use crate::common::enums::AxMarketDataLevel;
+
+    #[rstest]
+    #[case(BookType::L1_MBP, AxMarketDataLevel::Level2)]
+    #[case(BookType::L2_MBP, AxMarketDataLevel::Level2)]
+    #[case(BookType::L3_MBO, AxMarketDataLevel::Level3)]
+    fn test_map_book_type_to_market_data_level(
+        #[case] book_type: BookType,
+        #[case] expected: AxMarketDataLevel,
+    ) {
+        assert_eq!(AxDataClient::map_book_type_to_market_data_level(book_type), expected);
     }
 }
