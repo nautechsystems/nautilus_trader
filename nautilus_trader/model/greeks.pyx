@@ -186,7 +186,7 @@ cdef class GreeksCalculator:
         if use_cached_greeks and (greeks_data := self._cache.greeks(instrument_id)) is not None:
             self._log.debug(f"Using cached greeks for {instrument_id=}")
         else:
-            utc_now_ns = ts_event if ts_event is not None else self._clock.timestamp_ns()
+            utc_now_ns = ts_event if ts_event else self._clock.timestamp_ns()
             utc_now = unix_nanos_to_dt(utc_now_ns)
 
             expiry_utc = instrument.expiration_utc
