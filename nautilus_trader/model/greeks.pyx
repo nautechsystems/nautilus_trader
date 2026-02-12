@@ -191,7 +191,7 @@ cdef class GreeksCalculator:
 
             expiry_utc = instrument.expiration_utc
             expiry_int = int(expiry_utc.strftime("%Y%m%d"))
-            expiry_in_days = min((expiry_utc - utc_now).days, 1)
+            expiry_in_days = max((expiry_utc - utc_now).days, 1)
             expiry_in_years = expiry_in_days / 365.25
 
             currency = instrument.quote_currency.code

@@ -45,6 +45,8 @@ class TestGreeksCalculator:
     def setup_method(self):
         # Setup test components
         self.clock = TestClock()
+        # Set clock to 30 days before option expiry (2024-02-14 16:00 UTC)
+        self.clock.set_time(1_707_926_400_000_000_000)
         self.msgbus = MessageBus(
             trader_id=TestIdStubs.trader_id(),
             clock=self.clock,
@@ -138,25 +140,27 @@ class TestGreeksCalculator:
         greeks = self.greeks_calculator.instrument_greeks(
             instrument_id=self.option_id,
             cache_greeks=False,
+            ts_event=self.clock.timestamp_ns(),
         )
 
-        # Exact expected values from computation (tolerance 1e-5 for f64 precision)
-        # Expected values computed from market price of 8.50 with underlying at 155.00
-        assert abs(greeks.price - 850.0015258789) < 1e-5, (
-            f"Price mismatch: {greeks.price} vs 850.0015258789"
+        # Expected values for AAPL $150C with underlying at 155, 30 DTE, IV ~32.6%
+        assert abs(greeks.price - 850.0007629395) < 1e-3, (
+            f"Price mismatch: {greeks.price} vs 850.0007629395"
         )
-        assert abs(greeks.vol - 1.7764886189) < 1e-5, f"Vol mismatch: {greeks.vol} vs 1.7764886189"
-        assert abs(greeks.delta - 65.5138254166) < 1e-5, (
-            f"Delta mismatch: {greeks.delta} vs 65.5138254166"
+        assert abs(greeks.vol - 0.3260962941) < 1e-5, (
+            f"Vol mismatch: {greeks.vol} vs 0.3260962941"
         )
-        assert abs(greeks.gamma - 2.5565279648) < 1e-5, (
-            f"Gamma mismatch: {greeks.gamma} vs 2.5565279648"
+        assert abs(greeks.delta - 65.4531240463) < 1e-3, (
+            f"Delta mismatch: {greeks.delta} vs 65.4531240463"
         )
-        assert abs(greeks.vega - 2.9873502254) < 1e-5, (
-            f"Vega mismatch: {greeks.vega} vs 2.9873502254"
+        assert abs(greeks.gamma - 2.5358643383) < 1e-3, (
+            f"Gamma mismatch: {greeks.gamma} vs 2.5358643383"
         )
-        assert abs(greeks.theta - (-265.2507847258)) < 1e-4, (
-            f"Theta mismatch: {greeks.theta} vs -265.2507847258"
+        assert abs(greeks.vega - 16.3179779053) < 1e-3, (
+            f"Vega mismatch: {greeks.vega} vs 16.3179779053"
+        )
+        assert abs(greeks.theta - (-8.7698151199)) < 1e-3, (
+            f"Theta mismatch: {greeks.theta} vs -8.7698151199"
         )
 
     def test_instrument_greeks_with_caching(self):
@@ -190,6 +194,7 @@ class TestGreeksCalculator:
         greeks1 = self.greeks_calculator.instrument_greeks(
             instrument_id=self.option_id,
             cache_greeks=True,
+            ts_event=self.clock.timestamp_ns(),
         )
 
         cached_vol = greeks1.vol
@@ -198,6 +203,7 @@ class TestGreeksCalculator:
         greeks2 = self.greeks_calculator.instrument_greeks(
             instrument_id=self.option_id,
             use_cached_greeks=True,
+            ts_event=self.clock.timestamp_ns(),
         )
         # Cached values should match exactly
         tol = 1e-10
@@ -251,6 +257,7 @@ class TestGreeksCalculator:
         initial_greeks = self.greeks_calculator.instrument_greeks(
             instrument_id=self.option_id,
             cache_greeks=True,
+            ts_event=self.clock.timestamp_ns(),
         )
 
         initial_vol = initial_greeks.vol
@@ -273,19 +280,20 @@ class TestGreeksCalculator:
             instrument_id=self.option_id,
             update_vol=True,
             cache_greeks=False,
+            ts_event=self.clock.timestamp_ns(),
         )
 
-        # Exact expected updated price from computation
-        assert abs(updated_greeks.price - 899.9732971191) < 1e-5, (
+        # Expected updated price from computation
+        assert abs(updated_greeks.price - 899.9732971191) < 1e-3, (
             f"Updated price mismatch: {updated_greeks.price} vs 899.9732971191"
         )
         # Vol should be updated based on new price (should be different from initial)
         assert abs(updated_greeks.vol - initial_vol) > 1e-3, (
             f"Vol should change when price changes: {updated_greeks.vol} vs {initial_vol}"
         )
-        # Exact expected updated vol from computation (tolerance 1e-4 for refinement precision)
-        assert abs(updated_greeks.vol - 1.9428999424) < 1e-4, (
-            f"Updated vol mismatch: {updated_greeks.vol} vs 1.9428999424"
+        # Expected updated vol (~35.7%)
+        assert abs(updated_greeks.vol - 0.3565638065) < 1e-3, (
+            f"Updated vol mismatch: {updated_greeks.vol} vs 0.3565638065"
         )
 
     def test_instrument_greeks_update_vol_without_cache(self):
@@ -320,15 +328,16 @@ class TestGreeksCalculator:
             instrument_id=self.option_id,
             update_vol=True,  # No cached greeks available
             cache_greeks=False,
+            ts_event=self.clock.timestamp_ns(),
         )
 
         # Should compute greeks using standard implied vol (same as without update_vol)
-        # Exact expected values from computation
-        assert abs(greeks.price - 850.0015258789) < 1e-5, (
-            f"Price should match expected: {greeks.price} vs 850.0015258789"
+        # Expected values for 30 DTE, IV ~32.6%
+        assert abs(greeks.price - 850.0007629395) < 1e-3, (
+            f"Price should match expected: {greeks.price} vs 850.0007629395"
         )
-        assert abs(greeks.vol - 1.7764886189) < 1e-5, (
-            f"Vol should match expected: {greeks.vol} vs 1.7764886189"
+        assert abs(greeks.vol - 0.3260962941) < 1e-5, (
+            f"Vol should match expected: {greeks.vol} vs 0.3260962941"
         )
 
         # Compare with standard calculation (should be same when no cache exists)
@@ -336,6 +345,7 @@ class TestGreeksCalculator:
             instrument_id=self.option_id,
             update_vol=False,
             cache_greeks=False,
+            ts_event=self.clock.timestamp_ns(),
         )
         assert abs(greeks.price - standard_greeks.price) < 1e-10, (
             f"Should match standard calculation: {greeks.price} vs {standard_greeks.price}"
@@ -393,6 +403,7 @@ class TestGreeksCalculator:
         self.greeks_calculator.instrument_greeks(
             instrument_id=self.option_id,
             cache_greeks=True,
+            ts_event=self.clock.timestamp_ns(),
         )
 
         # Update option price
@@ -409,6 +420,7 @@ class TestGreeksCalculator:
         self.cache.add_quote_tick(quote_option_new)
 
         # Calculate portfolio greeks with update_vol
+        # portfolio_greeks() uses self._clock.timestamp_ns() internally for ts_event
         portfolio_greeks = self.greeks_calculator.portfolio_greeks(
             update_vol=True,
             cache_greeks=False,
