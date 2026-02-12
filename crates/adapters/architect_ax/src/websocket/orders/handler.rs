@@ -1058,10 +1058,7 @@ impl FeedHandler {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{
-        Arc,
-        atomic::AtomicBool,
-    };
+    use std::sync::{Arc, atomic::AtomicBool};
 
     use dashmap::DashMap;
     use nautilus_model::{
@@ -1069,11 +1066,12 @@ mod tests {
         types::Currency,
     };
     use nautilus_network::websocket::AuthTracker;
+    use rstest::rstest;
     use rust_decimal_macros::dec;
     use ustr::Ustr;
 
     use super::*;
-    use crate::common::enums::{AxOrderStatus, AxOrderSide, AxTimeInForce};
+    use crate::common::enums::{AxOrderSide, AxOrderStatus, AxTimeInForce};
     use crate::websocket::messages::{AxWsPlaceOrderResponse, AxWsPlaceOrderResult};
 
     fn test_handler() -> FeedHandler {
@@ -1111,7 +1109,10 @@ mod tests {
         }
     }
 
-    fn sample_metadata(client_order_id: ClientOrderId, venue_order_id: VenueOrderId) -> OrderMetadata {
+    fn sample_metadata(
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+    ) -> OrderMetadata {
         OrderMetadata {
             trader_id: TraderId::from("TRADER-001"),
             strategy_id: StrategyId::from("S-001"),
@@ -1125,7 +1126,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_place_order_response_cleans_pending_order() {
         let mut handler = test_handler();
         let request_id = 11;
@@ -1149,7 +1150,7 @@ mod tests {
         assert!(handler.pending_orders.get(&request_id).is_none());
     }
 
-    #[test]
+    #[rstest]
     fn test_handle_order_filled_cleans_tracking_maps() {
         let mut handler = test_handler();
 
@@ -1157,9 +1158,10 @@ mod tests {
         let venue_order_id = VenueOrderId::new("OID-1");
         let cid = 22_u64;
 
-        handler
-            .orders_metadata
-            .insert(client_order_id, sample_metadata(client_order_id, venue_order_id));
+        handler.orders_metadata.insert(
+            client_order_id,
+            sample_metadata(client_order_id, venue_order_id),
+        );
         handler
             .venue_to_client_id
             .insert(venue_order_id, client_order_id);
@@ -1187,7 +1189,7 @@ mod tests {
         assert!(handler.cid_to_client_order_id.get(&cid).is_none());
     }
 
-    #[test]
+    #[rstest]
     fn test_create_order_rejected_cleans_venue_mapping() {
         let mut handler = test_handler();
 
@@ -1195,9 +1197,10 @@ mod tests {
         let venue_order_id = VenueOrderId::new("OID-1");
         let cid = 33_u64;
 
-        handler
-            .orders_metadata
-            .insert(client_order_id, sample_metadata(client_order_id, venue_order_id));
+        handler.orders_metadata.insert(
+            client_order_id,
+            sample_metadata(client_order_id, venue_order_id),
+        );
         handler
             .venue_to_client_id
             .insert(venue_order_id, client_order_id);

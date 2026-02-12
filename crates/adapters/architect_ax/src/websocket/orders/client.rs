@@ -663,13 +663,11 @@ impl AxOrdersWebSocketClient {
         client_order_id: ClientOrderId,
         venue_order_id: Option<VenueOrderId>,
     ) -> AxOrdersWsResult<i64> {
-        let order_id = venue_order_id
-            .map(|v| v.to_string())
-            .ok_or_else(|| {
-                AxOrdersWsClientError::ClientError(format!(
-                    "Cannot cancel order {client_order_id}: missing venue_order_id"
-                ))
-            })?;
+        let order_id = venue_order_id.map(|v| v.to_string()).ok_or_else(|| {
+            AxOrdersWsClientError::ClientError(format!(
+                "Cannot cancel order {client_order_id}: missing venue_order_id"
+            ))
+        })?;
 
         let request_id = self.next_request_id();
 
@@ -758,8 +756,6 @@ impl AxOrdersWebSocketClient {
 mod tests {
     use std::sync::Arc;
 
-    use tokio::sync::RwLock;
-
     use super::*;
 
     #[tokio::test]
@@ -791,7 +787,7 @@ mod tests {
         );
 
         let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        client.cmd_tx = Arc::new(RwLock::new(cmd_tx));
+        client.cmd_tx = Arc::new(tokio::sync::RwLock::new(cmd_tx));
 
         let client_order_id = ClientOrderId::from("CID-456");
         let venue_order_id = VenueOrderId::from("V-ORDER-789");
