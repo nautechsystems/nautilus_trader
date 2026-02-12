@@ -92,6 +92,16 @@ simplified_symbology_params = [
     (IBContract(secType="IND", exchange="ASX", localSymbol="XJO"), "^XJO.ASX"),
     (
         IBContract(
+            secType="FUT",
+            exchange="EUREX",
+            symbol="ESTX50",
+            tradingClass="FESX",
+            lastTradeDateOrContractMonth="20240315",
+        ),
+        "ESTX50 FESX 20240315.EUREX",
+    ),
+    (
+        IBContract(
             secType="OPT",
             exchange="EUREX",
             symbol="OESX",

@@ -260,6 +260,11 @@ RE_FUT2_ORIGINAL = re.compile(
 RE_FUT3_ORIGINAL = re.compile(
     r"^(?P<symbol>[A-Z]+)(?P<year>\d{2})(?P<month>(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC))FUT$",
 )  # "NIFTY25MARFUT"
+RE_FUT4 = re.compile(
+    r"^(?P<underlying>[A-Z0-9]{2,10})\s+"
+    r"(?P<tradingClass>[A-Z0-9]{2,6})\s+"
+    r"(?P<expiry>\d{8})$",
+)
 RE_FOP = re.compile(
     r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d{2})(?P<right>[CP])(?P<strike>.{4,6})$",
 )  # "ESM23C4200"
@@ -1069,6 +1074,10 @@ def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too comple
         symbol = contract.symbol
     elif security_type == "FUT" and (m := RE_FUT_ORIGINAL.match(contract.localSymbol)):
         symbol = f"{m['symbol']}{m['month']}{m['year']}"
+    elif security_type == "FUT" and len(contract.lastTradeDateOrContractMonth) == 8:
+        symbol = (
+            f"{contract.symbol} {contract.tradingClass} {contract.lastTradeDateOrContractMonth}"
+        )
     elif (security_type == "FUT" and (m := RE_FUT2_ORIGINAL.match(contract.localSymbol))) or (
         security_type == "FUT" and (m := RE_FUT3_ORIGINAL.match(contract.localSymbol))
     ):
@@ -1216,6 +1225,14 @@ def instrument_id_to_ib_contract_simplified_symbology(  # noqa: C901 (too comple
             secType="IND",
             exchange=exchange,
             localSymbol=instrument_id.symbol.value[1:],
+        )
+    elif exchange in VENUES_FUT and (m := RE_FUT4.match(instrument_id.symbol.value)):
+        return IBContract(
+            secType="FUT",
+            exchange=exchange,
+            symbol=m["underlying"],
+            tradingClass=m["tradingClass"],
+            lastTradeDateOrContractMonth=m["expiry"],
         )
     elif exchange in VENUES_OPT:
         if m := RE_OPT.match(instrument_id.symbol.value):
