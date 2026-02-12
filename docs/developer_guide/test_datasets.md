@@ -100,6 +100,7 @@ should follow the Parquet standard above.
 | Dataset                  | Source | Format           | Location                  | Status  |
 |--------------------------|--------|------------------|---------------------------|---------|
 | Tardis Deribit L2 deltas | Tardis | Parquet (large)  | `tests/test_data/large/`  | Curated |
+| ITCH AAPL L3 deltas      | NASDAQ | Parquet (large)  | `tests/test_data/large/`  | Curated |
 | Tardis Deribit L2        | Tardis | CSV (checked in) | `tests/test_data/tardis/` | Legacy  |
 | Tardis Binance snapshots | Tardis | CSV.gz (large)   | `tests/test_data/large/`  | Legacy  |
 | Tardis Bitmex trades     | Tardis | CSV.gz (large)   | `tests/test_data/large/`  | Legacy  |

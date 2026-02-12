@@ -19,6 +19,7 @@ use std::{
     fs::{File, OpenOptions},
     io::{BufReader, BufWriter, Read, copy},
     path::Path,
+    sync::{Mutex, OnceLock},
     thread::sleep,
     time::{Duration, Instant},
 };
@@ -28,6 +29,15 @@ use nautilus_network::retry::RetryConfig;
 use rand::{RngExt, rng};
 use reqwest::blocking::Client;
 use serde_json::Value;
+
+static LARGE_CHECKSUMS_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn lock_large_checksums() -> anyhow::Result<std::sync::MutexGuard<'static, ()>> {
+    LARGE_CHECKSUMS_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .map_err(|e| anyhow::anyhow!("Failed to lock checksums file access: {e}"))
+}
 
 #[derive(Debug)]
 enum DownloadError {
@@ -175,6 +185,7 @@ pub fn ensure_file_exists_or_download_http_with_config(
         println!("File already exists: {filepath:?}");
 
         if let Some(checksums_file) = checksums {
+            let _guard = lock_large_checksums()?;
             if verify_sha256_checksum(filepath, checksums_file)? {
                 println!("File is valid");
                 return Ok(());
@@ -205,8 +216,11 @@ pub fn ensure_file_exists_or_download_http_with_config(
     download_file(filepath, url, timeout_secs, retry_config)?;
 
     if let Some(checksums_file) = checksums {
-        let new_checksum = calculate_sha256(filepath)?;
-        update_sha256_checksums(filepath, checksums_file, &new_checksum)?;
+        let _guard = lock_large_checksums()?;
+        if !verify_sha256_checksum(filepath, checksums_file)? {
+            let new_checksum = calculate_sha256(filepath)?;
+            update_sha256_checksums(filepath, checksums_file, &new_checksum)?;
+        }
     }
 
     Ok(())
