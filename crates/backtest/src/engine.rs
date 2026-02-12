@@ -24,6 +24,8 @@ use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
     component::Component,
+    enums::LogColor,
+    log_info,
     logging::{
         logging_clock_set_realtime_mode, logging_clock_set_static_mode,
         logging_clock_set_static_time,
@@ -34,7 +36,7 @@ use nautilus_common::{
         trading_cmd_queue_is_empty,
     },
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, datetime::unix_nanos_to_iso8601, formatting::Separable};
 use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::models::{fee::FeeModelAny, fill::FillModel, latency::LatencyModel};
 use nautilus_model::{
@@ -43,6 +45,7 @@ use nautilus_model::{
     enums::{AccountType, BookType, OmsType},
     identifiers::{AccountId, ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
+    orders::Order,
     position::Position,
     types::{Currency, Money},
 };
@@ -557,14 +560,9 @@ impl BacktestEngine {
             // which queue trading commands via the sync senders)
             self.kernel.data_engine.borrow_mut().process_data(d.clone());
 
-            // Drain all deferred commands, then process exchange queues.
-            // Exchange processing may generate fill events that trigger
-            // further strategy callbacks, so drain again after.
+            // Drain deferred commands, then process exchange queues
             self.drain_command_queues();
-            for exchange in self.venues.values() {
-                exchange.borrow_mut().process(ts_init);
-            }
-            self.drain_command_queues();
+            self.process_and_settle_venues(ts_init);
 
             let prev_last_ns = self.last_ns;
             data = self.data_iterator.next();
@@ -840,10 +838,7 @@ impl BacktestEngine {
 
             if ts_last != Some(ts_event) {
                 ts_last = Some(ts_event);
-                for exchange in self.venues.values() {
-                    exchange.borrow_mut().process(ts_event);
-                }
-                self.drain_command_queues();
+                self.process_and_settle_venues(ts_event);
             }
 
             // Re-advance clocks to capture chained timers
@@ -874,10 +869,7 @@ impl BacktestEngine {
 
             if ts_last != Some(ts_event) {
                 ts_last = Some(ts_event);
-                for exchange in self.venues.values() {
-                    exchange.borrow_mut().process(ts_event);
-                }
-                self.drain_command_queues();
+                self.process_and_settle_venues(ts_event);
             }
 
             // Re-advance clocks to capture chained timers
@@ -922,6 +914,23 @@ impl BacktestEngine {
         let mut clocks = vec![self.kernel.clock.clone()];
         clocks.extend(self.kernel.trader.get_component_clocks());
         clocks
+    }
+
+    fn process_and_settle_venues(&self, ts_now: UnixNanos) {
+        loop {
+            for exchange in self.venues.values() {
+                exchange.borrow_mut().process(ts_now);
+            }
+            self.drain_command_queues();
+
+            let has_pending = self
+                .venues
+                .values()
+                .any(|exchange| exchange.borrow().has_pending_commands(ts_now));
+            if !has_pending {
+                break;
+            }
+        }
     }
 
     fn drain_exec_client_events(&self) {
@@ -975,77 +984,80 @@ impl BacktestEngine {
         }
     }
 
+    #[rustfmt::skip]
     fn log_pre_run(&self) {
-        log::info!("=================================================================");
-        log::info!(" BACKTEST PRE-RUN");
-        log::info!("=================================================================");
+        log_info!("=================================================================", color = LogColor::Cyan);
+        log_info!(" BACKTEST PRE-RUN", color = LogColor::Cyan);
+        log_info!("=================================================================", color = LogColor::Cyan);
 
         for exchange in self.venues.values() {
             let ex = exchange.borrow();
             log::info!(" SimulatedVenue {} ({})", ex.id, ex.account_type);
         }
 
-        log::info!("-----------------------------------------------------------------");
+        log_info!("-----------------------------------------------------------------", color = LogColor::Cyan);
     }
 
+    #[rustfmt::skip]
     fn log_run(&self) {
-        log::info!("=================================================================");
-        log::info!(" BACKTEST RUN");
-        log::info!("=================================================================");
-        log::info!("Run config ID:  {:?}", self.run_config_id);
-        log::info!("Run ID:         {:?}", self.run_id);
-        log::info!("Backtest start: {:?}", self.backtest_start);
+        let config_id = self.run_config_id.as_deref().unwrap_or("None");
+        let id = format_optional_uuid(self.run_id.as_ref());
+        let start = format_optional_nanos(self.backtest_start);
+
+        log_info!("=================================================================", color = LogColor::Cyan);
+        log_info!(" BACKTEST RUN", color = LogColor::Cyan);
+        log_info!("=================================================================", color = LogColor::Cyan);
+        log::info!("Run config ID:  {config_id}");
+        log::info!("Run ID:         {id}");
+        log::info!("Backtest start: {start}");
         log::info!("Data elements:  {}", self.data_len);
-        log::info!("-----------------------------------------------------------------");
+        log_info!("-----------------------------------------------------------------", color = LogColor::Cyan);
     }
 
+    #[rustfmt::skip]
     fn log_post_run(&self) {
         let cache = self.kernel.cache.borrow();
-        let total_orders = cache.orders_total_count(None, None, None, None, None);
+        let orders = cache.orders(None, None, None, None, None);
+        let total_events: usize = orders.iter().map(|o| o.event_count()).sum();
+        let total_orders = orders.len();
         let positions = cache.positions(None, None, None, None, None);
         let total_positions = positions.len();
 
-        log::info!("=================================================================");
-        log::info!(" BACKTEST POST-RUN");
-        log::info!("=================================================================");
-        log::info!("Run config ID:  {:?}", self.run_config_id);
-        log::info!("Run ID:         {:?}", self.run_id);
-        log::info!("Run started:    {:?}", self.run_started);
-        log::info!("Run finished:   {:?}", self.run_finished);
-        log::info!("Backtest start: {:?}", self.backtest_start);
-        log::info!("Backtest end:   {:?}", self.backtest_end);
-        log::info!("Iterations:     {}", self.iteration);
-        log::info!("Total orders:   {total_orders}");
-        log::info!("Total positions:{total_positions}");
+        let config_id = self.run_config_id.as_deref().unwrap_or("None");
+        let id = format_optional_uuid(self.run_id.as_ref());
+        let started = format_optional_nanos(self.run_started);
+        let finished = format_optional_nanos(self.run_finished);
+        let elapsed = format_optional_duration(self.run_started, self.run_finished);
+        let bt_start = format_optional_nanos(self.backtest_start);
+        let bt_end = format_optional_nanos(self.backtest_end);
+        let bt_range = format_optional_duration(self.backtest_start, self.backtest_end);
+        let iterations = self.iteration.separate_with_underscores();
+        let events = total_events.separate_with_underscores();
+        let num_orders = total_orders.separate_with_underscores();
+        let num_positions = total_positions.separate_with_underscores();
 
-        if self.config.run_analysis {
-            let analyzer = self.build_analyzer(&cache, &positions);
+        log_info!("=================================================================", color = LogColor::Cyan);
+        log_info!(" BACKTEST POST-RUN", color = LogColor::Cyan);
+        log_info!("=================================================================", color = LogColor::Cyan);
+        log::info!("Run config ID:  {config_id}");
+        log::info!("Run ID:         {id}");
+        log::info!("Run started:    {started}");
+        log::info!("Run finished:   {finished}");
+        log::info!("Elapsed time:   {elapsed}");
+        log::info!("Backtest start: {bt_start}");
+        log::info!("Backtest end:   {bt_end}");
+        log::info!("Backtest range: {bt_range}");
+        log::info!("Iterations: {iterations}");
+        log::info!("Total events: {events}");
+        log::info!("Total orders: {num_orders}");
+        log::info!("Total positions: {num_positions}");
 
-            for currency in analyzer.currencies() {
-                log::info!("-----------------------------------------------------------------");
-                log::info!(" PnL Statistics ({})", currency.code);
-
-                if let Ok(pnl_lines) = analyzer.get_stats_pnls_formatted(Some(currency), None) {
-                    for line in &pnl_lines {
-                        log::info!(" {line}");
-                    }
-                }
-            }
-
-            log::info!("-----------------------------------------------------------------");
-            log::info!(" Returns Statistics");
-            for line in &analyzer.get_stats_returns_formatted() {
-                log::info!(" {line}");
-            }
-
-            log::info!("-----------------------------------------------------------------");
-            log::info!(" General Statistics");
-            for line in &analyzer.get_stats_general_formatted() {
-                log::info!(" {line}");
-            }
+        if !self.config.run_analysis {
+            return;
         }
 
-        log::info!("=================================================================");
+        let analyzer = self.build_analyzer(&cache, &positions);
+        log_portfolio_performance(&analyzer);
     }
 
     pub fn add_data_client_if_not_exists(&mut self, client_id: ClientId) {
@@ -1096,101 +1108,64 @@ impl BacktestEngine {
             self.kernel
                 .data_engine
                 .borrow_mut()
-                .register_client(data_client_adapter, None);
+                .register_client(data_client_adapter, Some(venue));
         }
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use ahash::AHashMap;
-    use nautilus_execution::models::{fee::FeeModelAny, fill::FillModel};
-    use nautilus_model::{
-        enums::{AccountType, BookType, OmsType},
-        identifiers::{ClientId, Venue},
-        instruments::{
-            CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
-        },
-        types::Money,
-    };
-    use rstest::rstest;
+fn format_optional_nanos(nanos: Option<UnixNanos>) -> String {
+    nanos.map_or("None".to_string(), unix_nanos_to_iso8601)
+}
 
-    use crate::{config::BacktestEngineConfig, engine::BacktestEngine};
+fn format_optional_uuid(uuid: Option<&UUID4>) -> String {
+    uuid.map_or("None".to_string(), |id| id.to_string())
+}
 
-    #[allow(clippy::missing_panics_doc)]
-    fn get_backtest_engine(config: Option<BacktestEngineConfig>) -> BacktestEngine {
-        let config = config.unwrap_or_default();
-        let mut engine = BacktestEngine::new(config).unwrap();
-        engine
-            .add_venue(
-                Venue::from("BINANCE"),
-                OmsType::Netting,
-                AccountType::Margin,
-                BookType::L2_MBP,
-                vec![Money::from("1_000_000 USD")],
-                None,
-                None,
-                AHashMap::new(),
-                vec![],
-                FillModel::default(),
-                FeeModelAny::default(),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap();
-        engine
+fn format_optional_duration(start: Option<UnixNanos>, end: Option<UnixNanos>) -> String {
+    match (start, end) {
+        (Some(s), Some(e)) => {
+            let delta = e.to_datetime_utc() - s.to_datetime_utc();
+            let days = delta.num_days().abs();
+            let hours = delta.num_hours().abs() % 24;
+            let minutes = delta.num_minutes().abs() % 60;
+            let seconds = delta.num_seconds().abs() % 60;
+            let micros = delta.subsec_nanos().unsigned_abs() / 1_000;
+            format!("{days} days {hours:02}:{minutes:02}:{seconds:02}.{micros:06}")
+        }
+        _ => "None".to_string(),
+    }
+}
+
+#[rustfmt::skip]
+fn log_portfolio_performance(analyzer: &PortfolioAnalyzer) {
+    log_info!("=================================================================", color = LogColor::Cyan);
+    log_info!(" PORTFOLIO PERFORMANCE", color = LogColor::Cyan);
+    log_info!("=================================================================", color = LogColor::Cyan);
+
+    for currency in analyzer.currencies() {
+        log::info!(" PnL Statistics ({})", currency.code);
+        log_info!("-----------------------------------------------------------------", color = LogColor::Cyan);
+
+        if let Ok(pnl_lines) = analyzer.get_stats_pnls_formatted(Some(currency), None) {
+            for line in &pnl_lines {
+                log::info!("{line}");
+            }
+        }
+
+        log_info!("-----------------------------------------------------------------", color = LogColor::Cyan);
     }
 
-    #[rstest]
-    fn test_engine_venue_and_instrument_initialization(crypto_perpetual_ethusdt: CryptoPerpetual) {
-        let venue = Venue::from("BINANCE");
-        let client_id = ClientId::from(venue.as_str());
-        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
-        let instrument_id = instrument.id();
-        let mut engine = get_backtest_engine(None);
-        engine.add_instrument(instrument).unwrap();
-
-        // Check the venue has been added
-        assert_eq!(engine.venues.len(), 1);
-        assert!(engine.venues.contains_key(&venue));
-
-        // Check the instrument has been added
-        assert!(
-            engine
-                .venues
-                .get(&venue)
-                .is_some_and(|venue| venue.borrow().get_matching_engine(&instrument_id).is_some())
-        );
-        assert_eq!(
-            engine
-                .kernel
-                .data_engine
-                .borrow()
-                .registered_clients()
-                .len(),
-            1
-        );
-        assert!(
-            engine
-                .kernel
-                .data_engine
-                .borrow()
-                .registered_clients()
-                .contains(&client_id)
-        );
+    log::info!(" Returns Statistics");
+    log_info!("-----------------------------------------------------------------", color = LogColor::Cyan);
+    for line in &analyzer.get_stats_returns_formatted() {
+        log::info!("{line}");
     }
+    log_info!("-----------------------------------------------------------------", color = LogColor::Cyan);
+
+    log::info!(" General Statistics");
+    log_info!("-----------------------------------------------------------------", color = LogColor::Cyan);
+    for line in &analyzer.get_stats_general_formatted() {
+        log::info!("{line}");
+    }
+    log_info!("-----------------------------------------------------------------", color = LogColor::Cyan);
 }

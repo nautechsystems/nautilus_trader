@@ -74,6 +74,19 @@ pub fn ensure_test_data_exists(filename: &str, url: &str) -> PathBuf {
     filepath
 }
 
+/// Ensures the NASDAQ ITCH AAPL deltas Parquet file exists locally, downloading from R2 if necessary.
+///
+/// # Panics
+///
+/// Panics if the download or checksum verification fails.
+#[must_use]
+pub fn ensure_itch_aapl_deltas_parquet() -> PathBuf {
+    ensure_test_data_exists(
+        "itch_AAPL.XNAS_2019-01-30_deltas.parquet",
+        "https://test-data.nautechsystems.io/large/itch_AAPL.XNAS_2019-01-30_deltas.parquet",
+    )
+}
+
 /// Ensures the Tardis Deribit BTC-PERPETUAL deltas Parquet file exists locally, downloading from R2 if necessary.
 ///
 /// # Panics

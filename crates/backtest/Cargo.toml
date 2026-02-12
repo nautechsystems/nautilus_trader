@@ -22,6 +22,7 @@ crate-type = ["rlib", "staticlib"]
 
 [features]
 default = []
+examples = ["nautilus-trading/examples"]
 streaming = ["nautilus-persistence", "nautilus-system/streaming"]
 extension-module = [
   "nautilus-common/extension-module",
@@ -81,3 +82,10 @@ tempfile = { workspace = true }
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }
+
+# Run with `cargo run --example ema-cross --package nautilus-backtest --features nautilus-backtest/examples`.
+[[example]]
+name = "ema-cross"
+path = "examples/ema_cross.rs"
+required-features = ["examples"]
+doc = false

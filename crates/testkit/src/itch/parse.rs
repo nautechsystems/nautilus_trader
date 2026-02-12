@@ -419,6 +419,11 @@ fn convert_price(price: itchy::Price4) -> Price {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, fs::File, path::PathBuf, sync::Arc};
+
+    use nautilus_model::data::OrderBookDelta;
+    use nautilus_serialization::arrow::{ArrowSchemaProvider, EncodeToRecordBatch};
+    use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
     use rstest::rstest;
 
     use super::*;
@@ -898,5 +903,59 @@ mod tests {
 
     fn build_system_event_msg(locate: u16, event_code: u8) -> Vec<u8> {
         build_msg(b'S', locate, 0, &[event_code])
+    }
+
+    // Curates AAPL L3 deltas from NASDAQ ITCH 5.0 binary into NautilusTrader Parquet.
+    // Download source: https://emi.nasdaq.com/ITCH/Nasdaq%20ITCH/01302019.NASDAQ_ITCH50.gz
+    // Run: cargo test -p nautilus-testkit --lib test_curate_aapl_itch -- --ignored --nocapture
+    #[rstest]
+    #[ignore = "one-time dataset curation, not for routine CI"]
+    fn test_curate_aapl_itch() {
+        let itch_path = PathBuf::from("/tmp/01302019.NASDAQ_ITCH50.gz");
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+
+        // 2019-01-30 midnight EST (UTC-5) as Unix nanoseconds
+        let base_ns: u64 = 1_548_824_400_000_000_000;
+        let parquet_path = "/tmp/itch_AAPL.XNAS_2019-01-30_deltas.parquet";
+
+        println!("Parsing ITCH from {}", itch_path.display());
+        let mut parser = ItchParser::new(instrument_id, "AAPL", base_ns);
+        let deltas = parser.parse_gzip_file(&itch_path).unwrap();
+        let count = deltas.len();
+        println!("Parsed {count} deltas for AAPL");
+
+        let metadata =
+            OrderBookDelta::get_metadata(&instrument_id, PRICE_PRECISION, SIZE_PRECISION);
+        let schema = OrderBookDelta::get_schema(Some(metadata.clone()));
+
+        println!("Writing Parquet to {parquet_path}");
+        let file = File::create(parquet_path).unwrap();
+        let zstd_level = parquet::basic::ZstdLevel::try_new(3).unwrap();
+        let props = WriterProperties::builder()
+            .set_compression(parquet::basic::Compression::ZSTD(zstd_level))
+            .set_max_row_group_size(1_000_000)
+            .build();
+        let mut writer = ArrowWriter::try_new(file, Arc::new(schema), Some(props)).unwrap();
+
+        let chunk_size = 1_000_000;
+        for (i, chunk) in deltas.chunks(chunk_size).enumerate() {
+            println!("  Encoding chunk {} ({} records)...", i + 1, chunk.len());
+            let batch = OrderBookDelta::encode_batch(&metadata, chunk).unwrap();
+            writer.write(&batch).unwrap();
+        }
+        writer.close().unwrap();
+
+        let file_size = fs::metadata(parquet_path).unwrap().len();
+        println!("\nRecords: {count}");
+        println!("Price precision: {PRICE_PRECISION}");
+        println!("Size precision: {SIZE_PRECISION}");
+        println!(
+            "File size: {} bytes ({:.1} MB)",
+            file_size,
+            file_size as f64 / 1_048_576.0
+        );
+        println!("Output: {parquet_path}");
+        println!("\nNext steps:");
+        println!("  sha256sum {parquet_path}");
     }
 }

@@ -129,6 +129,7 @@ cdef class BacktestEngine:
 
     cdef CVec _advance_time(self, uint64_t ts_now)
     cdef bint _process_next_timer(self)
+    cdef void _process_and_settle_venues(self, uint64_t ts_now)
     cdef void _flush_accumulator_events(self, uint64_t ts_now)
     cdef void _process_raw_time_event_handlers(
         self,
@@ -309,6 +310,8 @@ cdef class SimulatedExchange:
     cpdef void adjust_account(self, Money adjustment)
     cpdef void update_instrument(self, Instrument instrument)
     cdef tuple generate_inflight_command(self, TradingCommand command)
+    cpdef bint has_pending_commands(self, uint64_t ts_now)
+    cdef void _drain_commands(self, uint64_t ts_now)
     cpdef void send(self, TradingCommand command)
     cpdef void process_order_book_delta(self, OrderBookDelta delta)
     cpdef void process_order_book_deltas(self, OrderBookDeltas deltas)

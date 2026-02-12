@@ -1,4 +1,5 @@
 use std::{
+    cell::Cell,
     fmt::Debug,
     ops::{Deref, DerefMut},
 };
@@ -14,6 +15,7 @@ use nautilus_indicators::{
 use nautilus_model::{
     data::{Data, QuoteTick},
     enums::{AccountType, BookType, OmsType, OrderSide, PriceType},
+    events::OrderFilled,
     identifiers::{InstrumentId, StrategyId, Venue},
     instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     types::{Money, Price, Quantity},
@@ -784,6 +786,154 @@ fn test_ema_cross_with_batched_data(crypto_perpetual_ethusdt: CryptoPerpetual) {
     assert!(
         bt_result.total_orders >= 1,
         "Expected at least 1 order from batched data crossover, was {}",
+        bt_result.total_orders
+    );
+}
+
+// Strategy that submits a stop-loss when its market order fills,
+// exercising the engine's settle loop for cascading commands.
+struct CascadingStopStrategy {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    trade_size: Quantity,
+    entry_submitted: Cell<bool>,
+    stop_submitted: Cell<bool>,
+}
+
+impl CascadingStopStrategy {
+    fn new(instrument_id: InstrumentId, trade_size: Quantity) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("CASCADE-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            trade_size,
+            entry_submitted: Cell::new(false),
+            stop_submitted: Cell::new(false),
+        }
+    }
+}
+
+impl Deref for CascadingStopStrategy {
+    type Target = DataActorCore;
+    fn deref(&self) -> &Self::Target {
+        &self.core.actor
+    }
+}
+
+impl DerefMut for CascadingStopStrategy {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.core.actor
+    }
+}
+
+impl Debug for CascadingStopStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(CascadingStopStrategy)).finish()
+    }
+}
+
+impl DataActor for CascadingStopStrategy {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        if !self.entry_submitted.get() {
+            self.entry_submitted.set(true);
+            let order = self
+                .core
+                .order_factory
+                .as_mut()
+                .expect("OrderFactory should be initialized")
+                .market(
+                    self.instrument_id,
+                    OrderSide::Buy,
+                    self.trade_size,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                );
+            self.submit_order(order, None, None)?;
+        }
+        Ok(())
+    }
+
+    fn on_order_filled(&mut self, _event: &OrderFilled) -> anyhow::Result<()> {
+        // Submit stop-loss in response to fill (cascading command)
+        if !self.stop_submitted.get() {
+            self.stop_submitted.set(true);
+            let order = self
+                .core
+                .order_factory
+                .as_mut()
+                .expect("OrderFactory should be initialized")
+                .stop_market(
+                    self.instrument_id,
+                    OrderSide::Sell,
+                    self.trade_size,
+                    Price::from("900.00"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                );
+            self.submit_order(order, None, None)?;
+        }
+        Ok(())
+    }
+}
+
+impl Strategy for CascadingStopStrategy {
+    fn core_mut(&mut self) -> &mut StrategyCore {
+        &mut self.core
+    }
+
+    fn is_exiting(&self) -> bool {
+        self.core.is_exiting
+    }
+}
+
+#[rstest]
+fn test_cascading_stop_loss_on_fill_settled_same_tick(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(instrument).unwrap();
+
+    let strategy = CascadingStopStrategy::new(instrument_id, Quantity::from("1.000"));
+    engine.add_strategy(strategy).unwrap();
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1000.50", "1001.50", 2_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true);
+
+    engine.run(None, None, None, false).unwrap();
+
+    let bt_result = engine.get_result();
+
+    // Entry market order + cascading stop-loss = 2 orders
+    assert_eq!(
+        bt_result.total_orders, 2,
+        "Expected 2 orders (entry + cascading stop-loss), was {}",
         bt_result.total_orders
     );
 }
