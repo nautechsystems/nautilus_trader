@@ -113,6 +113,36 @@ use crate::{
 
 const OKX_SUCCESS_CODE: &str = "0";
 
+fn resolve_okx_error_message(response_body: &[u8], top_level_msg: &str) -> String {
+    let message = top_level_msg.trim();
+    if !message.is_empty() {
+        return message.to_string();
+    }
+
+    if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(response_body)
+        && let Some(first_item) = payload
+            .get("data")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|items| items.first())
+    {
+        if let Some(s_msg) = first_item.get("sMsg").and_then(serde_json::Value::as_str) {
+            let s_msg = s_msg.trim();
+            if !s_msg.is_empty() {
+                return s_msg.to_string();
+            }
+        }
+
+        if let Some(s_code) = first_item.get("sCode").and_then(serde_json::Value::as_str) {
+            let s_code = s_code.trim();
+            if !s_code.is_empty() {
+                return s_code.to_string();
+            }
+        }
+    }
+
+    String::new()
+}
+
 /// Default OKX REST API rate limit: 500 requests per 2 seconds.
 ///
 /// - Sub-account order limit: 1000 requests per 2 seconds.
@@ -476,7 +506,7 @@ impl OKXRawHttpClient {
                     if okx_response.code != OKX_SUCCESS_CODE {
                         return Err(OKXHttpError::OkxError {
                             error_code: okx_response.code,
-                            message: okx_response.msg,
+                            message: resolve_okx_error_message(&resp.body, &okx_response.msg),
                         });
                     }
 
@@ -495,7 +525,7 @@ impl OKXRawHttpClient {
                     if let Ok(parsed_error) = serde_json::from_slice::<OKXResponse<T>>(&resp.body) {
                         return Err(OKXHttpError::OkxError {
                             error_code: parsed_error.code,
-                            message: parsed_error.msg,
+                            message: resolve_okx_error_message(&resp.body, &parsed_error.msg),
                         });
                     }
 
