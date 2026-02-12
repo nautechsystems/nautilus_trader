@@ -1378,8 +1378,7 @@ cdef class BacktestEngine:
 
         try:
             # Process remaining messages
-            for exchange in self._venues.values():
-                exchange.process(self._kernel.clock.timestamp_ns())
+            self._process_and_settle_venues(self._kernel.clock.timestamp_ns())
         except AccountError:
             pass
 
@@ -1625,8 +1624,7 @@ cdef class BacktestEngine:
                 self._data_engine.process(data)
 
                 # Process all exchange messages
-                for exchange in self._venues.values():
-                    exchange.process(data.ts_init)
+                self._process_and_settle_venues(data.ts_init)
 
                 data = self._data_iterator.next()
 
@@ -1655,8 +1653,7 @@ cdef class BacktestEngine:
             return
 
         # Process remaining messages
-        for exchange in self._venues.values():
-            exchange.process(self._kernel.clock.timestamp_ns())
+        self._process_and_settle_venues(self._kernel.clock.timestamp_ns())
 
         # Flush remaining timer events up to end time
         self._flush_accumulator_events(end_ns)
@@ -1716,8 +1713,7 @@ cdef class BacktestEngine:
 
             if ts_event != ts_last:
                 ts_last = ts_event
-                for exchange in self._venues.values():
-                    exchange.process(ts_event)
+                self._process_and_settle_venues(ts_event)
 
             # Re-advance to capture timers scheduled by callback
             for clock in clocks:
@@ -1780,6 +1776,24 @@ cdef class BacktestEngine:
 
         return False
 
+    cdef void _process_and_settle_venues(self, uint64_t ts_now):
+        cdef SimulatedExchange exchange
+        cdef SimulationModule module
+
+        # Settle all cascading commands (without running modules)
+        while True:
+            for exchange in self._venues.values():
+                exchange._drain_commands(ts_now)
+
+            if not any(ex.has_pending_commands(ts_now) for ex in self._venues.values()):
+                break
+
+        # Run modules and expirations once after all commands are settled
+        for exchange in self._venues.values():
+            for module in exchange.modules:
+                module.process(ts_now)
+            exchange._process_instrument_expirations(ts_now)
+
     cdef void _flush_accumulator_events(self, uint64_t ts_now):
         cdef list[TestClock] clocks = get_component_clocks(self._instance_id)
         cdef TestClock clock
@@ -1829,8 +1843,7 @@ cdef class BacktestEngine:
 
             if ts_event != ts_last:
                 ts_last = ts_event
-                for exchange in self._venues.values():
-                    exchange.process(ts_event)
+                self._process_and_settle_venues(ts_event)
 
             # Re-advance clocks to capture chained alerts scheduled by callback
             for clock in clocks:
@@ -1894,8 +1907,7 @@ cdef class BacktestEngine:
 
             if ts_event != ts_last:
                 ts_last = ts_event
-                for exchange in self._venues.values():
-                    exchange.process(ts_event)
+                self._process_and_settle_venues(ts_event)
 
             # Re-advance to capture timers scheduled by callback
             for clock in clocks:
@@ -3198,6 +3210,13 @@ cdef class SimulatedExchange:
 
         matching_engine.update_instrument(instrument)
 
+    cpdef bint has_pending_commands(self, uint64_t ts_now):
+        if self._message_queue:
+            return True
+        if self._inflight_queue and self._inflight_queue[0][0][0] <= ts_now:
+            return True
+        return False
+
     cpdef void send(self, TradingCommand command):
         """
         Send the given trading command into the exchange.
@@ -3470,15 +3489,22 @@ cdef class SimulatedExchange:
             The current UNIX timestamp (nanoseconds).
 
         """
+        self._drain_commands(ts_now)
+
+        cdef SimulationModule module
+        for module in self.modules:
+            module.process(ts_now)
+
+        self._process_instrument_expirations(ts_now)
+
+    cdef void _drain_commands(self, uint64_t ts_now):
         self._clock.set_time(ts_now)
 
         cdef:
             uint64_t ts
         while self._inflight_queue:
-            # Peek at timestamp of next in-flight message
             ts = self._inflight_queue[0][0][0]
             if ts <= ts_now:
-                # Place message on queue to be processed
                 self._message_queue.appendleft(self._inflight_queue.pop(0)[1])
                 self._inflight_counter.pop(ts, None)
             else:
@@ -3488,13 +3514,6 @@ cdef class SimulatedExchange:
         while self._message_queue:
             command = self._message_queue.pop()
             self._process_trading_command(command)
-
-        # Iterate over modules
-        cdef SimulationModule module
-        for module in self.modules:
-            module.process(ts_now)
-
-        self._process_instrument_expirations(ts_now)
 
     cdef void _process_instrument_expirations(self, uint64_t ts_now):
         # Check instrument expiration for matching engines with expiring instruments at ts_now.

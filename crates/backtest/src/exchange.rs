@@ -480,6 +480,16 @@ impl SimulatedExchange {
         }
     }
 
+    #[must_use]
+    pub fn has_pending_commands(&self, ts_now: UnixNanos) -> bool {
+        if !self.message_queue.is_empty() {
+            return true;
+        }
+        self.inflight_queue
+            .peek()
+            .is_some_and(|inflight| inflight.timestamp <= ts_now)
+    }
+
     pub fn send(&mut self, command: TradingCommand) {
         if !self.use_message_queue {
             self.process_trading_command(command);
@@ -1564,6 +1574,71 @@ mod tests {
                 .unwrap()
                 .timestamp,
             UnixNanos::from(450)
+        );
+    }
+
+    #[rstest]
+    fn test_process_iterates_matching_engines_after_commands(
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+    ) {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let exchange = get_exchange(
+            Venue::new("BINANCE"),
+            AccountType::Margin,
+            BookType::L1_MBP,
+            Some(cache.clone()),
+        );
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let instrument_id = crypto_perpetual_ethusdt.id;
+        exchange.borrow_mut().add_instrument(instrument).unwrap();
+
+        let quote = QuoteTick::new(
+            instrument_id,
+            Price::from("1000.00"),
+            Price::from("1001.00"),
+            Quantity::from("1.000"),
+            Quantity::from("1.000"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        );
+        exchange.borrow_mut().process_quote_tick(&quote);
+
+        // Create a passive buy limit below the ask (should NOT fill)
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::new("O-LIMIT-1"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .price(Price::from("999.00"))
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+
+        let command = TradingCommand::SubmitOrder(SubmitOrder::new(
+            TraderId::test_default(),
+            None,
+            StrategyId::test_default(),
+            instrument_id,
+            order.client_order_id(),
+            order.init_event().clone(),
+            None,
+            None,
+            None,
+            UUID4::default(),
+            UnixNanos::from(1),
+        ));
+        exchange.borrow_mut().send(command);
+
+        exchange.borrow_mut().process(UnixNanos::from(1));
+
+        let open_orders = exchange.borrow().get_open_orders(Some(instrument_id));
+        assert_eq!(open_orders.len(), 1);
+        assert_eq!(
+            open_orders[0].client_order_id,
+            ClientOrderId::new("O-LIMIT-1")
         );
     }
 }

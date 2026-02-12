@@ -557,14 +557,9 @@ impl BacktestEngine {
             // which queue trading commands via the sync senders)
             self.kernel.data_engine.borrow_mut().process_data(d.clone());
 
-            // Drain all deferred commands, then process exchange queues.
-            // Exchange processing may generate fill events that trigger
-            // further strategy callbacks, so drain again after.
+            // Drain deferred commands, then process exchange queues
             self.drain_command_queues();
-            for exchange in self.venues.values() {
-                exchange.borrow_mut().process(ts_init);
-            }
-            self.drain_command_queues();
+            self.process_and_settle_venues(ts_init);
 
             let prev_last_ns = self.last_ns;
             data = self.data_iterator.next();
@@ -840,10 +835,7 @@ impl BacktestEngine {
 
             if ts_last != Some(ts_event) {
                 ts_last = Some(ts_event);
-                for exchange in self.venues.values() {
-                    exchange.borrow_mut().process(ts_event);
-                }
-                self.drain_command_queues();
+                self.process_and_settle_venues(ts_event);
             }
 
             // Re-advance clocks to capture chained timers
@@ -874,10 +866,7 @@ impl BacktestEngine {
 
             if ts_last != Some(ts_event) {
                 ts_last = Some(ts_event);
-                for exchange in self.venues.values() {
-                    exchange.borrow_mut().process(ts_event);
-                }
-                self.drain_command_queues();
+                self.process_and_settle_venues(ts_event);
             }
 
             // Re-advance clocks to capture chained timers
@@ -922,6 +911,23 @@ impl BacktestEngine {
         let mut clocks = vec![self.kernel.clock.clone()];
         clocks.extend(self.kernel.trader.get_component_clocks());
         clocks
+    }
+
+    fn process_and_settle_venues(&self, ts_now: UnixNanos) {
+        loop {
+            for exchange in self.venues.values() {
+                exchange.borrow_mut().process(ts_now);
+            }
+            self.drain_command_queues();
+
+            let has_pending = self
+                .venues
+                .values()
+                .any(|exchange| exchange.borrow().has_pending_commands(ts_now));
+            if !has_pending {
+                break;
+            }
+        }
     }
 
     fn drain_exec_client_events(&self) {

@@ -339,6 +339,18 @@ Failing to do so will result in data aggregation: L2 data will be reduced to a s
 
 In the main backtesting loop, new market data is processed for order execution before being dispatched to actors/strategies via the data engine.
 
+#### Command settling
+
+When an order fill triggers a strategy callback that submits additional orders (e.g., a stop-loss submitted
+in `on_order_filled`), those cascading commands are settled within the same timestamp/event cycle. The engine
+repeatedly drains venue command queues and any newly generated commands until no commands remain pending
+for the current timestamp. Simulation modules are run only once per cycle, after all commands have settled.
+
+When a `LatencyModel` is configured, commands are placed in the venue's inflight queue with a future
+timestamp derived from the simulated latency. The settle loop considers inflight commands that are due
+at the current timestamp as pending, so zero-latency or same-tick latency configurations still settle
+correctly. Commands with future timestamps are deferred and processed when the engine reaches that time.
+
 ### Fill modeling philosophy
 
 NautilusTrader treats historical order book and trade data as **immutable** during backtesting. What happened in the market is preserved exactly as recorded—fills never modify the underlying book state.
