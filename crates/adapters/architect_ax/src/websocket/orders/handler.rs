@@ -557,7 +557,7 @@ impl FeedHandler {
     fn handle_order_canceled(&mut self, msg: AxWsOrderCanceled) -> Option<Vec<AxOrdersWsMessage>> {
         log::debug!("Order canceled: {} reason={}", msg.o.oid, msg.xr);
 
-        if let Some(event) = self.create_order_canceled(&msg.o, msg.ts) {
+        let message = if let Some(event) = self.create_order_canceled(&msg.o, msg.ts) {
             Some(vec![AxOrdersWsMessage::Nautilus(
                 NautilusExecWsMessage::OrderCanceled(event),
             )])
@@ -574,14 +574,17 @@ impl FeedHandler {
                 msg.o.oid
             );
             None
-        }
+        };
+
+        self.cleanup_terminal_order_tracking(&msg.o);
+        message
     }
 
     fn handle_order_rejected(&mut self, msg: AxWsOrderRejected) -> Option<Vec<AxOrdersWsMessage>> {
         // Use r, or txt, or "UNKNOWN" as fallback
         let reason = msg.r.as_deref().or(msg.txt.as_deref()).unwrap_or("UNKNOWN");
 
-        if let Some(event) = self.create_order_rejected(&msg.o, reason, msg.ts) {
+        let message = if let Some(event) = self.create_order_rejected(&msg.o, reason, msg.ts) {
             Some(vec![AxOrdersWsMessage::Nautilus(
                 NautilusExecWsMessage::OrderRejected(event),
             )])
@@ -591,13 +594,16 @@ impl FeedHandler {
                 msg.o.oid
             );
             None
-        }
+        };
+
+        self.cleanup_terminal_order_tracking(&msg.o);
+        message
     }
 
     fn handle_order_expired(&mut self, msg: AxWsOrderExpired) -> Option<Vec<AxOrdersWsMessage>> {
         log::debug!("Order expired: {}", msg.o.oid);
 
-        if let Some(event) = self.create_order_expired(&msg.o, msg.ts) {
+        let message = if let Some(event) = self.create_order_expired(&msg.o, msg.ts) {
             Some(vec![AxOrdersWsMessage::Nautilus(
                 NautilusExecWsMessage::OrderExpired(event),
             )])
@@ -614,7 +620,10 @@ impl FeedHandler {
                 msg.o.oid
             );
             None
-        }
+        };
+
+        self.cleanup_terminal_order_tracking(&msg.o);
+        message
     }
 
     fn handle_order_replaced(&mut self, msg: AxWsOrderReplaced) -> Option<Vec<AxOrdersWsMessage>> {
@@ -650,7 +659,7 @@ impl FeedHandler {
     ) -> Option<Vec<AxOrdersWsMessage>> {
         log::debug!("Order done for day: {}", msg.o.oid);
 
-        if let Some(event) = self.create_order_expired(&msg.o, msg.ts) {
+        let message = if let Some(event) = self.create_order_expired(&msg.o, msg.ts) {
             Some(vec![AxOrdersWsMessage::Nautilus(
                 NautilusExecWsMessage::OrderExpired(event),
             )])
@@ -670,7 +679,10 @@ impl FeedHandler {
                 msg.o.oid
             );
             None
-        }
+        };
+
+        self.cleanup_terminal_order_tracking(&msg.o);
+        message
     }
 
     fn handle_cancel_rejected(
@@ -823,7 +835,7 @@ impl FeedHandler {
         ))
     }
 
-    fn create_order_canceled(&mut self, order: &AxWsOrder, event_ts: i64) -> Option<OrderCanceled> {
+    fn create_order_canceled(&self, order: &AxWsOrder, event_ts: i64) -> Option<OrderCanceled> {
         let venue_order_id = VenueOrderId::new(&order.oid);
         let metadata = self.lookup_order_metadata(order)?;
 
@@ -831,16 +843,6 @@ impl FeedHandler {
         let trader_id = metadata.trader_id;
         let strategy_id = metadata.strategy_id;
         let instrument_id = metadata.instrument_id;
-
-        // Drop the reference before removing
-        drop(metadata);
-
-        // Remove from tracking maps
-        self.orders_metadata.remove(&client_order_id);
-        self.venue_to_client_id.remove(&venue_order_id);
-        if let Some(cid) = order.cid {
-            self.cid_to_client_order_id.remove(&cid);
-        }
 
         let ts_event = ax_timestamp_s_to_unix_nanos(event_ts);
 
@@ -858,7 +860,7 @@ impl FeedHandler {
         ))
     }
 
-    fn create_order_expired(&mut self, order: &AxWsOrder, event_ts: i64) -> Option<OrderExpired> {
+    fn create_order_expired(&self, order: &AxWsOrder, event_ts: i64) -> Option<OrderExpired> {
         let venue_order_id = VenueOrderId::new(&order.oid);
         let metadata = self.lookup_order_metadata(order)?;
 
@@ -866,16 +868,6 @@ impl FeedHandler {
         let trader_id = metadata.trader_id;
         let strategy_id = metadata.strategy_id;
         let instrument_id = metadata.instrument_id;
-
-        // Drop the reference before removing
-        drop(metadata);
-
-        // Remove from tracking maps
-        self.orders_metadata.remove(&client_order_id);
-        self.venue_to_client_id.remove(&venue_order_id);
-        if let Some(cid) = order.cid {
-            self.cid_to_client_order_id.remove(&cid);
-        }
 
         let ts_event = ax_timestamp_s_to_unix_nanos(event_ts);
 
@@ -894,27 +886,17 @@ impl FeedHandler {
     }
 
     fn create_order_rejected(
-        &mut self,
+        &self,
         order: &AxWsOrder,
         reason: &str,
         event_ts: i64,
     ) -> Option<OrderRejected> {
-        let venue_order_id = VenueOrderId::new(&order.oid);
         let metadata = self.lookup_order_metadata(order)?;
 
         let client_order_id = metadata.client_order_id;
         let trader_id = metadata.trader_id;
         let strategy_id = metadata.strategy_id;
         let instrument_id = metadata.instrument_id;
-
-        // Drop the reference before removing
-        drop(metadata);
-
-        self.orders_metadata.remove(&client_order_id);
-        self.venue_to_client_id.remove(&venue_order_id);
-        if let Some(cid) = order.cid {
-            self.cid_to_client_order_id.remove(&cid);
-        }
 
         let ts_event = ax_timestamp_s_to_unix_nanos(event_ts);
         let due_post_only = reason.contains(AX_POST_ONLY_REJECT);
@@ -934,23 +916,22 @@ impl FeedHandler {
         ))
     }
 
-    fn cleanup_terminal_order_tracking(&self, order: &AxWsOrder) {
+    fn cleanup_terminal_order_tracking(&mut self, order: &AxWsOrder) {
         let venue_order_id = VenueOrderId::new(&order.oid);
         let client_order_id = self
             .venue_to_client_id
-            .get(&venue_order_id)
-            .map(|entry| *entry)
+            .remove(&venue_order_id)
+            .map(|(_, v)| v)
             .or_else(|| {
                 order
                     .cid
-                    .and_then(|cid| self.cid_to_client_order_id.get(&cid).map(|entry| *entry))
+                    .and_then(|cid| self.cid_to_client_order_id.remove(&cid).map(|(_, v)| v))
             });
 
         if let Some(client_order_id) = client_order_id {
             self.orders_metadata.remove(&client_order_id);
         }
 
-        self.venue_to_client_id.remove(&venue_order_id);
         if let Some(cid) = order.cid {
             self.cid_to_client_order_id.remove(&cid);
         }
@@ -1073,7 +1054,7 @@ mod tests {
     use super::*;
     use crate::{
         common::enums::{AxOrderSide, AxOrderStatus, AxTimeInForce},
-        websocket::messages::{AxWsPlaceOrderResponse, AxWsPlaceOrderResult},
+        websocket::messages::{AxWsOrderRejected, AxWsPlaceOrderResponse, AxWsPlaceOrderResult},
     };
 
     fn test_handler() -> FeedHandler {
@@ -1192,7 +1173,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_create_order_rejected_cleans_venue_mapping() {
+    fn test_handle_order_rejected_cleans_tracking_maps() {
         let mut handler = test_handler();
 
         let client_order_id = ClientOrderId::from("CID-33");
@@ -1208,8 +1189,17 @@ mod tests {
             .insert(venue_order_id, client_order_id);
         handler.cid_to_client_order_id.insert(cid, client_order_id);
 
-        let rejected = handler.create_order_rejected(&sample_order(cid), "rejected", 1_700_000_002);
-        assert!(rejected.is_some());
+        let msg = AxWsOrderRejected {
+            ts: 1_700_000_002,
+            tn: 3,
+            eid: "EID-3".to_string(),
+            o: sample_order(cid),
+            r: Some("rejected".to_string()),
+            txt: None,
+        };
+
+        let messages = handler.handle_order_rejected(msg);
+        assert!(messages.is_some());
         assert!(handler.orders_metadata.get(&client_order_id).is_none());
         assert!(handler.venue_to_client_id.get(&venue_order_id).is_none());
         assert!(handler.cid_to_client_order_id.get(&cid).is_none());

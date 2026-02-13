@@ -99,8 +99,7 @@ pub enum NautilusExecWsMessage {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdSubscribe {
     /// Client request ID for correlation.
-    #[serde(rename = "rid")]
-    pub request_id: i64,
+    pub rid: i64,
     /// Request type (always "subscribe").
     #[serde(rename = "type")]
     pub msg_type: AxMdRequestType,
@@ -117,8 +116,7 @@ pub struct AxMdSubscribe {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdUnsubscribe {
     /// Client request ID for correlation.
-    #[serde(rename = "rid")]
-    pub request_id: i64,
+    pub rid: i64,
     /// Request type (always "unsubscribe").
     #[serde(rename = "type")]
     pub msg_type: AxMdRequestType,
@@ -133,8 +131,7 @@ pub struct AxMdUnsubscribe {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdSubscribeCandles {
     /// Client request ID for correlation.
-    #[serde(rename = "rid")]
-    pub request_id: i64,
+    pub rid: i64,
     /// Request type (always "subscribe_candles").
     #[serde(rename = "type")]
     pub msg_type: AxMdRequestType,
@@ -151,8 +148,7 @@ pub struct AxMdSubscribeCandles {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxMdUnsubscribeCandles {
     /// Client request ID for correlation.
-    #[serde(rename = "rid")]
-    pub request_id: i64,
+    pub rid: i64,
     /// Request type (always "unsubscribe_candles").
     #[serde(rename = "type")]
     pub msg_type: AxMdRequestType,
@@ -980,7 +976,7 @@ mod tests {
     #[rstest]
     fn test_md_subscribe_serialization() {
         let msg = AxMdSubscribe {
-            request_id: 2,
+            rid: 2,
             msg_type: AxMdRequestType::Subscribe,
             symbol: Ustr::from("BTCUSD-PERP"),
             level: AxMarketDataLevel::Level2,
@@ -989,7 +985,6 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
         assert_eq!(parsed["rid"], 2);
-        assert!(parsed.get("request_id").is_none());
         assert_eq!(parsed["type"], "subscribe");
         assert_eq!(parsed["symbol"], "BTCUSD-PERP");
         assert_eq!(parsed["level"], "LEVEL_2");
@@ -998,7 +993,7 @@ mod tests {
     #[rstest]
     fn test_md_unsubscribe_serialization() {
         let msg = AxMdUnsubscribe {
-            request_id: 3,
+            rid: 3,
             msg_type: AxMdRequestType::Unsubscribe,
             symbol: Ustr::from("BTCUSD-PERP"),
         };
@@ -1006,7 +1001,6 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
         assert_eq!(parsed["rid"], 3);
-        assert!(parsed.get("request_id").is_none());
         assert_eq!(parsed["type"], "unsubscribe");
         assert_eq!(parsed["symbol"], "BTCUSD-PERP");
     }
@@ -1014,7 +1008,7 @@ mod tests {
     #[rstest]
     fn test_md_subscribe_candles_serialization() {
         let msg = AxMdSubscribeCandles {
-            request_id: 4,
+            rid: 4,
             msg_type: AxMdRequestType::SubscribeCandles,
             symbol: Ustr::from("BTCUSD-PERP"),
             width: AxCandleWidth::Minutes1,
@@ -1023,7 +1017,6 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
         assert_eq!(parsed["rid"], 4);
-        assert!(parsed.get("request_id").is_none());
         assert_eq!(parsed["type"], "subscribe_candles");
         assert_eq!(parsed["symbol"], "BTCUSD-PERP");
         assert_eq!(parsed["width"], "1m");
@@ -1032,7 +1025,7 @@ mod tests {
     #[rstest]
     fn test_md_unsubscribe_candles_serialization() {
         let msg = AxMdUnsubscribeCandles {
-            request_id: 5,
+            rid: 5,
             msg_type: AxMdRequestType::UnsubscribeCandles,
             symbol: Ustr::from("BTCUSD-PERP"),
             width: AxCandleWidth::Minutes1,
@@ -1041,7 +1034,6 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
         assert_eq!(parsed["rid"], 5);
-        assert!(parsed.get("request_id").is_none());
         assert_eq!(parsed["type"], "unsubscribe_candles");
         assert_eq!(parsed["symbol"], "BTCUSD-PERP");
         assert_eq!(parsed["width"], "1m");

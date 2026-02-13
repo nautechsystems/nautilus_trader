@@ -376,7 +376,7 @@ impl FeedHandler {
 
     async fn send_subscribe(&self, request_id: i64, symbol: Ustr, level: AxMarketDataLevel) {
         let msg = AxMdSubscribe {
-            request_id,
+            rid: request_id,
             msg_type: AxMdRequestType::Subscribe,
             symbol,
             level,
@@ -389,7 +389,7 @@ impl FeedHandler {
 
     async fn send_unsubscribe(&self, request_id: i64, symbol: Ustr) {
         let msg = AxMdUnsubscribe {
-            request_id,
+            rid: request_id,
             msg_type: AxMdRequestType::Unsubscribe,
             symbol,
         };
@@ -401,7 +401,7 @@ impl FeedHandler {
 
     async fn send_subscribe_candles(&self, request_id: i64, symbol: Ustr, width: AxCandleWidth) {
         let msg = AxMdSubscribeCandles {
-            request_id,
+            rid: request_id,
             msg_type: AxMdRequestType::SubscribeCandles,
             symbol,
             width,
@@ -414,7 +414,7 @@ impl FeedHandler {
 
     async fn send_unsubscribe_candles(&self, request_id: i64, symbol: Ustr, width: AxCandleWidth) {
         let msg = AxMdUnsubscribeCandles {
-            request_id,
+            rid: request_id,
             msg_type: AxMdRequestType::UnsubscribeCandles,
             symbol,
             width,
