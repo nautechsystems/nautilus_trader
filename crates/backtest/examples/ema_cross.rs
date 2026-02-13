@@ -22,7 +22,7 @@
 
 use ahash::AHashMap;
 use nautilus_backtest::{config::BacktestEngineConfig, engine::BacktestEngine};
-use nautilus_execution::models::{fee::FeeModelAny, fill::FillModel};
+use nautilus_execution::models::{fee::FeeModelAny, fill::FillModelAny};
 use nautilus_model::{
     data::{Data, QuoteTick},
     enums::{AccountType, BookType, OmsType},
@@ -96,7 +96,7 @@ fn main() -> anyhow::Result<()> {
         None,            // default_leverage (defaults to 10x for Margin)
         AHashMap::new(), // per-instrument leverages
         vec![],          // simulation modules
-        FillModel::default(),
+        FillModelAny::default(),
         FeeModelAny::default(),
         None, // latency_model
         None, // routing
@@ -111,6 +111,7 @@ fn main() -> anyhow::Result<()> {
         None, // bar_execution
         None, // bar_adaptive_high_low_ordering
         None, // trade_execution
+        None, // liquidity_consumption
         None, // allow_cash_borrowing
         None, // frozen_account
         None, // price_protection_points

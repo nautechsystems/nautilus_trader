@@ -28,7 +28,10 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::{
     matching_engine::{config::OrderMatchingEngineConfig, engine::OrderMatchingEngine},
-    models::{fee::FeeModelAny, fill::FillModel},
+    models::{
+        fee::FeeModelAny,
+        fill::{DefaultFillModel, FillModelAny},
+    },
 };
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, QuoteTick, TradeTick, stubs::OrderBookDeltaTestBuilder},
@@ -172,7 +175,7 @@ fn get_order_matching_engine(
     OrderMatchingEngine::new(
         instrument,
         1,
-        FillModel::default(),
+        FillModelAny::default(),
         FeeModelAny::default(),
         BookType::L1_MBP,
         OmsType::Netting,
@@ -196,7 +199,7 @@ fn get_order_matching_engine_l2(
     OrderMatchingEngine::new(
         instrument,
         1,
-        FillModel::default(),
+        FillModelAny::default(),
         FeeModelAny::default(),
         BookType::L2_MBP,
         OmsType::Netting,
@@ -4808,7 +4811,7 @@ fn test_trade_execution_fill_model_at_limit_with_prob_zero_does_not_fill(
     // probability check is used. With prob_fill_on_limit=0.0, the order should
     // not fill from trade execution (simulates being at back of queue).
 
-    let fill_model = FillModel::new(0.0, 0.0, Some(42)).unwrap();
+    let fill_model = FillModelAny::Default(DefaultFillModel::new(0.0, 0.0, Some(42)).unwrap());
     let config = OrderMatchingEngineConfig {
         trade_execution: true,
         ..Default::default()
@@ -4891,7 +4894,7 @@ fn test_trade_execution_fill_model_at_limit_with_prob_one_fills(
     // Test that when trade price equals limit price exactly, with
     // prob_fill_on_limit=1.0 the order fills deterministically.
 
-    let fill_model = FillModel::new(1.0, 0.0, Some(42)).unwrap();
+    let fill_model = FillModelAny::Default(DefaultFillModel::new(1.0, 0.0, Some(42)).unwrap());
     let config = OrderMatchingEngineConfig {
         trade_execution: true,
         ..Default::default()
@@ -4987,7 +4990,7 @@ fn test_trade_execution_crossing_limit_fills_regardless_of_fill_model(
     // Test that when trade price crosses the limit (better price), the fill
     // model is NOT consulted and the order fills.
 
-    let fill_model = FillModel::new(0.0, 0.0, Some(42)).unwrap();
+    let fill_model = FillModelAny::Default(DefaultFillModel::new(0.0, 0.0, Some(42)).unwrap());
     let config = OrderMatchingEngineConfig {
         trade_execution: true,
         ..Default::default()
@@ -5085,7 +5088,7 @@ fn test_trade_execution_fill_model_rejection_still_applies_liquidity_consumption
     // Setup: No book liquidity at the limit/trade price, so trade execution path
     // is exercised. Fill model rejects (prob=0), verifying the skip-trade-fill branch.
 
-    let fill_model = FillModel::new(0.0, 0.0, Some(42)).unwrap();
+    let fill_model = FillModelAny::Default(DefaultFillModel::new(0.0, 0.0, Some(42)).unwrap());
     let config = OrderMatchingEngineConfig {
         trade_execution: true,
         liquidity_consumption: true,

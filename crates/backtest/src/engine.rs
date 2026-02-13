@@ -38,7 +38,7 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos, datetime::unix_nanos_to_iso8601, formatting::Separable};
 use nautilus_data::client::DataClientAdapter;
-use nautilus_execution::models::{fee::FeeModelAny, fill::FillModel, latency::LatencyModel};
+use nautilus_execution::models::{fee::FeeModelAny, fill::FillModelAny, latency::LatencyModel};
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{Data, HasTsInit},
@@ -180,7 +180,7 @@ impl BacktestEngine {
         default_leverage: Option<Decimal>,
         leverages: AHashMap<InstrumentId, Decimal>,
         modules: Vec<Box<dyn SimulationModule>>,
-        fill_model: FillModel,
+        fill_model: FillModelAny,
         fee_model: FeeModelAny,
         latency_model: Option<Box<dyn LatencyModel>>,
         routing: Option<bool>,
@@ -195,6 +195,7 @@ impl BacktestEngine {
         bar_execution: Option<bool>,
         bar_adaptive_high_low_ordering: Option<bool>,
         trade_execution: Option<bool>,
+        liquidity_consumption: Option<bool>,
         allow_cash_borrowing: Option<bool>,
         frozen_account: Option<bool>,
         price_protection_points: Option<u32>,
@@ -225,7 +226,7 @@ impl BacktestEngine {
             bar_execution,
             bar_adaptive_high_low_ordering,
             trade_execution,
-            None, // liquidity_consumption - use default (true)
+            liquidity_consumption,
             reject_stop_orders,
             support_gtd_orders,
             support_contingent_orders,
@@ -269,7 +270,7 @@ impl BacktestEngine {
         Ok(())
     }
 
-    pub fn change_fill_model(&mut self, venue: Venue, fill_model: FillModel) {
+    pub fn change_fill_model(&mut self, venue: Venue, fill_model: FillModelAny) {
         if let Some(exchange) = self.venues.get_mut(&venue) {
             exchange.borrow_mut().set_fill_model(fill_model);
         } else {
@@ -799,9 +800,7 @@ impl BacktestEngine {
                 Data::Quote(quote) => ex.process_quote_tick(quote),
                 Data::Trade(trade) => ex.process_trade_tick(trade),
                 Data::Bar(bar) => ex.process_bar(*bar),
-                Data::InstrumentClose(_) => {
-                    // TODO: Add process_instrument_close to SimulatedExchange
-                }
+                Data::InstrumentClose(close) => ex.process_instrument_close(*close),
                 Data::Depth10(depth) => ex.process_order_book_depth10(depth),
                 Data::MarkPriceUpdate(_) | Data::IndexPriceUpdate(_) => {
                     // Not routed to exchange — processed by data engine only

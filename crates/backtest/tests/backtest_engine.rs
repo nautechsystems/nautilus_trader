@@ -7,7 +7,7 @@ use std::{
 use ahash::AHashMap;
 use nautilus_backtest::{config::BacktestEngineConfig, engine::BacktestEngine};
 use nautilus_common::actor::{DataActor, DataActorCore};
-use nautilus_execution::models::{fee::FeeModelAny, fill::FillModel};
+use nautilus_execution::models::{fee::FeeModelAny, fill::FillModelAny};
 use nautilus_indicators::{
     average::ema::ExponentialMovingAverage,
     indicator::{Indicator, MovingAverage},
@@ -197,8 +197,9 @@ fn create_engine() -> BacktestEngine {
             None,
             AHashMap::new(),
             vec![],
-            FillModel::default(),
+            FillModelAny::default(),
             FeeModelAny::default(),
+            None,
             None,
             None,
             None,
@@ -526,8 +527,9 @@ fn test_multi_venue_data_routing(crypto_perpetual_ethusdt: CryptoPerpetual) {
             None,
             AHashMap::new(),
             vec![],
-            FillModel::default(),
+            FillModelAny::default(),
             FeeModelAny::default(),
+            None,
             None,
             None,
             None,
@@ -559,8 +561,9 @@ fn test_multi_venue_data_routing(crypto_perpetual_ethusdt: CryptoPerpetual) {
             None,
             AHashMap::new(),
             vec![],
-            FillModel::default(),
+            FillModelAny::default(),
             FeeModelAny::default(),
+            None,
             None,
             None,
             None,

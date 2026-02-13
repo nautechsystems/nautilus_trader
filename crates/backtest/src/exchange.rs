@@ -33,13 +33,13 @@ use nautilus_core::{
 use nautilus_execution::{
     matching_core::OrderMatchInfo,
     matching_engine::{config::OrderMatchingEngineConfig, engine::OrderMatchingEngine},
-    models::{fee::FeeModelAny, fill::FillModel, latency::LatencyModel},
+    models::{fee::FeeModelAny, fill::FillModelAny, latency::LatencyModel},
 };
 use nautilus_model::{
     accounts::AccountAny,
     data::{
-        Bar, Data, InstrumentStatus, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, Data, InstrumentClose, InstrumentStatus, OrderBookDelta, OrderBookDeltas,
+        OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
     },
     enums::{AccountType, BookType, OmsType},
     identifiers::{InstrumentId, Venue},
@@ -113,7 +113,7 @@ pub struct SimulatedExchange {
     exec_client: Option<Rc<dyn ExecutionClient>>,
     pub base_currency: Option<Currency>,
     fee_model: FeeModelAny,
-    fill_model: FillModel,
+    fill_model: FillModelAny,
     latency_model: Option<Box<dyn LatencyModel>>,
     instruments: AHashMap<InstrumentId, InstrumentAny>,
     matching_engines: AHashMap<InstrumentId, OrderMatchingEngine>,
@@ -170,7 +170,7 @@ impl SimulatedExchange {
         modules: Vec<Box<dyn SimulationModule>>,
         cache: Rc<RefCell<Cache>>,
         clock: Rc<RefCell<dyn Clock>>,
-        fill_model: FillModel,
+        fill_model: FillModelAny,
         fee_model: FeeModelAny,
         book_type: BookType,
         latency_model: Option<Box<dyn LatencyModel>>,
@@ -240,7 +240,7 @@ impl SimulatedExchange {
         self.exec_client = Some(client);
     }
 
-    pub fn set_fill_model(&mut self, fill_model: FillModel) {
+    pub fn set_fill_model(&mut self, fill_model: FillModelAny) {
         for matching_engine in self.matching_engines.values_mut() {
             matching_engine.set_fill_model(fill_model.clone());
             log::info!(
@@ -751,6 +751,37 @@ impl SimulatedExchange {
 
     /// # Panics
     ///
+    /// Panics if adding a missing instrument during instrument close processing fails.
+    pub fn process_instrument_close(&mut self, close: InstrumentClose) {
+        for module in &self.modules {
+            module.pre_process(Data::InstrumentClose(close));
+        }
+
+        if !self.matching_engines.contains_key(&close.instrument_id) {
+            let instrument = {
+                let cache = self.cache.as_ref().borrow();
+                cache.instrument(&close.instrument_id).cloned()
+            };
+
+            if let Some(instrument) = instrument {
+                self.add_instrument(instrument).unwrap();
+            } else {
+                panic!(
+                    "No matching engine found for instrument {}",
+                    close.instrument_id
+                );
+            }
+        }
+
+        if let Some(matching_engine) = self.matching_engines.get_mut(&close.instrument_id) {
+            matching_engine.process_instrument_close(close);
+        } else {
+            panic!("Matching engine should be initialized");
+        }
+    }
+
+    /// # Panics
+    ///
     /// Panics if popping an inflight command fails during processing.
     pub fn process(&mut self, ts_now: UnixNanos) {
         // TODO implement correct clock fixed time setting self.clock.set_time(ts_now);
@@ -883,7 +914,7 @@ mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_execution::models::{
         fee::{FeeModelAny, MakerTakerFeeModel},
-        fill::FillModel,
+        fill::FillModelAny,
         latency::StaticLatencyModel,
     };
     use nautilus_model::{
@@ -932,7 +963,7 @@ mod tests {
                 vec![],
                 cache.clone(),
                 clock,
-                FillModel::default(),
+                FillModelAny::default(),
                 FeeModelAny::MakerTaker(MakerTakerFeeModel),
                 book_type,
                 None, // latency_model

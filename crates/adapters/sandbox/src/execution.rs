@@ -37,7 +37,7 @@ use nautilus_execution::{
     matching_engine::adapter::OrderEngineAdapter,
     models::{
         fee::{FeeModelAny, MakerTakerFeeModel},
-        fill::FillModel,
+        fill::FillModelAny,
     },
 };
 use nautilus_model::{
@@ -78,7 +78,7 @@ impl SandboxInner {
 
         if !self.matching_engines.contains_key(&instrument_id) {
             let engine_config = self.config.to_matching_engine_config();
-            let fill_model = FillModel::default();
+            let fill_model = FillModelAny::default();
             let fee_model = FeeModelAny::MakerTaker(MakerTakerFeeModel);
             let raw_id = self.next_engine_raw_id;
             self.next_engine_raw_id = self.next_engine_raw_id.wrapping_add(1);

@@ -27,6 +27,7 @@ pub struct OrderMatchingEngineConfig {
     pub use_random_ids: bool,
     pub use_reduce_only: bool,
     pub use_market_order_acks: bool,
+    pub queue_position: bool,
     pub price_protection_points: Option<u32>,
 }
 
@@ -59,6 +60,7 @@ impl OrderMatchingEngineConfig {
             use_random_ids,
             use_reduce_only,
             use_market_order_acks,
+            queue_position: false,
             price_protection_points: None,
         }
     }
@@ -90,6 +92,7 @@ impl Default for OrderMatchingEngineConfig {
             use_random_ids: false,
             use_reduce_only: false,
             use_market_order_acks: false,
+            queue_position: false,
             price_protection_points: None,
         }
     }
