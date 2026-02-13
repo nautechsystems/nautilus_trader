@@ -18,6 +18,7 @@ on:
 
 env:
   PACKAGE_DIR: python
+  PRESERVE_VENV: 0  # Exact sync in CI (no extra packages preserved)
 
 jobs:
   pre-commit:

@@ -8,6 +8,9 @@ on:
   push:
     branches: [nightly]
 
+env:
+  PRESERVE_VENV: 0  # Exact sync in CI (no extra packages preserved)
+
 jobs:
   performance-benchmarks:
     runs-on: ubuntu-latest

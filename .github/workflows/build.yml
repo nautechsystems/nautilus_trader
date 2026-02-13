@@ -10,6 +10,9 @@ on:
   pull_request:
     branches: ['*']
 
+env:
+  PRESERVE_VENV: 0  # Exact sync in CI (no extra packages preserved)
+
 jobs:
   pre-commit:
     runs-on: ubuntu-22.04 # (glibc 2.35) wider runtime range than 24.04/glibc 2.39

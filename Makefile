@@ -115,22 +115,30 @@ RESET  := \033[0m
 
 #== Installation
 
+# PRESERVE_VENV=1 (default) keeps packages not in the lockfile (e.g. uv pip install jupyter).
+# Set PRESERVE_VENV=0 for exact sync (e.g. in CI) so uv sync removes extras.
+PRESERVE_VENV ?= 1
+UV_SYNC := uv sync --active --all-groups --all-extras
+ifeq ($(PRESERVE_VENV),1)
+UV_SYNC += --inexact
+endif
+
 .PHONY: install-deps
 install-deps:  #-- Install Python dependencies only (no package build)
 	$(info $(M) Installing Python dependencies...)
-	$Q uv sync --active --all-groups --all-extras --no-install-package nautilus_trader
+	$Q $(UV_SYNC) --no-install-package nautilus_trader
 
 .PHONY: install
 install: export BUILD_MODE=release
 install:  #-- Install in release mode with all dependencies and extras
 	$(info $(M) Installing NautilusTrader in release mode...)
-	$Q uv sync --active --all-groups --all-extras
+	$Q $(UV_SYNC)
 
 .PHONY: install-debug
 install-debug: export BUILD_MODE=debug
 install-debug:  #-- Install in debug mode for development
 	$(info $(M) Installing NautilusTrader in debug mode...)
-	$Q uv sync --active --all-groups --all-extras
+	$Q $(UV_SYNC)
 
 #== Build
 
@@ -667,7 +675,8 @@ help:  #-- Show this help message and exit
 	@printf "$(GRAY)Requires GNU Make. Windows users can install it via MSYS2 or WSL.$(RESET)\n\n"
 	@printf "$(GREEN)Usage:$(RESET) make $(CYAN)<target>$(RESET)\n\n"
 	@printf "$(GRAY)Tips: Use $(CYAN)make <target> V=1$(GRAY) for verbose output$(RESET)\n"
-	@printf "$(GRAY)      Use $(CYAN)make <target> VERBOSE=false$(GRAY) to disable verbose output for build-debug and cargo-test$(RESET)\n\n"
+	@printf "$(GRAY)      Use $(CYAN)make <target> VERBOSE=false$(GRAY) to disable verbose output for build-debug and cargo-test$(RESET)\n"
+	@printf "$(GRAY)      PRESERVE_VENV=1$(GRAY) (default) keeps uv pip install packages; use $(CYAN)PRESERVE_VENV=0$(GRAY) for exact sync$(RESET)\n\n"
 
 	@printf "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n"
 	@printf "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣾⣿⣿⣿⠀⢸⣿⣿⣿⣿⣶⣶⣤⣀⠀⠀⠀⠀⠀\n"
