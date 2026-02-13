@@ -30,9 +30,10 @@ highest level, with the aim of supporting mission-critical, trading system backt
 
 This crate provides feature flags to control source code inclusion during compilation:
 
-- `high-precision` (default): Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 - `extension-module`: Builds as a Python extension module (used with `python`).
+
+[High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
 
 ## Documentation
 

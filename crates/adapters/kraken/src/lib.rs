@@ -31,13 +31,17 @@
 //! - [Kraken REST API](https://docs.kraken.com/api/)
 //! - [Kraken WebSocket v2](https://docs.kraken.com/websockets-v2/)
 //!
-//! # Python Bindings
+//! # Feature Flags
 //!
-//! Enable the `python` feature to use this adapter from Python:
+//! This crate provides feature flags to control source code inclusion during compilation,
+//! depending on the intended use case, i.e. whether to provide Python bindings
+//! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
+//! or as part of a Rust only build.
 //!
-//! ```toml
-//! nautilus-kraken = { version = "*", features = ["python"] }
-//! ```
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `extension-module`: Builds as a Python extension module (used with `python`).
+//!
+//! [High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
 
 pub mod common;
 pub mod config;

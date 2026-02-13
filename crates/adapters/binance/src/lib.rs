@@ -46,6 +46,8 @@
 //! - `python`: Enables Python bindings via [PyO3](https://pyo3.rs).
 //! - `extension-module`: Builds as a Python extension module (used together with `python`).
 //!
+//! [High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
+//!
 //! # Documentation
 //!
 //! See <https://docs.rs/nautilus-binance> for the latest API documentation.
