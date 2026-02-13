@@ -37,6 +37,7 @@ use nautilus_model::{
     orders::Order,
     types::{Price, Quantity},
 };
+use rust_decimal::Decimal;
 
 use crate::strategy::{Strategy, StrategyConfig, StrategyCore};
 
@@ -107,13 +108,13 @@ impl GridMarketMaker {
         &self,
         mid: Price,
         net_position: f64,
-        worst_long: f64,
-        worst_short: f64,
+        worst_long: Decimal,
+        worst_short: Decimal,
     ) -> Vec<(OrderSide, Price)> {
         let precision = self.price_precision;
         let skew = Price::new(self.skew_factor * net_position, precision);
-        let trade_size = self.trade_size.as_f64();
-        let max_pos = self.max_position.as_f64();
+        let trade_size = self.trade_size.as_decimal();
+        let max_pos = self.max_position.as_decimal();
         let mut projected_long = worst_long;
         let mut projected_short = worst_short;
         let mut orders = Vec::new();
@@ -186,10 +187,9 @@ impl DataActor for GridMarketMaker {
     }
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        let mid = Price::from_raw(
-            (quote.bid_price.raw + quote.ask_price.raw) / 2,
-            quote.bid_price.precision,
-        );
+        // f64 division by 2 is exact in IEEE 754
+        let mid_f64 = (quote.bid_price.as_f64() + quote.ask_price.as_f64()) / 2.0;
+        let mid = Price::new(mid_f64, self.price_precision);
 
         if !self.should_requote(mid) {
             return Ok(());
@@ -205,14 +205,20 @@ impl DataActor for GridMarketMaker {
             let strategy = Some(&strategy_id);
             let cache = self.cache();
 
-            let position_qty: f64 = cache
-                .positions_open(None, instrument_id, strategy, None, None)
-                .iter()
-                .map(|p| p.signed_qty)
-                .sum();
+            let mut position_qty = 0.0_f64;
+            let mut position_dec = Decimal::ZERO;
+            for p in cache.positions_open(None, instrument_id, strategy, None, None) {
+                position_qty += p.signed_qty;
+                position_dec += p.quantity.as_decimal()
+                    * if p.signed_qty < 0.0 {
+                        Decimal::NEGATIVE_ONE
+                    } else {
+                        Decimal::ONE
+                    };
+            }
 
-            let mut pending_buy_qty = 0.0;
-            let mut pending_sell_qty = 0.0;
+            let mut pending_buy_dec = Decimal::ZERO;
+            let mut pending_sell_dec = Decimal::ZERO;
             let mut seen = AHashSet::new();
 
             // Deduplicate open/inflight (can overlap during state transitions)
@@ -228,17 +234,17 @@ impl DataActor for GridMarketMaker {
                 if !seen.insert(order.client_order_id()) {
                     continue;
                 }
-                let qty = order.leaves_qty().as_f64();
+                let qty = order.leaves_qty().as_decimal();
                 match order.order_side() {
-                    OrderSide::Buy => pending_buy_qty += qty,
-                    _ => pending_sell_qty += qty,
+                    OrderSide::Buy => pending_buy_dec += qty,
+                    _ => pending_sell_dec += qty,
                 }
             }
 
             (
                 position_qty,
-                position_qty + pending_buy_qty,
-                position_qty - pending_sell_qty,
+                position_dec + pending_buy_dec,
+                position_dec - pending_sell_dec,
             )
         };
 
@@ -298,6 +304,7 @@ mod tests {
         types::{Price, Quantity},
     };
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::GridMarketMaker;
 
@@ -357,7 +364,7 @@ mod tests {
     #[rstest]
     fn test_grid_orders_flat_position_symmetric() {
         let strategy = create_strategy(3, 1.0, 0.0, Quantity::from("10.0"), 0.50);
-        let orders = strategy.grid_orders(mid("1000.00"), 0.0, 0.0, 0.0);
+        let orders = strategy.grid_orders(mid("1000.00"), 0.0, dec!(0), dec!(0));
 
         assert_eq!(orders.len(), 6);
 
@@ -387,7 +394,7 @@ mod tests {
     fn test_grid_orders_skew_shifts_prices() {
         // skew_factor=1.0, net_position=2.0 → skew=2.0
         let strategy = create_strategy(1, 5.0, 1.0, Quantity::from("10.0"), 0.50);
-        let orders = strategy.grid_orders(mid("1000.00"), 2.0, 2.0, 2.0);
+        let orders = strategy.grid_orders(mid("1000.00"), 2.0, dec!(2), dec!(2));
 
         assert_eq!(orders.len(), 2);
         // Buy: 1000 - 5.0 - 2.0 = 993.0
@@ -404,7 +411,7 @@ mod tests {
     fn test_grid_orders_max_position_limits_buy_levels() {
         // net_position=9.9, trade_size=0.1, max=10.0 → only 1 buy level fits
         let strategy = create_strategy(3, 1.0, 0.0, Quantity::from("10.0"), 0.50);
-        let orders = strategy.grid_orders(mid("1000.00"), 9.9, 9.9, 9.9);
+        let orders = strategy.grid_orders(mid("1000.00"), 9.9, dec!(9.9), dec!(9.9));
 
         assert_eq!(count_side(&orders, OrderSide::Buy), 1);
         assert_eq!(count_side(&orders, OrderSide::Sell), 3);
@@ -414,7 +421,7 @@ mod tests {
     fn test_grid_orders_max_position_limits_sell_levels() {
         // net_position=-9.9, trade_size=0.1, max=10.0 → only 1 sell level fits
         let strategy = create_strategy(3, 1.0, 0.0, Quantity::from("10.0"), 0.50);
-        let orders = strategy.grid_orders(mid("1000.00"), -9.9, -9.9, -9.9);
+        let orders = strategy.grid_orders(mid("1000.00"), -9.9, dec!(-9.9), dec!(-9.9));
 
         assert_eq!(count_side(&orders, OrderSide::Buy), 3);
         assert_eq!(count_side(&orders, OrderSide::Sell), 1);
@@ -424,7 +431,7 @@ mod tests {
     fn test_grid_orders_max_position_blocks_all_buys() {
         // net_position=10.0 (at max) → no buys, all sells
         let strategy = create_strategy(3, 1.0, 0.0, Quantity::from("10.0"), 0.50);
-        let orders = strategy.grid_orders(mid("1000.00"), 10.0, 10.0, 10.0);
+        let orders = strategy.grid_orders(mid("1000.00"), 10.0, dec!(10), dec!(10));
 
         assert_eq!(count_side(&orders, OrderSide::Buy), 0);
         assert_eq!(count_side(&orders, OrderSide::Sell), 3);
@@ -434,7 +441,7 @@ mod tests {
     fn test_grid_orders_projected_exposure_across_levels() {
         // max_position=0.15, trade_size=0.1, 3 levels → only 1 level fits per side
         let strategy = create_strategy(3, 1.0, 0.0, Quantity::from("0.150"), 0.50);
-        let orders = strategy.grid_orders(mid("1000.00"), 0.0, 0.0, 0.0);
+        let orders = strategy.grid_orders(mid("1000.00"), 0.0, dec!(0), dec!(0));
 
         assert_eq!(count_side(&orders, OrderSide::Buy), 1);
         assert_eq!(count_side(&orders, OrderSide::Sell), 1);
@@ -444,7 +451,7 @@ mod tests {
     fn test_grid_orders_empty_when_fully_constrained() {
         // max_position=0.05, trade_size=0.1 → nothing fits
         let strategy = create_strategy(3, 1.0, 0.0, Quantity::from("0.050"), 0.50);
-        let orders = strategy.grid_orders(mid("1000.00"), 0.0, 0.0, 0.0);
+        let orders = strategy.grid_orders(mid("1000.00"), 0.0, dec!(0), dec!(0));
         assert!(orders.is_empty());
     }
 }
