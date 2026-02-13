@@ -78,13 +78,13 @@ class BinanceFuturesBalanceInfo(msgspec.Struct, frozen=True):
         # considering margin collateral. As a temporary measure we're taking the `min` to
         # disregard free amounts above the cash balance, but still considering where not all
         # balance is available (so locked in some way, i.e. allocated as collateral).
-        total = Decimal(self.walletBalance)
-        free = min(Decimal(self.availableBalance), total)
+        total = Money(Decimal(self.walletBalance), currency)
+        free = Money(min(Decimal(self.availableBalance), Decimal(self.walletBalance)), currency)
         locked = total - free
         return AccountBalance(
-            total=Money(total, currency),
-            locked=Money(locked, currency),
-            free=Money(free, currency),
+            total=total,
+            locked=locked,
+            free=free,
         )
 
     def parse_to_margin_balance(self) -> MarginBalance:

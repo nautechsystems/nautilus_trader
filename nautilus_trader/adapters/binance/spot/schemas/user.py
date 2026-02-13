@@ -72,13 +72,13 @@ class BinanceSpotBalance(msgspec.Struct, frozen=True):
 
     def parse_to_account_balance(self) -> AccountBalance:
         currency = Currency.from_str(self.a)
-        free = Decimal(self.f)
-        locked = Decimal(self.l)
-        total: Decimal = free + locked
+        free = Money(Decimal(self.f), currency)
+        locked = Money(Decimal(self.l), currency)
+        total = free + locked
         return AccountBalance(
-            total=Money(total, currency),
-            locked=Money(locked, currency),
-            free=Money(free, currency),
+            total=total,
+            locked=locked,
+            free=free,
         )
 
 

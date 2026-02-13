@@ -1335,14 +1335,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
             if self._account_summary_tags - set(self._account_summary[currency].keys()) == set():
                 self._log.debug(f"{self._account_summary}", LogColor.GREEN)
-                total = self._account_summary[currency]["NetLiquidation"]
-                free = self._account_summary[currency]["FullAvailableFunds"]
+                cur = Currency.from_str(currency)
+                total = Money(self._account_summary[currency]["NetLiquidation"], cur)
+                free = Money(self._account_summary[currency]["FullAvailableFunds"], cur)
                 locked = total - free
 
                 account_balance = AccountBalance(
-                    total=Money(total, Currency.from_str(currency)),
-                    free=Money(free, Currency.from_str(currency)),
-                    locked=Money(locked, Currency.from_str(currency)),
+                    total=total,
+                    free=free,
+                    locked=locked,
                 )
                 margin_balance = MarginBalance(
                     initial=Money(

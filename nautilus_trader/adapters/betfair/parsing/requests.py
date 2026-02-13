@@ -349,8 +349,8 @@ def betfair_account_to_account_state(
             f"Cannot determine account currency: currency_code={currency_code!r}, "
             f"fallback_currency={fallback_currency}",
         )
-    free = float(account_funds.available_to_bet_balance)
-    locked = -float(account_funds.exposure)
+    free = Money(float(account_funds.available_to_bet_balance), currency)
+    locked = Money(-float(account_funds.exposure), currency)
     total = free + locked
     return AccountState(
         account_id=AccountId(f"{BETFAIR_VENUE.value}-{account_id}"),
@@ -359,9 +359,9 @@ def betfair_account_to_account_state(
         reported=reported,
         balances=[
             AccountBalance(
-                total=Money(total, currency),
-                locked=Money(locked, currency),
-                free=Money(free, currency),
+                total=total,
+                locked=locked,
+                free=free,
             ),
         ],
         margins=[],
