@@ -26,7 +26,10 @@ use nautilus_model::{
 };
 use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
 
-use crate::http::{client::BitmexHttpClient, error::BitmexHttpError};
+use crate::{
+    common::enums::BitmexPegPriceType,
+    http::{client::BitmexHttpClient, error::BitmexHttpError},
+};
 
 #[pymethods]
 impl BitmexHttpClient {
@@ -356,7 +359,9 @@ impl BitmexHttpClient {
         post_only = false,
         reduce_only = false,
         order_list_id = None,
-        contingency_type = None
+        contingency_type = None,
+        peg_price_type = None,
+        peg_offset_value = None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
@@ -378,8 +383,17 @@ impl BitmexHttpClient {
         reduce_only: bool,
         order_list_id: Option<OrderListId>,
         contingency_type: Option<ContingencyType>,
+        peg_price_type: Option<String>,
+        peg_offset_value: Option<f64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+
+        let peg_price_type: Option<BitmexPegPriceType> = peg_price_type
+            .map(|s| {
+                s.parse::<BitmexPegPriceType>()
+                    .map_err(|_| to_pyvalue_err(format!("Invalid peg_price_type: {s}")))
+            })
+            .transpose()?;
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let report = client
@@ -400,6 +414,8 @@ impl BitmexHttpClient {
                     reduce_only,
                     order_list_id,
                     contingency_type,
+                    peg_price_type,
+                    peg_offset_value,
                 )
                 .await
                 .map_err(to_pyvalue_err)?;

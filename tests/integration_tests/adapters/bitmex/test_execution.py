@@ -844,3 +844,305 @@ async def test_generate_position_status_reports_handles_failure(exec_client):
 
     # Assert
     assert reports == []
+
+
+@pytest.mark.asyncio
+async def test_submit_limit_order_with_peg_params(exec_client, instrument, strategy):
+    # Arrange
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-PEG-001"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(100),
+        price=Price.from_str("50000.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        order=order,
+        params={"peg_price_type": "PrimaryPeg", "peg_offset_value": "0"},
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    await exec_client._submit_order(command)
+
+    # Assert
+    exec_client._mock_http_client.submit_order.assert_called_once()
+    call_args = exec_client._mock_http_client.submit_order.call_args[1]
+    assert call_args["peg_price_type"] == "PrimaryPeg"
+    assert call_args["peg_offset_value"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_submit_limit_order_with_peg_negative_offset(exec_client, instrument, strategy):
+    # Arrange
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-PEG-002"),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(50),
+        price=Price.from_str("50000.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        order=order,
+        params={"peg_price_type": "MarketPeg", "peg_offset_value": "-1.5"},
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    await exec_client._submit_order(command)
+
+    # Assert
+    exec_client._mock_http_client.submit_order.assert_called_once()
+    call_args = exec_client._mock_http_client.submit_order.call_args[1]
+    assert call_args["peg_price_type"] == "MarketPeg"
+    assert call_args["peg_offset_value"] == -1.5
+
+
+@pytest.mark.asyncio
+async def test_submit_limit_order_with_peg_type_only(exec_client, instrument, strategy):
+    # Arrange - peg_offset_value is optional
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-PEG-003"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(100),
+        price=Price.from_str("50000.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        order=order,
+        params={"peg_price_type": "MidPricePeg"},
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    await exec_client._submit_order(command)
+
+    # Assert
+    exec_client._mock_http_client.submit_order.assert_called_once()
+    call_args = exec_client._mock_http_client.submit_order.call_args[1]
+    assert call_args["peg_price_type"] == "MidPricePeg"
+    assert call_args["peg_offset_value"] is None
+
+
+@pytest.mark.asyncio
+async def test_submit_order_with_invalid_peg_type_denied(
+    exec_client,
+    instrument,
+    strategy,
+    mocker,
+):
+    # Arrange
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-PEG-004"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(100),
+        price=Price.from_str("50000.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        order=order,
+        params={"peg_price_type": "InvalidPeg"},
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    denied_spy = mocker.spy(exec_client, "generate_order_denied")
+
+    # Act
+    await exec_client._submit_order(command)
+
+    # Assert
+    exec_client._mock_http_client.submit_order.assert_not_called()
+    denied_spy.assert_called_once()
+    denied_kwargs = denied_spy.call_args.kwargs
+    assert denied_kwargs["client_order_id"] == order.client_order_id
+    assert "peg_price_type" in denied_kwargs["reason"]
+
+
+@pytest.mark.asyncio
+async def test_submit_market_order_with_peg_params_denied(
+    exec_client,
+    instrument,
+    strategy,
+    mocker,
+):
+    # Arrange - pegged orders only supported for LIMIT
+    order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-PEG-005"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(100),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        order=order,
+        params={"peg_price_type": "PrimaryPeg", "peg_offset_value": "0"},
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    denied_spy = mocker.spy(exec_client, "generate_order_denied")
+
+    # Act
+    await exec_client._submit_order(command)
+
+    # Assert
+    exec_client._mock_http_client.submit_order.assert_not_called()
+    denied_spy.assert_called_once()
+    denied_kwargs = denied_spy.call_args.kwargs
+    assert denied_kwargs["client_order_id"] == order.client_order_id
+    assert "LIMIT" in denied_kwargs["reason"]
+
+
+@pytest.mark.asyncio
+async def test_submit_order_with_invalid_peg_offset_denied(
+    exec_client,
+    instrument,
+    strategy,
+    mocker,
+):
+    # Arrange
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-PEG-006"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(100),
+        price=Price.from_str("50000.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        order=order,
+        params={"peg_price_type": "PrimaryPeg", "peg_offset_value": "not_a_number"},
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    denied_spy = mocker.spy(exec_client, "generate_order_denied")
+
+    # Act
+    await exec_client._submit_order(command)
+
+    # Assert
+    exec_client._mock_http_client.submit_order.assert_not_called()
+    denied_spy.assert_called_once()
+    denied_kwargs = denied_spy.call_args.kwargs
+    assert denied_kwargs["client_order_id"] == order.client_order_id
+    assert "peg_offset_value" in denied_kwargs["reason"]
+
+
+@pytest.mark.asyncio
+async def test_submit_order_without_peg_params_unaffected(exec_client, instrument, strategy):
+    # Arrange - no peg params should leave them as None
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-PEG-007"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(100),
+        price=Price.from_str("50000.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    await exec_client._submit_order(command)
+
+    # Assert
+    exec_client._mock_http_client.submit_order.assert_called_once()
+    call_args = exec_client._mock_http_client.submit_order.call_args[1]
+    assert call_args["peg_price_type"] is None
+    assert call_args["peg_offset_value"] is None
+
+
+@pytest.mark.asyncio
+async def test_submit_order_with_peg_offset_only_denied(
+    exec_client,
+    instrument,
+    strategy,
+    mocker,
+):
+    # Arrange - peg_offset_value without peg_price_type should be rejected
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-PEG-008"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(100),
+        price=Price.from_str("50000.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy.id,
+        order=order,
+        params={"peg_offset_value": "0"},
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    denied_spy = mocker.spy(exec_client, "generate_order_denied")
+
+    # Act
+    await exec_client._submit_order(command)
+
+    # Assert
+    exec_client._mock_http_client.submit_order.assert_not_called()
+    denied_spy.assert_called_once()
+    denied_kwargs = denied_spy.call_args.kwargs
+    assert denied_kwargs["client_order_id"] == order.client_order_id
+    assert "peg_price_type" in denied_kwargs["reason"]

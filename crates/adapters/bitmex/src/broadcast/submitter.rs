@@ -55,7 +55,10 @@ use nautilus_model::{
 };
 use tokio::{sync::RwLock, task::JoinHandle, time::interval};
 
-use crate::{common::consts::BITMEX_HTTP_TESTNET_URL, http::client::BitmexHttpClient};
+use crate::{
+    common::{consts::BITMEX_HTTP_TESTNET_URL, enums::BitmexPegPriceType},
+    http::client::BitmexHttpClient,
+};
 
 /// Trait for order submission operations.
 ///
@@ -105,6 +108,8 @@ trait SubmitExecutor: Send + Sync {
         reduce_only: bool,
         order_list_id: Option<OrderListId>,
         contingency_type: Option<ContingencyType>,
+        peg_price_type: Option<BitmexPegPriceType>,
+        peg_offset_value: Option<f64>,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<OrderStatusReport>> + Send + '_>>;
 }
 
@@ -141,6 +146,8 @@ impl SubmitExecutor for BitmexHttpClient {
         reduce_only: bool,
         order_list_id: Option<OrderListId>,
         contingency_type: Option<ContingencyType>,
+        peg_price_type: Option<BitmexPegPriceType>,
+        peg_offset_value: Option<f64>,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<OrderStatusReport>> + Send + '_>> {
         Box::pin(async move {
             Self::submit_order(
@@ -161,6 +168,8 @@ impl SubmitExecutor for BitmexHttpClient {
                 reduce_only,
                 order_list_id,
                 contingency_type,
+                peg_price_type,
+                peg_offset_value,
             )
             .await
         })
@@ -330,6 +339,8 @@ impl TransportClient {
         reduce_only: bool,
         order_list_id: Option<OrderListId>,
         contingency_type: Option<ContingencyType>,
+        peg_price_type: Option<BitmexPegPriceType>,
+        peg_offset_value: Option<f64>,
     ) -> anyhow::Result<OrderStatusReport> {
         self.submit_count.fetch_add(1, Ordering::Relaxed);
 
@@ -352,6 +363,8 @@ impl TransportClient {
                 reduce_only,
                 order_list_id,
                 contingency_type,
+                peg_price_type,
+                peg_offset_value,
             )
             .await
         {
@@ -644,6 +657,8 @@ impl SubmitBroadcaster {
         order_list_id: Option<OrderListId>,
         contingency_type: Option<ContingencyType>,
         submit_tries: Option<usize>,
+        peg_price_type: Option<BitmexPegPriceType>,
+        peg_offset_value: Option<f64>,
     ) -> anyhow::Result<OrderStatusReport> {
         self.total_submits.fetch_add(1, Ordering::Relaxed);
 
@@ -704,6 +719,8 @@ impl SubmitBroadcaster {
                         reduce_only,
                         order_list_id,
                         contingency_type,
+                        peg_price_type,
+                        peg_offset_value,
                     )
                     .await;
                 (client_id, result)
@@ -879,6 +896,8 @@ mod tests {
             _reduce_only: bool,
             _order_list_id: Option<OrderListId>,
             _contingency_type: Option<ContingencyType>,
+            _peg_price_type: Option<BitmexPegPriceType>,
+            _peg_offset_value: Option<f64>,
         ) -> Pin<Box<dyn Future<Output = anyhow::Result<OrderStatusReport>> + Send + '_>> {
             (self.handler)()
         }
@@ -973,6 +992,8 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
+                None,
             )
             .await;
 
@@ -1019,6 +1040,8 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
+                None,
             )
             .await;
 
@@ -1057,6 +1080,8 @@ mod tests {
                 None,
                 false,
                 false,
+                None,
+                None,
                 None,
                 None,
                 None,
@@ -1102,6 +1127,8 @@ mod tests {
                 None,
                 false,
                 false,
+                None,
+                None,
                 None,
                 None,
                 None,
@@ -1216,6 +1243,8 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
+                None,
             )
             .await;
 
@@ -1272,6 +1301,8 @@ mod tests {
                 None,
                 false,
                 false,
+                None,
+                None,
                 None,
                 None,
                 None,
@@ -1377,6 +1408,8 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
+                None,
             )
             .await;
 
@@ -1474,6 +1507,8 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
+                None,
             )
             .await;
 
@@ -1523,6 +1558,8 @@ mod tests {
                 _reduce_only: bool,
                 _order_list_id: Option<OrderListId>,
                 _contingency_type: Option<ContingencyType>,
+                _peg_price_type: Option<BitmexPegPriceType>,
+                _peg_offset_value: Option<f64>,
             ) -> Pin<Box<dyn Future<Output = anyhow::Result<OrderStatusReport>> + Send + '_>>
             {
                 // Capture the client_order_id
@@ -1597,6 +1634,8 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
+                None,
             )
             .await;
 
@@ -1645,6 +1684,8 @@ mod tests {
                 _reduce_only: bool,
                 _order_list_id: Option<OrderListId>,
                 _contingency_type: Option<ContingencyType>,
+                _peg_price_type: Option<BitmexPegPriceType>,
+                _peg_offset_value: Option<f64>,
             ) -> Pin<Box<dyn Future<Output = anyhow::Result<OrderStatusReport>> + Send + '_>>
             {
                 // Capture the client_order_id
@@ -1711,6 +1752,8 @@ mod tests {
                 None,
                 false,
                 false,
+                None,
+                None,
                 None,
                 None,
                 None,

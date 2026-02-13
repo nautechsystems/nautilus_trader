@@ -78,7 +78,10 @@ use crate::{
     common::{
         consts::{BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL},
         credential::Credential,
-        enums::{BitmexContingencyType, BitmexOrderStatus, BitmexSide},
+        enums::{
+            BitmexContingencyType, BitmexExecInstruction, BitmexOrderStatus, BitmexOrderType,
+            BitmexPegPriceType, BitmexSide, BitmexTimeInForce,
+        },
         parse::{parse_account_balance, quantity_to_u32},
     },
     http::{
@@ -1535,12 +1538,9 @@ impl BitmexHttpClient {
         reduce_only: bool,
         order_list_id: Option<OrderListId>,
         contingency_type: Option<ContingencyType>,
+        peg_price_type: Option<BitmexPegPriceType>,
+        peg_offset_value: Option<f64>,
     ) -> anyhow::Result<OrderStatusReport> {
-        use crate::common::enums::{
-            BitmexExecInstruction, BitmexOrderType, BitmexPegPriceType, BitmexSide,
-            BitmexTimeInForce,
-        };
-
         let instrument = self.instrument_from_cache(instrument_id.symbol.inner())?;
 
         let mut params = super::query::PostOrderParamsBuilder::default();
@@ -1601,6 +1601,23 @@ impl BitmexHttpClient {
                 _ => offset,
             };
             params.peg_offset_value(signed_offset);
+        }
+
+        // Pegged orders (BBO) via params override
+        if peg_price_type.is_none() && peg_offset_value.is_some() {
+            anyhow::bail!("`peg_offset_value` requires `peg_price_type`");
+        }
+        if let Some(peg_type) = peg_price_type {
+            if order_type != OrderType::Limit {
+                anyhow::bail!(
+                    "Pegged orders only supported for LIMIT order type, was {order_type:?}"
+                );
+            }
+            params.ord_type(BitmexOrderType::Pegged);
+            params.peg_price_type(peg_type);
+            if let Some(offset) = peg_offset_value {
+                params.peg_offset_value(offset);
+            }
         }
 
         let mut exec_inst = Vec::new();

@@ -8026,6 +8026,8 @@ class BitmexHttpClient:
         reduce_only: bool = False,
         order_list_id: OrderListId | None = None,
         contingency_type: ContingencyType | None = None,
+        peg_price_type: str | None = None,
+        peg_offset_value: float | None = None,
     ) -> OrderStatusReport: ...
     async def cancel_order(
         self,
@@ -8154,6 +8156,8 @@ class SubmitBroadcaster:
         order_list_id: OrderListId | None = None,
         contingency_type: ContingencyType | None = None,
         submit_tries: int | None = None,
+        peg_price_type: str | None = None,
+        peg_offset_value: float | None = None,
     ) -> OrderStatusReport: ...
 
 class CancelBroadcaster:

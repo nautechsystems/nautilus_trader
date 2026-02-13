@@ -24,7 +24,10 @@ use nautilus_model::{
 };
 use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyDict};
 
-use crate::broadcast::submitter::{SubmitBroadcaster, SubmitBroadcasterConfig};
+use crate::{
+    broadcast::submitter::{SubmitBroadcaster, SubmitBroadcasterConfig},
+    common::enums::BitmexPegPriceType,
+};
 
 #[pymethods]
 impl SubmitBroadcaster {
@@ -122,7 +125,9 @@ impl SubmitBroadcaster {
         reduce_only=false,
         order_list_id=None,
         contingency_type=None,
-        submit_tries=None
+        submit_tries=None,
+        peg_price_type=None,
+        peg_offset_value=None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_broadcast_submit<'py>(
@@ -145,8 +150,18 @@ impl SubmitBroadcaster {
         order_list_id: Option<OrderListId>,
         contingency_type: Option<ContingencyType>,
         submit_tries: Option<usize>,
+        peg_price_type: Option<String>,
+        peg_offset_value: Option<f64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let broadcaster = self.clone_for_async();
+
+        let peg_price_type: Option<BitmexPegPriceType> = peg_price_type
+            .map(|s| {
+                s.parse::<BitmexPegPriceType>()
+                    .map_err(|_| to_pyvalue_err(format!("Invalid peg_price_type: {s}")))
+            })
+            .transpose()?;
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let report = broadcaster
                 .broadcast_submit(
@@ -167,6 +182,8 @@ impl SubmitBroadcaster {
                     order_list_id,
                     contingency_type,
                     submit_tries,
+                    peg_price_type,
+                    peg_offset_value,
                 )
                 .await
                 .map_err(to_pyvalue_err)?;

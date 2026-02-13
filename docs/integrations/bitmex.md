@@ -279,6 +279,46 @@ The stop price freezes when the market moves toward the trigger level.
 See the [BitMEX API documentation](https://www.bitmex.com/app/perpetualContractsGuide) for current update cadence details.
 :::
 
+### Pegged orders
+
+BitMEX supports pegged orders (BBO) that automatically track a reference price. The adapter
+supports pegged orders via the `params` dict on `submit_order`, which overrides the order type
+to `Pegged` on the exchange side.
+
+| Peg price type | Description                                                      |
+|----------------|------------------------------------------------------------------|
+| `PrimaryPeg`   | Pegs to the best bid (buy) or best ask (sell).                   |
+| `MarketPeg`    | Pegs to the opposite side (best ask for buy, best bid for sell). |
+| `MidPricePeg`  | Pegs to the mid-price between bid and ask.                       |
+| `LastPeg`      | Pegs to the last traded price.                                   |
+
+**Requirements**:
+
+- The underlying order must be a `LIMIT` order. Other order types are rejected.
+- `peg_price_type` is required; `peg_offset_value` is optional (defaults to 0).
+- `peg_offset_value` can be negative (e.g., sell-side offsets) or fractional.
+
+**Example**:
+
+```python
+# Pegged to best bid with zero offset (BBO)
+order = self.order_factory.limit(
+    instrument_id=instrument_id,
+    order_side=OrderSide.BUY,
+    quantity=qty,
+    price=price,  # Required for LIMIT order, but overridden by peg
+)
+self.submit_order(order, params={"peg_price_type": "PrimaryPeg", "peg_offset_value": "0"})
+
+# Pegged to mid-price with a -0.5 offset
+self.submit_order(order, params={"peg_price_type": "MidPricePeg", "peg_offset_value": "-0.5"})
+```
+
+:::note
+The `price` field is still required when constructing the `LimitOrder`, but BitMEX ignores it
+for pegged orders and instead continuously tracks the reference price plus offset.
+:::
+
 ### Time in force
 
 | Time in force  | Supported | Notes                                               |
@@ -296,13 +336,13 @@ See the [BitMEX Exchange Rules](https://www.bitmex.com/exchange-rules) and [API 
 
 ### Advanced order features
 
-| Feature            | Supported | Notes                                          |
-|--------------------|-----------|------------------------------------------------|
-| Order Modification | ✓         | Modify price, quantity, and trigger price.     |
-| Bracket Orders     | ✓         | Use `contingency_type` and `linked_order_ids`. |
-| Iceberg Orders     | ✓         | Use `display_qty`.                             |
-| Trailing Stops     | ✓         | Use `trailing_offset`. Price offset type only. |
-| Pegged Orders      | -         | *Not implemented* (supported by BitMEX).       |
+| Feature            | Supported | Notes                                                                    |
+|--------------------|-----------|--------------------------------------------------------------------------|
+| Order Modification | ✓         | Modify price, quantity, and trigger price.                               |
+| Bracket Orders     | ✓         | Use `contingency_type` and `linked_order_ids`.                           |
+| Iceberg Orders     | ✓         | Use `display_qty`.                                                       |
+| Trailing Stops     | ✓         | Use `trailing_offset`. Price offset type only.                           |
+| Pegged Orders      | ✓         | Use `params` with `peg_price_type`. See [Pegged orders](#pegged-orders). |
 
 ### Batch operations
 

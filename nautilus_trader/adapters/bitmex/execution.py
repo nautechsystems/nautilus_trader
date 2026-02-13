@@ -440,6 +440,23 @@ class BitmexExecutionClient(LiveExecutionClient):
             )
             return
 
+        # Validate peg params before marking as submitted
+        try:
+            peg_price_type, peg_offset_value = self._extract_peg_params(order, command.params)
+        except ValueError as e:
+            reason = str(e)
+            self._log.error(
+                f"Cannot submit order {order.client_order_id}: {reason}",
+            )
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=reason,
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
         # Generate OrderSubmitted event here to ensure correct event sequencing
         self.generate_order_submitted(
             strategy_id=order.strategy_id,
@@ -478,8 +495,9 @@ class BitmexExecutionClient(LiveExecutionClient):
         trailing_offset = None
         pyo3_trailing_offset_type = None
         if order.order_type in (OrderType.TRAILING_STOP_MARKET, OrderType.TRAILING_STOP_LIMIT):
-            if order.trailing_offset is not None:
-                trailing_offset = float(order.trailing_offset)
+            trailing_offset = (
+                float(order.trailing_offset) if order.trailing_offset is not None else None
+            )
             pyo3_trailing_offset_type = trailing_offset_type_to_pyo3(order.trailing_offset_type)
 
         pyo3_contingency_type = None
@@ -513,6 +531,8 @@ class BitmexExecutionClient(LiveExecutionClient):
                     order_list_id=pyo3_order_list_id,
                     contingency_type=pyo3_contingency_type,
                     submit_tries=submit_tries,
+                    peg_price_type=peg_price_type,
+                    peg_offset_value=peg_offset_value,
                 )
             else:
                 await self._http_client.submit_order(
@@ -532,6 +552,8 @@ class BitmexExecutionClient(LiveExecutionClient):
                     reduce_only=order.is_reduce_only,
                     order_list_id=pyo3_order_list_id,
                     contingency_type=pyo3_contingency_type,
+                    peg_price_type=peg_price_type,
+                    peg_offset_value=peg_offset_value,
                 )
         except Exception as e:
             error_msg = str(e)
@@ -571,6 +593,60 @@ class BitmexExecutionClient(LiveExecutionClient):
         except (ValueError, TypeError) as e:
             self._log.error(f"Invalid submit_tries value: {submit_tries_str}: {e}")
             return None
+
+    BITMEX_PEG_PRICE_TYPES = frozenset(
+        {
+            "PrimaryPeg",
+            "MarketPeg",
+            "MidPricePeg",
+            "LastPeg",
+        },
+    )
+
+    def _extract_peg_params(
+        self,
+        order: Order,
+        params: dict | None,
+    ) -> tuple[str | None, float | None]:
+        if not params:
+            return None, None
+
+        raw_peg_type = params.get("peg_price_type")
+        if raw_peg_type is None:
+            if "peg_offset_value" in params:
+                raise ValueError(
+                    "INVALID_ARG: `peg_offset_value` requires `peg_price_type`",
+                )
+            return None, None
+
+        if not isinstance(raw_peg_type, str):
+            raise ValueError(
+                "INVALID_ARG: `peg_price_type` must be a string value",
+            )
+
+        if raw_peg_type not in self.BITMEX_PEG_PRICE_TYPES:
+            raise ValueError(
+                f"INVALID_ARG: `peg_price_type` value {raw_peg_type!r} "
+                f"is not one of {sorted(self.BITMEX_PEG_PRICE_TYPES)}",
+            )
+
+        if order.order_type != OrderType.LIMIT:
+            raise ValueError(
+                f"UNSUPPORTED: `peg_price_type` is only supported for LIMIT orders, "
+                f"was {order.type_string()}",
+            )
+
+        raw_offset = params.get("peg_offset_value")
+        peg_offset: float | None = None
+        if raw_offset is not None:
+            try:
+                peg_offset = float(raw_offset)
+            except (ValueError, TypeError) as e:
+                raise ValueError(
+                    f"INVALID_ARG: `peg_offset_value` must be numeric, was {raw_offset!r}",
+                ) from e
+
+        return raw_peg_type, peg_offset
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
         for order in command.order_list.orders:

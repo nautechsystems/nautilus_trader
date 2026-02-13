@@ -15,11 +15,12 @@
 
 //! Live execution client implementation for the BitMEX adapter.
 
-use std::{future::Future, sync::Mutex};
+use std::{future::Future, str::FromStr, sync::Mutex};
 
 use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
+use indexmap::IndexMap;
 use nautilus_common::{
     clients::ExecutionClient,
     enums::LogLevel,
@@ -55,6 +56,7 @@ use crate::{
         canceller::{CancelBroadcaster, CancelBroadcasterConfig},
         submitter::{SubmitBroadcaster, SubmitBroadcasterConfig},
     },
+    common::enums::BitmexPegPriceType,
     config::BitmexExecClientConfig,
     http::client::BitmexHttpClient,
     websocket::{client::BitmexWebSocketClient, messages::NautilusWsMessage},
@@ -299,6 +301,8 @@ impl BitmexExecutionClient {
         &self,
         order: OrderAny,
         submit_tries: Option<usize>,
+        peg_price_type: Option<BitmexPegPriceType>,
+        peg_offset_value: Option<f64>,
         task_label: &'static str,
     ) -> anyhow::Result<()> {
         if order.is_closed() {
@@ -352,6 +356,8 @@ impl BitmexExecutionClient {
                         order_list_id,
                         contingency_type,
                         submit_tries,
+                        peg_price_type,
+                        peg_offset_value,
                     )
                     .await
             } else {
@@ -373,6 +379,8 @@ impl BitmexExecutionClient {
                         reduce_only,
                         order_list_id,
                         contingency_type,
+                        peg_price_type,
+                        peg_offset_value,
                     )
                     .await
             };
@@ -738,6 +746,9 @@ impl ExecutionClient for BitmexExecutionClient {
             .and_then(|s| s.parse::<usize>().ok())
             .filter(|&n| n > 0);
 
+        let peg_price_type = parse_peg_price_type(cmd.params.as_ref())?;
+        let peg_offset_value = parse_peg_offset_value(cmd.params.as_ref())?;
+
         let order = self
             .core
             .cache()
@@ -747,7 +758,13 @@ impl ExecutionClient for BitmexExecutionClient {
                 anyhow::anyhow!("Order not found in cache for {}", cmd.client_order_id)
             })?;
 
-        self.submit_cached_order(order, submit_tries, "submit_order")
+        self.submit_cached_order(
+            order,
+            submit_tries,
+            peg_price_type,
+            peg_offset_value,
+            "submit_order",
+        )
     }
 
     fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
@@ -763,6 +780,9 @@ impl ExecutionClient for BitmexExecutionClient {
             .and_then(|s| s.parse::<usize>().ok())
             .filter(|&n| n > 0);
 
+        let peg_price_type = parse_peg_price_type(cmd.params.as_ref())?;
+        let peg_offset_value = parse_peg_offset_value(cmd.params.as_ref())?;
+
         let orders = self.core.get_orders_for_list(&cmd.order_list)?;
 
         log::info!(
@@ -772,7 +792,13 @@ impl ExecutionClient for BitmexExecutionClient {
         );
 
         for order in orders {
-            self.submit_cached_order(order, submit_tries, "submit_order_list_item")?;
+            self.submit_cached_order(
+                order,
+                submit_tries,
+                peg_price_type,
+                peg_offset_value,
+                "submit_order_list_item",
+            )?;
         }
 
         Ok(())
@@ -955,5 +981,30 @@ fn dispatch_ws_message(message: NautilusWsMessage, emitter: &ExecutionEventEmitt
         NautilusWsMessage::Authenticated => {
             log::debug!("BitMEX execution websocket authenticated");
         }
+    }
+}
+
+fn parse_peg_price_type(
+    params: Option<&IndexMap<String, String>>,
+) -> anyhow::Result<Option<BitmexPegPriceType>> {
+    let value = params.and_then(|p| p.get("peg_price_type"));
+    match value {
+        Some(s) => BitmexPegPriceType::from_str(s)
+            .map(Some)
+            .map_err(|_| anyhow::anyhow!("Invalid peg_price_type: {s}")),
+        None => Ok(None),
+    }
+}
+
+fn parse_peg_offset_value(
+    params: Option<&IndexMap<String, String>>,
+) -> anyhow::Result<Option<f64>> {
+    let value = params.and_then(|p| p.get("peg_offset_value"));
+    match value {
+        Some(s) => s
+            .parse::<f64>()
+            .map(Some)
+            .map_err(|_| anyhow::anyhow!("Invalid peg_offset_value: {s}")),
+        None => Ok(None),
     }
 }

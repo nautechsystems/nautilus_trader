@@ -63,6 +63,7 @@ dashmap = { workspace = true }
 derive_builder = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }
+indexmap = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }

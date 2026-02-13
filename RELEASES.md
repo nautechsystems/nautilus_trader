@@ -28,6 +28,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Added Binance `environment` config field to `BinanceDataClientConfig` and `BinanceExecClientConfig`
 - Added Binance Demo environment support with `BINANCE_DEMO_API_KEY`/`BINANCE_DEMO_API_SECRET` env vars
 - Added BitMEX trailing stop support
+- Added BitMEX pegged order (BBO) support via params
 - Added Bybit mark price subscriptions support
 - Added Bybit index price subscriptions support
 - Added Databento bulk subscription and historical request support (#3490), thanks @shzhng

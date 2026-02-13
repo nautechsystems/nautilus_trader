@@ -4993,6 +4993,7 @@ dependencies = [
  "dotenvy",
  "futures-util",
  "hex",
+ "indexmap 2.13.0",
  "log",
  "nautilus-common",
  "nautilus-core",
