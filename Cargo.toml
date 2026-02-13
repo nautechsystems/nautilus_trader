@@ -363,9 +363,9 @@ cargo-deny = "0.19.0"
 cargo-edit = "0.13.8"
 cargo-llvm-cov = "0.8.4"
 cargo-machete = "0.9.1"
-cargo-nextest = "0.9.126"
+cargo-nextest = "0.9.127"
 cargo-vet = "0.10.2"
-lychee = "0.22.0"
+lychee = "0.23.0"
 
 # cargo-vet supply chain security configuration
 [workspace.metadata.vet]

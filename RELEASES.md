@@ -84,6 +84,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed OTO child order sizing with rapid parent fills (#3435), thanks for reporting @dxwil
 - Fixed `ExecAlgorithm` spawn quantity accounting (will now restore quantity from denied/rejected spawned orders)
 - Fixed `GreeksCalculator` to use index price for index instruments (#3541), thanks @shzhng
+- Fixed `GreeksCalculator` min->max DTE clamping (#3582), thanks @pandashark
 - Fixed `itm_prob` calculation to use N(d2) instead of normalized delta (#3554), thanks @shzhng
 - Fixed reconciliation `venue_order_id` indexing and validation
 - Fixed analyzer epoch timestamp from empty shell positions

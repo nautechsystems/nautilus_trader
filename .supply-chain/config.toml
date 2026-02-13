@@ -503,11 +503,11 @@ version = "0.3.16"
 criteria = "safe-to-deploy"
 
 [[exemptions.bon]]
-version = "3.8.2"
+version = "3.9.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.bon-macros]]
-version = "3.8.2"
+version = "3.9.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.borsh]]
@@ -559,7 +559,7 @@ version = "0.23.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.capnp]]
-version = "0.25.0"
+version = "0.25.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.capnpc]]
@@ -575,7 +575,7 @@ version = "0.29.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.cc]]
-version = "1.2.55"
+version = "1.2.56"
 criteria = "safe-to-deploy"
 
 [[exemptions.cesu8]]
@@ -1360,7 +1360,7 @@ version = "0.13.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.keccak]]
-version = "0.1.5"
+version = "0.1.6"
 criteria = "safe-to-deploy"
 
 [[exemptions.keccak-asm]]
@@ -2140,11 +2140,11 @@ version = "0.10.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.security-framework]]
-version = "3.5.1"
+version = "3.6.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.security-framework-sys]]
-version = "2.15.0"
+version = "2.16.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.semver]]
