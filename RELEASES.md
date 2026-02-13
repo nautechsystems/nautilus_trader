@@ -134,8 +134,10 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed Interactive Brokers options missing `^` prefix on index underlying symbols with simplified symbology (#3540), thanks @shzhng
 - Fixed Interactive Brokers contract for ESTX50 IND contract (#3556), thanks @davidsblom
 - Fixed Interactive Brokers parsing options for Stoxx50 (#3562), thanks @davidsblom
+- Fixed Interactive Brokers contract details for FESX futures (#3575), thanks @davidsblom
 - Fixed Kraken spot instrument fee/margin parsing where parameters were incorrectly swapped
 - Fixed Kraken spot XBT to BTC symbol normalization (#3509), thanks for reporting @chester0
+- Fixed OKX HTTP error messages missing rejection reason details (#3580), thanks @griffith-h
 - Fixed Polymarket cancel-rejection loop for done orders
 - Fixed Polymarket order state race condition where `PLACEMENT` events could arrive late
 - Fixed Polymarket duplicate WebSocket subscriptions (#3403), thanks for reporting @santivazq
@@ -178,6 +180,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Improved `OptionExerciseModule` logging and fix cache reference (#3388), thanks @davidsblom
 - Improved execution reports builder pattern in Rust (#3417), thanks @filipmacek
 - Improved visualization to use fill report for create_bars_with_fills (#3466), thanks @faysou
+- Improved Architect AX WebSocket data and order handling (#3577), thanks @andrew-cho-architect
 - Improved Betfair adapter rate limiting and fill deduplication
 - Improved Deribit with high-performance `Decimal` deserialization (#3510), thanks @filipmacek
 - Improved precision-mode validation for Arrow data (#3511), thanks for reporting @2-5
@@ -202,7 +205,6 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Upgraded Rust (MSRV) to 1.93.0
 - Upgraded Cap'n Proto to v1.3.0
 - Upgraded Cython to v3.2.4
-- Upgraded `capnp` and `capnpc` crates to v0.25.0
 - Upgraded `databento` crate to v0.39.0
 - Upgraded `datafusion` crate to v52.1.0
 - Upgraded `redis` crate to v1.0.3

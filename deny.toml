@@ -177,7 +177,7 @@ skip = [
   { crate = "reqwest" },
   { crate = "wasm-streams" },
 
-  # Cap'n Proto - hypersync-client uses 0.23.x, nautilus-serialization uses 0.24.x
+  # Cap'n Proto - hypersync-client uses 0.23.x, nautilus-serialization uses 0.25.0
   { crate = "capnp" },
 
   # TLS roots - version fragmentation in TLS ecosystem
