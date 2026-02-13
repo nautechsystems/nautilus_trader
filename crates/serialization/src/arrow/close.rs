@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,7 +30,7 @@ use nautilus_model::{
 
 use super::{
     DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, decode_price,
-    extract_column,
+    extract_column, validate_precision_bytes,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -125,16 +125,7 @@ impl DecodeFromRecordBatch for InstrumentClose {
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 2, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 3, DataType::UInt64)?;
 
-        // Validate value length
-        if close_price_values.value_length() != PRECISION_BYTES {
-            return Err(EncodingError::ParseError(
-                "close_price",
-                format!(
-                    "Invalid value length: expected {PRECISION_BYTES}, found {}",
-                    close_price_values.value_length()
-                ),
-            ));
-        }
+        validate_precision_bytes(close_price_values, "close_price")?;
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|row| {
@@ -369,7 +360,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("close_price") && err.to_string().contains("row 0"),
-            "Expected close_price error at row 0, got: {err}"
+            "Expected close_price error at row 0, was: {err}"
         );
     }
 
@@ -403,7 +394,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("InstrumentCloseType"),
-            "Expected InstrumentCloseType error, got: {err}"
+            "Expected InstrumentCloseType error, was: {err}"
         );
     }
 
@@ -439,7 +430,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("instrument_id"),
-            "Expected missing instrument_id error, got: {err}"
+            "Expected missing instrument_id error, was: {err}"
         );
     }
 

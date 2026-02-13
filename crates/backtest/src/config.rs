@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,12 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
+use std::time::Duration;
 
-use std::{collections::HashMap, time::Duration};
-
+use ahash::AHashMap;
 use nautilus_common::{
     cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
     msgbus::database::MessageBusConfig,
@@ -32,11 +29,9 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, TraderId},
     types::Currency,
 };
-#[cfg(feature = "streaming")]
-use nautilus_persistence::config::StreamingConfig;
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
-use nautilus_system::config::NautilusKernelConfig;
+use nautilus_system::config::{NautilusKernelConfig, StreamingConfig};
 use ustr::Ustr;
 
 /// Configuration for ``BacktestEngine`` instances.
@@ -79,7 +74,6 @@ pub struct BacktestEngineConfig {
     /// The portfolio configuration.
     pub portfolio: Option<PortfolioConfig>,
     /// The configuration for streaming to feather files.
-    #[cfg(feature = "streaming")]
     pub streaming: Option<StreamingConfig>,
     /// If logging should be bypassed.
     pub bypass_logging: bool,
@@ -111,7 +105,7 @@ impl BacktestEngineConfig {
         risk_engine: Option<RiskEngineConfig>,
         exec_engine: Option<ExecutionEngineConfig>,
         portfolio: Option<PortfolioConfig>,
-        #[cfg(feature = "streaming")] streaming: Option<StreamingConfig>,
+        streaming: Option<StreamingConfig>,
     ) -> Self {
         Self {
             environment,
@@ -132,7 +126,6 @@ impl BacktestEngineConfig {
             risk_engine,
             exec_engine,
             portfolio,
-            #[cfg(feature = "streaming")]
             streaming,
             bypass_logging: bypass_logging.unwrap_or(false),
             run_analysis: run_analysis.unwrap_or(true),
@@ -213,7 +206,6 @@ impl NautilusKernelConfig for BacktestEngineConfig {
         self.portfolio.clone()
     }
 
-    #[cfg(feature = "streaming")]
     fn streaming(&self) -> Option<StreamingConfig> {
         self.streaming.clone()
     }
@@ -240,7 +232,6 @@ impl Default for BacktestEngineConfig {
             risk_engine: None,
             exec_engine: None,
             portfolio: None,
-            #[cfg(feature = "streaming")]
             streaming: None,
             bypass_logging: false,
             run_analysis: true,
@@ -250,6 +241,7 @@ impl Default for BacktestEngineConfig {
 
 /// Represents a venue configuration for one specific backtest engine.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct BacktestVenueConfig {
     /// The name of the venue.
     name: Ustr,
@@ -294,7 +286,7 @@ pub struct BacktestVenueConfig {
     /// The account default leverage (for margin accounts).
     default_leverage: Option<f64>,
     /// The instrument specific leverage configuration (for margin accounts).
-    leverages: Option<HashMap<Currency, f64>>,
+    leverages: Option<AHashMap<Currency, f64>>,
     /// Defines an exchange-calculated price boundary to prevent a market order from being
     /// filled at an extremely aggressive price.
     price_protection_points: u32,
@@ -322,7 +314,7 @@ impl BacktestVenueConfig {
         starting_balances: Vec<String>,
         base_currency: Option<Currency>,
         default_leverage: Option<f64>,
-        leverages: Option<HashMap<Currency, f64>>,
+        leverages: Option<AHashMap<Currency, f64>>,
         price_protection_points: Option<u32>,
     ) -> Self {
         Self {
@@ -340,7 +332,7 @@ impl BacktestVenueConfig {
             use_reduce_only: use_reduce_only.unwrap_or(true),
             bar_execution: bar_execution.unwrap_or(true),
             bar_adaptive_high_low_ordering: bar_adaptive_high_low_ordering.unwrap_or(false),
-            trade_execution: trade_execution.unwrap_or(false),
+            trade_execution: trade_execution.unwrap_or(true),
             starting_balances,
             base_currency,
             default_leverage,
@@ -350,8 +342,9 @@ impl BacktestVenueConfig {
     }
 }
 
-#[derive(Debug, Clone)]
 /// Represents the data configuration for one specific backtest run.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct BacktestDataConfig {
     /// The path to the data catalog.
     catalog_path: String,
@@ -368,7 +361,7 @@ pub struct BacktestDataConfig {
     /// The client ID for the data configuration.
     client_id: Option<ClientId>,
     /// The metadata for the data catalog query.
-    metadata: Option<HashMap<String, String>>,
+    metadata: Option<AHashMap<String, String>>,
     /// The bar specification for the data catalog query.
     bar_spec: Option<BarSpecification>,
 }
@@ -384,7 +377,7 @@ impl BacktestDataConfig {
         end_time: Option<UnixNanos>,
         filter_expr: Option<String>,
         client_id: Option<ClientId>,
-        metadata: Option<HashMap<String, String>>,
+        metadata: Option<AHashMap<String, String>>,
         bar_spec: Option<BarSpecification>,
     ) -> Self {
         Self {
@@ -404,6 +397,7 @@ impl BacktestDataConfig {
 /// Represents the configuration for one specific backtest run.
 /// This includes a backtest engine with its actors and strategies, with the external inputs of venues and data.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct BacktestRunConfig {
     /// The venue configurations for the backtest run.
     venues: Vec<BacktestVenueConfig>,

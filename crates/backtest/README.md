@@ -35,6 +35,8 @@ depending on the intended use case, i.e. whether to provide Python bindings
 for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 or as part of a Rust only build.
 
+- `examples`: Enables example strategies and the EMA crossover backtest example.
+- `streaming`: Enables `persistence` dependency for streaming configuration.
 - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 - `extension-module`: Builds as a Python extension module (used with `python`).
@@ -56,4 +58,4 @@ For more information, visit <https://nautilustrader.io>.
 
 <img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-logo-white.png" alt="logo" width="400" height="auto"/>
 
-© 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+© 2015-2026 Nautech Systems Pty Ltd. All rights reserved.

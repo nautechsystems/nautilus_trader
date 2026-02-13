@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,6 +31,12 @@ BETFAIR_CLIENT_ID: Final[ClientId] = ClientId(BETFAIR)
 BETFAIR_PRICE_PRECISION: Final[int] = 2
 BETFAIR_QUANTITY_PRECISION: Final[int] = 2
 BETFAIR_BOOK_TYPE: Final[BookType] = BookType.L2_MBP
+
+BETFAIR_ORDER_STATUS_EXECUTABLE: Final[str] = "E"
+BETFAIR_ORDER_STATUS_EXECUTION_COMPLETE: Final[str] = "EC"
+BETFAIR_RATE_LIMIT_RETRY_DELAY_SECS: Final[float] = 1.0
+BETFAIR_FILL_CACHE_TTL_NS: Final[int] = 900_000_000_000  # 15 minutes
+BETFAIR_FILL_CACHE_SWEEP_TIMER: Final[str] = "BETFAIR_FILL_CACHE_SWEEP"
 
 CLOSE_PRICE_WINNER: Final[Price] = Price(1.0, precision=BETFAIR_PRICE_PRECISION)
 CLOSE_PRICE_LOSER: Final[Price] = Price(0.0, precision=BETFAIR_PRICE_PRECISION)

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -44,8 +44,8 @@ use crate::{
 /// properties as if it had been instantiated locally.
 #[repr(C)]
 #[derive(Clone, PartialEq, Eq, Builder, Serialize, Deserialize)]
-#[builder(default)]
 #[serde(tag = "type")]
+#[cfg_attr(any(test, feature = "stubs"), builder(default))]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -117,47 +117,6 @@ pub struct OrderInitialized {
     pub exec_spawn_id: Option<ClientOrderId>,
     /// The custom user tags for the order.
     pub tags: Option<Vec<Ustr>>,
-}
-
-impl Default for OrderInitialized {
-    /// Creates a new default [`OrderInitialized`] instance for testing.
-    fn default() -> Self {
-        Self {
-            trader_id: TraderId::default(),
-            strategy_id: StrategyId::default(),
-            instrument_id: InstrumentId::default(),
-            client_order_id: ClientOrderId::default(),
-            order_side: OrderSide::Buy,
-            order_type: OrderType::Market,
-            quantity: Quantity::new(100_000.0, 0),
-            price: Default::default(),
-            trigger_price: Default::default(),
-            trigger_type: Default::default(),
-            time_in_force: TimeInForce::Day,
-            expire_time: Default::default(),
-            post_only: Default::default(),
-            reduce_only: Default::default(),
-            display_qty: Default::default(),
-            quote_quantity: Default::default(),
-            limit_offset: Default::default(),
-            trailing_offset: Default::default(),
-            trailing_offset_type: Default::default(),
-            emulation_trigger: Default::default(),
-            trigger_instrument_id: Default::default(),
-            contingency_type: Default::default(),
-            order_list_id: Default::default(),
-            linked_order_ids: Default::default(),
-            parent_order_id: Default::default(),
-            exec_algorithm_id: Default::default(),
-            exec_algorithm_params: Default::default(),
-            exec_spawn_id: Default::default(),
-            tags: Default::default(),
-            event_id: Default::default(),
-            ts_event: Default::default(),
-            ts_init: Default::default(),
-            reconciliation: Default::default(),
-        }
-    }
 }
 
 impl OrderInitialized {

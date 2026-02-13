@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -44,6 +44,7 @@ use nautilus_bybit::{
 };
 use nautilus_common::testing::wait_until_async;
 use nautilus_model::{
+    data::BarType,
     identifiers::{InstrumentId, StrategyId, TraderId},
     instruments::{CurrencyPair, InstrumentAny},
     types::{Currency, Price, Quantity},
@@ -1247,12 +1248,8 @@ async fn test_klines_subscription_flow() {
 
     client.connect().await.unwrap();
 
-    // Subscribe to klines using the high-level method
-    let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
-    client
-        .subscribe_klines(instrument_id, "1".to_string())
-        .await
-        .unwrap();
+    let bar_type = BarType::from("BTCUSDT-LINEAR.BYBIT-1-MINUTE-LAST-EXTERNAL");
+    client.subscribe_bars(bar_type).await.unwrap();
 
     // Wait for subscription
     wait_until_async(
@@ -1849,6 +1846,8 @@ mod conditional_order_tests {
                 None,  // post_only
                 None,  // reduce_only
                 false, // is_leverage
+                None,  // take_profit
+                None,  // stop_loss
             )
             .unwrap()
     }

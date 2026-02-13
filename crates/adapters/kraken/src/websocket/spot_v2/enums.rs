@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,6 +15,7 @@
 
 //! Enumerations for Kraken WebSocket v2 API.
 
+use nautilus_model::enums::{LiquiditySide, OrderStatus};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumString, FromRepr};
 
@@ -226,4 +227,27 @@ pub enum KrakenLiquidityInd {
     #[serde(rename = "t")]
     #[strum(serialize = "t")]
     Taker,
+}
+
+impl From<KrakenWsOrderStatus> for OrderStatus {
+    fn from(value: KrakenWsOrderStatus) -> Self {
+        match value {
+            KrakenWsOrderStatus::PendingNew => Self::Submitted,
+            KrakenWsOrderStatus::New => Self::Accepted,
+            KrakenWsOrderStatus::PartiallyFilled => Self::PartiallyFilled,
+            KrakenWsOrderStatus::Filled => Self::Filled,
+            KrakenWsOrderStatus::Canceled => Self::Canceled,
+            KrakenWsOrderStatus::Expired => Self::Expired,
+            KrakenWsOrderStatus::Triggered => Self::Triggered,
+        }
+    }
+}
+
+impl From<KrakenLiquidityInd> for LiquiditySide {
+    fn from(value: KrakenLiquidityInd) -> Self {
+        match value {
+            KrakenLiquidityInd::Maker => Self::Maker,
+            KrakenLiquidityInd::Taker => Self::Taker,
+        }
+    }
 }

@@ -38,10 +38,8 @@ or as part of a Rust only build.
 
 - `streaming`: Enables `persistence` dependency for catalog-based data streaming.
 - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
-- `python`: Enables Python bindings from [PyO3](https://pyo3.rs) (auto-enables `streaming`).
 - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
 - `defi`: Enables DeFi (Decentralized Finance) support.
-- `extension-module`: Builds as a Python extension module (used with `python`).
 
 ## Documentation
 
@@ -60,4 +58,4 @@ For more information, visit <https://nautilustrader.io>.
 
 <img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-logo-white.png" alt="logo" width="400" height="auto"/>
 
-© 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+© 2015-2026 Nautech Systems Pty Ltd. All rights reserved.

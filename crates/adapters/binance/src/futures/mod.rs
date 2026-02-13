@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -35,8 +35,12 @@
 //! - Public streams: No authentication required
 //! - User data streams: Requires listen key (obtained via REST API)
 
+pub mod data;
+pub mod execution;
 pub mod http;
 pub mod websocket;
 
+pub use data::BinanceFuturesDataClient;
+pub use execution::BinanceFuturesExecutionClient;
 pub use http::client::BinanceFuturesHttpClient;
 pub use websocket::client::BinanceFuturesWebSocketClient;

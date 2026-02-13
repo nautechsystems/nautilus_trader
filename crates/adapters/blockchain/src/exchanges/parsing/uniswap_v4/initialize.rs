@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -89,7 +89,7 @@ pub fn parse_initialize_event_hypersync(log: HypersyncLog) -> anyhow::Result<Poo
     let topics = &log.topics;
     if topics.len() < 4 {
         anyhow::bail!(
-            "Initialize event missing topics: expected 4, got {}",
+            "Initialize event missing topics: expected 4, was {}",
             topics.len()
         );
     }
@@ -125,7 +125,7 @@ pub fn parse_initialize_event_hypersync(log: HypersyncLog) -> anyhow::Result<Poo
         // Validate minimum data length (5 fields × 32 bytes = 160 bytes)
         if data_bytes.len() < 160 {
             anyhow::bail!(
-                "Initialize event data too short: expected at least 160 bytes, got {}",
+                "Initialize event data too short: expected at least 160 bytes, was {}",
                 data_bytes.len()
             );
         }
@@ -173,7 +173,7 @@ pub fn parse_initialize_event_rpc(log: &RpcLog) -> anyhow::Result<PoolCreatedEve
     // topics[3] = currency1 (indexed)
     if log.topics.len() < 4 {
         anyhow::bail!(
-            "Initialize event missing topics: expected 4, got {}",
+            "Initialize event missing topics: expected 4, was {}",
             log.topics.len()
         );
     }
@@ -194,7 +194,7 @@ pub fn parse_initialize_event_rpc(log: &RpcLog) -> anyhow::Result<PoolCreatedEve
     // Validate minimum data length (5 fields × 32 bytes = 160 bytes)
     if data_bytes.len() < 160 {
         anyhow::bail!(
-            "Initialize event data too short: expected at least 160 bytes, got {}",
+            "Initialize event data too short: expected at least 160 bytes, was {}",
             data_bytes.len()
         );
     }
@@ -273,8 +273,6 @@ mod tests {
         serde_json::from_value(log_json).expect("Failed to deserialize RPC log")
     }
 
-    // ========== HyperSync parser tests ==========
-
     #[rstest]
     fn test_parse_initialize_hypersync(hypersync_log_weth_usdc: HypersyncLog) {
         let event =
@@ -297,8 +295,6 @@ mod tests {
         assert_eq!(event.tick_spacing, Some(60));
     }
 
-    // ========== RPC parser tests ==========
-
     #[rstest]
     fn test_parse_initialize_rpc(rpc_log_weth_usdc: RpcLog) {
         let event = parse_initialize_event_rpc(&rpc_log_weth_usdc).expect("Failed to parse");
@@ -319,8 +315,6 @@ mod tests {
         assert_eq!(event.fee, Some(3000));
         assert_eq!(event.tick_spacing, Some(60));
     }
-
-    // ========== Cross-validation tests ==========
 
     #[rstest]
     fn test_hypersync_rpc_match(hypersync_log_weth_usdc: HypersyncLog, rpc_log_weth_usdc: RpcLog) {

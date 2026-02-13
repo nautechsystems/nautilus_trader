@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -27,7 +27,7 @@ fn cache_order_querying_venue_instrument(
     venue: &Venue,
     instrument: Option<&InstrumentId>,
 ) {
-    let _ = cache.orders(Some(venue), instrument, None, None);
+    let _ = cache.orders(Some(venue), instrument, None, None, None);
 }
 
 fn cache_orders_processing(orders: &[OrderAny]) {

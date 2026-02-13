@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -72,6 +72,32 @@ pub fn ensure_test_data_exists(filename: &str, url: &str) -> PathBuf {
     let checksums_filepath = get_test_data_large_checksums_filepath();
     ensure_file_exists_or_download_http(&filepath, url, Some(&checksums_filepath), None).unwrap();
     filepath
+}
+
+/// Ensures the NASDAQ ITCH AAPL deltas Parquet file exists locally, downloading from R2 if necessary.
+///
+/// # Panics
+///
+/// Panics if the download or checksum verification fails.
+#[must_use]
+pub fn ensure_itch_aapl_deltas_parquet() -> PathBuf {
+    ensure_test_data_exists(
+        "itch_AAPL.XNAS_2019-01-30_deltas.parquet",
+        "https://test-data.nautechsystems.io/large/itch_AAPL.XNAS_2019-01-30_deltas.parquet",
+    )
+}
+
+/// Ensures the Tardis Deribit BTC-PERPETUAL deltas Parquet file exists locally, downloading from R2 if necessary.
+///
+/// # Panics
+///
+/// Panics if the download or checksum verification fails.
+#[must_use]
+pub fn ensure_tardis_deribit_deltas_parquet() -> PathBuf {
+    ensure_test_data_exists(
+        "tardis_BTC-PERPETUAL.DERIBIT_2020-04-01_deltas.parquet",
+        "https://test-data.nautechsystems.io/large/tardis_BTC-PERPETUAL.DERIBIT_2020-04-01_deltas.parquet",
+    )
 }
 
 /// Returns the path to the Tardis Deribit incremental book L2 test data.

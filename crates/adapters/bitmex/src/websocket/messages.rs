@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,6 +24,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
+use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::Value;
 use strum::Display;
@@ -98,11 +99,12 @@ pub enum NautilusWsMessage {
     Data(Vec<Data>),
     Instruments(Vec<InstrumentAny>),
     OrderStatusReports(Vec<OrderStatusReport>),
-    OrderUpdated(OrderUpdated),
+    OrderUpdated(Box<OrderUpdated>),
+    OrderUpdates(Vec<OrderUpdated>),
     FillReports(Vec<FillReport>),
-    PositionStatusReport(PositionStatusReport),
+    PositionStatusReports(Vec<PositionStatusReport>),
     FundingRateUpdates(Vec<FundingRateUpdate>),
-    AccountState(AccountState),
+    AccountStates(Vec<AccountState>),
     Reconnected,
     Authenticated,
 }
@@ -266,6 +268,7 @@ pub struct BitmexOrderBookMsg {
     pub timestamp: DateTime<Utc>,
     /// Timestamp of the transaction.
     pub transact_time: DateTime<Utc>,
+    pub pool: Option<Ustr>,
 }
 
 /// Represents a single order book entry in the BitMEX order book.
@@ -280,6 +283,7 @@ pub struct BitmexOrderBook10Msg {
     pub asks: Vec<[f64; 2]>,
     /// Timestamp of the orderbook snapshot.
     pub timestamp: DateTime<Utc>,
+    pub pool: Option<Ustr>,
 }
 
 /// Represents a top-of-book quote.
@@ -298,6 +302,7 @@ pub struct BitmexQuoteMsg {
     pub ask_size: Option<u64>,
     /// Timestamp of the quote.
     pub timestamp: DateTime<Utc>,
+    pub pool: Option<Ustr>,
 }
 
 /// Represents a single trade execution on BitMEX.
@@ -328,37 +333,39 @@ pub struct BitmexTradeMsg {
     /// Trade type.
     #[serde(rename = "trdType")]
     pub trade_type: Ustr, // TODO: Add enum
+    pub pool: Option<Ustr>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BitmexTradeBinMsg {
-    /// Start time of the bin
+    /// Start time of the bin.
     pub timestamp: DateTime<Utc>,
-    /// Trading instrument symbol
+    /// Trading instrument symbol.
     pub symbol: Ustr,
-    /// Opening price for the period
+    /// Opening price for the period.
     pub open: f64,
-    /// Highest price for the period
+    /// Highest price for the period.
     pub high: f64,
-    /// Lowest price for the period
+    /// Lowest price for the period.
     pub low: f64,
-    /// Closing price for the period
+    /// Closing price for the period.
     pub close: f64,
-    /// Number of trades in the period
+    /// Number of trades in the period.
     pub trades: i64,
-    /// Volume traded in the period
+    /// Volume traded in the period.
     pub volume: i64,
-    /// Volume weighted average price
-    pub vwap: f64,
-    /// Size of the last trade in the period
-    pub last_size: i64,
-    /// Turnover in satoshis
+    /// Volume weighted average price (None when trades=0).
+    pub vwap: Option<f64>,
+    /// Size of the last trade in the period (None when trades=0).
+    pub last_size: Option<i64>,
+    /// Turnover in satoshis.
     pub turnover: i64,
-    /// Home currency volume
+    /// Home currency volume.
     pub home_notional: f64,
-    /// Foreign currency volume
+    /// Foreign currency volume.
     pub foreign_notional: f64,
+    pub pool: Option<Ustr>,
 }
 
 /// Represents a single order book entry in the BitMEX order book.
@@ -383,6 +390,7 @@ pub struct BitmexInstrumentMsg {
     pub reference_symbol: Option<Ustr>,
     pub max_order_qty: Option<f64>,
     pub max_price: Option<f64>,
+    pub min_price: Option<f64>,
     pub lot_size: Option<f64>,
     pub tick_size: Option<f64>,
     pub multiplier: Option<f64>,
@@ -404,8 +412,10 @@ pub struct BitmexInstrumentMsg {
     pub funding_premium_symbol: Option<Ustr>,
     pub funding_timestamp: Option<DateTime<Utc>>,
     pub funding_interval: Option<DateTime<Utc>>,
-    pub funding_rate: Option<f64>,
-    pub indicative_funding_rate: Option<f64>,
+    #[serde(default, with = "rust_decimal::serde::float_option")]
+    pub funding_rate: Option<Decimal>,
+    #[serde(default, with = "rust_decimal::serde::float_option")]
+    pub indicative_funding_rate: Option<Decimal>,
     pub last_price: Option<f64>,
     pub last_tick_direction: Option<BitmexTickDirection>,
     pub mark_price: Option<f64>,
@@ -483,6 +493,7 @@ impl TryFrom<BitmexInstrumentMsg> for crate::http::models::BitmexInstrument {
             publish_time: None,
             max_order_qty: msg.max_order_qty,
             max_price: msg.max_price,
+            min_price: msg.min_price,
             lot_size: msg.lot_size,
             tick_size,
             multiplier,
@@ -621,6 +632,8 @@ pub struct BitmexOrderMsg {
     pub text: Option<Ustr>,
     pub transact_time: DateTime<Utc>,
     pub timestamp: DateTime<Utc>,
+    pub strategy: Option<Ustr>,
+    pub pool: Option<Ustr>,
 }
 
 /// Wrapper enum for order data that can be either full or update messages.
@@ -709,6 +722,9 @@ pub struct BitmexExecutionMsg {
     pub foreign_notional: Option<f64>,
     pub transact_time: Option<DateTime<Utc>>,
     pub timestamp: Option<DateTime<Utc>>,
+    pub strategy: Option<Ustr>,
+    pub pool: Option<Ustr>,
+    pub exec_comm_ccy: Option<Ustr>,
 }
 
 /// Position status.
@@ -801,6 +817,7 @@ pub struct BitmexPositionMsg {
     pub timestamp: Option<DateTime<Utc>>,
     pub last_price: Option<f64>,
     pub last_value: Option<i64>,
+    pub strategy: Option<Ustr>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -904,9 +921,11 @@ pub struct BitmexFundingMsg {
     /// The instrument symbol the funding applies to.
     pub symbol: Ustr,
     /// The funding rate for this interval.
-    pub funding_rate: f64,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub funding_rate: Decimal,
     /// The daily funding rate.
-    pub funding_rate_daily: f64,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub funding_rate_daily: Decimal,
 }
 
 /// Represents an insurance fund update.

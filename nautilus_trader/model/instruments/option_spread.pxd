@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,9 +31,6 @@ cdef class OptionSpread(Instrument):
     """UNIX timestamp (nanoseconds) for contract activation.\n\n:returns: `unit64_t`"""
     cdef readonly uint64_t expiration_ns
     """UNIX timestamp (nanoseconds) for contract expiration.\n\n:returns: `unit64_t`"""
-
-    cpdef bint is_spread(self)
-    cpdef list legs(self)
 
     @staticmethod
     cdef OptionSpread from_dict_c(dict values)

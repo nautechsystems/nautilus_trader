@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,19 +15,18 @@
 
 //! WebSocket message handler for Hyperliquid.
 
-use std::{
-    collections::HashSet,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
+use dashmap::DashMap;
+use nautilus_common::cache::fifo::FifoCache;
 use nautilus_core::{AtomicTime, nanos::UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::BarType,
-    identifiers::AccountId,
+    identifiers::{AccountId, ClientOrderId},
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
@@ -82,8 +81,10 @@ pub enum HandlerCommand {
     /// Update asset context subscriptions for a coin.
     UpdateAssetContextSubs {
         coin: Ustr,
-        data_types: HashSet<AssetContextDataType>,
+        data_types: AHashSet<AssetContextDataType>,
     },
+    /// Cache spot fill coin mappings for instrument lookup.
+    CacheSpotFillCoins(AHashMap<Ustr, Ustr>),
 }
 
 pub(super) struct FeedHandler {
@@ -97,10 +98,12 @@ pub(super) struct FeedHandler {
     subscriptions: SubscriptionState,
     retry_manager: RetryManager<HyperliquidWsError>,
     message_buffer: Vec<NautilusWsMessage>,
-    instruments_cache: AHashMap<Ustr, InstrumentAny>,
+    instruments: AHashMap<Ustr, InstrumentAny>,
+    cloid_cache: Arc<DashMap<Ustr, ClientOrderId>>,
     bar_types_cache: AHashMap<String, BarType>,
     bar_cache: AHashMap<String, CandleData>,
-    asset_context_subs: AHashMap<Ustr, HashSet<AssetContextDataType>>,
+    asset_context_subs: AHashMap<Ustr, AHashSet<AssetContextDataType>>,
+    processed_trade_ids: FifoCache<u64, 10_000>,
     mark_price_cache: AHashMap<Ustr, String>,
     index_price_cache: AHashMap<Ustr, String>,
     funding_rate_cache: AHashMap<Ustr, String>,
@@ -115,6 +118,7 @@ impl FeedHandler {
         out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
         account_id: Option<AccountId>,
         subscriptions: SubscriptionState,
+        cloid_cache: Arc<DashMap<Ustr, ClientOrderId>>,
     ) -> Self {
         Self {
             clock: get_atomic_clock_realtime(),
@@ -127,10 +131,12 @@ impl FeedHandler {
             subscriptions,
             retry_manager: create_websocket_retry_manager(),
             message_buffer: Vec::new(),
-            instruments_cache: AHashMap::new(),
+            instruments: AHashMap::new(),
+            cloid_cache,
             bar_types_cache: AHashMap::new(),
             bar_cache: AHashMap::new(),
             asset_context_subs: AHashMap::new(),
+            processed_trade_ids: FifoCache::new(),
             mark_price_cache: AHashMap::new(),
             index_price_cache: AHashMap::new(),
             funding_rate_cache: AHashMap::new(),
@@ -183,11 +189,11 @@ impl FeedHandler {
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
                         HandlerCommand::SetClient(client) => {
-                            tracing::debug!("Setting WebSocket client in handler");
+                            log::debug!("Setting WebSocket client in handler");
                             self.client = Some(client);
                         }
                         HandlerCommand::Disconnect => {
-                            tracing::debug!("Handler received disconnect command");
+                            log::debug!("Handler received disconnect command");
                             if let Some(ref client) = self.client {
                                 client.disconnect().await;
                             }
@@ -202,14 +208,14 @@ impl FeedHandler {
                                 let request = HyperliquidWsRequest::Subscribe { subscription };
                                 match serde_json::to_string(&request) {
                                     Ok(payload) => {
-                                        tracing::debug!("Sending subscribe payload: {payload}");
+                                        log::debug!("Sending subscribe payload: {payload}");
                                         if let Err(e) = self.send_with_retry(payload).await {
-                                            tracing::error!("Error subscribing to {key}: {e}");
+                                            log::error!("Error subscribing to {key}: {e}");
                                             self.subscriptions.mark_failure(&key);
                                         }
                                     }
                                     Err(e) => {
-                                        tracing::error!("Error serializing subscription for {key}: {e}");
+                                        log::error!("Error serializing subscription for {key}: {e}");
                                         self.subscriptions.mark_failure(&key);
                                     }
                                 }
@@ -223,32 +229,26 @@ impl FeedHandler {
                                 let request = HyperliquidWsRequest::Unsubscribe { subscription };
                                 match serde_json::to_string(&request) {
                                     Ok(payload) => {
-                                        tracing::debug!("Sending unsubscribe payload: {payload}");
+                                        log::debug!("Sending unsubscribe payload: {payload}");
                                         if let Err(e) = self.send_with_retry(payload).await {
-                                            tracing::error!("Error unsubscribing from {key}: {e}");
+                                            log::error!("Error unsubscribing from {key}: {e}");
                                         }
                                     }
                                     Err(e) => {
-                                        tracing::error!("Error serializing unsubscription for {key}: {e}");
+                                        log::error!("Error serializing unsubscription for {key}: {e}");
                                     }
                                 }
                             }
                         }
                         HandlerCommand::InitializeInstruments(instruments) => {
                             for inst in instruments {
-                                let full_symbol = inst.symbol().inner();
                                 let coin = inst.raw_symbol().inner();
-
-                                self.instruments_cache.insert(full_symbol, inst.clone());
-                                self.instruments_cache.insert(coin, inst);
+                                self.instruments.insert(coin, inst);
                             }
                         }
                         HandlerCommand::UpdateInstrument(inst) => {
-                            let full_symbol = inst.symbol().inner();
                             let coin = inst.raw_symbol().inner();
-
-                            self.instruments_cache.insert(full_symbol, inst.clone());
-                            self.instruments_cache.insert(coin, inst);
+                            self.instruments.insert(coin, inst);
                         }
                         HandlerCommand::AddBarType { key, bar_type } => {
                             self.bar_types_cache.insert(key, bar_type);
@@ -264,6 +264,9 @@ impl FeedHandler {
                                 self.asset_context_subs.insert(coin, data_types);
                             }
                         }
+                        HandlerCommand::CacheSpotFillCoins(_) => {
+                            // No longer needed - raw_symbol now contains the proper format
+                        }
                     }
                     continue;
                 }
@@ -272,7 +275,7 @@ impl FeedHandler {
                     match raw_msg {
                         Message::Text(text) => {
                             if text == RECONNECTED {
-                                tracing::info!("Received RECONNECTED sentinel");
+                                log::info!("Received RECONNECTED sentinel");
                                 return Some(NautilusWsMessage::Reconnected);
                             }
 
@@ -282,11 +285,13 @@ impl FeedHandler {
 
                                     let nautilus_msgs = Self::parse_to_nautilus_messages(
                                         msg,
-                                        &self.instruments_cache,
+                                        &self.instruments,
+                                        &self.cloid_cache,
                                         &self.bar_types_cache,
                                         self.account_id,
                                         ts_init,
                                         &self.asset_context_subs,
+                                        &mut self.processed_trade_ids,
                                         &mut self.mark_price_cache,
                                         &mut self.index_price_cache,
                                         &mut self.funding_rate_cache,
@@ -301,18 +306,18 @@ impl FeedHandler {
                                     }
                                 }
                                 Err(e) => {
-                                    tracing::error!("Error parsing WebSocket message: {e}, text: {text}");
+                                    log::error!("Error parsing WebSocket message: {e}, text: {text}");
                                 }
                             }
                         }
                         Message::Ping(data) => {
                             if let Some(ref client) = self.client
                                 && let Err(e) = client.send_pong(data.to_vec()).await {
-                                tracing::error!("Error sending pong: {e}");
+                                log::error!("Error sending pong: {e}");
                             }
                         }
                         Message::Close(_) => {
-                            tracing::info!("Received WebSocket close frame");
+                            log::info!("Received WebSocket close frame");
                             return None;
                         }
                         _ => {}
@@ -320,7 +325,7 @@ impl FeedHandler {
                 }
 
                 else => {
-                    tracing::debug!("Handler shutting down: stream ended or command channel closed");
+                    log::debug!("Handler shutting down: stream ended or command channel closed");
                     return None;
                 }
             }
@@ -331,10 +336,12 @@ impl FeedHandler {
     fn parse_to_nautilus_messages(
         msg: HyperliquidWsMessage,
         instruments: &AHashMap<Ustr, InstrumentAny>,
+        cloid_cache: &DashMap<Ustr, ClientOrderId>,
         bar_types: &AHashMap<String, BarType>,
         account_id: Option<AccountId>,
         ts_init: UnixNanos,
-        asset_context_subs: &AHashMap<Ustr, HashSet<AssetContextDataType>>,
+        asset_context_subs: &AHashMap<Ustr, AHashSet<AssetContextDataType>>,
+        processed_trade_ids: &mut FifoCache<u64, 10_000>,
         mark_price_cache: &mut AHashMap<Ustr, String>,
         index_price_cache: &mut AHashMap<Ustr, String>,
         funding_rate_cache: &mut AHashMap<Ustr, String>,
@@ -345,17 +352,68 @@ impl FeedHandler {
         match msg {
             HyperliquidWsMessage::OrderUpdates { data } => {
                 if let Some(account_id) = account_id
-                    && let Some(msg) =
-                        Self::handle_order_updates(&data, instruments, account_id, ts_init)
+                    && let Some(msg) = Self::handle_order_updates(
+                        &data,
+                        instruments,
+                        cloid_cache,
+                        account_id,
+                        ts_init,
+                    )
                 {
                     result.push(msg);
                 }
             }
-            HyperliquidWsMessage::UserEvents { data } => {
+            HyperliquidWsMessage::UserEvents { data } | HyperliquidWsMessage::User { data } => {
+                // Process fills from userEvents channel (userFills channel is redundant)
+                match data {
+                    WsUserEventData::Fills { fills } => {
+                        log::debug!("Received {} fill(s) from userEvents channel", fills.len());
+                        for fill in &fills {
+                            log::debug!(
+                                "Fill: oid={}, coin={}, side={:?}, sz={}, px={}",
+                                fill.oid,
+                                fill.coin,
+                                fill.side,
+                                fill.sz,
+                                fill.px
+                            );
+                        }
+                        if let Some(account_id) = account_id {
+                            log::debug!("Processing fills with account_id={account_id}");
+                            if let Some(msg) = Self::handle_user_fills(
+                                &fills,
+                                instruments,
+                                cloid_cache,
+                                account_id,
+                                ts_init,
+                                processed_trade_ids,
+                            ) {
+                                log::debug!("Successfully created fill message");
+                                result.push(msg);
+                            } else {
+                                log::debug!("handle_user_fills returned None (no new fills)");
+                            }
+                        } else {
+                            log::warn!("Cannot process fills: account_id is None");
+                        }
+                    }
+                    _ => {
+                        log::debug!("Received non-fill user event: {data:?}");
+                    }
+                }
+            }
+            HyperliquidWsMessage::UserFills { data } => {
+                // UserFills channel is redundant with userEvents, but handle it for
+                // backwards compatibility if explicitly subscribed
                 if let Some(account_id) = account_id
-                    && let WsUserEventData::Fills { fills } = data
-                    && let Some(msg) =
-                        Self::handle_user_fills(&fills, instruments, account_id, ts_init)
+                    && let Some(msg) = Self::handle_user_fills(
+                        &data.fills,
+                        instruments,
+                        cloid_cache,
+                        account_id,
+                        ts_init,
+                        processed_trade_ids,
+                    )
                 {
                     result.push(msg);
                 }
@@ -395,7 +453,7 @@ impl FeedHandler {
                 ));
             }
             HyperliquidWsMessage::Error { data } => {
-                tracing::warn!("Received error from Hyperliquid WebSocket: {data}");
+                log::warn!("Received error from Hyperliquid WebSocket: {data}");
             }
             // Ignore other message types (subscription confirmations, etc)
             _ => {}
@@ -407,60 +465,104 @@ impl FeedHandler {
     fn handle_order_updates(
         data: &[super::messages::WsOrderData],
         instruments: &AHashMap<Ustr, InstrumentAny>,
+        cloid_cache: &DashMap<Ustr, ClientOrderId>,
         account_id: AccountId,
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
         let mut exec_reports = Vec::new();
 
         for order_update in data {
-            if let Some(instrument) = instruments.get(&order_update.order.coin) {
+            let instrument = instruments.get(&order_update.order.coin);
+
+            if let Some(instrument) = instrument {
                 match parse_ws_order_status_report(order_update, instrument, account_id, ts_init) {
-                    Ok(report) => {
+                    Ok(mut report) => {
+                        // Resolve cloid to real client_order_id if cached
+                        if let Some(cloid) = &order_update.order.cloid {
+                            let cloid_ustr = Ustr::from(cloid.as_str());
+                            if let Some(entry) = cloid_cache.get(&cloid_ustr) {
+                                let real_client_order_id = *entry.value();
+                                log::debug!("Resolved cloid {cloid} -> {real_client_order_id}");
+                                report.client_order_id = Some(real_client_order_id);
+                            }
+                        }
                         exec_reports.push(ExecutionReport::Order(report));
                     }
                     Err(e) => {
-                        tracing::error!("Error parsing order update: {e}");
+                        log::error!("Error parsing order update: {e}");
                     }
                 }
             } else {
-                tracing::debug!("No instrument found for coin: {}", order_update.order.coin);
+                log::debug!("No instrument found for coin: {}", order_update.order.coin);
             }
         }
 
-        if !exec_reports.is_empty() {
-            Some(NautilusWsMessage::ExecutionReports(exec_reports))
-        } else {
+        if exec_reports.is_empty() {
             None
+        } else {
+            Some(NautilusWsMessage::ExecutionReports(exec_reports))
         }
     }
 
     fn handle_user_fills(
         fills: &[super::messages::WsFillData],
         instruments: &AHashMap<Ustr, InstrumentAny>,
+        cloid_cache: &DashMap<Ustr, ClientOrderId>,
         account_id: AccountId,
         ts_init: UnixNanos,
+        processed_trade_ids: &mut FifoCache<u64, 10_000>,
     ) -> Option<NautilusWsMessage> {
         let mut exec_reports = Vec::new();
 
         for fill in fills {
-            if let Some(instrument) = instruments.get(&fill.coin) {
+            // Skip duplicate fills (Hyperliquid sometimes sends duplicate userEvents)
+            if processed_trade_ids.contains(&fill.tid) {
+                log::debug!("Skipping duplicate fill: tid={}", fill.tid);
+                continue;
+            }
+            processed_trade_ids.add(fill.tid);
+
+            let instrument = instruments.get(&fill.coin);
+
+            if let Some(instrument) = instrument {
+                log::debug!("Found instrument for fill coin={}", fill.coin);
                 match parse_ws_fill_report(fill, instrument, account_id, ts_init) {
-                    Ok(report) => {
+                    Ok(mut report) => {
+                        // Resolve cloid to real client_order_id if cached
+                        if let Some(cloid) = &fill.cloid {
+                            let cloid_ustr = Ustr::from(cloid.as_str());
+                            if let Some(entry) = cloid_cache.get(&cloid_ustr) {
+                                let real_client_order_id = *entry.value();
+                                log::debug!(
+                                    "Resolved fill cloid {cloid} -> {real_client_order_id}"
+                                );
+                                report.client_order_id = Some(real_client_order_id);
+                            }
+                        }
+                        log::debug!(
+                            "Parsed fill report: venue_order_id={:?}, trade_id={:?}",
+                            report.venue_order_id,
+                            report.trade_id
+                        );
                         exec_reports.push(ExecutionReport::Fill(report));
                     }
                     Err(e) => {
-                        tracing::error!("Error parsing fill: {e}");
+                        log::error!("Error parsing fill: {e}");
                     }
                 }
             } else {
-                tracing::debug!("No instrument found for coin: {}", fill.coin);
+                log::warn!(
+                    "No instrument found for fill coin={}. Keys: {:?}",
+                    fill.coin,
+                    instruments.keys().collect::<Vec<_>>()
+                );
             }
         }
 
-        if !exec_reports.is_empty() {
-            Some(NautilusWsMessage::ExecutionReports(exec_reports))
-        } else {
+        if exec_reports.is_empty() {
             None
+        } else {
+            Some(NautilusWsMessage::ExecutionReports(exec_reports))
         }
     }
 
@@ -476,18 +578,18 @@ impl FeedHandler {
                 match parse_ws_trade_tick(trade, instrument, ts_init) {
                     Ok(tick) => trade_ticks.push(tick),
                     Err(e) => {
-                        tracing::error!("Error parsing trade tick: {e}");
+                        log::error!("Error parsing trade tick: {e}");
                     }
                 }
             } else {
-                tracing::debug!("No instrument found for coin: {}", trade.coin);
+                log::debug!("No instrument found for coin: {}", trade.coin);
             }
         }
 
-        if !trade_ticks.is_empty() {
-            Some(NautilusWsMessage::Trades(trade_ticks))
-        } else {
+        if trade_ticks.is_empty() {
             None
+        } else {
+            Some(NautilusWsMessage::Trades(trade_ticks))
         }
     }
 
@@ -500,12 +602,12 @@ impl FeedHandler {
             match parse_ws_quote_tick(data, instrument, ts_init) {
                 Ok(quote_tick) => Some(NautilusWsMessage::Quote(quote_tick)),
                 Err(e) => {
-                    tracing::error!("Error parsing quote tick: {e}");
+                    log::error!("Error parsing quote tick: {e}");
                     None
                 }
             }
         } else {
-            tracing::debug!("No instrument found for coin: {}", data.coin);
+            log::debug!("No instrument found for coin: {}", data.coin);
             None
         }
     }
@@ -519,12 +621,12 @@ impl FeedHandler {
             match parse_ws_order_book_deltas(data, instrument, ts_init) {
                 Ok(deltas) => Some(NautilusWsMessage::Deltas(deltas)),
                 Err(e) => {
-                    tracing::error!("Error parsing order book deltas: {e}");
+                    log::error!("Error parsing order book deltas: {e}");
                     None
                 }
             }
         } else {
-            tracing::debug!("No instrument found for coin: {}", data.coin);
+            log::debug!("No instrument found for coin: {}", data.coin);
             None
         }
     }
@@ -542,7 +644,7 @@ impl FeedHandler {
         if let Some(cached) = bar_cache.get(&key) {
             // Emit cached bar when close_time changes, indicating the previous period closed
             if cached.close_time != data.close_time {
-                tracing::debug!(
+                log::debug!(
                     "Bar period changed for {}: prev_close_time={}, new_close_time={}",
                     data.s,
                     cached.close_time,
@@ -560,14 +662,14 @@ impl FeedHandler {
                     match parse_ws_candle(&closed_data, instrument, bar_type, ts_init) {
                         Ok(bar) => return Some(NautilusWsMessage::Candle(bar)),
                         Err(e) => {
-                            tracing::error!("Error parsing closed candle: {e}");
+                            log::error!("Error parsing closed candle: {e}");
                         }
                     }
                 } else {
-                    tracing::debug!("No instrument found for coin: {}", data.s);
+                    log::debug!("No instrument found for coin: {}", data.s);
                 }
             } else {
-                tracing::debug!("No bar type found for key: {key}");
+                log::debug!("No bar type found for key: {key}");
             }
         }
 
@@ -577,7 +679,7 @@ impl FeedHandler {
     fn handle_asset_context(
         data: &WsActiveAssetCtxData,
         instruments: &AHashMap<Ustr, InstrumentAny>,
-        asset_context_subs: &AHashMap<Ustr, HashSet<AssetContextDataType>>,
+        asset_context_subs: &AHashMap<Ustr, AHashSet<AssetContextDataType>>,
         mark_price_cache: &mut AHashMap<Ustr, String>,
         index_price_cache: &mut AHashMap<Ustr, String>,
         funding_rate_cache: &mut AHashMap<Ustr, String>,
@@ -641,12 +743,12 @@ impl FeedHandler {
                         }
                     }
                     Err(e) => {
-                        tracing::error!("Error parsing asset context: {e}");
+                        log::error!("Error parsing asset context: {e}");
                     }
                 }
             }
         } else {
-            tracing::debug!("No instrument found for coin: {coin}");
+            log::debug!("No instrument found for coin: {coin}");
         }
 
         result

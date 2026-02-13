@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -674,9 +674,10 @@ mod tests {
 
         #[allow(clippy::panic_in_result_fn)] // Intentional panic for testing
         fn on_start(&mut self) -> anyhow::Result<()> {
-            if self.should_panic.load(Ordering::SeqCst) {
-                panic!("Intentional panic for testing");
-            }
+            assert!(
+                !self.should_panic.load(Ordering::SeqCst),
+                "Intentional panic for testing"
+            );
             Ok(())
         }
     }

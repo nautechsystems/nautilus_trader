@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -48,7 +48,7 @@ pub struct TardisHttpClient {
 
 impl Debug for TardisHttpClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TardisHttpClient")
+        f.debug_struct(stringify!(TardisHttpClient))
             .field("base_url", &self.base_url)
             .field(
                 "credential",
@@ -111,7 +111,7 @@ impl TardisHttpClient {
         let error_text = match resp.text().await {
             Ok(text) => text,
             Err(e) => {
-                tracing::warn!("Failed to extract error response body: {e}");
+                log::warn!("Failed to extract error response body: {e}");
                 String::from("Failed to extract error response")
             }
         };
@@ -153,7 +153,7 @@ impl TardisHttpClient {
         {
             url.push_str(&format!("?filter={}", urlencoding::encode(&filter_json)));
         }
-        tracing::debug!("Requesting: {url}");
+        log::debug!("Requesting: {url}");
 
         let resp = self
             .client
@@ -161,14 +161,14 @@ impl TardisHttpClient {
             .bearer_auth(self.credential.as_ref().map_or("", |c| c.api_key()))
             .send()
             .await?;
-        tracing::debug!("Response status: {}", resp.status());
+        log::debug!("Response status: {}", resp.status());
 
         if !resp.status().is_success() {
             return Self::handle_error_response(resp).await;
         }
 
         let body = resp.text().await?;
-        tracing::trace!("{body}");
+        log::trace!("{body}");
 
         if let Ok(instrument) = serde_json::from_str::<TardisInstrumentInfo>(&body) {
             return Ok(vec![instrument]);
@@ -177,8 +177,8 @@ impl TardisHttpClient {
         match serde_json::from_str(&body) {
             Ok(parsed) => Ok(parsed),
             Err(e) => {
-                tracing::error!("Failed to parse response: {e}");
-                tracing::debug!("Response body was: {body}");
+                log::error!("Failed to parse response: {e}");
+                log::debug!("Response body was: {body}");
                 Err(Error::ResponseParse(e.to_string()))
             }
         }

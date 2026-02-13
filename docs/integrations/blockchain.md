@@ -83,3 +83,10 @@ Inherits from `BaseContract` to leverage Multicall3 for efficient batch operatio
 | `postgres_cache_database_config`| `None`  | Optional `PostgresConnectOptions` enabling on-disk caching of decoded pool state. |
 | `http_proxy_url`                | `None`  | Optional HTTP proxy URL for RPC requests. |
 | `ws_proxy_url`                  | `None`  | Optional WebSocket proxy URL for RPC connections. |
+
+## Contributing
+
+:::info
+For additional features or to contribute to the Blockchain adapter, please see our
+[contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).
+:::

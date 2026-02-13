@@ -63,9 +63,7 @@ class DemoStrategy(Strategy):
         # Count processed bars
         self.bars_processed += 1
         self.log.info(
-            f"Bar #{self.bars_processed} | "
-            f"Bar: {bar} | "
-            f"Time={unix_nanos_to_dt(bar.ts_event)}",
+            f"Bar #{self.bars_processed} | Bar: {bar} | Time={unix_nanos_to_dt(bar.ts_event)}",
             color=LogColor.YELLOW,
         )
 

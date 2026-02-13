@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -35,7 +35,7 @@ use nautilus_model::{
 
 use super::{
     DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
-    KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column,
+    KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column, validate_precision_bytes,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -282,42 +282,10 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
         }
 
         for i in 0..DEPTH10_LEN {
-            if bid_prices[i].value_length() != PRECISION_BYTES {
-                return Err(EncodingError::ParseError(
-                    "bid_price",
-                    format!(
-                        "Invalid value length at index {i}: expected {PRECISION_BYTES}, found {}",
-                        bid_prices[i].value_length()
-                    ),
-                ));
-            }
-            if ask_prices[i].value_length() != PRECISION_BYTES {
-                return Err(EncodingError::ParseError(
-                    "ask_price",
-                    format!(
-                        "Invalid value length at index {i}: expected {PRECISION_BYTES}, found {}",
-                        ask_prices[i].value_length()
-                    ),
-                ));
-            }
-            if bid_sizes[i].value_length() != PRECISION_BYTES {
-                return Err(EncodingError::ParseError(
-                    "bid_size",
-                    format!(
-                        "Invalid value length at index {i}: expected {PRECISION_BYTES}, found {}",
-                        bid_sizes[i].value_length()
-                    ),
-                ));
-            }
-            if ask_sizes[i].value_length() != PRECISION_BYTES {
-                return Err(EncodingError::ParseError(
-                    "ask_size",
-                    format!(
-                        "Invalid value length at index {i}: expected {PRECISION_BYTES}, found {}",
-                        ask_sizes[i].value_length()
-                    ),
-                ));
-            }
+            validate_precision_bytes(bid_prices[i], "bid_price")?;
+            validate_precision_bytes(ask_prices[i], "ask_price")?;
+            validate_precision_bytes(bid_sizes[i], "bid_size")?;
+            validate_precision_bytes(ask_sizes[i], "ask_size")?;
         }
 
         let flags = extract_column::<UInt8Array>(cols, "flags", 6 * DEPTH10_LEN, DataType::UInt8)?;
@@ -646,7 +614,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("instrument_id"),
-            "Expected missing instrument_id error, got: {err}"
+            "Expected missing instrument_id error, was: {err}"
         );
     }
 
@@ -663,7 +631,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("price_precision"),
-            "Expected missing price_precision error, got: {err}"
+            "Expected missing price_precision error, was: {err}"
         );
     }
 

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -407,8 +407,11 @@ impl PortfolioAnalyzer {
         let max_length = self.get_max_length_name();
         let stats = self.get_performance_stats_pnls(currency, unrealized_pnl)?;
 
+        let mut entries: Vec<_> = stats.into_iter().collect();
+        entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+
         let mut output = Vec::new();
-        for (k, v) in stats {
+        for (k, v) in entries {
             let padding = if max_length > k.len() {
                 max_length - k.len() + 1
             } else {
@@ -426,8 +429,11 @@ impl PortfolioAnalyzer {
         let max_length = self.get_max_length_name();
         let stats = self.get_performance_stats_returns();
 
+        let mut entries: Vec<_> = stats.into_iter().collect();
+        entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+
         let mut output = Vec::new();
-        for (k, v) in stats {
+        for (k, v) in entries {
             let padding = max_length - k.len() + 1;
             output.push(format!("{}: {}{:.2}", k, " ".repeat(padding), v));
         }
@@ -441,8 +447,11 @@ impl PortfolioAnalyzer {
         let max_length = self.get_max_length_name();
         let stats = self.get_performance_stats_general();
 
+        let mut entries: Vec<_> = stats.into_iter().collect();
+        entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+
         let mut output = Vec::new();
-        for (k, v) in stats {
+        for (k, v) in entries {
             let padding = max_length - k.len() + 1;
             output.push(format!("{}: {}{}", k, " ".repeat(padding), v));
         }
@@ -465,6 +474,7 @@ mod tests {
             stubs::{instrument_id_aud_usd_sim, strategy_id_ema_cross, trader_id},
         },
         instruments::InstrumentAny,
+        stubs::TestDefault,
         types::{AccountBalance, Money, Price, Quantity},
     };
     use rstest::rstest;
@@ -519,7 +529,7 @@ mod tests {
             instrument_id: instrument_id_aud_usd_sim(),
             id: PositionId::new(&id),
             account_id: AccountId::new("test-account"),
-            opening_order_id: ClientOrderId::default(),
+            opening_order_id: ClientOrderId::test_default(),
             closing_order_id: None,
             entry: OrderSide::NoOrderSide,
             side: PositionSide::NoPositionSide,
@@ -611,7 +621,7 @@ mod tests {
         fn balances(&self) -> AHashMap<Currency, AccountBalance> {
             todo!()
         }
-        fn apply(&mut self, _: AccountState) {
+        fn apply(&mut self, _: AccountState) -> anyhow::Result<()> {
             todo!()
         }
         fn calculate_balance_locked(

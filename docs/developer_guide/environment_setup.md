@@ -115,6 +115,14 @@ make build-debug
 [Cap'n Proto](https://capnproto.org/) is required for serialization schema compilation.
 The required version is defined in the `capnp-version` file in the repository root.
 
+The recommended way to install the correct version on **Linux** or **macOS** is:
+
+```bash
+./scripts/install-capnp.sh
+```
+
+This script ensures the pinned version is installed. Alternatively, you can install manually:
+
 On **macOS**, install via Homebrew:
 
 ```bash

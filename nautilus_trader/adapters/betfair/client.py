@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -67,6 +67,7 @@ from nautilus_trader.common.secure import SecureString
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
+from nautilus_trader.core.nautilus_pyo3 import Quota
 from nautilus_trader.core.rust.common import LogColor
 
 
@@ -84,6 +85,8 @@ class BetfairHttpClient:
         The Betfair application key.
     proxy_url : str, optional
         The proxy URL for HTTP requests.
+    ratelimiter_default_quota : Quota, optional
+        The default rate limiter quota for requests.
 
     """
 
@@ -93,6 +96,7 @@ class BetfairHttpClient:
         password: str,
         app_key: str,
         proxy_url: str | None = None,
+        ratelimiter_default_quota: Quota | None = None,
     ) -> None:
         # Config
         self.username = username
@@ -100,7 +104,10 @@ class BetfairHttpClient:
         self.app_key = app_key
 
         # Client
-        self._client = HttpClient(proxy_url=proxy_url)
+        self._client = HttpClient(
+            proxy_url=proxy_url,
+            default_quota=ratelimiter_default_quota,
+        )
         self._headers: dict[str, str] = {}
         self._log = Logger(name=type(self).__name__)
         self._connect_lock: asyncio.Lock | None = None
@@ -124,6 +131,16 @@ class BetfairHttpClient:
         return response
 
     def _parse_response(self, request: Request, response: HttpResponse) -> Request.return_type:
+        if not response.body:
+            self._log.warning("Betfair returned empty response body")
+            raise BetfairError("JSON_PARSE_ERROR: Empty response body")
+
+        if response.body[0] == 0:
+            # Null byte at start indicates corrupted/truncated response
+            preview = response.body[:100].hex()
+            self._log.warning(f"Betfair response starts with null byte: {preview}")
+            raise BetfairError("JSON_PARSE_ERROR: Response starts with null byte (corrupted)")
+
         try:
             return request.parse_response(response.body, raise_errors=True)
         except ValueError as e:
@@ -133,8 +150,8 @@ class BetfairHttpClient:
                 raise BetfairError(f"INVALID_SESSION_INFORMATION: {e}") from e
             raise
         except JSONError as e:
-            # Handle betfair-parser msgspec parsing errors
-            self._log.warning(f"Betfair JSON parsing error: {e}")
+            preview = response.body[:200].decode(errors="replace")
+            self._log.warning(f"Betfair JSON parsing error: {e}, response preview: {preview}")
             raise BetfairError(f"JSON_PARSE_ERROR: {e}") from e
 
     async def _post(self, request: Request) -> Request.return_type:

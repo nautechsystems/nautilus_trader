@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,6 +21,7 @@ import msgspec
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceSymbolFilter
 from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
@@ -49,14 +50,6 @@ from nautilus_trader.model.objects import Quantity
 
 
 def _symbol_info_to_dict(symbol_info: BinanceSpotSymbolInfo) -> dict:
-    """
-    Convert symbol info to dict with all enums and nested structs converted to
-    primitives.
-
-    This ensures the info dict contains only JSON-serializable primitives.
-
-    """
-
     def _convert_value(value: Any) -> Any:
         # Recursively convert enums and structs to primitives
         if isinstance(value, Enum):
@@ -87,8 +80,8 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         The clock for the provider.
     account_type : BinanceAccountType, default SPOT
         The Binance account type for the provider.
-    is_testnet : bool, default False
-        If the provider is for the Spot testnet.
+    environment : BinanceEnvironment, default LIVE
+        The Binance environment.
     config : InstrumentProviderConfig, optional
         The configuration for the provider.
 
@@ -99,7 +92,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         client: BinanceHttpClient,
         clock: LiveClock,
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
-        is_testnet: bool = False,
+        environment: BinanceEnvironment = BinanceEnvironment.LIVE,
         config: InstrumentProviderConfig | None = None,
         venue: Venue = BINANCE_VENUE,
     ) -> None:
@@ -108,7 +101,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         self._clock = clock
         self._client = client
         self._account_type = account_type
-        self._is_testnet = is_testnet
+        self._environment = environment
         self._venue = venue
 
         self._http_wallet = BinanceSpotWalletHttpAPI(
@@ -131,9 +124,9 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             # Get current commission rates (requires authentication)
             fees_dict: dict[str, BinanceSpotTradeFee] = {}
 
-            if self._is_testnet:
+            if self._environment.is_sandbox:
                 self._log.warning(
-                    "Currently not requesting actual trade fees for the SPOT testnet; "
+                    f"Not requesting actual trade fees for {self._environment.value}; "
                     "all instruments will have zero fees",
                 )
             elif self._client.api_key is None or self._client._secret is None:
@@ -175,9 +168,9 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         try:
             # Get current commission rates (requires authentication)
             fees_dict: dict[str, BinanceSpotTradeFee] = {}
-            if self._is_testnet:
+            if self._environment.is_sandbox:
                 self._log.warning(
-                    "Currently not requesting actual trade fees for the SPOT testnet; "
+                    f"Not requesting actual trade fees for {self._environment.value}; "
                     "all instruments will have zero fees",
                 )
             elif self._client.api_key is None or self._client._secret is None:
@@ -221,9 +214,9 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         try:
             # Get current commission rates (requires authentication)
             fees_dict: dict[str, BinanceSpotTradeFee] = {}
-            if self._is_testnet:
+            if self._environment.is_sandbox:
                 self._log.warning(
-                    "Currently not requesting actual trade fees for the SPOT testnet; "
+                    f"Not requesting actual trade fees for {self._environment.value}; "
                     "all instruments will have zero fees",
                 )
             elif self._client.api_key is None or self._client._secret is None:

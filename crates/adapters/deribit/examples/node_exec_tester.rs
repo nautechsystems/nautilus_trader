@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,10 +15,10 @@
 
 //! Example demonstrating live execution testing with the Deribit adapter.
 //!
-//! Run with: `cargo run -p nautilus-deribit --example deribit-exec-tester`
+//! Run with: `cargo run --example deribit-exec-tester --package nautilus-deribit`
 //!
 //! For production, set USE_TESTNET=false:
-//! `USE_TESTNET=false cargo run -p nautilus-deribit --example deribit-exec-tester`
+//! `USE_TESTNET=false cargo run --example deribit-exec-tester --package nautilus-deribit`
 //!
 //! Environment variables:
 //! - DERIBIT_TESTNET_API_KEY / DERIBIT_API_KEY: Your Deribit API key
@@ -28,7 +28,7 @@ use nautilus_common::enums::Environment;
 use nautilus_deribit::{
     config::{DeribitDataClientConfig, DeribitExecClientConfig},
     factories::{DeribitDataClientFactory, DeribitExecutionClientFactory},
-    http::models::DeribitInstrumentKind,
+    http::models::DeribitProductType,
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
@@ -42,9 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     // Read USE_TESTNET from environment (default true for safety)
-    let use_testnet = std::env::var("USE_TESTNET")
-        .map(|v| v.to_lowercase() != "false")
-        .unwrap_or(true);
+    let use_testnet = std::env::var("USE_TESTNET").map_or(true, |v| v.to_lowercase() != "false");
 
     let environment = Environment::Live;
     let trader_id = TraderId::from("TESTER-001");
@@ -56,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_config = DeribitDataClientConfig {
         api_key: None,    // Will use env var
         api_secret: None, // Will use env var
-        instrument_kinds: vec![DeribitInstrumentKind::Future],
+        product_types: vec![DeribitProductType::Future],
         use_testnet,
         ..Default::default()
     };
@@ -66,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         account_id,
         api_key: None,    // Will use env var
         api_secret: None, // Will use env var
-        instrument_kinds: vec![DeribitInstrumentKind::Future],
+        product_types: vec![DeribitProductType::Future],
         use_testnet,
         ..Default::default()
     };
@@ -85,11 +83,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         StrategyId::from("EXEC_TESTER-001"),
         instrument_id,
         client_id,
-        Quantity::from("0.001"), // Small quantity for testing
+        Quantity::from("10"), // 10 USD contracts (Deribit minimum)
     )
-    .with_log_data(false)
-    .with_subscribe_trades(false)
-    .with_subscribe_quotes(false);
+    .with_subscribe_trades(true)
+    .with_subscribe_quotes(true)
+    .with_use_post_only(true)
+    .with_log_data(false);
 
     // Use UUIDs for unique client order IDs across restarts
     tester_config.base.use_uuid_client_order_ids = true;

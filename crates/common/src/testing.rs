@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,7 +23,7 @@ use std::{
 };
 
 use nautilus_core::UUID4;
-use nautilus_model::identifiers::TraderId;
+use nautilus_model::{identifiers::TraderId, stubs::TestDefault};
 
 use crate::logging::{
     init_logging,
@@ -40,7 +40,7 @@ pub fn init_logger_for_testing(stdout_level: Option<log::LevelFilter>) -> anyhow
         ..Default::default()
     };
     init_logging(
-        TraderId::default(),
+        TraderId::test_default(),
         UUID4::new(),
         config,
         FileWriterConfig::default(),

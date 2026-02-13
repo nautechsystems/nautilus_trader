@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -159,7 +159,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         # Configuration
         self._binance_account_type = account_type
         self._use_agg_trade_ticks = config.use_agg_trade_ticks
-        self._log.info(f"Key type: {config.key_type.value}", LogColor.BLUE)
         self._log.info(f"Account type: {self._binance_account_type.value}", LogColor.BLUE)
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.use_agg_trade_ticks=}", LogColor.BLUE)
@@ -288,7 +287,11 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         await self._ws_client.disconnect()
 
     def _should_retry(self, error_code: BinanceErrorCode, retries: int) -> bool:
-        return not (error_code not in self._retry_errors or not self._max_retries or retries > self._max_retries)
+        return not (
+            error_code not in self._retry_errors
+            or not self._max_retries
+            or retries > self._max_retries
+        )
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
@@ -353,9 +356,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         await self._subscribe_order_book(command)
 
-    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
-        await self._subscribe_order_book(command)
-
     async def _subscribe_order_book(self, command: SubscribeOrderBook) -> None:
         update_speed: int | None = command.params.get("update_speed")
 
@@ -386,7 +386,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         # Binance maximum (1000). Note that a depth of ``0`` means *full book*
         # in NautilusTrader semantics, which we translate to 1000; the maximum
         # value accepted by the Binance partial book snapshot endpoint.
-        depth: int = command.depth if command.depth else 1000
+        depth: int = command.depth or 1000
 
         if 0 < depth <= 20:
             if depth not in (5, 10, 20):
@@ -492,9 +492,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         pass  # Do nothing further
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
-        pass  # TODO: Unsubscribe from Binance if no other subscriptions
-
-    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
         pass  # TODO: Unsubscribe from Binance if no other subscriptions
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
@@ -704,11 +701,11 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
             data_type = DataType(
                 OrderBookDeltas,
-                metadata=({"instrument_id": request.instrument_id}),
+                metadata={"instrument_id": request.instrument_id},
             )
             self._handle_data_response(
                 data_type=data_type,
-                data=snapshot,
+                data=[snapshot],
                 correlation_id=request.id,
                 start=None,
                 end=None,

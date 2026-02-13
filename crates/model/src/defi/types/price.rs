@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -56,16 +56,13 @@ impl Price {
     /// Panics if the price has precision other than 18 or if the raw value is negative.
     #[must_use]
     pub fn as_wei(&self) -> U256 {
-        if self.precision != 18 {
-            panic!(
-                "Failed to convert price with precision {} to wei (requires precision 18)",
-                self.precision
-            );
-        }
+        assert!(
+            self.precision == 18,
+            "Failed to convert price with precision {} to wei (requires precision 18)",
+            self.precision
+        );
 
-        if self.raw < 0 {
-            panic!("Failed to convert negative price to wei");
-        }
+        assert!(self.raw >= 0, "Failed to convert negative price to wei");
 
         // SAFETY: We've checked that raw is non-negative, so casting to u128 is safe
         U256::from(self.raw as u128)

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -117,9 +117,7 @@ impl PoolProfiler {
     /// - Pool is already initialized (checked via `is_initialized` flag)
     /// - Calculated tick from price doesn't match pool's `initial_tick` (if set)
     pub fn initialize(&mut self, price_sqrt_ratio_x96: U160) {
-        if self.is_initialized {
-            panic!("Pool already initialized");
-        }
+        assert!(!self.is_initialized, "Pool already initialized");
 
         let calculated_tick = get_tick_at_sqrt_ratio(price_sqrt_ratio_x96);
         if let Some(initial_tick) = self.pool.initial_tick {
@@ -129,10 +127,8 @@ impl PoolProfiler {
             );
         }
 
-        tracing::info!(
-            "Initializing pool profiler with tick {} and price sqrt ratio {}",
-            calculated_tick,
-            price_sqrt_ratio_x96
+        log::info!(
+            "Initializing pool profiler with tick {calculated_tick} and price sqrt ratio {price_sqrt_ratio_x96}"
         );
 
         self.state.current_tick = calculated_tick;
@@ -146,9 +142,7 @@ impl PoolProfiler {
     ///
     /// Panics if the pool hasn't been initialized with a starting price via [`initialize()`](Self::initialize).
     pub fn check_if_initialized(&self) {
-        if !self.is_initialized {
-            panic!("Pool is not initialized");
-        }
+        assert!(self.is_initialized, "Pool is not initialized");
     }
 
     /// Processes a historical pool event and updates internal state.
@@ -196,11 +190,8 @@ impl PoolProfiler {
                     && log_idx <= last_event.log_index);
 
             if should_skip {
-                tracing::debug!(
-                    "Skipping already processed event at block {} tx {} log {}",
-                    block,
-                    tx_idx,
-                    log_idx
+                log::debug!(
+                    "Skipping already processed event at block {block} tx {tx_idx} log {log_idx}"
                 );
             }
             return should_skip;
@@ -270,7 +261,7 @@ impl PoolProfiler {
 
         // Verify simulation against event data - correct with event values if mismatch detected
         if swap.tick != self.state.current_tick {
-            tracing::error!(
+            log::error!(
                 "Inconsistency in swap processing: Current tick mismatch: simulated {}, event {} on block {}",
                 self.state.current_tick,
                 swap.tick,
@@ -279,7 +270,7 @@ impl PoolProfiler {
             self.state.current_tick = swap.tick;
         }
         if swap.liquidity != self.tick_map.liquidity {
-            tracing::error!(
+            log::error!(
                 "Inconsistency in swap processing: Active liquidity mismatch: simulated {}, event {} on block {}",
                 self.tick_map.liquidity,
                 swap.liquidity,
@@ -1288,7 +1279,7 @@ impl PoolProfiler {
         if let Some(position) = self.positions.get(position_key)
             && position.is_empty()
         {
-            tracing::debug!(
+            log::debug!(
                 "CLEANING UP EMPTY POSITION: owner={}, ticks=[{}, {}]",
                 position.owner,
                 position.tick_lower,
@@ -1303,15 +1294,14 @@ impl PoolProfiler {
     /// The utilization rate measures what percentage of total deployed liquidity
     /// is currently active (in-range and earning fees) at the current price tick.
     pub fn liquidity_utilization_rate(&self) -> f64 {
+        const PRECISION: u32 = 1_000_000; // 6 decimal places
+
         let total_liquidity = self.get_total_liquidity();
         let active_liquidity = self.get_active_liquidity();
 
         if total_liquidity == U256::ZERO {
             return 0.0;
         }
-
-        // 6 decimal places
-        const PRECISION: u32 = 1_000_000;
         let ratio = FullMath::mul_div(
             U256::from(active_liquidity),
             U256::from(PRECISION),

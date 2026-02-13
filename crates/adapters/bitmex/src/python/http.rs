@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,14 +19,17 @@ use chrono::{DateTime, Utc};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::BarType,
-    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TriggerType},
+    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
     identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, VenueOrderId},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     types::{Price, Quantity},
 };
 use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
 
-use crate::http::{client::BitmexHttpClient, error::BitmexHttpError};
+use crate::{
+    common::enums::BitmexPegPriceType,
+    http::{client::BitmexHttpClient, error::BitmexHttpError},
+};
 
 #[pymethods]
 impl BitmexHttpClient {
@@ -273,7 +276,7 @@ impl BitmexHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let reports = client
-                .request_order_status_reports(instrument_id, open_only, limit)
+                .request_order_status_reports(instrument_id, open_only, None, None, limit)
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -300,7 +303,7 @@ impl BitmexHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let reports = client
-                .request_fill_reports(instrument_id, limit)
+                .request_fill_reports(instrument_id, None, None, limit)
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -350,11 +353,15 @@ impl BitmexHttpClient {
         price = None,
         trigger_price = None,
         trigger_type = None,
+        trailing_offset = None,
+        trailing_offset_type = None,
         display_qty = None,
         post_only = false,
         reduce_only = false,
         order_list_id = None,
-        contingency_type = None
+        contingency_type = None,
+        peg_price_type = None,
+        peg_offset_value = None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
@@ -369,13 +376,24 @@ impl BitmexHttpClient {
         price: Option<Price>,
         trigger_price: Option<Price>,
         trigger_type: Option<TriggerType>,
+        trailing_offset: Option<f64>,
+        trailing_offset_type: Option<TrailingOffsetType>,
         display_qty: Option<Quantity>,
         post_only: bool,
         reduce_only: bool,
         order_list_id: Option<OrderListId>,
         contingency_type: Option<ContingencyType>,
+        peg_price_type: Option<String>,
+        peg_offset_value: Option<f64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+
+        let peg_price_type: Option<BitmexPegPriceType> = peg_price_type
+            .map(|s| {
+                s.parse::<BitmexPegPriceType>()
+                    .map_err(|_| to_pyvalue_err(format!("Invalid peg_price_type: {s}")))
+            })
+            .transpose()?;
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let report = client
@@ -389,11 +407,15 @@ impl BitmexHttpClient {
                     price,
                     trigger_price,
                     trigger_type,
+                    trailing_offset,
+                    trailing_offset_type,
                     display_qty,
                     post_only,
                     reduce_only,
                     order_list_id,
                     contingency_type,
+                    peg_price_type,
+                    peg_offset_value,
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
@@ -540,6 +562,21 @@ impl BitmexHttpClient {
                 // Create a simple Python object with just the account field we need
                 // We can expand this if more fields are needed
                 let account = margin.account;
+                account.into_py_any(py)
+            })
+        })
+    }
+
+    #[pyo3(name = "get_account_number")]
+    fn py_get_account_number<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let margins = client.get_all_margins().await.map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                // Return the account number from any margin (all have the same account)
+                let account = margins.first().map(|m| m.account);
                 account.into_py_any(py)
             })
         })

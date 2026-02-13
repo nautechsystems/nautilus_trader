@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,10 +19,11 @@ use super::{
     consts::{
         BINANCE_FUTURES_COIN_HTTP_URL, BINANCE_FUTURES_COIN_TESTNET_HTTP_URL,
         BINANCE_FUTURES_COIN_TESTNET_WS_URL, BINANCE_FUTURES_COIN_WS_URL,
-        BINANCE_FUTURES_USD_HTTP_URL, BINANCE_FUTURES_USD_TESTNET_HTTP_URL,
-        BINANCE_FUTURES_USD_TESTNET_WS_URL, BINANCE_FUTURES_USD_WS_URL, BINANCE_OPTIONS_HTTP_URL,
-        BINANCE_OPTIONS_WS_URL, BINANCE_SPOT_HTTP_URL, BINANCE_SPOT_TESTNET_HTTP_URL,
-        BINANCE_SPOT_TESTNET_WS_URL, BINANCE_SPOT_WS_URL,
+        BINANCE_FUTURES_DEMO_HTTP_URL, BINANCE_FUTURES_USD_HTTP_URL,
+        BINANCE_FUTURES_USD_TESTNET_HTTP_URL, BINANCE_FUTURES_USD_TESTNET_WS_URL,
+        BINANCE_FUTURES_USD_WS_URL, BINANCE_OPTIONS_HTTP_URL, BINANCE_OPTIONS_WS_URL,
+        BINANCE_SPOT_DEMO_HTTP_URL, BINANCE_SPOT_DEMO_WS_URL, BINANCE_SPOT_HTTP_URL,
+        BINANCE_SPOT_TESTNET_HTTP_URL, BINANCE_SPOT_TESTNET_WS_URL, BINANCE_SPOT_WS_URL,
     },
     enums::{BinanceEnvironment, BinanceProductType},
 };
@@ -52,8 +53,16 @@ pub fn get_http_base_url(
         (BinanceProductType::CoinM, BinanceEnvironment::Testnet) => {
             BINANCE_FUTURES_COIN_TESTNET_HTTP_URL
         }
-        // Options testnet not available, fall back to mainnet
         (BinanceProductType::Options, BinanceEnvironment::Testnet) => BINANCE_OPTIONS_HTTP_URL,
+
+        // Demo (futures demo uses same URLs as futures testnet)
+        (BinanceProductType::Spot | BinanceProductType::Margin, BinanceEnvironment::Demo) => {
+            BINANCE_SPOT_DEMO_HTTP_URL
+        }
+        (BinanceProductType::UsdM | BinanceProductType::CoinM, BinanceEnvironment::Demo) => {
+            BINANCE_FUTURES_DEMO_HTTP_URL
+        }
+        (BinanceProductType::Options, BinanceEnvironment::Demo) => BINANCE_OPTIONS_HTTP_URL,
     }
 }
 
@@ -82,8 +91,17 @@ pub fn get_ws_base_url(
         (BinanceProductType::CoinM, BinanceEnvironment::Testnet) => {
             BINANCE_FUTURES_COIN_TESTNET_WS_URL
         }
-        // Options testnet not available, fall back to mainnet
         (BinanceProductType::Options, BinanceEnvironment::Testnet) => BINANCE_OPTIONS_WS_URL,
+
+        // Demo (futures demo uses same WS URLs as futures testnet)
+        (BinanceProductType::Spot | BinanceProductType::Margin, BinanceEnvironment::Demo) => {
+            BINANCE_SPOT_DEMO_WS_URL
+        }
+        (BinanceProductType::UsdM, BinanceEnvironment::Demo) => BINANCE_FUTURES_USD_TESTNET_WS_URL,
+        (BinanceProductType::CoinM, BinanceEnvironment::Demo) => {
+            BINANCE_FUTURES_COIN_TESTNET_WS_URL
+        }
+        (BinanceProductType::Options, BinanceEnvironment::Demo) => BINANCE_OPTIONS_WS_URL,
     }
 }
 
@@ -106,6 +124,12 @@ mod tests {
     }
 
     #[rstest]
+    fn test_http_url_spot_demo() {
+        let url = get_http_base_url(BinanceProductType::Spot, BinanceEnvironment::Demo);
+        assert_eq!(url, "https://demo-api.binance.com");
+    }
+
+    #[rstest]
     fn test_http_url_usdm_mainnet() {
         let url = get_http_base_url(BinanceProductType::UsdM, BinanceEnvironment::Mainnet);
         assert_eq!(url, "https://fapi.binance.com");
@@ -121,6 +145,12 @@ mod tests {
     fn test_ws_url_spot_mainnet() {
         let url = get_ws_base_url(BinanceProductType::Spot, BinanceEnvironment::Mainnet);
         assert_eq!(url, "wss://stream.binance.com:9443/ws");
+    }
+
+    #[rstest]
+    fn test_ws_url_spot_demo() {
+        let url = get_ws_base_url(BinanceProductType::Spot, BinanceEnvironment::Demo);
+        assert_eq!(url, "wss://demo-stream.binance.com/ws");
     }
 
     #[rstest]

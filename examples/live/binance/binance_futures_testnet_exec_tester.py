@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,6 +23,7 @@ from nautilus_trader.adapters.binance import BinanceExecClientConfig
 from nautilus_trader.adapters.binance import BinanceInstrumentProviderConfig
 from nautilus_trader.adapters.binance import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance import BinanceLiveExecClientFactory
+from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.config import LiveExecEngineConfig
@@ -91,13 +92,10 @@ config_node = TradingNodeConfig(
     # streaming=StreamingConfig(catalog_path="catalog"),
     data_clients={
         BINANCE: BinanceDataClientConfig(
-            api_key=None,  # 'BINANCE_API_KEY' env var
-            api_secret=None,  # 'BINANCE_API_SECRET' env var
+            api_key=None,  # 'BINANCE_TESTNET_API_KEY' env var
+            api_secret=None,  # 'BINANCE_TESTNET_API_SECRET' env var
             account_type=BinanceAccountType.USDT_FUTURES,
-            base_url_http=None,  # Override with custom endpoint
-            base_url_ws=None,  # Override with custom endpoint
-            us=False,  # If client is for Binance US
-            testnet=True,  # If client uses the testnet
+            environment=BinanceEnvironment.TESTNET,
             instrument_provider=BinanceInstrumentProviderConfig(
                 load_ids=frozenset([instrument_id]),
                 query_commission_rates=True,
@@ -106,13 +104,10 @@ config_node = TradingNodeConfig(
     },
     exec_clients={
         BINANCE: BinanceExecClientConfig(
-            api_key=None,  # 'BINANCE_API_KEY' env var
-            api_secret=None,  # 'BINANCE_API_SECRET' env var
+            api_key=None,  # 'BINANCE_TESTNET_API_KEY' env var
+            api_secret=None,  # 'BINANCE_TESTNET_API_SECRET' env var
             account_type=BinanceAccountType.USDT_FUTURES,
-            base_url_http=None,  # Override with custom endpoint
-            base_url_ws=None,  # Override with custom endpoint
-            us=False,  # If client is for Binance US
-            testnet=True,  # If client uses the testnet
+            environment=BinanceEnvironment.TESTNET,
             instrument_provider=BinanceInstrumentProviderConfig(
                 load_ids=frozenset([instrument_id]),
                 query_commission_rates=True,

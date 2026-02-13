@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -37,10 +37,7 @@ use crate::{
         registry::{get_actor_unchecked, register_actor},
     },
     clock::Clock,
-    msgbus::{
-        self, Endpoint, MStr,
-        handler::{MessageHandler, ShareableMessageHandler},
-    },
+    msgbus::{self, Endpoint, Handler, MStr, ShareableMessageHandler},
     timer::{TimeEvent, TimeEventCallback},
 };
 
@@ -233,9 +230,9 @@ where
     pub fn to_actor(self) -> Rc<UnsafeCell<Self>> {
         // Register process endpoint
         let process_handler = ThrottlerProcess::<T, F>::new(self.actor_id);
-        msgbus::register(
+        msgbus::register_any(
             process_handler.id().as_str().into(),
-            ShareableMessageHandler::from(Rc::new(process_handler) as Rc<dyn MessageHandler>),
+            ShareableMessageHandler::from(Rc::new(process_handler) as Rc<dyn Handler<dyn Any>>),
         );
 
         // Register actor state and return the wrapped reference
@@ -324,7 +321,7 @@ where
     }
 }
 
-impl<T, F> MessageHandler for ThrottlerProcess<T, F>
+impl<T, F> Handler<dyn Any> for ThrottlerProcess<T, F>
 where
     T: 'static + Debug,
     F: Fn(T) + 'static,
@@ -356,10 +353,6 @@ where
 
         throttler.is_limiting = false;
     }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 }
 
 /// Sets throttler to resume sending messages
@@ -386,7 +379,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::{RateLimit, Throttler, ThrottlerProcess};
-    use crate::{clock::TestClock, msgbus::handler::MessageHandler};
+    use crate::{clock::TestClock, msgbus::Handler};
     type SharedThrottler = Rc<UnsafeCell<Throttler<u64, Box<dyn Fn(u64)>>>>;
 
     /// Test throttler with default values for testing

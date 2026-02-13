@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,9 +15,12 @@
 
 //! Enumerations mapping dYdX v4 concepts onto idiomatic Nautilus variants.
 
-use nautilus_model::enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide};
+use nautilus_model::{
+    data::BarSpecification,
+    enums::{BarAggregation, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide},
+};
 use serde::{Deserialize, Serialize};
-use strum::{AsRefStr, Display, EnumIter, EnumString};
+use strum::{AsRefStr, Display, EnumIter, EnumString, IntoStaticStr};
 
 use crate::{error::DydxError, grpc::types::ChainId};
 
@@ -595,6 +598,7 @@ pub enum DydxTransferType {
     Eq,
     Hash,
     AsRefStr,
+    IntoStaticStr,
     EnumIter,
     EnumString,
     Serialize,
@@ -636,6 +640,32 @@ pub enum DydxCandleResolution {
     #[serde(rename = "1DAY")]
     #[strum(serialize = "1DAY")]
     OneDay,
+}
+
+impl DydxCandleResolution {
+    /// Maps a Nautilus [`BarSpecification`] to a dYdX candle resolution.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the step/aggregation combination is not supported.
+    pub fn from_bar_spec(spec: &BarSpecification) -> anyhow::Result<Self> {
+        match spec.step.get() {
+            1 => match spec.aggregation {
+                BarAggregation::Minute => Ok(Self::OneMinute),
+                BarAggregation::Hour => Ok(Self::OneHour),
+                BarAggregation::Day => Ok(Self::OneDay),
+                _ => anyhow::bail!("Unsupported bar aggregation: {:?}", spec.aggregation),
+            },
+            5 if spec.aggregation == BarAggregation::Minute => Ok(Self::FiveMinutes),
+            15 if spec.aggregation == BarAggregation::Minute => Ok(Self::FifteenMinutes),
+            30 if spec.aggregation == BarAggregation::Minute => Ok(Self::ThirtyMinutes),
+            4 if spec.aggregation == BarAggregation::Hour => Ok(Self::FourHours),
+            step => anyhow::bail!(
+                "Unsupported bar step: {step} with aggregation {:?}",
+                spec.aggregation
+            ),
+        }
+    }
 }
 
 #[cfg(test)]

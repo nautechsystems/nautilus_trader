@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -136,9 +136,12 @@ def test_config_default_values():
     assert config.subscribe_instrument_close is False
     assert config.can_unsubscribe is True
     assert config.request_instruments is False
+    assert config.request_book_snapshot is False
+    assert config.request_book_deltas is False
     assert config.request_quotes is False
     assert config.request_trades is False
     assert config.request_bars is False
+    assert config.request_funding_rates is False
     assert config.book_type == BookType.L2_MBP
     assert config.book_interval_ms == 1000
     assert config.book_levels_to_print == 10
@@ -182,9 +185,12 @@ def test_config_subscribe_flags(subscribe_flag, value):
     ("request_flag", "value"),
     [
         ("request_instruments", True),
+        ("request_book_snapshot", True),
+        ("request_book_deltas", True),
         ("request_quotes", True),
         ("request_trades", True),
         ("request_bars", True),
+        ("request_funding_rates", True),
     ],
 )
 def test_config_request_flags(request_flag, value):
@@ -229,7 +235,13 @@ def test_config_book_types(book_type_value):
 
 
 def test_on_start_subscribes_to_quotes(
-    trader_id, msgbus, cache, clock, portfolio, instrument, instrument_id,
+    trader_id,
+    msgbus,
+    cache,
+    clock,
+    portfolio,
+    instrument,
+    instrument_id,
 ):
     # Arrange
     cache.add_instrument(instrument)
@@ -260,7 +272,13 @@ def test_on_start_subscribes_to_quotes(
 
 
 def test_on_start_subscribes_to_trades(
-    trader_id, msgbus, cache, clock, portfolio, instrument, instrument_id,
+    trader_id,
+    msgbus,
+    cache,
+    clock,
+    portfolio,
+    instrument,
+    instrument_id,
 ):
     # Arrange
     cache.add_instrument(instrument)
@@ -632,7 +650,13 @@ def test_on_start_subscribes_to_book_at_interval(
 
 
 def test_on_start_subscribes_to_bars(
-    trader_id, msgbus, cache, clock, portfolio, instrument, instrument_id,
+    trader_id,
+    msgbus,
+    cache,
+    clock,
+    portfolio,
+    instrument,
+    instrument_id,
 ):
     # Arrange
     cache.add_instrument(instrument)
@@ -711,7 +735,13 @@ def test_on_start_with_multiple_instruments_subscribes_all(
 
 
 def test_on_start_with_client_id(
-    trader_id, msgbus, cache, clock, portfolio, instrument, instrument_id,
+    trader_id,
+    msgbus,
+    cache,
+    clock,
+    portfolio,
+    instrument,
+    instrument_id,
 ):
     # Arrange
     cache.add_instrument(instrument)
@@ -968,7 +998,13 @@ def test_on_start_requests_instruments(trader_id, msgbus, cache, clock, portfoli
 
 
 def test_on_start_requests_quotes(
-    trader_id, msgbus, cache, clock, portfolio, instrument, instrument_id,
+    trader_id,
+    msgbus,
+    cache,
+    clock,
+    portfolio,
+    instrument,
+    instrument_id,
 ):
     # Arrange
     cache.add_instrument(instrument)
@@ -999,7 +1035,13 @@ def test_on_start_requests_quotes(
 
 
 def test_on_start_requests_trades(
-    trader_id, msgbus, cache, clock, portfolio, instrument, instrument_id,
+    trader_id,
+    msgbus,
+    cache,
+    clock,
+    portfolio,
+    instrument,
+    instrument_id,
 ):
     # Arrange
     cache.add_instrument(instrument)
@@ -1030,7 +1072,13 @@ def test_on_start_requests_trades(
 
 
 def test_on_start_requests_bars(
-    trader_id, msgbus, cache, clock, portfolio, instrument, instrument_id,
+    trader_id,
+    msgbus,
+    cache,
+    clock,
+    portfolio,
+    instrument,
+    instrument_id,
 ):
     # Arrange
     cache.add_instrument(instrument)
@@ -1059,6 +1107,80 @@ def test_on_start_requests_bars(
         mock_request.assert_called_once()
         call_args = mock_request.call_args
         assert call_args.args[0] == bar_type
+        assert call_args.kwargs["client_id"] is None
+        assert call_args.kwargs["params"] is None
+
+
+def test_on_start_requests_funding_rates(
+    trader_id,
+    msgbus,
+    cache,
+    clock,
+    portfolio,
+    instrument,
+    instrument_id,
+):
+    # Arrange
+    cache.add_instrument(instrument)
+
+    config = DataTesterConfig(
+        instrument_ids=[instrument_id],
+        request_funding_rates=True,
+    )
+
+    tester = DataTester(config)
+    tester.register_base(
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    with patch.object(tester, "request_funding_rates") as mock_request:
+        # Act
+        tester.on_start()
+
+        # Assert
+        mock_request.assert_called_once()
+        call_args = mock_request.call_args
+        assert call_args.kwargs["instrument_id"] == instrument_id
+        assert call_args.kwargs["client_id"] is None
+        assert call_args.kwargs["params"] is None
+
+
+def test_on_start_requests_book_deltas(
+    trader_id,
+    msgbus,
+    cache,
+    clock,
+    portfolio,
+    instrument,
+    instrument_id,
+):
+    # Arrange
+    cache.add_instrument(instrument)
+
+    config = DataTesterConfig(
+        instrument_ids=[instrument_id],
+        request_book_deltas=True,
+    )
+
+    tester = DataTester(config)
+    tester.register_base(
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    with patch.object(tester, "request_order_book_deltas") as mock_request:
+        # Act
+        tester.on_start()
+
+        # Assert
+        mock_request.assert_called_once()
+        call_args = mock_request.call_args
+        assert call_args.kwargs["instrument_id"] == instrument_id
         assert call_args.kwargs["client_id"] is None
         assert call_args.kwargs["params"] is None
 
@@ -1102,7 +1224,13 @@ def test_on_start_requests_start_delta_uses_custom_delta(
 
 
 def test_on_start_with_request_params(
-    trader_id, msgbus, cache, clock, portfolio, instrument, instrument_id,
+    trader_id,
+    msgbus,
+    cache,
+    clock,
+    portfolio,
+    instrument,
+    instrument_id,
 ):
     # Arrange
     cache.add_instrument(instrument)
@@ -1579,7 +1707,13 @@ def test_on_stop_unsubscribes_from_book_at_interval(
 
 
 def test_on_stop_unsubscribes_from_bars(
-    trader_id, msgbus, cache, clock, portfolio, instrument, instrument_id,
+    trader_id,
+    msgbus,
+    cache,
+    clock,
+    portfolio,
+    instrument,
+    instrument_id,
 ):
     # Arrange
     cache.add_instrument(instrument)
@@ -2046,7 +2180,13 @@ def test_on_funding_rate_calls_without_error(
 
 
 def test_on_bar_calls_without_error(
-    trader_id, msgbus, cache, clock, portfolio, instrument, instrument_id,
+    trader_id,
+    msgbus,
+    cache,
+    clock,
+    portfolio,
+    instrument,
+    instrument_id,
 ):
     # Arrange
     cache.add_instrument(instrument)

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -137,7 +137,7 @@ impl Ord for ScheduledTimeEvent {
 /// - `Rust`: Thread-safe callbacks using `Arc`. Use when the closure is `Send + Sync`.
 /// - `RustLocal`: Single-threaded callbacks using `Rc`. Use when capturing `Rc<RefCell<...>>`.
 ///
-/// # Choosing between `Rust` and `RustLocal`
+/// # Choosing Between `Rust` and `RustLocal`
 ///
 /// Use `Rust` (thread-safe) when:
 /// - The callback doesn't capture `Rc<RefCell<...>>` or other non-`Send` types.
@@ -151,7 +151,7 @@ impl Ord for ScheduledTimeEvent {
 /// with `LiveClock` because callbacks are sent through a channel and executed on the
 /// originating thread's event loop - they never actually cross thread boundaries.
 ///
-/// # Automatic conversion
+/// # Automatic Conversion
 ///
 /// - Closures that are `Fn + Send + Sync + 'static` automatically convert to `Rust`.
 /// - `Rc<dyn Fn(TimeEvent)>` converts to `RustLocal`.
@@ -277,15 +277,15 @@ unsafe impl Sync for TimeEventCallback {}
 ///
 /// `TimeEventHandler` associates a `TimeEvent` with a callback function that is triggered
 /// when the event's timestamp is reached.
-pub struct TimeEventHandlerV2 {
+pub struct TimeEventHandler {
     /// The time event.
     pub event: TimeEvent,
     /// The callable handler for the event.
     pub callback: TimeEventCallback,
 }
 
-impl TimeEventHandlerV2 {
-    /// Creates a new [`TimeEventHandlerV2`] instance.
+impl TimeEventHandler {
+    /// Creates a new [`TimeEventHandler`] instance.
     #[must_use]
     pub const fn new(event: TimeEvent, callback: TimeEventCallback) -> Self {
         Self { event, callback }
@@ -302,21 +302,21 @@ impl TimeEventHandlerV2 {
     }
 }
 
-impl PartialOrd for TimeEventHandlerV2 {
+impl PartialOrd for TimeEventHandler {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl PartialEq for TimeEventHandlerV2 {
+impl PartialEq for TimeEventHandler {
     fn eq(&self, other: &Self) -> bool {
         self.event.ts_event == other.event.ts_event
     }
 }
 
-impl Eq for TimeEventHandlerV2 {}
+impl Eq for TimeEventHandler {}
 
-impl Ord for TimeEventHandlerV2 {
+impl Ord for TimeEventHandler {
     fn cmp(&self, other: &Self) -> Ordering {
         self.event.ts_event.cmp(&other.event.ts_event)
     }
@@ -330,7 +330,7 @@ impl Ord for TimeEventHandlerV2 {
 /// # Threading
 ///
 /// The timer mutates its internal state and should only be used from its owning thread.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct TestTimer {
     /// The name of the timer.
     pub name: Ustr,
@@ -741,7 +741,7 @@ mod tests {
                     && timer.next_time_ns().as_u64() > stop_time_ns
                 {
                     // The timer should expire on the next advance/iteration
-                    let mut test_timer = timer;
+                    let mut test_timer = timer.clone();
                     let events: Vec<TimeEvent> = test_timer
                         .advance(UnixNanos::from(stop_time_ns + 1))
                         .collect();

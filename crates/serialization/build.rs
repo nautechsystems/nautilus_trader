@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 fn main() {
-    println!("cargo::rustc-check-cfg=cfg(docs_rs)");
+    println!("cargo::rustc-check-cfg=cfg(docsrs)");
 
     #[cfg(feature = "capnp")]
     {
@@ -28,7 +28,7 @@ fn compile_capnp_schemas() {
 
     // Skip schema compilation when building docs (docs.rs doesn't have capnp compiler)
     if env::var("DOCS_RS").is_ok() {
-        println!("cargo:rustc-cfg=docs_rs");
+        println!("cargo:rustc-cfg=docsrs");
         return;
     }
 

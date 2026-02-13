@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,7 +30,7 @@ use std::{
 };
 
 use arrow::{
-    array::{Array, ArrayRef},
+    array::{Array, ArrayRef, FixedSizeBinaryArray},
     datatypes::{DataType, Schema},
     error::ArrowError,
     ipc::writer::StreamWriter,
@@ -43,7 +43,7 @@ use nautilus_model::{
     },
     types::{
         PRICE_ERROR, PRICE_UNDEF, Price, QUANTITY_UNDEF, Quantity,
-        fixed::{correct_price_raw, correct_quantity_raw},
+        fixed::{PRECISION_BYTES, correct_price_raw, correct_quantity_raw},
         price::PriceRaw,
         quantity::QuantityRaw,
     },
@@ -80,6 +80,17 @@ pub enum EncodingError {
     ParseError(&'static str, String),
     #[error("Invalid column type `{0}` at index {1}: expected {2}, found {3}")]
     InvalidColumnType(&'static str, usize, DataType, DataType),
+    #[error(
+        "Precision mode mismatch for `{field}`: catalog data has {actual_bytes} byte values, \
+         but this build expects {expected_bytes} bytes. The catalog was created with a different \
+         precision mode (standard=8 bytes, high=16 bytes). Rebuild the catalog or change your \
+         build's precision mode. See: https://nautilustrader.io/docs/latest/getting_started/installation#precision-mode"
+    )]
+    PrecisionMismatch {
+        field: &'static str,
+        expected_bytes: i32,
+        actual_bytes: i32,
+    },
     #[error("Arrow error: {0}")]
     ArrowError(#[from] arrow::error::ArrowError),
 }
@@ -336,6 +347,30 @@ pub fn extract_column<'a, T: Array + 'static>(
                 column_values.data_type().clone(),
             ))?;
     Ok(downcasted_values)
+}
+
+/// Validates that a [`FixedSizeBinaryArray`] has the expected precision byte width.
+///
+/// This detects precision mode mismatches that occur when catalog data was encoded
+/// with a different precision mode (64-bit standard vs 128-bit high-precision).
+///
+/// # Errors
+///
+/// Returns [`EncodingError::PrecisionMismatch`] if the actual byte width doesn't
+/// match [`PRECISION_BYTES`].
+pub fn validate_precision_bytes(
+    array: &FixedSizeBinaryArray,
+    field: &'static str,
+) -> Result<(), EncodingError> {
+    let actual = array.value_length();
+    if actual != PRECISION_BYTES {
+        return Err(EncodingError::PrecisionMismatch {
+            field,
+            expected_bytes: PRECISION_BYTES,
+            actual_bytes: actual,
+        });
+    }
+    Ok(())
 }
 
 /// Converts a vector of `OrderBookDelta` into an Arrow `RecordBatch`.

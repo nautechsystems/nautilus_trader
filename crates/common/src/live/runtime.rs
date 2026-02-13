@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,20 +15,20 @@
 
 //! The centralized Tokio runtime for a running Nautilus system.
 //!
-//! # Design rationale
+//! # Design Rationale
 //!
 //! NautilusTrader uses a single global Tokio runtime because:
 //! - A single long-lived runtime avoids repeated startup/shutdown overhead.
 //! - The runtime is lazily initialized on first call to `get_runtime()` via `OnceLock`.
 //! - Worker thread count is configurable via the `NAUTILUS_WORKER_THREADS` environment variable.
 //!
-//! # Python support
+//! # Python Support
 //!
 //! When the `python` feature is enabled, the runtime initializes the Python interpreter
 //! before starting worker threads. The PyO3 module registers an `atexit` handler via
 //! `shutdown_runtime()` to cleanly shut down when Python exits.
 //!
-//! # Testing considerations
+//! # Testing Considerations
 //!
 //! The global runtime pattern makes it harder to inject test doubles. For testing:
 //! - Unit tests can use `#[tokio::test]` which creates its own runtime.

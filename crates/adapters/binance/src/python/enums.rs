@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,22 +21,98 @@ use crate::common::enums::{BinanceEnvironment, BinanceProductType};
 
 #[pymethods]
 impl BinanceProductType {
+    #[classattr]
+    #[pyo3(name = "SPOT")]
+    const fn py_spot() -> Self {
+        Self::Spot
+    }
+
+    #[classattr]
+    #[pyo3(name = "MARGIN")]
+    const fn py_margin() -> Self {
+        Self::Margin
+    }
+
+    #[classattr]
+    #[pyo3(name = "USD_M")]
+    const fn py_usd_m() -> Self {
+        Self::UsdM
+    }
+
+    #[classattr]
+    #[pyo3(name = "COIN_M")]
+    const fn py_coin_m() -> Self {
+        Self::CoinM
+    }
+
+    #[classattr]
+    #[pyo3(name = "OPTIONS")]
+    const fn py_options() -> Self {
+        Self::Options
+    }
+
     fn __repr__(&self) -> String {
-        format!("BinanceProductType.{self:?}")
+        format!(
+            "BinanceProductType.{}",
+            match self {
+                Self::Spot => "SPOT",
+                Self::Margin => "MARGIN",
+                Self::UsdM => "USD_M",
+                Self::CoinM => "COIN_M",
+                Self::Options => "OPTIONS",
+            }
+        )
     }
 
     fn __str__(&self) -> String {
-        format!("{self:?}")
+        match self {
+            Self::Spot => "SPOT",
+            Self::Margin => "MARGIN",
+            Self::UsdM => "USD_M",
+            Self::CoinM => "COIN_M",
+            Self::Options => "OPTIONS",
+        }
+        .to_string()
     }
 }
 
 #[pymethods]
 impl BinanceEnvironment {
+    #[classattr]
+    #[pyo3(name = "MAINNET")]
+    const fn py_mainnet() -> Self {
+        Self::Mainnet
+    }
+
+    #[classattr]
+    #[pyo3(name = "TESTNET")]
+    const fn py_testnet() -> Self {
+        Self::Testnet
+    }
+
+    #[classattr]
+    #[pyo3(name = "DEMO")]
+    const fn py_demo() -> Self {
+        Self::Demo
+    }
+
     fn __repr__(&self) -> String {
-        format!("BinanceEnvironment.{self:?}")
+        format!(
+            "BinanceEnvironment.{}",
+            match self {
+                Self::Mainnet => "MAINNET",
+                Self::Testnet => "TESTNET",
+                Self::Demo => "DEMO",
+            }
+        )
     }
 
     fn __str__(&self) -> String {
-        format!("{self:?}")
+        match self {
+            Self::Mainnet => "MAINNET",
+            Self::Testnet => "TESTNET",
+            Self::Demo => "DEMO",
+        }
+        .to_string()
     }
 }

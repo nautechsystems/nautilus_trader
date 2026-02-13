@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -88,7 +88,8 @@ impl Add<Nanos> for Duration {
 /// what "now" is (relative to some point meaningful to the program),
 /// and returns that.
 ///
-/// # Thread safety
+/// # Thread Safety
+///
 /// The mock time is represented as an atomic u64 count of nanoseconds, behind an [`Arc`].
 /// Clones of this clock will all show the same time, even if the original advances.
 #[derive(Debug, Clone, Default)]

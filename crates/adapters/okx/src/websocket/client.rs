@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -106,29 +106,31 @@ pub static OKX_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> =
 pub static OKX_WS_ORDER_QUOTA: LazyLock<Quota> =
     LazyLock::new(|| Quota::per_second(NonZeroU32::new(250).unwrap()));
 
-/// Rate limit key for subscription operations (subscribe/unsubscribe/login).
+/// Pre-interned rate limit key for subscription operations (subscribe/unsubscribe/login).
 ///
 /// See: <https://www.okx.com/docs-v5/en/#websocket-api-login>
 /// See: <https://www.okx.com/docs-v5/en/#websocket-api-subscribe>
-pub const OKX_RATE_LIMIT_KEY_SUBSCRIPTION: &str = "subscription";
+pub static OKX_RATE_LIMIT_KEY_SUBSCRIPTION: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from("subscription")]);
 
-/// Rate limit key for order operations (place regular and algo orders).
+/// Pre-interned rate limit key for order operations (place regular and algo orders).
 ///
 /// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-place-order>
 /// See: <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-ws-place-algo-order>
-pub const OKX_RATE_LIMIT_KEY_ORDER: &str = "order";
+pub static OKX_RATE_LIMIT_KEY_ORDER: LazyLock<[Ustr; 1]> = LazyLock::new(|| [Ustr::from("order")]);
 
-/// Rate limit key for cancel operations (cancel regular and algo orders, mass cancel).
+/// Pre-interned rate limit key for cancel operations (cancel regular and algo orders, mass cancel).
 ///
 /// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-cancel-order>
 /// See: <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-ws-cancel-algo-order>
 /// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-mass-cancel-order>
-pub const OKX_RATE_LIMIT_KEY_CANCEL: &str = "cancel";
+pub static OKX_RATE_LIMIT_KEY_CANCEL: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from("cancel")]);
 
-/// Rate limit key for amend operations (amend orders).
+/// Pre-interned rate limit key for amend operations (amend orders).
 ///
 /// See: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-amend-order>
-pub const OKX_RATE_LIMIT_KEY_AMEND: &str = "amend";
+pub static OKX_RATE_LIMIT_KEY_AMEND: LazyLock<[Ustr; 1]> = LazyLock::new(|| [Ustr::from("amend")]);
 
 /// Provides a WebSocket client for connecting to [OKX](https://okx.com).
 #[derive(Clone)]
@@ -157,6 +159,7 @@ pub struct OKXWebSocketClient {
     active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
     client_id_aliases: Arc<DashMap<ClientOrderId, ClientOrderId>>,
     instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    inst_id_code_cache: Arc<DashMap<Ustr, u64>>,
     cancellation_token: CancellationToken,
 }
 
@@ -240,6 +243,7 @@ impl OKXWebSocketClient {
             active_client_orders: Arc::new(DashMap::new()),
             client_id_aliases: Arc::new(DashMap::new()),
             instruments_cache: Arc::new(DashMap::new()),
+            inst_id_code_cache: Arc::new(DashMap::new()),
             cancellation_token: CancellationToken::new(),
         })
     }
@@ -370,6 +374,30 @@ impl OKXWebSocketClient {
         }
     }
 
+    /// Caches the instIdCode mapping for an instrument.
+    ///
+    /// The instIdCode is required for WebSocket order operations per OKX API deprecation.
+    pub fn cache_inst_id_code(&self, inst_id: Ustr, inst_id_code: u64) {
+        self.inst_id_code_cache.insert(inst_id, inst_id_code);
+    }
+
+    /// Caches multiple instIdCode mappings for instruments.
+    ///
+    /// This is typically called after loading instruments from the HTTP API.
+    pub fn cache_inst_id_codes(&self, mappings: impl IntoIterator<Item = (Ustr, u64)>) {
+        for (inst_id, inst_id_code) in mappings {
+            self.inst_id_code_cache.insert(inst_id, inst_id_code);
+        }
+    }
+
+    /// Gets the instIdCode for an instrument.
+    ///
+    /// Returns `None` if the instrument is not cached (e.g., SPOT instruments may not have instIdCode).
+    #[must_use]
+    pub fn get_inst_id_code(&self, inst_id: &Ustr) -> Option<u64> {
+        self.inst_id_code_cache.get(inst_id).map(|r| *r.value())
+    }
+
     /// Sets the VIP level for this client.
     ///
     /// The VIP level determines which WebSocket channels are available.
@@ -417,12 +445,21 @@ impl OKXWebSocketClient {
         // Configure rate limits for different operation types
         let keyed_quotas = vec![
             (
-                OKX_RATE_LIMIT_KEY_SUBSCRIPTION.to_string(),
+                OKX_RATE_LIMIT_KEY_SUBSCRIPTION[0].as_str().to_string(),
                 *OKX_WS_SUBSCRIPTION_QUOTA,
             ),
-            (OKX_RATE_LIMIT_KEY_ORDER.to_string(), *OKX_WS_ORDER_QUOTA),
-            (OKX_RATE_LIMIT_KEY_CANCEL.to_string(), *OKX_WS_ORDER_QUOTA),
-            (OKX_RATE_LIMIT_KEY_AMEND.to_string(), *OKX_WS_ORDER_QUOTA),
+            (
+                OKX_RATE_LIMIT_KEY_ORDER[0].as_str().to_string(),
+                *OKX_WS_ORDER_QUOTA,
+            ),
+            (
+                OKX_RATE_LIMIT_KEY_CANCEL[0].as_str().to_string(),
+                *OKX_WS_ORDER_QUOTA,
+            ),
+            (
+                OKX_RATE_LIMIT_KEY_AMEND[0].as_str().to_string(),
+                *OKX_WS_ORDER_QUOTA,
+            ),
         ];
 
         let client = WebSocketClient::connect(
@@ -455,7 +492,7 @@ impl OKXWebSocketClient {
                 .map(|entry| entry.value().clone())
                 .collect();
             if let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(cached_instruments)) {
-                tracing::error!("Failed to replay instruments to handler: {e}");
+                log::error!("Failed to replay instruments to handler: {e}");
             }
         }
 
@@ -464,6 +501,7 @@ impl OKXWebSocketClient {
         let auth_tracker = self.auth_tracker.clone();
         let subscriptions_state = self.subscriptions_state.clone();
         let client_id_aliases = self.client_id_aliases.clone();
+        let inst_id_code_cache = self.inst_id_code_cache.clone();
 
         let stream_handle = get_runtime().spawn({
             let auth_tracker = auth_tracker.clone();
@@ -485,6 +523,7 @@ impl OKXWebSocketClient {
                     msg_tx,
                     active_client_orders,
                     client_id_aliases,
+                    inst_id_code_cache,
                     auth_tracker.clone(),
                     subscriptions_state.clone(),
                 );
@@ -501,7 +540,7 @@ impl OKXWebSocketClient {
                                 inst_id: Some(*inst_id),
                             };
                             if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe { args: vec![arg] }) {
-                                tracing::error!(error = %e, "Failed to send resubscribe command");
+                                log::error!("Failed to send resubscribe command: error={e}");
                             }
                         }
                     }
@@ -515,7 +554,7 @@ impl OKXWebSocketClient {
                             inst_id: None,
                         };
                         if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe { args: vec![arg] }) {
-                            tracing::error!(error = %e, "Failed to send resubscribe command");
+                            log::error!("Failed to send resubscribe command: error={e}");
                         }
                     }
 
@@ -529,7 +568,7 @@ impl OKXWebSocketClient {
                                 inst_id: None,
                             };
                             if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe { args: vec![arg] }) {
-                                tracing::error!(error = %e, "Failed to send resubscribe command");
+                                log::error!("Failed to send resubscribe command: error={e}");
                             }
                         }
                     }
@@ -544,7 +583,7 @@ impl OKXWebSocketClient {
                                 inst_id: None,
                             };
                             if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe { args: vec![arg] }) {
-                                tracing::error!(error = %e, "Failed to send resubscribe command");
+                                log::error!("Failed to send resubscribe command: error={e}");
                             }
                         }
                     }
@@ -578,14 +617,14 @@ impl OKXWebSocketClient {
                             };
 
                             if !confirmed_topics_vec.is_empty() {
-                                tracing::debug!(count = confirmed_topics_vec.len(), "Marking confirmed subscriptions as pending for replay");
+                                log::debug!("Marking confirmed subscriptions as pending for replay: count={}", confirmed_topics_vec.len());
                                 for topic in confirmed_topics_vec {
                                     subscriptions_state.mark_failure(&topic);
                                 }
                             }
 
                             if let Some(cred) = &credential {
-                                tracing::debug!("Re-authenticating after reconnection");
+                                log::debug!("Re-authenticating after reconnection");
                                 let timestamp = std::time::SystemTime::now()
                                     .duration_since(std::time::SystemTime::UNIX_EPOCH)
                                     .expect("System time should be after UNIX epoch")
@@ -605,17 +644,17 @@ impl OKXWebSocketClient {
 
                                 if let Ok(payload) = serde_json::to_string(&auth_message) {
                                     if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Authenticate { payload }) {
-                                        tracing::error!(error = %e, "Failed to send reconnection auth command");
+                                        log::error!("Failed to send reconnection auth command: error={e}");
                                     }
                                 } else {
-                                    tracing::error!("Failed to serialize reconnection auth message");
+                                    log::error!("Failed to serialize reconnection auth message");
                                 }
                             }
 
                             // Unauthenticated sessions resubscribe immediately after reconnection,
                             // authenticated sessions wait for Authenticated message
                             if credential.is_none() {
-                                tracing::debug!("No authentication required, resubscribing immediately");
+                                log::debug!("No authentication required, resubscribing immediately");
                                 resubscribe_all();
                             }
 
@@ -638,7 +677,7 @@ impl OKXWebSocketClient {
                         }
                         Some(msg) => {
                             if handler.send(msg).is_err() {
-                                tracing::error!(
+                                log::error!(
                                     "Failed to send message through channel: receiver dropped",
                                 );
                                 break;
@@ -646,18 +685,18 @@ impl OKXWebSocketClient {
                         }
                         None => {
                             if handler.is_stopped() {
-                                tracing::debug!(
+                                log::debug!(
                                     "Stop signal received, ending message processing",
                                 );
                                 break;
                             }
-                            tracing::debug!("WebSocket stream closed");
+                            log::debug!("WebSocket stream closed");
                             break;
                         }
                     }
                 }
 
-                tracing::debug!("Handler task exiting");
+                log::debug!("Handler task exiting");
             }
         });
 
@@ -670,7 +709,7 @@ impl OKXWebSocketClient {
             .map_err(|e| {
                 OKXWsError::ClientError(format!("Failed to send WebSocket client to handler: {e}"))
             })?;
-        tracing::debug!("Sent WebSocket client to handler");
+        log::debug!("Sent WebSocket client to handler");
 
         if self.credential.is_some()
             && let Err(e) = self.authenticate().await
@@ -730,11 +769,11 @@ impl OKXWebSocketClient {
             .await
         {
             Ok(()) => {
-                tracing::info!("WebSocket authenticated");
+                log::info!("WebSocket authenticated");
                 Ok(())
             }
             Err(e) => {
-                tracing::error!(error = %e, "WebSocket authentication failed");
+                log::error!("WebSocket authentication failed: error={e}");
                 Err(Error::Io(std::io::Error::other(e.to_string())))
             }
         }
@@ -971,6 +1010,8 @@ impl OKXWebSocketClient {
     ///
     /// Returns an error if the unsubscribe request fails to send.
     pub async fn unsubscribe_all(&self) -> Result<(), OKXWsError> {
+        const BATCH_SIZE: usize = 256;
+
         let mut all_args = Vec::new();
 
         for entry in self.subscriptions_inst_type.iter() {
@@ -1020,13 +1061,11 @@ impl OKXWebSocketClient {
         }
 
         if all_args.is_empty() {
-            tracing::debug!("No active subscriptions to unsubscribe from");
+            log::debug!("No active subscriptions to unsubscribe from");
             return Ok(());
         }
 
-        tracing::debug!("Batched unsubscribe from {} channels", all_args.len());
-
-        const BATCH_SIZE: usize = 256;
+        log::debug!("Batched unsubscribe from {} channels", all_args.len());
 
         for chunk in all_args.chunks(BATCH_SIZE) {
             self.unsubscribe(chunk.to_vec()).await?;
@@ -1083,13 +1122,11 @@ impl OKXWebSocketClient {
             .is_some_and(|types| types.contains(&inst_type));
 
         if already_subscribed {
-            tracing::debug!(
-                "Already subscribed to instrument type {inst_type:?} for {instrument_id}"
-            );
+            log::debug!("Already subscribed to instrument type {inst_type:?} for {instrument_id}");
             return Ok(());
         }
 
-        tracing::debug!("Subscribing to instrument type {inst_type:?} for {instrument_id}");
+        log::debug!("Subscribing to instrument type {inst_type:?} for {instrument_id}");
         self.subscribe_instruments(inst_type).await
     }
 
@@ -1904,6 +1941,12 @@ impl OKXWebSocketClient {
         let mut builder = WsPostOrderParamsBuilder::default();
 
         builder.inst_id(instrument_id.symbol.as_str());
+
+        // Look up instIdCode from cache (required for WebSocket orders per OKX deprecation)
+        if let Some(inst_id_code) = self.get_inst_id_code(&instrument_id.symbol.inner()) {
+            builder.inst_id_code(inst_id_code);
+        }
+
         builder.td_mode(td_mode);
         builder.cl_ord_id(client_order_id.as_str());
 
@@ -1994,6 +2037,7 @@ impl OKXWebSocketClient {
 
         // OKX implements FOK/IOC as order types rather than separate time-in-force
         // Market + FOK is unsupported (FOK requires a limit price)
+        // optimal_limit_ioc is only supported for derivatives (SWAP/FUTURES), not SPOT
         let (okx_ord_type, price) = if post_only.unwrap_or(false) {
             (OKXOrderType::PostOnly, price)
         } else if let Some(tif) = time_in_force {
@@ -2003,7 +2047,14 @@ impl OKXWebSocketClient {
                         "Market orders with FOK time-in-force are not supported by OKX. Use Limit order with FOK instead.".to_string()
                     ));
                 }
-                (OrderType::Market, TimeInForce::Ioc) => (OKXOrderType::OptimalLimitIoc, price),
+                (OrderType::Market, TimeInForce::Ioc) => {
+                    // optimal_limit_ioc only works for derivatives, use plain market for SPOT
+                    if instrument_type == OKXInstrumentType::Spot {
+                        (OKXOrderType::Market, price)
+                    } else {
+                        (OKXOrderType::OptimalLimitIoc, price)
+                    }
+                }
                 (OrderType::Limit, TimeInForce::Fok) => (OKXOrderType::Fok, price),
                 (OrderType::Limit, TimeInForce::Ioc) => (OKXOrderType::Ioc, price),
                 _ => (OKXOrderType::from(order_type), price),
@@ -2074,6 +2125,11 @@ impl OKXWebSocketClient {
         let mut builder = WsAmendOrderParamsBuilder::default();
 
         builder.inst_id(instrument_id.symbol.as_str());
+
+        // Look up instIdCode from cache (required for WebSocket orders per OKX deprecation)
+        if let Some(inst_id_code) = self.get_inst_id_code(&instrument_id.symbol.inner()) {
+            builder.inst_id_code(inst_id_code);
+        }
 
         if let Some(venue_order_id) = venue_order_id {
             builder.ord_id(venue_order_id.as_str());
@@ -2205,6 +2261,12 @@ impl OKXWebSocketClient {
             let mut builder = WsPostOrderParamsBuilder::default();
             builder.inst_type(inst_type);
             builder.inst_id(inst_id.symbol.inner());
+
+            // Look up instIdCode from cache (required for WebSocket orders per OKX deprecation)
+            if let Some(inst_id_code) = self.get_inst_id_code(&inst_id.symbol.inner()) {
+                builder.inst_id_code(inst_id_code);
+            }
+
             builder.td_mode(td_mode);
             builder.cl_ord_id(cl_ord_id.as_str());
             builder.side(ord_side);
@@ -2269,6 +2331,12 @@ impl OKXWebSocketClient {
             let mut builder = WsAmendOrderParamsBuilder::default();
             // Note: instType should NOT be included in amend order requests
             builder.inst_id(inst_id.symbol.inner());
+
+            // Look up instIdCode from cache (required for WebSocket orders per OKX deprecation)
+            if let Some(inst_id_code) = self.get_inst_id_code(&inst_id.symbol.inner()) {
+                builder.inst_id_code(inst_id_code);
+            }
+
             builder.cl_ord_id(cl_ord_id.as_str());
             builder.new_cl_ord_id(new_cl_ord_id.as_str());
 
@@ -2313,6 +2381,11 @@ impl OKXWebSocketClient {
             let mut builder = WsCancelOrderParamsBuilder::default();
             // Note: instType should NOT be included in cancel order requests
             builder.inst_id(inst_id.symbol.inner());
+
+            // Look up instIdCode from cache (required for WebSocket orders per OKX deprecation)
+            if let Some(inst_id_code) = self.get_inst_id_code(&inst_id.symbol.inner()) {
+                builder.inst_id_code(inst_id_code);
+            }
 
             if let Some(c) = cl_ord_id {
                 builder.cl_ord_id(c.as_str());
@@ -2373,6 +2446,12 @@ impl OKXWebSocketClient {
         }
 
         builder.inst_id(instrument_id.symbol.inner());
+
+        // Look up instIdCode from cache (required for WebSocket orders per OKX deprecation)
+        if let Some(inst_id_code) = self.get_inst_id_code(&instrument_id.symbol.inner()) {
+            builder.inst_id_code(inst_id_code);
+        }
+
         builder.td_mode(td_mode);
         builder.cl_ord_id(client_order_id.as_str());
         builder.side(order_side);

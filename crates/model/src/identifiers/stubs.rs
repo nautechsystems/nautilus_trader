@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,11 +22,89 @@ use super::{
     AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId, OrderListId,
     PositionId, StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
 };
+use crate::stubs::TestDefault;
+
+impl TestDefault for AccountId {
+    /// Creates a new test default [`AccountId`] instance.
+    fn test_default() -> Self {
+        Self::from("SIM-001")
+    }
+}
+
+impl TestDefault for ClientId {
+    /// Creates a new test default [`ClientId`] instance.
+    fn test_default() -> Self {
+        Self::from("SIM")
+    }
+}
+
+impl TestDefault for ClientOrderId {
+    /// Creates a new test default [`ClientOrderId`] instance.
+    fn test_default() -> Self {
+        Self::from("O-19700101-000000-001-001-1")
+    }
+}
+
+impl TestDefault for PositionId {
+    /// Creates a new test default [`PositionId`] instance.
+    fn test_default() -> Self {
+        Self::from("P-001")
+    }
+}
+
+impl TestDefault for StrategyId {
+    /// Creates a new test default [`StrategyId`] instance.
+    fn test_default() -> Self {
+        Self::from("S-001")
+    }
+}
+
+impl TestDefault for TradeId {
+    /// Creates a new test default [`TradeId`] instance.
+    fn test_default() -> Self {
+        Self::from("1")
+    }
+}
+
+impl TestDefault for TraderId {
+    /// Creates a new test default [`TraderId`] instance.
+    fn test_default() -> Self {
+        Self::default()
+    }
+}
+
+impl TestDefault for Symbol {
+    /// Creates a new test default [`Symbol`] instance.
+    fn test_default() -> Self {
+        Self::from("AUD/USD")
+    }
+}
+
+impl TestDefault for Venue {
+    /// Creates a new test default [`Venue`] instance.
+    fn test_default() -> Self {
+        Self::from("SIM")
+    }
+}
+
+impl TestDefault for VenueOrderId {
+    /// Creates a new test default [`VenueOrderId`] instance.
+    fn test_default() -> Self {
+        Self::from("001")
+    }
+}
+
+impl TestDefault for InstrumentId {
+    /// Creates a new test default [`InstrumentId`] instance.
+    fn test_default() -> Self {
+        Self::new(Symbol::test_default(), Venue::test_default())
+    }
+}
 
 /// Returns a stub trader ID.
 #[fixture]
 pub fn trader_id() -> TraderId {
-    TraderId::new("TRADER-001")
+    TraderId::test_default()
 }
 
 /// Returns a stub strategy ID for an EMA cross strategy.
@@ -44,25 +122,25 @@ pub fn uuid4() -> UUID4 {
 /// Returns a stub account ID.
 #[fixture]
 pub fn account_id() -> AccountId {
-    AccountId::new("SIM-001")
+    AccountId::test_default()
 }
 
 /// Returns a stub client order ID.
 #[fixture]
 pub fn client_order_id() -> ClientOrderId {
-    ClientOrderId::new("O-19700101-000000-001-001-1")
+    ClientOrderId::test_default()
 }
 
 /// Returns a stub venue order ID.
 #[fixture]
 pub fn venue_order_id() -> VenueOrderId {
-    VenueOrderId::new("001")
+    VenueOrderId::test_default()
 }
 
 /// Returns a stub position ID.
 #[fixture]
 pub fn position_id() -> PositionId {
-    PositionId::new("P-001")
+    PositionId::test_default()
 }
 
 /// Returns a stub instrument ID for BTC/USDT.

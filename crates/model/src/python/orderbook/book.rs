@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -326,6 +326,16 @@ impl OrderBook {
     #[pyo3(name = "get_quantity_for_price")]
     fn py_get_quantity_for_price(&self, price: Price, order_side: OrderSide) -> f64 {
         self.get_quantity_for_price(price, order_side)
+    }
+
+    #[pyo3(name = "get_quantity_at_level")]
+    fn py_get_quantity_at_level(
+        &self,
+        price: Price,
+        order_side: OrderSide,
+        size_precision: u8,
+    ) -> Quantity {
+        self.get_quantity_at_level(price, order_side, size_precision)
     }
 
     #[pyo3(name = "simulate_fills")]

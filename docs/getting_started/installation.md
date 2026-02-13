@@ -311,10 +311,13 @@ which differ in their internal bit-width and maximum decimal precision.
 - **Standard-precision**: 64-bit integers with up to 9 decimals of precision, and a smaller value range.
 
 :::note
-By default, the official Python wheels **ship** in high-precision (128-bit) mode on Linux and macOS.
-On Windows, only standard-precision (64-bit) is available due to the lack of native 128-bit integer support.
+By default, the official Python wheels ship in high-precision (128-bit) mode on Linux and macOS.
+On Windows, only standard-precision (64-bit) Python wheels are available because MSVC's C/C++ frontend
+does not support `__int128`, preventing the Cython/FFI layer from handling 128-bit integers.
 
-For the Rust crates, the default is standard-precision unless you explicitly enable the `high-precision` feature flag.
+For pure Rust crates, high-precision works on all platforms (including Windows) since Rust handles
+`i128`/`u128` via software emulation. The default is standard-precision unless you explicitly enable
+the `high-precision` feature flag.
 :::
 
 The performance tradeoff is that standard-precision is ~3–5% faster in typical backtests,

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -170,27 +170,23 @@ impl Debug for Secrets {
 }
 
 impl Secrets {
-    /// Load secrets from environment variables
+    /// Load secrets from environment variables for the specified network.
     ///
     /// Expected environment variables:
-    /// - `HYPERLIQUID_PK`: EVM private key for mainnet (required for mainnet)
-    /// - `HYPERLIQUID_TESTNET_PK`: EVM private key for testnet (required for testnet)
+    /// - `HYPERLIQUID_PK`: EVM private key for mainnet (required when `is_testnet=false`)
+    /// - `HYPERLIQUID_TESTNET_PK`: EVM private key for testnet (required when `is_testnet=true`)
     /// - `HYPERLIQUID_VAULT`: Vault address for mainnet (optional)
     /// - `HYPERLIQUID_TESTNET_VAULT`: Vault address for testnet (optional)
-    ///
-    /// The method will first try to load testnet credentials. If not found, it will fall back to mainnet.
-    pub fn from_env() -> Result<Self> {
-        // Try testnet credentials first
-        let (private_key_str, vault_env_var, is_testnet) =
-            if let Ok(testnet_pk) = env::var("HYPERLIQUID_TESTNET_PK") {
-                (testnet_pk, "HYPERLIQUID_TESTNET_VAULT", true)
-            } else if let Ok(mainnet_pk) = env::var("HYPERLIQUID_PK") {
-                (mainnet_pk, "HYPERLIQUID_VAULT", false)
-            } else {
-                return Err(Error::bad_request(
-                    "Neither HYPERLIQUID_PK nor HYPERLIQUID_TESTNET_PK environment variable is set",
-                ));
-            };
+    pub fn from_env(is_testnet: bool) -> Result<Self> {
+        let (pk_env_var, vault_env_var) = if is_testnet {
+            ("HYPERLIQUID_TESTNET_PK", "HYPERLIQUID_TESTNET_VAULT")
+        } else {
+            ("HYPERLIQUID_PK", "HYPERLIQUID_VAULT")
+        };
+
+        let private_key_str = env::var(pk_env_var).map_err(|_| {
+            Error::bad_request(format!("{pk_env_var} environment variable is not set"))
+        })?;
 
         let private_key = EvmPrivateKey::new(private_key_str)?;
 

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -471,7 +471,6 @@ impl FromU8 for BookAction {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[allow(non_camel_case_types)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -482,6 +481,7 @@ impl FromU8 for BookAction {
         module = "nautilus_trader.core.nautilus_pyo3.model.enums"
     )
 )]
+#[allow(non_camel_case_types)]
 pub enum BookType {
     /// Top-of-book best bid/ask, one level per side.
     L1_MBP = 1,
@@ -638,6 +638,17 @@ pub enum InstrumentClass {
     SportsBetting = 11,
     /// A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, depending on whether the price of an underlying asset is above or below a predetermined level at expiration.
     BinaryOption = 12,
+}
+
+impl InstrumentClass {
+    /// Returns whether this instrument class has an expiration.
+    #[must_use]
+    pub const fn has_expiration(&self) -> bool {
+        matches!(
+            self,
+            Self::Future | Self::FuturesSpread | Self::Option | Self::OptionSpread
+        )
+    }
 }
 
 /// The type of event for an instrument close.
@@ -937,6 +948,44 @@ pub enum OptionKind {
     Put = 2,
 }
 
+/// Defines when OTO (One-Triggers-Other) child orders are released.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    AsRefStr,
+    FromRepr,
+    EnumIter,
+    EnumString,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        hash,
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+    )
+)]
+pub enum OtoTriggerMode {
+    /// Release child order(s) pro-rata to each partial fill (default).
+    #[default]
+    Partial = 0,
+    /// Release child order(s) only once the parent is fully filled.
+    Full = 1,
+}
+
 /// The order side for a specific order, or action related to orders.
 #[repr(C)]
 #[derive(
@@ -1158,6 +1207,20 @@ impl OrderStatus {
                 Self::PartiallyFilled,
             ])
         })
+    }
+
+    /// Returns whether the order status represents an open/working order.
+    #[must_use]
+    pub const fn is_open(self) -> bool {
+        matches!(
+            self,
+            Self::Submitted
+                | Self::Accepted
+                | Self::Triggered
+                | Self::PendingUpdate
+                | Self::PendingCancel
+                | Self::PartiallyFilled
+        )
     }
 }
 

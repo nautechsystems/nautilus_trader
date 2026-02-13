@@ -25,13 +25,14 @@ import numpy as np
 from nautilus_trader.adapters.databento.data_utils import data_path
 from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
-from nautilus_trader.analysis.config import TearsheetConfig
+from nautilus_trader.analysis import TearsheetBarsWithFillsChart
+from nautilus_trader.analysis import TearsheetConfig
+from nautilus_trader.analysis import TearsheetEquityChart
+from nautilus_trader.analysis import TearsheetStatsTableChart
 from nautilus_trader.analysis.tearsheet import create_bars_with_fills
 from nautilus_trader.analysis.tearsheet import create_tearsheet
 from nautilus_trader.backtest.config import MarginModelConfig
 from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.backtest.option_exercise import OptionExerciseConfig
-from nautilus_trader.backtest.option_exercise import OptionExerciseModule
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
@@ -186,6 +187,8 @@ class OptionStrategy(Strategy):
         self.spread_order_submitted2 = False
 
     def on_start(self):
+        self.default_data_params = {"aggregate_spread_quotes": True}
+
         self.user_log("Strategy on_start called")
         self.bar_type = BarType.from_str(f"{self.config.future_id}-1-MINUTE-LAST-EXTERNAL")
 
@@ -198,7 +201,9 @@ class OptionStrategy(Strategy):
 
         self.bar_type_3 = BarType.from_str(f"{self.config.spread_id2}-2-MINUTE-ASK-INTERNAL")
 
-        self.user_log(f"Requesting instruments: {self.config.option_id}, {self.config.option_id2}, {self.config.future_id}, {self.config.future_id2}")
+        self.user_log(
+            f"Requesting instruments: {self.config.option_id}, {self.config.option_id2}, {self.config.future_id}, {self.config.future_id2}",
+        )
         self.request_instrument(self.config.option_id)
         self.request_instrument(self.config.option_id2)
         self.request_instrument(self.config.future_id)
@@ -215,14 +220,21 @@ class OptionStrategy(Strategy):
             instrument_id=self.config.spread_id2,
         )
 
-        self.user_log(f"Requesting quote ticks for spread {self.config.spread_id2} from {start_time}")
-        self.request_quote_ticks(self.config.spread_id2, start=time_object_to_dt(start_time))
+        self.user_log(
+            f"Requesting quote ticks for spread {self.config.spread_id2} from {start_time}",
+        )
+        self.request_quote_ticks(
+            self.config.spread_id2,
+            start=time_object_to_dt(start_time),
+            params=self.default_data_params,
+        )
 
         self.user_log(f"Requesting bars for spread {self.bar_type_3} from {start_time}")
         self.request_aggregated_bars(
             [self.bar_type_3],
             start=time_object_to_dt(start_time),
             update_subscriptions=True,
+            params=self.default_data_params,
         )
 
         # Subscribe to various data
@@ -232,13 +244,15 @@ class OptionStrategy(Strategy):
         self.subscribe_bars(self.bar_type)
         self.subscribe_quote_ticks(self.config.future_id)
         self.subscribe_quote_ticks(self.config.future_id2)
-        self.subscribe_quote_ticks(self.config.spread_id)
-        self.subscribe_quote_ticks(self.config.spread_id2)
+        self.subscribe_quote_ticks(self.config.spread_id, params=self.default_data_params)
+        self.subscribe_quote_ticks(self.config.spread_id2, params=self.default_data_params)
         self.subscribe_bars(self.bar_type_2)
         self.subscribe_bars(self.bar_type_3)
 
         # Subscribing to custom greeks data if it's already stored
-        self.user_log(f"Subscribing to GreeksData for options, load_greeks={self.config.load_greeks}")
+        self.user_log(
+            f"Subscribing to GreeksData for options, load_greeks={self.config.load_greeks}",
+        )
         self.subscribe_data(
             DataType(GreeksData),
             instrument_id=self.config.option_id,
@@ -269,13 +283,22 @@ class OptionStrategy(Strategy):
 
     def on_historical_data(self, data):
         if isinstance(data, QuoteTick):
-            self.user_log(f"Historical QuoteTick: {data}, ts={unix_nanos_to_iso8601(data.ts_init)}", color=LogColor.BLUE)
+            self.user_log(
+                f"Historical QuoteTick: {data}, ts={unix_nanos_to_iso8601(data.ts_init)}",
+                color=LogColor.BLUE,
+            )
 
         if isinstance(data, Bar):
-            self.user_log(f"Historical Bar: {data}, ts={unix_nanos_to_iso8601(data.ts_init)}", color=LogColor.RED)
+            self.user_log(
+                f"Historical Bar: {data}, ts={unix_nanos_to_iso8601(data.ts_init)}",
+                color=LogColor.RED,
+            )
 
     def on_quote_tick(self, tick):
-        self.user_log(f"QuoteTick: {tick}, ts={unix_nanos_to_iso8601(tick.ts_init)}", color=LogColor.BLUE)
+        self.user_log(
+            f"QuoteTick: {tick}, ts={unix_nanos_to_iso8601(tick.ts_init)}",
+            color=LogColor.BLUE,
+        )
 
         # Submit spread order when we have spread quotes available
         if tick.instrument_id == self.config.spread_id and not self.spread_order_submitted:
@@ -288,13 +311,19 @@ class OptionStrategy(Strategy):
             self.spread_order_submitted2 = True
 
     def on_order_filled(self, event):
-        self.user_log(f"Order filled: {event.instrument_id}, qty={event.last_qty}, price={event.last_px}, trade_id={event.trade_id}")
+        self.user_log(
+            f"Order filled: {event.instrument_id}, qty={event.last_qty}, price={event.last_px}, trade_id={event.trade_id}",
+        )
 
     def on_position_opened(self, event):
-        self.user_log(f"Position opened: {event.instrument_id}, qty={event.quantity}, entry={event.entry}")
+        self.user_log(
+            f"Position opened: {event.instrument_id}, qty={event.quantity}, entry={event.entry}",
+        )
 
     def on_position_changed(self, event):
-        self.user_log(f"Position changed: {event.instrument_id}, qty={event.quantity}, pnl={event.unrealized_pnl}")
+        self.user_log(
+            f"Position changed: {event.instrument_id}, qty={event.quantity}, pnl={event.unrealized_pnl}",
+        )
 
     # def on_data(self, greeks):
     #     self.log.warning(f"{greeks=}")
@@ -302,11 +331,12 @@ class OptionStrategy(Strategy):
 
     def on_bar(self, bar):
         if bar.bar_type == self.bar_type_3:
-            self.user_log(f"Bar: {bar}, ts={unix_nanos_to_iso8601(bar.ts_init)}", color=LogColor.RED)
-        else:
             self.user_log(
-                f"bar ts_init = {unix_nanos_to_iso8601(bar.ts_init)}, bar close = {bar}",
+                f"Bar: {bar}, ts={unix_nanos_to_iso8601(bar.ts_init)}",
+                color=LogColor.RED,
             )
+        else:
+            self.user_log(f"Bar: {bar}, ts={unix_nanos_to_iso8601(bar.ts_init)}")
 
         if not self.start_orders_done:
             self.user_log("Initializing the portfolio with some trades")
@@ -353,11 +383,14 @@ class OptionStrategy(Strategy):
 
     def on_stop(self):
         self.unsubscribe_bars(self.bar_type)
+        self.unsubscribe_bars(self.bar_type_2)
+        self.unsubscribe_bars(self.bar_type_3)
         self.unsubscribe_quote_ticks(self.config.option_id)
         self.unsubscribe_quote_ticks(self.config.option_id2)
         self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id)
         self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id2)
-        self.unsubscribe_quote_ticks(self.config.spread_id)
+        self.unsubscribe_quote_ticks(self.config.spread_id, params=self.default_data_params)
+        self.unsubscribe_quote_ticks(self.config.spread_id2, params=self.default_data_params)
 
 
 # %% [markdown]
@@ -477,16 +510,6 @@ margin_model = MarginModelConfig(
     model_type="standard",
 )  # Use standard margin model for options trading
 
-modules = [
-    ImportableActorConfig(
-        actor_path=OptionExerciseModule.fully_qualified_name(),
-        config_path=OptionExerciseConfig.fully_qualified_name(),
-        config={
-            "auto_exercise_enabled": True,
-        },
-    ),
-]
-
 venues = [
     BacktestVenueConfig(
         name="XCME",
@@ -496,7 +519,6 @@ venues = [
         starting_balances=["1_000_000 USD"],
         margin_model=margin_model,
         fill_model=fill_model,
-        modules=modules,
     ),
 ]
 
@@ -560,12 +582,14 @@ fig
 # %%
 # Test tearsheet integration with bars_with_fills chart using node and instance_id
 tearsheet_config = TearsheetConfig(
-    charts=["stats_table", "equity", "bars_with_fills"],
-    chart_args={
-        "bars_with_fills": {
-            "bar_type": f"{future_symbols[0]}.XCME-1-MINUTE-LAST-EXTERNAL",
-        },
-    },
+    charts=[
+        TearsheetStatsTableChart(),
+        TearsheetEquityChart(),
+        TearsheetBarsWithFillsChart(
+            bar_type=f"{future_symbols[0]}.XCME-1-MINUTE-LAST-EXTERNAL",
+            title="Bars with Order Fills",
+        ),
+    ],
     theme="nautilus_dark",
 )
 

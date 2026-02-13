@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -164,7 +164,7 @@ impl HttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let keys = keys.map(into_ustr_vec);
-            rate_limiter.await_keys_ready(keys).await;
+            rate_limiter.await_keys_ready(keys.as_deref()).await;
             client
                 .send_request(
                     method.into(),
@@ -580,7 +580,7 @@ pub fn http_download(
 
 #[cfg(test)]
 mod tests {
-    use std::net::{SocketAddr, TcpListener as StdTcpListener};
+    use std::net::SocketAddr;
 
     use axum::{Router, routing::get};
     use pyo3::types::{PyDict, PyList, PyTuple};
@@ -816,12 +816,6 @@ mod tests {
         assert!(err.to_string().contains("params must be a dict"));
     }
 
-    fn get_unique_port() -> u16 {
-        let listener =
-            StdTcpListener::bind("127.0.0.1:0").expect("Failed to bind temporary TcpListener");
-        listener.local_addr().unwrap().port()
-    }
-
     async fn create_test_router() -> Router {
         Router::new()
             .route("/get", get(|| async { "hello-world!" }))
@@ -831,8 +825,7 @@ mod tests {
     }
 
     async fn start_test_server() -> Result<SocketAddr, Box<dyn std::error::Error + Send + Sync>> {
-        let port = get_unique_port();
-        let listener = TcpListener::bind(format!("127.0.0.1:{port}")).await?;
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;
 
         tokio::spawn(async move {

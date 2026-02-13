@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,9 +15,16 @@
 
 //! Binance adapter configuration structures.
 
+use std::any::Any;
+
+use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_system::factories::ClientConfig;
+
 use crate::common::enums::{BinanceEnvironment, BinanceProductType};
 
 /// Configuration for Binance data client.
+///
+/// Ed25519 API keys are required for SBE WebSocket streams.
 #[derive(Clone, Debug)]
 pub struct BinanceDataClientConfig {
     /// Product types to subscribe to.
@@ -28,9 +35,9 @@ pub struct BinanceDataClientConfig {
     pub base_url_http: Option<String>,
     /// Optional base URL override for WebSocket.
     pub base_url_ws: Option<String>,
-    /// API key for authenticated endpoints.
+    /// API key (Ed25519).
     pub api_key: Option<String>,
-    /// API secret for request signing.
+    /// API secret (Ed25519 base64-encoded or PEM).
     pub api_secret: Option<String>,
 }
 
@@ -47,9 +54,23 @@ impl Default for BinanceDataClientConfig {
     }
 }
 
+impl ClientConfig for BinanceDataClientConfig {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 /// Configuration for Binance execution client.
+///
+/// Ed25519 API keys are required for execution clients. Binance deprecated
+/// listenKey-based user data streams in favor of WebSocket API authentication,
+/// which only supports Ed25519.
 #[derive(Clone, Debug)]
 pub struct BinanceExecClientConfig {
+    /// Trader ID for the client.
+    pub trader_id: TraderId,
+    /// Account ID for the client.
+    pub account_id: AccountId,
     /// Product types to trade.
     pub product_types: Vec<BinanceProductType>,
     /// Environment (mainnet or testnet).
@@ -58,8 +79,14 @@ pub struct BinanceExecClientConfig {
     pub base_url_http: Option<String>,
     /// Optional base URL override for WebSocket.
     pub base_url_ws: Option<String>,
-    /// API key for authenticated endpoints (required).
-    pub api_key: String,
-    /// API secret for request signing (required).
-    pub api_secret: String,
+    /// API key (Ed25519 required, uses env var if not provided).
+    pub api_key: Option<String>,
+    /// API secret (Ed25519 base64-encoded, required, uses env var if not provided).
+    pub api_secret: Option<String>,
+}
+
+impl ClientConfig for BinanceExecClientConfig {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }

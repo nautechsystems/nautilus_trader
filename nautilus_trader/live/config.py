@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -175,7 +175,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
         A recommended setting is 60 minutes for HFT.
     purge_account_events_interval_mins : PositiveInt, optional
         The interval (minutes) between purging account events from the in-memory cache,
-        **will not purge from the database**. If None, closed orders will **not** be automatically purged.
+        **will not purge from the database**. If None, account events will **not** be automatically purged.
         A recommended setting is 10-15 minutes for HFT.
     purge_account_events_lookback_mins : NonNegativeInt, optional
         The time buffer (minutes) from when an account event occurred before it can be purged.

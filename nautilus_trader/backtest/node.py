@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -58,9 +58,11 @@ from nautilus_trader.model.data import capsule_to_list
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OtoTriggerMode
 from nautilus_trader.model.enums import account_type_from_str
 from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.enums import oms_type_from_str
+from nautilus_trader.model.enums import oto_trigger_mode_from_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
@@ -330,6 +332,7 @@ class BacktestNode:
             "request_quote_ticks",
             "request_trade_ticks",
             "request_order_book_depth",
+            "request_order_book_deltas",
         ]
 
         if request_function not in compatible_request_functions:
@@ -398,15 +401,19 @@ class BacktestNode:
                 reject_stop_orders=venue_config.reject_stop_orders,
                 support_gtd_orders=venue_config.support_gtd_orders,
                 support_contingent_orders=venue_config.support_contingent_orders,
+                oto_trigger_mode=get_oto_trigger_mode(venue_config),
                 use_position_ids=venue_config.use_position_ids,
                 use_random_ids=venue_config.use_random_ids,
                 use_reduce_only=venue_config.use_reduce_only,
+                use_market_order_acks=venue_config.use_market_order_acks,
                 bar_execution=venue_config.bar_execution,
                 bar_adaptive_high_low_ordering=venue_config.bar_adaptive_high_low_ordering,
                 trade_execution=venue_config.trade_execution,
                 liquidity_consumption=venue_config.liquidity_consumption,
+                queue_position=venue_config.queue_position,
                 allow_cash_borrowing=venue_config.allow_cash_borrowing,
                 price_protection_points=get_price_protection_points(venue_config),
+                settlement_prices=venue_config.settlement_prices,
             )
 
         # Add instruments
@@ -584,6 +591,7 @@ class BacktestNode:
                 end=used_end,
                 session=session,
                 files=filter_files,
+                optimize_file_loading=config.optimize_file_loading,
             )
 
         # Stream data
@@ -777,6 +785,16 @@ def get_book_type(config: BacktestVenueConfig) -> BookType | None:
     book_type = config.book_type
 
     return book_type_from_str(book_type) if type(book_type) is str else book_type
+
+
+def get_oto_trigger_mode(config: BacktestVenueConfig) -> OtoTriggerMode:
+    oto_trigger_mode = config.oto_trigger_mode
+
+    return (
+        oto_trigger_mode_from_str(oto_trigger_mode)
+        if type(oto_trigger_mode) is str
+        else oto_trigger_mode
+    )
 
 
 def get_starting_balances(config: BacktestVenueConfig) -> list[Money]:

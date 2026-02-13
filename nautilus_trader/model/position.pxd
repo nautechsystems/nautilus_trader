@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -129,7 +129,8 @@ cdef class Position:
     cpdef void apply(self, OrderFilled fill)
     cpdef void apply_adjustment(self, PositionAdjusted adjustment)
 
-    cpdef Money notional_value(self, Price price)
+    cpdef Money notional_value(self, Price price, Currency target_currency=*, Price conversion_price=*)
+    cpdef Money cross_notional_value(self, Price price, Price quote_price, Price base_price, Currency target_currency)
     cpdef Money calculate_pnl(self, double avg_px_open, double avg_px_close, Quantity quantity)
     cpdef Money unrealized_pnl(self, Price price)
     cpdef Money total_pnl(self, Price price)

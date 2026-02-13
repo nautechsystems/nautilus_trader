@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,12 +19,10 @@ use nautilus_common::{
     cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
     msgbus::database::MessageBusConfig,
 };
-use nautilus_core::UUID4;
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::engine::config::ExecutionEngineConfig;
 use nautilus_model::identifiers::TraderId;
-#[cfg(feature = "streaming")]
-use nautilus_persistence::config::StreamingConfig;
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
 
@@ -67,7 +65,6 @@ pub trait NautilusKernelConfig: Debug {
     /// Returns the portfolio configuration.
     fn portfolio(&self) -> Option<PortfolioConfig>;
     /// Returns the configuration for streaming to feather files.
-    #[cfg(feature = "streaming")]
     fn streaming(&self) -> Option<StreamingConfig>;
 }
 
@@ -111,7 +108,6 @@ pub struct KernelConfig {
     /// The portfolio configuration.
     pub portfolio: Option<PortfolioConfig>,
     /// The configuration for streaming to feather files.
-    #[cfg(feature = "streaming")]
     pub streaming: Option<StreamingConfig>,
 }
 
@@ -188,7 +184,6 @@ impl NautilusKernelConfig for KernelConfig {
         self.portfolio.clone()
     }
 
-    #[cfg(feature = "streaming")]
     fn streaming(&self) -> Option<StreamingConfig> {
         self.streaming.clone()
     }
@@ -215,8 +210,66 @@ impl Default for KernelConfig {
             risk_engine: None,
             exec_engine: None,
             portfolio: None,
-            #[cfg(feature = "streaming")]
             streaming: None,
+        }
+    }
+}
+
+/// Configuration for file rotation in streaming output.
+#[derive(Debug, Clone)]
+pub enum RotationConfig {
+    /// Rotate based on file size.
+    Size {
+        /// Maximum buffer size in bytes before rotation.
+        max_size: u64,
+    },
+    /// Rotate based on a time interval.
+    Interval {
+        /// Interval in nanoseconds.
+        interval_ns: u64,
+    },
+    /// Rotate based on scheduled dates.
+    ScheduledDates {
+        /// Interval in nanoseconds.
+        interval_ns: u64,
+        /// Start of the scheduled rotation period.
+        schedule_ns: UnixNanos,
+    },
+    /// No automatic rotation.
+    NoRotation,
+}
+
+/// Configuration for streaming live or backtest runs to the catalog in feather format.
+#[derive(Debug, Clone)]
+pub struct StreamingConfig {
+    /// The path to the data catalog.
+    pub catalog_path: String,
+    /// The `fsspec` filesystem protocol for the catalog.
+    pub fs_protocol: String,
+    /// The flush interval (milliseconds) for writing chunks.
+    pub flush_interval_ms: u64,
+    /// If any existing feather files should be replaced.
+    pub replace_existing: bool,
+    /// Rotation configuration.
+    pub rotation_config: RotationConfig,
+}
+
+impl StreamingConfig {
+    /// Creates a new [`StreamingConfig`] instance.
+    #[must_use]
+    pub const fn new(
+        catalog_path: String,
+        fs_protocol: String,
+        flush_interval_ms: u64,
+        replace_existing: bool,
+        rotation_config: RotationConfig,
+    ) -> Self {
+        Self {
+            catalog_path,
+            fs_protocol,
+            flush_interval_ms,
+            replace_existing,
+            rotation_config,
         }
     }
 }

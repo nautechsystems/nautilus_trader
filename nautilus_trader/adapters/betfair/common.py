@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -145,3 +145,24 @@ def is_session_error(error: BetfairError) -> bool:
         or "is not a valid JSONExceptionCode" in msg
         or "JSON_PARSE_ERROR" in msg
     )
+
+
+def is_rate_limit_error(error: BetfairError) -> bool:
+    """
+    Check if a BetfairError is a rate limit error.
+
+    Parameters
+    ----------
+    error : BetfairError
+        The error to check.
+
+    Returns
+    -------
+    bool
+        True if the error is a rate limit error.
+
+    """
+    if not error.args:
+        return False
+    msg = str(error.args[0])
+    return "TOO_MANY_REQUESTS" in msg

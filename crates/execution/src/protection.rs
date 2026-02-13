@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,10 +17,12 @@
 use nautilus_model::{
     enums::{OrderSideSpecified, OrderType},
     orders::{Order, OrderAny},
-    types::Price,
+    types::{Price, price::PriceRaw},
 };
 
-/// Calculates the protection price for stop limit and stop market orders using best bid or ask price..
+/// Calculates the protection price for stop limit and stop market orders using best bid or ask price.
+///
+/// Uses integer arithmetic on raw price values to avoid floating-point precision issues.
 ///
 /// # Returns
 /// A calculated protection price.
@@ -28,15 +30,11 @@ use nautilus_model::{
 /// # Errors
 /// Returns an error if:
 /// - the order type is invalid.
-/// - protection points or best bid/ask are provided but not valid
-///
-/// # Panics
-///
-/// Panics if the values required for calculation cannot be converted to a float.
+/// - best bid/ask is not provided when required for the order side.
 pub fn protection_price_calculate(
     price_increment: Price,
     order: &OrderAny,
-    protection_points: Option<u32>,
+    protection_points: u32,
     bid: Option<Price>,
     ask: Option<Price>,
 ) -> anyhow::Result<Price> {
@@ -45,25 +43,21 @@ pub fn protection_price_calculate(
         anyhow::bail!("Invalid `OrderType` {order_type} for protection price calculation");
     }
 
-    let protection_points =
-        protection_points.ok_or_else(|| anyhow::anyhow!("Protection points required"))?;
-    let offset = f64::from(protection_points) * price_increment.as_f64();
+    let offset_raw = PriceRaw::from(protection_points) * price_increment.raw;
 
     let order_side = order.order_side_specified();
-    let protection_price = match order_side {
+    let protection_raw = match order_side {
         OrderSideSpecified::Buy => {
             let opposite = ask.ok_or_else(|| anyhow::anyhow!("Ask required"))?;
-            let opposite_f64 = opposite.as_f64();
-            opposite_f64 + offset
+            opposite.raw + offset_raw
         }
         OrderSideSpecified::Sell => {
             let opposite = bid.ok_or_else(|| anyhow::anyhow!("Bid required"))?;
-            let opposite_f64 = opposite.as_f64();
-            opposite_f64 - offset
+            opposite.raw - offset_raw
         }
     };
 
-    Ok(Price::new(protection_price, price_increment.precision))
+    Ok(Price::from_raw(protection_raw, price_increment.precision))
 }
 
 #[cfg(test)]
@@ -102,22 +96,7 @@ mod tests {
             .quantity(Quantity::from(1))
             .build();
 
-        let result = protection_price_calculate(Price::new(0.01, 2), &order, Some(600), None, None);
-
-        assert!(result.is_err());
-    }
-
-    #[rstest]
-    fn test_calculate_requires_protection_points() {
-        let order = build_stop_order(OrderType::StopMarket, OrderSide::Buy);
-
-        let result = protection_price_calculate(
-            Price::new(0.01, 2),
-            &order,
-            None,
-            Some(Price::new(99.0, 2)),
-            Some(Price::new(101.0, 2)),
-        );
+        let result = protection_price_calculate(Price::new(0.01, 2), &order, 600, None, None);
 
         assert!(result.is_err());
     }
@@ -135,7 +114,7 @@ mod tests {
             OrderSide::NoOrderSide => panic!("Side is required"),
         };
 
-        let result = protection_price_calculate(price_increment, &order, Some(25), bid, ask);
+        let result = protection_price_calculate(price_increment, &order, 25, bid, ask);
 
         assert!(result.is_err());
     }
@@ -149,7 +128,7 @@ mod tests {
         let protection_price = protection_price_calculate(
             Price::new(0.01, 2),
             &order,
-            Some(50),
+            50,
             Some(Price::new(99.0, 2)),
             Some(Price::new(101.0, 2)),
         )
@@ -167,12 +146,63 @@ mod tests {
         let protection_price = protection_price_calculate(
             Price::new(0.01, 2),
             &order,
-            Some(50),
+            50,
             Some(Price::new(99.0, 2)),
             Some(Price::new(101.0, 2)),
         )
         .unwrap();
 
         assert_eq!(protection_price.as_f64(), 98.5);
+    }
+
+    #[rstest]
+    fn test_protection_price_zero_points() {
+        let order = build_stop_order(OrderType::Market, OrderSide::Buy);
+
+        let protection_price = protection_price_calculate(
+            Price::new(0.01, 2),
+            &order,
+            0,
+            Some(Price::new(99.0, 2)),
+            Some(Price::new(101.0, 2)),
+        )
+        .unwrap();
+
+        // With 0 points, protection_price = ask + 0 = 101.0
+        assert_eq!(protection_price.as_f64(), 101.0);
+    }
+
+    #[rstest]
+    fn test_protection_price_sell_negative_result() {
+        let order = build_stop_order(OrderType::Market, OrderSide::Sell);
+
+        let protection_price = protection_price_calculate(
+            Price::new(0.01, 2),
+            &order,
+            1000,
+            Some(Price::new(5.0, 2)),
+            Some(Price::new(6.0, 2)),
+        )
+        .unwrap();
+
+        // protection_price = 5.0 - (1000 * 0.01) = 5.0 - 10.0 = -5.0
+        assert_eq!(protection_price.as_f64(), -5.0);
+    }
+
+    #[rstest]
+    fn test_protection_price_large_points() {
+        let order = build_stop_order(OrderType::Market, OrderSide::Buy);
+
+        let protection_price = protection_price_calculate(
+            Price::new(0.01, 2),
+            &order,
+            100_000,
+            Some(Price::new(50_000.0, 2)),
+            Some(Price::new(50_001.0, 2)),
+        )
+        .unwrap();
+
+        // protection_price = 50001.0 + (100_000 * 0.01) = 50001.0 + 1000.0 = 51001.0
+        assert_eq!(protection_price.as_f64(), 51001.0);
     }
 }

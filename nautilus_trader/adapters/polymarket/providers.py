@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import traceback
 from typing import Any
 
 import msgspec
@@ -21,12 +22,16 @@ from py_clob_client.client import ClobClient
 
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
 from nautilus_trader.adapters.polymarket.common.gamma_markets import list_markets
-from nautilus_trader.adapters.polymarket.common.gamma_markets import normalize_gamma_market_to_clob_format
+from nautilus_trader.adapters.polymarket.common.gamma_markets import (
+    normalize_gamma_market_to_clob_format,
+)
 from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_condition_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
-from nautilus_trader.adapters.polymarket.http.errors import PolymarketAPIError
+from nautilus_trader.adapters.polymarket.http.errors import check_clob_response
+from nautilus_trader.adapters.polymarket.loaders import PolymarketDataLoader
 from nautilus_trader.common.component import LiveClock
+from nautilus_trader.common.config import resolve_path
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition
@@ -35,29 +40,30 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BinaryOption
 
 
-def _check_clob_response(response: dict[str, Any] | str) -> dict[str, Any]:
+class PolymarketInstrumentProviderConfig(InstrumentProviderConfig, frozen=True, kw_only=True):
     """
-    Check CLOB API response and raise exception if error string returned.
+    Configuration for ``PolymarketInstrumentProvider`` instances.
 
     Parameters
     ----------
-    response : dict[str, Any] | str
-        The response from the CLOB API.
+    event_slug_builder : str, optional
+        A fully qualified path to a callable that returns a list of event slugs to fetch.
+        The callable should have signature: `() -> list[str]`.
 
-    Returns
-    -------
-    dict[str, Any]
-        The validated response dictionary.
+        When set, the provider will call this function on each initialization/refresh cycle
+        to dynamically generate event slugs, then fetch only those specific events from
+        the Gamma API. This is much more efficient for niche markets with predictable
+        slug patterns (e.g., temperature markets, UpDown crypto markets).
 
-    Raises
-    ------
-    PolymarketAPIError
-        If response is an error string.
+        Example: "myproject.slugs:build_temperature_slugs"
 
     """
-    if isinstance(response, str):
-        raise PolymarketAPIError(response)
-    return response
+
+    event_slug_builder: str | None = None
+
+    def __post_init__(self):
+        if self.event_slug_builder and not self.load_all:
+            msgspec.structs.force_setattr(self, "load_all", True)
 
 
 class PolymarketInstrumentProvider(InstrumentProvider):
@@ -70,7 +76,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         The Polymarket CLOB HTTP client.
     clock : LiveClock
         The clock instance.
-    config : InstrumentProviderConfig, optional
+    config : PolymarketInstrumentProviderConfig, optional
         The instrument provider configuration, by default None.
     http_client : HttpClient, optional
         The HTTP client for Gamma API requests.
@@ -81,7 +87,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         self,
         client: ClobClient,
         clock: LiveClock,
-        config: InstrumentProviderConfig | None = None,
+        config: PolymarketInstrumentProviderConfig | None = None,
         http_client: HttpClient | None = None,
     ) -> None:
         super().__init__(config=config)
@@ -94,7 +100,105 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         self._encoder = msgspec.json.Encoder()
 
     async def load_all_async(self, filters: dict | None = None) -> None:
-        await self._load_markets([], filters)
+        # Check for event_slug_builder first (most efficient for niche markets)
+        if (
+            isinstance(self._config, PolymarketInstrumentProviderConfig)
+            and self._config.event_slug_builder
+        ):
+            await self._load_from_event_slugs()
+        elif self._config.use_gamma_markets:
+            await self._load_all_using_gamma_markets(filters)
+        else:
+            await self._load_markets([], filters)
+
+    async def _load_from_event_slugs(self) -> None:
+        """
+        Load instruments by fetching specific events via their slugs.
+
+        This method resolves the configured `event_slug_builder` callable,
+        invokes it to get a list of event slugs, then fetches each event
+        from the Gamma API and loads all instruments from their markets.
+
+        """
+        if (
+            not isinstance(self._config, PolymarketInstrumentProviderConfig)
+            or not self._config.event_slug_builder
+        ):
+            return
+        slug_builder = resolve_path(self._config.event_slug_builder)
+        event_slugs: list[str] = slug_builder()
+
+        self._log.info(f"Loading instruments from {len(event_slugs)} event slugs")
+
+        instruments_loaded = 0
+        events_loaded = 0
+
+        for slug in event_slugs:
+            try:
+                event = await PolymarketDataLoader._fetch_event_by_slug(
+                    slug=slug,
+                    http_client=self._http_client,
+                )
+                events_loaded += 1
+                instruments_loaded += self._load_instruments_from_event(event)
+
+            except ValueError as e:
+                # Event not found - log and continue
+                if self._log_warnings:
+                    self._log.warning(f"Event slug '{slug}' not found: {e}")
+            except Exception:
+                self._log.error(
+                    f"Failed to load event slug '{slug}':\n{traceback.format_exc()}",
+                )
+
+        self._log.info(
+            f"Loaded {instruments_loaded} instruments from {events_loaded} events",
+        )
+
+    def _load_instruments_from_event(self, event: dict[str, Any]) -> int:
+        count = 0
+        for market in event.get("markets", []):
+            condition_id = market.get("conditionId")
+            if not condition_id:
+                continue
+
+            normalized_market = normalize_gamma_market_to_clob_format(market)
+
+            for token_info in normalized_market.get("tokens", []):
+                token_id = token_info["token_id"]
+                if not token_id:
+                    if self._log_warnings:
+                        self._log.warning(f"Market {condition_id} had an empty token")
+                    continue
+
+                outcome = token_info["outcome"]
+                self._load_instrument(normalized_market, token_id, outcome)
+                count += 1
+        return count
+
+    async def _load_all_using_gamma_markets(self, filters: dict | None = None) -> None:
+        filters = filters.copy() if filters is not None else {}
+
+        self._log.info(f"Loading all instruments via Gamma API with filters {filters}...")
+
+        markets = await list_markets(http_client=self._http_client, filters=filters)
+        self._log.info(f"Loaded {len(markets)} markets from Gamma API")
+
+        for market in markets:
+            condition_id = market.get("conditionId")
+            if not condition_id:
+                continue
+
+            normalized_market = normalize_gamma_market_to_clob_format(market)
+
+            for token_info in normalized_market.get("tokens", []):
+                token_id = token_info["token_id"]
+                if not token_id:
+                    self._log.warning(f"Market {condition_id} had an empty token")
+                    continue
+
+                outcome = token_info["outcome"]
+                self._load_instrument(normalized_market, token_id, outcome)
 
     async def _load_ids_using_gamma_markets(
         self,
@@ -113,11 +217,17 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         # Create a copy to avoid mutating the caller's filters
         filters = filters.copy() if filters is not None else {}
 
-        if len(condition_ids) <= 100:  # We can filter directly by condition_id, but there is an API limit of max 100 condition_ids in the query string
-            self._log.info(f"Loading {len(instrument_ids)} instruments from {len(condition_ids)} markets, using direct condition_id filtering")
+        if (
+            len(condition_ids) <= 100
+        ):  # We can filter directly by condition_id, but there is an API limit of max 100 condition_ids in the query string
+            self._log.info(
+                f"Loading {len(instrument_ids)} instruments from {len(condition_ids)} markets, using direct condition_id filtering",
+            )
             filters["condition_ids"] = condition_ids
         else:
-            self._log.info(f"Loading {len(instrument_ids)} instruments from {len(condition_ids)} markets, using bulk load of all markets")
+            self._log.info(
+                f"Loading {len(instrument_ids)} instruments from {len(condition_ids)} markets, using bulk load of all markets",
+            )
 
         markets = await list_markets(http_client=self._http_client, filters=filters)
         self._log.info(f"Loaded {len(markets)} markets using Gamma API")
@@ -186,7 +296,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         token_id = get_polymarket_token_id(instrument_id)
 
         response = await asyncio.to_thread(self._client.get_market, condition_id)
-        response = _check_clob_response(response)
+        response = check_clob_response(response)
 
         for token_info in response["tokens"]:
             if token_id != token_info["token_id"]:
@@ -211,7 +321,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                 self._client.get_market,
                 condition_id=get_polymarket_condition_id(instrument_id),
             )
-            response = _check_clob_response(response)
+            response = check_clob_response(response)
 
             try:
                 active = response["active"]
@@ -244,6 +354,8 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         # Create a copy to avoid mutating the caller's filters
         filters = filters.copy() if filters is not None else {}
 
+        self._warn_unsupported_clob_filters(filters)
+
         if instrument_ids:
             instruments_str = "instruments: " + ", ".join([str(x) for x in instrument_ids])
         else:
@@ -263,7 +375,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                 self._client.get_markets,
                 next_cursor=next_cursor,
             )
-            response = _check_clob_response(response)
+            response = check_clob_response(response)
 
             for market_info in response["data"]:
                 try:
@@ -311,3 +423,12 @@ class PolymarketInstrumentProvider(InstrumentProvider):
 
         self.add(instrument)
         return instrument
+
+    def _warn_unsupported_clob_filters(self, filters: dict) -> None:
+        gamma_only_filters = {"end_date_min", "end_date_max", "start_date_min", "start_date_max"}
+        unsupported = gamma_only_filters & filters.keys()
+        if unsupported:
+            self._log.warning(
+                f"Filters {unsupported} are ignored by CLOB API; "
+                "set use_gamma_markets=True to enable server-side filtering",
+            )

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,10 +24,16 @@ from ibapi.common import MarketDataTypeEnum
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
+from nautilus_trader.adapters.interactive_brokers.config import (
+    InteractiveBrokersInstrumentProviderConfig,
+)
 from nautilus_trader.adapters.interactive_brokers.data import InteractiveBrokersDataClient
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ib_contract_to_instrument_id
-from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
+    ib_contract_to_instrument_id,
+)
+from nautilus_trader.adapters.interactive_brokers.providers import (
+    InteractiveBrokersInstrumentProvider,
+)
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.cache.database import CacheDatabaseAdapter
@@ -162,11 +168,15 @@ class HistoricInteractiveBrokersClient:
         """
         # Convert string instrument_ids to InstrumentId objects
         converted_instrument_ids = [
-            InstrumentId.from_str(instrument_id) if isinstance(instrument_id, str) else instrument_id
+            InstrumentId.from_str(instrument_id)
+            if isinstance(instrument_id, str)
+            else instrument_id
             for instrument_id in (instrument_ids or [])
         ]
 
-        await self._data_client.instrument_provider.load_ids_async(converted_instrument_ids + (contracts or []))
+        await self._data_client.instrument_provider.load_ids_async(
+            converted_instrument_ids + (contracts or []),
+        )
 
         return list(self._data_client.instrument_provider._instruments.values())
 
@@ -247,7 +257,9 @@ class HistoricInteractiveBrokersClient:
         contracts.extend(
             [
                 await self._data_client.instrument_provider.instrument_id_to_ib_contract(
-                    InstrumentId.from_str(instrument_id) if isinstance(instrument_id, str) else instrument_id,
+                    InstrumentId.from_str(instrument_id)
+                    if isinstance(instrument_id, str)
+                    else instrument_id,
                 )
                 for instrument_id in instrument_ids
             ],
@@ -259,7 +271,9 @@ class HistoricInteractiveBrokersClient:
 
         for contract in contracts:
             for bar_spec in bar_specifications:
-                venue = self._data_client.instrument_provider.determine_venue_from_contract(contract)
+                venue = self._data_client.instrument_provider.determine_venue_from_contract(
+                    contract,
+                )
                 instrument_id = ib_contract_to_instrument_id(
                     contract,
                     venue,
@@ -356,7 +370,9 @@ class HistoricInteractiveBrokersClient:
         contracts.extend(
             [
                 await self._data_client.instrument_provider.instrument_id_to_ib_contract(
-                    InstrumentId.from_str(instrument_id) if isinstance(instrument_id, str) else instrument_id,
+                    InstrumentId.from_str(instrument_id)
+                    if isinstance(instrument_id, str)
+                    else instrument_id,
                 )
                 for instrument_id in instrument_ids
             ],

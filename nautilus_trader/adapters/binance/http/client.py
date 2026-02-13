@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,7 +20,6 @@ from typing import Any
 import msgspec
 
 import nautilus_trader
-from nautilus_trader.adapters.binance.common.enums import BinanceKeyType
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.http.error import BinanceServerError
 from nautilus_trader.common.component import LiveClock
@@ -50,8 +49,6 @@ class BinanceHttpClient:
     api_secret : str, optional
         The Binance API secret for signed requests.
         If ``None``, the client will work for public market data only.
-    key_type : BinanceKeyType, default 'HMAC'
-        The private key cryptographic algorithm type.
     rsa_private_key : str, optional
         The RSA private key for RSA signing.
     ed25519_private_key : str, optional
@@ -73,7 +70,6 @@ class BinanceHttpClient:
         api_key: str | None,
         api_secret: str | None,
         base_url: str,
-        key_type: BinanceKeyType = BinanceKeyType.HMAC,
         rsa_private_key: str | None = None,
         ed25519_private_key: str | None = None,
         ratelimiter_quotas: list[tuple[str, Quota]] | None = None,
@@ -86,13 +82,15 @@ class BinanceHttpClient:
 
         self._base_url: str = base_url
         self._secret: str | None = api_secret
-        self._key_type: BinanceKeyType = key_type
         self._rsa_private_key: str | None = rsa_private_key
         self._ed25519_private_key: bytes | None = None
         if ed25519_private_key:
-            # Decode base64 ASN.1/DER format
-            key_bytes = base64.b64decode(ed25519_private_key)
-            # ASN.1/DER structure: the 32-byte seed is typically at the end
+            # Strip PEM headers/footers if present, then decode base64
+            key_data = "".join(
+                line for line in ed25519_private_key.splitlines() if not line.startswith("-----")
+            )
+            key_bytes = base64.b64decode(key_data)
+            # Extract 32-byte seed (works for both raw and PKCS#8 DER format)
             self._ed25519_private_key = key_bytes[-32:]
 
         self._headers: dict[str, Any] = {
@@ -168,20 +166,11 @@ class BinanceHttpClient:
         if self._secret is None:
             raise ValueError("Cannot sign request: api_secret not configured")
 
-        match self._key_type:
-            case BinanceKeyType.HMAC:
-                return hmac_signature(self._secret, data)
-            case BinanceKeyType.RSA:
-                if not self._rsa_private_key:
-                    raise ValueError("`rsa_private_key` was `None`")
-                return rsa_signature(self._rsa_private_key, data)
-            case BinanceKeyType.ED25519:
-                if not self._ed25519_private_key:
-                    raise ValueError("`ed25519_private_key` was `None`")
-                return ed25519_signature(self._ed25519_private_key, data)
-            case _:
-                # Theoretically unreachable but retained to keep the match exhaustive
-                raise ValueError(f"Unsupported key type, was '{self._key_type.value}'")
+        if self._ed25519_private_key is not None:
+            return ed25519_signature(self._ed25519_private_key, data)
+        if self._rsa_private_key is not None:
+            return rsa_signature(self._rsa_private_key, data)
+        return hmac_signature(self._secret, data)
 
     async def sign_request(
         self,

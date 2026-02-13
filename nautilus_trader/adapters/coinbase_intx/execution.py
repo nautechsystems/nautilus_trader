@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -249,10 +249,10 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
         active_symbols = self._get_cache_active_symbols()
 
         # Fetch active symbols from exchange
-        pyo3_position_reports: list[nautilus_pyo3.PositionStatusReport] = (
-            await self._http_client.request_position_status_reports(
-                account_id=self.pyo3_account_id,
-            )
+        pyo3_position_reports: list[
+            nautilus_pyo3.PositionStatusReport
+        ] = await self._http_client.request_position_status_reports(
+            account_id=self.pyo3_account_id,
         )
 
         for pyo3_position_report in pyo3_position_reports:
@@ -270,8 +270,8 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
                     report = OrderStatusReport.from_pyo3(pyo3_order_report)
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
                     reports.append(report)
-        except Exception as e:
-            self._log.exception("Failed to generate OrderStatusReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "OrderStatusReports")
 
         self._log_report_receipt(
             len(reports),
@@ -317,8 +317,8 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             report = OrderStatusReport.from_pyo3(pyo3_report)
             self._log.debug(f"Received {report}", LogColor.MAGENTA)
             return report
-        except Exception as e:
-            self._log.exception("Failed to generate OrderStatusReport", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "OrderStatusReport")
         return None
 
     async def generate_fill_reports(
@@ -342,8 +342,8 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
                 report = FillReport.from_pyo3(pyo3_report)
                 self._log.debug(f"Received {report}", LogColor.MAGENTA)
                 reports.append(report)
-        except Exception as e:
-            self._log.exception("Failed to generate FillReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "FillReports")
 
         self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
 
@@ -373,10 +373,10 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
                 reports.append(report)
             else:
                 self._log.debug("Requesting PositionStatusReports...")
-                pyo3_reports: list[nautilus_pyo3.PositionStatusReport] = (
-                    await self._http_client.request_position_status_reports(
-                        account_id=self.pyo3_account_id,
-                    )
+                pyo3_reports: list[
+                    nautilus_pyo3.PositionStatusReport
+                ] = await self._http_client.request_position_status_reports(
+                    account_id=self.pyo3_account_id,
                 )
 
                 for pyo3_report in pyo3_reports:
@@ -397,8 +397,8 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
                     report = PositionStatusReport.from_pyo3(pyo3_report)
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
                     reports.append(report)
-        except Exception as e:
-            self._log.exception("Failed to generate PositionReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "PositionReports")
 
         self._log_report_receipt(
             len(reports),
@@ -583,7 +583,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             order_type=nautilus_pyo3.OrderType.MARKET,
             time_in_force=time_in_force_to_pyo3(time_in_force),
             quantity=nautilus_pyo3.Quantity.from_str(str(order.quantity)),
-            reduce_only=order.is_reduce_only if order.is_reduce_only else None,
+            reduce_only=order.is_reduce_only or None,
         )
 
     async def _submit_limit_order(
@@ -600,8 +600,8 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             expire_time=ensure_pydatetime_utc(order.expire_time),
             quantity=nautilus_pyo3.Quantity.from_str(str(order.quantity)),
             price=nautilus_pyo3.Price.from_str(str(order.price)),
-            post_only=order.is_post_only if order.is_post_only else None,
-            reduce_only=order.is_reduce_only if order.is_reduce_only else None,
+            post_only=order.is_post_only or None,
+            reduce_only=order.is_reduce_only or None,
         )
 
     async def _submit_stop_market_order(
@@ -618,7 +618,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             expire_time=ensure_pydatetime_utc(order.expire_time),
             quantity=nautilus_pyo3.Quantity.from_str(str(order.quantity)),
             trigger_price=nautilus_pyo3.Price.from_str(str(order.trigger_price)),
-            reduce_only=order.is_reduce_only if order.is_reduce_only else None,
+            reduce_only=order.is_reduce_only or None,
         )
 
     async def _submit_stop_limit_order(
@@ -636,7 +636,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             quantity=nautilus_pyo3.Quantity.from_str(str(order.quantity)),
             price=nautilus_pyo3.Price.from_str(str(order.price)),
             trigger_price=nautilus_pyo3.Price.from_str(str(order.trigger_price)),
-            reduce_only=order.is_reduce_only if order.is_reduce_only else None,
+            reduce_only=order.is_reduce_only or None,
         )
 
     def _is_external_order(self, client_order_id: ClientOrderId) -> bool:

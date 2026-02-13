@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -221,7 +221,7 @@ config_tester = ExecTesterConfig(
     enable_limit_sells=enable_limit_sells,
     open_position_on_start_qty=order_qty,
     open_position_time_in_force=TimeInForce.IOC,
-    tob_offset_ticks=100,
+    # tob_offset_ticks=0,
     # stop_offset_ticks=1,
     order_qty=order_qty,
     # modify_orders_to_maintain_tob_offset=True,

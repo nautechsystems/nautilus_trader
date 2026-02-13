@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,10 +20,12 @@ from typing import Any
 import msgspec
 
 from nautilus_trader.common.config import NautilusConfig
+from nautilus_trader.common.config import PositiveInt
 from nautilus_trader.common.config import msgspec_encoding_hook
 from nautilus_trader.common.config import resolve_config_path
 from nautilus_trader.common.config import resolve_path
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
 
@@ -50,11 +52,26 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
         The external order claim instrument IDs.
         External orders for matching instrument IDs will be associated with (claimed by) the strategy.
     manage_contingent_orders : bool, default False
-        If OUO and OCO **open** contingent orders should be managed automatically by the strategy.
+        If OTO, OCO, and OUO **open** contingent orders should be managed automatically by the strategy.
         Any emulated orders which are active local will be managed by the `OrderEmulator` instead.
     manage_gtd_expiry : bool, default False
         If all order GTD time in force expirations should be managed by the strategy.
         If True, then will ensure open orders have their GTD timers re-activated on start.
+    manage_stop : bool, default False
+        If the strategy should automatically perform a market exit when stopped.
+        If True, calling stop() will first cancel all orders and close all positions
+        before the strategy transitions to the STOPPED state.
+    market_exit_interval_ms : int, default 100
+        The interval in milliseconds to check for in-flight orders and open positions
+        during a market exit.
+    market_exit_max_attempts : int, default 100
+        The maximum number of attempts to wait for orders and positions to close
+        during a market exit before completing. Defaults to 100 attempts
+        (10 seconds at 100ms intervals).
+    market_exit_time_in_force : TimeInForce, default ``GTC``
+        The time in force for closing market orders during a market exit.
+    market_exit_reduce_only : bool, default True
+        If closing market orders during a market exit should be reduce only.
     log_events : bool, default True
         If events should be logged by the strategy.
         If False, then only warning events and above are logged.
@@ -73,6 +90,11 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
     external_order_claims: list[InstrumentId] | None = None
     manage_contingent_orders: bool = False
     manage_gtd_expiry: bool = False
+    manage_stop: bool = False
+    market_exit_interval_ms: PositiveInt = 100
+    market_exit_max_attempts: PositiveInt = 100
+    market_exit_time_in_force: TimeInForce = TimeInForce.GTC
+    market_exit_reduce_only: bool = True
     log_events: bool = True
     log_commands: bool = True
     log_rejected_due_post_only_as_warning: bool = True

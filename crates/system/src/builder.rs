@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -207,7 +207,6 @@ impl NautilusKernelBuilder {
             risk_engine: self.risk_engine,
             exec_engine: self.exec_engine,
             portfolio: self.portfolio,
-            #[cfg(feature = "streaming")]
             streaming: None,
         };
 
@@ -285,5 +284,49 @@ mod tests {
 
         assert!(builder.cache.is_some());
         assert!(builder.data_engine.is_some());
+    }
+
+    #[rstest]
+    fn test_builder_with_all_engine_configs() {
+        let builder = NautilusKernelBuilder::default()
+            .with_data_engine_config(DataEngineConfig::default())
+            .with_risk_engine_config(RiskEngineConfig::default())
+            .with_exec_engine_config(ExecutionEngineConfig::default())
+            .with_portfolio_config(PortfolioConfig::default());
+
+        assert!(builder.data_engine.is_some());
+        assert!(builder.risk_engine.is_some());
+        assert!(builder.exec_engine.is_some());
+        assert!(builder.portfolio.is_some());
+    }
+
+    #[rstest]
+    fn test_builder_with_all_timeouts() {
+        let builder = NautilusKernelBuilder::default()
+            .with_timeout_connection(10)
+            .with_timeout_reconciliation(20)
+            .with_timeout_portfolio(30)
+            .with_timeout_disconnection(40)
+            .with_delay_post_stop(50)
+            .with_timeout_shutdown(60);
+
+        assert_eq!(builder.timeout_connection, Duration::from_secs(10));
+        assert_eq!(builder.timeout_reconciliation, Duration::from_secs(20));
+        assert_eq!(builder.timeout_portfolio, Duration::from_secs(30));
+        assert_eq!(builder.timeout_disconnection, Duration::from_secs(40));
+        assert_eq!(builder.delay_post_stop, Duration::from_secs(50));
+        assert_eq!(builder.timeout_shutdown, Duration::from_secs(60));
+    }
+
+    #[rstest]
+    fn test_builder_default_timeouts() {
+        let builder = NautilusKernelBuilder::default();
+
+        assert_eq!(builder.timeout_connection, Duration::from_secs(60));
+        assert_eq!(builder.timeout_reconciliation, Duration::from_secs(30));
+        assert_eq!(builder.timeout_portfolio, Duration::from_secs(10));
+        assert_eq!(builder.timeout_disconnection, Duration::from_secs(10));
+        assert_eq!(builder.delay_post_stop, Duration::from_secs(10));
+        assert_eq!(builder.timeout_shutdown, Duration::from_secs(5));
     }
 }

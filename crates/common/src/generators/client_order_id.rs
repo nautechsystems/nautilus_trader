@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,15 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{AtomicTime, uuid::UUID4};
+use std::{cell::RefCell, rc::Rc};
+
+use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::{ClientOrderId, StrategyId, TraderId};
 
 use super::get_datetime_tag;
+use crate::clock::Clock;
 
-#[repr(C)]
 #[derive(Debug)]
 pub struct ClientOrderIdGenerator {
-    clock: &'static AtomicTime,
+    clock: Rc<RefCell<dyn Clock>>,
     trader_id: TraderId,
     strategy_id: StrategyId,
     count: usize,
@@ -32,11 +34,11 @@ pub struct ClientOrderIdGenerator {
 impl ClientOrderIdGenerator {
     /// Creates a new [`ClientOrderIdGenerator`] instance.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         trader_id: TraderId,
         strategy_id: StrategyId,
         initial_count: usize,
-        clock: &'static AtomicTime,
+        clock: Rc<RefCell<dyn Clock>>,
         use_uuids: bool,
         use_hyphens: bool,
     ) -> Self {
@@ -71,21 +73,21 @@ impl ClientOrderIdGenerator {
             }
             uuid_value
         } else {
-            let datetime_tag = get_datetime_tag(self.clock.get_time_ms());
+            let datetime_tag = get_datetime_tag(self.clock.borrow().timestamp_ms());
             let trader_tag = self.trader_id.get_tag();
             let strategy_tag = self.strategy_id.get_tag();
             self.count += 1;
 
-            if !self.use_hyphens {
+            if self.use_hyphens {
+                format!(
+                    "O-{}-{}-{}-{}",
+                    datetime_tag, trader_tag, strategy_tag, self.count
+                )
+            } else {
                 let datetime_no_hyphens = datetime_tag.replace('-', "");
                 format!(
                     "O{}{}{}{}",
                     datetime_no_hyphens, trader_tag, strategy_tag, self.count
-                )
-            } else {
-                format!(
-                    "O-{}-{}-{}-{}",
-                    datetime_tag, trader_tag, strategy_tag, self.count
                 )
             }
         };
@@ -96,22 +98,27 @@ impl ClientOrderIdGenerator {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::time::get_atomic_clock_static;
-    use nautilus_model::identifiers::{ClientOrderId, StrategyId, TraderId};
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_model::{
+        identifiers::{ClientOrderId, StrategyId, TraderId},
+        stubs::TestDefault,
+    };
     use rstest::rstest;
 
-    use crate::generators::client_order_id::ClientOrderIdGenerator;
+    use crate::{clock::TestClock, generators::client_order_id::ClientOrderIdGenerator};
 
     fn get_client_order_id_generator(
         initial_count: Option<usize>,
         use_uuids: bool,
         use_hyphens: bool,
     ) -> ClientOrderIdGenerator {
+        let clock = Rc::new(RefCell::new(TestClock::new()));
         ClientOrderIdGenerator::new(
-            TraderId::default(),
-            StrategyId::default(),
+            TraderId::test_default(),
+            StrategyId::test_default(),
             initial_count.unwrap_or(0),
-            get_atomic_clock_static(),
+            clock,
             use_uuids,
             use_hyphens,
         )

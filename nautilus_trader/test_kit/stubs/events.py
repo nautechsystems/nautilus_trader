@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -368,6 +368,7 @@ class TestEventStubs:
     @staticmethod
     def order_canceled(
         order: Order,
+        account_id: AccountId | None = None,
         ts_event: int = 0,
     ) -> OrderCanceled:
         return OrderCanceled(
@@ -376,7 +377,7 @@ class TestEventStubs:
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            account_id=TestIdStubs.account_id(),
+            account_id=account_id or TestIdStubs.account_id(),
             ts_event=ts_event,
             event_id=UUID4(),
             ts_init=0,

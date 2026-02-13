@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -273,9 +273,21 @@ cdef class BettingInstrument(Instrument):
         """
         return BettingInstrument.to_dict_c(obj)
 
-    cpdef Money notional_value(self, Quantity quantity, Price price, bint use_quote_for_inverse=False):
+    cpdef Money notional_value(
+        self,
+        Quantity quantity,
+        Price price,
+        bint use_quote_for_inverse=False,
+        Currency target_currency=None,
+        Price conversion_price=None,
+    ):
         Condition.not_none(quantity, "quantity")
-        return Money(quantity.as_f64_c() * float(self.multiplier), self.quote_currency)
+        cdef Money notional = Money(quantity.as_f64_c() * float(self.multiplier), self.quote_currency)
+
+        if target_currency is not None and conversion_price is not None:
+            return Money(notional.as_f64_c() * conversion_price.as_f64_c(), target_currency)
+
+        return notional
 
 
 cpdef Symbol make_symbol(

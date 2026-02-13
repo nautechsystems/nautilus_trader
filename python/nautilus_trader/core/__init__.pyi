@@ -3,6 +3,21 @@
 import builtins
 import typing
 
+__all__ = [
+    "convert_to_snake_case",
+    "is_pycapsule",
+    "is_within_last_24_hours",
+    "last_weekday_nanos",
+    "mask_api_key",
+    "micros_to_nanos",
+    "millis_to_nanos",
+    "nanos_to_micros",
+    "nanos_to_millis",
+    "nanos_to_secs",
+    "secs_to_millis",
+    "secs_to_nanos",
+    "unix_nanos_to_iso8601",
+]
 
 def convert_to_snake_case(input: builtins.str) -> builtins.str:
     r"""
@@ -83,6 +98,29 @@ def last_weekday_nanos(year: builtins.int, month: builtins.int, day: builtins.in
     # Errors
 
     Returns a `PyErr` if the provided date is invalid.
+    """
+
+def mask_api_key(api_key: builtins.str) -> builtins.str:
+    r"""
+    Masks an API key by showing only the first and last 4 characters.
+
+    For keys 8 characters or shorter, returns asterisks only.
+
+    Parameters
+    ----------
+    api_key : str
+        The API key to mask.
+
+    Returns
+    -------
+    str
+
+    Examples
+    --------
+    >>> mask_api_key("abcdefghijklmnop")
+    'abcd...mnop'
+    >>> mask_api_key("short")
+    '*****'
     """
 
 def micros_to_nanos(micros: builtins.float) -> builtins.int:
@@ -183,7 +221,9 @@ def secs_to_nanos(secs: builtins.float) -> builtins.int:
     int
     """
 
-def unix_nanos_to_iso8601(timestamp_ns: builtins.int, nanos_precision: builtins.bool | None = True) -> builtins.str:
+def unix_nanos_to_iso8601(
+    timestamp_ns: builtins.int, nanos_precision: builtins.bool | None = True
+) -> builtins.str:
     r"""
     Return UNIX nanoseconds as an ISO 8601 (RFC 3339) format string.
 
@@ -203,4 +243,3 @@ def unix_nanos_to_iso8601(timestamp_ns: builtins.int, nanos_precision: builtins.
     ValueError
         If `timestamp_ns` is invalid.
     """
-

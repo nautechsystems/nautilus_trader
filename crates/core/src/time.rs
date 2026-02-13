@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -197,7 +197,7 @@ impl AtomicTime {
         self.get_time_ns().as_f64() / (NANOSECONDS_IN_SECOND as f64)
     }
 
-    /// Manually sets a new time for the clock (only meaningful in **static mode**).
+    /// Manually sets a new time for the clock (only possible in **static mode**).
     ///
     /// This uses an atomic store with [`Ordering::Release`], so any thread reading with
     /// [`Ordering::Acquire`] will see the updated time. This does *not* enforce a total ordering

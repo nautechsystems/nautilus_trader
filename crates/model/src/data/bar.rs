@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,7 +29,7 @@ use indexmap::IndexMap;
 use nautilus_core::{
     UnixNanos,
     correctness::{FAILED, check_predicate_true},
-    datetime::{add_n_months, subtract_n_months, subtract_n_years},
+    datetime::{add_n_months, subtract_n_months},
     serialization::Serializable,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -245,22 +245,29 @@ pub fn get_time_bar_start(
             start_time
         }
         BarAggregation::Year => {
-            // Set to the first day of the year
-            let mut start_time = DateTime::from_naive_utc_and_offset(
-                chrono::NaiveDate::from_ymd_opt(now.year(), 1, 1)
-                    .expect("valid date")
-                    .and_hms_opt(0, 0, 0)
-                    .expect("valid time"),
-                Utc,
-            );
-            start_time += origin_offset;
+            let step_i32 = step as i32;
 
-            if now < start_time {
-                start_time =
-                    subtract_n_years(start_time, step as u32).expect("Failed to subtract years");
+            // Reconstruct from Jan 1 + origin each time to avoid leap-day drift
+            let year_start = |y: i32| {
+                DateTime::from_naive_utc_and_offset(
+                    chrono::NaiveDate::from_ymd_opt(y, 1, 1)
+                        .expect("valid date")
+                        .and_hms_opt(0, 0, 0)
+                        .expect("valid time"),
+                    Utc,
+                ) + origin_offset
+            };
+
+            let mut year = now.year();
+            if year_start(year) > now {
+                year -= step_i32;
             }
 
-            start_time
+            while year_start(year + step_i32) <= now {
+                year += step_i32;
+            }
+
+            year_start(year)
         }
         _ => panic!(
             "Aggregation type {} not supported for time bars",
@@ -286,10 +293,16 @@ fn find_closest_smaller_time(
     let base_time = day_start + daily_time_origin;
 
     let time_difference = now - base_time;
-    let num_periods = (time_difference.num_nanoseconds().unwrap_or(0)
-        / period.num_nanoseconds().unwrap_or(1)) as i32;
+    let period_ns = period.num_nanoseconds().unwrap_or(1);
 
-    base_time + period * num_periods
+    // Use div_euclid for floor division (rounds toward -inf, not zero)
+    // so negative deltas (now before origin) yield the previous period boundary
+    let num_periods = time_difference
+        .num_nanoseconds()
+        .unwrap_or(0)
+        .div_euclid(period_ns);
+
+    base_time + TimeDelta::nanoseconds(num_periods * period_ns)
 }
 
 /// Represents a bar aggregation specification including a step, aggregation
@@ -379,7 +392,9 @@ impl BarSpecification {
     ///  - [`BarAggregation::Minute`]
     ///  - [`BarAggregation::Hour`]
     ///  - [`BarAggregation::Day`]
+    ///  - [`BarAggregation::Week`]
     ///  - [`BarAggregation::Month`]
+    ///  - [`BarAggregation::Year`]
     pub fn is_time_aggregated(&self) -> bool {
         matches!(
             self.aggregation,
@@ -388,7 +403,9 @@ impl BarSpecification {
                 | BarAggregation::Minute
                 | BarAggregation::Hour
                 | BarAggregation::Day
+                | BarAggregation::Week
                 | BarAggregation::Month
+                | BarAggregation::Year
         )
     }
 
@@ -698,9 +715,9 @@ impl FromStr for BarType {
     }
 }
 
-impl From<&str> for BarType {
-    fn from(value: &str) -> Self {
-        Self::from_str(value).expect(FAILED)
+impl<T: AsRef<str>> From<T> for BarType {
+    fn from(value: T) -> Self {
+        Self::from_str(value.as_ref()).expect(FAILED)
     }
 }
 

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,6 +34,8 @@ pub struct DataEngineConfig {
     /// - `LeftOpen`: start time is excluded and end time is included (default).
     /// - `RightOpen`: start time is included and end time is excluded.
     pub time_bars_interval_type: BarIntervalType,
+    /// The time delay (microseconds) before building and emitting a bar.
+    pub time_bars_build_delay: u64,
     /// A dictionary mapping time bar aggregations to their origin time offsets.
     pub time_bars_origins: HashMap<BarAggregation, Duration>,
     /// If data objects timestamp sequencing will be validated and handled.
@@ -55,6 +57,7 @@ impl DataEngineConfig {
         time_bars_timestamp_on_close: bool,
         time_bars_interval_type: BarIntervalType,
         time_bars_skip_first_non_full_bar: bool,
+        time_bars_build_delay: u64,
         time_bars_origins: HashMap<BarAggregation, Duration>,
         validate_data_sequence: bool,
         buffer_deltas: bool,
@@ -66,6 +69,7 @@ impl DataEngineConfig {
             time_bars_timestamp_on_close,
             time_bars_skip_first_non_full_bar,
             time_bars_interval_type,
+            time_bars_build_delay,
             time_bars_origins,
             validate_data_sequence,
             buffer_deltas,
@@ -86,6 +90,7 @@ impl Default for DataEngineConfig {
             external_clients: None,
             debug: false,
             time_bars_skip_first_non_full_bar: false,
+            time_bars_build_delay: 0,
             time_bars_origins: HashMap::new(),
         }
     }

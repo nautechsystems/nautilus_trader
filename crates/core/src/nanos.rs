@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -146,6 +146,8 @@ impl UnixNanos {
     }
 
     fn parse_string(s: &str) -> Result<Self, String> {
+        const MAX_NS_F64: f64 = u64::MAX as f64;
+
         // Try parsing as an integer (nanoseconds)
         if let Ok(int_value) = s.parse::<u64>() {
             return Ok(Self(int_value));
@@ -173,7 +175,6 @@ impl UnixNanos {
             // Convert seconds to nanoseconds while checking for overflow
             // We perform the multiplication in `f64`, then validate the
             // result fits inside `u64` *before* rounding / casting.
-            const MAX_NS_F64: f64 = u64::MAX as f64;
             let nanos_f64 = float_value * 1_000_000_000.0;
 
             if nanos_f64 > MAX_NS_F64 {
@@ -529,6 +530,8 @@ impl<'de> Deserialize<'de> for UnixNanos {
             where
                 E: de::Error,
             {
+                const MAX_NS_F64: f64 = u64::MAX as f64;
+
                 if !value.is_finite() {
                     return Err(E::custom(format!(
                         "Unix timestamp must be finite, was {value}"
@@ -537,8 +540,8 @@ impl<'de> Deserialize<'de> for UnixNanos {
                 if value < 0.0 {
                     return Err(E::custom("Unix timestamp cannot be negative"));
                 }
+
                 // Convert from seconds to nanoseconds with overflow check
-                const MAX_NS_F64: f64 = u64::MAX as f64;
                 let nanos_f64 = value * 1_000_000_000.0;
                 if nanos_f64 > MAX_NS_F64 {
                     return Err(E::custom(format!(
@@ -876,8 +879,6 @@ mod tests {
         let result = input.parse::<UnixNanos>();
         assert!(result.is_err());
     }
-
-    // ---------- checked / saturating arithmetic ----------
 
     #[rstest]
     fn test_checked_add_overflow_returns_none() {

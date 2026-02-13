@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -173,7 +173,7 @@ pub fn parse_instrument_any(
             parse_perp_instrument(instrument, None, None, None, None, ts_init).map(Some)
         }
         CoinbaseIntxInstrumentType::Index => {
-            tracing::warn!(
+            log::warn!(
                 "Index instrument parsing not implemented {}",
                 instrument.product_id,
             );
@@ -184,7 +184,7 @@ pub fn parse_instrument_any(
     match result {
         Ok(instrument) => instrument,
         Err(e) => {
-            tracing::warn!("Failed to parse instrument {}: {e}", instrument.product_id,);
+            log::warn!("Failed to parse instrument {}: {e}", instrument.product_id,);
             None
         }
     }

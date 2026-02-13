@@ -21,7 +21,7 @@ name = "nautilus_coinbase_intx"
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = []
+default = ["high-precision"]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
@@ -38,6 +38,7 @@ python = [
   "pyo3",
   "pyo3-async-runtimes",
 ]
+high-precision = ["nautilus-model/high-precision"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -68,8 +69,6 @@ strum = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true } # Needed for example binaries
 ustr = { workspace = true }
 uuid = { workspace = true }
 zeroize = { workspace = true }
@@ -80,19 +79,21 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
 rstest = { workspace = true }
-tracing-test = { workspace = true }
 
 [[bin]]
 name = "coinbase-intx-http-private"
 path = "bin/http_private.rs"
 required-features = ["python"]
+doc = false
 
 [[bin]]
 name = "coinbase-intx-http-public"
 path = "bin/http_public.rs"
 required-features = ["python"]
+doc = false
 
 [[bin]]
 name = "coinbase-intx-ws"
 path = "bin/websocket.rs"
 required-features = ["python"]
+doc = false

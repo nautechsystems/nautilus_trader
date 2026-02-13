@@ -12,12 +12,6 @@ NautilusTrader adapters follow a layered architecture pattern with:
 - **Rust core** for networking clients and performance-critical operations.
 - **Python layer** for integrating Rust clients into the platform's data and execution engines.
 
-Good references for standardized patterns are currently:
-
-- OKX
-- BitMEX
-- Bybit
-
 ### Rust core (`crates/adapters/your_adapter/`)
 
 The Rust layer handles:
@@ -36,14 +30,12 @@ crates/adapters/your_adapter/
 │   │   ├── consts.rs        # Venue constants / broker IDs
 │   │   ├── credential.rs    # API key storage and signing helpers
 │   │   ├── enums.rs         # Venue enums mirrored in REST/WS payloads
+│   │   ├── error.rs         # Adapter-level error aggregation (when applicable)
 │   │   ├── models.rs        # Shared model types
 │   │   ├── parse.rs         # Shared parsing helpers
+│   │   ├── retry.rs         # Retry classification (when applicable)
 │   │   ├── urls.rs          # Environment & product aware base-url resolvers
 │   │   └── testing.rs       # Fixtures reused across unit tests
-│   ├── data/                # Data client (Rust-native, optional)
-│   │   └── mod.rs           # Data client implementation
-│   ├── execution/           # Execution client (Rust-native, optional)
-│   │   └── mod.rs           # Execution client implementation
 │   ├── http/                # HTTP client implementation
 │   │   ├── client.rs        # HTTP client with authentication
 │   │   ├── error.rs         # HTTP-specific error types
@@ -64,12 +56,13 @@ crates/adapters/your_adapter/
 │   │   ├── websocket.rs     # Python WebSocket client bindings
 │   │   └── mod.rs           # Module exports
 │   ├── config.rs            # Configuration structures
-│   ├── error.rs             # Adapter-level error types
-│   ├── factories.rs         # Factory functions (optional)
+│   ├── data.rs              # Data client implementation
+│   ├── execution.rs         # Execution client implementation
+│   ├── factories.rs         # Factory functions
 │   └── lib.rs               # Library entry point
 ├── tests/                   # Integration tests with mock servers
-│   ├── data.rs              # Data client integration tests
-│   ├── execution.rs         # Execution client integration tests
+│   ├── data_client.rs       # Data client integration tests
+│   ├── exec_client.rs       # Execution client integration tests
 │   ├── http.rs              # HTTP client integration tests
 │   └── websocket.rs         # WebSocket client integration tests
 └── test_data/               # Canonical venue payloads
@@ -204,17 +197,82 @@ for fixtures, providing a single place for cross-cutting pieces.
 When an adapter has multiple environments or product categories, add a dedicated `common::urls` helper so
 REST/WebSocket base URLs stay in sync with the Python layer.
 
+### URL resolution
+
+Define URL constants and resolution functions in `common/urls.rs`:
+
+```rust
+const VENUE_WS_URL: &str = "wss://stream.venue.com/ws";
+const VENUE_TESTNET_WS_URL: &str = "wss://testnet-stream.venue.com/ws";
+
+pub const fn get_ws_base_url(testnet: bool) -> &'static str {
+    if testnet { VENUE_TESTNET_WS_URL } else { VENUE_WS_URL }
+}
+```
+
+Config structs should provide override fields (`base_url_http`, `base_url_ws`, etc.) that fall back
+to these defaults when unset.
+
 ### Configurations (`config.rs`)
 
 Expose typed config structs in `src/config.rs` so Python callers toggle venue-specific behaviour
 (see how OKX wires demo URLs, retries, and channel flags).
 Keep defaults minimal and delegate URL selection to helpers in `common::urls`.
 
-### Error taxonomy (`error.rs`)
+### Error taxonomy (`common/error.rs`)
 
-Centralise HTTP/WebSocket failure handling in an adapter-specific error enum.
-BitMEX, for example, separates retryable, non-retryable, and fatal variants while embedding the original transport
-error—follow that shape so operational tooling can react consistently.
+For adapters with multiple client types, define an adapter-level error enum in `common/error.rs` that
+aggregates component errors:
+
+```rust
+#[derive(Debug, thiserror::Error)]
+pub enum VenueError {
+    #[error("HTTP error: {0}")]
+    Http(#[from] VenueHttpError),
+
+    #[error("WebSocket error: {0}")]
+    WebSocket(#[from] VenueWsError),
+
+    #[error("Build error: {0}")]
+    Build(#[from] VenueBuildError),
+}
+```
+
+This enables unified error handling at the adapter boundary while preserving component-specific
+error details for debugging.
+
+### Retry classification (`common/retry.rs`)
+
+When an adapter needs sophisticated retry logic, define a retry classification module in `common/retry.rs`
+that distinguishes between retryable, non-retryable, and fatal errors:
+
+```rust
+#[derive(Debug, thiserror::Error)]
+pub enum VenueError {
+    #[error("Retryable error: {source}")]
+    Retryable {
+        #[source]
+        source: VenueRetryableError,
+        retry_after: Option<Duration>,
+    },
+
+    #[error("Non-retryable error: {source}")]
+    NonRetryable {
+        #[source]
+        source: VenueNonRetryableError,
+    },
+
+    #[error("Fatal error: {source}")]
+    Fatal {
+        #[source]
+        source: VenueFatalError,
+    },
+}
+```
+
+Include helper methods like `from_http_status()`, `from_rate_limit_headers()`, `is_retryable()`,
+`is_fatal()`, and `retry_after()` to enable consistent error classification across the adapter.
+See BitMEX and Bybit adapters for reference implementations.
 
 ### Python exports (`python/mod.rs`)
 
@@ -266,6 +324,29 @@ sync) documented under WebSocket patterns.
 
 Store shared fixtures and payload loaders in `src/common/testing.rs` for use across HTTP and WebSocket unit tests.
 This keeps `#[cfg(test)]` helpers out of production modules and encourages reuse.
+
+### Factory module (`factories.rs`)
+
+Complex adapters may define a `factories.rs` module for converting venue data to Nautilus types.
+This centralizes transformation logic that would otherwise be scattered across HTTP and WebSocket
+parsers:
+
+```rust
+// factories.rs
+pub fn create_instrument(
+    venue_instrument: &VenueInstrument,
+    ts_init: UnixNanos,
+) -> anyhow::Result<InstrumentAny> {
+    match venue_instrument.instrument_type {
+        InstrumentType::Perpetual => parse_perpetual(venue_instrument, ts_init),
+        InstrumentType::Future => parse_future(venue_instrument, ts_init),
+        InstrumentType::Option => parse_option(venue_instrument, ts_init),
+    }
+}
+```
+
+Use this pattern when the same venue data structures are parsed in multiple places (HTTP responses,
+WebSocket updates, historical data).
 
 ## HTTP client patterns
 
@@ -420,6 +501,35 @@ let secret = get_or_env_var_opt(api_secret, api_secret_env);
 - Use `get_or_env_var_opt` for optional credentials (public-only clients).
 - Use `get_or_env_var` when credentials are required (returns error if missing).
 - Document supported environment variables in adapter README files.
+
+**Credential resolver helper:**
+
+Encapsulate environment-based credential resolution in a helper function when the logic involves
+multiple environments or fallback behavior:
+
+```rust
+use nautilus_core::env::get_or_env_var_opt;
+
+fn resolve_credential(
+    api_key: Option<&str>,
+    api_secret: Option<&str>,
+    is_testnet: bool,
+) -> Option<Credential> {
+    let (key_env, secret_env) = if is_testnet {
+        ("{VENUE}_TESTNET_API_KEY", "{VENUE}_TESTNET_API_SECRET")
+    } else {
+        ("{VENUE}_API_KEY", "{VENUE}_API_SECRET")
+    };
+
+    let key = get_or_env_var_opt(api_key, key_env)?;
+    let secret = get_or_env_var_opt(api_secret, secret_env)?;
+
+    Some(Credential::new(key, secret))
+}
+```
+
+This pattern returns `None` when credentials are unavailable, suitable for optional authentication.
+For clients that require credentials, use `get_or_env_var` which returns an error if missing.
 
 ### Error handling and retry logic
 
@@ -610,6 +720,43 @@ On reconnection, restore authentication and subscriptions:
    - If authenticated: Re-authenticate and wait for confirmation.
    - Restore all tracked subscriptions via handler commands.
 
+**Preserving subscription arguments:**
+
+Store original subscription arguments in a separate collection to enable deterministic reconnection
+replay without parsing topics back into arguments:
+
+```rust
+pub struct MyWebSocketClient {
+    subscription_state: Arc<SubscriptionState>,
+    subscription_args: Arc<DashMap<String, SubscriptionArgs>>,  // topic → original args
+    // ...
+}
+
+impl MyWebSocketClient {
+    async fn subscribe(&self, args: SubscriptionArgs) -> Result<(), Error> {
+        let topic = args.to_topic();
+        self.subscription_state.mark_subscribe(&topic);
+        self.subscription_args.insert(topic.clone(), args.clone());
+        self.send_cmd(HandlerCommand::Subscribe(args)).await
+    }
+
+    async fn unsubscribe(&self, topic: &str) -> Result<(), Error> {
+        self.subscription_state.mark_unsubscribe(topic);
+        self.subscription_args.remove(topic);
+        self.send_cmd(HandlerCommand::Unsubscribe(topic.to_string())).await
+    }
+
+    async fn restore_subscriptions(&self) {
+        for entry in self.subscription_args.iter() {
+            let _ = self.send_cmd(HandlerCommand::Subscribe(entry.value().clone())).await;
+        }
+    }
+}
+```
+
+This avoids complex topic parsing and ensures subscriptions are replayed exactly as originally
+requested.
+
 ### Ping/Pong handling
 
 Support both WebSocket control frame pings and application-level text pings:
@@ -634,6 +781,18 @@ WebSocket clients that cache instruments use a **dual-tier pattern** for perform
 
 **Critical implementation detail:** When `cache_instrument()` is called after connection, it must send an `UpdateInstrument` command to the inner handler. Otherwise, instruments added dynamically (e.g., from WebSocket updates) won't be available for parsing market data.
 
+### Handler configuration constants
+
+Define handler-specific tuning constants for consistent behavior:
+
+| Constant                   | Purpose                                          | Typical value |
+|----------------------------|--------------------------------------------------|---------------|
+| `DEFAULT_HEARTBEAT_SECS`   | Interval for sending keep-alive messages.        | 15-30         |
+| `WEBSOCKET_AUTH_WINDOW_MS` | Maximum age for authentication timestamps.       | 5000-30000    |
+| `BATCH_PROCESSING_LIMIT`   | Maximum messages processed per event loop cycle. | 100-1000      |
+
+Place these in `websocket/handler.rs` or `common/consts.rs` depending on scope.
+
 ### Message routing
 
 Define two message enums for the transformation pipeline:
@@ -643,6 +802,35 @@ Define two message enums for the transformation pipeline:
 2. **`NautilusWsMessage`**: Normalized domain messages emitted to the client (data, deltas, order events, errors, `Reconnected`, `Authenticated`). Include a `Raw(serde_json::Value)` variant for unhandled channels during development.
 
 The handler parses incoming JSON into `{Venue}WsMessage`, transforms to `NautilusWsMessage`, and sends via `out_tx`. The client receives from `out_rx` and routes to data/execution callbacks.
+
+#### Message type naming convention
+
+Types prefixed with `Nautilus` contain only Nautilus domain types (normalized data ready for the trading system). Types prefixed with the venue name (e.g., `Binance`, `Deribit`) contain raw exchange-specific types that require further processing.
+
+**Top-level output enum:**
+
+```rust
+pub enum NautilusWsMessage {
+    Data(NautilusDataWsMessage),          // Normalized market data
+    Exec(NautilusExecWsMessage),          // Normalized execution events
+    Error(BinanceWsErrorMsg),
+    Reconnected,
+}
+```
+
+**Pattern for multi-stage processing:**
+
+When execution messages require additional context lookup (e.g., correlating order updates with pending order maps), use a `Raw` variant:
+
+1. The data handler emits `NautilusWsMessage::ExecRaw(raw_msg)` for raw execution messages.
+2. The execution handler receives `ExecRaw`, performs context lookup, and produces `NautilusExecWsMessage`.
+3. The outer client routes normalized `NautilusExecWsMessage` events to callbacks.
+
+This separation ensures:
+
+- `NautilusExecWsMessage` only contains fully-resolved Nautilus domain types.
+- Raw venue messages flow through internal channels without polluting the normalized output.
+- Each handler has a single responsibility (parsing vs context resolution).
 
 ### Error handling
 
@@ -974,6 +1162,48 @@ At a minimum, review existing adapter test suites for reference patterns and ens
 - Prefer event-driven assertions with shared state (for example, collect `subscription_events`, track pending/confirmed topics, wait for `connection_count` transitions).
 - Use adapter-specific helpers to gate on explicit signals such as "auth confirmed" or "reconnection finished" so suites remain deterministic under load.
 
+##### Data and execution client integration testing
+
+Data (`tests/data_client.rs`) and execution (`tests/exec_client.rs`) client integration tests verify the full message flow from WebSocket through parsing to event emission.
+
+**Test infrastructure:**
+
+| Component                    | Purpose                                                                            |
+|------------------------------|------------------------------------------------------------------------------------|
+| Mock Axum server             | Serves HTTP endpoints (instruments, fee rates, positions) and WebSocket channels.  |
+| `TestServerState`            | Tracks connections, subscriptions, and authentication state for assertions.        |
+| Thread-local event channels  | `set_data_event_sender()` / `set_exec_event_sender()` for capturing emitted events.|
+| `wait_until_async`           | Polls conditions with timeout for deterministic async assertions.                  |
+
+**Data client coverage:**
+
+| Test scenario                | Validates                                                      |
+|------------------------------|----------------------------------------------------------------|
+| Connect/disconnect           | Connection lifecycle, WebSocket establishment, clean shutdown. |
+| Subscribe trades             | Trade tick events emitted to data channel.                     |
+| Subscribe quotes             | Quote events from ticker (LINEAR) or orderbook (SPOT).         |
+| Subscribe book deltas        | OrderBookDeltas events from orderbook snapshots/updates.       |
+| Subscribe mark/index prices  | Filtered by subscription state (only emit when subscribed).    |
+| Reset state                  | Subscription tracking cleared, connection terminated.          |
+| Instruments on connect       | Instrument events emitted during connection setup.             |
+
+**Execution client coverage:**
+
+| Test scenario                | Validates                                                      |
+|------------------------------|----------------------------------------------------------------|
+| Connect/disconnect           | Auth handshake, private + trade WS connections, subscriptions. |
+| Demo mode                    | Only private WS connects (trade WS skipped for HTTP fallback). |
+| Order submission             | Order accepted/rejected events, venue ID correlation.          |
+| Order modification/cancel    | Update and cancel acknowledgment events.                       |
+| Position/wallet updates      | PositionStatusReport and AccountState events.                  |
+
+**Key patterns:**
+
+- Each `#[tokio::test]` runs on a fresh thread, ensuring thread-local channel isolation.
+- Use `wait_until_async` for subscription/connection state instead of arbitrary sleeps.
+- Drain instrument events before subscription tests to isolate assertions.
+- Verify subscription state in `TestServerState` before asserting on emitted events.
+
 ### Python testing
 
 #### Layout
@@ -1033,6 +1263,18 @@ Use third-person declarative voice (e.g., "Returns the account ID" not "Return t
 ## Python adapter layer
 
 Below is a step-by-step guide to building an adapter for a new data provider using the provided template.
+
+### Method ordering convention
+
+When implementing adapter classes, group methods by category in this order:
+
+1. **Connection handlers**: `_connect`, `_disconnect`
+2. **Subscribe handlers**: `_subscribe`, `_subscribe_*`
+3. **Unsubscribe handlers**: `_unsubscribe`, `_unsubscribe_*`
+4. **Request handlers**: `_request`, `_request_*`
+
+This convention improves readability by keeping related functionality together rather than
+interleaving subscribe/unsubscribe pairs.
 
 ### InstrumentProvider
 
@@ -1116,6 +1358,7 @@ from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookDeltas
 from nautilus_trader.data.messages import RequestOrderBookDepth
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestQuoteTicks
@@ -1159,89 +1402,98 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     async def _subscribe(self, command: SubscribeData) -> None:
         raise NotImplementedError("implement `_subscribe` in your adapter subclass")
 
-    async def _unsubscribe(self, command: UnsubscribeData) -> None:
-        raise NotImplementedError("implement `_unsubscribe` in your adapter subclass")
-
-    async def _request(self, request: RequestData) -> None:
-        raise NotImplementedError("implement `_request` in your adapter subclass")
-
     async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
         raise NotImplementedError("implement `_subscribe_instruments` in your adapter subclass")
-
-    async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
-        raise NotImplementedError("implement `_unsubscribe_instruments` in your adapter subclass")
 
     async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
         raise NotImplementedError("implement `_subscribe_instrument` in your adapter subclass")
 
-    async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
-        raise NotImplementedError("implement `_unsubscribe_instrument` in your adapter subclass")
-
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         raise NotImplementedError("implement `_subscribe_order_book_deltas` in your adapter subclass")
 
-    async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
-        raise NotImplementedError("implement `_unsubscribe_order_book_deltas` in your adapter subclass")
-
-    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
-        raise NotImplementedError("implement `_subscribe_order_book_snapshots` in your adapter subclass")
-
-    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
-        raise NotImplementedError("implement `_unsubscribe_order_book_snapshots` in your adapter subclass")
+    async def _subscribe_order_book_depth(self, command: SubscribeOrderBook) -> None:
+        raise NotImplementedError("implement `_subscribe_order_book_depth` in your adapter subclass")
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         raise NotImplementedError("implement `_subscribe_quote_ticks` in your adapter subclass")
 
-    async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
-        raise NotImplementedError("implement `_unsubscribe_quote_ticks` in your adapter subclass")
-
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         raise NotImplementedError("implement `_subscribe_trade_ticks` in your adapter subclass")
-
-    async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
-        raise NotImplementedError("implement `_unsubscribe_trade_ticks` in your adapter subclass")
 
     async def _subscribe_mark_prices(self, command: SubscribeMarkPrices) -> None:
         raise NotImplementedError("implement `_subscribe_mark_prices` in your adapter subclass")
 
-    async def _unsubscribe_mark_prices(self, command: UnsubscribeMarkPrices) -> None:
-        raise NotImplementedError("implement `_unsubscribe_mark_prices` in your adapter subclass")
-
     async def _subscribe_index_prices(self, command: SubscribeIndexPrices) -> None:
         raise NotImplementedError("implement `_subscribe_index_prices` in your adapter subclass")
-
-    async def _unsubscribe_index_prices(self, command: UnsubscribeIndexPrices) -> None:
-        raise NotImplementedError("implement `_unsubscribe_index_prices` in your adapter subclass")
-
-    async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
-        raise NotImplementedError("implement `_subscribe_funding_rates` in your adapter subclass")
-
-    async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
-        raise NotImplementedError("implement `_unsubscribe_funding_rates` in your adapter subclass")
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         raise NotImplementedError("implement `_subscribe_bars` in your adapter subclass")
 
-    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
-        raise NotImplementedError("implement `_unsubscribe_bars` in your adapter subclass")
+    async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
+        raise NotImplementedError("implement `_subscribe_funding_rates` in your adapter subclass")
 
     async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
         raise NotImplementedError("implement `_subscribe_instrument_status` in your adapter subclass")
 
-    async def _unsubscribe_instrument_status(self, command: UnsubscribeInstrumentStatus) -> None:
-        raise NotImplementedError("implement `_unsubscribe_instrument_status` in your adapter subclass")
-
     async def _subscribe_instrument_close(self, command: SubscribeInstrumentClose) -> None:
         raise NotImplementedError("implement `_subscribe_instrument_close` in your adapter subclass")
 
+    async def _unsubscribe(self, command: UnsubscribeData) -> None:
+        raise NotImplementedError("implement `_unsubscribe` in your adapter subclass")
+
+    async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
+        raise NotImplementedError("implement `_unsubscribe_instruments` in your adapter subclass")
+
+    async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
+        raise NotImplementedError("implement `_unsubscribe_instrument` in your adapter subclass")
+
+    async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
+        raise NotImplementedError("implement `_unsubscribe_order_book_deltas` in your adapter subclass")
+
+    async def _unsubscribe_order_book_depth(self, command: UnsubscribeOrderBook) -> None:
+        raise NotImplementedError("implement `_unsubscribe_order_book_depth` in your adapter subclass")
+
+    async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
+        raise NotImplementedError("implement `_unsubscribe_quote_ticks` in your adapter subclass")
+
+    async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
+        raise NotImplementedError("implement `_unsubscribe_trade_ticks` in your adapter subclass")
+
+    async def _unsubscribe_mark_prices(self, command: UnsubscribeMarkPrices) -> None:
+        raise NotImplementedError("implement `_unsubscribe_mark_prices` in your adapter subclass")
+
+    async def _unsubscribe_index_prices(self, command: UnsubscribeIndexPrices) -> None:
+        raise NotImplementedError("implement `_unsubscribe_index_prices` in your adapter subclass")
+
+    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
+        raise NotImplementedError("implement `_unsubscribe_bars` in your adapter subclass")
+
+    async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
+        raise NotImplementedError("implement `_unsubscribe_funding_rates` in your adapter subclass")
+
+    async def _unsubscribe_instrument_status(self, command: UnsubscribeInstrumentStatus) -> None:
+        raise NotImplementedError("implement `_unsubscribe_instrument_status` in your adapter subclass")
+
     async def _unsubscribe_instrument_close(self, command: UnsubscribeInstrumentClose) -> None:
         raise NotImplementedError("implement `_unsubscribe_instrument_close` in your adapter subclass")
+
+    async def _request(self, request: RequestData) -> None:
+        raise NotImplementedError("implement `_request` in your adapter subclass")
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
         raise NotImplementedError("implement `_request_instrument` in your adapter subclass")
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
         raise NotImplementedError("implement `_request_instruments` in your adapter subclass")
+
+    async def _request_order_book_deltas(self, request: RequestOrderBookDeltas) -> None:
+        raise NotImplementedError("implement `_request_order_book_deltas` in your adapter subclass")
+
+    async def _request_order_book_depth(self, request: RequestOrderBookDepth) -> None:
+        raise NotImplementedError("implement `_request_order_book_depth` in your adapter subclass")
+
+    async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
+        raise NotImplementedError("implement `_request_order_book_snapshot` in your adapter subclass")
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         raise NotImplementedError("implement `_request_quote_ticks` in your adapter subclass")
@@ -1252,51 +1504,107 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     async def _request_bars(self, request: RequestBars) -> None:
         raise NotImplementedError("implement `_request_bars` in your adapter subclass")
 
-    async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
-        raise NotImplementedError("implement `_request_order_book_snapshot` in your adapter subclass")
-
-    async def _request_order_book_depth(self, request: RequestOrderBookDepth) -> None:
-        raise NotImplementedError("implement `_request_order_book_depth` in your adapter subclass")
 ```
 
-| Method                             | Description                                            |
-|------------------------------------|--------------------------------------------------------|
-| `_connect`                         | Establishes a connection to the venue APIs.            |
-| `_disconnect`                      | Closes the connection to the venue APIs.               |
-| `_subscribe`                       | Subscribes to generic data (base for custom types).    |
-| `_unsubscribe`                     | Unsubscribes from generic data (base for custom types).|
-| `_request`                         | Requests generic data (base for custom types).         |
-| `_subscribe_instruments`           | Subscribes to market data for multiple instruments.    |
-| `_unsubscribe_instruments`         | Unsubscribes from market data for multiple instruments.|
-| `_subscribe_instrument`            | Subscribes to market data for a single instrument.     |
-| `_unsubscribe_instrument`          | Unsubscribes from market data for a single instrument. |
-| `_subscribe_order_book_deltas`     | Subscribes to order book delta updates.                |
-| `_unsubscribe_order_book_deltas`   | Unsubscribes from order book delta updates.            |
-| `_subscribe_order_book_snapshots`  | Subscribes to order book snapshot updates.             |
-| `_unsubscribe_order_book_snapshots`| Unsubscribes from order book snapshot updates.         |
-| `_subscribe_quote_ticks`           | Subscribes to top-of-book quote updates.               |
-| `_unsubscribe_quote_ticks`         | Unsubscribes from quote tick updates.                  |
-| `_subscribe_trade_ticks`           | Subscribes to trade tick updates.                      |
-| `_unsubscribe_trade_ticks`         | Unsubscribes from trade tick updates.                  |
-| `_subscribe_mark_prices`           | Subscribes to mark price updates.                      |
-| `_unsubscribe_mark_prices`         | Unsubscribes from mark price updates.                  |
-| `_subscribe_index_prices`          | Subscribes to index price updates.                     |
-| `_unsubscribe_index_prices`        | Unsubscribes from index price updates.                 |
-| `_subscribe_funding_rates`         | Subscribes to funding rate updates.                    |
-| `_unsubscribe_funding_rates`       | Unsubscribes from funding rate updates.                |
-| `_subscribe_bars`                  | Subscribes to bar/candlestick updates.                 |
-| `_unsubscribe_bars`                | Unsubscribes from bar updates.                         |
-| `_subscribe_instrument_status`     | Subscribes to instrument status updates.               |
-| `_unsubscribe_instrument_status`   | Unsubscribes from instrument status updates.           |
-| `_subscribe_instrument_close`      | Subscribes to instrument close price updates.          |
-| `_unsubscribe_instrument_close`    | Unsubscribes from instrument close price updates.      |
-| `_request_instrument`              | Requests historical data for a single instrument.      |
-| `_request_instruments`             | Requests historical data for multiple instruments.     |
-| `_request_quote_ticks`             | Requests historical quote tick data.                   |
-| `_request_trade_ticks`             | Requests historical trade tick data.                   |
-| `_request_bars`                    | Requests historical bar data.                          |
-| `_request_order_book_snapshot`     | Requests an order book snapshot.                       |
-| `_request_order_book_depth`        | Requests order book depth.                             |
+| Method                             | Description                                             |
+|------------------------------------|---------------------------------------------------------|
+| `_connect`                         | Establishes a connection to the venue APIs.             |
+| `_disconnect`                      | Closes the connection to the venue APIs.                |
+| `_subscribe`                       | Subscribes to generic data (base for custom types).     |
+| `_subscribe_instruments`           | Subscribes to market data for multiple instruments.     |
+| `_subscribe_instrument`            | Subscribes to market data for a single instrument.      |
+| `_subscribe_order_book_deltas`     | Subscribes to order book delta updates.                 |
+| `_subscribe_order_book_depth`      | Subscribes to order book depth updates.                 |
+| `_subscribe_quote_ticks`           | Subscribes to top-of-book quote updates.                |
+| `_subscribe_trade_ticks`           | Subscribes to trade tick updates.                       |
+| `_subscribe_mark_prices`           | Subscribes to mark price updates.                       |
+| `_subscribe_index_prices`          | Subscribes to index price updates.                      |
+| `_subscribe_bars`                  | Subscribes to bar/candlestick updates.                  |
+| `_subscribe_funding_rates`         | Subscribes to funding rate updates.                     |
+| `_subscribe_instrument_status`     | Subscribes to instrument status updates.                |
+| `_subscribe_instrument_close`      | Subscribes to instrument close price updates.           |
+| `_unsubscribe`                     | Unsubscribes from generic data (base for custom types). |
+| `_unsubscribe_instruments`         | Unsubscribes from market data for multiple instruments. |
+| `_unsubscribe_instrument`          | Unsubscribes from market data for a single instrument.  |
+| `_unsubscribe_order_book_deltas`   | Unsubscribes from order book delta updates.             |
+| `_unsubscribe_order_book_depth`    | Unsubscribes from order book depth updates.             |
+| `_unsubscribe_quote_ticks`         | Unsubscribes from quote tick updates.                   |
+| `_unsubscribe_trade_ticks`         | Unsubscribes from trade tick updates.                   |
+| `_unsubscribe_mark_prices`         | Unsubscribes from mark price updates.                   |
+| `_unsubscribe_index_prices`        | Unsubscribes from index price updates.                  |
+| `_unsubscribe_bars`                | Unsubscribes from bar updates.                          |
+| `_unsubscribe_funding_rates`       | Unsubscribes from funding rate updates.                 |
+| `_unsubscribe_instrument_status`   | Unsubscribes from instrument status updates.            |
+| `_unsubscribe_instrument_close`    | Unsubscribes from instrument close price updates.       |
+| `_request`                         | Requests generic data (base for custom types).          |
+| `_request_instrument`              | Requests historical data for a single instrument.       |
+| `_request_instruments`             | Requests historical data for multiple instruments.      |
+| `_request_order_book_snapshot`     | Requests an order book snapshot.                        |
+| `_request_order_book_depth`        | Requests order book depth.                              |
+| `_request_order_book_deltas`       | Requests historical order book deltas.                  |
+| `_request_quote_ticks`             | Requests historical quote tick data.                    |
+| `_request_trade_ticks`             | Requests historical trade tick data.                    |
+| `_request_bars`                    | Requests historical bar data.                           |
+| `_request_funding_rates`           | Requests historical funding rate data.                  |
+
+#### Order book delta flag requirements
+
+When implementing `_subscribe_order_book_deltas` or streaming order book
+data, adapters **must** set `RecordFlag` flags correctly on each
+`OrderBookDelta`. See also [Delta flags and event boundaries](../concepts/data.md#delta-flags-and-event-boundaries).
+
+- **`F_LAST`**: Set on the last delta of every logical event group. The
+  `DataEngine` uses this flag as the flush signal when `buffer_deltas` is
+  enabled. Without it, deltas accumulate indefinitely and are never
+  published to subscribers.
+
+- **`F_SNAPSHOT`**: Set on all deltas that belong to a snapshot sequence
+  (a `Clear` action followed by `Add` actions reconstructing the book).
+
+- **Empty book snapshots**: When emitting a snapshot for an empty book,
+  the `Clear` delta must have `F_SNAPSHOT | F_LAST`. Otherwise buffered
+  consumers never receive it.
+
+- **Incremental updates**: Each venue update message ends with a delta
+  that has `F_LAST` set. If the venue batches multiple updates into one
+  message, terminate each logical group with `F_LAST`.
+
+```python
+from nautilus_trader.model.enums import RecordFlag
+
+# Incremental update (single event)
+delta = OrderBookDelta(
+    instrument_id=instrument_id,
+    action=BookAction.UPDATE,
+    order=order,
+    flags=RecordFlag.F_LAST,  # Last (and only) delta in this event
+    sequence=sequence,
+    ts_event=ts_event,
+    ts_init=ts_init,
+)
+
+# Snapshot sequence
+clear_delta = OrderBookDelta(
+    instrument_id=instrument_id,
+    action=BookAction.CLEAR,
+    order=NULL_ORDER,
+    flags=RecordFlag.F_SNAPSHOT,  # Not the last delta
+    ...
+)
+
+last_add_delta = OrderBookDelta(
+    instrument_id=instrument_id,
+    action=BookAction.ADD,
+    order=last_order,
+    flags=RecordFlag.F_SNAPSHOT | RecordFlag.F_LAST,  # End of snapshot
+    ...
+)
+```
+
+:::warning
+A missing `F_LAST` is a silent bug — no error is raised, but subscribers
+never receive the data when buffering is enabled.
+:::
 
 ### ExecutionClient
 
@@ -1315,6 +1623,7 @@ from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
+from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
@@ -1371,22 +1680,29 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
         raise NotImplementedError("method `generate_position_status_reports` must be implemented in the subclass")
+
+    async def generate_mass_status(
+        self,
+        lookback_mins: int | None = None,
+    ) -> ExecutionMassStatus | None:
+        raise NotImplementedError("method `generate_mass_status` must be implemented in the subclass")
 ```
 
-| Method                           | Description                                             |
-|----------------------------------|---------------------------------------------------------|
-| `_connect`                       | Establishes a connection to the venue APIs.             |
-| `_disconnect`                    | Closes the connection to the venue APIs.                |
-| `_submit_order`                  | Submits a new order to the venue.                       |
-| `_submit_order_list`             | Submits a list of orders to the venue.                  |
-| `_modify_order`                  | Modifies an existing order on the venue.                |
-| `_cancel_order`                  | Cancels a specific order on the venue.                  |
-| `_cancel_all_orders`             | Cancels all orders for an instrument on the venue.      |
-| `_batch_cancel_orders`           | Cancels a batch of orders for an instrument on the venue.|
-| `generate_order_status_report`   | Generates a report for a specific order on the venue.   |
-| `generate_order_status_reports`  | Generates reports for all orders on the venue.          |
-| `generate_fill_reports`          | Generates reports for filled orders on the venue.       |
-| `generate_position_status_reports`| Generates reports for position status on the venue.    |
+| Method                             | Description                                               |
+|------------------------------------|-----------------------------------------------------------|
+| `_connect`                         | Establishes a connection to the venue APIs.               |
+| `_disconnect`                      | Closes the connection to the venue APIs.                  |
+| `_submit_order`                    | Submits a new order to the venue.                         |
+| `_submit_order_list`               | Submits a list of orders to the venue.                    |
+| `_modify_order`                    | Modifies an existing order on the venue.                  |
+| `_cancel_order`                    | Cancels a specific order on the venue.                    |
+| `_cancel_all_orders`               | Cancels all orders for an instrument on the venue.        |
+| `_batch_cancel_orders`             | Cancels a batch of orders for an instrument on the venue. |
+| `generate_order_status_report`     | Generates a report for a specific order on the venue.     |
+| `generate_order_status_reports`    | Generates reports for all orders on the venue.            |
+| `generate_fill_reports`            | Generates reports for filled orders on the venue.         |
+| `generate_position_status_reports` | Generates reports for position status on the venue.       |
+| `generate_mass_status`             | Generates execution mass status reports.                  |
 
 ### Configuration
 

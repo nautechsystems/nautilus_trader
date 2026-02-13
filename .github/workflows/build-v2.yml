@@ -23,12 +23,12 @@ jobs:
   pre-commit:
     runs-on: ubuntu-22.04  # glibc 2.35 – larger runtime range
     steps:
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           egress-policy: audit
 
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
@@ -42,58 +42,8 @@ jobs:
       - name: Run pre-commit
         run: pre-commit run --all-files
 
-  # Dependency license, advisory, and ban checks
-  # https://embarkstudios.github.io/cargo-deny/
-  cargo-deny:
-    runs-on: ubuntu-22.04
-    steps:
-      # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
-        with:
-          egress-policy: audit
-
-      - name: Checkout repository
-        # https://github.com/actions/checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          persist-credentials: false
-
-      - name: Install cargo-deny
-        uses: ./.github/actions/cargo-tool-install
-        with:
-          tool-name: cargo-deny
-
-      - name: Run cargo-deny (advisories, licenses, sources, bans)
-        run: cargo deny --all-features check advisories licenses sources bans
-
-  # Supply chain security auditing
-  # https://mozilla.github.io/cargo-vet/configuring-ci.html
-  cargo-vet:
-    runs-on: ubuntu-22.04
-    steps:
-      # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
-        with:
-          egress-policy: audit
-
-      - name: Checkout repository
-        # https://github.com/actions/checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          persist-credentials: false
-
-      - name: Install cargo-vet
-        uses: ./.github/actions/cargo-tool-install
-        with:
-          tool-name: cargo-vet
-
-      - name: Run cargo-vet
-        run: cargo vet --locked
-
   build:
     needs:
-      - cargo-deny
-      - cargo-vet
       - pre-commit
     strategy:
       fail-fast: false
@@ -110,9 +60,10 @@ jobs:
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
+    # yamllint disable rule:line-length
     services:
       redis:
-        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21
+        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
         ports:
           - 6379:6379
         options: >-
@@ -121,7 +72,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: public.ecr.aws/docker/library/postgres:16.4-alpine
+        image: public.ecr.aws/docker/library/postgres:16.4-alpine@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pass
@@ -133,14 +84,15 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+    # yamllint enable rule:line-length
 
     steps:
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           egress-policy: audit
 
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
@@ -210,7 +162,7 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
       CLOUDFLARE_R2_PREFIX: "v2/simple/nautilus-trader"
     steps:
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           egress-policy: audit
           allowed-endpoints: |
@@ -218,12 +170,12 @@ jobs:
             ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
       - name: Download built wheels
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           path: dist
           pattern: "*.whl"
@@ -231,7 +183,7 @@ jobs:
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        uses: actions/attest-build-provenance@46a583fd92dfbf46b772907a9740f888f4324bb9 # v3.1.0
         with:
           subject-path: 'dist/*.whl'
 

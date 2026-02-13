@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,7 +15,9 @@
 
 import json
 
-from nautilus_trader.adapters.polymarket.common.gamma_markets import normalize_gamma_market_to_clob_format
+from nautilus_trader.adapters.polymarket.common.gamma_markets import (
+    normalize_gamma_market_to_clob_format,
+)
 
 
 def test_normalize_gamma_market_to_clob_format() -> None:
@@ -80,7 +82,10 @@ def test_normalize_gamma_market_to_clob_format() -> None:
     normalized = normalize_gamma_market_to_clob_format(gamma_market)
 
     # Assert
-    assert normalized["condition_id"] == "0x4319532e181605cb15b1bd677759a3bc7f7394b2fdf145195b700eeaedfd5221"
+    assert (
+        normalized["condition_id"]
+        == "0x4319532e181605cb15b1bd677759a3bc7f7394b2fdf145195b700eeaedfd5221"
+    )
     assert normalized["question"] == "Fed rate hike in 2025?"
     assert normalized["minimum_tick_size"] == 0.001
     assert normalized["minimum_order_size"] == 5
@@ -132,8 +137,14 @@ def test_parse_clob_token_ids_and_outcomes() -> None:
     # Assert
     assert len(clob_token_ids) == 2
     assert len(outcomes) == 2
-    assert clob_token_ids[0] == "60487116984468020978247225474488676749601001829886755968952521846780452448915"
-    assert clob_token_ids[1] == "81104637750588840860328515305303028259865221573278091453716127842023614249200"
+    assert (
+        clob_token_ids[0]
+        == "60487116984468020978247225474488676749601001829886755968952521846780452448915"
+    )
+    assert (
+        clob_token_ids[1]
+        == "81104637750588840860328515305303028259865221573278091453716127842023614249200"
+    )
     assert outcomes[0] == "Yes"
     assert outcomes[1] == "No"
 

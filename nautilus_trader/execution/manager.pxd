@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -55,7 +55,8 @@ cdef class OrderManager:
     cdef readonly bint log_events
     cdef readonly bint log_commands
 
-    cdef dict _submit_order_commands
+    cdef dict[ClientOrderId, SubmitOrder] _submit_order_commands
+    cdef dict[ClientOrderId, Quantity] _oto_target_quantities
     cdef object _submit_order_handler
     cdef object _cancel_order_handler
     cdef object _modify_order_handler

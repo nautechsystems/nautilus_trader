@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,6 +32,7 @@ from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.position cimport PositionEvent
+from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -117,6 +118,7 @@ cdef class ExecutionEngine(Component):
     cdef str _get_fill_events_topic(self, InstrumentId instrument_id)
     cdef str _get_cancel_events_topic(self, InstrumentId instrument_id)
     cdef str _get_commands_topic(self, ClientId client_id)
+    cpdef ExecutionClient _find_client_for_command(self, Command command)
 
     cpdef void _set_position_id_counts(self)
     cpdef Price _last_px_for_conversion(self, InstrumentId instrument_id, OrderSide order_side)

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,28 +16,25 @@
 use std::fmt::Display;
 
 use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, correctness::check_equal};
 use nautilus_model::{
+    events::OrderInitialized,
     identifiers::{
         ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, TraderId,
-        VenueOrderId,
     },
-    orders::{OrderAny, OrderList},
+    orders::{Order, OrderAny, OrderList},
 };
 use serde::{Deserialize, Serialize};
 
-// Fix: equality and default and builder
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
-// #[builder(default)]
 #[serde(tag = "type")]
 pub struct SubmitOrder {
     pub trader_id: TraderId,
-    pub client_id: ClientId,
+    pub client_id: Option<ClientId>,
     pub strategy_id: StrategyId,
     pub instrument_id: InstrumentId,
     pub client_order_id: ClientOrderId,
-    pub venue_order_id: VenueOrderId,
-    pub order: OrderAny,
+    pub order_init: OrderInitialized,
     pub exec_algorithm_id: Option<ExecAlgorithmId>,
     pub position_id: Option<PositionId>,
     pub params: Option<IndexMap<String, String>>,
@@ -47,39 +44,60 @@ pub struct SubmitOrder {
 
 impl SubmitOrder {
     /// Creates a new [`SubmitOrder`] instance.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if parameters are invalid.
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         trader_id: TraderId,
-        client_id: ClientId,
+        client_id: Option<ClientId>,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
-        venue_order_id: VenueOrderId,
-        order: OrderAny,
+        order_init: OrderInitialized,
         exec_algorithm_id: Option<ExecAlgorithmId>,
         position_id: Option<PositionId>,
         params: Option<IndexMap<String, String>>,
         command_id: UUID4,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             trader_id,
             client_id,
             strategy_id,
             instrument_id,
             client_order_id,
-            venue_order_id,
-            order,
+            order_init,
             exec_algorithm_id,
             position_id,
             params,
             command_id,
             ts_init,
-        })
+        }
+    }
+
+    /// Creates a new [`SubmitOrder`] from an existing order.
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub fn from_order(
+        order: &OrderAny,
+        trader_id: TraderId,
+        client_id: Option<ClientId>,
+        position_id: Option<PositionId>,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self {
+            trader_id,
+            client_id,
+            strategy_id: order.strategy_id(),
+            instrument_id: order.instrument_id(),
+            client_order_id: order.client_order_id(),
+            order_init: OrderInitialized::from(order),
+            exec_algorithm_id: order.exec_algorithm_id(),
+            position_id,
+            params: None,
+            command_id,
+            ts_init,
+        }
     }
 }
 
@@ -87,8 +105,9 @@ impl Display for SubmitOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "SubmitOrder(instrument_id={}, order=TBD, position_id={})",
+            "SubmitOrder(instrument_id={}, client_order_id={}, position_id={})",
             self.instrument_id,
+            self.client_order_id,
             self.position_id
                 .map_or("None".to_string(), |position_id| format!("{position_id}")),
         )
@@ -99,12 +118,11 @@ impl Display for SubmitOrder {
 #[serde(tag = "type")]
 pub struct SubmitOrderList {
     pub trader_id: TraderId,
-    pub client_id: ClientId,
+    pub client_id: Option<ClientId>,
     pub strategy_id: StrategyId,
     pub instrument_id: InstrumentId,
-    pub client_order_id: ClientOrderId,
-    pub venue_order_id: VenueOrderId,
     pub order_list: OrderList,
+    pub order_inits: Vec<OrderInitialized>,
     pub exec_algorithm_id: Option<ExecAlgorithmId>,
     pub position_id: Option<PositionId>,
     pub params: Option<IndexMap<String, String>>,
@@ -115,38 +133,55 @@ pub struct SubmitOrderList {
 impl SubmitOrderList {
     /// Creates a new [`SubmitOrderList`] instance.
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// Returns an error if parameters are invalid.
+    /// Panics if `order_inits` length doesn't match `order_list.client_order_ids`, or if
+    /// the client order IDs don't match in order.
     #[allow(clippy::too_many_arguments)]
-    pub const fn new(
+    #[must_use]
+    pub fn new(
         trader_id: TraderId,
-        client_id: ClientId,
+        client_id: Option<ClientId>,
         strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        venue_order_id: VenueOrderId,
         order_list: OrderList,
+        order_inits: Vec<OrderInitialized>,
         exec_algorithm_id: Option<ExecAlgorithmId>,
         position_id: Option<PositionId>,
         params: Option<IndexMap<String, String>>,
         command_id: UUID4,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        check_equal(
+            &order_inits.len(),
+            &order_list.client_order_ids.len(),
+            "order_inits.len()",
+            "order_list.client_order_ids.len()",
+        )
+        .unwrap();
+
+        for (init, id) in order_inits.iter().zip(order_list.client_order_ids.iter()) {
+            check_equal(
+                &init.client_order_id,
+                id,
+                "order_init.client_order_id",
+                "order_list.client_order_ids id",
+            )
+            .unwrap();
+        }
+
+        Self {
             trader_id,
             client_id,
             strategy_id,
-            instrument_id,
-            client_order_id,
-            venue_order_id,
+            instrument_id: order_list.instrument_id,
             order_list,
+            order_inits,
             exec_algorithm_id,
             position_id,
             params,
             command_id,
             ts_init,
-        })
+        }
     }
 }
 
@@ -154,8 +189,9 @@ impl Display for SubmitOrderList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "SubmitOrderList(instrument_id={}, order_list=TBD, position_id={})",
+            "SubmitOrderList(instrument_id={}, order_list={}, position_id={})",
             self.instrument_id,
+            self.order_list.id,
             self.position_id
                 .map_or("None".to_string(), |position_id| format!("{position_id}")),
         )

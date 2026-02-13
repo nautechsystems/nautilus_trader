@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -36,21 +36,6 @@ class ContractId(int):
     """
     ContractId type.
     """
-
-
-# https://interactivebrokers.github.io/tws-api/tick_types.html
-TickTypeMapping = {
-    0: "Bid Size",
-    1: "Bid Price",
-    2: "Ask Price",
-    3: "Ask Size",
-    4: "Last Price",
-    5: "Last Size",
-    6: "High",
-    7: "Low",
-    8: "Volume",
-    9: "Close Price",
-}
 
 
 class ComboLeg(NautilusConfig, frozen=True, omit_defaults=True, repr_omit_defaults=True):
@@ -139,7 +124,7 @@ class IBContract(NautilusConfig, frozen=True, repr_omit_defaults=True):
     multiplier: str = ""
 
     # options
-    strike: float = 0.0
+    strike: float | str = ""
     right: str = ""
 
     # If set to true, contract details requests and historical data queries can be performed pertaining

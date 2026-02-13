@@ -189,6 +189,15 @@ See [Execution reconciliation](#execution-reconciliation) for additional backgro
 | `filter_unclaimed_external_orders` | False   | Filters out unclaimed external orders to prevent irrelevant orders from impacting the strategy.            |
 | `filter_position_reports`          | False   | Filters out position status reports, useful when multiple nodes trade the same account to avoid conflicts. |
 
+:::note Order tagging behavior
+During reconciliation, orders are tagged to distinguish their origin:
+
+- **`VENUE` tag**: Applied to external orders discovered from the venue (placed outside this system).
+- **`RECONCILIATION` tag**: Applied to synthetic orders generated internally to align position discrepancies.
+
+When `filter_unclaimed_external_orders` is enabled, only `VENUE`-tagged orders are filtered. `RECONCILIATION`-tagged orders (synthetic) are never filtered, ensuring position alignment always succeeds regardless of filter settings.
+:::
+
 #### Continuous reconciliation
 
 **Purpose**: Maintains accurate execution state through a continuous reconciliation loop that runs *after* startup reconciliation completes, this loop:
@@ -330,7 +339,7 @@ For a complete parameter list see the `StrategyConfig` [API Reference](../api_re
 | `oms_type`                  | None    | Specifies the [OMS type](../concepts/execution#oms-configuration), for position ID handling and order processing flow. |
 | `use_uuid_client_order_ids` | False   | If UUID4's should be used for client order ID values (required for some venues such as Coinbase Intx). |
 | `external_order_claims`     | None    | Lists instrument IDs for external orders the strategy should claim, aiding accurate order management. |
-| `manage_contingent_orders`  | False   | If enabled, the strategy automatically manages contingent orders, reducing manual intervention. |
+| `manage_contingent_orders`  | False   | If enabled, the strategy automatically manages OTO, OCO, and OUO contingent orders. |
 | `manage_gtd_expiry`         | False   | If enabled, the strategy manages GTD expirations, ensuring orders remain active as intended. |
 
 ### Windows signal handling
@@ -445,9 +454,8 @@ methods to produce an execution mass status:
 ```mermaid
 flowchart TD
     Start[Startup Reconciliation] --> Fetch[Fetch venue reports<br/>orders, fills, positions]
-    Fetch --> Dup{Duplicate<br/>order IDs?}
-    Dup -->|Yes| Fail[Reconciliation fails]
-    Dup -->|No| Orders[Order Reconciliation<br/>align order states, generate missing events]
+    Fetch --> Dedup[Deduplicate reports<br/>log warnings for duplicates]
+    Dedup --> Orders[Order Reconciliation<br/>align order states, generate missing events]
     Orders --> Fills[Fill Reconciliation<br/>verify fills, generate missing OrderFilled events]
     Fills --> Pos[Position Reconciliation<br/>compare net positions per instrument]
     Pos --> Match{Positions<br/>match venue?}
@@ -459,8 +467,8 @@ flowchart TD
 The system state is then reconciled with the reports, which represent external "reality":
 
 - **Duplicate Check**:
-  - Check for duplicate client order IDs and trade IDs.
-  - Duplicate client order IDs cause reconciliation failure to prevent state corruption.
+  - Duplicate order reports within the batch are deduplicated with warnings logged.
+  - Duplicate trade IDs within the batch are logged as warnings for investigation.
 - **Order Reconciliation**:
   - Generate and apply events necessary to update orders from any cached state to the current state.
   - If any trade reports are missing, inferred `OrderFilled` events are generated.
@@ -504,11 +512,11 @@ The scenarios below are split between startup reconciliation (mass status) and r
 | **Order state discrepancy**            | Local order state differs from venue (e.g., local shows `SUBMITTED`, venue shows `REJECTED`).     | Updates local order to match venue state and emits missing events.               |
 | **Missed fills**                       | Venue fills an order but the engine misses the fill event.                                        | Generates missing `OrderFilled` events.                                          |
 | **Multiple fills**                     | Order has multiple partial fills, some missed by the engine.                                      | Reconstructs complete fill history from venue reports.                           |
-| **External orders**                    | Orders exist on venue but not in local cache (placed externally or from another system).          | Creates orders from venue reports; tags them `EXTERNAL`.                         |
+| **External orders**                    | Orders exist on venue but not in local cache (placed externally or from another system).          | Creates orders from venue reports with strategy ID `EXTERNAL` and tag `VENUE`.   |
 | **Partially filled then canceled**     | Order partially filled then canceled by venue.                                                    | Updates order state to `CANCELED` while preserving fill history.                 |
 | **Different fill data**                | Venue reports different fill price/commission than cached.                                        | Preserves cached fill data; logs discrepancies from reports.                     |
 | **Filtered orders**                    | Orders marked for filtering via configuration.                                                    | Skips reconciliation based on `filtered_client_order_ids` or instrument filters. |
-| **Duplicate client order IDs**         | Multiple orders with same client order ID in venue reports.                                       | Reconciliation fails to prevent state corruption.                                |
+| **Duplicate order reports**            | Multiple orders with same identifier in venue reports.                                            | Deduplicated with warning logged.                                                |
 | **Position quantity mismatch (long)**  | Internal long position differs from external (e.g., internal: 100, external: 150).                | Generates BUY LIMIT order with calculated price when `generate_missing_orders=True`.  |
 | **Position quantity mismatch (short)** | Internal short position differs from external (e.g., internal: -100, external: -150).             | Generates SELL LIMIT order with calculated price when `generate_missing_orders=True`. |
 | **Position reduction**                 | External position smaller than internal (e.g., internal: 150 long, external: 100 long).           | Generates opposite side LIMIT order with calculated price to reduce position.             |
@@ -527,7 +535,7 @@ The scenarios below are split between startup reconciliation (mass status) and r
 
 - **Missing trade reports**: Some venues filter out older trades, causing incomplete reconciliation. Increase `reconciliation_lookback_mins` or ensure all events are cached locally.
 - **Position mismatches**: If external orders predate the lookback window, positions may not align. Flatten the account before restarting the system to reset state.
-- **Duplicate order IDs**: Duplicate client order IDs in mass status reports will cause reconciliation failure. Ensure venue data integrity or contact support.
+- **Duplicate order IDs**: Duplicate client order IDs or trade IDs in mass status reports are deduplicated with warnings logged. Multiple duplicates may indicate venue data integrity issues.
 - **Precision differences**: Small decimal differences in position quantities are handled automatically using instrument precision, but large discrepancies may indicate missing orders.
 - **Out-of-order reports**: Fill reports arriving before order status reports are deferred until order state is available.
 
@@ -570,3 +578,9 @@ the system analyzes position lifecycles from fills - and applies adjustments to 
 - **Lifecycle**: A sequence of fills between zero-crossings representing a continuous position open-close cycle.
 - **Synthetic fill**: A calculated fill report created by the system to represent missing trading activity, using reconciliation price calculations to achieve correct average positions.
 - **Tolerance**: Position matching uses configurable price tolerance (default: 0.0001 = 0.01% relative difference) to account for minor calculation differences.
+
+## Related guides
+
+- [Adapters](adapters.md) - Venue connectivity for live trading.
+- [Execution](execution.md) - Order execution in live environments.
+- [Backtesting](backtesting.md) - Test strategies before live deployment.

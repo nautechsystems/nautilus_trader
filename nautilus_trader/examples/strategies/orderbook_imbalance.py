@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,11 +16,16 @@
 import datetime
 from decimal import Decimal
 
+from nautilus_trader.adapters.betfair.constants import BETFAIR_CLIENT_ID
+from nautilus_trader.adapters.betfair.data_types import BetfairRaceProgress
+from nautilus_trader.adapters.betfair.data_types import BetfairRaceRunnerData
+from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.config import NonNegativeFloat
 from nautilus_trader.config import PositiveFloat
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.model.book import OrderBook
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import BookType
@@ -117,6 +122,11 @@ class OrderBookImbalance(Strategy):
             self.book_type = book_type_from_str(self.config.book_type)
             self.subscribe_order_book_deltas(self.instrument.id, self.book_type)
 
+        # Subscribe to Betfair custom data types (for testing)
+        self.subscribe_data(DataType(BetfairTicker), client_id=BETFAIR_CLIENT_ID)
+        self.subscribe_data(DataType(BetfairRaceRunnerData), client_id=BETFAIR_CLIENT_ID)
+        self.subscribe_data(DataType(BetfairRaceProgress), client_id=BETFAIR_CLIENT_ID)
+
         # Initialize to None to allow immediate first execution
         self._last_trigger_timestamp = None
 
@@ -137,6 +147,27 @@ class OrderBookImbalance(Strategy):
         Actions to be performed when an order book update is received.
         """
         self.check_trigger()
+
+    def on_data(self, data) -> None:
+        """
+        Actions to be performed when custom data is received.
+        """
+        if isinstance(data, BetfairRaceRunnerData):
+            self.log.info(
+                f"RaceRunner: {data.selection_id} speed={data.speed} m/s, "
+                f"progress={data.progress}m",
+                color=LogColor.CYAN,
+            )
+        elif isinstance(data, BetfairRaceProgress):
+            self.log.info(
+                f"RaceProgress: gate={data.gate_name} order={data.order}",
+                color=LogColor.CYAN,
+            )
+        elif isinstance(data, BetfairTicker):
+            self.log.info(
+                f"Ticker: ltp={data.last_traded_price} tv={data.traded_volume}",
+                color=LogColor.CYAN,
+            )
 
     def check_trigger(self) -> None:  # noqa: C901 (too complex)
         """

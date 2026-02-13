@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,11 +26,13 @@ use axum::{
 };
 use nautilus_common::testing::wait_until_async;
 use nautilus_dydx::{common::enums::DydxCandleResolution, http::client::DydxHttpClient};
-use nautilus_model::instruments::Instrument;
+use nautilus_model::{
+    identifiers::{InstrumentId, Symbol, Venue},
+    instruments::Instrument,
+};
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
 use serde_json::{Value, json};
-use ustr::Ustr;
 
 fn test_data_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
@@ -225,8 +227,8 @@ async fn test_instrument_caching() {
     client.cache_instruments(instruments);
 
     // Retrieve from cache
-    let btc_symbol = Ustr::from("BTC-USD-PERP");
-    let cached = client.get_instrument(&btc_symbol);
+    let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let cached = client.get_instrument(&btc_id);
     assert!(cached.is_some(), "BTC-USD-PERP should be cached");
     assert_eq!(cached.unwrap().id().symbol.as_str(), "BTC-USD-PERP");
 }
@@ -247,12 +249,12 @@ async fn test_cache_single_instrument() {
 
     client.cache_instrument(btc);
 
-    let btc_symbol = Ustr::from("BTC-USD-PERP");
-    assert!(client.get_instrument(&btc_symbol).is_some());
+    let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    assert!(client.get_instrument(&btc_id).is_some());
 
     // ETH should not be cached
-    let eth_symbol = Ustr::from("ETH-USD-PERP");
-    assert!(client.get_instrument(&eth_symbol).is_none());
+    let eth_id = InstrumentId::new(Symbol::new("ETH-USD-PERP"), Venue::new("DYDX"));
+    assert!(client.get_instrument(&eth_id).is_none());
 }
 
 #[rstest]
@@ -262,7 +264,7 @@ async fn test_request_trades_success() {
     let base_url = format!("http://{addr}");
 
     let client = DydxHttpClient::new(Some(base_url), Some(30), None, false, None).unwrap();
-    let trades = client.request_trades("BTC-USD", None).await.unwrap();
+    let trades = client.request_trades("BTC-USD", None, None).await.unwrap();
 
     assert_eq!(trades.trades.len(), 3);
     assert_eq!(trades.trades[0].id, "03f89a550000000200000002");
@@ -277,7 +279,7 @@ async fn test_trades_chronological_order() {
     let base_url = format!("http://{addr}");
 
     let client = DydxHttpClient::new(Some(base_url), Some(30), None, false, None).unwrap();
-    let trades = client.request_trades("BTC-USD", None).await.unwrap();
+    let trades = client.request_trades("BTC-USD", None, None).await.unwrap();
 
     // dYdX returns trades in reverse chronological order (newest first)
     for i in 0..trades.trades.len() - 1 {
@@ -297,7 +299,10 @@ async fn test_trades_with_limit() {
     let base_url = format!("http://{addr}");
 
     let client = DydxHttpClient::new(Some(base_url), Some(30), None, false, None).unwrap();
-    let _trades = client.request_trades("BTC-USD", Some(10)).await.unwrap();
+    let _trades = client
+        .request_trades("BTC-USD", Some(10), None)
+        .await
+        .unwrap();
 
     let params = state.last_trades_params.lock().await;
     assert!(params.is_some());

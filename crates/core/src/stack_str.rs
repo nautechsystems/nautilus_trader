@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -43,7 +43,7 @@ use std::{
     borrow::Borrow,
     cmp::Ordering,
     ffi::{CStr, c_char},
-    fmt::{self, Debug, Display, Formatter},
+    fmt::{Debug, Display},
     hash::{Hash, Hasher},
     ops::Deref,
 };
@@ -70,7 +70,7 @@ const STACKSTR_BUFFER_SIZE: usize = STACKSTR_CAPACITY + 1;
 /// always holds exactly the capacity in characters. This aligns with identifier
 /// conventions which are inherently ASCII.
 ///
-/// # Memory layout
+/// # Memory Layout
 ///
 /// The `value` field is placed first so the struct pointer equals the string
 /// pointer, making C FFI more natural: `(char*)&stack_str` works directly.
@@ -239,7 +239,7 @@ impl StackStr {
     #[inline]
     #[must_use]
     pub const fn as_ptr(&self) -> *const c_char {
-        self.value.as_ptr() as *const c_char
+        self.value.as_ptr().cast::<c_char>()
     }
 
     /// Returns the value as a C string slice.
@@ -295,13 +295,13 @@ impl PartialOrd for StackStr {
 }
 
 impl Display for StackStr {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
 impl Debug for StackStr {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.as_str())
     }
 }
@@ -639,7 +639,7 @@ mod tests {
     #[rstest]
     fn test_value_field_at_offset_zero() {
         let s = StackStr::new("hello");
-        let struct_ptr = &s as *const StackStr as *const u8;
+        let struct_ptr = std::ptr::from_ref(&s).cast::<u8>();
         let first_byte = unsafe { *struct_ptr };
         assert_eq!(first_byte, b'h');
     }

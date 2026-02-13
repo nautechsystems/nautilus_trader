@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -705,12 +705,14 @@ impl From<KrakenFuturesOrderType> for OrderType {
     }
 }
 
-impl From<OrderSide> for KrakenOrderSide {
-    fn from(value: OrderSide) -> Self {
+impl TryFrom<OrderSide> for KrakenOrderSide {
+    type Error = &'static str;
+
+    fn try_from(value: OrderSide) -> Result<Self, Self::Error> {
         match value {
-            OrderSide::Buy => Self::Buy,
-            OrderSide::Sell => Self::Sell,
-            OrderSide::NoOrderSide => Self::Buy, // Default fallback
+            OrderSide::Buy => Ok(Self::Buy),
+            OrderSide::Sell => Ok(Self::Sell),
+            OrderSide::NoOrderSide => Err("Cannot convert NoOrderSide to KrakenOrderSide"),
         }
     }
 }
@@ -732,6 +734,7 @@ impl From<KrakenFuturesOrderStatus> for OrderStatus {
 /// Futures symbols have the following prefixes:
 /// - `PI_` - Perpetual Inverse futures (e.g., `PI_XBTUSD`)
 /// - `PF_` - Perpetual Fixed-margin futures (e.g., `PF_XBTUSD`)
+/// - `PV_` - Perpetual Vanilla futures (e.g., `PV_XRPXBT`)
 /// - `FI_` - Fixed maturity Inverse futures (e.g., `FI_XBTUSD_230929`)
 /// - `FF_` - Flex futures
 ///
@@ -740,6 +743,7 @@ impl From<KrakenFuturesOrderStatus> for OrderStatus {
 pub fn product_type_from_symbol(symbol: &str) -> KrakenProductType {
     if symbol.starts_with("PI_")
         || symbol.starts_with("PF_")
+        || symbol.starts_with("PV_")
         || symbol.starts_with("FI_")
         || symbol.starts_with("FF_")
     {

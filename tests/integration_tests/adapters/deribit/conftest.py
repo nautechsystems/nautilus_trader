@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,7 +29,7 @@ from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.nautilus_pyo3 import DeribitInstrumentKind
+from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.identifiers import InstrumentId
@@ -75,6 +75,8 @@ def _create_ws_mock():
     ws_client.connect = AsyncMock()
     ws_client.close = AsyncMock()
     ws_client.is_closed.return_value = False
+    ws_client.has_credentials.return_value = False
+    ws_client.is_authenticated.return_value = False
     ws_client.wait_until_active = AsyncMock()
     ws_client.cache_instruments = MagicMock()
     ws_client.cache_instrument = MagicMock()
@@ -94,7 +96,7 @@ def mock_instrument_provider(mock_http_client):
     """
     provider = MagicMock(spec=DeribitInstrumentProvider)
     provider._client = mock_http_client
-    provider.instrument_kinds = (DeribitInstrumentKind.FUTURE,)
+    provider.product_types = (DeribitProductType.FUTURE,)
     provider.initialize = AsyncMock()
     provider.instruments_pyo3.return_value = []
     provider.get_all.return_value = {}
@@ -174,7 +176,7 @@ def data_client_builder(
     Provide a factory for creating DeribitDataClient instances.
     """
 
-    def _builder(instrument_kinds: tuple[DeribitInstrumentKind, ...] | None = None):
+    def _builder(product_types: tuple[DeribitProductType, ...] | None = None):
         msgbus = MessageBus(
             trader_id=TestIdStubs.trader_id(),
             clock=live_clock,
@@ -183,7 +185,7 @@ def data_client_builder(
         cache = Cache(database=cache_db)
 
         config = DeribitDataClientConfig(
-            instrument_kinds=instrument_kinds or (DeribitInstrumentKind.FUTURE,),
+            product_types=product_types or (DeribitProductType.FUTURE,),
             instrument_provider=InstrumentProviderConfig(load_all=True),
             is_testnet=True,
             http_timeout_secs=30,

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -233,9 +233,8 @@ class EMACrossLongOnly(Strategy):
             if self.portfolio.is_flat(self.config.instrument_id):
                 self.buy()
         # SELL LOGIC
-        elif (
-            self.fast_ema.value < self.slow_ema.value
-            and self.portfolio.is_net_long(self.config.instrument_id)
+        elif self.fast_ema.value < self.slow_ema.value and self.portfolio.is_net_long(
+            self.config.instrument_id,
         ):
             self.close_all_positions(self.config.instrument_id)
 

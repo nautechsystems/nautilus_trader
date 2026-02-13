@@ -600,7 +600,7 @@ An OTO order involves two parts:
 
 :::info
 The default backtest venue for NautilusTrader uses a *partial-trigger model* for OTO orders.
-A future update will add configuration to opt-in to a *full-trigger model*.
+To opt-in to a *full-trigger mode*, set `oto_trigger_mode="FULL"` for the venue (e.g. via `BacktestVenueConfig`).
 :::
 
 **Working with partial-trigger in production:**
@@ -745,7 +745,7 @@ Here are all the available values you can set into `emulation_trigger` parameter
 
 The platform makes it possible to emulate most order types locally, regardless
 of whether the type is supported on a trading venue. The logic and code paths for
-order emulation are exactly the same for all [environment contexts](/concepts/architecture.md#environment-contexts)
+order emulation are exactly the same for all [environment contexts](architecture.md#environment-contexts)
 and utilize a common `OrderEmulator` component.
 
 :::note
@@ -858,3 +858,9 @@ When working with emulated orders, consider the following best practices:
 Order emulation allows you to use advanced order types even on venues that don't natively support them,
 making your trading strategies more portable across different venues.
 :::
+
+## Related guides
+
+- [Execution](execution.md) - Order execution and fill handling.
+- [Positions](positions.md) - Positions created from order fills.
+- [Strategies](strategies.md) - Order management from strategies.

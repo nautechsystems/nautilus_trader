@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -78,13 +78,13 @@ class BinanceFuturesBalanceInfo(msgspec.Struct, frozen=True):
         # considering margin collateral. As a temporary measure we're taking the `min` to
         # disregard free amounts above the cash balance, but still considering where not all
         # balance is available (so locked in some way, i.e. allocated as collateral).
-        total = Decimal(self.walletBalance)
-        free = min(Decimal(self.availableBalance), total)
+        total = Money(Decimal(self.walletBalance), currency)
+        free = Money(min(Decimal(self.availableBalance), Decimal(self.walletBalance)), currency)
         locked = total - free
         return AccountBalance(
-            total=Money(total, currency),
-            locked=Money(locked, currency),
-            free=Money(free, currency),
+            total=total,
+            locked=locked,
+            free=free,
         )
 
     def parse_to_margin_balance(self) -> MarginBalance:
@@ -362,7 +362,7 @@ class BinanceFuturesAlgoOrder(msgspec.Struct, frozen=True):
             )
 
         client_order_id = ClientOrderId(self.clientAlgoId) if self.clientAlgoId else None
-        venue_order_id_str = self.actualOrderId if self.actualOrderId else str(self.algoId)
+        venue_order_id_str = self.actualOrderId or str(self.algoId)
         venue_order_id = VenueOrderId(venue_order_id_str)
 
         trigger_type = TriggerType.NO_TRIGGER
@@ -388,7 +388,7 @@ class BinanceFuturesAlgoOrder(msgspec.Struct, frozen=True):
         binance_order_side = BinanceOrderSide(self.side)
         order_side = enum_parser.parse_binance_order_side(binance_order_side)
 
-        price_str = self.price if self.price else "0"
+        price_str = self.price or "0"
         trigger_price_str = self.triggerPrice or self.activatePrice or "0"
         reduce_only = self.reduceOnly if self.reduceOnly is not None else False
 

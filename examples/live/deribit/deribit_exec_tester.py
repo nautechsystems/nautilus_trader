@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -46,7 +46,7 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.core.nautilus_pyo3 import DeribitInstrumentKind
+from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
@@ -61,13 +61,12 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # Use testnet by default for safety
 USE_TESTNET = os.getenv("USE_TESTNET", "true").lower() != "false"
 
-# Optional: Filter by instrument kinds
-instrument_kinds: tuple[DeribitInstrumentKind, ...] | None = (
-    DeribitInstrumentKind.FUTURE,
-)
+# Optional: Filter by product types
+product_types: tuple[DeribitProductType, ...] | None = (DeribitProductType.FUTURE,)
 
 # Define instrument to test with
-perpetual_id = InstrumentId.from_str(f"BTC-PERPETUAL.{DERIBIT}")
+instrument_id = InstrumentId.from_str(f"BTC-PERPETUAL.{DERIBIT}")
+reconciliation_instrument_ids = [instrument_id]
 
 # Order quantity (minimum for BTC-PERPETUAL is 10 USD)
 order_qty = Decimal(10)
@@ -77,16 +76,21 @@ config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
     logging=LoggingConfig(
         log_level="INFO",
+        # use_tracing=True,
         use_pyo3=True,
     ),
     exec_engine=LiveExecEngineConfig(
-        reconciliation=False,  # Disable reconciliation for testing
+        reconciliation=True,
+        # reconciliation_instrument_ids=reconciliation_instrument_ids,
+        open_check_interval_secs=5.0,
+        open_check_open_only=False,
+        position_check_interval_secs=30.0,
     ),
     data_clients={
         DERIBIT: DeribitDataClientConfig(
             api_key=None,  # Will use env var
             api_secret=None,  # Will use env var
-            instrument_kinds=instrument_kinds,
+            product_types=product_types,
             instrument_provider=InstrumentProviderConfig(
                 load_all=True,
             ),
@@ -98,7 +102,7 @@ config_node = TradingNodeConfig(
         DERIBIT: DeribitExecClientConfig(
             api_key=None,  # Will use env var
             api_secret=None,  # Will use env var
-            instrument_kinds=instrument_kinds,
+            product_types=product_types,
             instrument_provider=InstrumentProviderConfig(
                 load_all=True,
             ),
@@ -116,13 +120,20 @@ node = TradingNode(config=config_node)
 
 # Configure and initialize the tester
 config_tester = ExecTesterConfig(
-    instrument_id=perpetual_id,
-    external_order_claims=[perpetual_id],
+    instrument_id=instrument_id,
+    external_order_claims=[instrument_id],
     order_qty=order_qty,
     subscribe_quotes=True,
     subscribe_trades=True,
-    enable_limit_buys=False,  # Disable order submission (not implemented yet)
-    enable_limit_sells=False,  # Disable order submission (not implemented yet)
+    # enable_limit_buys=False,
+    # enable_limit_sells=False,
+    use_post_only=True,
+    # tob_offset_ticks=0,
+    open_position_on_start_qty=order_qty,
+    # use_batch_cancel_on_stop=True,
+    # use_individual_cancels_on_stop=True,
+    # test_reject_post_only=True,
+    log_data=False,
 )
 tester = ExecTester(config=config_tester)
 

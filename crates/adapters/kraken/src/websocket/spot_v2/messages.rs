@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -66,6 +66,8 @@ pub struct KrakenWsParams {
     pub depth: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub interval: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_trigger: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

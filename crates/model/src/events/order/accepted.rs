@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -38,9 +38,9 @@ use crate::{
 ///
 /// This event often corresponds to a `NEW` OrdStatus <39> field in FIX execution reports.
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Builder)]
-#[builder(default)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Builder)]
 #[serde(tag = "type")]
+#[cfg_attr(any(test, feature = "stubs"), builder(default))]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -312,6 +312,7 @@ mod tests {
     use crate::{
         events::order::stubs::*,
         identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
+        stubs::TestDefault,
     };
 
     fn create_test_order_accepted() -> OrderAccepted {
@@ -381,12 +382,15 @@ mod tests {
     fn test_order_accepted_default() {
         let order_accepted = OrderAccepted::default();
 
-        assert_eq!(order_accepted.trader_id, TraderId::default());
-        assert_eq!(order_accepted.strategy_id, StrategyId::default());
-        assert_eq!(order_accepted.instrument_id, InstrumentId::default());
-        assert_eq!(order_accepted.client_order_id, ClientOrderId::default());
-        assert_eq!(order_accepted.venue_order_id, VenueOrderId::default());
-        assert_eq!(order_accepted.account_id, AccountId::default());
+        assert_eq!(order_accepted.trader_id, TraderId::test_default());
+        assert_eq!(order_accepted.strategy_id, StrategyId::test_default());
+        assert_eq!(order_accepted.instrument_id, InstrumentId::test_default());
+        assert_eq!(
+            order_accepted.client_order_id,
+            ClientOrderId::test_default()
+        );
+        assert_eq!(order_accepted.venue_order_id, VenueOrderId::test_default());
+        assert_eq!(order_accepted.account_id, AccountId::test_default());
         assert_eq!(order_accepted.reconciliation, 0);
     }
 

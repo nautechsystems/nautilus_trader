@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -61,8 +61,11 @@ from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.core cimport NANOSECONDS_IN_MILLISECOND
 from nautilus_trader.core.rust.core cimport NANOSECONDS_IN_SECOND
 from nautilus_trader.core.rust.core cimport millis_to_nanos
+from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport BookType
+from nautilus_trader.core.rust.model cimport OrderBookDeltas_API
 from nautilus_trader.core.rust.model cimport PriceType
+from nautilus_trader.core.rust.model cimport orderbook_to_snapshot_deltas
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport RenkoBarAggregator
@@ -84,9 +87,11 @@ from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport RequestBars
 from nautilus_trader.data.messages cimport RequestData
+from nautilus_trader.data.messages cimport RequestFundingRates
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
 from nautilus_trader.data.messages cimport RequestJoin
+from nautilus_trader.data.messages cimport RequestOrderBookDeltas
 from nautilus_trader.data.messages cimport RequestOrderBookDepth
 from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
 from nautilus_trader.data.messages cimport RequestQuoteTicks
@@ -137,8 +142,6 @@ from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.identifiers cimport generic_spread_id_to_list
-from nautilus_trader.model.identifiers cimport is_generic_spread_id
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Price
@@ -207,6 +210,7 @@ cdef class DataEngine(Component):
         self._parent_join_request_id: dict[UUID4, UUID4] = {}
         self._parent_request_id: dict[UUID4, UUID4] = {}
         self._disable_historical_cache: bool = False
+        self._bar_types_params: dict[UUID4, dict[str, Any]] = {}
 
         self._topic_cache = TopicCache()
 
@@ -510,9 +514,9 @@ cdef class DataEngine(Component):
 
         return subscriptions
 
-    cpdef list subscribed_order_book_snapshots(self):
+    cpdef list subscribed_order_book_depth(self):
         """
-        Return the order book snapshot instruments subscribed to.
+        Return the order book depth instruments subscribed to.
 
         Returns
         -------
@@ -523,7 +527,7 @@ cdef class DataEngine(Component):
             list subscriptions = []
             MarketDataClient client
         for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
-            subscriptions += client.subscribed_order_book_snapshots()
+            subscriptions += client.subscribed_order_book_depth()
 
         return subscriptions
 
@@ -940,7 +944,7 @@ cdef class DataEngine(Component):
         elif isinstance(command, UnsubscribeInstrumentStatus):
             self._handle_unsubscribe_instrument_status(client, command)
         elif isinstance(command, UnsubscribeInstrumentClose):
-            self._handle_unsubscribe_instrument_status(client, command)
+            self._handle_unsubscribe_instrument_close(client, command)
         else:
             self._handle_unsubscribe_data(client, command)
 
@@ -970,7 +974,7 @@ cdef class DataEngine(Component):
             if command.instrument_id not in client.subscribed_order_book_deltas():
                 client.subscribe_order_book_deltas(command)
         elif command.data_type.type == OrderBookDepth10:
-            if command.instrument_id not in client.subscribed_order_book_snapshots():
+            if command.instrument_id not in client.subscribed_order_book_depth():
                 client.subscribe_order_book_depth(command)
         else:  # pragma: no cover (design-time error)
             raise TypeError(f"Invalid book data type, was {command.data_type}")
@@ -984,7 +988,6 @@ cdef class DataEngine(Component):
 
         if command.interval_ms > 0:
             key = (command.instrument_id, command.interval_ms)
-
             if key not in self._order_book_intervals:
                 self._order_book_intervals[key] = []
 
@@ -1070,9 +1073,9 @@ cdef class DataEngine(Component):
 
         Condition.not_none(client, "client")
 
-        if self._is_backtest_client(client) and not command.params.get("force_aggregated_quotes", False):
+        if command.params.get("aggregate_spread_quotes", False):
             instrument = self._cache.instrument(command.instrument_id)
-            if instrument and instrument.is_spread() and len(instrument.legs()) > 1:
+            if instrument and instrument.is_spread():
                 self._start_spread_quote_aggregator(client, command)
                 return
 
@@ -1282,11 +1285,8 @@ cdef class DataEngine(Component):
                 if command.instrument_id in client.subscribed_order_book_deltas():
                     client.unsubscribe_order_book_deltas(command)
             elif command.data_type.type == OrderBookDepth10:
-                if command.instrument_id in client.subscribed_order_book_snapshots():
+                if command.instrument_id in client.subscribed_order_book_depth():
                     client.unsubscribe_order_book_depth(command)
-            else:
-                if command.instrument_id in client.subscribed_order_book_snapshots():
-                    client.unsubscribe_order_book_snapshots(command)
 
         # Cancel any snapshot timers for this instrument that no longer have subscribers
         cdef:
@@ -1314,9 +1314,9 @@ cdef class DataEngine(Component):
     cpdef void _handle_unsubscribe_quote_ticks(self, MarketDataClient client, UnsubscribeQuoteTicks command):
         Condition.not_none(command.instrument_id, "instrument_id")
 
-        if self._is_backtest_client(client) and not command.params.get("force_aggregated_quotes", False):
+        if command.params.get("aggregate_spread_quotes", False):
             instrument = self._cache.instrument(command.instrument_id)
-            if instrument and instrument.is_spread() and len(instrument.legs()) > 1:
+            if instrument and instrument.is_spread():
                 self._stop_spread_quote_aggregator(client, command)
                 return
 
@@ -1440,17 +1440,27 @@ cdef class DataEngine(Component):
         if client is not None:
             Condition.is_true(isinstance(client, DataClient), "client was not a DataClient")
 
+        if request.params.get("bar_types"):
+            if self._should_request_aggregated_bars(request):
+                self._init_historical_aggregators(request)
+                self._bar_types_params[request.id] = request.params.copy()
+                request.params.pop("bar_types", None)
+            else:
+                self._log.error(f"One of the aggregators in {request.params.get('bar_types')} is already running. "
+                                f"Either wait for a request to complete or unsubscribe from a live subscription. "
+                                f"Aborting request {request.id}.")
+                return
+
         self._requests[request.id] = request
 
         request.start = time_object_to_dt(request.start)
         request.end = time_object_to_dt(request.end)
 
         # A request involving a spread aggregator will be converted to a request join first
-        # "force_aggregated_quotes" allows to request actual quotes instead of aggregated ones,
-        # this can be useful if quotes have been saved before or an exchange provides actual quotes
-        if isinstance(request, RequestQuoteTicks) and not request.params.get("force_aggregated_quotes", False):
+        # "aggregate_spread_quotes" allows to aggregate spread quotes from component quotes
+        if isinstance(request, RequestQuoteTicks) and request.params.get("aggregate_spread_quotes", False):
             instrument = self._cache.instrument(request.instrument_id)
-            if instrument and instrument.is_spread() and len(instrument.legs()) > 1:
+            if instrument and instrument.is_spread():
                 if self._should_request_spread_quote_ticks(request):
                     self._handle_spread_quote_tick_request(request)
                     return
@@ -1460,16 +1470,6 @@ cdef class DataEngine(Component):
                                     f"Aborting request {request.id}.")
                     self._requests.pop(request.id, None)
                     return
-
-        if request.params.get("bar_types"):
-            if self._should_request_aggregated_bars(request):
-                self._init_historical_aggregators(request)
-            else:
-                self._log.error(f"One of the aggregators in {request.params.get('bar_types')} is already running. "
-                                f"Either wait for a request to complete or unsubscribe from a live subscription. "
-                                f"Aborting request {request.id}.")
-                self._requests.pop(request.id, None)
-                return
 
         # Long join requests need to be processed as join requests first before the long request starts
         if ("time_range_generator" in request.params
@@ -1481,14 +1481,18 @@ cdef class DataEngine(Component):
             self._handle_request_instruments(client, request)
         elif isinstance(request, RequestInstrument):
             self._handle_request_instrument(client, request)
-        elif isinstance(request, RequestOrderBookSnapshot):
-            self._handle_request_order_book_snapshot(client, request)
+        elif isinstance(request, RequestOrderBookDeltas):
+            self._handle_request_order_book_deltas(client, request)
         elif isinstance(request, RequestOrderBookDepth):
             self._handle_request_order_book_depth(client, request)
+        elif isinstance(request, RequestOrderBookSnapshot):
+            self._handle_request_order_book_snapshot(client, request)
         elif isinstance(request, RequestQuoteTicks):
             self._handle_request_quote_ticks(client, request)
         elif isinstance(request, RequestTradeTicks):
             self._handle_request_trade_ticks(client, request)
+        elif isinstance(request, RequestFundingRates):
+            self._handle_request_funding_rates(client, request)
         elif isinstance(request, RequestBars):
             self._handle_request_bars(client, request)
         elif isinstance(request, RequestJoin):
@@ -1524,6 +1528,20 @@ cdef class DataEngine(Component):
 
         client.request_instrument(request)
 
+    cpdef void _handle_request_order_book_deltas(self, DataClient client, RequestOrderBookDeltas request):
+        # Store original start_date only if not already present (for long requests)
+        if request.start is not None:
+            request.params["original_start_date"] = request.start
+
+            # Floor to start of UTC day (optional, default True)
+            if request.params.get("from_day_start", True):
+                request.start = request.start.floor(freq="d")
+
+        self._handle_date_range_request(client, request)
+
+    cpdef void _handle_request_order_book_depth(self, DataClient client, RequestOrderBookDepth request):
+        self._handle_date_range_request(client, request)
+
     cpdef void _handle_request_order_book_snapshot(self, DataClient client, RequestOrderBookSnapshot request):
         if client is None:
             self._log_request_warning(request)
@@ -1531,13 +1549,13 @@ cdef class DataEngine(Component):
 
         client.request_order_book_snapshot(request)
 
-    cpdef void _handle_request_order_book_depth(self, DataClient client, RequestOrderBookDepth request):
-        self._handle_date_range_request(client, request)
-
     cpdef void _handle_request_quote_ticks(self, DataClient client, RequestQuoteTicks request):
         self._handle_date_range_request(client, request)
 
     cpdef void _handle_request_trade_ticks(self, DataClient client, RequestTradeTicks request):
+        self._handle_date_range_request(client, request)
+
+    cpdef void _handle_request_funding_rates(self, DataClient client, RequestFundingRates request):
         self._handle_date_range_request(client, request)
 
     cpdef void _handle_request_bars(self, DataClient client, RequestBars request):
@@ -1624,8 +1642,12 @@ cdef class DataEngine(Component):
             client.request_quote_ticks(request)
         elif isinstance(request, RequestTradeTicks):
             client.request_trade_ticks(request)
+        elif isinstance(request, RequestFundingRates):
+            client.request_funding_rates(request)
         elif isinstance(request, RequestOrderBookDepth):
             client.request_order_book_depth(request)
+        elif isinstance(request, RequestOrderBookDeltas):
+            client.request_order_book_deltas(request)
         else:
             try:
                 client.request(request)
@@ -1688,6 +1710,12 @@ cdef class DataEngine(Component):
                     start=ts_start,
                     end=ts_end,
                 )
+            elif isinstance(request, RequestFundingRates):
+                data = catalog.funding_rates(
+                    instrument_ids=[str(request.instrument_id)],
+                    start=ts_start,
+                    end=ts_end,
+                )
             elif isinstance(request, RequestBars):
                 bar_type = request.bar_type
                 if bar_type is None:
@@ -1705,6 +1733,14 @@ cdef class DataEngine(Component):
                     instrument_ids=[str(request.instrument_id)],
                     start=ts_start,
                     end=ts_end,
+                )
+            elif isinstance(request, RequestOrderBookDeltas):
+                batched = request.params.get("batched", True)
+                data = catalog.order_book_deltas(
+                    instrument_ids=[str(request.instrument_id)],
+                    start=ts_start,
+                    end=ts_end,
+                    batched=batched,
                 )
             elif type(request) is RequestData:
                 filter_expr = request.params.get("filter_expr")
@@ -1737,11 +1773,9 @@ cdef class DataEngine(Component):
 
         if isinstance(request, RequestInstruments) or isinstance(request, RequestInstrument):
             only_last = request.params.get("only_last", True)
-
             if only_last:
                 # Retains only the latest instrument record per instrument_id, based on the most recent ts_init
                 last_instrument = {}
-
                 for instrument in data:
                     if instrument.id not in last_instrument:
                         last_instrument[instrument.id] = instrument
@@ -1826,9 +1860,6 @@ cdef class DataEngine(Component):
         # We remove time_range_generator from params to avoid an infinite recursion
         new_request.params.pop("time_range_generator", None)
 
-        # We don't want to create aggregators for sub requests
-        new_request.params.pop("bar_types", None)
-
         # Send the sub-request through the message bus to properly register the callback
         self._parent_long_request_id[new_request.id] = parent_request_id
         self._msgbus.request(endpoint="DataEngine.request", request=new_request)
@@ -1880,14 +1911,10 @@ cdef class DataEngine(Component):
         self._handle_response(response)
 
     cpdef void _handle_request_join(self, RequestJoin request):
-        if not request.correlation_id:
+        if not request.params.get("is_started",False):
             start, end = self._bound_dates(request)
             new_request = request.with_dates(start, end, self._clock.timestamp_ns(), self._finalize_request_join)
             new_request.params["is_started"] = True
-
-            # We don't want to create aggregators for sub requests
-            new_request.params.pop("bar_types", None)
-
             self._parent_join_request_id[new_request.id] = request.id
             self._msgbus.request(endpoint="DataEngine.request", request=new_request)
             return
@@ -1919,7 +1946,7 @@ cdef class DataEngine(Component):
                 self._log.error(f"joined_request for {request_id=} not found.")
                 continue
 
-            response = DataResponse(
+            leg_response = DataResponse(
                 client_id=joined_request.client_id,
                 venue=joined_request.venue,
                 data_type=joined_request.data_type,
@@ -1931,9 +1958,9 @@ cdef class DataEngine(Component):
                 ts_init=self._clock.timestamp_ns(),
                 params=joined_request.params,
             )
-            self._handle_response(response)
+            self._handle_response(leg_response)
 
-        response = DataResponse(
+        join_response = DataResponse(
             client_id=parent_request.client_id,
             venue=parent_request.venue,
             data_type=parent_request.data_type,
@@ -1943,9 +1970,9 @@ cdef class DataEngine(Component):
             start=parent_request.start,
             end=parent_request.end,
             ts_init=self._clock.timestamp_ns(),
-            params=parent_request.params,
+            params=response.params,
         )
-        self._handle_response(response)
+        self._handle_response(join_response)
 
     cpdef tuple _bound_dates(self, RequestData request):
         # Capping dates to the now datetime
@@ -2001,9 +2028,6 @@ cdef class DataEngine(Component):
         bint historical = False,
         dict params = None,
     ):
-        if not (historical and self._disable_historical_cache):
-            self._cache.add_instrument(instrument)
-
         if params is None:
             params = {}
 
@@ -2011,6 +2035,9 @@ cdef class DataEngine(Component):
         update_catalog = params.get("update_catalog", False)
         force_update_catalog = params.get("force_update_catalog", False)
         modified_instrument = self._modify_instrument_properties(instrument, instrument_properties)
+
+        if not (historical and self._disable_historical_cache):
+            self._cache.add_instrument(modified_instrument)
 
         if update_catalog:
             self._update_catalog(
@@ -2045,6 +2072,7 @@ cdef class DataEngine(Component):
             list[OrderBookDelta] buffer_deltas = None
             bint is_last_delta = False
             InstrumentId instrument_id = delta.instrument_id
+            OrderBookDelta last_delta = None
         if self._buffer_deltas:
             buffer_deltas = self._buffered_deltas_map.get(instrument_id)
             if buffer_deltas is None:
@@ -2053,11 +2081,11 @@ cdef class DataEngine(Component):
 
             buffer_deltas.append(delta)
 
-            is_last_delta = delta.flags == RecordFlag.F_LAST
+            is_last_delta = delta.flags & RecordFlag.F_LAST
             if is_last_delta:
                 deltas = OrderBookDeltas(
                     instrument_id=instrument_id,
-                    deltas=buffer_deltas
+                    deltas=buffer_deltas,
                 )
                 self._msgbus.publish_c(
                     topic=self._topic_cache.get_deltas_topic(instrument_id, historical),
@@ -2067,7 +2095,7 @@ cdef class DataEngine(Component):
         else:
             deltas = OrderBookDeltas(
                 instrument_id=instrument_id,
-                deltas=[delta]
+                deltas=[delta],
             )
             self._msgbus.publish_c(
                 topic=self._topic_cache.get_deltas_topic(instrument_id, historical),
@@ -2089,7 +2117,7 @@ cdef class DataEngine(Component):
             for delta in deltas.deltas:
                 buffer_deltas.append(delta)
 
-                is_last_delta = delta.flags == RecordFlag.F_LAST
+                is_last_delta = delta.flags & RecordFlag.F_LAST
                 if is_last_delta:
                     deltas_to_publish = OrderBookDeltas(
                         instrument_id=instrument_id,
@@ -2268,6 +2296,10 @@ cdef class DataEngine(Component):
         if grouped_response.params.get("disable_historical_cache", False):
             self._disable_historical_cache = True
 
+        # Handle snapshot forward replay for order book deltas
+        if grouped_response.data_type.type == OrderBookDeltas:
+            self._handle_order_book_deltas_snapshot_replay(grouped_response)
+
         cdef:
             bint query_past_data = response.params.get("subscription_name") is None
             Data data
@@ -2281,11 +2313,13 @@ cdef class DataEngine(Component):
                 for data in grouped_response.data:
                     self.process_historical(data)
 
-                if grouped_response.params.get("bar_types"):
+                if grouped_response.correlation_id in self._bar_types_params:
                     self._finalize_aggregated_bars_request(grouped_response)
 
-                # We store the amount of data received to be used for long requests
-                grouped_response.params["data_count"] = len(grouped_response.data)
+                # We store the amount of data received to be used for long requests or a join request
+                if "data_count" not in grouped_response.params:
+                    grouped_response.params["data_count"] = len(grouped_response.data)
+
                 grouped_response.data = []
 
         self._disable_historical_cache = False
@@ -2359,7 +2393,7 @@ cdef class DataEngine(Component):
 
         cdef:
             uint64_t start = response.start.value if response.start is not None else 0
-            cdef int first_index = 0
+            int first_index = 0
         if start:
             for i in range(data_len):
                 if response.data[i].ts_init >= start:
@@ -2431,6 +2465,110 @@ cdef class DataEngine(Component):
         cdef Instrument instrument
         for instrument in instruments:
             self._handle_instrument(instrument)
+
+    cpdef void _handle_order_book_deltas_snapshot_replay(self, DataResponse response):
+        """
+        Handle snapshot forward replay for order book deltas.
+
+        If the data at the start of a UTC day is a snapshot, move the snapshot forward
+        by playing order book deltas until the first delta with ts_init >= "original_start_date".
+        """
+        cdef:
+            OrderBookDelta delta = None
+            OrderBookDelta last_applied = None
+            OrderBookDeltas deltas_obj
+            OrderBookDeltas snapshot_deltas = None
+            OrderBookDeltas_API snapshot_deltas_api
+            OrderBook order_book
+            Instrument instrument
+            InstrumentId instrument_id
+            uint64_t original_start_ns
+            uint64_t snapshot_ts
+            bint stop = False
+            list[OrderBookDeltas] filtered_data = []
+            list[OrderBookDelta] before_deltas
+            list[OrderBookDelta] after_deltas
+
+        original_start_date = response.params.get("original_start_date")
+        if original_start_date is None or not response.data:
+            return
+
+        # Check if first deltas at start of UTC day is a snapshot
+        deltas_obj = response.data[0]
+        if not deltas_obj.deltas:
+            return
+
+        delta = deltas_obj.deltas[0]
+        if not (delta.flags & RecordFlag.F_SNAPSHOT):
+            return
+
+        # Check if first delta is at start of UTC day
+        first_delta_dt = unix_nanos_to_dt(delta.ts_init)
+        start_of_utc_day = first_delta_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        if first_delta_dt != start_of_utc_day:
+            return
+
+        # Apply the initial snapshot and deltas up to original_start_date, similar to _update_order_book
+        instrument_id = delta.instrument_id
+        instrument = self._cache.instrument(instrument_id)
+        if instrument is None:
+            self._log.warning(f"Instrument {instrument_id} not found in cache, skipping snapshot replay")
+            return
+
+        book_type = response.params.get("book_type", BookType.L2_MBP)
+        order_book = OrderBook(instrument_id, book_type)
+        original_start_ns = dt_to_unix_nanos(original_start_date)
+
+        if original_start_ns <= delta.ts_init:
+            return
+
+        # Apply snapshot and deltas until first delta >= original_start_ns
+        for deltas_obj in response.data:
+            if stop:
+                filtered_data.append(deltas_obj)
+                continue
+
+            before_deltas = []
+            after_deltas = []
+            for delta in deltas_obj.deltas:
+                if not stop:
+                    before_deltas.append(delta)
+                    if delta.ts_init >= original_start_ns:
+                        stop = True
+                        last_applied = delta
+                else:
+                    after_deltas.append(delta)
+
+            if before_deltas:
+                order_book.apply(OrderBookDeltas(
+                    instrument_id=instrument_id,
+                    deltas=before_deltas,
+                ))
+                if last_applied is None:
+                    last_applied = before_deltas[-1]
+
+            if stop:
+                # Create the evolved snapshot
+                snapshot_ts = last_applied.ts_init
+                if snapshot_ts < original_start_ns:
+                    snapshot_ts = original_start_ns
+
+                snapshot_deltas = order_book.to_deltas_c(snapshot_ts, snapshot_ts)
+                filtered_data.append(snapshot_deltas)
+
+                if after_deltas:
+                    filtered_data.append(OrderBookDeltas(
+                        instrument_id=instrument_id,
+                        deltas=after_deltas,
+                    ))
+
+        # If we exhausted all data without reaching original_start_ns, create snapshot from end state
+        if not stop and last_applied is not None:
+            snapshot_ts = max(last_applied.ts_init, original_start_ns)
+            snapshot_deltas = order_book.to_deltas_c(snapshot_ts, snapshot_ts)
+            filtered_data.append(snapshot_deltas)
+
+        response.data = filtered_data
 
     cpdef void _update_order_book(self, Data data):
         cdef OrderBook order_book = self._cache.order_book(data.instrument_id)
@@ -2619,10 +2757,15 @@ cdef class DataEngine(Component):
             self._setup_bar_aggregator(bar_type, historical=True, request_id=used_request_id)
 
     cpdef void _finalize_aggregated_bars_request(self, DataResponse response):
-        update_subscriptions = response.params.get("update_subscriptions", False)
+        used_params = self._bar_types_params.pop(response.correlation_id, None)
+        if not used_params:
+            self._log.error(f"No stored params to finalize aggregated bars for request id {response.correlation_id}.")
+            return
+
+        update_subscriptions = used_params.get("update_subscriptions", False)
         used_request_id = response.correlation_id if not update_subscriptions else None
 
-        bar_types = response.params.get("bar_types", ())
+        bar_types = used_params.get("bar_types", ())
         for bar_type in bar_types:
             key = self._get_bar_aggregator_key(bar_type, used_request_id)
             aggregator = self._bar_aggregators.get(key)
@@ -2637,6 +2780,7 @@ cdef class DataEngine(Component):
             if not update_subscriptions:
                 self._dispose_bar_aggregator(bar_type, historical=True, request_id=used_request_id)
                 self._bar_aggregators.pop(key, None)
+                self._log.debug(f"Removed aggregator for {key=}")
 
     cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command):
         key = self._get_bar_aggregator_key(command.bar_type)
@@ -2670,6 +2814,7 @@ cdef class DataEngine(Component):
         self._unsubscribe_bar_aggregator(client, command)
 
         self._bar_aggregators.pop(key, None)
+        self._log.debug(f"Removed aggregator for {key=}")
 
     cpdef void _create_bar_aggregator(self, BarType bar_type, dict params, UUID4 request_id = None):
         key = self._get_bar_aggregator_key(bar_type, request_id)
@@ -2689,6 +2834,8 @@ cdef class DataEngine(Component):
 
         if bar_type.spec.is_time_aggregated():
             time_bars_origin_offset = self._time_bars_origin_offset.get(bar_type.spec.aggregation) or params.get("time_bars_origin_offset")
+            time_bars_skip_first_non_full_bar = params.get("skip_first_non_full_bar", self._time_bars_skip_first_non_full_bar)
+
             aggregator = TimeBarAggregator(
                 instrument=instrument,
                 bar_type=aggregated_bar_type,
@@ -2696,7 +2843,7 @@ cdef class DataEngine(Component):
                 clock=self._clock,
                 interval_type=self._time_bars_interval_type,
                 timestamp_on_close=self._time_bars_timestamp_on_close,
-                skip_first_non_full_bar=self._time_bars_skip_first_non_full_bar,
+                skip_first_non_full_bar=time_bars_skip_first_non_full_bar,
                 build_with_no_updates=self._time_bars_build_with_no_updates,
                 time_bars_origin_offset=time_bars_origin_offset,
                 bar_build_delay=self._time_bars_build_delay,
@@ -2995,9 +3142,8 @@ cdef class DataEngine(Component):
         # Create join_request using leg_request_ids and send it
         cdef uint64_t ts_init = self._clock.timestamp_ns()
         cdef list leg_request_ids = []
-        leg_params = (request.params or {}).copy()
+        leg_params = request.params.copy()
         leg_params["join_request"] = True
-        leg_params.pop("bar_types", None)
 
         for leg_id, _ in spread_legs:
             leg_request = RequestQuoteTicks(
@@ -3015,7 +3161,7 @@ cdef class DataEngine(Component):
             leg_request_ids.append(leg_request.id)
             self._msgbus.request(endpoint="DataEngine.request", request=leg_request)
 
-        join_params = (request.params or {}).copy()
+        join_params = request.params.copy()
 
         cdef RequestJoin join_request = RequestJoin(
             request_ids=tuple(leg_request_ids),
@@ -3056,6 +3202,7 @@ cdef class DataEngine(Component):
             if not update_subscriptions:
                 self._dispose_spread_quote_aggregator(spread_instrument_id, historical=True, request_id=used_request_id)
                 self._spread_quote_aggregators.pop(key, None)
+                self._log.debug(f"Removed aggregator for {key=}")
 
         # Send response for the original request to trigger its callback
         final_response = DataResponse(
@@ -3104,6 +3251,7 @@ cdef class DataEngine(Component):
         self._unsubscribe_spread_quote_aggregator(client, command)
 
         self._spread_quote_aggregators.pop(key, None)
+        self._log.debug(f"Removed aggregator for {key=}")
 
     cpdef void _create_spread_quote_aggregator(
         self,
@@ -3134,7 +3282,8 @@ cdef class DataEngine(Component):
             )
             return
 
-        update_interval_seconds = (params or {}).get("update_interval_seconds", 1)
+        update_interval_seconds = params.get("update_interval_seconds", 1)
+        quote_build_delay = params.get("quote_build_delay", 0)
         greeks_calculator = GreeksCalculator(self._msgbus, self._cache, self._clock)
         self._spread_quote_aggregators[key] = SpreadQuoteAggregator(
             spread_instrument=instrument,
@@ -3143,6 +3292,7 @@ cdef class DataEngine(Component):
             clock=self._clock,
             historical=False,
             update_interval_seconds=update_interval_seconds,
+            quote_build_delay=quote_build_delay,
         )
         self._log.debug(f"Created aggregator for {key=}")
 

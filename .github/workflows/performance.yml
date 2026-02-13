@@ -15,9 +15,10 @@ jobs:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
       SCCACHE_CACHE_SIZE: 1G
+    # yamllint disable rule:line-length
     services:
       redis:
-        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21
+        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
         ports:
           - 6379:6379
         options: >-
@@ -26,7 +27,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: public.ecr.aws/docker/library/postgres:16.4-alpine
+        image: public.ecr.aws/docker/library/postgres:16.4-alpine@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pass
@@ -34,15 +35,16 @@ jobs:
         ports:
           - 5432:5432
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -127,7 +129,7 @@ jobs:
       # Run codspeed once only
       - name: Run benchmarks
         # https://github.com/CodSpeedHQ/action
-        uses: CodSpeedHQ/action@6b43a0cd438f6ca5ad26f9ed03ed159ed2df7da9 # v4.1.1
+        uses: CodSpeedHQ/action@6d34d2c6e7a86f627c3a13da9549139a12af9023 # v4.4.1
         with:
           token: ${{ secrets.CODSPEED_TOKEN }}
           mode: instrumentation

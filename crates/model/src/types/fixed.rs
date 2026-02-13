@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,7 +18,7 @@
 //! This module provides constants and functions that enforce a fixed-point precision strategy,
 //! ensuring consistent precision and scaling across various types and calculations.
 //!
-//! # Raw value requirements
+//! # Raw Value Requirements
 //!
 //! When constructing value types like [`Price`] or [`Quantity`] using `from_raw`, the raw value
 //! **must** be a valid multiple of the scale factor for the given precision. Valid raw values
@@ -31,7 +31,7 @@
 //! Raw values that are not valid multiples will cause a panic on construction in debug builds,
 //! and may result in incorrect values in release builds.
 //!
-//! # Legacy catalog data and floating-point errors
+//! # Legacy Catalog Data and Floating-Point Errors
 //!
 //! Data written to catalogs using V2 wranglers before 16th December 2025 may contain raw values with
 //! floating-point precision errors. This occurred because the wranglers used:
@@ -46,7 +46,7 @@
 //! round(value * 10^precision) * scale  # Correct
 //! ```
 //!
-//! # Raw value correction
+//! # Raw Value Correction
 //!
 //! To handle legacy data with floating-point errors, the Arrow decode path uses correction
 //! functions ([`correct_raw_i64`], [`correct_raw_i128`], etc.) to round raw values to the
@@ -256,7 +256,7 @@ fn invalid_raw_error(
 /// multiples of 10^(FIXED_PRECISION - P). Any non-zero remainder indicates data corruption
 /// or incorrect scaling upstream.
 ///
-/// # Precision limits
+/// # Precision Limits
 ///
 /// This check only validates when `precision < FIXED_PRECISION`:
 /// - When `precision == FIXED_PRECISION`, every bit of the raw value is significant and
@@ -327,7 +327,7 @@ pub fn check_fixed_raw_u64(raw: u64, precision: u8) -> anyhow::Result<()> {
 /// multiples of 10^(FIXED_PRECISION - P). Any non-zero remainder indicates data corruption
 /// or incorrect scaling upstream.
 ///
-/// # Precision limits
+/// # Precision Limits
 ///
 /// This check only validates when `precision < FIXED_PRECISION`:
 /// - When `precision == FIXED_PRECISION`, every bit of the raw value is significant and
@@ -541,6 +541,81 @@ pub fn correct_quantity_raw(raw: QuantityRaw, precision: u8) -> QuantityRaw {
     {
         correct_raw_u64(raw, precision)
     }
+}
+
+/// Rounds a mantissa by removing `excess` decimal digits using banker's rounding (half to even).
+///
+/// Given a mantissa representing a number with `excess` extra decimal places beyond the desired
+/// precision, divides by `10^excess` and rounds the result using round-half-to-even semantics.
+#[must_use]
+#[inline]
+pub fn bankers_round(mantissa: i128, excess: u32) -> i128 {
+    if excess == 0 {
+        return mantissa;
+    }
+
+    // 10^39 overflows i128, and any i64-origin mantissa divided by 10^39+ is 0
+    if excess >= 39 {
+        return 0;
+    }
+
+    let divisor = 10i128.pow(excess);
+    let quotient = mantissa / divisor;
+    let remainder = mantissa % divisor;
+    let half = divisor / 2;
+
+    if remainder.abs() > half || (remainder.abs() == half && quotient % 2 != 0) {
+        quotient + mantissa.signum()
+    } else {
+        quotient
+    }
+}
+
+/// Converts a mantissa/exponent pair to a raw fixed-point `i128` value at the given precision.
+///
+/// The value is `mantissa * 10^exponent`. Uses pure integer arithmetic with banker's rounding
+/// when fractional digits exceed `precision`. The result is scaled to [`FIXED_PRECISION`].
+///
+/// This is the shared core for `from_decimal`, `from_decimal_dp`, and `from_mantissa_exponent`
+/// across Money, Price, and Quantity.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `precision` exceeds the maximum allowed by [`check_fixed_precision`].
+/// - The scale factor exceeds `10^38` (i128 range).
+/// - Overflow occurs during multiplication.
+pub fn mantissa_exponent_to_fixed_i128(
+    mantissa: i128,
+    exponent: i8,
+    precision: u8,
+) -> anyhow::Result<i128> {
+    check_fixed_precision(precision)?;
+
+    let precision_i16 = precision as i16;
+    let target_scale = (FIXED_PRECISION as i16).max(precision_i16);
+    let frac_digits = -(exponent as i16);
+
+    let mantissa = if frac_digits > precision_i16 {
+        let excess = (frac_digits - precision_i16) as u32;
+        bankers_round(mantissa, excess)
+    } else {
+        mantissa
+    };
+
+    let scale_after_rounding = frac_digits.min(precision_i16);
+    let scale_exp = target_scale - scale_after_rounding;
+    anyhow::ensure!(
+        scale_exp <= 38,
+        "Exponent {exponent} produces scale factor 10^{scale_exp} which exceeds i128 range"
+    );
+
+    if scale_exp >= 0 {
+        mantissa.checked_mul(10i128.pow(scale_exp as u32))
+    } else {
+        Some(mantissa / 10i128.pow((-scale_exp) as u32))
+    }
+    .ok_or_else(|| anyhow::anyhow!("Overflow when scaling mantissa to fixed precision"))
 }
 
 /// Converts an `f64` value to a raw fixed-point `i64` representation with a specified precision.
@@ -1281,5 +1356,172 @@ mod tests {
         assert!(check_fixed_raw_i64(-1, FIXED_PRECISION).is_ok());
         assert!(check_fixed_raw_i64(i64::MAX, FIXED_PRECISION).is_ok());
         assert!(check_fixed_raw_i64(i64::MIN, FIXED_PRECISION).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod bankers_round_tests {
+    use std::str::FromStr;
+
+    use rstest::rstest;
+    use rust_decimal::{Decimal, RoundingStrategy};
+
+    use super::*;
+
+    #[rstest]
+    // Excess=0: no rounding, identity
+    #[case(0, 0, 0)]
+    #[case(1, 0, 1)]
+    #[case(5, 0, 5)]
+    #[case(99, 0, 99)]
+    #[case(-7, 0, -7)]
+    // Excess >= 39: overflow guard returns 0
+    #[case(12345, 39, 0)]
+    #[case(i64::MAX as i128, 100, 0)]
+    #[case(-99999, 50, 0)]
+    // Excess=1: halfway cases (remainder == 5, half of 10)
+    #[case(15, 1, 2)] // 1.5 -> 2 (round up to even)
+    #[case(25, 1, 2)] // 2.5 -> 2 (round down to even)
+    #[case(35, 1, 4)] // 3.5 -> 4 (round up to even)
+    #[case(45, 1, 4)] // 4.5 -> 4 (round down to even)
+    #[case(55, 1, 6)] // 5.5 -> 6 (round up to even)
+    #[case(65, 1, 6)] // 6.5 -> 6 (round down to even)
+    #[case(75, 1, 8)] // 7.5 -> 8 (round up to even)
+    #[case(85, 1, 8)] // 8.5 -> 8 (round down to even)
+    #[case(95, 1, 10)] // 9.5 -> 10 (round up to even)
+    #[case(105, 1, 10)] // 10.5 -> 10 (round down to even)
+    // Excess=1: non-halfway cases
+    #[case(14, 1, 1)] // 1.4 -> 1 (truncate)
+    #[case(16, 1, 2)] // 1.6 -> 2 (round up)
+    #[case(24, 1, 2)] // 2.4 -> 2 (truncate)
+    #[case(26, 1, 3)] // 2.6 -> 3 (round up)
+    #[case(11, 1, 1)] // 1.1 -> 1 (truncate)
+    #[case(19, 1, 2)] // 1.9 -> 2 (round up)
+    // Excess=2: halfway cases (remainder == 50, half of 100)
+    #[case(150, 2, 2)] // 1.50 -> 2 (round up to even)
+    #[case(250, 2, 2)] // 2.50 -> 2 (round down to even)
+    #[case(350, 2, 4)] // 3.50 -> 4 (round up to even)
+    #[case(450, 2, 4)] // 4.50 -> 4 (round down to even)
+    #[case(550, 2, 6)] // 5.50 -> 6 (round up to even)
+    #[case(1050, 2, 10)] // 10.50 -> 10 (round down to even)
+    #[case(1150, 2, 12)] // 11.50 -> 12 (round up to even)
+    // Excess=2: non-halfway cases
+    #[case(149, 2, 1)] // 1.49 -> 1 (truncate)
+    #[case(151, 2, 2)] // 1.51 -> 2 (round up)
+    #[case(199, 2, 2)] // 1.99 -> 2 (round up)
+    #[case(101, 2, 1)] // 1.01 -> 1 (truncate)
+    // Excess=3: halfway cases (remainder == 500, half of 1000)
+    #[case(1500, 3, 2)] // 1.500 -> 2 (round up to even)
+    #[case(2500, 3, 2)] // 2.500 -> 2 (round down to even)
+    #[case(3500, 3, 4)] // 3.500 -> 4 (round up to even)
+    #[case(10500, 3, 10)] // 10.500 -> 10 (round down to even)
+    #[case(11500, 3, 12)] // 11.500 -> 12 (round up to even)
+    // Excess=3: non-halfway cases
+    #[case(1499, 3, 1)] // 1.499 -> 1 (truncate)
+    #[case(1501, 3, 2)] // 1.501 -> 2 (round up)
+    // Negative halfway cases
+    #[case(-15, 1, -2)] // -1.5 -> -2 (round away from zero to even)
+    #[case(-25, 1, -2)] // -2.5 -> -2 (round toward zero to even)
+    #[case(-35, 1, -4)] // -3.5 -> -4 (round away from zero to even)
+    #[case(-45, 1, -4)] // -4.5 -> -4 (round toward zero to even)
+    #[case(-55, 1, -6)] // -5.5 -> -6 (round away from zero to even)
+    #[case(-65, 1, -6)] // -6.5 -> -6 (round toward zero to even)
+    #[case(-150, 2, -2)] // -1.50 -> -2 (round away from zero to even)
+    #[case(-250, 2, -2)] // -2.50 -> -2 (round toward zero to even)
+    #[case(-350, 2, -4)] // -3.50 -> -4 (round away from zero to even)
+    // Negative non-halfway cases
+    #[case(-14, 1, -1)] // -1.4 -> -1 (truncate toward zero)
+    #[case(-16, 1, -2)] // -1.6 -> -2 (round away from zero)
+    #[case(-24, 1, -2)] // -2.4 -> -2 (truncate toward zero)
+    #[case(-26, 1, -3)] // -2.6 -> -3 (round away from zero)
+    // Zero mantissa
+    #[case(0, 1, 0)]
+    #[case(0, 2, 0)]
+    #[case(0, 5, 0)]
+    // Large excess values
+    #[case(123_456_789, 3, 123_457)] // 123456.789 -> 123457
+    #[case(123_456_500, 3, 123_456)] // 123456.500 -> 123456 (half, even quotient)
+    #[case(123_457_500, 3, 123_458)] // 123457.500 -> 123458 (half, odd quotient)
+    #[case(100_005, 1, 10_000)] // 10000.5 -> 10000 (half, even quotient)
+    #[case(100_015, 1, 10_002)] // 10001.5 -> 10002 (half, odd quotient)
+    // Large mantissa values
+    #[case(999_999_999_999_999_995, 1, 100_000_000_000_000_000)]
+    #[case(1_000_000_000_000_000_005, 1, 100_000_000_000_000_000)]
+    fn test_bankers_round(#[case] mantissa: i128, #[case] excess: u32, #[case] expected: i128) {
+        assert_eq!(
+            bankers_round(mantissa, excess),
+            expected,
+            "bankers_round({mantissa}, {excess}) expected {expected}"
+        );
+    }
+
+    // Symmetry: bankers_round(-x, e) == -bankers_round(x, e) for all positive x
+    #[rstest]
+    #[case(15, 1)]
+    #[case(25, 1)]
+    #[case(35, 1)]
+    #[case(150, 2)]
+    #[case(250, 2)]
+    #[case(1500, 3)]
+    #[case(2500, 3)]
+    #[case(123_456_789, 3)]
+    #[case(14, 1)]
+    #[case(16, 1)]
+    fn test_bankers_round_negative_symmetry(#[case] mantissa: i128, #[case] excess: u32) {
+        assert_eq!(
+            bankers_round(-mantissa, excess),
+            -bankers_round(mantissa, excess),
+            "Negative symmetry failed for mantissa={mantissa}, excess={excess}"
+        );
+    }
+
+    // Verify consistency with Rust Decimal's banker's rounding
+    #[rstest]
+    #[case("1.005", 2, "1.00")] // 0.005 remainder, even quotient -> truncate
+    #[case("1.015", 2, "1.02")] // 0.005 remainder, odd quotient -> round up
+    #[case("1.025", 2, "1.02")] // 0.005 remainder, even quotient -> truncate
+    #[case("1.035", 2, "1.04")] // 0.005 remainder, odd quotient -> round up
+    #[case("1.045", 2, "1.04")] // 0.005 remainder, even quotient -> truncate
+    #[case("2.5", 0, "2")] // 0.5 remainder, even quotient -> truncate
+    #[case("3.5", 0, "4")] // 0.5 remainder, odd quotient -> round up
+    #[case("-2.5", 0, "-2")]
+    #[case("-3.5", 0, "-4")]
+    #[case("123.456", 2, "123.46")]
+    #[case("123.455", 2, "123.46")] // Odd quotient at half
+    #[case("123.445", 2, "123.44")] // Even quotient at half
+    fn test_bankers_round_matches_decimal(
+        #[case] input: &str,
+        #[case] target_precision: u8,
+        #[case] expected: &str,
+    ) {
+        let dec = Decimal::from_str(input).unwrap();
+        let expected_dec = Decimal::from_str(expected).unwrap();
+
+        let decimal_rounded = dec.round_dp_with_strategy(
+            u32::from(target_precision),
+            RoundingStrategy::MidpointNearestEven,
+        );
+        assert_eq!(
+            decimal_rounded, expected_dec,
+            "Decimal rounding sanity check failed for {input}"
+        );
+
+        let mantissa = dec.mantissa();
+        let scale = dec.scale() as u8;
+        let excess = scale.saturating_sub(target_precision) as u32;
+        if excess > 0 {
+            let rounded = bankers_round(mantissa, excess);
+
+            // Reconstruct expected mantissa at target precision
+            let expected_mantissa = expected_dec.mantissa();
+            let expected_scale = expected_dec.scale() as u8;
+            let scale_diff = target_precision.saturating_sub(expected_scale) as u32;
+            let normalized_expected = expected_mantissa * 10i128.pow(scale_diff);
+
+            assert_eq!(
+                rounded, normalized_expected,
+                "bankers_round disagrees with Decimal for {input} at precision {target_precision}"
+            );
+        }
     }
 }

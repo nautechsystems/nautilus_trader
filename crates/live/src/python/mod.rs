@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,6 @@
 //! Python bindings from [PyO3](https://pyo3.rs).
 
 pub mod node;
-pub mod reconciliation;
 
 use pyo3::prelude::*;
 
@@ -29,13 +28,5 @@ use pyo3::prelude::*;
 pub fn live(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::node::LiveNode>()?;
     m.add_class::<node::LiveNodeBuilderPy>()?;
-    m.add_function(wrap_pyfunction!(
-        reconciliation::py_adjust_fills_for_partial_window,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        reconciliation::py_calculate_reconciliation_price,
-        m
-    )?)?;
     Ok(())
 }

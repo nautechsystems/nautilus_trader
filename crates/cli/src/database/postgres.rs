@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -43,11 +43,14 @@ pub async fn run_database_command(opt: DatabaseOpt) -> anyhow::Result<()> {
                 config.password,
                 config.database,
             );
-            let pg = connect_pg(pg_connect_options.clone().into()).await?;
             log::info!(
-                "Connected with Postgres on url: {}",
-                pg_connect_options.connection_string()
+                "Connecting to Postgres at {}",
+                pg_connect_options.connection_string_masked()
             );
+
+            let pg = connect_pg(pg_connect_options.clone().into()).await?;
+            log::info!("Connected");
+
             init_postgres(
                 &pg,
                 pg_connect_options.database,
@@ -64,11 +67,14 @@ pub async fn run_database_command(opt: DatabaseOpt) -> anyhow::Result<()> {
                 config.password,
                 config.database,
             );
-            let pg = connect_pg(pg_connect_options.clone().into()).await?;
             log::info!(
-                "Connected with Postgres on url: {}",
-                pg_connect_options.connection_string()
+                "Connecting to Postgres at {}",
+                pg_connect_options.connection_string_masked()
             );
+
+            let pg = connect_pg(pg_connect_options.clone().into()).await?;
+            log::info!("Connected");
+
             drop_postgres(&pg, pg_connect_options.database).await?;
         }
     }

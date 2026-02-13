@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,13 +17,13 @@
 
 use std::{
     ffi::CStr,
-    fmt::{Debug, Display, Formatter},
+    fmt::{Debug, Display},
     hash::Hash,
     io::{Cursor, Write},
     str::FromStr,
 };
 
-use rand::RngCore;
+use rand::Rng;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
@@ -162,26 +162,14 @@ impl FromStr for UUID4 {
 }
 
 impl From<&str> for UUID4 {
-    /// Creates a [`UUID4`] from a string slice.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the `value` string is not a valid UUID version 4 RFC 4122.
     fn from(value: &str) -> Self {
-        value
-            .parse()
-            .expect("`value` should be a valid UUID version 4 (RFC 4122)")
+        Self::from_str(value).expect("Invalid UUID4 string")
     }
 }
 
 impl From<String> for UUID4 {
-    /// Creates a [`UUID4`] from a string.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the `value` string is not a valid UUID version 4 RFC 4122.
     fn from(value: String) -> Self {
-        Self::from(value.as_str())
+        Self::from_str(&value).expect("Invalid UUID4 string")
     }
 }
 
@@ -214,13 +202,13 @@ impl Default for UUID4 {
 }
 
 impl Debug for UUID4 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}({})", stringify!(UUID4), self)
     }
 }
 
 impl Display for UUID4 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_cstr().to_string_lossy())
     }
 }

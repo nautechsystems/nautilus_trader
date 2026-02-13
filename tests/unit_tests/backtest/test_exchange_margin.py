@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -140,6 +140,7 @@ class TestSimulatedExchangeMarginAccount:
             clock=self.clock,
             latency_model=LatencyModel(0),
             bar_adaptive_high_low_ordering=bar_adaptive_high_low_ordering,
+            trade_execution=True,
         )
         self.exchange.add_instrument(_USDJPY_SIM)
 
@@ -1382,10 +1383,11 @@ class TestSimulatedExchangeMarginAccount:
         self.strategy.submit_order(order)
         self.exchange.process(0)
 
-        # Act
+        # Act: Seller aggressor pushes ask down to fill passive BUY
         trade2 = TestDataStubs.trade_tick(
             instrument=_USDJPY_SIM,
             price=_USDJPY_SIM.make_price(trade_price),
+            aggressor_side=AggressorSide.SELLER,
         )
         self.data_engine.process(trade2)
         self.exchange.process_trade_tick(trade2)
@@ -3821,3 +3823,55 @@ class TestSimulatedExchangeL1:
         assert len(self.exchange.get_open_orders()) == 0
         assert order.avg_px == 91.000
         assert self.exchange.get_account().balance_total(USD) == Money(999997.98, USD)
+
+    def test_process_iterates_matching_engines_after_commands(self) -> None:
+        # Arrange: Prepare market
+        quote = TestDataStubs.quote_tick(
+            instrument=_USDJPY_SIM,
+            bid_price=90.002,
+            ask_price=90.005,
+        )
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
+
+        # Submit a passive buy limit below the ask (should NOT fill)
+        order = self.strategy.order_factory.limit(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            _USDJPY_SIM.make_price(89.990),
+            post_only=False,
+        )
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Assert: Order accepted and sitting on the book
+        assert order.status == OrderStatus.ACCEPTED
+        assert len(self.exchange.get_open_orders()) == 1
+
+    def test_process_re_iterate_does_not_fill_passive_limit_order(self) -> None:
+        # Arrange: Prepare market
+        quote = TestDataStubs.quote_tick(
+            instrument=_USDJPY_SIM,
+            bid_price=90.002,
+            ask_price=90.005,
+        )
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
+
+        order = self.strategy.order_factory.limit(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            _USDJPY_SIM.make_price(89.990),
+            post_only=False,
+        )
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Act: Process again (simulates next time step with no new data)
+        self.exchange.process(0)
+
+        # Assert: Passive order still on book, not incorrectly filled
+        assert order.status == OrderStatus.ACCEPTED
+        assert len(self.exchange.get_open_orders()) == 1

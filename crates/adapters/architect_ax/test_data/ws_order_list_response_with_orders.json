@@ -1,0 +1,38 @@
+{
+  "rid": 0,
+  "res": {
+    "li": "01KCQM-4WP1-0000",
+    "o": [
+      {
+        "oid": "O-01KF4QM3VVJEDH98ZVNS1PCSBB",
+        "u": "01KCQM-4WP1-0000",
+        "s": "EURUSD-PERP",
+        "p": "1.2105",
+        "q": 1000,
+        "xq": 0,
+        "rq": 1000,
+        "o": "ACCEPTED",
+        "d": "S",
+        "tif": "GTC",
+        "tag": "dcea9c8d-40ee-4c0e-9d57-eb2004c63d4a",
+        "ts": 1768611778,
+        "tn": 428120797
+      },
+      {
+        "oid": "O-01KF4QM3K9FJZWYA02JF9Y1FJA",
+        "u": "01KCQM-4WP1-0000",
+        "s": "EURUSD-PERP",
+        "p": "1.1103",
+        "q": 1000,
+        "xq": 0,
+        "rq": 1000,
+        "o": "ACCEPTED",
+        "d": "B",
+        "tif": "GTC",
+        "tag": "ba1ca1b9-00ad-494e-9647-9cf7b3ca3d2c",
+        "ts": 1768611778,
+        "tn": 154117954
+      }
+    ]
+  }
+}

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -517,10 +517,11 @@ mod tests {
 
     #[rstest]
     fn test_order_book_depth10_serializable_trait() {
+        fn assert_serializable<T: Serializable>(_: &T) {}
+
         let depth = create_test_depth10();
 
         // Verify Serializable trait is implemented (compile-time check)
-        fn assert_serializable<T: Serializable>(_: &T) {}
         assert_serializable(&depth);
     }
 

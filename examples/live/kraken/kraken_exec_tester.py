@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -40,10 +40,11 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 
 # Configuration - Change product_type to switch between trading modes
 product_type = KrakenProductType.FUTURES  # SPOT or FUTURES
-token = "ETH"
+token = None  # FUTURES uses "XBT", SPOT uses "BTC"
 
 # Symbol and settings based on product type
 if product_type == KrakenProductType.SPOT:
+    token = token or "BTC"
     symbol = f"{token}/USDT"
     order_qty = Decimal("0.001")
     enable_sells = False  # May not own base token when starting fresh
@@ -52,6 +53,7 @@ if product_type == KrakenProductType.SPOT:
     environment = KrakenEnvironment.MAINNET
 elif product_type == KrakenProductType.FUTURES:
     # Kraken Futures perpetual symbols use PI_ prefix (e.g., PI_XBTUSD, PI_ETHUSD)
+    token = token or "XBT"
     symbol = f"PF_{token}USD"
     order_qty = Decimal("0.001")
     enable_sells = True

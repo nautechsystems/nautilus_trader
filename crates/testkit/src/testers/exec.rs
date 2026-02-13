@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -449,6 +449,7 @@ pub struct ExecTester {
     config: ExecTesterConfig,
     instrument: Option<InstrumentAny>,
     price_offset: Option<f64>,
+    preinitialized_market_data: bool,
 
     // Order tracking
     buy_order: Option<OrderAny>,
@@ -461,13 +462,13 @@ impl Deref for ExecTester {
     type Target = DataActorCore;
 
     fn deref(&self) -> &Self::Target {
-        &self.core.actor
+        &self.core
     }
 }
 
 impl DerefMut for ExecTester {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core.actor
+        &mut self.core
     }
 }
 
@@ -484,10 +485,21 @@ impl DataActor for ExecTester {
         };
 
         if let Some(inst) = instrument {
-            self.initialize_with_instrument(inst)?;
+            self.initialize_with_instrument(inst, true)?;
         } else {
             log::info!("Instrument {instrument_id} not in cache, subscribing...");
             self.subscribe_instrument(instrument_id, client_id, None);
+
+            // Also subscribe to market data to trigger instrument definitions from data providers
+            // (e.g., Databento sends instrument definitions as part of market data subscriptions)
+            if self.config.subscribe_quotes {
+                self.subscribe_quotes(instrument_id, client_id, None);
+            }
+            if self.config.subscribe_trades {
+                self.subscribe_trades(instrument_id, client_id, None);
+            }
+            self.preinitialized_market_data =
+                self.config.subscribe_quotes || self.config.subscribe_trades;
         }
 
         Ok(())
@@ -497,7 +509,7 @@ impl DataActor for ExecTester {
         if instrument.id() == self.config.instrument_id && self.instrument.is_none() {
             let id = instrument.id();
             log::info!("Received instrument {id}, initializing...");
-            self.initialize_with_instrument(instrument.clone())?;
+            self.initialize_with_instrument(instrument.clone(), !self.preinitialized_market_data)?;
         }
         Ok(())
     }
@@ -512,11 +524,11 @@ impl DataActor for ExecTester {
         let client_id = self.config.client_id;
 
         if self.config.cancel_orders_on_stop {
-            let strategy_id = StrategyId::from(self.core.actor.actor_id.inner().as_str());
+            let strategy_id = StrategyId::from(self.core.actor_id.inner().as_str());
             if self.config.use_individual_cancels_on_stop {
                 let cache = self.cache();
                 let open_orders: Vec<OrderAny> = cache
-                    .orders_open(None, Some(&instrument_id), Some(&strategy_id), None)
+                    .orders_open(None, Some(&instrument_id), Some(&strategy_id), None, None)
                     .iter()
                     .map(|o| (*o).clone())
                     .collect();
@@ -530,7 +542,7 @@ impl DataActor for ExecTester {
             } else if self.config.use_batch_cancel_on_stop {
                 let cache = self.cache();
                 let open_orders: Vec<OrderAny> = cache
-                    .orders_open(None, Some(&instrument_id), Some(&strategy_id), None)
+                    .orders_open(None, Some(&instrument_id), Some(&strategy_id), None, None)
                     .iter()
                     .map(|o| (*o).clone())
                     .collect();
@@ -586,7 +598,7 @@ impl DataActor for ExecTester {
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {quote:?}", color = LogColor::Cyan);
+            log_info!("{quote:?}", color = LogColor::Cyan);
         }
 
         self.maintain_orders(quote.bid_price, quote.ask_price);
@@ -595,7 +607,7 @@ impl DataActor for ExecTester {
 
     fn on_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {trade:?}", color = LogColor::Cyan);
+            log_info!("{trade:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
@@ -633,28 +645,28 @@ impl DataActor for ExecTester {
 
     fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {deltas:?}", color = LogColor::Cyan);
+            log_info!("{deltas:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {bar:?}", color = LogColor::Cyan);
+            log_info!("{bar:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_mark_price(&mut self, mark_price: &MarkPriceUpdate) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {mark_price:?}", color = LogColor::Cyan);
+            log_info!("{mark_price:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_index_price(&mut self, index_price: &IndexPriceUpdate) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {index_price:?}", color = LogColor::Cyan);
+            log_info!("{index_price:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
@@ -665,8 +677,16 @@ impl DataActor for ExecTester {
 }
 
 impl Strategy for ExecTester {
+    fn core(&self) -> &StrategyCore {
+        &self.core
+    }
+
     fn core_mut(&mut self) -> &mut StrategyCore {
         &mut self.core
+    }
+
+    fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
+        self.config.base.external_order_claims.clone()
     }
 }
 
@@ -679,6 +699,7 @@ impl ExecTester {
             config,
             instrument: None,
             price_offset: None,
+            preinitialized_market_data: false,
             buy_order: None,
             sell_order: None,
             buy_stop_order: None,
@@ -686,18 +707,22 @@ impl ExecTester {
         }
     }
 
-    fn initialize_with_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
+    fn initialize_with_instrument(
+        &mut self,
+        instrument: InstrumentAny,
+        subscribe_market_data: bool,
+    ) -> anyhow::Result<()> {
         let instrument_id = self.config.instrument_id;
         let client_id = self.config.client_id;
 
         self.price_offset = Some(self.get_price_offset(&instrument));
         self.instrument = Some(instrument);
 
-        if self.config.subscribe_quotes {
+        if subscribe_market_data && self.config.subscribe_quotes {
             self.subscribe_quotes(instrument_id, client_id, None);
         }
 
-        if self.config.subscribe_trades {
+        if subscribe_market_data && self.config.subscribe_trades {
             self.subscribe_trades(instrument_id, client_id, None);
         }
 
@@ -1081,11 +1106,7 @@ impl ExecTester {
 
         let quantity = instrument.make_qty(self.config.order_qty.as_f64(), None);
 
-        let Some(factory) = &mut self.core.order_factory else {
-            anyhow::bail!("Strategy not registered: OrderFactory missing");
-        };
-
-        let order = factory.limit(
+        let order = self.core.order_factory().limit(
             self.config.instrument_id,
             order_side,
             quantity,
@@ -1154,9 +1175,7 @@ impl ExecTester {
         // Use instrument's make_qty to ensure correct precision
         let quantity = instrument.make_qty(self.config.order_qty.as_f64(), None);
 
-        let Some(factory) = &mut self.core.order_factory else {
-            anyhow::bail!("Strategy not registered: OrderFactory missing");
-        };
+        let factory = self.core.order_factory();
 
         let order: OrderAny = match self.config.stop_order_type {
             OrderType::StopMarket => factory.stop_market(
@@ -1279,7 +1298,7 @@ impl ExecTester {
 
         if self.config.bracket_entry_order_type != OrderType::Limit {
             anyhow::bail!(
-                "Only Limit entry orders are supported for brackets, got {:?}",
+                "Only Limit entry orders are supported for brackets, was {:?}",
                 self.config.bracket_entry_order_type
             );
         }
@@ -1320,11 +1339,7 @@ impl ExecTester {
             _ => anyhow::bail!("Invalid order side for bracket: {order_side:?}"),
         };
 
-        let Some(factory) = &mut self.core.order_factory else {
-            anyhow::bail!("Strategy not registered: OrderFactory missing");
-        };
-
-        let order_list = factory.bracket(
+        let orders = self.core.order_factory().bracket(
             self.config.instrument_id,
             order_side,
             quantity,
@@ -1345,7 +1360,7 @@ impl ExecTester {
             None, // tags
         );
 
-        if let Some(entry_order) = order_list.orders.first() {
+        if let Some(entry_order) = orders.first() {
             if order_side == OrderSide::Buy {
                 self.buy_order = Some(entry_order.clone());
             } else {
@@ -1355,9 +1370,9 @@ impl ExecTester {
 
         let client_id = self.config.client_id;
         if let Some(params) = &self.config.order_params {
-            self.submit_order_list_with_params(order_list, None, client_id, params.clone())
+            self.submit_order_list_with_params(orders, None, client_id, params.clone())
         } else {
-            self.submit_order_list(order_list, None, client_id)
+            self.submit_order_list(orders, None, client_id)
         }
     }
 
@@ -1384,10 +1399,6 @@ impl ExecTester {
 
         let quantity = instrument.make_qty(net_qty.abs().to_f64().unwrap_or(0.0), None);
 
-        let Some(factory) = &mut self.core.order_factory else {
-            anyhow::bail!("Strategy not registered: OrderFactory missing");
-        };
-
         // Test reduce_only rejection by setting reduce_only on open position order
         let reduce_only = if self.config.test_reject_reduce_only {
             Some(true)
@@ -1395,7 +1406,7 @@ impl ExecTester {
             None
         };
 
-        let order = factory.market(
+        let order = self.core.order_factory().market(
             self.config.instrument_id,
             order_side,
             quantity,
@@ -1427,6 +1438,7 @@ mod tests {
         identifiers::{StrategyId, TradeId, TraderId},
         instruments::stubs::crypto_perpetual_ethusdt,
         orders::LimitOrder,
+        stubs::TestDefault,
     };
     use nautilus_portfolio::portfolio::Portfolio;
     use rstest::*;
@@ -1473,7 +1485,7 @@ mod tests {
     }
 
     fn create_initialized_limit_order() -> OrderAny {
-        OrderAny::Limit(LimitOrder::default())
+        OrderAny::Limit(LimitOrder::test_default())
     }
 
     #[rstest]

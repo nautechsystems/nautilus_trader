@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -37,8 +37,8 @@ pub fn bitmex(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::common::enums::BitmexPositionSide>()?;
     m.add_class::<crate::http::client::BitmexHttpClient>()?;
     m.add_class::<crate::websocket::BitmexWebSocketClient>()?;
-    m.add_class::<crate::execution::canceller::CancelBroadcaster>()?;
-    m.add_class::<crate::execution::submitter::SubmitBroadcaster>()?;
+    m.add_class::<crate::broadcast::canceller::CancelBroadcaster>()?;
+    m.add_class::<crate::broadcast::submitter::SubmitBroadcaster>()?;
     m.add_function(wrap_pyfunction!(urls::get_bitmex_http_base_url, m)?)?;
     m.add_function(wrap_pyfunction!(urls::get_bitmex_ws_url, m)?)?;
 

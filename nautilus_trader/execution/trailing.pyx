@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -53,8 +53,7 @@ cdef class TrailingStopCalculator:
             Price temp_trigger_price
             Price temp_price
         if (
-            order.trigger_type == TriggerType.DEFAULT
-            or order.trigger_type == TriggerType.LAST_PRICE
+            order.trigger_type == TriggerType.LAST_PRICE
             or order.trigger_type == TriggerType.MARK_PRICE
         ):
             if last is None:
@@ -103,7 +102,10 @@ cdef class TrailingStopCalculator:
                     )
                     if price is None or price._mem.raw < temp_price._mem.raw:
                         new_price = temp_price
-        elif order.trigger_type == TriggerType.BID_ASK:
+        elif (
+            order.trigger_type == TriggerType.DEFAULT
+            or order.trigger_type == TriggerType.BID_ASK
+        ):
             if bid is None:
                 raise RuntimeError(  # pragma: no cover (design-time error)
                     f"cannot process trailing stop, "

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,7 +19,18 @@ and analysis.
 
 from nautilus_trader.analysis.analyzer import PortfolioAnalyzer
 from nautilus_trader.analysis.config import GridLayout
+from nautilus_trader.analysis.config import TearsheetBarsWithFillsChart
+from nautilus_trader.analysis.config import TearsheetChart
 from nautilus_trader.analysis.config import TearsheetConfig
+from nautilus_trader.analysis.config import TearsheetCustomChart
+from nautilus_trader.analysis.config import TearsheetDistributionChart
+from nautilus_trader.analysis.config import TearsheetDrawdownChart
+from nautilus_trader.analysis.config import TearsheetEquityChart
+from nautilus_trader.analysis.config import TearsheetMonthlyReturnsChart
+from nautilus_trader.analysis.config import TearsheetRollingSharpeChart
+from nautilus_trader.analysis.config import TearsheetRunInfoChart
+from nautilus_trader.analysis.config import TearsheetStatsTableChart
+from nautilus_trader.analysis.config import TearsheetYearlyReturnsChart
 from nautilus_trader.analysis.reporter import ReportProvider
 from nautilus_trader.analysis.statistic import PortfolioStatistic
 from nautilus_trader.analysis.tearsheet import create_drawdown_chart
@@ -82,7 +93,18 @@ __all__ = [
     "RiskReturnRatio",
     "SharpeRatio",
     "SortinoRatio",
+    "TearsheetBarsWithFillsChart",
+    "TearsheetChart",
     "TearsheetConfig",
+    "TearsheetCustomChart",
+    "TearsheetDistributionChart",
+    "TearsheetDrawdownChart",
+    "TearsheetEquityChart",
+    "TearsheetMonthlyReturnsChart",
+    "TearsheetRollingSharpeChart",
+    "TearsheetRunInfoChart",
+    "TearsheetStatsTableChart",
+    "TearsheetYearlyReturnsChart",
     "WinRate",
     "create_drawdown_chart",
     "create_equity_curve",

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -28,6 +28,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.events.account cimport AccountState
@@ -129,6 +130,9 @@ cdef class AccountsManager:
             positions_open = self._cache.positions_open(
                 venue=None,  # Faster query filtering
                 instrument_id=fill.instrument_id,
+                strategy_id=None,
+                side=PositionSide.NO_POSITION_SIDE,
+                account_id=fill.account_id,
             )
             if positions_open:
                 position_id = positions_open[0].id
@@ -213,6 +217,7 @@ cdef class AccountsManager:
     ):
         if not orders_open:
             account.clear_balance_locked(instrument.id)
+            return True
 
         cdef dict[Currency, Money] total_locked = {}
         base_xrate = Decimal(0)
@@ -248,6 +253,7 @@ cdef class AccountsManager:
                         side=order.side,
                     )
 
+                    # xrate=0 indicates price data unavailable - defer calculation
                     if base_xrate == 0:
                         self._log.debug(
                             f"Cannot calculate balance locked: "
@@ -263,7 +269,7 @@ cdef class AccountsManager:
             cumulative_locked = total_locked.get(currency)
 
             if cumulative_locked is not None:
-                cumulative_locked.add_assign(balance_locked)
+                total_locked[currency] = cumulative_locked + balance_locked
             else:
                 total_locked[currency] = balance_locked
 
@@ -271,6 +277,9 @@ cdef class AccountsManager:
         if len(total_locked) == 0:
             account.clear_balance_locked(instrument.id)
             return True
+
+        # Clear existing locks before applying new ones to remove stale currency entries
+        account.clear_balance_locked(instrument.id)
 
         for currency, balance_locked in total_locked.items():
             account.update_balance_locked(instrument.id, balance_locked)
@@ -316,6 +325,7 @@ cdef class AccountsManager:
                         side=order.side,
                     )
 
+                    # xrate=0 indicates price data unavailable - defer calculation
                     if base_xrate == 0:
                         self._log.debug(
                             f"Cannot calculate initial (order) margin: "
@@ -404,6 +414,7 @@ cdef class AccountsManager:
                         side=position.entry,
                     )
 
+                    # xrate=0 indicates price data unavailable - defer calculation
                     if base_xrate == 0:
                         self._log.debug(
                             f"Cannot calculate maintenance (position) margin: "
@@ -552,6 +563,12 @@ cdef class AccountsManager:
                 else:
                     new_locked = new_locked.add(pnl)
 
+                    # Ensure locked doesn't go negative (excess comes from free)
+                    if new_locked._mem.raw < 0:
+                        excess = Money.from_raw_c(-new_locked._mem.raw, new_locked.currency)
+                        new_free = new_free.sub(excess)
+                        new_locked = Money(0, new_locked.currency)
+
                 if apply_commission and pnl.currency == commission.currency:
                     new_total = new_total.sub(commission)
                     new_free = new_free.sub(commission)
@@ -612,12 +629,28 @@ cdef class AccountsManager:
         Instrument instrument,
         OrderSide side,
     ):
+        """
+        Calculate the exchange rate from instrument cost currency to account base currency.
+
+        Returns `Decimal(1)` if no conversion is needed (multi-currency account).
+
+        Returns `Decimal(0)` if the exchange rate is unavailable. Callers must check
+        for zero and handle accordingly - typically by returning False to indicate
+        the operation cannot be completed due to insufficient market data.
+
+        This zero-return behavior allows margin/balance calculations to fail gracefully
+        when price data for the required currency pair is not yet available (e.g., during
+        startup or when subscriptions are pending). The caller can retry when data arrives.
+        """
         if account.base_currency is None:
             return Decimal(1)  # No conversion needed
 
-        return Decimal(self._cache.get_xrate(
+        xrate = self._cache.get_xrate(
             venue=instrument.id.venue,
             from_currency=instrument.get_cost_currency(),
             to_currency=account.base_currency,
             price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
-        ) or 0.0)  # Retain original behavior of returning zero for now
+        )
+
+        # Return 0 when xrate unavailable - callers check for this and return False
+        return Decimal(xrate) if xrate else Decimal(0)

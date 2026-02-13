@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,7 +29,7 @@ Then execute this file:
 
     python tests/integration_tests/adapters/tardis/sandbox/run_replay.py
 
-Export ``RUST_LOG=debug`` if you want verbose logging from the Rust side.
+Export ``NAUTILUS_LOG=debug`` for verbose Rust logging (defaults to INFO).
 
 """
 

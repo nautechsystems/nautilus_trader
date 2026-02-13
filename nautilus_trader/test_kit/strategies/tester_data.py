@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -62,10 +62,12 @@ class DataTesterConfig(ActorConfig, frozen=True):
     subscribe_params: dict[str, Any] | None = None
     can_unsubscribe: bool = True
     request_instruments: bool = False
+    request_book_snapshot: bool = False
+    request_book_deltas: bool = False
     request_quotes: bool = False
     request_trades: bool = False
     request_bars: bool = False
-    request_book_snapshot: bool = False
+    request_funding_rates: bool = False
     request_params: dict[str, Any] | None = None
     requests_start_delta: pd.Timedelta | None = None
     book_type: BookType = BookType.L2_MBP
@@ -203,6 +205,22 @@ class DataTester(Actor):
                     params=self.config.subscribe_params,
                 )
 
+            if self.config.request_book_snapshot:
+                self.request_order_book_snapshot(
+                    instrument_id=instrument_id,
+                    limit=self.config.book_depth or 0,
+                    client_id=client_id,
+                    params=self.config.request_params,
+                )
+
+            if self.config.request_book_deltas:
+                self.request_order_book_deltas(
+                    instrument_id=instrument_id,
+                    start=requests_start,
+                    client_id=client_id,
+                    params=self.config.request_params,
+                )
+
             if self.config.request_quotes:
                 self.request_quote_ticks(
                     instrument_id=instrument_id,
@@ -219,10 +237,11 @@ class DataTester(Actor):
                     params=self.config.request_params,
                 )
 
-            if self.config.request_book_snapshot:
-                self.request_order_book_snapshot(
+            if self.config.request_funding_rates:
+                funding_start = self.clock.utc_now() - pd.Timedelta(days=7)
+                self.request_funding_rates(
                     instrument_id=instrument_id,
-                    limit=self.config.book_depth or 0,
+                    start=funding_start,
                     client_id=client_id,
                     params=self.config.request_params,
                 )

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -166,11 +166,11 @@ def _create_ws_mock() -> MagicMock:
     mock.subscribe_orderbook = AsyncMock()
     mock.subscribe_ticker = AsyncMock()
     mock.subscribe_trades = AsyncMock()
-    mock.subscribe_klines = AsyncMock()
+    mock.subscribe_bars = AsyncMock()
     mock.unsubscribe_orderbook = AsyncMock()
     mock.unsubscribe_ticker = AsyncMock()
     mock.unsubscribe_trades = AsyncMock()
-    mock.unsubscribe_klines = AsyncMock()
+    mock.unsubscribe_bars = AsyncMock()
     mock.cache_instrument = MagicMock()
     mock.subscribe_orders = AsyncMock()
     mock.subscribe_executions = AsyncMock()

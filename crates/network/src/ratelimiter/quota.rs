@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,7 +25,7 @@ use super::nanos::Nanos;
 ///
 /// Neither the number of cells nor the replenishment unit of time may be zero.
 ///
-/// # Burst sizes
+/// # Burst Sizes
 /// There are multiple ways of expressing the same quota: a quota given as `Quota::per_second(1)`
 /// allows, on average, the same number of cells through as a quota given as `Quota::per_minute(60)`.
 /// The quota of `Quota::per_minute(60)` has a burst size of 60 cells, meaning it is
@@ -77,8 +77,7 @@ impl Quota {
     /// of cells is also assumed to be the maximum burst size.
     #[must_use]
     pub const fn per_hour(max_burst: NonZeroU32) -> Self {
-        let replenish_interval_ns =
-            Duration::from_secs(60 * 60).as_nanos() / (max_burst.get() as u128);
+        let replenish_interval_ns = Duration::from_hours(1).as_nanos() / (max_burst.get() as u128);
         Self {
             max_burst,
             replenish_1_per: Duration::from_nanos(replenish_interval_ns as u64),

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,8 +15,10 @@
 
 //! Provides an Apache Parquet backend powered by [DataFusion](https://arrow.apache.org/datafusion).
 
+pub mod binary_heap;
 pub mod catalog;
 pub mod catalog_operations;
+pub mod compare;
 pub mod feather;
 pub mod kmerge_batch;
 pub mod session;

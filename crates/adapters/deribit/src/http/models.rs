@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,10 +15,15 @@
 
 //! Deribit HTTP API models and types.
 
+use nautilus_core::serialization::{deserialize_decimal, deserialize_optional_decimal};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-pub use crate::common::rpc::{DeribitJsonRpcError, DeribitJsonRpcRequest, DeribitJsonRpcResponse};
+pub use crate::common::{
+    enums::{DeribitCurrency, DeribitOptionType, DeribitProductType},
+    rpc::{DeribitJsonRpcError, DeribitJsonRpcRequest, DeribitJsonRpcResponse},
+};
 
 /// JSON-RPC 2.0 response payload (either success or error).
 #[derive(Debug, Serialize, Deserialize)]
@@ -36,15 +41,17 @@ pub struct DeribitInstrument {
     /// The underlying currency being traded
     pub base_currency: Ustr,
     /// Block trade commission for instrument
-    #[serde(default)]
-    pub block_trade_commission: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub block_trade_commission: Option<Decimal>,
     /// Minimum amount for block trading
-    pub block_trade_min_trade_amount: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub block_trade_min_trade_amount: Option<Decimal>,
     /// Specifies minimal price change for block trading
-    #[serde(default)]
-    pub block_trade_tick_size: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub block_trade_tick_size: Option<Decimal>,
     /// Contract size for instrument
-    pub contract_size: f64,
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub contract_size: Decimal,
     /// Counter currency for the instrument
     pub counter_currency: Option<Ustr>,
     /// The time when the instrument was first created (milliseconds since UNIX epoch)
@@ -61,16 +68,19 @@ pub struct DeribitInstrument {
     pub instrument_type: Option<String>,
     /// Indicates if the instrument can currently be traded
     pub is_active: bool,
-    /// Instrument kind: "future", "option", "spot", "future_combo", "option_combo"
-    pub kind: DeribitInstrumentKind,
+    /// Product type: "future", "option", "spot", "future_combo", "option_combo"
+    pub kind: DeribitProductType,
     /// Maker commission for instrument
-    pub maker_commission: f64,
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub maker_commission: Decimal,
     /// Maximal leverage for instrument (only for futures)
     pub max_leverage: Option<i64>,
     /// Maximal liquidation trade commission for instrument (only for futures)
-    pub max_liquidation_commission: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub max_liquidation_commission: Option<Decimal>,
     /// Minimum amount for trading
-    pub min_trade_amount: f64,
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub min_trade_amount: Decimal,
     /// The option type (only for options)
     pub option_type: Option<DeribitOptionType>,
     /// Name of price index that is used for this instrument
@@ -82,11 +92,14 @@ pub struct DeribitInstrument {
     /// The settlement period (not present for spot)
     pub settlement_period: Option<String>,
     /// The strike value (only for options)
-    pub strike: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub strike: Option<Decimal>,
     /// Taker commission for instrument
-    pub taker_commission: f64,
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub taker_commission: Decimal,
     /// Specifies minimal price change and number of decimal places for instrument prices
-    pub tick_size: f64,
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub tick_size: Decimal,
     /// Tick size steps for different price ranges
     pub tick_size_steps: Option<Vec<DeribitTickSizeStep>>,
 }
@@ -95,130 +108,11 @@ pub struct DeribitInstrument {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeribitTickSizeStep {
     /// The price from which the increased tick size applies
-    pub above_price: f64,
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub above_price: Decimal,
     /// Tick size to be used above the price
-    pub tick_size: f64,
-}
-
-/// Deribit instrument kind.
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    PartialEq,
-    Eq,
-    Hash,
-    strum::AsRefStr,
-    strum::Display,
-    strum::EnumIter,
-    strum::EnumString,
-    Serialize,
-    Deserialize,
-)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.deribit")
-)]
-pub enum DeribitInstrumentKind {
-    /// Future contract
-    Future,
-    /// Option contract
-    Option,
-    /// Spot market
-    Spot,
-    /// Future combo
-    #[serde(rename = "future_combo")]
-    FutureCombo,
-    /// Option combo
-    #[serde(rename = "option_combo")]
-    OptionCombo,
-}
-
-/// Deribit currency.
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    PartialEq,
-    Eq,
-    Hash,
-    strum::AsRefStr,
-    strum::EnumIter,
-    strum::EnumString,
-    Serialize,
-    Deserialize,
-)]
-#[serde(rename_all = "UPPERCASE")]
-#[strum(serialize_all = "UPPERCASE")]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.deribit")
-)]
-pub enum DeribitCurrency {
-    /// Bitcoin
-    BTC,
-    /// Ethereum
-    ETH,
-    /// USD Coin
-    USDC,
-    /// Tether
-    USDT,
-    /// Euro stablecoin
-    EURR,
-    /// All currencies
-    #[serde(rename = "any")]
-    ANY,
-}
-
-/// Deribit option type.
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    PartialEq,
-    Eq,
-    Hash,
-    strum::AsRefStr,
-    strum::Display,
-    strum::EnumIter,
-    strum::EnumString,
-    Serialize,
-    Deserialize,
-)]
-#[serde(rename_all = "lowercase")]
-#[strum(serialize_all = "lowercase")]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.deribit")
-)]
-pub enum DeribitOptionType {
-    /// Call option
-    Call,
-    /// Put option
-    Put,
-}
-
-impl DeribitCurrency {
-    /// Returns the currency as a string.
-    #[must_use]
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::BTC => "BTC",
-            Self::ETH => "ETH",
-            Self::USDC => "USDC",
-            Self::USDT => "USDT",
-            Self::EURR => "EURR",
-            Self::ANY => "any",
-        }
-    }
-}
-
-impl std::fmt::Display for DeribitCurrency {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub tick_size: Decimal,
 }
 
 /// Wrapper for the account summaries response.
@@ -281,28 +175,32 @@ pub struct DeribitAccountSummary {
     /// Currency code (e.g., "BTC", "ETH")
     pub currency: Ustr,
     /// Account equity (balance + unrealized PnL)
-    pub equity: f64,
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub equity: Decimal,
     /// Account balance
-    pub balance: f64,
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub balance: Decimal,
     /// Available funds for trading
-    pub available_funds: f64,
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub available_funds: Decimal,
     /// Margin balance (for derivatives)
-    pub margin_balance: f64,
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub margin_balance: Decimal,
     /// Initial margin (required for current positions)
-    #[serde(default)]
-    pub initial_margin: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub initial_margin: Option<Decimal>,
     /// Maintenance margin
-    #[serde(default)]
-    pub maintenance_margin: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub maintenance_margin: Option<Decimal>,
     /// Total profit/loss
-    #[serde(default)]
-    pub total_pl: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub total_pl: Option<Decimal>,
     /// Session unrealized profit/loss
-    #[serde(default)]
-    pub session_upl: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub session_upl: Option<Decimal>,
     /// Session realized profit/loss
-    #[serde(default)]
-    pub session_rpl: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub session_rpl: Option<Decimal>,
     /// Portfolio margining enabled
     #[serde(default)]
     pub portfolio_margining_enabled: Option<bool>,
@@ -318,28 +216,32 @@ pub struct DeribitAccountSummaryExtended {
     /// Currency code (e.g., "BTC", "ETH")
     pub currency: Ustr,
     /// Account equity (balance + unrealized PnL)
-    pub equity: f64,
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub equity: Decimal,
     /// Account balance
-    pub balance: f64,
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub balance: Decimal,
     /// Available funds for trading
-    pub available_funds: f64,
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub available_funds: Decimal,
     /// Margin balance (for derivatives)
-    pub margin_balance: f64,
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub margin_balance: Decimal,
     /// Initial margin (required for current positions)
-    #[serde(default)]
-    pub initial_margin: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub initial_margin: Option<Decimal>,
     /// Maintenance margin
-    #[serde(default)]
-    pub maintenance_margin: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub maintenance_margin: Option<Decimal>,
     /// Total profit/loss
-    #[serde(default)]
-    pub total_pl: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub total_pl: Option<Decimal>,
     /// Session unrealized profit/loss
-    #[serde(default)]
-    pub session_upl: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub session_upl: Option<Decimal>,
     /// Session realized profit/loss
-    #[serde(default)]
-    pub session_rpl: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub session_rpl: Option<Decimal>,
     /// Portfolio margining enabled
     #[serde(default)]
     pub portfolio_margining_enabled: Option<bool>,
@@ -360,62 +262,62 @@ pub struct DeribitAccountSummaryExtended {
     #[serde(rename = "type", default)]
     pub account_type: Option<String>,
     /// Futures session unrealized P&L
-    #[serde(default)]
-    pub futures_session_upl: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub futures_session_upl: Option<Decimal>,
     /// Futures session realized P&L
-    #[serde(default)]
-    pub futures_session_rpl: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub futures_session_rpl: Option<Decimal>,
     /// Options session unrealized P&L
-    #[serde(default)]
-    pub options_session_upl: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub options_session_upl: Option<Decimal>,
     /// Options session realized P&L
-    #[serde(default)]
-    pub options_session_rpl: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub options_session_rpl: Option<Decimal>,
     /// Futures profit/loss
-    #[serde(default)]
-    pub futures_pl: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub futures_pl: Option<Decimal>,
     /// Options profit/loss
-    #[serde(default)]
-    pub options_pl: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub options_pl: Option<Decimal>,
     /// Options delta
-    #[serde(default)]
-    pub options_delta: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub options_delta: Option<Decimal>,
     /// Options gamma
-    #[serde(default)]
-    pub options_gamma: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub options_gamma: Option<Decimal>,
     /// Options vega
-    #[serde(default)]
-    pub options_vega: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub options_vega: Option<Decimal>,
     /// Options theta
-    #[serde(default)]
-    pub options_theta: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub options_theta: Option<Decimal>,
     /// Options value
-    #[serde(default)]
-    pub options_value: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub options_value: Option<Decimal>,
     /// Total delta across all positions
-    #[serde(default)]
-    pub delta_total: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub delta_total: Option<Decimal>,
     /// Projected delta total
-    #[serde(default)]
-    pub projected_delta_total: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub projected_delta_total: Option<Decimal>,
     /// Projected initial margin
-    #[serde(default)]
-    pub projected_initial_margin: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub projected_initial_margin: Option<Decimal>,
     /// Projected maintenance margin
-    #[serde(default)]
-    pub projected_maintenance_margin: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub projected_maintenance_margin: Option<Decimal>,
     /// Estimated liquidation ratio
-    #[serde(default)]
-    pub estimated_liquidation_ratio: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub estimated_liquidation_ratio: Option<Decimal>,
     /// Available withdrawal funds
-    #[serde(default)]
-    pub available_withdrawal_funds: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub available_withdrawal_funds: Option<Decimal>,
     /// Spot reserve
-    #[serde(default)]
-    pub spot_reserve: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub spot_reserve: Option<Decimal>,
     /// Fee balance
-    #[serde(default)]
-    pub fee_balance: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub fee_balance: Option<Decimal>,
     /// Margin model (e.g., "segregated_sm", "cross_pm")
     #[serde(default)]
     pub margin_model: Option<String>,
@@ -459,26 +361,30 @@ pub struct DeribitAccountSummaryExtended {
 pub struct DeribitPublicTrade {
     /// Trade amount. For perpetual and inverse futures the amount is in USD units.
     /// For options and linear futures it is the underlying base currency coin.
-    pub amount: f64,
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub amount: Decimal,
     /// Trade size in contract units (optional, may be absent in historical trades).
-    #[serde(default)]
-    pub contracts: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub contracts: Option<Decimal>,
     /// Direction of the trade: "buy" or "sell"
     pub direction: String,
     /// Index Price at the moment of trade.
-    pub index_price: f64,
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub index_price: Decimal,
     /// Unique instrument identifier.
     pub instrument_name: String,
     /// Option implied volatility for the price (Option only).
-    #[serde(default)]
-    pub iv: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub iv: Option<Decimal>,
     /// Optional field (only for trades caused by liquidation).
     #[serde(default)]
     pub liquidation: Option<String>,
     /// Mark Price at the moment of trade.
-    pub mark_price: f64,
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub mark_price: Decimal,
     /// Price in base currency.
-    pub price: f64,
+    #[serde(deserialize_with = "deserialize_decimal")]
+    pub price: Decimal,
     /// Direction of the "tick" (0 = Plus Tick, 1 = Zero-Plus Tick, 2 = Minus Tick, 3 = Zero-Minus Tick).
     pub tick_direction: i32,
     /// The timestamp of the trade (milliseconds since the UNIX epoch).
@@ -500,8 +406,8 @@ pub struct DeribitPublicTrade {
     #[serde(default)]
     pub combo_id: Option<String>,
     /// Optional field containing combo trade identifier if the trade is a combo trade.
-    #[serde(default)]
-    pub combo_trade_id: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub combo_trade_id: Option<Decimal>,
 }
 
 /// Response wrapper for trades endpoints.
@@ -549,70 +455,230 @@ pub struct DeribitOrderBook {
     pub timestamp: i64,
     /// Unique instrument identifier
     pub instrument_name: String,
-    /// List of bids as [price, amount] pairs
+    /// List of bids as [price, amount] pairs (kept as f64 for performance)
     pub bids: Vec<[f64; 2]>,
-    /// List of asks as [price, amount] pairs
+    /// List of asks as [price, amount] pairs (kept as f64 for performance)
     pub asks: Vec<[f64; 2]>,
     /// The state of the order book: "open" or "closed"
     pub state: String,
     /// The current best bid price (null if there aren't any bids)
-    #[serde(default)]
-    pub best_bid_price: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub best_bid_price: Option<Decimal>,
     /// The current best ask price (null if there aren't any asks)
-    #[serde(default)]
-    pub best_ask_price: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub best_ask_price: Option<Decimal>,
     /// The order size of all best bids
-    #[serde(default)]
-    pub best_bid_amount: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub best_bid_amount: Option<Decimal>,
     /// The order size of all best asks
-    #[serde(default)]
-    pub best_ask_amount: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub best_ask_amount: Option<Decimal>,
     /// The mark price for the instrument
-    #[serde(default)]
-    pub mark_price: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub mark_price: Option<Decimal>,
     /// The price for the last trade
-    #[serde(default)]
-    pub last_price: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub last_price: Option<Decimal>,
     /// Current index price
-    #[serde(default)]
-    pub index_price: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub index_price: Option<Decimal>,
     /// The total amount of outstanding contracts
-    #[serde(default)]
-    pub open_interest: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub open_interest: Option<Decimal>,
     /// The maximum price for the future
-    #[serde(default)]
-    pub max_price: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub max_price: Option<Decimal>,
     /// The minimum price for the future
-    #[serde(default)]
-    pub min_price: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub min_price: Option<Decimal>,
     /// Current funding (perpetual only)
-    #[serde(default)]
-    pub current_funding: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub current_funding: Option<Decimal>,
     /// Funding 8h (perpetual only)
-    #[serde(default)]
-    pub funding_8h: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub funding_8h: Option<Decimal>,
     /// The settlement price for the instrument (when state = open)
-    #[serde(default)]
-    pub settlement_price: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub settlement_price: Option<Decimal>,
     /// The settlement/delivery price for the instrument (when state = closed)
-    #[serde(default)]
-    pub delivery_price: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub delivery_price: Option<Decimal>,
     /// (Only for option) implied volatility for best bid
-    #[serde(default)]
-    pub bid_iv: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub bid_iv: Option<Decimal>,
     /// (Only for option) implied volatility for best ask
-    #[serde(default)]
-    pub ask_iv: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub ask_iv: Option<Decimal>,
     /// (Only for option) implied volatility for mark price
-    #[serde(default)]
-    pub mark_iv: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub mark_iv: Option<Decimal>,
     /// Underlying price for implied volatility calculations (options only)
-    #[serde(default)]
-    pub underlying_price: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub underlying_price: Option<Decimal>,
     /// Name of the underlying future, or index_price (options only)
     #[serde(default)]
     pub underlying_index: Option<serde_json::Value>,
     /// Interest rate used in implied volatility calculations (options only)
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub interest_rate: Option<Decimal>,
+}
+
+/// Position data from `/private/get_positions` endpoint.
+///
+/// Contains information about a single position in a specific instrument.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeribitPosition {
+    /// Unique instrument identifier
+    pub instrument_name: Ustr,
+    /// Position direction: "buy" (long), "sell" (short), or "zero" (flat)
+    pub direction: String,
+    /// Position size in contracts (positive = long, negative = short)
+    #[serde(
+        serialize_with = "nautilus_core::serialization::serialize_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub size: Decimal,
+    /// Average entry price
+    #[serde(
+        serialize_with = "nautilus_core::serialization::serialize_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub average_price: Decimal,
+    /// Current mark price
+    #[serde(
+        serialize_with = "nautilus_core::serialization::serialize_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub mark_price: Decimal,
+    /// Current index price
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal"
+    )]
+    pub index_price: Option<Decimal>,
+    /// Maintenance margin
+    #[serde(
+        serialize_with = "nautilus_core::serialization::serialize_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub maintenance_margin: Decimal,
+    /// Initial margin
+    #[serde(
+        serialize_with = "nautilus_core::serialization::serialize_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub initial_margin: Decimal,
+    /// Leverage used for the position
     #[serde(default)]
-    pub interest_rate: Option<f64>,
+    pub leverage: Option<i64>,
+    /// Current unrealized profit/loss
+    #[serde(
+        serialize_with = "nautilus_core::serialization::serialize_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub floating_profit_loss: Decimal,
+    /// Realized profit/loss for this position
+    #[serde(
+        serialize_with = "nautilus_core::serialization::serialize_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub realized_profit_loss: Decimal,
+    /// Total profit/loss (floating + realized)
+    #[serde(
+        serialize_with = "nautilus_core::serialization::serialize_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+    )]
+    pub total_profit_loss: Decimal,
+    /// Product type: future, option, spot, etc.
+    pub kind: DeribitProductType,
+    /// Position size in currency units (for currency-quoted positions)
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal"
+    )]
+    pub size_currency: Option<Decimal>,
+    /// Estimated liquidation price
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal"
+    )]
+    pub estimated_liquidation_price: Option<Decimal>,
+    /// Position delta (for options)
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal"
+    )]
+    pub delta: Option<Decimal>,
+    /// Position gamma (for options)
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal"
+    )]
+    pub gamma: Option<Decimal>,
+    /// Position vega (for options)
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal"
+    )]
+    pub vega: Option<Decimal>,
+    /// Position theta (for options)
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal"
+    )]
+    pub theta: Option<Decimal>,
+    /// Settlement price (if settled)
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal"
+    )]
+    pub settlement_price: Option<Decimal>,
+    /// Open orders margin for this position
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal"
+    )]
+    pub open_orders_margin: Option<Decimal>,
+    /// Average price in USD (for currency-margined contracts)
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal"
+    )]
+    pub average_price_usd: Option<Decimal>,
+    /// Realized profit loss (session)
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal"
+    )]
+    pub realized_profit_loss_session: Option<Decimal>,
+    /// Floating profit loss in USD
+    #[serde(
+        default,
+        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal"
+    )]
+    pub floating_profit_loss_usd: Option<Decimal>,
+}
+
+/// Response wrapper for user trades endpoints.
+///
+/// Contains the trades array and pagination information.
+/// Used by `/private/get_user_trades_by_*` endpoints.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeribitUserTradesResponse {
+    /// Whether there are more trades available.
+    pub has_more: bool,
+    /// Array of user trade objects.
+    pub trades: Vec<crate::websocket::messages::DeribitUserTradeMsg>,
 }

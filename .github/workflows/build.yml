@@ -6,7 +6,7 @@ permissions: # Principle of least privilege
 
 on:
   push:
-    branches: [master, nightly, develop, test-ci]
+    branches: [master, nightly, develop, test-ci, test-pre-commit]
   pull_request:
     branches: ['*']
 
@@ -15,13 +15,13 @@ jobs:
     runs-on: ubuntu-22.04 # (glibc 2.35) wider runtime range than 24.04/glibc 2.39
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
@@ -40,19 +40,20 @@ jobs:
       - name: Verify capnp schemas are up-to-date
         run: make check-capnp-schemas
 
-  # Dependency license, advisory, and ban checks
+  # Dependency license, advisory, and ban checks (master only - gates releases)
   # https://embarkstudios.github.io/cargo-deny/
   cargo-deny:
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
@@ -64,19 +65,20 @@ jobs:
       - name: Run cargo-deny (advisories, licenses, sources, bans)
         run: cargo deny --all-features check advisories licenses sources bans
 
-  # Supply chain security auditing
+  # Supply chain security auditing (master only - gates releases)
   # https://mozilla.github.io/cargo-vet/configuring-ci.html
   cargo-vet:
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
@@ -89,6 +91,7 @@ jobs:
         run: cargo vet --locked
 
   build-linux-x86:
+    if: github.ref != 'refs/heads/test-pre-commit'
     strategy:
       fail-fast: false
       matrix:
@@ -104,8 +107,6 @@ jobs:
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs:
-      - cargo-deny
-      - cargo-vet
       - pre-commit
     env:
       BUILD_MODE: release
@@ -133,13 +134,13 @@ jobs:
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
@@ -192,30 +193,27 @@ jobs:
         python-version:
           - "3.12"
           - "3.13"
-          # - "3.14"  # Disabled: ckzg dependency (via eth-account) lacks ARM64 wheel for 3.14
+          - "3.14"
     defaults:
       run:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Pause job on develop, nightly, and test-ci branches for now
-    # - develop: takes ~1-1.5 hrs
-    # - nightly: TODO: build issue pending investigation
-    # - test-ci: skip ARM builds during CI testing
+    # Pause job on develop branch (takes ~1-1.5 hrs)
+    # - test-pre-commit: only run linting jobs
     if: >
       !(
         (github.event_name == 'push' &&
-          (github.ref_name == 'develop' || github.ref_name == 'nightly' || github.ref_name == 'test-ci'))
+          (github.ref_name == 'develop' || github.ref_name == 'test-pre-commit'))
         || (github.event_name == 'pull_request' &&
-          (github.base_ref == 'develop' || github.base_ref == 'nightly' || github.base_ref == 'test-ci'))
+          github.base_ref == 'develop')
       )
     needs:
-      - cargo-deny
-      - cargo-vet
       - pre-commit
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
+      CARGO_BUILD_JOBS: 1
     # yamllint disable rule:line-length
     services:
       redis:
@@ -239,13 +237,13 @@ jobs:
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
@@ -273,7 +271,7 @@ jobs:
         uses: ./.github/actions/common-test-data
 
       - name: Run Rust tests
-        run: make cargo-test EXTRA_FEATURES="capnp,hypersync"
+        run: make cargo-test EXTRA_FEATURES="capnp"
 
       - name: Build and install wheel
         uses: ./.github/actions/common-wheel-build
@@ -289,6 +287,7 @@ jobs:
         uses: ./.github/actions/upload-artifact-wheel
 
   build-macos:
+    if: github.ref != 'refs/heads/test-pre-commit'
     strategy:
       fail-fast: false
       matrix:
@@ -304,21 +303,19 @@ jobs:
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs:
-      - cargo-deny
-      - cargo-vet
       - pre-commit
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
@@ -347,6 +344,7 @@ jobs:
         uses: ./.github/actions/upload-artifact-wheel
 
   build-windows:
+    if: github.ref != 'refs/heads/test-pre-commit'
     strategy:
       fail-fast: false
       matrix:
@@ -362,8 +360,6 @@ jobs:
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs:
-      - cargo-deny
-      - cargo-vet
       - pre-commit
     env:
       BUILD_MODE: release
@@ -372,13 +368,13 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           egress-policy: audit
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
@@ -396,9 +392,6 @@ jobs:
 
       - name: Cached test data
         uses: ./.github/actions/common-test-data
-
-      - name: Install test dependencies
-        run: make install-just-deps
 
       - name: Run tests
         run: |
@@ -431,7 +424,7 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           egress-policy: audit
           allowed-endpoints: |
@@ -440,12 +433,12 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
       - name: Download built wheels
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           path: dist
           pattern: "nautilus_trader-*.whl"
@@ -453,7 +446,7 @@ jobs:
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        uses: actions/attest-build-provenance@46a583fd92dfbf46b772907a9740f888f4324bb9 # v3.1.0
         with:
           subject-path: 'dist/nautilus_trader-*.whl'
 
@@ -478,7 +471,7 @@ jobs:
       attestations: write # Required for attestations
     needs:
       - build-linux-x86
-      # - build-linux-arm  # TODO: Build issue pending investigation
+      - build-linux-arm
       - build-macos
       - build-windows
     if: >
@@ -491,7 +484,7 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           egress-policy: audit
           allowed-endpoints: |
@@ -500,12 +493,12 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
       - name: Download built wheels
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           path: dist
           pattern: "nautilus_trader-*.whl"
@@ -513,7 +506,7 @@ jobs:
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        uses: actions/attest-build-provenance@46a583fd92dfbf46b772907a9740f888f4324bb9 # v3.1.0
         with:
           subject-path: 'dist/nautilus_trader-*.whl'
 
@@ -551,7 +544,7 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           egress-policy: audit
           allowed-endpoints: |
@@ -563,7 +556,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
@@ -573,12 +566,12 @@ jobs:
           echo "UV_VERSION=$(cat uv-version)" >> "$GITHUB_ENV"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@3259c6206f993105e3a61b142c2d97bf4b9ef83d # v7.1.0
+        uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7.1.6
         with:
           version: ${{ env.UV_VERSION }}
 
       - name: Download built wheels for PyPI and GitHub release
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           path: dist
           pattern: "nautilus_trader-*.whl"
@@ -586,7 +579,7 @@ jobs:
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        uses: actions/attest-build-provenance@46a583fd92dfbf46b772907a9740f888f4324bb9 # v3.1.0
         with:
           subject-path: 'dist/nautilus_trader-*.whl'
 
@@ -654,6 +647,8 @@ jobs:
       - build-linux-arm
       - build-macos
       - build-windows
+      - cargo-deny
+      - cargo-vet
     permissions:
       contents: write # Required for pushing tags and upload release assets
       actions: write  # Required for creating releases
@@ -664,7 +659,7 @@ jobs:
       tag_name: ${{ env.TAG_NAME }}
     steps:
       # Security hardening
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           egress-policy: audit
           allowed-endpoints: |
@@ -672,14 +667,15 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: true  # Required for salsify action to push git tags
           fetch-depth: 2
+          fetch-tags: true
 
       - name: Set up Python environment
         # https://github.com/actions/setup-python
-        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
         with:
           python-version: "3.13"
 
@@ -699,7 +695,7 @@ jobs:
       - name: Create GitHub release
         id: create-release
         # https://github.com/softprops/action-gh-release v2.5.0
-        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -722,7 +718,7 @@ jobs:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           egress-policy: audit
           allowed-endpoints: |
@@ -733,7 +729,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
@@ -749,7 +745,7 @@ jobs:
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest sdist provenance
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        uses: actions/attest-build-provenance@46a583fd92dfbf46b772907a9740f888f4324bb9 # v3.1.0
         with:
           subject-path: 'dist/*.tar.gz'
 

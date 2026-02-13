@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -44,7 +44,7 @@ def test_account_identifier() -> None:
     # Assert
     assert account_id1 == account_id1
     assert account_id1 != account_id2
-    assert "SIM-02851908", account_id1.value
+    assert account_id1.value == "SIM-02851908"
     assert account_id1 == AccountId("SIM-02851908")
 
 

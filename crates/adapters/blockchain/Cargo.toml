@@ -25,7 +25,6 @@ default = []
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
-  "nautilus-data/extension-module",
   "nautilus-model/extension-module",
   "nautilus-network/extension-module",
   "python",
@@ -49,8 +48,6 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true, features = ["defi", "live"] }
 nautilus-core = { workspace = true }
-nautilus-data = { workspace = true, features = ["defi"] }
-nautilus-execution = { workspace = true }
 nautilus-infrastructure = { workspace = true, features = ["postgres"] }
 nautilus-live = { workspace = true, features = ["defi"] }
 nautilus-model = { workspace = true, features = ["defi"] }
@@ -77,7 +74,6 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
-tracing = { workspace = true }
 ustr = { workspace = true }
 
 hypersync-client = { workspace = true, optional = true }
@@ -91,11 +87,13 @@ rstest = { workspace = true }
 turmoil = { workspace = true }
 
 [[bin]]
-name = "node_test"
-path = "bin/node_test.rs"
-required-features = ["hypersync"]
-
-[[bin]]
 name = "node_wallet"
 path = "bin/node_wallet.rs"
 required-features = ["hypersync"]
+doc = false
+
+[[example]]
+name = "blockchain-data-tester"
+path = "examples/node_data_tester.rs"
+required-features = ["hypersync"]
+doc = false

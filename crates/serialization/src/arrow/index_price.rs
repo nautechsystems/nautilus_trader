@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -27,7 +27,7 @@ use nautilus_model::{
 
 use super::{
     DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, decode_price,
-    extract_column,
+    extract_column, validate_precision_bytes,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -120,15 +120,7 @@ impl DecodeFromRecordBatch for IndexPriceUpdate {
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 1, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 2, DataType::UInt64)?;
 
-        if value_values.value_length() != PRECISION_BYTES {
-            return Err(EncodingError::ParseError(
-                "value",
-                format!(
-                    "Invalid value length: expected {PRECISION_BYTES}, found {}",
-                    value_values.value_length()
-                ),
-            ));
-        }
+        validate_precision_bytes(value_values, "value")?;
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|row| {
@@ -309,7 +301,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("value") && err.to_string().contains("row 0"),
-            "Expected value error at row 0, got: {err}"
+            "Expected value error at row 0, was: {err}"
         );
     }
 
@@ -341,7 +333,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("instrument_id"),
-            "Expected missing instrument_id error, got: {err}"
+            "Expected missing instrument_id error, was: {err}"
         );
     }
 

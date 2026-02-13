@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,11 +21,6 @@ use crate::common::consts::{
     DERIBIT_HTTP_URL, DERIBIT_TESTNET_HTTP_URL, DERIBIT_TESTNET_WS_URL, DERIBIT_WS_URL,
 };
 
-/// Returns the Deribit HTTP base URL.
-///
-/// # Arguments
-///
-/// * `is_testnet` - If true, returns the testnet URL.
 #[pyfunction]
 #[pyo3(name = "get_deribit_http_base_url")]
 #[must_use]
@@ -37,11 +32,6 @@ pub fn py_get_deribit_http_base_url(is_testnet: bool) -> String {
     }
 }
 
-/// Returns the Deribit WebSocket URL.
-///
-/// # Arguments
-///
-/// * `is_testnet` - If true, returns the testnet URL.
 #[pyfunction]
 #[pyo3(name = "get_deribit_ws_url")]
 #[must_use]

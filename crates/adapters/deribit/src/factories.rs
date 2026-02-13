@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,9 +17,12 @@
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
-use nautilus_common::{cache::Cache, clock::Clock};
-use nautilus_data::client::DataClient;
-use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
+use nautilus_common::{
+    cache::Cache,
+    clients::{DataClient, ExecutionClient},
+    clock::Clock,
+};
+use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
     identifiers::ClientId,
@@ -89,8 +92,6 @@ impl DataClientFactory for DeribitDataClientFactory {
     }
 }
 
-// ------------------------------------------------------------------------------------------------
-
 impl ClientConfig for DeribitExecClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
@@ -121,7 +122,6 @@ impl ExecutionClientFactory for DeribitExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: Rc<RefCell<Cache>>,
-        clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let deribit_config = config
             .as_any()
@@ -146,7 +146,6 @@ impl ExecutionClientFactory for DeribitExecutionClientFactory {
             deribit_config.account_id,
             account_type,
             None, // base_currency
-            clock,
             cache,
         );
 
@@ -174,7 +173,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::http::models::DeribitInstrumentKind;
+    use crate::http::models::DeribitProductType;
 
     fn setup_test_env() {
         // Initialize data event sender for tests
@@ -198,7 +197,7 @@ mod tests {
     #[rstest]
     fn test_deribit_data_client_config_implements_client_config() {
         let config = DeribitDataClientConfig {
-            instrument_kinds: vec![DeribitInstrumentKind::Future],
+            product_types: vec![DeribitProductType::Future],
             ..Default::default()
         };
 
@@ -216,7 +215,7 @@ mod tests {
 
         let factory = DeribitDataClientFactory::new();
         let config = DeribitDataClientConfig {
-            instrument_kinds: vec![DeribitInstrumentKind::Future],
+            product_types: vec![DeribitProductType::Future],
             use_testnet: true,
             ..Default::default()
         };

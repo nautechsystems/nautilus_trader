@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -41,11 +41,6 @@ use crate::{
         OrderRequest, OrderTypeRequest, PostRequest, PostResponse, TimeInForceRequest, TpSlRequest,
     },
 };
-
-// -------------------------------------------------------------------------------------------------
-// Correlation router for "channel":"post" → correlate by id
-//  - Enforces inflight cap using OwnedSemaphorePermit stored per waiter
-// -------------------------------------------------------------------------------------------------
 
 #[derive(Debug)]
 struct Waiter {
@@ -108,11 +103,11 @@ impl PostRouter {
         };
         if let Some(waiter) = waiter {
             if waiter.tx.send(resp).is_err() {
-                tracing::warn!(id, "post waiter dropped before delivery");
+                log::warn!("Post waiter dropped before delivery: id={id}");
             }
             // waiter drops here → permit released
         } else {
-            tracing::warn!(id, "post response with unknown id (late/duplicate?)");
+            log::warn!("Post response with unknown id (late/duplicate?): id={id}");
         }
     }
 
@@ -146,10 +141,6 @@ impl PostRouter {
     }
 }
 
-// -------------------------------------------------------------------------------------------------
-// ID generation
-// -------------------------------------------------------------------------------------------------
-
 #[derive(Debug)]
 pub struct PostIds(AtomicU64);
 
@@ -161,10 +152,6 @@ impl PostIds {
         self.0.fetch_add(1, Ordering::Relaxed)
     }
 }
-
-// -------------------------------------------------------------------------------------------------
-// Lanes & batcher (scaffold). You can expand policy later.
-// -------------------------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PostLane {
@@ -239,13 +226,13 @@ impl PostBatcher {
                     for item in to_send {
                         let req = HyperliquidWsRequest::Post { id: item.id, request: item.request.clone() };
                         if let Err(e) = send_fn(req).await {
-                            tracing::error!(lane=%lane_name, id=%item.id, "failed to send post: {e}");
+                            log::error!("Failed to send post: lane={lane_name}, id={}, {e}", item.id);
                         }
                     }
                 }
             }
         }
-        tracing::info!(lane=%lane_name, "post lane terminated");
+        log::info!("Post lane terminated: lane={lane_name}");
     }
 
     pub async fn enqueue(&self, item: ScheduledPost) -> Result<()> {
@@ -288,10 +275,6 @@ pub fn lane_for_action(action: &ActionRequest) -> PostLane {
         _ => PostLane::Normal,
     }
 }
-
-// -------------------------------------------------------------------------------------------------
-// Typed builders (produce ActionRequest), plus Info request helpers.
-// -------------------------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, Default)]
 pub enum Grouping {
@@ -557,10 +540,6 @@ pub fn info_candle(coin: &str, interval: &str) -> PostRequest {
     }
 }
 
-// -------------------------------------------------------------------------------------------------
-// Minimal response helpers
-// -------------------------------------------------------------------------------------------------
-
 pub fn parse_l2_book(payload: &serde_json::Value) -> Result<HyperliquidL2Book> {
     serde_json::from_value(payload.clone()).map_err(Error::Serde)
 }
@@ -621,10 +600,6 @@ pub fn classify_action_payload(payload: &serde_json::Value) -> ActionOutcome<'_>
     ActionOutcome::Unknown(payload)
 }
 
-// -------------------------------------------------------------------------------------------------
-// Glue helpers used by the client (wired in client.rs)
-// -------------------------------------------------------------------------------------------------
-
 #[derive(Clone, Debug)]
 pub struct WsSender {
     inner: Arc<tokio::sync::Mutex<mpsc::Sender<HyperliquidWsRequest>>>,
@@ -648,10 +623,11 @@ impl WsSender {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::testing::wait_until_async;
     use rstest::rstest;
     use tokio::{
         sync::oneshot,
-        time::{Duration, sleep, timeout},
+        time::{Duration, timeout},
     };
 
     use super::*;
@@ -1029,11 +1005,18 @@ mod tests {
                 .unwrap();
         }
 
-        // Wait slightly past one tick to allow the lane to flush.
-        sleep(Duration::from_millis(80)).await;
+        // Wait for all 5 posts to be sent
+        let sent_check = sent.clone();
+        wait_until_async(
+            || {
+                let sent_inner = sent_check.clone();
+                async move { sent_inner.lock().await.len() == 5 }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
 
         let got = sent.lock().await.clone();
-        assert_eq!(got.len(), 5, "expected 5 sends on first tick");
         assert_eq!(got, vec![1, 2, 3, 4, 5]);
     }
 }

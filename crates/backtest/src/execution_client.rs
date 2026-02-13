@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,10 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 //! Provides a `BacktestExecutionClient` implementation for backtesting.
 
 use std::{cell::RefCell, fmt::Debug, rc::Rc};
@@ -24,19 +20,23 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc};
 use async_trait::async_trait;
 use nautilus_common::{
     cache::Cache,
+    clients::ExecutionClient,
     clock::Clock,
+    factories::OrderEventFactory,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
         SubmitOrder, SubmitOrderList, TradingCommand,
     },
+    msgbus::{self, MessagingSwitchboard},
 };
 use nautilus_core::{SharedCell, UnixNanos, WeakCell};
-use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
+use nautilus_execution::client::core::ExecutionClientCore;
 use nautilus_model::{
     accounts::AccountAny,
     enums::OmsType,
-    identifiers::{AccountId, ClientId, TraderId, Venue},
-    orders::Order,
+    events::OrderEventAny,
+    identifiers::{AccountId, ClientId, ClientOrderId, TraderId, Venue},
+    orders::OrderAny,
     types::{AccountBalance, MarginBalance},
 };
 
@@ -51,11 +51,19 @@ use crate::exchange::SimulatedExchange;
 #[derive(Clone)]
 pub struct BacktestExecutionClient {
     core: ExecutionClientCore,
-    exchange: WeakCell<SimulatedExchange>,
+    factory: OrderEventFactory,
+    cache: Rc<RefCell<Cache>>,
     clock: Rc<RefCell<dyn Clock>>,
-    is_connected: bool,
+    exchange: WeakCell<SimulatedExchange>,
+    /// Buffered order events for deferred processing.
+    ///
+    /// Events like `OrderSubmitted` cannot be sent synchronously through
+    /// the msgbus during `submit_order` because the exec engine holds a
+    /// borrow via its `execute` handler. Instead, events are buffered here
+    /// and drained by the engine after the execute borrow is released.
+    queued_events: Rc<RefCell<Vec<OrderEventAny>>>,
     routing: bool,
-    frozen_account: bool,
+    _frozen_account: bool,
 }
 
 impl Debug for BacktestExecutionClient {
@@ -82,29 +90,52 @@ impl BacktestExecutionClient {
         let frozen_account = frozen_account.unwrap_or(false);
         let exchange_shared: SharedCell<SimulatedExchange> = SharedCell::from(exchange.clone());
         let exchange_id = exchange_shared.borrow().id;
-        let core_client = ExecutionClientCore::new(
+        let account_type = exchange.borrow().account_type;
+        let base_currency = exchange.borrow().base_currency;
+
+        let core = ExecutionClientCore::new(
             trader_id,
             ClientId::from(exchange_id.as_str()),
             Venue::from(exchange_id.as_str()),
             exchange.borrow().oms_type,
             account_id,
-            exchange.borrow().account_type,
-            exchange.borrow().base_currency,
-            clock.clone(),
-            cache,
+            account_type,
+            base_currency,
+            cache.clone(),
         );
+
+        let factory = OrderEventFactory::new(trader_id, account_id, account_type, base_currency);
 
         if !frozen_account {
             // TODO Register calculated account
         }
 
         Self {
+            core,
+            factory,
             exchange: exchange_shared.downgrade(),
+            cache,
             clock,
-            core: core_client,
-            is_connected: false,
+            queued_events: Rc::new(RefCell::new(Vec::new())),
             routing,
-            frozen_account,
+            _frozen_account: frozen_account,
+        }
+    }
+
+    fn get_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<OrderAny> {
+        self.cache
+            .borrow()
+            .order(client_order_id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("Order not found in cache for {client_order_id}"))
+    }
+
+    /// Drain buffered order events, sending each to the exec engine.
+    pub fn drain_queued_events(&self) {
+        let events: Vec<OrderEventAny> = self.queued_events.borrow_mut().drain(..).collect();
+        let endpoint = MessagingSwitchboard::exec_engine_process();
+        for event in events {
+            msgbus::send_order_event(endpoint, event);
         }
     }
 }
@@ -112,7 +143,7 @@ impl BacktestExecutionClient {
 #[async_trait(?Send)]
 impl ExecutionClient for BacktestExecutionClient {
     fn is_connected(&self) -> bool {
-        self.is_connected
+        self.core.is_connected()
     }
 
     fn client_id(&self) -> ClientId {
@@ -132,7 +163,7 @@ impl ExecutionClient for BacktestExecutionClient {
     }
 
     fn get_account(&self) -> Option<AccountAny> {
-        self.core.get_account()
+        self.cache.borrow().account(&self.core.account_id).cloned()
     }
 
     fn generate_account_state(
@@ -142,29 +173,34 @@ impl ExecutionClient for BacktestExecutionClient {
         reported: bool,
         ts_event: UnixNanos,
     ) -> anyhow::Result<()> {
-        self.core
-            .generate_account_state(balances, margins, reported, ts_event)
+        let ts_init = self.clock.borrow().timestamp_ns();
+        let state = self
+            .factory
+            .generate_account_state(balances, margins, reported, ts_event, ts_init);
+        let endpoint = MessagingSwitchboard::portfolio_update_account();
+        msgbus::send_account_state(endpoint, &state);
+        Ok(())
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
-        self.is_connected = true;
+        self.core.set_connected();
         log::info!("Backtest execution client started");
         Ok(())
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
-        self.is_connected = false;
+        self.core.set_disconnected();
         log::info!("Backtest execution client stopped");
         Ok(())
     }
 
     fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
-        self.core.generate_order_submitted(
-            cmd.strategy_id,
-            cmd.instrument_id,
-            cmd.client_order_id,
-            self.clock.borrow().timestamp_ns(),
-        );
+        // Buffer the OrderSubmitted event for deferred processing to avoid
+        // RefCell re-entrancy (exec_engine holds a borrow during execute)
+        let order = self.get_order(&cmd.client_order_id)?;
+        let ts_init = self.clock.borrow().timestamp_ns();
+        let event = self.factory.generate_order_submitted(&order, ts_init);
+        self.queued_events.borrow_mut().push(event);
 
         if let Some(exchange) = self.exchange.upgrade() {
             exchange
@@ -177,14 +213,20 @@ impl ExecutionClient for BacktestExecutionClient {
     }
 
     fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
-        for order in &cmd.order_list.orders {
-            self.core.generate_order_submitted(
-                cmd.strategy_id,
-                order.instrument_id(),
-                order.client_order_id(),
-                self.clock.borrow().timestamp_ns(),
-            );
+        let ts_init = self.clock.borrow().timestamp_ns();
+
+        let orders: Vec<OrderAny> = self
+            .cache
+            .borrow()
+            .orders_for_ids(&cmd.order_list.client_order_ids, cmd);
+
+        // Buffer events for deferred processing
+        let mut queued = self.queued_events.borrow_mut();
+        for order in &orders {
+            let event = self.factory.generate_order_submitted(order, ts_init);
+            queued.push(event);
         }
+        drop(queued);
 
         if let Some(exchange) = self.exchange.upgrade() {
             exchange

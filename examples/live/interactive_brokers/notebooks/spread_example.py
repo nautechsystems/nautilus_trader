@@ -27,10 +27,16 @@ from ibapi.common import MarketDataTypeEnum as IBMarketDataTypeEnum
 from nautilus_trader.adapters.interactive_brokers.common import IB
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
+from nautilus_trader.adapters.interactive_brokers.config import (
+    InteractiveBrokersInstrumentProviderConfig,
+)
 from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
-from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
-from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveDataClientFactory,
+)
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveExecClientFactory,
+)
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import RoutingConfig
@@ -293,7 +299,7 @@ leg2_id = InstrumentId.from_str("ESH6 P6775.XCME")
 
 spread_id = new_generic_spread_id(
     [
-        (leg1_id, 1),   # Long 1 ESZ5 per spread unit
+        (leg1_id, 1),  # Long 1 ESZ5 per spread unit
         (leg2_id, -1),  # Short 1 ESH6 per spread unit
     ],
 )

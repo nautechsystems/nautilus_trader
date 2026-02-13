@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,16 +17,110 @@
 //!
 //! This module provides two types of credentials:
 //! - [`Credential`]: HMAC SHA256 signing for REST API and standard WebSocket
-//! - [`Ed25519Credential`]: Ed25519 signing for SBE market data streams
+//! - [`Ed25519Credential`]: Ed25519 signing for WebSocket API and SBE streams
+//!
+//! Ed25519 keys are required. Credentials are resolved from standard
+//! environment variables (`BINANCE_API_KEY`/`BINANCE_API_SECRET`), falling
+//! back to deprecated `*_ED25519_*` variables with a warning.
 
 #![allow(unused_assignments)] // Fields are used in methods; false positive on some toolchains
 
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 
 use aws_lc_rs::hmac;
 use ed25519_dalek::{Signature, Signer, SigningKey};
 use ustr::Ustr;
 use zeroize::ZeroizeOnDrop;
+
+use super::enums::{BinanceEnvironment, BinanceProductType};
+
+/// Resolves API credentials from config or environment variables.
+///
+/// Checks standard environment variables first, then falls back to
+/// deprecated `*_ED25519_*` variables with a deprecation warning.
+///
+/// For live environments:
+/// - Deprecated: `BINANCE_ED25519_API_KEY` / `BINANCE_ED25519_API_SECRET`
+/// - Standard: `BINANCE_API_KEY` / `BINANCE_API_SECRET`
+///
+/// For testnet environments (Spot):
+/// - Deprecated: `BINANCE_TESTNET_ED25519_API_KEY` / `BINANCE_TESTNET_ED25519_API_SECRET`
+/// - Standard: `BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`
+///
+/// For testnet environments (Futures):
+/// - Deprecated: `BINANCE_FUTURES_TESTNET_ED25519_API_KEY` / `BINANCE_FUTURES_TESTNET_ED25519_API_SECRET`
+/// - Standard: `BINANCE_FUTURES_TESTNET_API_KEY` / `BINANCE_FUTURES_TESTNET_API_SECRET`
+///
+/// # Errors
+///
+/// Returns an error if credentials cannot be resolved from config or environment.
+pub fn resolve_credentials(
+    config_api_key: Option<String>,
+    config_api_secret: Option<String>,
+    environment: BinanceEnvironment,
+    product_type: BinanceProductType,
+) -> anyhow::Result<(String, String)> {
+    if let (Some(key), Some(secret)) = (config_api_key.clone(), config_api_secret.clone()) {
+        return Ok((key, secret));
+    }
+
+    let (deprecated_key_var, deprecated_secret_var, standard_key_var, standard_secret_var) =
+        match environment {
+            BinanceEnvironment::Testnet => match product_type {
+                BinanceProductType::Spot
+                | BinanceProductType::Margin
+                | BinanceProductType::Options => (
+                    "BINANCE_TESTNET_ED25519_API_KEY",
+                    "BINANCE_TESTNET_ED25519_API_SECRET",
+                    "BINANCE_TESTNET_API_KEY",
+                    "BINANCE_TESTNET_API_SECRET",
+                ),
+                BinanceProductType::UsdM | BinanceProductType::CoinM => (
+                    "BINANCE_FUTURES_TESTNET_ED25519_API_KEY",
+                    "BINANCE_FUTURES_TESTNET_ED25519_API_SECRET",
+                    "BINANCE_FUTURES_TESTNET_API_KEY",
+                    "BINANCE_FUTURES_TESTNET_API_SECRET",
+                ),
+            },
+
+            // Demo shares API keys across all product types
+            BinanceEnvironment::Demo => ("", "", "BINANCE_DEMO_API_KEY", "BINANCE_DEMO_API_SECRET"),
+            BinanceEnvironment::Mainnet => (
+                "BINANCE_ED25519_API_KEY",
+                "BINANCE_ED25519_API_SECRET",
+                "BINANCE_API_KEY",
+                "BINANCE_API_SECRET",
+            ),
+        };
+
+    let api_key = config_api_key
+        .or_else(|| std::env::var(standard_key_var).ok())
+        .or_else(|| {
+            std::env::var(deprecated_key_var).ok().inspect(|_| {
+                log::warn!(
+                    "'{deprecated_key_var}' is deprecated, \
+                     use '{standard_key_var}' instead"
+                );
+            })
+        })
+        .ok_or_else(|| anyhow::anyhow!("{standard_key_var} not found in config or environment"))?;
+
+    let api_secret = config_api_secret
+        .or_else(|| std::env::var(standard_secret_var).ok())
+        .or_else(|| {
+            std::env::var(deprecated_secret_var).ok().inspect(|_| {
+                log::warn!(
+                    "'{deprecated_secret_var}' is deprecated, \
+                     use '{standard_secret_var}' instead"
+                );
+            })
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!("{standard_secret_var} not found in config or environment")
+        })?;
+
+    Ok((api_key, api_secret))
+}
 
 /// Binance API credentials for signing requests (HMAC SHA256).
 ///
@@ -38,10 +132,10 @@ pub struct Credential {
     api_secret: Box<[u8]>,
 }
 
-/// Binance Ed25519 credentials for SBE market data streams.
+/// Binance Ed25519 credentials for WebSocket API authentication.
 ///
-/// SBE market data streams at `stream-sbe.binance.com` require Ed25519 API key
-/// authentication via the `X-MBX-APIKEY` header.
+/// Ed25519 is required for WebSocket API authentication (`session.logon`).
+/// This is the only key type supported for execution clients.
 #[derive(ZeroizeOnDrop)]
 pub struct Ed25519Credential {
     #[zeroize(skip)]
@@ -95,18 +189,34 @@ impl Debug for Ed25519Credential {
 impl Ed25519Credential {
     /// Creates a new [`Ed25519Credential`] from API key and base64-encoded private key.
     ///
+    /// The private key can be provided as:
+    /// - Raw 32-byte seed (base64 encoded)
+    /// - PKCS#8 DER format (48 bytes, as generated by OpenSSL)
+    /// - PEM format (with or without headers)
+    ///
+    /// For PKCS#8/PEM format, the 32-byte seed is extracted from the last 32 bytes.
+    ///
     /// # Errors
     ///
     /// Returns an error if the private key is not valid base64 or not a valid
-    /// Ed25519 private key (32 bytes).
+    /// Ed25519 private key.
     pub fn new(api_key: String, private_key_base64: &str) -> Result<Self, Ed25519CredentialError> {
-        let private_key_bytes = base64::Engine::decode(
-            &base64::engine::general_purpose::STANDARD,
-            private_key_base64,
-        )
-        .map_err(|e| Ed25519CredentialError::InvalidBase64(e.to_string()))?;
+        // Strip PEM headers/footers if present
+        let key_data: String = private_key_base64
+            .lines()
+            .filter(|line| !line.starts_with("-----"))
+            .collect();
 
-        let key_bytes: [u8; 32] = private_key_bytes
+        let private_key_bytes =
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &key_data)
+                .map_err(|e| Ed25519CredentialError::InvalidBase64(e.to_string()))?;
+
+        // Extract 32-byte seed: works for both raw (32 bytes) and PKCS#8 (48 bytes)
+        if private_key_bytes.len() < 32 {
+            return Err(Ed25519CredentialError::InvalidKeyLength);
+        }
+        let seed_start = private_key_bytes.len() - 32;
+        let key_bytes: [u8; 32] = private_key_bytes[seed_start..]
             .try_into()
             .map_err(|_| Ed25519CredentialError::InvalidKeyLength)?;
 
@@ -144,7 +254,7 @@ pub enum Ed25519CredentialError {
     InvalidKeyLength,
 }
 
-impl std::fmt::Display for Ed25519CredentialError {
+impl Display for Ed25519CredentialError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidBase64(e) => write!(f, "Invalid base64 encoding: {e}"),

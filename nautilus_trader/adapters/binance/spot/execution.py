@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,6 +18,7 @@ import asyncio
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.execution import BinanceCommonExecutionClient
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
@@ -25,12 +26,11 @@ from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEnumParser
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEventType
 from nautilus_trader.adapters.binance.spot.http.account import BinanceSpotAccountHttpAPI
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
-from nautilus_trader.adapters.binance.spot.http.user import BinanceSpotUserDataHttpAPI
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.adapters.binance.spot.schemas.account import BinanceSpotAccountInfo
-from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotAccountUpdateWrapper
-from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotOrderUpdateWrapper
-from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotUserMsgWrapper
+from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotAccountUpdateMsg
+from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotOrderUpdateData
+from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotUserMsgData
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -64,13 +64,19 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
     instrument_provider : BinanceSpotInstrumentProvider
         The instrument provider.
     base_url_ws : str
-        The base URL for the WebSocket client.
+        The base URL for the WebSocket client (unused, kept for backward compatibility).
     config : BinanceExecClientConfig
         The configuration for the client.
     account_type : BinanceAccountType, default 'SPOT'
         The account type for the client.
     name : str, optional
         The custom client ID.
+    environment : BinanceEnvironment
+        The resolved Binance environment.
+    api_key : str
+        The Binance API key.
+    api_secret : str
+        The Binance API secret.
 
     """
 
@@ -86,6 +92,10 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
         config: BinanceExecClientConfig,
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
         name: str | None = None,
+        *,
+        environment: BinanceEnvironment,
+        api_key: str,
+        api_secret: str,
     ) -> None:
         PyCondition.is_true(
             account_type.is_spot_or_margin,
@@ -95,7 +105,6 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
         # Spot HTTP API
         self._spot_http_account = BinanceSpotAccountHttpAPI(client, clock, account_type)
         self._spot_http_market = BinanceSpotMarketHttpAPI(client, account_type)
-        self._spot_http_user = BinanceSpotUserDataHttpAPI(client, account_type)
 
         # Spot enum parser
         self._spot_enum_parser = BinanceSpotEnumParser()
@@ -106,7 +115,6 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
             client=client,
             account=self._spot_http_account,
             market=self._spot_http_market,
-            user=self._spot_http_user,
             enum_parser=self._spot_enum_parser,
             msgbus=msgbus,
             cache=cache,
@@ -116,6 +124,9 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
             base_url_ws=base_url_ws,
             name=name,
             config=config,
+            environment=environment,
+            api_key=api_key,
+            api_secret=api_secret,
         )
 
         # Register spot websocket user data event handlers
@@ -124,16 +135,12 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
             BinanceSpotEventType.executionReport: self._handle_execution_report,
             BinanceSpotEventType.listStatus: self._handle_list_status,
             BinanceSpotEventType.balanceUpdate: self._handle_balance_update,
+            BinanceSpotEventType.listenKeyExpired: self._handle_listen_key_expired,
         }
 
-        # Websocket spot schema decoders
-        self._decoder_spot_user_msg_wrapper = msgspec.json.Decoder(BinanceSpotUserMsgWrapper)
-        self._decoder_spot_order_update_wrapper = msgspec.json.Decoder(
-            BinanceSpotOrderUpdateWrapper,
-        )
-        self._decoder_spot_account_update_wrapper = msgspec.json.Decoder(
-            BinanceSpotAccountUpdateWrapper,
-        )
+        self._decoder_spot_user_msg = msgspec.json.Decoder(BinanceSpotUserMsgData)
+        self._decoder_spot_order_update = msgspec.json.Decoder(BinanceSpotOrderUpdateData)
+        self._decoder_spot_account_update = msgspec.json.Decoder(BinanceSpotAccountUpdateMsg)
 
     async def _update_account_state(self) -> None:
         account_info: BinanceSpotAccountInfo = (
@@ -157,8 +164,6 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
         self._is_dual_side_position = False
         self._log.info(f"Dual side position: {self._is_dual_side_position}", LogColor.BLUE)
 
-    # -- EXECUTION REPORTS ------------------------------------------------------------------------
-
     async def _get_binance_position_status_reports(
         self,
         symbol: str | None = None,
@@ -172,8 +177,6 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
     ) -> set[str]:
         # Never cash positions
         return set()
-
-    # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
     def _check_order_validity(self, order: Order) -> str | None:
         # Check order type valid
@@ -234,25 +237,26 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
             f"Batch cancel fallback completed: {successful_cancels}/{len(command.cancels)} orders cancelled",
         )
 
-    # -- WEBSOCKET EVENT HANDLERS --------------------------------------------------------------------
-
     def _handle_user_ws_message(self, raw: bytes) -> None:
         try:
-            wrapper = self._decoder_spot_user_msg_wrapper.decode(raw)
-            self._spot_user_ws_handlers[wrapper.data.e](raw)
+            msg = self._decoder_spot_user_msg.decode(raw)
+            self._spot_user_ws_handlers[msg.e](raw)
         except Exception as e:
             self._log.exception(f"Error on handling {raw!r}", e)
 
     def _handle_account_update(self, raw: bytes) -> None:
-        account_msg = self._decoder_spot_account_update_wrapper.decode(raw)
-        account_msg.data.handle_account_update(self)
+        account_msg = self._decoder_spot_account_update.decode(raw)
+        account_msg.handle_account_update(self)
 
     def _handle_execution_report(self, raw: bytes) -> None:
-        order_msg = self._decoder_spot_order_update_wrapper.decode(raw)
-        order_msg.data.handle_execution_report(self)
+        order_msg = self._decoder_spot_order_update.decode(raw)
+        order_msg.handle_execution_report(self)
 
     def _handle_list_status(self, raw: bytes) -> None:
         self._log.warning("List status (OCO) received")  # Implement
 
     def _handle_balance_update(self, raw: bytes) -> None:
         self.create_task(self._update_account_state())
+
+    def _handle_listen_key_expired(self, raw: bytes) -> None:
+        self._log.warning("Listen key expired")

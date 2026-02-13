@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,7 +25,7 @@ from typing import NamedTuple
 
 import msgspec
 from ibapi.client import EClient
-from ibapi.commission_report import CommissionReport
+from ibapi.commission_and_fees_report import CommissionAndFeesReport
 from ibapi.common import BarData
 from ibapi.execution import Execution
 
@@ -37,11 +37,37 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import VenueOrderId
 
 
 class AccountOrderRef(NamedTuple):
     account_id: str
     order_id: str
+
+
+def get_venue_order_id(order_id: int, perm_id: int) -> VenueOrderId:
+    """
+    Get venue order ID, using permId for external orders (orderId=0).
+
+    IB assigns orderId=0 to external orders (placed via TWS or other clients) and
+    completed orders. Since multiple orders can have orderId=0, we use the unique
+    permId to identify them.
+
+    Parameters
+    ----------
+    order_id : int
+        The IB order ID.
+    perm_id : int
+        The permanent order ID (unique across all orders).
+
+    Returns
+    -------
+    VenueOrderId
+
+    """
+    if order_id != 0:
+        return VenueOrderId(str(order_id))
+    return VenueOrderId(f"PERM-{perm_id}")
 
 
 class IBPosition(NamedTuple):
@@ -534,13 +560,13 @@ class BaseMixin:
     # MarketData
     _bar_type_to_last_bar: dict[str, BarData | None]
     _bar_timeout_tasks: dict[str, Any]  # asyncio.Task
-    _order_id_to_order_ref: dict[int, AccountOrderRef]
+    _order_id_to_order_ref: dict[VenueOrderId, AccountOrderRef]
 
     # Order
     _next_valid_order_id: int
     _exec_id_details: dict[
         str,
-        dict[str, Execution | (CommissionReport | str)],
+        dict[str, Execution | (CommissionAndFeesReport | str)],
     ]
 
 

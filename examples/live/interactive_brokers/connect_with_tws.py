@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,15 +15,20 @@
 # -------------------------------------------------------------------------------------------------
 
 
-
 from nautilus_trader.adapters.interactive_brokers.common import IB
 from nautilus_trader.adapters.interactive_brokers.config import IBMarketDataTypeEnum
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
+from nautilus_trader.adapters.interactive_brokers.config import (
+    InteractiveBrokersInstrumentProviderConfig,
+)
 from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
-from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
-from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveDataClientFactory,
+)
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveExecClientFactory,
+)
 from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import RoutingConfig
@@ -52,6 +57,7 @@ instrument_provider = InteractiveBrokersInstrumentProviderConfig(
             "V.NYSE",
             "CLZ8.NYMEX",
             "ESZ8.CME",
+            "^SPX.CBOE",
         ],
     ),
 )
@@ -101,10 +107,12 @@ node = TradingNode(config=config_node)
 
 # Configure your strategy
 strategy_config = SubscribeStrategyConfig(
-    instrument_id=InstrumentId.from_str("EUR/USD.IDEALPRO"),
+    # instrument_id=InstrumentId.from_str("EUR/USD.IDEALPRO"),
+    instrument_id=InstrumentId.from_str("^SPX.CBOE"),
     trade_ticks=False,
-    quote_ticks=True,
-    bars=True,
+    quote_ticks=False,
+    bars=False,
+    index_prices=True,
 )
 # Instantiate your strategy
 strategy = SubscribeStrategy(config=strategy_config)

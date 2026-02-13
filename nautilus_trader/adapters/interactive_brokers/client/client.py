@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,24 +23,38 @@ from typing import Any
 
 from ibapi import comm
 from ibapi.client import EClient
-from ibapi.commission_report import CommissionReport
+from ibapi.commission_and_fees_report import CommissionAndFeesReport
+from ibapi.common import PROTOBUF_MSG_ID
 from ibapi.common import BarData
 from ibapi.const import MAX_MSG_LEN
 from ibapi.const import NO_VALID_ID
 from ibapi.errors import BAD_LENGTH
 from ibapi.execution import Execution
+from ibapi.server_versions import MIN_SERVER_VER_PROTOBUF
 from ibapi.utils import current_fn_name
 
-from nautilus_trader.adapters.interactive_brokers.client.account import InteractiveBrokersClientAccountMixin
+from nautilus_trader.adapters.interactive_brokers.client.account import (
+    InteractiveBrokersClientAccountMixin,
+)
 from nautilus_trader.adapters.interactive_brokers.client.common import AccountOrderRef
 from nautilus_trader.adapters.interactive_brokers.client.common import Request
 from nautilus_trader.adapters.interactive_brokers.client.common import Requests
 from nautilus_trader.adapters.interactive_brokers.client.common import Subscriptions
-from nautilus_trader.adapters.interactive_brokers.client.connection import InteractiveBrokersClientConnectionMixin
-from nautilus_trader.adapters.interactive_brokers.client.contract import InteractiveBrokersClientContractMixin
-from nautilus_trader.adapters.interactive_brokers.client.error import InteractiveBrokersClientErrorMixin
-from nautilus_trader.adapters.interactive_brokers.client.market_data import InteractiveBrokersClientMarketDataMixin
-from nautilus_trader.adapters.interactive_brokers.client.order import InteractiveBrokersClientOrderMixin
+from nautilus_trader.adapters.interactive_brokers.client.connection import (
+    InteractiveBrokersClientConnectionMixin,
+)
+from nautilus_trader.adapters.interactive_brokers.client.contract import (
+    InteractiveBrokersClientContractMixin,
+)
+from nautilus_trader.adapters.interactive_brokers.client.error import (
+    InteractiveBrokersClientErrorMixin,
+)
+from nautilus_trader.adapters.interactive_brokers.client.market_data import (
+    InteractiveBrokersClientMarketDataMixin,
+)
+from nautilus_trader.adapters.interactive_brokers.client.order import (
+    InteractiveBrokersClientOrderMixin,
+)
 from nautilus_trader.adapters.interactive_brokers.client.wrapper import InteractiveBrokersEWrapper
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.cache.cache import Cache
@@ -49,6 +63,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import VenueOrderId
 
 
 class InteractiveBrokersClient(
@@ -133,23 +148,26 @@ class InteractiveBrokersClient(
 
         # ConnectionMixin
         self._connection_attempts: int = 0
-        self._max_connection_attempts: int = int(os.getenv("IB_MAX_CONNECTION_ATTEMPTS", 0))
+        self._max_connection_attempts: int = int(os.getenv("IB_MAX_CONNECTION_ATTEMPTS", "0"))
         self._indefinite_reconnect: bool = not self._max_connection_attempts
         self._reconnect_delay: int = 5  # seconds
         self._last_disconnection_ns: int | None = None
 
         # MarketDataMixin
         self._bar_type_to_last_bar: dict[str, BarData | None] = {}
-        self._bar_timeout_tasks: dict[str, asyncio.Task] = {}  # Track timeout tasks for each bar type
+        self._bar_timeout_tasks: dict[
+            str,
+            asyncio.Task,
+        ] = {}  # Track timeout tasks for each bar type
         self._subscription_tick_data: dict[int, dict] = {}  # Store tick data by req_id
         self._subscription_start_times: dict[int, int] = {}  # Store start_ns for bar filtering
 
         # OrderMixin
         self._exec_id_details: dict[
             str,
-            dict[str, Execution | (CommissionReport | str)],
+            dict[str, Execution | (CommissionAndFeesReport | str)],
         ] = {}
-        self._order_id_to_order_ref: dict[int, AccountOrderRef] = {}
+        self._order_id_to_order_ref: dict[VenueOrderId, AccountOrderRef] = {}
         self._next_valid_order_id: int = -1
 
         # Instrument provider (set by data/execution clients during connection)
@@ -178,7 +196,10 @@ class InteractiveBrokersClient(
         while not self._is_ib_connected.is_set():
             try:
                 self._connection_attempts += 1
-                if not self._indefinite_reconnect and self._connection_attempts > self._max_connection_attempts:
+                if (
+                    not self._indefinite_reconnect
+                    and self._connection_attempts > self._max_connection_attempts
+                ):
                     self._log.error("Max connection attempts reached, connection failed")
                     self._stop()
                     break
@@ -447,6 +468,14 @@ class InteractiveBrokersClient(
 
         """
         if task.exception():
+            # exc = task.exception()
+            # exc_type = type(exc)
+            # exc_traceback = exc.__traceback__
+            # stack_trace = traceback.format_exception(exc_type, exc, exc_traceback)
+            # stack_trace_str = "".join(stack_trace)
+            # self._log.error(
+            #     f"Error on '{task.get_name()}': {exc!r}\n{stack_trace_str}",
+            # )
             self._log.error(
                 f"Error on '{task.get_name()}': {task.exception()!r}",
             )
@@ -605,7 +634,9 @@ class InteractiveBrokersClient(
         self._log.debug("Client internal message queue processor started")
 
         try:
-            while (self._eclient.conn and self._eclient.conn.isConnected()) or not self._internal_msg_queue.empty():
+            while (
+                self._eclient.conn and self._eclient.conn.isConnected()
+            ) or not self._internal_msg_queue.empty():
                 msg = await self._internal_msg_queue.get()
 
                 if not await self._process_message(msg):
@@ -624,13 +655,13 @@ class InteractiveBrokersClient(
         finally:
             self._log.debug("Internal message queue processor stopped")
 
-    async def _process_message(self, msg: str) -> bool:
+    async def _process_message(self, msg: bytes) -> bool:
         """
         Process a single message from TWS/Gateway.
 
         Parameters
         ----------
-        msg : str
+        msg : bytes
             The message to be processed.
 
         Returns
@@ -641,21 +672,37 @@ class InteractiveBrokersClient(
         if len(msg) > MAX_MSG_LEN:
             await self.process_error(
                 req_id=NO_VALID_ID,
+                error_time=0,
                 error_code=BAD_LENGTH.code(),
-                error_string=f"{BAD_LENGTH.msg()}:{len(msg)}:{msg}",
+                error_string=f"{BAD_LENGTH.msg()}:{len(msg)}:{msg!r}",
             )
 
             return False
 
-        fields: tuple[bytes] = comm.read_fields(msg)
-        self._log.debug(f"Msg received: {msg}")
-        self._log.debug(f"Msg received fields: {fields}")
+        if self._eclient.serverVersion() >= MIN_SERVER_VER_PROTOBUF:
+            sMsgId = msg[:4]
+            msgId = int.from_bytes(sMsgId, "big")
+            msg = msg[4:]
+        else:
+            sMsgId = msg[: msg.index(b"\0")]
+            msg = msg[msg.index(b"\0") + len(b"\0") :]
+            msgId = int(sMsgId)
 
-        # The decoder identifies the message type based on its payload (e.g., open
-        # order, process real-time ticks, etc.) and then calls the corresponding
-        # method from the EWrapper. Many of those methods are overridden in the client
-        # manager and handler classes to support custom processing required for Nautilus.
-        await asyncio.to_thread(self._eclient.decoder.interpret, fields)
+        if msgId > PROTOBUF_MSG_ID:
+            msgId -= PROTOBUF_MSG_ID
+            self._log.debug(f"Msg received (Protobuf): msgId={msgId}")
+            # Use the Protobuf decoder to identify the message type and call the
+            # corresponding EWrapper method. Protobuf encoding is used for more
+            # efficient communication in newer TWS API versions.
+            await asyncio.to_thread(self._eclient.decoder.processProtoBuf, msg, msgId)
+        else:
+            fields: tuple[bytes] = comm.read_fields(msg)
+            self._log.debug(f"Msg received: msgId={msgId} fields={fields}")
+            # Use the standard decoder to identify the message type based on the msgId
+            # and then calls the corresponding method from the EWrapper. Many of
+            # those methods are overridden in the client manager and handler classes
+            # to support custom processing required for Nautilus.
+            await asyncio.to_thread(self._eclient.decoder.interpret, fields, msgId)
 
         return True
 
@@ -676,6 +723,18 @@ class InteractiveBrokersClient(
             while True:
                 handler_task = await self._msg_handler_task_queue.get()
                 await handler_task()
+                # try:
+                #     await handler_task()
+                # except Exception as e:
+                #     exc_type = type(e)
+                #     exc_traceback = e.__traceback__
+                #     stack_trace = traceback.format_exception(exc_type, e, exc_traceback)
+                #     stack_trace_str = "".join(stack_trace)
+                #     task_name = getattr(handler_task, "__name__", str(handler_task))
+                #     self._log.error(
+                #         f"Exception in message handler task '{task_name}': {e!r}\n{stack_trace_str}",
+                #     )
+                #     raise
                 self._msg_handler_task_queue.task_done()
         except asyncio.CancelledError:
             log_msg = f"Handler task processing was cancelled. (qsize={self._msg_handler_task_queue.qsize()})."
@@ -723,11 +782,12 @@ class InteractiveBrokersClient(
 
     # -- EClient overrides ------------------------------------------------------------------------
 
-    def sendMsg(self, msg):
+    def sendMsg(self, msgId, msg):
         """
         Override the logging for ibapi EClient.sendMsg.
         """
-        full_msg = comm.make_msg(msg)
+        useRawIntMsgId = self._eclient.serverVersion() >= MIN_SERVER_VER_PROTOBUF
+        full_msg = comm.make_msg(msgId, useRawIntMsgId, msg)
         self._log.debug(f"TWS API request sent: function={current_fn_name(1)} msg={full_msg}")
         self._eclient.conn.sendMsg(full_msg)
 

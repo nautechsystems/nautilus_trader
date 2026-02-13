@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -237,8 +237,7 @@ cdef class StopLimitOrder(Order):
             self._venue_order_ids.append(self.venue_order_id)
             self.venue_order_id = event.venue_order_id
         if event.quantity is not None:
-            self.quantity = event.quantity
-            self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity._mem.precision)
+            self._update_quantity(event.quantity)
         if event.price is not None:
             self.price = event.price
         if event.trigger_price is not None:

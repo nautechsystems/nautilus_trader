@@ -440,3 +440,8 @@ undefined behavior.
 See the `SyntheticInstrument` [API reference](../api_reference/model/instruments.md#class-syntheticinstrument-1)
 for a detailed understanding of input requirements and potential exceptions.
 :::
+
+## Related guides
+
+- [Data](data.md) - Market data types for instruments.
+- [Orders](orders.md) - Orders reference instruments.

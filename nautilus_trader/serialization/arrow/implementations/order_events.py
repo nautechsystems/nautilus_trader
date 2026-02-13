@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,6 +16,7 @@
 import msgspec
 import pyarrow as pa
 
+from nautilus_trader.common.config import msgspec_encoding_hook
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.serialization.arrow.schema import NAUTILUS_ARROW_SCHEMA
@@ -24,12 +25,18 @@ from nautilus_trader.serialization.arrow.schema import NAUTILUS_ARROW_SCHEMA
 def serialize(event: OrderInitialized | OrderFilled) -> pa.RecordBatch:
     data = event.to_dict(event)
     if isinstance(event, OrderInitialized):
-        data["options"] = msgspec.json.encode(data["options"])
-        data["linked_order_ids"] = msgspec.json.encode(data["linked_order_ids"])
-        data["exec_algorithm_params"] = msgspec.json.encode(data["exec_algorithm_params"])
-        data["tags"] = msgspec.json.encode(data["tags"])
+        data["options"] = msgspec.json.encode(data["options"], enc_hook=msgspec_encoding_hook)
+        data["linked_order_ids"] = msgspec.json.encode(
+            data["linked_order_ids"],
+            enc_hook=msgspec_encoding_hook,
+        )
+        data["exec_algorithm_params"] = msgspec.json.encode(
+            data["exec_algorithm_params"],
+            enc_hook=msgspec_encoding_hook,
+        )
+        data["tags"] = msgspec.json.encode(data["tags"], enc_hook=msgspec_encoding_hook)
     elif isinstance(event, OrderFilled):
-        data["info"] = msgspec.json.encode(data["info"])
+        data["info"] = msgspec.json.encode(data["info"], enc_hook=msgspec_encoding_hook)
     return pa.RecordBatch.from_pylist([data], schema=NAUTILUS_ARROW_SCHEMA[type(event)])
 
 

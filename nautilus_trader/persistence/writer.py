@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,6 +32,7 @@ from nautilus_trader.common.component import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import CustomData
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
@@ -135,6 +136,7 @@ class StreamingFeatherWriter:
             "order_book_depths",
             "quote_tick",
             "trade_tick",
+            "funding_rate_update",
         }
         self.rotation_mode = rotation_mode
         self.max_file_size = max_file_size
@@ -423,7 +425,7 @@ class StreamingFeatherWriter:
         if self.include_types is not None and cls not in self.include_types:
             return
 
-        table_name = table_name if table_name else class_to_filename(cls)
+        table_name = table_name or class_to_filename(cls)
 
         if table_name in self._writers:
             return
@@ -456,7 +458,13 @@ class StreamingFeatherWriter:
 
     def _extract_obj_metadata(
         self,
-        obj: TradeTick | QuoteTick | Bar | OrderBookDelta | OrderBookDepth10 | object,
+        obj: TradeTick
+        | QuoteTick
+        | Bar
+        | OrderBookDelta
+        | OrderBookDepth10
+        | FundingRateUpdate
+        | object,
     ) -> dict[bytes, bytes]:
         if isinstance(obj, Bar):
             instrument_id = obj.bar_type.instrument_id
@@ -478,6 +486,8 @@ class StreamingFeatherWriter:
                     b"size_precision": str(instrument.size_precision).encode(),
                 },
             )
+        elif isinstance(obj, FundingRateUpdate):
+            pass
         else:
             metadata.update(
                 {

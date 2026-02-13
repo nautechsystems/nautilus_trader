@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -157,6 +157,35 @@ impl SubscriptionState {
         untrack_topic(&self.pending_unsubscribe, channel, symbol);
 
         track_topic(&self.pending_subscribe, channel, symbol);
+    }
+
+    /// Atomically tries to mark a topic as pending subscription.
+    ///
+    /// Returns `true` if the topic was newly marked as pending (should send subscribe).
+    /// Returns `false` if the topic was already confirmed or pending (skip sending).
+    ///
+    /// This provides atomic check-and-set semantics for concurrent subscribe calls.
+    pub fn try_mark_subscribe(&self, topic: &str) -> bool {
+        let (channel, symbol) = split_topic(topic, self.delimiter);
+
+        // If already confirmed, no action needed
+        if is_tracked(&self.confirmed, channel, symbol) {
+            return false;
+        }
+
+        // Atomically try to insert into pending_subscribe
+        let channel_ustr = Ustr::from(channel);
+        let symbol_ustr = symbol.map_or(*CHANNEL_LEVEL_MARKER, Ustr::from);
+
+        let mut entry = self.pending_subscribe.entry(channel_ustr).or_default();
+        let inserted = entry.insert(symbol_ustr);
+
+        // Remove from pending_unsubscribe if present
+        if inserted {
+            untrack_topic(&self.pending_unsubscribe, channel, symbol);
+        }
+
+        inserted
     }
 
     /// Marks a topic as pending unsubscription.

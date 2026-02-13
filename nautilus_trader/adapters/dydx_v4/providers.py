@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -72,7 +72,6 @@ class DYDXv4InstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
-        # Fetch instruments via Rust HTTP client
         pyo3_instruments = await self._client.request_instruments(
             maker_fee=None,
             taker_fee=None,
@@ -94,7 +93,6 @@ class DYDXv4InstrumentProvider(InstrumentProvider):
             self._log.info("No instrument IDs given for loading")
             return
 
-        # Check all instrument IDs
         for instrument_id in instrument_ids:
             PyCondition.equal(instrument_id.venue, DYDX_VENUE, "instrument_id.venue", "DYDX")
 

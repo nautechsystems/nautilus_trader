@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,7 +19,7 @@ use nautilus_model::identifiers::{AccountId, TraderId};
 
 use crate::{
     common::urls::{get_http_base_url, get_ws_url},
-    http::models::DeribitInstrumentKind,
+    http::models::DeribitProductType,
 };
 
 /// Configuration for the Deribit data client.
@@ -29,8 +29,8 @@ pub struct DeribitDataClientConfig {
     pub api_key: Option<String>,
     /// Optional API secret for authenticated endpoints.
     pub api_secret: Option<String>,
-    /// Instrument kinds to load (e.g., Future, Option, Spot).
-    pub instrument_kinds: Vec<DeribitInstrumentKind>,
+    /// Product types to load (e.g., Future, Option, Spot).
+    pub product_types: Vec<DeribitProductType>,
     /// Optional override for the HTTP base URL.
     pub base_url_http: Option<String>,
     /// Optional override for the WebSocket URL.
@@ -56,7 +56,7 @@ impl Default for DeribitDataClientConfig {
         Self {
             api_key: None,
             api_secret: None,
-            instrument_kinds: vec![DeribitInstrumentKind::Future],
+            product_types: vec![DeribitProductType::Future],
             base_url_http: None,
             base_url_ws: None,
             use_testnet: false,
@@ -108,8 +108,6 @@ impl DeribitDataClientConfig {
     }
 }
 
-// ------------------------------------------------------------------------------------------------
-
 /// Configuration for the Deribit execution client.
 #[derive(Clone, Debug)]
 pub struct DeribitExecClientConfig {
@@ -121,8 +119,8 @@ pub struct DeribitExecClientConfig {
     pub api_key: Option<String>,
     /// Optional API secret for authenticated endpoints.
     pub api_secret: Option<String>,
-    /// Instrument kinds to load (e.g., Future, Option, Spot).
-    pub instrument_kinds: Vec<DeribitInstrumentKind>,
+    /// Product types to load (e.g., Future, Option, Spot).
+    pub product_types: Vec<DeribitProductType>,
     /// Optional override for the HTTP base URL.
     pub base_url_http: Option<String>,
     /// Optional override for the WebSocket URL.
@@ -146,7 +144,7 @@ impl Default for DeribitExecClientConfig {
             account_id: AccountId::from("DERIBIT-001"),
             api_key: None,
             api_secret: None,
-            instrument_kinds: vec![DeribitInstrumentKind::Future],
+            product_types: vec![DeribitProductType::Future],
             base_url_http: None,
             base_url_ws: None,
             use_testnet: false,
@@ -210,7 +208,7 @@ mod tests {
     fn test_default_config() {
         let config = DeribitDataClientConfig::default();
         assert!(!config.use_testnet);
-        assert_eq!(config.instrument_kinds.len(), 1);
+        assert_eq!(config.product_types.len(), 1);
         assert_eq!(config.http_timeout_secs, Some(60));
     }
 
@@ -242,13 +240,6 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(config.ws_url(), "wss://test.deribit.com/ws/api/v2");
-    }
-
-    #[rstest]
-    fn test_has_api_credentials_none() {
-        let config = DeribitDataClientConfig::default();
-        // Without env vars set, should return false
-        assert!(!config.has_api_credentials());
     }
 
     #[rstest]

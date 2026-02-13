@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -54,7 +54,7 @@ impl TardisInstrumentMiniInfo {
     ) -> Self {
         Self {
             instrument_id,
-            raw_symbol: raw_symbol.unwrap_or(Ustr::from(instrument_id.symbol.as_str())),
+            raw_symbol: raw_symbol.unwrap_or(instrument_id.symbol.inner()),
             exchange,
             price_precision,
             size_precision,

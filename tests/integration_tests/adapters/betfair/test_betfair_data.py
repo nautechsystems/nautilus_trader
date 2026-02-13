@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,6 +15,7 @@
 
 import asyncio
 from collections import Counter
+from pathlib import Path
 from unittest.mock import patch
 
 import msgspec
@@ -22,6 +23,9 @@ import pytest
 from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
+from nautilus_trader.adapters.betfair.data_types import BetfairOrderVoided
+from nautilus_trader.adapters.betfair.data_types import BetfairRaceProgress
+from nautilus_trader.adapters.betfair.data_types import BetfairRaceRunnerData
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
@@ -553,3 +557,223 @@ def test_bsp_deltas_apply(data_client, instrument):
 @pytest.mark.asyncio
 async def test_subscribe_instruments(data_client, instrument):
     await data_client._subscribe_instrument(instrument.id)
+
+
+RESOURCES_PATH = Path(__file__).parent / "resources"
+
+
+def test_rcm_race_runner_data(data_client, mock_data_engine_process):
+    # Arrange
+    raw = (RESOURCES_PATH / "streaming" / "streaming_rcm.json").read_bytes()
+
+    # Act
+    data_client.on_market_update(raw)
+
+    # Assert
+    mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
+    custom_data = [data for data in mock_call_args if isinstance(data, CustomData)]
+    runner_data = [
+        data.data for data in custom_data if isinstance(data.data, BetfairRaceRunnerData)
+    ]
+
+    assert len(runner_data) == 1
+    assert runner_data[0].race_id == "28587288.1650"
+    assert runner_data[0].selection_id == 7390417
+    assert runner_data[0].speed == 17.8
+    assert runner_data[0].progress == 2051
+
+
+def test_rcm_race_progress(data_client, mock_data_engine_process):
+    # Arrange
+    raw = (RESOURCES_PATH / "streaming" / "streaming_rcm.json").read_bytes()
+
+    # Act
+    data_client.on_market_update(raw)
+
+    # Assert
+    mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
+    custom_data = [data for data in mock_call_args if isinstance(data, CustomData)]
+    progress_data = [
+        data.data for data in custom_data if isinstance(data.data, BetfairRaceProgress)
+    ]
+
+    assert len(progress_data) == 1
+    assert progress_data[0].race_id == "28587288.1650"
+    assert progress_data[0].gate_name == "1f"
+    assert progress_data[0].running_time == 46.7
+    assert progress_data[0].order == [7390417, 5600338, 11527189, 6395118, 8706072]
+
+
+def test_rcm_multi_runner(data_client, mock_data_engine_process):
+    # Arrange
+    raw = (RESOURCES_PATH / "streaming" / "streaming_rcm_multi_runner.json").read_bytes()
+
+    # Act
+    data_client.on_market_update(raw)
+
+    # Assert
+    mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
+    custom_data = [data for data in mock_call_args if isinstance(data, CustomData)]
+    runner_data = [
+        data.data for data in custom_data if isinstance(data.data, BetfairRaceRunnerData)
+    ]
+
+    assert len(runner_data) == 5
+    assert all(r.race_id == "32908802.0000" for r in runner_data)
+    assert {r.selection_id for r in runner_data} == {35467839, 24947967, 299569, 31422647, 41694785}
+
+
+def test_rcm_with_jumps(data_client, mock_data_engine_process):
+    # Arrange
+    raw = (RESOURCES_PATH / "streaming" / "streaming_rcm_race_start.json").read_bytes()
+
+    # Act
+    data_client.on_market_update(raw)
+
+    # Assert
+    mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
+    custom_data = [data for data in mock_call_args if isinstance(data, CustomData)]
+    progress_data = [
+        data.data for data in custom_data if isinstance(data.data, BetfairRaceProgress)
+    ]
+
+    assert len(progress_data) == 1
+    assert progress_data[0].jumps is not None
+    assert len(progress_data[0].jumps) == 9
+    assert progress_data[0].jumps[0] == {"J": 9, "L": 3123.5}
+
+
+def test_betfair_order_voided_dict_serialization():
+    # Arrange
+    instrument_id = InstrumentId.from_str("1-123456-789-None.BETFAIR")
+    voided = BetfairOrderVoided(
+        instrument_id=instrument_id,
+        client_order_id="test-order-123",
+        venue_order_id="248485109136",
+        size_voided=50.0,
+        price=1.50,
+        size=100.0,
+        side="B",
+        avg_price_matched=1.50,
+        size_matched=50.0,
+        reason=None,
+        ts_event=1635217893000000000,
+        ts_init=1635217893000000001,
+    )
+
+    # Act
+    result_dict = BetfairOrderVoided.to_dict(voided)
+    result = BetfairOrderVoided.from_dict(result_dict)
+
+    # Assert
+    assert result.instrument_id == voided.instrument_id
+    assert result.client_order_id == voided.client_order_id
+    assert result.venue_order_id == voided.venue_order_id
+    assert result.size_voided == voided.size_voided
+    assert result.price == voided.price
+    assert result.size == voided.size
+    assert result.side == voided.side
+    assert result.avg_price_matched == voided.avg_price_matched
+    assert result.size_matched == voided.size_matched
+    assert result.reason == voided.reason
+    assert result.ts_event == voided.ts_event
+    assert result.ts_init == voided.ts_init
+
+
+def test_betfair_order_voided_dict_serialization_with_reason():
+    # Arrange
+    instrument_id = InstrumentId.from_str("1-123456-789-None.BETFAIR")
+    voided = BetfairOrderVoided(
+        instrument_id=instrument_id,
+        client_order_id="test-order-123",
+        venue_order_id="248485109136",
+        size_voided=25.5,
+        price=2.0,
+        size=100.0,
+        side="L",
+        reason="VAR_DECISION",
+        ts_event=1635217893000000000,
+        ts_init=1635217893000000001,
+    )
+
+    # Act
+    result_dict = BetfairOrderVoided.to_dict(voided)
+    result = BetfairOrderVoided.from_dict(result_dict)
+
+    # Assert
+    assert result.reason == "VAR_DECISION"
+    assert result.size_voided == 25.5
+
+
+def test_betfair_order_voided_repr():
+    # Arrange
+    instrument_id = InstrumentId.from_str("1-123456-789-None.BETFAIR")
+    voided = BetfairOrderVoided(
+        instrument_id=instrument_id,
+        client_order_id="test-order-123",
+        venue_order_id="248485109136",
+        size_voided=50.0,
+        price=1.50,
+        size=100.0,
+        side="B",
+        reason=None,
+        ts_event=1635217893000000000,
+        ts_init=1635217893000000001,
+    )
+
+    # Act
+    result = repr(voided)
+
+    # Assert
+    assert "BetfairOrderVoided" in result
+    assert "1-123456-789-None.BETFAIR" in result
+    assert "test-order-123" in result
+    assert "248485109136" in result
+    assert "50.0" in result
+
+
+def test_betfair_order_voided_equality():
+    # Arrange
+    instrument_id = InstrumentId.from_str("1-123456-789-None.BETFAIR")
+    voided1 = BetfairOrderVoided(
+        instrument_id=instrument_id,
+        client_order_id="test-order-123",
+        venue_order_id="248485109136",
+        size_voided=50.0,
+        price=1.50,
+        size=100.0,
+        side="B",
+        reason=None,
+        ts_event=1635217893000000000,
+        ts_init=1635217893000000001,
+    )
+    voided2 = BetfairOrderVoided(
+        instrument_id=instrument_id,
+        client_order_id="test-order-123",
+        venue_order_id="248485109136",
+        size_voided=25.0,
+        price=2.0,
+        size=100.0,
+        side="L",
+        reason="DIFFERENT",
+        ts_event=1635217893000000002,
+        ts_init=1635217893000000003,
+    )
+    voided3 = BetfairOrderVoided(
+        instrument_id=instrument_id,
+        client_order_id="different-order",
+        venue_order_id="248485109136",
+        size_voided=50.0,
+        price=1.50,
+        size=100.0,
+        side="B",
+        reason=None,
+        ts_event=1635217893000000000,
+        ts_init=1635217893000000001,
+    )
+
+    # Assert
+    assert voided1 == voided2  # Same instrument_id, client_order_id, venue_order_id
+    assert voided1 != voided3  # Different client_order_id
+    assert voided1 != None  # noqa: E711
+    assert voided1 != "not a voided object"

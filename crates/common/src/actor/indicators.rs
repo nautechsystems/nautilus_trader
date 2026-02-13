@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -58,11 +58,11 @@ impl Indicators {
         // Add to instrument-specific quotes indicators
         let indicators = self.indicators_for_quotes.entry(instrument_id).or_default();
 
-        if !indicators.iter().any(|i| Arc::ptr_eq(i, &indicator)) {
+        if indicators.iter().any(|i| Arc::ptr_eq(i, &indicator)) {
+            // TODO: Log error - already registered
+        } else {
             indicators.push(indicator);
             // TODO: Log registration
-        } else {
-            // TODO: Log error - already registered
         }
     }
 
@@ -80,11 +80,11 @@ impl Indicators {
         // Add to instrument-specific trades indicators
         let indicators = self.indicators_for_trades.entry(instrument_id).or_default();
 
-        if !indicators.iter().any(|i| Arc::ptr_eq(i, &indicator)) {
+        if indicators.iter().any(|i| Arc::ptr_eq(i, &indicator)) {
+            // TODO: Log error - already registered
+        } else {
             indicators.push(indicator);
             // TODO: Log registration
-        } else {
-            // TODO: Log error - already registered
         }
     }
 
@@ -108,11 +108,11 @@ impl Indicators {
             .entry(standard_bar_type)
             .or_default();
 
-        if !indicators.iter().any(|i| Arc::ptr_eq(i, &indicator)) {
+        if indicators.iter().any(|i| Arc::ptr_eq(i, &indicator)) {
+            // TODO: Log error - already registered
+        } else {
             indicators.push(indicator);
             // TODO: Log registration
-        } else {
-            // TODO: Log error - already registered
         }
     }
 }

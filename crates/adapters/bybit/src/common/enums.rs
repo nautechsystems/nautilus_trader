@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,7 +15,7 @@
 
 //! Enumerations that model Bybit string/int enums across HTTP and WebSocket payloads.
 
-use std::fmt::{Display, Formatter};
+use std::fmt::Display;
 
 use chrono::{DateTime, Datelike, TimeZone, Utc};
 use nautilus_model::enums::{AggressorSide, OrderSide, TriggerType};
@@ -403,7 +403,7 @@ impl BybitKlineInterval {
 }
 
 impl Display for BybitKlineInterval {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
             Self::Minute1 => "1",
             Self::Minute3 => "3",
@@ -483,6 +483,18 @@ impl From<BybitOrderSide> for OrderSide {
             BybitOrderSide::Buy => Self::Buy,
             BybitOrderSide::Sell => Self::Sell,
             BybitOrderSide::Unknown => Self::NoOrderSide,
+        }
+    }
+}
+
+impl TryFrom<OrderSide> for BybitOrderSide {
+    type Error = anyhow::Error;
+
+    fn try_from(value: OrderSide) -> Result<Self, Self::Error> {
+        match value {
+            OrderSide::Buy => Ok(Self::Buy),
+            OrderSide::Sell => Ok(Self::Sell),
+            _ => anyhow::bail!("unsupported OrderSide for Bybit: {value:?}"),
         }
     }
 }

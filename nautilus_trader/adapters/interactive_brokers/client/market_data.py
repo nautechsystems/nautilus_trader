@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,6 +30,7 @@ from ibapi.common import HistoricalTickLast
 from ibapi.common import MarketDataTypeEnum
 from ibapi.common import TickAttribBidAsk
 from ibapi.common import TickAttribLast
+from ibapi.ticktype import TickTypeEnum
 
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 from nautilus_trader.adapters.interactive_brokers.client.common import IBKRBookLevel
@@ -41,11 +42,14 @@ from nautilus_trader.adapters.interactive_brokers.parsing.data import bar_spec_t
 from nautilus_trader.adapters.interactive_brokers.parsing.data import generate_trade_id
 from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_to_duration_str
 from nautilus_trader.adapters.interactive_brokers.parsing.data import what_to_show
-from nautilus_trader.adapters.interactive_brokers.parsing.price_conversion import ib_price_to_nautilus_price
+from nautilus_trader.adapters.interactive_brokers.parsing.price_conversion import (
+    ib_price_to_nautilus_price,
+)
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import IndexPriceUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
@@ -58,6 +62,9 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 # Used to invalidate abnormal tick sizes that can signal data issues
 MAX_VALID_TICK_SIZE = Decimal("1e12")
+
+# Subscription type identifier for index market data (reqMktData for indices)
+INDEX_MARKET_DATA = "index_market_data"
 
 
 class InteractiveBrokersClientMarketDataMixin(BaseMixin):
@@ -260,6 +267,52 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         name = (str(instrument_id), tick_type)
         await self._unsubscribe(name, self._eclient.cancelTickByTickData)
+
+    async def subscribe_index_market_data(
+        self,
+        instrument_id: InstrumentId,
+        contract: IBContract,
+        generic_tick_list: str = "",
+    ) -> None:
+        """
+        Subscribe to index market data for a specified instrument using reqMktData. This
+        method is used for index contracts that don't support reqTickByTickData (^SPX.CBOE for example).
+        Note: Per Interactive Brokers some CME exchange indexes do support reqTickByTickData.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The identifier of the instrument for which to subscribe.
+        contract : IBContract
+            The contract details for the instrument.
+        generic_tick_list : str
+            A comma-separated list of generic tick types to request.
+
+        """
+        name = (str(instrument_id), INDEX_MARKET_DATA)
+        await self._subscribe(
+            name,
+            self._eclient.reqMktData,
+            self._eclient.cancelMktData,
+            contract,
+            generic_tick_list,
+            False,  # snapshot
+            False,  # regulatory_snapshot
+            [],  # mktDataOptions
+        )
+
+    async def unsubscribe_index_market_data(self, instrument_id: InstrumentId) -> None:
+        """
+        Unsubscribes from index market data for a specified instrument.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The identifier of the instrument for which to unsubscribe.
+
+        """
+        name = (str(instrument_id), INDEX_MARKET_DATA)
+        await self._unsubscribe(name, self._eclient.cancelMktData)
 
     async def subscribe_market_data(
         self,
@@ -775,7 +828,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         attrib: Any,
     ) -> None:
         """
-        Process tick price data from reqMktData for spread instruments.
+        Process tick price data from reqMktData for spread instruments and indices.
         """
         if not (subscription := self._subscriptions.get(req_id=req_id)):
             return
@@ -788,15 +841,19 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         # But option spreads can have negative prices, in this case the size of a quote will invalidate the quote
         if price == -1.0 and self._subscription_tick_data[req_id].get(tick_type, 0.0) > 0.0:
             self._log.warning(
-                f"Ignoring invalid tick price: {price} for req_id={req_id}, tick_type={tick_type}",
+                f"Ignoring invalid tick price: {price} for req_id={req_id}, tick_type={tick_type}:{TickTypeEnum.toStr(tick_type)}",
             )
             return
 
-        # IB tick types: 0=BID_SIZE, 1=BID_PRICE, 2=ASK_PRICE, 3=ASK_SIZE
+        # IB tick types: 0=BID_SIZE, 1=BID_PRICE, 2=ASK_PRICE, 3=ASK_SIZE, 4=LAST_PRICE
         self._subscription_tick_data[req_id][tick_type] = price
 
-        # Check if we have both bid and ask prices to create a quote tick
-        await self._try_create_quote_tick_from_market_data(subscription, req_id)
+        if subscription.name[1] == INDEX_MARKET_DATA:
+            # Create an index price tick
+            await self._try_create_index_price_tick_from_market_data(subscription, req_id)
+        else:
+            # Check if we have both bid and ask prices to create a quote tick
+            await self._try_create_quote_tick_from_market_data(subscription, req_id)
 
     async def process_tick_size(
         self,
@@ -813,10 +870,12 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         # Skip invalid sizes (negative or extremely large values)
         # IB may send invalid sizes when prices are invalid
+        # For index subscriptions, this is expected (indices have no volume) so don't warn
         if size < 0 or size > MAX_VALID_TICK_SIZE:
-            self._log.warning(
-                f"Ignoring invalid tick size: {size} for req_id={req_id}, tick_type={tick_type}",
-            )
+            if subscription.name[1] != INDEX_MARKET_DATA:
+                self._log.warning(
+                    f"Ignoring invalid tick size: {size} for req_id={req_id}, tick_type={tick_type}:{TickTypeEnum.toStr(tick_type)}",
+                )
             return
 
         # Store the size data for this subscription
@@ -842,11 +901,10 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         tick_data = self._subscription_tick_data[req_id]
 
-        # IB tick types: 0=BID_SIZE, 1=BID_PRICE, 2=ASK_PRICE, 3=ASK_SIZE
-        bid_size = tick_data.get(0)
-        bid_price = tick_data.get(1)
-        ask_price = tick_data.get(2)
-        ask_size = tick_data.get(3)
+        bid_size = tick_data.get(TickTypeEnum.BID_SIZE)
+        bid_price = tick_data.get(TickTypeEnum.BID)
+        ask_price = tick_data.get(TickTypeEnum.ASK)
+        ask_size = tick_data.get(TickTypeEnum.ASK_SIZE)
 
         # Validate that both prices are present and valid (positive)
         if (
@@ -878,6 +936,42 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             )
 
             await self._handle_data(quote_tick)
+
+    async def _try_create_index_price_tick_from_market_data(
+        self,
+        subscription: Subscription,
+        req_id: int,
+    ) -> None:
+        if req_id not in self._subscription_tick_data:
+            return
+
+        tick_data = self._subscription_tick_data[req_id]
+
+        price = tick_data.get(TickTypeEnum.LAST)
+
+        if price is not None:
+            instrument_id = InstrumentId.from_str(subscription.name[0])
+            instrument = self._cache.instrument(instrument_id)
+            if instrument is None:
+                self._log.error(f"Cannot find instrument for {instrument_id}")
+                return
+
+            ts_event = self._clock.timestamp_ns()
+            price_magnifier = (
+                self._instrument_provider.get_price_magnifier(instrument_id)
+                if self._instrument_provider
+                else 1
+            )
+            converted_price = ib_price_to_nautilus_price(price, price_magnifier)
+
+            index_price_update = IndexPriceUpdate(
+                instrument_id=instrument_id,
+                value=instrument.make_price(converted_price),
+                ts_event=ts_event,
+                ts_init=ts_event,
+            )
+
+            await self._handle_data(index_price_update)
 
     async def process_realtime_bar(
         self,

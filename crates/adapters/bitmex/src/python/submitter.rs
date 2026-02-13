@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,14 +17,17 @@
 
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
-    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TriggerType},
+    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
     identifiers::{ClientOrderId, InstrumentId, OrderListId},
     python::instruments::pyobject_to_instrument_any,
     types::{Price, Quantity},
 };
 use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyDict};
 
-use crate::execution::submitter::{SubmitBroadcaster, SubmitBroadcasterConfig};
+use crate::{
+    broadcast::submitter::{SubmitBroadcaster, SubmitBroadcasterConfig},
+    common::enums::BitmexPegPriceType,
+};
 
 #[pymethods]
 impl SubmitBroadcaster {
@@ -115,12 +118,16 @@ impl SubmitBroadcaster {
         price=None,
         trigger_price=None,
         trigger_type=None,
+        trailing_offset=None,
+        trailing_offset_type=None,
         display_qty=None,
         post_only=false,
         reduce_only=false,
         order_list_id=None,
         contingency_type=None,
-        submit_tries=None
+        submit_tries=None,
+        peg_price_type=None,
+        peg_offset_value=None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_broadcast_submit<'py>(
@@ -135,14 +142,26 @@ impl SubmitBroadcaster {
         price: Option<Price>,
         trigger_price: Option<Price>,
         trigger_type: Option<TriggerType>,
+        trailing_offset: Option<f64>,
+        trailing_offset_type: Option<TrailingOffsetType>,
         display_qty: Option<Quantity>,
         post_only: bool,
         reduce_only: bool,
         order_list_id: Option<OrderListId>,
         contingency_type: Option<ContingencyType>,
         submit_tries: Option<usize>,
+        peg_price_type: Option<String>,
+        peg_offset_value: Option<f64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let broadcaster = self.clone_for_async();
+
+        let peg_price_type: Option<BitmexPegPriceType> = peg_price_type
+            .map(|s| {
+                s.parse::<BitmexPegPriceType>()
+                    .map_err(|_| to_pyvalue_err(format!("Invalid peg_price_type: {s}")))
+            })
+            .transpose()?;
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let report = broadcaster
                 .broadcast_submit(
@@ -155,12 +174,16 @@ impl SubmitBroadcaster {
                     price,
                     trigger_price,
                     trigger_type,
+                    trailing_offset,
+                    trailing_offset_type,
                     display_qty,
                     post_only,
                     reduce_only,
                     order_list_id,
                     contingency_type,
                     submit_tries,
+                    peg_price_type,
+                    peg_offset_value,
                 )
                 .await
                 .map_err(to_pyvalue_err)?;

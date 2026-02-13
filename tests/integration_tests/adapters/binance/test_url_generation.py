@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,59 +16,164 @@
 import pytest
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.common.urls import get_http_base_url
 from nautilus_trader.adapters.binance.common.urls import get_ws_base_url
 
 
 @pytest.mark.parametrize(
-    ("account_type", "is_testnet", "is_us", "expected"),
+    ("account_type", "environment", "is_us", "expected"),
     [
         # Live URLs
-        (BinanceAccountType.SPOT, False, False, "https://api.binance.com"),
-        (BinanceAccountType.SPOT, False, True, "https://api.binance.us"),
-        (BinanceAccountType.MARGIN, False, False, "https://sapi.binance.com"),
-        (BinanceAccountType.MARGIN, False, True, "https://sapi.binance.us"),
-        (BinanceAccountType.USDT_FUTURES, False, False, "https://fapi.binance.com"),
-        (BinanceAccountType.USDT_FUTURES, False, True, "https://fapi.binance.us"),
-        (BinanceAccountType.COIN_FUTURES, False, False, "https://dapi.binance.com"),
-        (BinanceAccountType.COIN_FUTURES, False, True, "https://dapi.binance.us"),
-        # Testnet URLs (US flag ignored)
-        (BinanceAccountType.SPOT, True, False, "https://testnet.binance.vision"),
-        (BinanceAccountType.SPOT, True, True, "https://testnet.binance.vision"),
-        (BinanceAccountType.MARGIN, True, False, "https://testnet.binance.vision"),
-        (BinanceAccountType.USDT_FUTURES, True, False, "https://testnet.binancefuture.com"),
-        (BinanceAccountType.COIN_FUTURES, True, False, "https://testnet.binancefuture.com"),
+        (BinanceAccountType.SPOT, BinanceEnvironment.LIVE, False, "https://api.binance.com"),
+        (BinanceAccountType.SPOT, BinanceEnvironment.LIVE, True, "https://api.binance.us"),
+        (BinanceAccountType.MARGIN, BinanceEnvironment.LIVE, False, "https://sapi.binance.com"),
+        (BinanceAccountType.MARGIN, BinanceEnvironment.LIVE, True, "https://sapi.binance.us"),
+        (
+            BinanceAccountType.USDT_FUTURES,
+            BinanceEnvironment.LIVE,
+            False,
+            "https://fapi.binance.com",
+        ),
+        (BinanceAccountType.USDT_FUTURES, BinanceEnvironment.LIVE, True, "https://fapi.binance.us"),
+        (
+            BinanceAccountType.COIN_FUTURES,
+            BinanceEnvironment.LIVE,
+            False,
+            "https://dapi.binance.com",
+        ),
+        (BinanceAccountType.COIN_FUTURES, BinanceEnvironment.LIVE, True, "https://dapi.binance.us"),
+        # Testnet URLs
+        (
+            BinanceAccountType.SPOT,
+            BinanceEnvironment.TESTNET,
+            False,
+            "https://testnet.binance.vision",
+        ),
+        (
+            BinanceAccountType.MARGIN,
+            BinanceEnvironment.TESTNET,
+            False,
+            "https://testnet.binance.vision",
+        ),
+        (
+            BinanceAccountType.USDT_FUTURES,
+            BinanceEnvironment.TESTNET,
+            False,
+            "https://testnet.binancefuture.com",
+        ),
+        (
+            BinanceAccountType.COIN_FUTURES,
+            BinanceEnvironment.TESTNET,
+            False,
+            "https://testnet.binancefuture.com",
+        ),
+        # Demo URLs
+        (BinanceAccountType.SPOT, BinanceEnvironment.DEMO, False, "https://demo-api.binance.com"),
+        (BinanceAccountType.MARGIN, BinanceEnvironment.DEMO, False, "https://demo-api.binance.com"),
+        (
+            BinanceAccountType.USDT_FUTURES,
+            BinanceEnvironment.DEMO,
+            False,
+            "https://testnet.binancefuture.com",
+        ),
+        (
+            BinanceAccountType.COIN_FUTURES,
+            BinanceEnvironment.DEMO,
+            False,
+            "https://testnet.binancefuture.com",
+        ),
     ],
 )
-def test_get_http_base_url(account_type, is_testnet, is_us, expected):
-    url = get_http_base_url(account_type, is_testnet=is_testnet, is_us=is_us)
+def test_get_http_base_url(account_type, environment, is_us, expected):
+    url = get_http_base_url(account_type, environment=environment, is_us=is_us)
     assert url == expected
 
 
 @pytest.mark.parametrize(
-    ("account_type", "is_testnet", "is_us", "expected"),
+    ("account_type", "environment", "is_us", "expected"),
     [
         # Live URLs
-        (BinanceAccountType.SPOT, False, False, "wss://stream.binance.com:9443"),
-        (BinanceAccountType.SPOT, False, True, "wss://stream.binance.us:9443"),
-        (BinanceAccountType.MARGIN, False, False, "wss://stream.binance.com:9443"),
-        (BinanceAccountType.MARGIN, False, True, "wss://stream.binance.us:9443"),
-        (BinanceAccountType.USDT_FUTURES, False, False, "wss://fstream.binance.com"),
-        (BinanceAccountType.USDT_FUTURES, False, True, "wss://fstream.binance.us"),
-        (BinanceAccountType.COIN_FUTURES, False, False, "wss://dstream.binance.com"),
-        (BinanceAccountType.COIN_FUTURES, False, True, "wss://dstream.binance.us"),
-        # Testnet URLs (US flag ignored)
-        (BinanceAccountType.SPOT, True, False, "wss://stream.testnet.binance.vision"),
-        (BinanceAccountType.SPOT, True, True, "wss://stream.testnet.binance.vision"),
-        (BinanceAccountType.MARGIN, True, False, "wss://stream.testnet.binance.vision"),
-        (BinanceAccountType.USDT_FUTURES, True, False, "wss://stream.binancefuture.com"),
+        (BinanceAccountType.SPOT, BinanceEnvironment.LIVE, False, "wss://stream.binance.com:9443"),
+        (BinanceAccountType.SPOT, BinanceEnvironment.LIVE, True, "wss://stream.binance.us:9443"),
+        (
+            BinanceAccountType.MARGIN,
+            BinanceEnvironment.LIVE,
+            False,
+            "wss://stream.binance.com:9443",
+        ),
+        (BinanceAccountType.MARGIN, BinanceEnvironment.LIVE, True, "wss://stream.binance.us:9443"),
+        (
+            BinanceAccountType.USDT_FUTURES,
+            BinanceEnvironment.LIVE,
+            False,
+            "wss://fstream.binance.com",
+        ),
+        (
+            BinanceAccountType.USDT_FUTURES,
+            BinanceEnvironment.LIVE,
+            True,
+            "wss://fstream.binance.us",
+        ),
+        (
+            BinanceAccountType.COIN_FUTURES,
+            BinanceEnvironment.LIVE,
+            False,
+            "wss://dstream.binance.com",
+        ),
+        (
+            BinanceAccountType.COIN_FUTURES,
+            BinanceEnvironment.LIVE,
+            True,
+            "wss://dstream.binance.us",
+        ),
+        # Testnet URLs
+        (
+            BinanceAccountType.SPOT,
+            BinanceEnvironment.TESTNET,
+            False,
+            "wss://stream.testnet.binance.vision",
+        ),
+        (
+            BinanceAccountType.MARGIN,
+            BinanceEnvironment.TESTNET,
+            False,
+            "wss://stream.testnet.binance.vision",
+        ),
+        (
+            BinanceAccountType.USDT_FUTURES,
+            BinanceEnvironment.TESTNET,
+            False,
+            "wss://stream.binancefuture.com",
+        ),
+        (
+            BinanceAccountType.COIN_FUTURES,
+            BinanceEnvironment.TESTNET,
+            False,
+            "wss://dstream.binancefuture.com",
+        ),
+        # Demo URLs
+        (BinanceAccountType.SPOT, BinanceEnvironment.DEMO, False, "wss://demo-stream.binance.com"),
+        (
+            BinanceAccountType.MARGIN,
+            BinanceEnvironment.DEMO,
+            False,
+            "wss://demo-stream.binance.com",
+        ),
+        (
+            BinanceAccountType.USDT_FUTURES,
+            BinanceEnvironment.DEMO,
+            False,
+            "wss://stream.binancefuture.com",
+        ),
+        (
+            BinanceAccountType.COIN_FUTURES,
+            BinanceEnvironment.DEMO,
+            False,
+            "wss://dstream.binancefuture.com",
+        ),
     ],
 )
-def test_get_ws_base_url(account_type, is_testnet, is_us, expected):
-    url = get_ws_base_url(account_type, is_testnet=is_testnet, is_us=is_us)
+def test_get_ws_base_url(account_type, environment, is_us, expected):
+    url = get_ws_base_url(account_type, environment=environment, is_us=is_us)
     assert url == expected
-
-
-def test_get_ws_base_url_coin_futures_testnet_raises_error():
-    with pytest.raises(ValueError, match="no testnet for COIN-M futures"):
-        get_ws_base_url(BinanceAccountType.COIN_FUTURES, is_testnet=True, is_us=False)

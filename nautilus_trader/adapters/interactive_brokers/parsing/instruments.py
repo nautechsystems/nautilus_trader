@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -234,15 +234,18 @@ VENUES_FUT = [
 ]
 VENUES_CASH = ["IDEALPRO"]
 VENUES_CRYPTO = ["PAXOS"]
-VENUES_OPT = ["SMART"]
-VENUES_CFD = ["IBCFD"] # self named, in fact mapping to "SMART" when parsing
+VENUES_OPT = ["SMART", "EUREX"]
+VENUES_CFD = ["IBCFD"]  # self named, in fact mapping to "SMART" when parsing
 VENUES_CMDTY = ["IBCMDTY"]  # self named, in fact mapping to "SMART" when parsing
 
 RE_CASH = re.compile(r"^(?P<symbol>[A-Z]{3})\/(?P<currency>[A-Z]{3})$")  # "EUR/USD"
 RE_CFD_CASH = re.compile(r"^(?P<symbol>[A-Z]{3})\.(?P<currency>[A-Z]{3})$")  # "EUR.USD"
 RE_OPT = re.compile(
-    r"^(?P<symbol>^[A-Z. ]{1,6})(?P<expiry>\d{6})(?P<right>[CP])(?P<strike>\d{5})(?P<decimal>\d{3})$",
-)  # "AAPL220617C00155000"
+    r"^(?P<symbol>[A-Z.]{1,6}) *(?P<expiry>\d{6})(?P<right>[CP])(?P<strike>\d{5})(?P<decimal>\d{3})$",
+)  # "AAPL220617C00155000" or "SPXW  260120P06835000" (OCC format with padding)
+RE_OPT2 = re.compile(
+    r"^(?P<right>[CP])\s+(?P<tradingClass>[A-Z0-9]{3,6})\s+(?P<expiry>\d{8})\s+(?P<strike>\d+(?:\.\d+)?)(?:\s+(?P<style>[A-Z]))?$",
+)  # "C OESX 20260213 4775" or "P OEXP 20260212 6480 W"
 RE_FUT_UNDERLYING = re.compile(r"^(?P<symbol>\w{1,3})$")  # "ES"
 RE_FUT = re.compile(r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d{2})$")  # "ESM23"
 RE_FUT_ORIGINAL = re.compile(
@@ -257,11 +260,16 @@ RE_FUT2_ORIGINAL = re.compile(
 RE_FUT3_ORIGINAL = re.compile(
     r"^(?P<symbol>[A-Z]+)(?P<year>\d{2})(?P<month>(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC))FUT$",
 )  # "NIFTY25MARFUT"
+RE_FUT4 = re.compile(
+    r"^(?P<underlying>[A-Z0-9]{2,10})\s+"
+    r"(?P<tradingClass>[A-Z0-9]{2,6})\s+"
+    r"(?P<expiry>\d{8})$",
+)
 RE_FOP = re.compile(
-    r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d{2})(?P<right>[CP])(?P<strike>.{4,5})$",
+    r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d{2})(?P<right>[CP])(?P<strike>.{4,6})$",
 )  # "ESM23C4200"
 RE_FOP_ORIGINAL = re.compile(
-    r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d)\s(?P<right>[CP])(?P<strike>\d{1,4}(?:\.\d)?)$",
+    r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d)\s(?P<right>[CP])(?P<strike>\d{1,6}(?:\.\d+)?)$",
 )  # "ESM3 C4420"
 RE_CRYPTO = re.compile(r"^(?P<symbol>[A-Z]*)\/(?P<currency>[A-Z]{3})$")  # "BTC/USD"
 
@@ -314,9 +322,16 @@ def parse_instrument(  # noqa: C901
     elif security_type == "IND":
         return parse_index_contract(contract_details=contract_details, instrument_id=instrument_id)
     elif security_type in ("FUT", "CONTFUT"):
-        return parse_futures_contract(contract_details=contract_details, instrument_id=instrument_id)
+        return parse_futures_contract(
+            contract_details=contract_details,
+            instrument_id=instrument_id,
+        )
     elif security_type in ("OPT", "FOP"):
-        return parse_option_contract(contract_details=contract_details, instrument_id=instrument_id)
+        return parse_option_contract(
+            contract_details=contract_details,
+            instrument_id=instrument_id,
+            symbology_method=symbology_method,
+        )
     elif security_type == "CASH":
         return parse_forex_contract(contract_details=contract_details, instrument_id=instrument_id)
     elif security_type == "CRYPTO":
@@ -324,12 +339,21 @@ def parse_instrument(  # noqa: C901
     elif security_type == "CFD":
         return parse_cfd_contract(contract_details=contract_details, instrument_id=instrument_id)
     elif security_type == "CMDTY":
-        return parse_commodity_contract(contract_details=contract_details, instrument_id=instrument_id)
+        return parse_commodity_contract(
+            contract_details=contract_details,
+            instrument_id=instrument_id,
+        )
     elif security_type == "BAG":
         if _has_futures(contract_details.contract, contract_details_map):
-            return parse_futures_spread(contract_details=contract_details, instrument_id=instrument_id)
+            return parse_futures_spread(
+                contract_details=contract_details,
+                instrument_id=instrument_id,
+            )
         else:
-            return parse_option_spread(contract_details=contract_details, instrument_id=instrument_id)
+            return parse_option_spread(
+                contract_details=contract_details,
+                instrument_id=instrument_id,
+            )
     else:
         raise ValueError(f"Unknown {security_type=}")
 
@@ -421,6 +445,7 @@ def parse_futures_contract(
 def parse_option_contract(
     contract_details: IBContractDetails,
     instrument_id: InstrumentId,
+    symbology_method: SymbologyMethod = SymbologyMethod.IB_SIMPLIFIED,
 ) -> OptionContract:
     price_precision: int = _tick_size_to_precision(contract_details.minTick)
     timestamp = time.time_ns()
@@ -435,6 +460,15 @@ def parse_option_contract(
     # For options, the multiplier represents the lot size (e.g., 100 shares per contract)
     multiplier = Quantity.from_str(contract_details.contract.multiplier)
 
+    # Add ^ prefix for index underlyings to match IB simplified symbology
+    underlying = contract_details.underSymbol
+    if (
+        symbology_method == SymbologyMethod.IB_SIMPLIFIED
+        and contract_details.underSecType == "IND"
+        and not underlying.startswith("^")
+    ):
+        underlying = f"^{underlying}"
+
     return OptionContract(
         instrument_id=instrument_id,
         raw_symbol=Symbol(contract_details.contract.localSymbol),
@@ -444,7 +478,7 @@ def parse_option_contract(
         price_increment=Price(contract_details.minTick, price_precision),
         multiplier=multiplier,
         lot_size=multiplier,  # For options, lot size equals multiplier
-        underlying=contract_details.underSymbol,
+        underlying=underlying,
         strike_price=Price(contract_details.contract.strike, price_precision),
         activation_ns=activation.value,
         expiration_ns=expiration.value,
@@ -654,7 +688,9 @@ def parse_option_spread(
 
     # Determine asset class from underlying security type
     asset_class = (
-        sec_type_to_asset_class(contract_details.underSecType) if contract_details.underSecType else AssetClass.EQUITY
+        sec_type_to_asset_class(contract_details.underSecType)
+        if contract_details.underSecType
+        else AssetClass.EQUITY
     )
 
     # For options, the multiplier represents the lot size (e.g., 100 shares per contract)
@@ -662,7 +698,9 @@ def parse_option_spread(
 
     return OptionSpread(
         instrument_id=instrument_id,
-        raw_symbol=Symbol(contract_details.contract.localSymbol or contract_details.contract.symbol),
+        raw_symbol=Symbol(
+            contract_details.contract.localSymbol or contract_details.contract.symbol,
+        ),
         asset_class=asset_class,
         currency=Currency.from_str(contract_details.contract.currency),
         price_precision=price_precision,
@@ -815,7 +853,9 @@ def parse_futures_spread(
 
     # Determine asset class from underlying security type
     asset_class = (
-        sec_type_to_asset_class(contract_details.underSecType) if contract_details.underSecType else AssetClass.INDEX
+        sec_type_to_asset_class(contract_details.underSecType)
+        if contract_details.underSecType
+        else AssetClass.INDEX
     )
 
     # For futures, the multiplier is typically 1 or the contract multiplier
@@ -823,7 +863,9 @@ def parse_futures_spread(
 
     return FuturesSpread(
         instrument_id=instrument_id,
-        raw_symbol=Symbol(contract_details.contract.localSymbol or contract_details.contract.symbol),
+        raw_symbol=Symbol(
+            contract_details.contract.localSymbol or contract_details.contract.symbol,
+        ),
         asset_class=asset_class,
         currency=Currency.from_str(contract_details.contract.currency),
         price_precision=price_precision,
@@ -933,7 +975,10 @@ def parse_futures_spread_instrument_id(
             info=info,
         )
     except Exception as e:
-        raise ValueError(f"Failed to parse futures spread instrument ID {instrument_id}: {e}") from e
+        raise ValueError(
+            f"Failed to parse futures spread instrument ID {instrument_id}: {e}",
+        ) from e
+
 
 def contract_details_to_dict(contract_details: IBContractDetails) -> dict:
     dict_details = contract_details.dict().copy()
@@ -1021,13 +1066,21 @@ def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too comple
         symbol = (contract.localSymbol or contract.symbol).replace(" ", "-")
     elif security_type == "IND":
         symbol = f"^{(contract.localSymbol or contract.symbol)}"
+    elif security_type == "OPT" and contract.localSymbol:
+        symbol = contract.localSymbol
     elif security_type == "OPT":
-        symbol = contract.localSymbol.replace(" ", "")
+        symbol = f"{contract.right} {contract.tradingClass} {contract.lastTradeDateOrContractMonth} {contract.strike}"
     elif security_type == "CONTFUT":
         symbol = contract.symbol
     elif security_type == "FUT" and (m := RE_FUT_ORIGINAL.match(contract.localSymbol)):
         symbol = f"{m['symbol']}{m['month']}{m['year']}"
-    elif (security_type == "FUT" and (m := RE_FUT2_ORIGINAL.match(contract.localSymbol))) or (security_type == "FUT" and (m := RE_FUT3_ORIGINAL.match(contract.localSymbol))):
+    elif security_type == "FUT" and len(contract.lastTradeDateOrContractMonth) == 8:
+        symbol = (
+            f"{contract.symbol} {contract.tradingClass} {contract.lastTradeDateOrContractMonth}"
+        )
+    elif (security_type == "FUT" and (m := RE_FUT2_ORIGINAL.match(contract.localSymbol))) or (
+        security_type == "FUT" and (m := RE_FUT3_ORIGINAL.match(contract.localSymbol))
+    ):
         symbol = f"{m['symbol']}{FUTURES_MONTH_TO_CODE[m['month']]}{m['year'][-1]}"
     elif security_type == "FOP" and (m := RE_FOP_ORIGINAL.match(contract.localSymbol)):
         symbol = f"{m['symbol']}{m['month']}{m['year']} {m['right']}{m['strike']}"
@@ -1167,12 +1220,37 @@ def instrument_id_to_ib_contract_simplified_symbology(  # noqa: C901 (too comple
             exchange=exchange,
             localSymbol=f"{m['symbol']}.{m['currency']}",
         )
-    elif exchange in VENUES_OPT and (m := RE_OPT.match(instrument_id.symbol.value)):
+    elif str(instrument_id.symbol).startswith("^"):
         return IBContract(
-            secType="OPT",
+            secType="IND",
             exchange=exchange,
-            localSymbol=f"{m['symbol'].ljust(6)}{m['expiry']}{m['right']}{m['strike']}{m['decimal']}",
+            localSymbol=instrument_id.symbol.value[1:],
         )
+    elif exchange in VENUES_FUT and (m := RE_FUT4.match(instrument_id.symbol.value)):
+        return IBContract(
+            secType="FUT",
+            exchange=exchange,
+            symbol=m["underlying"],
+            tradingClass=m["tradingClass"],
+            lastTradeDateOrContractMonth=m["expiry"],
+        )
+    elif exchange in VENUES_OPT:
+        if m := RE_OPT.match(instrument_id.symbol.value):
+            return IBContract(
+                secType="OPT",
+                exchange=exchange,
+                localSymbol=f"{m['symbol'].ljust(6)}{m['expiry']}{m['right']}{m['strike']}{m['decimal']}",
+            )
+        elif m := RE_OPT2.match(instrument_id.symbol.value):
+            return IBContract(
+                secType="OPT",
+                exchange=exchange,
+                symbol=m["tradingClass"],
+                tradingClass=m["tradingClass"],
+                right=m["right"],
+                strike=m["strike"],
+                lastTradeDateOrContractMonth=m["expiry"],
+            )
     elif exchange in VENUES_FUT:
         if m := RE_FUT_ORIGINAL.match(instrument_id.symbol.value):
             return IBContract(
@@ -1213,12 +1291,6 @@ def instrument_id_to_ib_contract_simplified_symbology(  # noqa: C901 (too comple
             secType="CMDTY",
             exchange="SMART",
             symbol=f"{instrument_id.symbol.value}".replace("-", " "),
-        )
-    elif str(instrument_id.symbol).startswith("^"):
-        return IBContract(
-            secType="IND",
-            exchange=exchange,
-            localSymbol=instrument_id.symbol.value[1:],
         )
 
     # Default to Stock

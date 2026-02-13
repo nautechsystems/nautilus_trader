@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,8 +34,8 @@ class BetfairDataClientConfig(LiveDataClientConfig, kw_only=True, frozen=True):
         The Betfair account password.
     app_key : str, optional
         The Betfair application key.
-    cert_dir : str, optional
-        The local directory that contains the Betfair certificates.
+    certs_dir : str, optional
+        The local directory that contains the Betfair SSL certificates.
     instrument_config : BetfairInstrumentProviderConfig, None
         The Betfair instrument provider config.
     subscription_delay_secs : PositiveInt, default 3
@@ -79,7 +79,7 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     app_key : str, optional
         The Betfair application key.
     certs_dir : str, optional
-        The local directory that contains the Betfair certificates.
+        The local directory that contains the Betfair SSL certificates.
     instrument_config : BetfairInstrumentProviderConfig, None
         The Betfair instrument provider config.
     calculate_account_state : bool, default True
@@ -90,6 +90,10 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     reconcile_market_ids_only : bool, default False
         If True, reconciliation only requests orders matching the market IDs listed
         in the `instrument_config`. If False, all orders are reconciled.
+    stream_market_ids_filter : list[str], optional
+        If provided, only process order stream updates for these market IDs.
+        Updates for other markets are silently skipped. Useful to reduce warning
+        spam when sharing a Betfair account across multiple trading nodes.
     ignore_external_orders : bool, default False
         If True, orders received over the stream that aren't found in the cache
         will be silently ignored. This is useful when multiple trading nodes
@@ -108,5 +112,6 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     calculate_account_state: bool = True
     request_account_state_secs: NonNegativeInt = 300
     reconcile_market_ids_only: bool = False
+    stream_market_ids_filter: list[str] | None = None
     ignore_external_orders: bool = False
     proxy_url: str | None = None

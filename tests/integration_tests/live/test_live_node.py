@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -130,8 +130,8 @@ class TestTradingNodeConfiguration:
         # Arrange
         loop = event_loop_for_setup
 
-        monkeypatch.setenv("BINANCE_FUTURES_API_KEY", "SOME_API_KEY")
-        monkeypatch.setenv("BINANCE_FUTURES_API_SECRET", "SOME_API_SECRET")
+        monkeypatch.setenv("BINANCE_API_KEY", "SOME_API_KEY")
+        monkeypatch.setenv("BINANCE_API_SECRET", "SOME_API_SECRET")
 
         config = TradingNodeConfig.parse(RAW_CONFIG)
 

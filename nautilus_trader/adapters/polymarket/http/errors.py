@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,6 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+from typing import Any
 
 from py_clob_client.exceptions import PolyApiException
 
@@ -70,3 +72,28 @@ def should_retry(error: BaseException) -> bool:
             return True
 
     return False
+
+
+def check_clob_response(response: dict[str, Any] | str) -> dict[str, Any]:
+    """
+    Check CLOB API response and raise exception if error string returned.
+
+    Parameters
+    ----------
+    response : dict[str, Any] | str
+        The response from the CLOB API.
+
+    Returns
+    -------
+    dict[str, Any]
+        The validated response dictionary.
+
+    Raises
+    ------
+    PolymarketAPIError
+        If response is an error string.
+
+    """
+    if isinstance(response, str):
+        raise PolymarketAPIError(response)
+    return response

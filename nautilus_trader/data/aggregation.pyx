@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -189,6 +189,7 @@ cdef class BarBuilder:
         self._open = None
         self._high = None
         self._low = None
+        self._close = None
 
         self.volume = Quantity.zero_c(precision=self.size_precision)
         self.count = 0
@@ -1370,8 +1371,6 @@ cdef class TimeBarAggregator(BarAggregator):
         The origin time offset.
     bar_build_delay : int, default 0
         The time delay (microseconds) before building and emitting a composite bar type.
-        15 microseconds can be useful in a backtest context, when aggregating internal bars
-        from internal bars several times so all messages are processed before a timer triggers.
 
     Raises
     ------
@@ -1408,8 +1407,10 @@ cdef class TimeBarAggregator(BarAggregator):
         self.interval_ns = self._get_interval_ns()
         self.stored_open_ns = 0
         self.next_close_ns = 0
+        self.first_close_ns = 0
         self.historical_mode = False
         self._historical_events = []
+        self._historical_event_at_ts_init = None
 
         if interval_type == "left-open":
             self._is_left_open = True
@@ -1438,9 +1439,40 @@ cdef class TimeBarAggregator(BarAggregator):
         # Closing a partial bar at the transition from historical to backtest data
         cdef bint fire_immediately = (start_time == now)
 
-        self._skip_first_non_full_bar = self._skip_first_non_full_bar and now > start_time
+        # Calculate the next close time based on aggregation type
+        cdef datetime close_time
+        if fire_immediately:
+            close_time = start_time
+        elif self.bar_type.spec.aggregation == BarAggregation.MONTH:
+            close_time = start_time + pd.DateOffset(months=self.bar_type.spec.step)
+        elif self.bar_type.spec.aggregation == BarAggregation.YEAR:
+            close_time = start_time + pd.DateOffset(years=self.bar_type.spec.step)
+        else:
+            close_time = start_time + self.interval
 
-        if self.bar_type.spec.aggregation not in (BarAggregation.MONTH, BarAggregation.YEAR):
+        self.next_close_ns = dt_to_unix_nanos(close_time)
+
+        # The stored open time needs to be defined as a subtraction with respect to the first closing time
+        if self.bar_type.spec.aggregation == BarAggregation.MONTH:
+            self.stored_open_ns = dt_to_unix_nanos(close_time - pd.DateOffset(months=self.bar_type.spec.step))
+        elif self.bar_type.spec.aggregation == BarAggregation.YEAR:
+            self.stored_open_ns = dt_to_unix_nanos(close_time - pd.DateOffset(years=self.bar_type.spec.step))
+        else:
+            self.stored_open_ns = self.next_close_ns - self.interval_ns
+
+        if self._skip_first_non_full_bar:
+            self.first_close_ns = self.next_close_ns
+
+        if self.bar_type.spec.aggregation in (BarAggregation.MONTH, BarAggregation.YEAR):
+            # The monthly/yearly alert time is defined iteratively at each alert time as there is no regular interval
+            self._clock.set_time_alert(
+                name=self._timer_name,
+                alert_time=close_time,
+                callback=self._build_bar,
+                override=True,
+                allow_past=True,
+            )
+        else:
             self._clock.set_timer(
                 name=self._timer_name,
                 interval=self.interval,
@@ -1451,33 +1483,11 @@ cdef class TimeBarAggregator(BarAggregator):
                 fire_immediately=fire_immediately,
             )
 
-            if fire_immediately:
-                self.next_close_ns = dt_to_unix_nanos(start_time)
-            else:
-                self.next_close_ns = dt_to_unix_nanos(start_time + self.interval)
-
-            self.stored_open_ns = self.next_close_ns - self.interval_ns
-        else:
-            # The monthly/yearly alert time is defined iteratively at each alert time as there is no regular interval
-            if self.bar_type.spec.aggregation == BarAggregation.MONTH:
-                alert_time = start_time + (pd.DateOffset(months=self.bar_type.spec.step) if not fire_immediately else pd.Timedelta(0))
-            elif self.bar_type.spec.aggregation == BarAggregation.YEAR:
-                alert_time = start_time + (pd.DateOffset(years=self.bar_type.spec.step) if not fire_immediately else pd.Timedelta(0))
-            else:
-                alert_time = start_time
-
-            self._clock.set_time_alert(
-                name=self._timer_name,
-                alert_time=alert_time,
-                callback=self._build_bar,
-                override=True,
-                allow_past=True,
-            )
-            self.next_close_ns = alert_time.value
-            self.stored_open_ns = start_time.value
-
-        self._log.debug(f"Started timer {self._timer_name}, {start_time=}, {self.historical_mode=}, "
-                        f"{fire_immediately=}, {start_time=}, {now=}, {self._bar_build_delay=}")
+        self._log.debug(f"[start_timer] fire_immediately={fire_immediately}, "
+                        f"_skip_first_non_full_bar={self._skip_first_non_full_bar}, "
+                        f"now={now}, start_time={start_time}, "
+                        f"first_close_ns={unix_nanos_to_dt(self.first_close_ns)}, "
+                        f"next_close_ns={unix_nanos_to_dt(self.next_close_ns)}")
 
     cpdef void stop_timer(self):
         cdef str timer_name = str(self.bar_type)
@@ -1511,7 +1521,6 @@ cdef class TimeBarAggregator(BarAggregator):
                 start_time -= pd.Timedelta(weeks=step)
         elif aggregation == BarAggregation.MONTH:
             start_time = (now - pd.DateOffset(months=now.month - 1, days=now.day - 1)).floor(freq="d")
-
             if self._time_bars_origin_offset is not None:
                 start_time += self._time_bars_origin_offset
 
@@ -1567,18 +1576,24 @@ cdef class TimeBarAggregator(BarAggregator):
             )
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
+        if self.historical_mode:
+            self._pre_process_historical_events(ts_init)
+
         self._builder.update(price, size, ts_init)
 
         if self.historical_mode:
-            self._process_historical_events(ts_init)
+            self._post_process_historical_events()
 
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        if self.historical_mode:
+            self._pre_process_historical_events(ts_init)
+
         self._builder.update_bar(bar, volume, ts_init)
 
         if self.historical_mode:
-            self._process_historical_events(ts_init)
+            self._post_process_historical_events()
 
-    cdef void _process_historical_events(self, uint64_t ts_init):
+    cdef void _pre_process_historical_events(self, uint64_t ts_init):
         if self._clock.timestamp_ns() == 0:
             self._clock.set_time(ts_init)
             self.start_timer()
@@ -1586,9 +1601,19 @@ cdef class TimeBarAggregator(BarAggregator):
         # Advance this aggregator's independent clock and collect timer events
         event_handlers = self._clock.advance_time(ts_init, set_time=True)
 
-        # Process timer events after data processing
+        # Process timer events
         for event_handler in event_handlers:
+            if event_handler.event.ts_event == ts_init:
+                self._historical_event_at_ts_init = event_handler
+                continue
+
             self._build_bar(event_handler.event)
+
+    cdef void _post_process_historical_events(self):
+        # Process timer events
+        if self._historical_event_at_ts_init:
+            self._build_bar(self._historical_event_at_ts_init.event)
+            self._historical_event_at_ts_init = None
 
     cpdef void _build_bar(self, TimeEvent event):
         if not self._builder.initialized:
@@ -1633,10 +1658,11 @@ cdef class TimeBarAggregator(BarAggregator):
             self.next_close_ns = self._clock.next_time_ns(self._timer_name)
 
     cdef void _build_and_send(self, uint64_t ts_event, uint64_t ts_init):
-        if self._skip_first_non_full_bar:
+        if self._skip_first_non_full_bar and ts_init <= self.first_close_ns:
             self._builder.reset()
-            self._skip_first_non_full_bar = False
         else:
+            # Set _skip_first_non_full_bar to False for transition from historical to live data
+            self._skip_first_non_full_bar = False
             BarAggregator._build_and_send(self, ts_event, ts_init)
 
 
@@ -1702,6 +1728,8 @@ cdef class SpreadQuoteAggregator:
         The interval in seconds for timer-driven quote building. If None, uses quote-driven mode
         (builds immediately when all legs have quotes). If an integer, uses timer-driven mode
         (reads from internal state at the specified interval).
+    quote_build_delay : int, default 0
+        The time delay (microseconds) before building and emitting a quote.
 
     Raises
     ------
@@ -1717,6 +1745,7 @@ cdef class SpreadQuoteAggregator:
         Clock clock not None,
         bint historical,
         object update_interval_seconds = None,
+        int quote_build_delay = 0,
     ):
         self._handler = handler
         self._clock = clock
@@ -1747,6 +1776,7 @@ cdef class SpreadQuoteAggregator:
         self._is_futures_spread = self._spread_instrument.instrument_class == InstrumentClass.FUTURES_SPREAD
         self.historical_mode = historical
         self._update_interval_seconds = update_interval_seconds
+        self._quote_build_delay = quote_build_delay
         self.is_running = False
         self._historical_events = []
 
@@ -1775,6 +1805,7 @@ cdef class SpreadQuoteAggregator:
 
         cdef datetime now = self._clock.utc_now()
         start_time = find_closest_smaller_time(now, pd.Timedelta(0), pd.Timedelta(seconds=<int>self._update_interval_seconds))
+        start_time += timedelta(microseconds=self._quote_build_delay)
 
         # Determine if we should fire immediately (if start_time equals now)
         cdef bint fire_immediately = (start_time == now)
@@ -1815,7 +1846,6 @@ cdef class SpreadQuoteAggregator:
             self.start_timer()
 
         self._historical_events.extend(self._clock.advance_time(ts_init, set_time=True))
-
         if not self._historical_events:
             return
 
@@ -1897,7 +1927,9 @@ cdef class SpreadQuoteAggregator:
         non_zero_multipliers = vega_multipliers[vega_multipliers != 0]
         if len(non_zero_multipliers) == 0:
             self._log.warning(
-                f"All vegas are zero for spread {self._spread_instrument_id}, cannot generate spread quote"
+                f"No vega information available for the components of {self._spread_instrument_id}. "
+                f"Will generate spread quote using component quotes only. "
+                f"Subscribe to some underlying price information for more precise quotes."
             )
             return self._create_futures_spread_prices()
 

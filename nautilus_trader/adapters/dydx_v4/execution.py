@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -28,10 +28,8 @@ Supported order types:
 """
 
 import asyncio
-import hashlib
+import os
 
-from nautilus_trader.adapters.dydx_v4.common.urls import get_grpc_urls
-from nautilus_trader.adapters.dydx_v4.common.urls import get_ws_url
 from nautilus_trader.adapters.dydx_v4.config import DYDXv4ExecClientConfig
 from nautilus_trader.adapters.dydx_v4.constants import DYDX_VENUE
 from nautilus_trader.adapters.dydx_v4.providers import DYDXv4InstrumentProvider
@@ -57,16 +55,13 @@ from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
-from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
-from nautilus_trader.model.events import OrderCancelRejected
-from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.orders import LimitIfTouchedOrder
 from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.model.orders import MarketIfTouchedOrder
@@ -76,26 +71,7 @@ from nautilus_trader.model.orders import StopLimitOrder
 from nautilus_trader.model.orders import StopMarketOrder
 
 
-def _client_order_id_to_u32(client_order_id: ClientOrderId) -> int:
-    """
-    Hash a ClientOrderId string to a u32 for dYdX order submission.
-
-    dYdX requires a u32 client_id for orders. We use a hash of the string to ensure
-    uniqueness while fitting in the u32 range.
-
-    """
-    digest = hashlib.sha256(client_order_id.value.encode()).digest()
-    return int.from_bytes(digest[:4], byteorder="big")
-
-
 def _get_expire_time_secs(order: Order) -> int | None:
-    """
-    Extract expire_time from an order and convert to seconds.
-
-    dYdX conditional orders require expire_time in Unix seconds. Returns None if the
-    order has no expiry time set.
-
-    """
     if hasattr(order, "expire_time_ns") and order.expire_time_ns:
         return int(nanos_to_secs(order.expire_time_ns))
     return None
@@ -169,23 +145,26 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
         self._http_client = client
 
         # Resolve URLs
-        ws_url = config.base_url_ws or get_ws_url(is_testnet=config.is_testnet)
-        grpc_urls = config.base_url_grpc or get_grpc_urls(is_testnet=config.is_testnet)
+        ws_url = config.base_url_ws or nautilus_pyo3.get_dydx_ws_url(config.is_testnet)  # type: ignore[attr-defined]
+        grpc_urls = config.base_url_grpc or nautilus_pyo3.get_dydx_grpc_urls(config.is_testnet)  # type: ignore[attr-defined]
 
-        # Initialize wallet and gRPC client from mnemonic
-        self._wallet: nautilus_pyo3.DydxWallet | None = None  # type: ignore[name-defined]
+        # Initialize gRPC and order submitter (created on connect)
         self._grpc_client: nautilus_pyo3.DydxGrpcClient | None = None  # type: ignore[name-defined]
         self._order_submitter: nautilus_pyo3.DydxOrderSubmitter | None = None  # type: ignore[name-defined]
         self._grpc_urls = grpc_urls
 
+        # Bidirectional client order ID encoder (set from WS client in _connect)
+        self._encoder: nautilus_pyo3.DydxClientOrderIdEncoder | None = None  # type: ignore[name-defined]
+
+        # Order context for cancellation (client_id_u32 -> (tif_value, expire_time_ns))
+        self._order_contexts: dict[int, tuple[int | None, int | None]] = {}
+
         # WebSocket API (private client for account updates)
-        # Note: The private WebSocket requires mnemonic for authentication
         self._ws_client: nautilus_pyo3.DydxWebSocketClient | None = None  # type: ignore[name-defined]
         self._ws_url = ws_url
 
         # Account tracking
         self._wallet_address: str | None = None
-        self._block_height: int = 0
         self._pyo3_account_id: nautilus_pyo3.AccountId | None = None
 
     @property
@@ -201,27 +180,33 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
         # Load instruments
         await self._instrument_provider.initialize()
 
-        # Initialize wallet from mnemonic
-        mnemonic = self._config.mnemonic
-        if not mnemonic:
-            # Try to get from environment
-            import os
+        # Fetch and cache instruments with full market params (needed for order quantization)
+        await self._http_client.fetch_and_cache_instruments()
 
-            env_var = "DYDX_TESTNET_MNEMONIC" if self._is_testnet else "DYDX_MNEMONIC"
-            mnemonic = os.environ.get(env_var)
+        # Initialize wallet from private key
+        private_key = self._config.private_key
+        if not private_key:
+            env_var = "DYDX_TESTNET_PRIVATE_KEY" if self._is_testnet else "DYDX_PRIVATE_KEY"
+            private_key = os.environ.get(env_var)
 
-        if not mnemonic:
+        if not private_key:
             self._log.error(
-                f"No mnemonic provided. Set via config or "
-                f"{'DYDX_TESTNET_MNEMONIC' if self._is_testnet else 'DYDX_MNEMONIC'} env var",
+                f"No private key provided. Set via config or "
+                f"{'DYDX_TESTNET_PRIVATE_KEY' if self._is_testnet else 'DYDX_PRIVATE_KEY'} env var",
             )
             return
 
-        # Create wallet
-        self._wallet = nautilus_pyo3.DydxWallet.from_mnemonic(  # type: ignore[attr-defined]
-            mnemonic=mnemonic,
-        )
-        self._wallet_address = self._wallet.address()
+        # Resolve wallet address: config → env var → derived from private key
+        temp_wallet = nautilus_pyo3.DydxWallet.from_private_key(private_key)  # type: ignore[attr-defined]
+        wallet_address = self._config.wallet_address
+        if not wallet_address:
+            wallet_env = (
+                "DYDX_TESTNET_WALLET_ADDRESS" if self._is_testnet else "DYDX_WALLET_ADDRESS"
+            )
+            wallet_address = os.environ.get(wallet_env)
+        if not wallet_address:
+            wallet_address = temp_wallet.address()
+        self._wallet_address = wallet_address
 
         # Set account ID based on wallet address
         account_id = AccountId(f"{DYDX_VENUE.value}-{self._wallet_address}-{self._subaccount}")
@@ -241,25 +226,31 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
                 self._grpc_urls,
             )
 
-        # Create order submitter
+        # Create order submitter (wallet owned internally)
         chain_id = "dydx-testnet-4" if self._is_testnet else "dydx-mainnet-1"
         self._order_submitter = nautilus_pyo3.DydxOrderSubmitter(  # type: ignore[attr-defined]
             grpc_client=self._grpc_client,
             http_client=self._http_client,
+            private_key=private_key,
             wallet_address=self._wallet_address,
             subaccount_number=self._subaccount,
             chain_id=chain_id,
         )
 
+        # Resolve authenticators for permissioned key trading
+        await self._order_submitter.resolve_authenticators()
+
         # Connect private WebSocket for account updates
         self._ws_client = nautilus_pyo3.DydxWebSocketClient.new_private(  # type: ignore[attr-defined]
             url=self._ws_url,
-            mnemonic=mnemonic,
-            account_index=self._subaccount,
-            authenticator_ids=[],
+            private_key=private_key,
+            authenticator_ids=self._config.authenticator_ids or [],
             account_id=nautilus_pyo3.AccountId(account_id.value),
             heartbeat=20,
         )
+
+        self._encoder = self._ws_client.encoder()
+        self._ws_client.share_instrument_cache(self._http_client)
 
         instruments = self._instrument_provider.instruments_pyo3()
         await self._ws_client.connect(
@@ -280,13 +271,15 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
         # Subscribe to block height for order timing
         await self._ws_client.subscribe_block_height()
 
-        # Fetch initial block height via gRPC for order submission
+        # Fetch initial block height via gRPC and feed to submitter
         try:
-            self._block_height = await self._grpc_client.latest_block_height()
-            self._log.info(f"Initial block height: {self._block_height}", LogColor.BLUE)
+            initial_height = await self._grpc_client.latest_block_height()
+            self._order_submitter.set_block_height(initial_height)
+            self._log.info(f"Initial block height: {initial_height}", LogColor.BLUE)
         except Exception as e:
             self._log.warning(f"Failed to fetch initial block height: {e}")
-            self._block_height = 0
+
+        await self._await_account_registered(timeout_secs=30.0)
 
     async def _disconnect(self) -> None:
         # Delay to allow websocket to send any unsubscribe messages
@@ -298,33 +291,98 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             await self._ws_client.disconnect()
             self._log.info("Disconnected from WebSocket", LogColor.BLUE)
 
-    def _handle_msg(self, capsule: object) -> None:
+    def _handle_msg(self, raw: object) -> None:
         try:
-            data = capsule_to_data(capsule)
-            self._handle_data(data)
+            if isinstance(raw, dict):
+                self._handle_dict_message(raw)
+            elif isinstance(raw, nautilus_pyo3.AccountState):
+                self._handle_account_state(raw)
+            elif isinstance(raw, nautilus_pyo3.OrderStatusReport):
+                report = OrderStatusReport.from_pyo3(raw)
+                self._cleanup_order_context(report)
+                self._send_order_status_report(report)
+            elif isinstance(raw, nautilus_pyo3.FillReport):
+                report = FillReport.from_pyo3(raw)
+                self._send_fill_report(report)
+            elif isinstance(raw, nautilus_pyo3.PositionStatusReport):
+                report = PositionStatusReport.from_pyo3(raw)
+                self._send_position_report(report)
+            else:
+                self._log.warning(f"Ignoring message of type {type(raw).__name__}")
         except Exception as e:
             self._log.error(f"Error handling WebSocket message: {e}")
 
-    # -- COMMANDS ---------------------------------------------------------------------------------
+    def _handle_dict_message(self, msg: dict) -> None:
+        msg_type = msg.get("type")
+        if msg_type == "block_height":
+            self._handle_block_height(msg)
+        elif msg_type == "subaccounts_channel_data":
+            pass  # Handled by Rust WS handler, parsed into typed reports
+
+    def _handle_block_height(self, msg: dict) -> None:
+        height = msg.get("height")
+        time_str = msg.get("time")
+        if height is not None and self._order_submitter is not None:
+            try:
+                self._order_submitter.record_block(height, time_str)
+            except Exception as e:
+                self._log.warning(f"Failed to record block height: {e}")
+
+    def _handle_account_state(self, msg: nautilus_pyo3.AccountState) -> None:
+        account_state = AccountState.from_dict(msg.to_dict())
+        self.generate_account_state(
+            balances=account_state.balances,
+            margins=account_state.margins,
+            reported=account_state.is_reported,
+            ts_event=account_state.ts_event,
+        )
+
+    _TERMINAL_STATUSES = frozenset(
+        {
+            OrderStatus.FILLED,
+            OrderStatus.CANCELED,
+            OrderStatus.EXPIRED,
+            OrderStatus.REJECTED,
+            OrderStatus.DENIED,
+        },
+    )
+
+    def _cleanup_order_context(self, report: OrderStatusReport) -> None:
+        if report.order_status not in self._TERMINAL_STATUSES:
+            return
+        if self._encoder is None or report.client_order_id is None:
+            return
+        client_order_id_u32, _ = self._encoder.encode(str(report.client_order_id))
+        if self._order_contexts.pop(client_order_id_u32, None) is not None:
+            self._log.debug(
+                f"Cleaned up order context for {report.client_order_id} "
+                f"(status={report.order_status.name})",
+            )
 
     async def _submit_order(self, command: SubmitOrder) -> None:
-        if self._order_submitter is None or self._wallet is None:
-            self._generate_order_rejected(
-                command.order.client_order_id,
-                "Order submitter not initialized - connect first",
+        if self._order_submitter is None:
+            self.generate_order_rejected(
+                strategy_id=command.strategy_id,
+                instrument_id=command.order.instrument_id,
+                client_order_id=command.order.client_order_id,
+                reason="Order submitter not initialized - connect first",
+                ts_event=self._clock.timestamp_ns(),
             )
             return
 
         # Check block height is available for short-term orders
-        if self._block_height == 0:
+        if self._order_submitter.get_block_height() == 0:
             reason = "Block height not initialized"
             self._log.warning(
                 f"Cannot submit order {command.order.client_order_id}: {reason}",
                 LogColor.YELLOW,
             )
-            self._generate_order_rejected(
-                command.order.client_order_id,
-                reason,
+            self.generate_order_rejected(
+                strategy_id=command.strategy_id,
+                instrument_id=command.order.instrument_id,
+                client_order_id=command.order.client_order_id,
+                reason=reason,
+                ts_event=self._clock.timestamp_ns(),
             )
             return
 
@@ -332,32 +390,52 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
         instrument = self._instrument_provider.find(order.instrument_id)
 
         if instrument is None:
-            self._generate_order_rejected(
-                order.client_order_id,
-                f"Instrument {order.instrument_id} not found",
+            self.generate_order_rejected(
+                strategy_id=command.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=f"Instrument {order.instrument_id} not found",
+                ts_event=self._clock.timestamp_ns(),
             )
             return
 
-        # Cache instruments in HTTP client for order quantization
-        instruments_pyo3 = self._instrument_provider.instruments_pyo3()
-        for inst in instruments_pyo3:
-            self._http_client.cache_instrument(inst)
+        # Encode client_order_id to (u32, u32) pair using bidirectional encoder
+        assert self._encoder is not None
+        client_order_id_u32, client_metadata = self._encoder.encode(str(order.client_order_id))
 
-        # Generate u32 client_order_id from the string
-        client_order_id_u32 = _client_order_id_to_u32(order.client_order_id)
+        # Register order context for cancellation
+        tif_value = order.time_in_force.value if hasattr(order, "time_in_force") else None
+        expire_ns = order.expire_time_ns if hasattr(order, "expire_time_ns") else None
+        self._order_contexts[client_order_id_u32] = (tif_value, expire_ns)
 
-        self._log.info(f"Submit {order}", LogColor.BLUE)
+        self._log.info(f"Submit {order}", LogColor.NORMAL)
+
+        # Generate OrderSubmitted event before dispatch
+        self.generate_order_submitted(
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            ts_event=self._clock.timestamp_ns(),
+        )
 
         try:
-            await self._dispatch_order(order, client_order_id_u32)
+            await self._dispatch_order(order, client_order_id_u32, client_metadata)
             self._log.debug(f"Submitted order {order.client_order_id}")
         except Exception as e:
-            self._generate_order_rejected(
-                order.client_order_id,
-                f"Order submission failed: {e}",
+            self.generate_order_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=f"Order submission failed: {e}",
+                ts_event=self._clock.timestamp_ns(),
             )
 
-    async def _dispatch_order(self, order: Order, client_order_id_u32: int) -> None:
+    async def _dispatch_order(
+        self,
+        order: Order,
+        client_order_id_u32: int,
+        client_metadata: int,
+    ) -> None:
         dispatch_map = {
             OrderType.MARKET: self._submit_market_order,
             OrderType.LIMIT: self._submit_limit_order,
@@ -369,40 +447,48 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
 
         handler = dispatch_map.get(order.order_type)
         if handler is None:
-            self._generate_order_rejected(
-                order.client_order_id,
-                f"Unsupported order type: {order.order_type}",
+            self.generate_order_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=f"Unsupported order type: {order.order_type}",
+                ts_event=self._clock.timestamp_ns(),
             )
             return
 
-        await handler(order, client_order_id_u32)
+        await handler(order, client_order_id_u32, client_metadata)
 
-    async def _submit_market_order(self, order: MarketOrder, client_order_id_u32: int) -> None:
-        assert self._order_submitter is not None  # Checked in _submit_order
-        assert self._wallet is not None  # Checked in _submit_order
+    async def _submit_market_order(
+        self,
+        order: MarketOrder,
+        client_order_id_u32: int,
+        client_metadata: int,
+    ) -> None:
+        assert self._order_submitter is not None
         await self._order_submitter.submit_market_order(
-            wallet=self._wallet,
             instrument_id=str(order.instrument_id),
             client_order_id=client_order_id_u32,
             side=order.side.value,
             quantity=str(order.quantity),
-            block_height=self._block_height,
+            client_metadata=client_metadata,
         )
 
-    async def _submit_limit_order(self, order: LimitOrder, client_order_id_u32: int) -> None:
-        assert self._order_submitter is not None  # Checked in _submit_order
-        assert self._wallet is not None  # Checked in _submit_order
-        # Convert TimeInForce enum to int value
+    async def _submit_limit_order(
+        self,
+        order: LimitOrder,
+        client_order_id_u32: int,
+        client_metadata: int,
+    ) -> None:
+        assert self._order_submitter is not None
         tif_value = order.time_in_force.value
 
         self._log.info(
-            f"Submitting limit order with block_height={self._block_height}, "
+            f"Submitting limit order: "
             f"price={order.price}, qty={order.quantity}, tif={order.time_in_force}",
-            LogColor.MAGENTA,
+            LogColor.NORMAL,
         )
 
         await self._order_submitter.submit_limit_order(
-            wallet=self._wallet,
             instrument_id=str(order.instrument_id),
             client_order_id=client_order_id_u32,
             side=order.side.value,
@@ -411,19 +497,18 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             time_in_force=tif_value,
             post_only=order.is_post_only,
             reduce_only=order.is_reduce_only,
-            block_height=self._block_height,
             expire_time=_get_expire_time_secs(order),
+            client_metadata=client_metadata,
         )
 
     async def _submit_stop_market_order(
         self,
         order: StopMarketOrder,
         client_order_id_u32: int,
+        client_metadata: int,
     ) -> None:
-        assert self._order_submitter is not None  # Checked in _submit_order
-        assert self._wallet is not None  # Checked in _submit_order
+        assert self._order_submitter is not None
         await self._order_submitter.submit_stop_market_order(
-            wallet=self._wallet,
             instrument_id=str(order.instrument_id),
             client_order_id=client_order_id_u32,
             side=order.side.value,
@@ -431,19 +516,19 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             quantity=str(order.quantity),
             reduce_only=order.is_reduce_only,
             expire_time=_get_expire_time_secs(order),
+            client_metadata=client_metadata,
         )
 
     async def _submit_stop_limit_order(
         self,
         order: StopLimitOrder,
         client_order_id_u32: int,
+        client_metadata: int,
     ) -> None:
-        assert self._order_submitter is not None  # Checked in _submit_order
-        assert self._wallet is not None  # Checked in _submit_order
+        assert self._order_submitter is not None
         tif_value = order.time_in_force.value
 
         await self._order_submitter.submit_stop_limit_order(
-            wallet=self._wallet,
             instrument_id=str(order.instrument_id),
             client_order_id=client_order_id_u32,
             side=order.side.value,
@@ -454,17 +539,17 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             post_only=order.is_post_only,
             reduce_only=order.is_reduce_only,
             expire_time=_get_expire_time_secs(order),
+            client_metadata=client_metadata,
         )
 
     async def _submit_take_profit_market_order(
         self,
         order: MarketIfTouchedOrder,
         client_order_id_u32: int,
+        client_metadata: int,
     ) -> None:
-        assert self._order_submitter is not None  # Checked in _submit_order
-        assert self._wallet is not None  # Checked in _submit_order
+        assert self._order_submitter is not None
         await self._order_submitter.submit_take_profit_market_order(
-            wallet=self._wallet,
             instrument_id=str(order.instrument_id),
             client_order_id=client_order_id_u32,
             side=order.side.value,
@@ -472,19 +557,19 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             quantity=str(order.quantity),
             reduce_only=order.is_reduce_only,
             expire_time=_get_expire_time_secs(order),
+            client_metadata=client_metadata,
         )
 
     async def _submit_take_profit_limit_order(
         self,
         order: LimitIfTouchedOrder,
         client_order_id_u32: int,
+        client_metadata: int,
     ) -> None:
-        assert self._order_submitter is not None  # Checked in _submit_order
-        assert self._wallet is not None  # Checked in _submit_order
+        assert self._order_submitter is not None
         tif_value = order.time_in_force.value
 
         await self._order_submitter.submit_take_profit_limit_order(
-            wallet=self._wallet,
             instrument_id=str(order.instrument_id),
             client_order_id=client_order_id_u32,
             side=order.side.value,
@@ -495,6 +580,7 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             post_only=order.is_post_only,
             reduce_only=order.is_reduce_only,
             expire_time=_get_expire_time_secs(order),
+            client_metadata=client_metadata,
         )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
@@ -513,47 +599,67 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
     async def _modify_order(self, command: ModifyOrder) -> None:
         # dYdX doesn't support order modification, reject
         self._log.warning("dYdX does not support order modification")
-        self._generate_order_modify_rejected(
-            command.client_order_id,
-            "Order modification not supported by dYdX",
+        self.generate_order_modify_rejected(
+            strategy_id=command.strategy_id,
+            instrument_id=command.instrument_id,
+            client_order_id=command.client_order_id,
+            venue_order_id=command.venue_order_id,
+            reason="Order modification not supported by dYdX",
+            ts_event=self._clock.timestamp_ns(),
         )
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        if self._order_submitter is None or self._wallet is None:
-            self._generate_order_cancel_rejected(
-                command.client_order_id,
-                "Order submitter not initialized - connect first",
+        if self._order_submitter is None:
+            self.generate_order_cancel_rejected(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=command.venue_order_id,
+                reason="Order submitter not initialized - connect first",
+                ts_event=self._clock.timestamp_ns(),
             )
             return
 
         # Get the order from cache to get instrument_id
         order = self._cache.order(command.client_order_id)
         if order is None:
-            self._generate_order_cancel_rejected(
-                command.client_order_id,
-                f"Order {command.client_order_id} not found in cache",
+            self.generate_order_cancel_rejected(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=command.venue_order_id,
+                reason=f"Order {command.client_order_id} not found in cache",
+                ts_event=self._clock.timestamp_ns(),
             )
             return
 
-        # Generate u32 client_order_id from the string (same as submit)
-        client_order_id_u32 = _client_order_id_to_u32(command.client_order_id)
+        # Encode client_order_id using bidirectional encoder
+        assert self._encoder is not None
+        client_order_id_u32, _ = self._encoder.encode(str(command.client_order_id))
+
+        # Get order context for time_in_force/expire_time_ns
+        tif_value, expire_ns = self._order_contexts.get(client_order_id_u32, (None, None))
 
         try:
             await self._order_submitter.cancel_order(
-                wallet=self._wallet,
                 instrument_id=str(order.instrument_id),
                 client_order_id=client_order_id_u32,
-                block_height=self._block_height,
+                time_in_force=tif_value,
+                expire_time_ns=expire_ns,
             )
             self._log.debug(f"Cancelled order {command.client_order_id}")
         except Exception as e:
-            self._generate_order_cancel_rejected(
-                command.client_order_id,
-                f"Order cancellation failed: {e}",
+            self.generate_order_cancel_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=order.venue_order_id,
+                reason=f"Order cancellation failed: {e}",
+                ts_event=self._clock.timestamp_ns(),
             )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        if self._order_submitter is None or self._wallet is None:
+        if self._order_submitter is None:
             self._log.error("Order submitter not initialized - connect first")
             return
 
@@ -567,27 +673,29 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             self._log.info("No open orders to cancel")
             return
 
-        # Build batch cancel list: (instrument_id, client_order_id_u32)
-        cancel_list = []
+        # Cancel each order individually (dYdX does not allow batching short-term cancels)
+        assert self._encoder is not None
+        self._log.info(
+            f"Cancelling {len(open_orders)} orders individually for "
+            f"{command.instrument_id or 'all instruments'}",
+        )
         for order in open_orders:
-            client_order_id_u32 = _client_order_id_to_u32(order.client_order_id)
-            cancel_list.append((str(order.instrument_id), client_order_id_u32))
-
-        try:
-            await self._order_submitter.cancel_orders_batch(
-                wallet=self._wallet,
-                orders=cancel_list,
-                block_height=self._block_height,
-            )
-            self._log.debug(
-                f"Cancelled {len(cancel_list)} orders for "
-                f"{command.instrument_id or 'all instruments'}",
-            )
-        except Exception as e:
-            self._log.error(f"Cancel all orders failed: {e}")
+            client_order_id_u32, _ = self._encoder.encode(str(order.client_order_id))
+            tif_value, expire_ns = self._order_contexts.get(client_order_id_u32, (None, None))
+            try:
+                await self._order_submitter.cancel_order(
+                    instrument_id=str(order.instrument_id),
+                    client_order_id=client_order_id_u32,
+                    time_in_force=tif_value,
+                    expire_time_ns=expire_ns,
+                )
+            except Exception as e:
+                self._log.error(
+                    f"Failed to cancel order {order.client_order_id}: {e}",
+                )
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
-        if self._order_submitter is None or self._wallet is None:
+        if self._order_submitter is None:
             self._log.error("Order submitter not initialized - connect first")
             return
 
@@ -595,34 +703,29 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             self._log.info("No orders to cancel in batch")
             return
 
-        # Build batch cancel list: (instrument_id, client_order_id_u32)
-        cancel_list = []
+        # Cancel each order individually (dYdX does not allow batching short-term cancels)
+        assert self._encoder is not None
+        self._log.info(f"Cancelling {len(command.cancels)} orders individually")
         for cancel in command.cancels:
-            # Get the order from cache to get instrument_id
             order = self._cache.order(cancel.client_order_id)
             if order is None:
                 self._log.warning(
                     f"Order {cancel.client_order_id} not found in cache, skipping",
                 )
                 continue
-            client_order_id_u32 = _client_order_id_to_u32(cancel.client_order_id)
-            cancel_list.append((str(order.instrument_id), client_order_id_u32))
-
-        if not cancel_list:
-            self._log.warning("No valid orders to cancel in batch")
-            return
-
-        try:
-            await self._order_submitter.cancel_orders_batch(
-                wallet=self._wallet,
-                orders=cancel_list,
-                block_height=self._block_height,
-            )
-            self._log.debug(f"Batch cancelled {len(cancel_list)} orders")
-        except Exception as e:
-            self._log.error(f"Batch cancel orders failed: {e}")
-
-    # -- REPORTS ----------------------------------------------------------------------------------
+            client_order_id_u32, _ = self._encoder.encode(str(cancel.client_order_id))
+            tif_value, expire_ns = self._order_contexts.get(client_order_id_u32, (None, None))
+            try:
+                await self._order_submitter.cancel_order(
+                    instrument_id=str(order.instrument_id),
+                    client_order_id=client_order_id_u32,
+                    time_in_force=tif_value,
+                    expire_time_ns=expire_ns,
+                )
+            except Exception as e:
+                self._log.error(
+                    f"Failed to cancel order {cancel.client_order_id}: {e}",
+                )
 
     async def generate_order_status_report(
         self,
@@ -637,7 +740,7 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
                 start=None,
                 end=None,
                 open_only=False,
-                command_id=command.command_id,
+                command_id=command.id,
                 ts_init=command.ts_init,
             ),
         )
@@ -686,15 +789,10 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
 
             for pyo3_report in pyo3_reports:
                 report = OrderStatusReport.from_pyo3(pyo3_report)
-                self._log.debug(f"Received {report}", LogColor.MAGENTA)
+                self._log.debug(f"Received {report}", LogColor.NORMAL)
                 reports.append(report)
-        except ValueError as e:
-            if "request canceled" in str(e).lower():
-                self._log.debug("OrderStatusReports request cancelled during shutdown")
-            else:
-                self._log.exception("Failed to generate OrderStatusReports", e)
-        except Exception as e:
-            self._log.exception("Failed to generate OrderStatusReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "OrderStatusReports")
 
         self._log_report_receipt(
             len(reports),
@@ -739,15 +837,10 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
 
             for pyo3_report in pyo3_reports:
                 report = FillReport.from_pyo3(pyo3_report)
-                self._log.debug(f"Received {report}", LogColor.MAGENTA)
+                self._log.debug(f"Received {report}", LogColor.NORMAL)
                 reports.append(report)
-        except ValueError as e:
-            if "request canceled" in str(e).lower():
-                self._log.debug("FillReports request cancelled during shutdown")
-            else:
-                self._log.exception("Failed to generate FillReports", e)
-        except Exception as e:
-            self._log.exception("Failed to generate FillReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "FillReports")
 
         self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
 
@@ -788,15 +881,10 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
 
             for pyo3_report in pyo3_reports:
                 report = PositionStatusReport.from_pyo3(pyo3_report)
-                self._log.debug(f"Received {report}", LogColor.MAGENTA)
+                self._log.debug(f"Received {report}", LogColor.NORMAL)
                 reports.append(report)
-        except ValueError as e:
-            if "request canceled" in str(e).lower():
-                self._log.debug("PositionStatusReports request cancelled during shutdown")
-            else:
-                self._log.exception("Failed to generate PositionStatusReports", e)
-        except Exception as e:
-            self._log.exception("Failed to generate PositionStatusReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "PositionStatusReports")
 
         self._log_report_receipt(
             len(reports),
@@ -805,69 +893,3 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
         )
 
         return reports
-
-    # -- HELPERS ----------------------------------------------------------------------------------
-
-    def _generate_order_rejected(
-        self,
-        client_order_id: ClientOrderId,
-        reason: str,
-    ) -> None:
-        self._log.error(f"Order rejected: {reason}")
-        event = OrderRejected(
-            trader_id=self.trader_id,
-            strategy_id=self._cache.strategy_id_for_order(client_order_id)
-            or self.trader_id.get_strategy_id(),
-            instrument_id=InstrumentId.from_str("UNKNOWN.DYDX"),
-            client_order_id=client_order_id,
-            account_id=self.account_id,
-            reason=reason,
-            event_id=UUID4(),
-            ts_event=self._clock.timestamp_ns(),
-            ts_init=self._clock.timestamp_ns(),
-        )
-        self._send_order_event(event)
-
-    def _generate_order_modify_rejected(
-        self,
-        client_order_id: ClientOrderId,
-        reason: str,
-    ) -> None:
-        self._log.error(f"Order modify rejected: {reason}")
-        from nautilus_trader.model.events import OrderModifyRejected
-
-        event = OrderModifyRejected(
-            trader_id=self.trader_id,
-            strategy_id=self._cache.strategy_id_for_order(client_order_id)
-            or self.trader_id.get_strategy_id(),
-            instrument_id=InstrumentId.from_str("UNKNOWN.DYDX"),
-            client_order_id=client_order_id,
-            venue_order_id=None,
-            account_id=self.account_id,
-            reason=reason,
-            event_id=UUID4(),
-            ts_event=self._clock.timestamp_ns(),
-            ts_init=self._clock.timestamp_ns(),
-        )
-        self._send_order_event(event)
-
-    def _generate_order_cancel_rejected(
-        self,
-        client_order_id: ClientOrderId,
-        reason: str,
-    ) -> None:
-        self._log.error(f"Order cancel rejected: {reason}")
-        event = OrderCancelRejected(
-            trader_id=self.trader_id,
-            strategy_id=self._cache.strategy_id_for_order(client_order_id)
-            or self.trader_id.get_strategy_id(),
-            instrument_id=InstrumentId.from_str("UNKNOWN.DYDX"),
-            client_order_id=client_order_id,
-            venue_order_id=None,
-            account_id=self.account_id,
-            reason=reason,
-            event_id=UUID4(),
-            ts_event=self._clock.timestamp_ns(),
-            ts_init=self._clock.timestamp_ns(),
-        )
-        self._send_order_event(event)

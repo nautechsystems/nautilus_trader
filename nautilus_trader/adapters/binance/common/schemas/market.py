@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -433,7 +433,7 @@ class BinanceOrderBookData(msgspec.Struct, frozen=True):
             delta = bid.parse_to_order_book_delta(
                 instrument_id=instrument_id,
                 side=OrderSide.BUY,
-                flags=RecordFlag.F_SNAPSHOT if snapshot else flags,
+                flags=(RecordFlag.F_SNAPSHOT | flags) if snapshot else flags,
                 sequence=self.u,
                 ts_event=ts_event,
                 ts_init=ts_init,
@@ -450,7 +450,7 @@ class BinanceOrderBookData(msgspec.Struct, frozen=True):
             delta = ask.parse_to_order_book_delta(
                 instrument_id=instrument_id,
                 side=OrderSide.SELL,
-                flags=RecordFlag.F_SNAPSHOT if snapshot else flags,
+                flags=(RecordFlag.F_SNAPSHOT | flags) if snapshot else flags,
                 sequence=self.u,
                 ts_event=ts_event,
                 ts_init=ts_init,

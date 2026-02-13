@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -750,7 +750,7 @@ async fn test_ping_pong() {
     let pong_count = state.pong_count.load(Ordering::Relaxed);
     assert!(
         pong_count >= 1,
-        "Expected at least 1 completed ping/pong cycle within 3s, got {pong_count}"
+        "Expected at least 1 completed ping/pong cycle within 3s, was {pong_count}"
     );
 
     client.disconnect().await.unwrap();
@@ -951,7 +951,7 @@ async fn test_multiple_subscription_failures() {
     let failures: Vec<_> = events.iter().filter(|(_, success)| !*success).collect();
     assert!(
         failures.len() >= 2,
-        "Should have at least 2 failed subscriptions, got {}",
+        "Should have at least 2 failed subscriptions, was {}",
         failures.len()
     );
 
@@ -1115,7 +1115,7 @@ async fn test_sends_pong_for_control_ping() {
     let pong_count = state.pong_count.load(Ordering::Relaxed);
     assert!(
         pong_count >= 1,
-        "Expected at least 1 completed ping/pong cycle within 3s, got {pong_count}"
+        "Expected at least 1 completed ping/pong cycle within 3s, was {pong_count}"
     );
 
     client.disconnect().await.unwrap();
@@ -1997,7 +1997,7 @@ async fn test_heartbeat_keeps_connection_alive() {
     let pong_count = state.pong_count.load(Ordering::Relaxed);
     assert!(
         pong_count >= 1,
-        "Expected at least 1 completed heartbeat cycle within 5s (heartbeat_interval=1s), got {pong_count}"
+        "Expected at least 1 completed heartbeat cycle within 5s (heartbeat_interval=1s), was {pong_count}"
     );
     assert!(
         client.is_connected(),
@@ -2660,7 +2660,8 @@ async fn test_markets_subscription_failure() {
     client.disconnect().await.unwrap();
 }
 
-const TEST_MNEMONIC: &str = "mirror actor skill push coach wait confirm orchard lunch mobile athlete gossip awake miracle matter bus reopen team ladder lazy list timber render wait";
+// Valid test private key (32 bytes, value 1 - simplest valid secp256k1 key)
+const TEST_PRIVATE_KEY: &str = "0000000000000000000000000000000000000000000000000000000000000001";
 
 #[rstest]
 #[tokio::test]
@@ -2692,8 +2693,8 @@ async fn test_subscribe_subaccount_with_private_client() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    // Create a credential from test mnemonic
-    let credential = DydxCredential::from_mnemonic(TEST_MNEMONIC, 0, vec![]).unwrap();
+    // Create a credential from test private key
+    let credential = DydxCredential::from_private_key(TEST_PRIVATE_KEY, vec![]).unwrap();
     let account_id = AccountId::new("DYDX-001");
 
     let mut client = DydxWebSocketClient::new_private(ws_url, credential, account_id, Some(30));
@@ -2738,7 +2739,7 @@ async fn test_unsubscribe_subaccount() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let credential = DydxCredential::from_mnemonic(TEST_MNEMONIC, 0, vec![]).unwrap();
+    let credential = DydxCredential::from_private_key(TEST_PRIVATE_KEY, vec![]).unwrap();
     let account_id = AccountId::new("DYDX-001");
 
     let mut client = DydxWebSocketClient::new_private(ws_url, credential, account_id, Some(30));
@@ -2801,7 +2802,7 @@ async fn test_subaccount_subscription_failure() {
         .set_subscription_failures(vec!["v4_subaccounts".to_string()])
         .await;
 
-    let credential = DydxCredential::from_mnemonic(TEST_MNEMONIC, 0, vec![]).unwrap();
+    let credential = DydxCredential::from_private_key(TEST_PRIVATE_KEY, vec![]).unwrap();
     let account_id = AccountId::new("DYDX-001");
 
     let mut client = DydxWebSocketClient::new_private(ws_url, credential, account_id, Some(30));
@@ -2840,18 +2841,15 @@ async fn test_subaccount_subscription_failure() {
 #[tokio::test]
 async fn test_block_height_parsing() {
     use chrono::Utc;
-    use nautilus_dydx::websocket::{
-        enums::{DydxWsChannel, DydxWsMessageType},
-        messages::{DydxBlockHeightChannelContents, DydxWsBlockHeightChannelData},
+    use nautilus_dydx::websocket::messages::{
+        DydxBlockHeightChannelContents, DydxWsBlockHeightChannelData,
     };
 
     let test_block_height = "12345678";
     let block_msg = DydxWsBlockHeightChannelData {
-        msg_type: DydxWsMessageType::ChannelData,
         connection_id: "test-conn-123".to_string(),
         message_id: 42,
         id: "dydx".to_string(),
-        channel: DydxWsChannel::BlockHeight,
         version: "4.0.0".to_string(),
         contents: DydxBlockHeightChannelContents {
             block_height: test_block_height.to_string(),
@@ -2864,26 +2862,21 @@ async fn test_block_height_parsing() {
         12345678_u64,
         "Block height string should parse to correct u64"
     );
-    assert_eq!(block_msg.channel, DydxWsChannel::BlockHeight);
-    assert_eq!(block_msg.msg_type, DydxWsMessageType::ChannelData);
 }
 
 #[rstest]
 #[tokio::test]
 async fn test_block_height_invalid_format() {
     use chrono::Utc;
-    use nautilus_dydx::websocket::{
-        enums::{DydxWsChannel, DydxWsMessageType},
-        messages::{DydxBlockHeightChannelContents, DydxWsBlockHeightChannelData},
+    use nautilus_dydx::websocket::messages::{
+        DydxBlockHeightChannelContents, DydxWsBlockHeightChannelData,
     };
 
     let invalid_block_height = "not-a-number";
     let block_msg = DydxWsBlockHeightChannelData {
-        msg_type: DydxWsMessageType::ChannelData,
         connection_id: "test-conn".to_string(),
         message_id: 1,
         id: "dydx".to_string(),
-        channel: DydxWsChannel::BlockHeight,
         version: "4.0.0".to_string(),
         contents: DydxBlockHeightChannelContents {
             block_height: invalid_block_height.to_string(),
@@ -2902,17 +2895,14 @@ async fn test_block_height_invalid_format() {
 #[tokio::test]
 async fn test_block_height_subscribed_parsing() {
     use chrono::Utc;
-    use nautilus_dydx::websocket::{
-        enums::{DydxWsChannel, DydxWsMessageType},
-        messages::{DydxBlockHeightSubscribedContents, DydxWsBlockHeightSubscribedData},
+    use nautilus_dydx::websocket::messages::{
+        DydxBlockHeightSubscribedContents, DydxWsBlockHeightSubscribedData,
     };
 
     let test_height = "98765432";
     let subscribed_msg = DydxWsBlockHeightSubscribedData {
-        msg_type: DydxWsMessageType::Subscribed,
         connection_id: "test-conn-456".to_string(),
         message_id: 1,
-        channel: DydxWsChannel::BlockHeight,
         id: "v4_block_height".to_string(),
         contents: DydxBlockHeightSubscribedContents {
             height: test_height.to_string(),
@@ -2925,8 +2915,6 @@ async fn test_block_height_subscribed_parsing() {
         98765432_u64,
         "Subscribed message height field should parse correctly"
     );
-    assert_eq!(subscribed_msg.channel, DydxWsChannel::BlockHeight);
-    assert_eq!(subscribed_msg.msg_type, DydxWsMessageType::Subscribed);
 }
 
 #[rstest]

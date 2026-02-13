@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -49,28 +49,28 @@ fn bench_set_intersections(c: &mut Criterion) {
     // No filters → full set
     group.bench_function("all orders", |b| {
         b.iter(|| {
-            black_box(cache.client_order_ids(None, None, None));
+            black_box(cache.client_order_ids(None, None, None, None));
         });
     });
 
     // Venue only
     group.bench_function("venue filter", |b| {
         b.iter(|| {
-            black_box(cache.client_order_ids(Some(&venue), None, None));
+            black_box(cache.client_order_ids(Some(&venue), None, None, None));
         });
     });
 
     // Instrument only
     group.bench_function("instrument filter", |b| {
         b.iter(|| {
-            black_box(cache.client_order_ids(None, Some(&instrument), None));
+            black_box(cache.client_order_ids(None, Some(&instrument), None, None));
         });
     });
 
     // Venue + instrument
     group.bench_function("venue + instrument filter", |b| {
         b.iter(|| {
-            black_box(cache.client_order_ids(Some(&venue), Some(&instrument), None));
+            black_box(cache.client_order_ids(Some(&venue), Some(&instrument), None, None));
         });
     });
 

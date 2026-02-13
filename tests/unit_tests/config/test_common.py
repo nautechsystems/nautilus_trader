@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -38,6 +38,7 @@ from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
@@ -459,6 +460,29 @@ def test_decoding_environment() -> None:
 
     # Assert
     assert result == Environment(obj)
+
+
+def test_encoding_time_in_force() -> None:
+    # Arrange
+    obj = TimeInForce.GTC
+
+    # Act
+    result = msgspec_encoding_hook(obj)
+
+    # Assert
+    assert result == "GTC"
+
+
+def test_decoding_time_in_force() -> None:
+    # Arrange
+    obj_type = TimeInForce
+    obj = "GTC"
+
+    # Act
+    result = msgspec_decoding_hook(obj_type, obj)
+
+    # Assert
+    assert result == TimeInForce.GTC
 
 
 def test_encoding_type_with_fully_qualified_name() -> None:

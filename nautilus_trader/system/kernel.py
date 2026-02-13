@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -196,9 +196,6 @@ class NautilusKernel:
                 if logging.use_pyo3:
                     set_logging_pyo3(True)
 
-                    # Initialize tracing for async Rust
-                    nautilus_pyo3.init_tracing()
-
                     # Initialize logging for sync Rust and Python
                     self._log_guard = nautilus_pyo3.init_logging(
                         trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
@@ -261,6 +258,9 @@ class NautilusKernel:
                     "`LoggingConfig.bypass_logging` was set `True` "
                     "when not safe to bypass logging in a LIVE context",
                 )
+
+        if logging.use_tracing and not nautilus_pyo3.tracing_is_initialized():
+            nautilus_pyo3.init_tracing()
 
         self._log: Logger = Logger(name=name)
         self._log.info("Building system kernel")
@@ -458,7 +458,8 @@ class NautilusKernel:
                 config=config.exec_engine,
             )
 
-        if config.exec_engine and config.exec_engine.load_cache:
+        flush_on_start = config.cache is not None and config.cache.flush_on_start
+        if config.exec_engine and config.exec_engine.load_cache and not flush_on_start:
             self.exec_engine.load_cache()
 
         self._emulator = OrderEmulator(
@@ -1054,7 +1055,7 @@ class NautilusKernel:
 
         self._stop_engines()
         self._cancel_timers()
-        self._flush_writer()
+        self._close_writer()
 
         self._log.info("STOPPED")
         self._is_running = False
@@ -1095,7 +1096,7 @@ class NautilusKernel:
 
         self._stop_engines()
         self._cancel_timers()
-        self._flush_writer()
+        self._close_writer()
 
         self._log.info("STOPPED")
         self._is_running = False
@@ -1313,8 +1314,7 @@ class NautilusKernel:
 
     async def _await_engines_disconnected(self) -> None:
         self._log.info(
-            f"Awaiting engine disconnections "
-            f"({self._config.timeout_disconnection}s timeout)...",
+            f"Awaiting engine disconnections ({self._config.timeout_disconnection}s timeout)...",
             color=LogColor.BLUE,
         )
 
@@ -1443,3 +1443,7 @@ class NautilusKernel:
     def _flush_writer(self) -> None:
         if self._writer is not None:
             self._writer.flush()
+
+    def _close_writer(self) -> None:
+        if self._writer is not None:
+            self._writer.close()

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -28,13 +28,14 @@ use nautilus_common::testing::wait_until_async;
 use nautilus_deribit::http::{
     client::DeribitRawHttpClient,
     error::DeribitHttpError,
-    models::{DeribitCurrency, DeribitInstrumentKind},
+    models::{DeribitCurrency, DeribitProductType},
     query::{
         GetInstrumentParams, GetInstrumentsParams, GetLastTradesByInstrumentAndTimeParams,
         GetOrderBookParams, GetTradingViewChartDataParams,
     },
 };
 use nautilus_network::http::HttpClient;
+use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 
 #[derive(Clone, Default)]
@@ -83,10 +84,6 @@ async fn wait_for_server(addr: SocketAddr) {
     )
     .await;
 }
-
-// ============================================================================
-// JSON-RPC Handlers
-// ============================================================================
 
 async fn handle_jsonrpc_request(
     State(state): State<TestServerState>,
@@ -395,10 +392,6 @@ async fn handle_method_not_found(id: u64) -> axum::response::Response {
     .into_response()
 }
 
-// ============================================================================
-// Router
-// ============================================================================
-
 fn create_router(state: TestServerState) -> Router {
     Router::new()
         .route("/api/v2", post(handle_jsonrpc_request))
@@ -428,11 +421,11 @@ async fn test_get_instrument_success() {
     assert_eq!(instrument.instrument_id, 124972);
     assert_eq!(instrument.base_currency.as_str(), "BTC");
     assert_eq!(instrument.quote_currency.as_str(), "USD");
-    assert_eq!(instrument.contract_size, 10.0);
-    assert_eq!(instrument.tick_size, 0.5);
-    assert_eq!(instrument.min_trade_amount, 10.0);
+    assert_eq!(instrument.contract_size, dec!(10.0));
+    assert_eq!(instrument.tick_size, dec!(0.5));
+    assert_eq!(instrument.min_trade_amount, dec!(10.0));
     assert!(instrument.is_active);
-    assert_eq!(instrument.kind, DeribitInstrumentKind::Future);
+    assert_eq!(instrument.kind, DeribitProductType::Future);
 
     assert_eq!(
         *state
@@ -474,7 +467,7 @@ async fn test_get_instrument_invalid_params() {
             assert!(msg.contains("Invalid params"));
             assert!(msg.contains("instrument_name"));
         }
-        other => panic!("Expected ValidationError, got: {other:?}"),
+        other => panic!("Expected ValidationError, was: {other:?}"),
     }
 }
 
@@ -512,7 +505,7 @@ async fn test_get_instrument_not_found() {
             assert_eq!(error_code, 13020);
             assert!(message.contains("instrument_not_found"));
         }
-        other => panic!("Expected DeribitError with code 13020, got: {other:?}"),
+        other => panic!("Expected DeribitError with code 13020, was: {other:?}"),
     }
 }
 
@@ -545,23 +538,23 @@ async fn test_get_instruments_success() {
 
     let perpetual = &instruments[0];
     assert_eq!(perpetual.instrument_name.as_str(), "BTC-PERPETUAL");
-    assert_eq!(perpetual.kind, DeribitInstrumentKind::Future);
+    assert_eq!(perpetual.kind, DeribitProductType::Future);
     assert_eq!(perpetual.base_currency.as_str(), "BTC");
     assert!(perpetual.is_active);
 
     let future = &instruments[1];
     assert_eq!(future.instrument_name.as_str(), "BTC-27DEC24");
-    assert_eq!(future.kind, DeribitInstrumentKind::Future);
+    assert_eq!(future.kind, DeribitProductType::Future);
     assert_eq!(future.expiration_timestamp, Some(1735300800000));
 
     let option = &instruments[2];
     assert_eq!(option.instrument_name.as_str(), "BTC-27DEC24-100000-C");
-    assert_eq!(option.kind, DeribitInstrumentKind::Option);
-    assert_eq!(option.strike, Some(100000.0));
+    assert_eq!(option.kind, DeribitProductType::Option);
+    assert_eq!(option.strike, Some(dec!(100000.0)));
 
     let combo = &instruments[3];
     assert_eq!(combo.instrument_name.as_str(), "BTC-COMBO-1");
-    assert_eq!(combo.kind, DeribitInstrumentKind::FutureCombo);
+    assert_eq!(combo.kind, DeribitProductType::FutureCombo);
 
     assert_eq!(
         *state
@@ -590,8 +583,7 @@ async fn test_get_instruments_with_kind_filter() {
     )
     .unwrap();
 
-    let params =
-        GetInstrumentsParams::with_kind(DeribitCurrency::BTC, DeribitInstrumentKind::Option);
+    let params = GetInstrumentsParams::with_kind(DeribitCurrency::BTC, DeribitProductType::Option);
     let result = client.get_instruments(params).await;
 
     assert!(result.is_ok(), "Request should succeed");
@@ -602,7 +594,7 @@ async fn test_get_instruments_with_kind_filter() {
 
     let option = &instruments[0];
     assert_eq!(option.instrument_name.as_str(), "BTC-27DEC24-100000-C");
-    assert_eq!(option.kind, DeribitInstrumentKind::Option);
+    assert_eq!(option.kind, DeribitProductType::Option);
 }
 
 #[tokio::test]
@@ -670,18 +662,18 @@ async fn test_get_last_trades_success() {
     let first_trade = &trades_response.trades[0];
     assert_eq!(first_trade.instrument_name, "ETH-PERPETUAL");
     assert_eq!(first_trade.direction, "sell");
-    assert_eq!(first_trade.price, 2968.3);
-    assert_eq!(first_trade.amount, 1.0);
+    assert_eq!(first_trade.price, dec!(2968.3));
+    assert_eq!(first_trade.amount, dec!(1.0));
     assert_eq!(first_trade.trade_id, "ETH-284830839");
     assert_eq!(first_trade.trade_seq, 203024587);
     assert_eq!(first_trade.tick_direction, 0);
-    assert_eq!(first_trade.index_price, 2967.73);
-    assert_eq!(first_trade.mark_price, 2968.01);
+    assert_eq!(first_trade.index_price, dec!(2967.73));
+    assert_eq!(first_trade.mark_price, dec!(2968.01));
 
     // Verify last trade (buy order with larger size)
     let last_trade = &trades_response.trades[9];
     assert_eq!(last_trade.direction, "buy");
-    assert_eq!(last_trade.amount, 106.0);
+    assert_eq!(last_trade.amount, dec!(106.0));
     assert_eq!(last_trade.trade_id, "ETH-284830854");
 
     // Verify request was tracked
@@ -747,7 +739,7 @@ async fn test_get_last_trades_invalid_params() {
             assert!(msg.contains("Invalid params"));
             assert!(msg.contains("instrument_name"));
         }
-        other => panic!("Expected ValidationError, got: {other:?}"),
+        other => panic!("Expected ValidationError, was: {other:?}"),
     }
 }
 
@@ -789,7 +781,7 @@ async fn test_get_last_trades_instrument_not_found() {
             assert_eq!(error_code, 13020);
             assert!(message.contains("instrument_not_found"));
         }
-        other => panic!("Expected DeribitError with code 13020, got: {other:?}"),
+        other => panic!("Expected DeribitError with code 13020, was: {other:?}"),
     }
 }
 
@@ -916,7 +908,7 @@ async fn test_get_tradingview_chart_data_instrument_not_found() {
             assert_eq!(error_code, 13020);
             assert!(message.contains("instrument_not_found"));
         }
-        other => panic!("Expected DeribitError with code 13020, got: {other:?}"),
+        other => panic!("Expected DeribitError with code 13020, was: {other:?}"),
     }
 }
 
@@ -951,12 +943,12 @@ async fn test_get_order_book_success() {
     assert_eq!(order_book.asks.len(), 20, "Should return 20 ask levels");
 
     // Verify best bid
-    assert_eq!(order_book.best_bid_price, Some(87002.5));
-    assert_eq!(order_book.best_bid_amount, Some(199190.0));
+    assert_eq!(order_book.best_bid_price, Some(dec!(87002.5)));
+    assert_eq!(order_book.best_bid_amount, Some(dec!(199190.0)));
 
     // Verify best ask
-    assert_eq!(order_book.best_ask_price, Some(87003.0));
-    assert_eq!(order_book.best_ask_amount, Some(125090.0));
+    assert_eq!(order_book.best_ask_price, Some(dec!(87003.0)));
+    assert_eq!(order_book.best_ask_amount, Some(dec!(125090.0)));
 
     // Verify first bid level
     assert_eq!(order_book.bids[0][0], 87002.5); // price
@@ -1022,6 +1014,6 @@ async fn test_get_order_book_instrument_not_found() {
             assert_eq!(error_code, 13020);
             assert!(message.contains("instrument_not_found"));
         }
-        other => panic!("Expected DeribitError with code 13020, got: {other:?}"),
+        other => panic!("Expected DeribitError with code 13020, was: {other:?}"),
     }
 }

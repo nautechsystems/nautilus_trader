@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -518,6 +518,62 @@ pub struct BybitTradeResult {
 /// # References
 /// - <https://bybit-exchange.github.io/docs/v5/market/recent-trade>
 pub type BybitTradesResponse = BybitResponse<BybitTradeResult>;
+
+/// Funding entry returned by `GET /v5/market/funding/history`.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/market/history-fund-rate>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitFunding {
+    pub symbol: Ustr,
+    pub funding_rate: String,
+    pub funding_rate_timestamp: String,
+}
+
+/// Funding list result returned by Bybit.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/market/history-fund-rate>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitFundingResult {
+    pub category: BybitProductType,
+    pub list: Vec<BybitFunding>,
+}
+
+/// Response alias for historical funding requests.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/market/history-fund-rate>
+pub type BybitFundingResponse = BybitResponse<BybitFundingResult>;
+
+/// Orderbook result returned by Bybit.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/market/orderbook>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitOrderbookResult {
+    /// Symbol.
+    pub s: Ustr,
+    /// Bid levels represented as `[price, size]` string pairs.
+    pub b: Vec<[String; 2]>,
+    /// Ask levels represented as `[price, size]` string pairs.
+    pub a: Vec<[String; 2]>,
+    pub ts: i64,
+    /// Update identifier.
+    pub u: i64,
+    /// Cross sequence number.
+    pub seq: i64,
+    pub cts: i64,
+}
+
+/// Response alias for orderbook requests.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/market/orderbook>
+pub type BybitOrderbookResponse = BybitResponse<BybitOrderbookResult>;
 
 /// Instrument definition for spot symbols.
 ///

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -76,7 +76,7 @@ mod tests {
         let root = get_workspace_root_path();
         assert!(
             root.join("pyproject.toml").exists(),
-            "Workspace root should contain pyproject.toml, got: {root:?}"
+            "Workspace root should contain pyproject.toml, was: {root:?}"
         );
     }
 
@@ -85,7 +85,7 @@ mod tests {
         let root = get_workspace_root_path();
         assert!(
             root.join("crates").is_dir(),
-            "Workspace root should contain crates/ directory, got: {root:?}"
+            "Workspace root should contain crates/ directory, was: {root:?}"
         );
     }
 
@@ -99,7 +99,7 @@ mod tests {
         let tests_root = get_tests_root_path();
         assert!(
             tests_root.ends_with("tests"),
-            "Tests root should end with 'tests', got: {tests_root:?}"
+            "Tests root should end with 'tests', was: {tests_root:?}"
         );
     }
 }

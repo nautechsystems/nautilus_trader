@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -3115,6 +3115,7 @@ cdef class OrderBookDeltas(Data):
     def __eq__(self, OrderBookDeltas other) -> bool:
         if other is None:
             return False
+
         return OrderBookDeltas.to_dict_c(self) == OrderBookDeltas.to_dict_c(other)
 
     def __hash__(self) -> int:
@@ -3311,7 +3312,8 @@ cdef class OrderBookDeltas(Data):
             OrderBookDelta delta
         for delta in data:
             batch.append(delta)
-            if delta.flags == RecordFlag.F_LAST:
+
+            if delta.flags & RecordFlag.F_LAST:
                 batches.append(batch)
                 batch = []
 
@@ -3334,6 +3336,26 @@ cdef class OrderBookDeltas(Data):
         data[0] = self._mem
         capsule = PyCapsule_New(data, NULL, <PyCapsule_Destructor>capsule_destructor_deltas)
         return capsule
+
+    @staticmethod
+    def from_pyo3(pyo3_deltas) -> OrderBookDeltas:
+        """
+        Return legacy Cython orderbook deltas converted from the given pyo3 Rust object.
+
+        Parameters
+        ----------
+        pyo3_deltas : nautilus_pyo3.OrderBookDeltas
+            The pyo3 Rust orderbook deltas to convert from.
+
+        Returns
+        -------
+        OrderBookDeltas
+
+        """
+        return OrderBookDeltas(
+            instrument_id=InstrumentId.from_str(pyo3_deltas.instrument_id.value),
+            deltas=OrderBookDelta.from_pyo3_list(pyo3_deltas.deltas),
+        )
 
     cpdef to_pyo3(self):
         """

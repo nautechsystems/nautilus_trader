@@ -148,7 +148,6 @@ class MinimalStrategy(Strategy):
 
 
 if __name__ == "__main__":
-
     engine = BacktestEngine(
         config=BacktestEngineConfig(
             trader_id="TESTER-001",

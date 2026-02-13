@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,8 +25,10 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport RequestBars
 from nautilus_trader.data.messages cimport RequestData
+from nautilus_trader.data.messages cimport RequestFundingRates
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
+from nautilus_trader.data.messages cimport RequestOrderBookDeltas
 from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
 from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
@@ -55,6 +57,8 @@ from nautilus_trader.data.messages cimport UnsubscribeOrderBook
 from nautilus_trader.data.messages cimport UnsubscribeQuoteTicks
 from nautilus_trader.data.messages cimport UnsubscribeTradeTicks
 from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport FundingRateUpdate
+from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
@@ -270,7 +274,7 @@ cdef class MarketDataClient(DataClient):
 
         # Subscriptions
         self._subscriptions_order_book_delta = set()     # type: set[InstrumentId]
-        self._subscriptions_order_book_snapshot = set()  # type: set[InstrumentId]
+        self._subscriptions_order_book_depth = set()    # type: set[InstrumentId]
         self._subscriptions_quote_tick = set()           # type: set[InstrumentId]
         self._subscriptions_trade_tick = set()           # type: set[InstrumentId]
         self._subscriptions_mark_price = set()           # type: set[InstrumentId]
@@ -319,16 +323,16 @@ cdef class MarketDataClient(DataClient):
         """
         return sorted(list(self._subscriptions_order_book_delta))
 
-    cpdef list subscribed_order_book_snapshots(self):
+    cpdef list subscribed_order_book_depth(self):
         """
-        Return the order book snapshot instruments subscribed to.
+        Return the order book depth instruments subscribed to.
 
         Returns
         -------
         list[InstrumentId]
 
         """
-        return sorted(list(self._subscriptions_order_book_snapshot))
+        return sorted(list(self._subscriptions_order_book_depth))
 
     cpdef list subscribed_quote_ticks(self):
         """
@@ -489,28 +493,6 @@ cdef class MarketDataClient(DataClient):
             f"You can implement by overriding the `subscribe_order_book_deltas` method for this client",  # pragma: no cover
         )
         raise NotImplementedError("method `subscribe_order_book_deltas` must be implemented in the subclass")
-
-    cpdef void subscribe_order_book_snapshots(self, SubscribeOrderBook command):
-        """
-        Subscribe to `OrderBook` snapshots data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The order book instrument to subscribe to.
-        book_type : BookType {``L1_MBP``, ``L2_MBP``, ``L3_MBO``}
-            The order book level.
-        depth : int, optional
-            The maximum depth for the order book. A depth of 0 is maximum depth.
-        params : dict[str, Any], optional
-            Additional params for the subscription.
-
-        """
-        self._log.error(  # pragma: no cover
-            f"Cannot subscribe to `OrderBook` snapshots data for {command.instrument_id}: not implemented. "  # pragma: no cover
-            f"You can implement by overriding the `subscribe_order_book_snapshots` method for this client",  # pragma: no cover
-        )
-        raise NotImplementedError("method `subscribe_order_book_snapshots` must be implemented in the subclass")
 
     cpdef void subscribe_order_book_depth(self, SubscribeOrderBook command):
         """
@@ -745,24 +727,6 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `unsubscribe_order_book_deltas` must be implemented in the subclass")
 
-    cpdef void unsubscribe_order_book_snapshots(self, UnsubscribeOrderBook command):
-        """
-        Unsubscribe from `OrderBook` snapshots data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The order book instrument to unsubscribe from.
-        params : dict[str, Any], optional
-            Additional params for the subscription.
-
-        """
-        self._log.error(  # pragma: no cover
-            f"Cannot unsubscribe from `OrderBook` snapshot data for {command.instrument_id}: not implemented. "  # pragma: no cover
-            f"You can implement by overriding the `unsubscribe_order_book_snapshots` method for this client",  # pragma: no cover
-        )
-        raise NotImplementedError("method `unsubscribe_order_book_snapshots` must be implemented in the subclass")
-
     cpdef void unsubscribe_order_book_depth(self, UnsubscribeOrderBook command):
         """
         Unsubscribe from `OrderBookDepth10` data for the given instrument ID.
@@ -940,10 +904,10 @@ cdef class MarketDataClient(DataClient):
 
         self._subscriptions_order_book_delta.add(instrument_id)
 
-    cpdef void _add_subscription_order_book_snapshots(self, InstrumentId instrument_id):
+    cpdef void _add_subscription_order_book_depth(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
-        self._subscriptions_order_book_snapshot.add(instrument_id)
+        self._subscriptions_order_book_depth.add(instrument_id)
 
     cpdef void _add_subscription_quote_ticks(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
@@ -1000,10 +964,10 @@ cdef class MarketDataClient(DataClient):
 
         self._subscriptions_order_book_delta.discard(instrument_id)
 
-    cpdef void _remove_subscription_order_book_snapshots(self, InstrumentId instrument_id):
+    cpdef void _remove_subscription_order_book_depth(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
-        self._subscriptions_order_book_snapshot.discard(instrument_id)
+        self._subscriptions_order_book_depth.discard(instrument_id)
 
     cpdef void _remove_subscription_quote_ticks(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
@@ -1077,6 +1041,21 @@ cdef class MarketDataClient(DataClient):
             f"You can implement by overriding the `request_instruments` method for this client",  # pragma: no cover  # noqa
         )
 
+    cpdef void request_order_book_deltas(self, RequestOrderBookDeltas request):
+        """
+        Request historical `OrderBookDeltas` data.
+
+        Parameters
+        ----------
+        request : RequestOrderBookDeltas
+            The message for the data request.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot request `OrderBookDeltas` data for {request.instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `request_order_book_deltas` method for this client",  # pragma: no cover  # noqa
+        )
+
     cpdef void request_order_book_snapshot(self, RequestOrderBookSnapshot request):
         """
         Request order book snapshot data.
@@ -1122,6 +1101,21 @@ cdef class MarketDataClient(DataClient):
             f"You can implement by overriding the `request_trade_ticks` method for this client",  # pragma: no cover  # noqa
         )
 
+    cpdef void request_funding_rates(self, RequestFundingRates request):
+        """
+        Request historical `FundingRateUpdate` data.
+
+        Parameters
+        ----------
+        request : RequestFundingRates
+            The message for the data request.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot request `FundingRateUpdate` data for {request.instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `request_funding_rates` method for this client",  # pragma: no cover  # noqa
+        )
+
     cpdef void request_bars(self, RequestBars request):
         """
         Request historical `Bar` data. To load historical data from a catalog, you can pass a list[DataCatalogConfig] to the TradingNodeConfig or the BacktestEngineConfig.
@@ -1158,11 +1152,17 @@ cdef class MarketDataClient(DataClient):
     def _handle_trade_ticks_py(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params = None):
         self._handle_trade_ticks(instrument_id, ticks, correlation_id, start, end, params)
 
+    def _handle_funding_rates_py(self, InstrumentId instrument_id, list funding_rates, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params = None):
+        self._handle_funding_rates(instrument_id, funding_rates, correlation_id, start, end, params)
+
     def _handle_bars_py(self, BarType bar_type, list bars, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params = None):
         self._handle_bars(bar_type, bars, correlation_id, start, end, params)
 
     def _handle_order_book_depths_py(self, InstrumentId instrument_id, list depths, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params = None):
         self._handle_order_book_depths(instrument_id, depths, correlation_id, start, end, params)
+
+    def _handle_order_book_deltas_py(self, InstrumentId instrument_id, list deltas, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params = None):
+        self._handle_order_book_deltas(instrument_id, deltas, correlation_id, start, end, params)
 
     def _handle_data_response_py(self, DataType data_type, data, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params = None):
         self._handle_data_response(data_type, data, correlation_id, start, end, params)
@@ -1236,6 +1236,22 @@ cdef class MarketDataClient(DataClient):
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
+    cpdef void _handle_funding_rates(self, InstrumentId instrument_id, list funding_rates, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params):
+        cdef DataResponse response = DataResponse(
+            client_id=self.id,
+            venue=instrument_id.venue,
+            data_type=DataType(FundingRateUpdate, metadata=({"instrument_id": instrument_id})),
+            data=funding_rates,
+            correlation_id=correlation_id,
+            response_id=UUID4(),
+            start=start,
+            end=end,
+            ts_init=self._clock.timestamp_ns(),
+            params=params,
+        )
+
+        self._msgbus.send(endpoint="DataEngine.response", msg=response)
+
     cpdef void _handle_bars(self, BarType bar_type, list bars, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
@@ -1258,6 +1274,22 @@ cdef class MarketDataClient(DataClient):
             venue=instrument_id.venue,
             data_type=DataType(OrderBookDepth10, metadata=({"instrument_id": instrument_id})),
             data=depths,
+            correlation_id=correlation_id,
+            response_id=UUID4(),
+            start=start,
+            end=end,
+            ts_init=self._clock.timestamp_ns(),
+            params=params,
+        )
+
+        self._msgbus.send(endpoint="DataEngine.response", msg=response)
+
+    cpdef void _handle_order_book_deltas(self, InstrumentId instrument_id, list deltas, UUID4 correlation_id, datetime start, datetime end, dict[str, object] params):
+        cdef DataResponse response = DataResponse(
+            client_id=self.id,
+            venue=instrument_id.venue,
+            data_type=DataType(OrderBookDeltas, metadata=({"instrument_id": instrument_id})),
+            data=deltas,
             correlation_id=correlation_id,
             response_id=UUID4(),
             start=start,

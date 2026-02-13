@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -37,11 +37,9 @@ from nautilus_trader.adapters.deribit.factories import get_cached_deribit_instru
 from nautilus_trader.adapters.deribit.providers import DeribitInstrumentProvider
 from nautilus_trader.core.nautilus_pyo3 import DeribitCurrency
 from nautilus_trader.core.nautilus_pyo3 import DeribitHttpClient
-from nautilus_trader.core.nautilus_pyo3 import DeribitInstrumentKind
-from nautilus_trader.core.nautilus_pyo3 import DeribitOptionType
+from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
 from nautilus_trader.core.nautilus_pyo3 import DeribitUpdateInterval
 from nautilus_trader.core.nautilus_pyo3 import DeribitWebSocketClient
-from nautilus_trader.core.nautilus_pyo3 import DeribitWsChannel
 
 
 __all__ = [
@@ -54,14 +52,12 @@ __all__ = [
     "DeribitExecClientConfig",
     "DeribitExecutionClient",
     "DeribitHttpClient",
-    "DeribitInstrumentKind",
     "DeribitInstrumentProvider",
     "DeribitLiveDataClientFactory",
     "DeribitLiveExecClientFactory",
-    "DeribitOptionType",
+    "DeribitProductType",
     "DeribitUpdateInterval",
     "DeribitWebSocketClient",
-    "DeribitWsChannel",
     "get_cached_deribit_http_client",
     "get_cached_deribit_instrument_provider",
 ]

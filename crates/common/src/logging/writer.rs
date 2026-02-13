@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,6 +23,7 @@ use std::{
 
 use chrono::{NaiveDate, Utc};
 use log::LevelFilter;
+use nautilus_core::consts::NAUTILUS_PREFIX;
 use regex::Regex;
 
 use crate::logging::logger::LogLine;
@@ -73,7 +74,7 @@ impl LogWriter for StdoutWriter {
     }
 
     fn enabled(&self, line: &LogLine) -> bool {
-        // Prevent error logs also writing to stdout
+        // Prevent error logs also writing to stdout (they go to stderr)
         line.level > LevelFilter::Error && line.level <= self.level
     }
 }
@@ -211,8 +212,8 @@ impl FileWriter {
             Some(ref format) if format == "json" => true,
             None => false,
             Some(ref unrecognized) => {
-                tracing::error!(
-                    "Unrecognized log file format: {unrecognized}. Using plain text format as default."
+                eprintln!(
+                    "{NAUTILUS_PREFIX} Unrecognized log file format: {unrecognized}. Using plain text format as default."
                 );
                 false
             }
@@ -222,7 +223,7 @@ impl FileWriter {
             match Self::create_log_file_path(&file_config, &trader_id, &instance_id, json_format) {
                 Ok(path) => path,
                 Err(e) => {
-                    tracing::error!("Error creating log directory: {e}");
+                    eprintln!("{NAUTILUS_PREFIX} Error creating log directory: {e}");
                     return None;
                 }
             };
@@ -253,7 +254,7 @@ impl FileWriter {
                 })
             }
             Err(e) => {
-                tracing::error!("Error creating log file: {e}");
+                eprintln!("{NAUTILUS_PREFIX} Error creating log file: {e}");
                 None
             }
         }
@@ -327,7 +328,7 @@ impl FileWriter {
         ) {
             Ok(path) => path,
             Err(e) => {
-                tracing::error!("Error creating log directory for rotation: {e}");
+                eprintln!("{NAUTILUS_PREFIX} Error creating log directory for rotation: {e}");
                 return;
             }
         };
@@ -348,9 +349,12 @@ impl FileWriter {
 
                 self.buf = BufWriter::new(new_file);
                 self.path = new_path.clone();
-                tracing::info!("Rotated log file, now logging to: {}", new_path.display());
+                eprintln!(
+                    "{NAUTILUS_PREFIX} Rotated log file, now logging to: {}",
+                    new_path.display()
+                );
             }
-            Err(e) => tracing::error!("Error creating log file: {e}"),
+            Err(e) => eprintln!("{NAUTILUS_PREFIX} Error creating log file: {e}"),
         }
     }
 }
@@ -367,13 +371,13 @@ fn cleanup_backups(rotate_config: &mut FileRotateConfig) {
         .saturating_sub(rotate_config.max_backup_count as usize);
     for _ in 0..excess {
         if let Some(path) = rotate_config.backup_files.pop_front() {
-            if path.exists() {
-                match std::fs::remove_file(&path) {
-                    Ok(_) => tracing::debug!("Removed old log file: {}", path.display()),
-                    Err(e) => {
-                        tracing::error!("Failed to remove old log file {}: {e}", path.display());
-                    }
-                }
+            if path.exists()
+                && let Err(e) = std::fs::remove_file(&path)
+            {
+                eprintln!(
+                    "{NAUTILUS_PREFIX} Failed to remove old log file {}: {e}",
+                    path.display()
+                );
             }
         } else {
             break;
@@ -398,19 +402,19 @@ impl LogWriter for FileWriter {
                     rotate_config.cur_file_size += line_size;
                 }
             }
-            Err(e) => tracing::error!("Error writing to file: {e:?}"),
+            Err(e) => eprintln!("{NAUTILUS_PREFIX} Error writing to file: {e:?}"),
         }
     }
 
     fn flush(&mut self) {
         match self.buf.flush() {
             Ok(()) => {}
-            Err(e) => tracing::error!("Error flushing file: {e:?}"),
+            Err(e) => eprintln!("{NAUTILUS_PREFIX} Error flushing file: {e:?}"),
         }
 
         match self.buf.get_ref().sync_all() {
             Ok(()) => {}
-            Err(e) => tracing::error!("Error syncing file: {e:?}"),
+            Err(e) => eprintln!("{NAUTILUS_PREFIX} Error syncing file: {e:?}"),
         }
     }
 

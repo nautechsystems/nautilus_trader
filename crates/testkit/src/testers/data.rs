@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -90,6 +90,11 @@ pub struct DataTesterConfig {
     pub request_bars: bool,
     /// Whether to request order book snapshots.
     pub request_book_snapshot: bool,
+    // TODO: Support request_book_deltas when Rust data engine has RequestBookDeltas
+    /// Whether to request historical order book deltas (not yet implemented).
+    pub request_book_deltas: bool,
+    /// Whether to request historical funding rates.
+    pub request_funding_rates: bool,
     // TODO: Support requests_start_delta when we implement historical data requests
     /// Book type for order book subscriptions.
     pub book_type: BookType,
@@ -140,6 +145,8 @@ impl DataTesterConfig {
             request_trades: false,
             request_bars: false,
             request_book_snapshot: false,
+            request_book_deltas: false,
+            request_funding_rates: false,
             book_type: BookType::L2_MBP,
             book_depth: None,
             book_interval_ms: NonZeroUsize::new(1000).unwrap(),
@@ -265,6 +272,18 @@ impl DataTesterConfig {
     }
 
     #[must_use]
+    pub fn with_request_book_snapshot(mut self, request: bool) -> Self {
+        self.request_book_snapshot = request;
+        self
+    }
+
+    #[must_use]
+    pub fn with_request_book_deltas(mut self, request: bool) -> Self {
+        self.request_book_deltas = request;
+        self
+    }
+
+    #[must_use]
     pub fn with_request_trades(mut self, request: bool) -> Self {
         self.request_trades = request;
         self
@@ -277,8 +296,8 @@ impl DataTesterConfig {
     }
 
     #[must_use]
-    pub fn with_request_book_snapshot(mut self, request: bool) -> Self {
-        self.request_book_snapshot = request;
+    pub fn with_request_funding_rates(mut self, request: bool) -> Self {
+        self.request_funding_rates = request;
         self
     }
 
@@ -320,6 +339,8 @@ impl Default for DataTesterConfig {
             request_trades: false,
             request_bars: false,
             request_book_snapshot: false,
+            request_book_deltas: false,
+            request_funding_rates: false,
             book_type: BookType::L2_MBP,
             book_depth: None,
             book_interval_ms: NonZeroUsize::new(1000).unwrap(),
@@ -455,6 +476,18 @@ impl DataActor for DataTester {
             //     self.request_quote_ticks(...);
             // }
 
+            // Request order book snapshot if configured
+            if self.config.request_book_snapshot {
+                let _ = self.request_book_snapshot(
+                    instrument_id,
+                    self.config.book_depth,
+                    client_id,
+                    None,
+                );
+            }
+
+            // TODO: Request book deltas when Rust data engine has RequestBookDeltas
+
             // Request historical trades (default to last 1 hour)
             if self.config.request_trades {
                 let start = self.clock().utc_now() - ChronoDuration::hours(1);
@@ -470,14 +503,19 @@ impl DataActor for DataTester {
                 }
             }
 
-            // Request order book snapshot if configured
-            if self.config.request_book_snapshot {
-                let _ = self.request_book_snapshot(
+            // Request historical funding rates (default to last 7 days)
+            if self.config.request_funding_rates {
+                let start = self.clock().utc_now() - ChronoDuration::days(7);
+                if let Err(e) = self.request_funding_rates(
                     instrument_id,
-                    self.config.book_depth,
+                    Some(start),
+                    None,
+                    None,
                     client_id,
                     None,
-                );
+                ) {
+                    log::error!("Failed to request funding rates for {instrument_id}: {e}");
+                }
             }
         }
 
@@ -599,7 +637,7 @@ impl DataActor for DataTester {
 
     fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {instrument:?}", color = LogColor::Cyan);
+            log_info!("{instrument:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
@@ -628,63 +666,63 @@ impl DataActor for DataTester {
                 }
             }
         } else if self.config.log_data {
-            log_info!("Received {deltas:?}", color = LogColor::Cyan);
+            log_info!("{deltas:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {quote:?}", color = LogColor::Cyan);
+            log_info!("{quote:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {trade:?}", color = LogColor::Cyan);
+            log_info!("{trade:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {bar:?}", color = LogColor::Cyan);
+            log_info!("{bar:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_mark_price(&mut self, mark_price: &MarkPriceUpdate) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {mark_price:?}", color = LogColor::Cyan);
+            log_info!("{mark_price:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_index_price(&mut self, index_price: &IndexPriceUpdate) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {index_price:?}", color = LogColor::Cyan);
+            log_info!("{index_price:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_funding_rate(&mut self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {funding_rate:?}", color = LogColor::Cyan);
+            log_info!("{funding_rate:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_instrument_status(&mut self, data: &InstrumentStatus) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {data:?}", color = LogColor::Cyan);
+            log_info!("{data:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
 
     fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
         if self.config.log_data {
-            log_info!("Received {update:?}", color = LogColor::Cyan);
+            log_info!("{update:?}", color = LogColor::Cyan);
         }
         Ok(())
     }
@@ -703,6 +741,30 @@ impl DataActor for DataTester {
                 log_info!(
                     "  ... and {} more trades",
                     trades.len() - 5,
+                    color = LogColor::Cyan
+                );
+            }
+        }
+        Ok(())
+    }
+
+    fn on_historical_funding_rates(
+        &mut self,
+        funding_rates: &[FundingRateUpdate],
+    ) -> anyhow::Result<()> {
+        if self.config.log_data {
+            log_info!(
+                "Received {} historical funding rates",
+                funding_rates.len(),
+                color = LogColor::Cyan
+            );
+            for rate in funding_rates.iter().take(5) {
+                log_info!("  {rate:?}", color = LogColor::Cyan);
+            }
+            if funding_rates.len() > 5 {
+                log_info!(
+                    "  ... and {} more funding rates",
+                    funding_rates.len() - 5,
                     color = LogColor::Cyan
                 );
             }
@@ -795,6 +857,12 @@ mod tests {
         assert!(!config.subscribe_quotes);
         assert!(!config.subscribe_trades);
         assert!(!config.subscribe_bars);
+        assert!(!config.request_instruments);
+        assert!(!config.request_book_snapshot);
+        assert!(!config.request_book_deltas);
+        assert!(!config.request_trades);
+        assert!(!config.request_bars);
+        assert!(!config.request_funding_rates);
         assert!(config.can_unsubscribe);
         assert!(config.log_data);
     }
@@ -944,6 +1012,52 @@ mod tests {
         let result = actor.on_funding_rate(&funding_rate);
 
         assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_on_historical_funding_rates(config: DataTesterConfig) {
+        let mut actor = DataTester::new(config);
+
+        let instrument_id = InstrumentId::from("BTC-USDT.TEST");
+        let rates = vec![
+            FundingRateUpdate::new(
+                instrument_id,
+                Decimal::new(1, 4),
+                None,
+                UnixNanos::default(),
+                UnixNanos::default(),
+            ),
+            FundingRateUpdate::new(
+                instrument_id,
+                Decimal::new(2, 4),
+                None,
+                UnixNanos::default(),
+                UnixNanos::default(),
+            ),
+        ];
+        let result = actor.on_historical_funding_rates(&rates);
+
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_config_request_funding_rates() {
+        let client_id = ClientId::new("TEST");
+        let instrument_ids = vec![InstrumentId::from("BTC-USDT.TEST")];
+        let config =
+            DataTesterConfig::new(client_id, instrument_ids).with_request_funding_rates(true);
+
+        assert!(config.request_funding_rates);
+    }
+
+    #[rstest]
+    fn test_config_request_book_deltas() {
+        let client_id = ClientId::new("TEST");
+        let instrument_ids = vec![InstrumentId::from("BTC-USDT.TEST")];
+        let config =
+            DataTesterConfig::new(client_id, instrument_ids).with_request_book_deltas(true);
+
+        assert!(config.request_book_deltas);
     }
 
     #[rstest]

@@ -471,3 +471,8 @@ message_bus=MessageBusConfig(
     external_streams=["binance"],  # <---
 ),
 ```
+
+## Related guides
+
+- [Actors](actors.md) - Actors use the message bus for event handling.
+- [Architecture](architecture.md) - Message bus role in system architecture.

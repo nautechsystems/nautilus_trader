@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -40,6 +40,11 @@ class CacheConfig(NautilusConfig, frozen=True):
         The buffer interval (milliseconds) between pipelined/batched transactions.
         The recommended range if using buffered pipelining is [10, 1000] milliseconds,
         with a good compromise being 100 milliseconds.
+    bulk_read_batch_size : PositiveInt, optional
+        The batch size for bulk read operations (e.g., MGET). If set, bulk reads
+        will be batched into chunks of this size to avoid exceeding request size
+        limits on some Redis providers. If `None`, all keys are fetched in a
+        single operation.
     use_trader_prefix : bool, default True
         If a 'trader-' prefix is used for keys.
     use_instance_id : bool, default False
@@ -60,6 +65,7 @@ class CacheConfig(NautilusConfig, frozen=True):
     timestamps_as_iso8601: bool = False
     persist_account_events: bool = True
     buffer_interval_ms: PositiveInt | None = None
+    bulk_read_batch_size: PositiveInt | None = None
     use_trader_prefix: bool = True
     use_instance_id: bool = False
     flush_on_start: bool = False

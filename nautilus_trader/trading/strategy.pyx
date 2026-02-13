@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,6 +24,8 @@ fully "wired" into the platform. Exceptions will be raised if a `Strategy`
 attempts to operate without a managing `Trader` instance.
 
 """
+
+import pandas as pd
 
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyConfig
@@ -172,6 +174,13 @@ cdef class Strategy(Actor):
 
         # Order management
         self._manager = None       # Initialized when registered
+        self._is_exiting = False
+        self._pending_stop = False
+        self._market_exit_attempts = 0
+        self._market_exit_tag = "MARKET_EXIT"
+        self._market_exit_timer_name = f"MARKET_EXIT_CHECK:{self.id}"
+        self._market_exit_time_in_force = <TimeInForce>config.market_exit_time_in_force
+        self._market_exit_reduce_only = config.market_exit_reduce_only
 
         # Register warning events
         self.register_warning_event(OrderDenied)
@@ -187,6 +196,7 @@ cdef class Strategy(Actor):
             return []
 
         order_claims: list[InstrumentId] = []
+
         for instrument_id in config_claims:
             if isinstance(instrument_id, str):
                 instrument_id = InstrumentId.from_str(instrument_id)
@@ -208,8 +218,6 @@ cdef class Strategy(Actor):
             config_path=self.config.fully_qualified_name(),
             config=self.config.dict(),
         )
-
-# -- REGISTRATION ---------------------------------------------------------------------------------
 
     cpdef void on_start(self):
         # Should override in subclass
@@ -327,6 +335,7 @@ cdef class Strategy(Actor):
         Condition.not_none(strategy_id, "strategy_id")
 
         self.id = strategy_id
+        self._market_exit_timer_name = f"MARKET_EXIT_CHECK:{self.id}"
 
     cpdef void change_order_id_tag(self, str order_id_tag):
         """
@@ -392,6 +401,26 @@ cdef class Strategy(Actor):
 
         self.on_start()
 
+    cpdef void stop(self):
+        if self.config.manage_stop:
+            if self.state != ComponentState.RUNNING:
+                Actor.stop(self)
+                return
+
+            if self._pending_stop:
+                return
+
+            self._pending_stop = True
+            if not self._is_exiting:
+                self.market_exit()
+            return
+
+        # Clean up any active market exit to avoid state leaks
+        if self._is_exiting:
+            self._cancel_market_exit()
+
+        Actor.stop(self)
+
     cpdef void _reset(self):
         if self.order_factory:
             self.order_factory.reset()
@@ -404,9 +433,36 @@ cdef class Strategy(Actor):
         if self._manager:
             self._manager.reset()
 
+        self._is_exiting = False
+        self._pending_stop = False
+        self._market_exit_attempts = 0
+
         self.on_reset()
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
+
+    cpdef void on_market_exit(self):
+        """
+        Actions to be performed when a market exit has been initiated.
+
+        Warnings
+        --------
+        Override this method in a subclass to implement custom market exit logic.
+
+        """
+        # Optionally override in subclass
+
+    cpdef void post_market_exit(self):
+        """
+        Actions to be performed after a market exit has been completed.
+
+        Warnings
+        --------
+        Override this method in a subclass to implement custom logic after
+        market exit.
+
+        """
+        # Optionally override in subclass
 
     cpdef void on_order_event(self, OrderEvent event):
         """
@@ -802,12 +858,21 @@ cdef class Strategy(Actor):
             msg=order.init_event_c(),
         )
 
+        if self._is_exiting and not order.is_reduce_only and self._market_exit_tag not in (order.tags or []):
+            self._deny_order(order, "MARKET_EXIT_IN_PROGRESS")
+            return
+
         # Check for duplicate client order ID
         if self.cache.order_exists(order.client_order_id):
+            self._log.error(f"Cannot submit order: duplicate {repr(order.client_order_id)}")
             self._deny_order(order, f"duplicate {repr(order.client_order_id)}")
             return
 
         self.cache.add_order(order, position_id, client_id)
+
+        cdef dict[str, object] used_params = {}
+        if params:
+            used_params.update(params)
 
         cdef SubmitOrder command = SubmitOrder(
             trader_id=self.trader_id,
@@ -817,7 +882,7 @@ cdef class Strategy(Actor):
             ts_init=self.clock.timestamp_ns(),
             position_id=position_id,
             client_id=client_id,
-            params=params,
+            params=used_params,
         )
 
         if self.manage_gtd_expiry and order.time_in_force == TimeInForce.GTD:
@@ -885,6 +950,12 @@ cdef class Strategy(Actor):
                 msg=order.init_event_c(),
             )
 
+        if self._is_exiting:
+            for order in order_list.orders:
+                if not order.is_reduce_only and self._market_exit_tag not in (order.tags or []):
+                    self._deny_order_list(order_list, reason="MARKET_EXIT_IN_PROGRESS")
+                    return
+
         # Check for duplicate order list ID
         if self.cache.order_list_exists(order_list.id):
             self._deny_order_list(
@@ -898,6 +969,7 @@ cdef class Strategy(Actor):
         # Check for duplicate client order IDs
         for order in order_list.orders:
             if self.cache.order_exists(order.client_order_id):
+                self._log.error(f"Cannot submit order list: duplicate {repr(order.client_order_id)}")
                 for order in order_list.orders:
                     self._deny_order(
                         order,
@@ -908,6 +980,10 @@ cdef class Strategy(Actor):
         for order in order_list.orders:
             self.cache.add_order(order, position_id, client_id)
 
+        cdef dict[str, object] used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef SubmitOrderList command = SubmitOrderList(
             trader_id=self.trader_id,
             strategy_id=self.id,
@@ -916,7 +992,7 @@ cdef class Strategy(Actor):
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
-            params=params,
+            params=used_params,
         )
 
         if self.manage_gtd_expiry:
@@ -990,13 +1066,17 @@ cdef class Strategy(Actor):
         Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
 
+        cdef dict[str, object] used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef ModifyOrder command = self._create_modify_order(
             order=order,
             quantity=quantity,
             price=price,
             trigger_price=trigger_price,
             client_id=client_id,
-            params=params,
+            params=used_params,
         )
         if command is None:
             return
@@ -1027,10 +1107,14 @@ cdef class Strategy(Actor):
         Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
 
+        cdef dict[str, object] used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef CancelOrder command = self._create_cancel_order(
             order=order,
             client_id=client_id,
-            params=params,
+            params=used_params,
         )
         if command is None:
             return
@@ -1111,6 +1195,10 @@ cdef class Strategy(Actor):
             self._log.warning("Cannot send `BatchCancelOrders`, no valid cancel commands")
             return
 
+        cdef dict[str, object] used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef command = BatchCancelOrders(
             trader_id=self.trader_id,
             strategy_id=self.id,
@@ -1119,7 +1207,7 @@ cdef class Strategy(Actor):
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
-            params=params,
+            params=used_params,
         )
 
         self._manager.send_exec_command(command)
@@ -1153,14 +1241,21 @@ cdef class Strategy(Actor):
         Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(instrument_id, "instrument_id")
 
-        cdef list open_orders = self.cache.orders_open(
+        cdef list[Order] open_orders = self.cache.orders_open(
             venue=None,  # Faster query filtering
             instrument_id=instrument_id,
             strategy_id=self.id,
             side=order_side,
         )
 
-        cdef list emulated_orders = self.cache.orders_emulated(
+        cdef list[Order] emulated_orders = self.cache.orders_emulated(
+            venue=None,  # Faster query filtering
+            instrument_id=instrument_id,
+            strategy_id=self.id,
+            side=order_side,
+        )
+
+        cdef list[Order] inflight_orders = self.cache.orders_inflight(
             venue=None,  # Faster query filtering
             instrument_id=instrument_id,
             strategy_id=self.id,
@@ -1168,9 +1263,9 @@ cdef class Strategy(Actor):
         )
 
         cdef str order_side_str = " " + order_side_to_str(order_side) if order_side != OrderSide.NO_ORDER_SIDE else ""
-        if not open_orders and not emulated_orders:
+        if not open_orders and not emulated_orders and not inflight_orders:
             self.log.info(
-                f"No {instrument_id.to_str()} open or emulated{order_side_str} "
+                f"No {instrument_id.to_str()} open, emulated, or inflight{order_side_str} "
                 f"orders to cancel")
             return
 
@@ -1186,6 +1281,13 @@ cdef class Strategy(Actor):
             self.log.info(
                 f"Canceling {emulated_count} emulated{order_side_str} "
                 f"{instrument_id.to_str()} order{'' if emulated_count == 1 else 's'}",
+            )
+
+        cdef int inflight_count = len(inflight_orders)
+        if inflight_count:
+            self.log.info(
+                f"Canceling {inflight_count} inflight{order_side_str} "
+                f"{instrument_id.to_str()} order{'' if inflight_count == 1 else 's'}",
             )
 
         cdef:
@@ -1214,9 +1316,13 @@ cdef class Strategy(Actor):
                 if order.strategy_id == self.id and not order.is_closed_c():
                     self.cancel_order(order)
 
+        cdef dict[str, object] used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef CancelAllOrders command
 
-        if open_count > 0:
+        if open_count > 0 or inflight_count > 0:
             command = CancelAllOrders(
                 trader_id=self.trader_id,
                 strategy_id=self.id,
@@ -1225,7 +1331,7 @@ cdef class Strategy(Actor):
                 command_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
                 client_id=client_id,
-                params=params,
+                params=used_params,
             )
             self._manager.send_exec_command(command)
 
@@ -1238,7 +1344,7 @@ cdef class Strategy(Actor):
                 command_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
                 client_id=client_id,
-                params=params,
+                params=used_params,
             )
             self._manager.send_emulator_command(command)
 
@@ -1303,7 +1409,11 @@ cdef class Strategy(Actor):
             tags=tags,
         )
 
-        self.submit_order(order, position_id=position.id, client_id=client_id, params=params)
+        cdef dict[str, object] used_params = {}
+        if params:
+            used_params.update(params)
+
+        self.submit_order(order, position_id=position.id, client_id=client_id, params=used_params)
 
     cpdef void close_all_positions(
         self,
@@ -1363,6 +1473,10 @@ cdef class Strategy(Actor):
             f"Closing {count} open{position_side_str} position{'' if count == 1 else 's'}",
         )
 
+        cdef dict[str, object] used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef Position position
         for position in positions_open:
             self.close_position(
@@ -1372,7 +1486,7 @@ cdef class Strategy(Actor):
                 time_in_force,
                 reduce_only,
                 quote_quantity,
-                params,
+                used_params,
             )
 
     cpdef void query_account(self, AccountId account_id, ClientId client_id = None, dict[str, object] params = None):
@@ -1395,13 +1509,17 @@ cdef class Strategy(Actor):
         """
         Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
 
+        cdef dict[str, object] used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef QueryAccount command = QueryAccount(
             trader_id=self.trader_id,
             account_id=account_id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
-            params=params,
+            params=used_params,
         )
 
         self._manager.send_exec_command(command)
@@ -1429,6 +1547,10 @@ cdef class Strategy(Actor):
         Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
 
+        cdef dict[str, object] used_params = {}
+        if params:
+            used_params.update(params)
+
         cdef QueryOrder command = QueryOrder(
             trader_id=self.trader_id,
             strategy_id=self.id,
@@ -1438,7 +1560,7 @@ cdef class Strategy(Actor):
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
-            params=params,
+            params=used_params,
         )
 
         self._manager.send_exec_command(command)
@@ -1624,7 +1746,141 @@ cdef class Strategy(Actor):
         self._log.info(f"Expiring GTD order {order.client_order_id}", LogColor.BLUE)
         self.cancel_order(order)
 
-    # -- HANDLERS -------------------------------------------------------------------------------------
+    cpdef void market_exit(self):
+        """
+        Initiate an iterative market exit for the strategy.
+
+        Will cancel all open orders and close all open positions, and wait for
+        all in-flight orders to resolve and positions to close. The strategy
+        remains running after the exit completes.
+
+        Uses `market_exit_time_in_force` and `market_exit_reduce_only` from
+        the strategy config for closing market orders.
+
+        The `on_market_exit` hook is called when the exit process begins.
+        The `post_market_exit` hook is called when the exit process completes.
+
+        """
+        if self.state != ComponentState.RUNNING:
+            self._log.warning("Cannot market exit: strategy is not running")
+            return
+
+        if self._is_exiting:
+            self._log.warning("Market exit called when already in progress")
+            return
+
+        self._is_exiting = True
+        self._market_exit_attempts = 0
+
+        self._log.info("Initiating market exit...", LogColor.BLUE)
+        self.on_market_exit()
+
+        # Get all instruments the strategy has orders or positions for
+        cdef list[Order] open_orders = self.cache.orders_open(None, None, self.id)
+        cdef list[Order] inflight_orders = self.cache.orders_inflight(None, None, self.id)
+        cdef list[Position] open_positions = self.cache.positions_open(None, None, self.id)
+
+        cdef set[InstrumentId] instruments = set()
+
+        cdef Order order
+        for order in open_orders:
+            instruments.add(order.instrument_id)
+        for order in inflight_orders:
+            instruments.add(order.instrument_id)
+
+        cdef Position position
+        for position in open_positions:
+            instruments.add(position.instrument_id)
+
+        cdef InstrumentId instrument_id
+        for instrument_id in instruments:
+            self.cancel_all_orders(instrument_id)
+            self.close_all_positions(instrument_id, tags=[self._market_exit_tag], time_in_force=self._market_exit_time_in_force, reduce_only=self._market_exit_reduce_only)
+
+        # Start iterative check
+        self._log.info(f"Setting market exit timer at {self.config.market_exit_interval_ms}ms intervals", LogColor.BLUE)
+        self._clock.set_timer(
+            self._market_exit_timer_name,
+            pd.Timedelta(milliseconds=self.config.market_exit_interval_ms),
+            None,
+            None,
+            self._check_market_exit,
+            True,
+            False,
+        )
+
+    cpdef bint is_exiting(self):
+        """
+        Return whether the strategy is currently executing a market exit.
+
+        Strategies can check this to avoid submitting new orders during exit.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._is_exiting
+
+    cpdef void _check_market_exit(self, TimeEvent event):
+        # Guard against stale timer events after cancel_market_exit
+        if not self._is_exiting or self.state != ComponentState.RUNNING:
+            return
+
+        self._market_exit_attempts += 1
+        self._log.debug(f"Market exit check triggered: {event.name} (attempt {self._market_exit_attempts})")
+
+        # Check if max attempts reached
+        if self._market_exit_attempts >= self.config.market_exit_max_attempts:
+            self._log.warning(
+                f"Market exit max attempts ({self.config.market_exit_max_attempts}) reached, "
+                f"completing with open orders: {len(self.cache.orders_open(None, None, self.id))}, "
+                f"inflight orders: {len(self.cache.orders_inflight(None, None, self.id))}, "
+                f"open positions: {len(self.cache.positions_open(None, None, self.id))}",
+                LogColor.YELLOW
+            )
+            self._finalize_market_exit()
+            return
+
+        cdef list open_orders = self.cache.orders_open(None, None, self.id)
+        cdef list inflight_orders = self.cache.orders_inflight(None, None, self.id)
+
+        if open_orders or inflight_orders:
+            return
+
+        cdef list open_positions = self.cache.positions_open(None, None, self.id)
+        if open_positions:
+            # If there are open positions but no orders, re-send close orders
+            for position in open_positions:
+                self.close_position(position, tags=[self._market_exit_tag], time_in_force=self._market_exit_time_in_force, reduce_only=self._market_exit_reduce_only)
+
+            return
+
+        # All clear
+        self._finalize_market_exit()
+
+    cdef void _finalize_market_exit(self):
+        cdef bint should_stop = self._pending_stop
+        self._cancel_market_exit()
+
+        try:
+            self.post_market_exit()
+        except Exception as e:
+            self._log.exception("Error in post_market_exit", e)
+        finally:
+            if should_stop:
+                Actor.stop(self)
+
+    cdef void _cancel_market_exit(self):
+        # Cancel timer and reset state without calling hooks
+        if self._market_exit_timer_name in self._clock.timer_names:
+            self._clock.cancel_timer(name=self._market_exit_timer_name)
+
+        self._is_exiting = False
+        self._pending_stop = False
+        self._market_exit_attempts = 0
+        self._market_exit_time_in_force = <TimeInForce>self.config.market_exit_time_in_force
+        self._market_exit_reduce_only = self.config.market_exit_reduce_only
 
     cpdef void handle_event(self, Event event):
         """
@@ -1772,8 +2028,6 @@ cdef class Strategy(Actor):
         )
 
     cdef void _deny_order(self, Order order, str reason):
-        self._log.error(f"Order denied: {reason}")
-
         if not self.cache.order_exists(order.client_order_id):
             self.cache.add_order(order)
 

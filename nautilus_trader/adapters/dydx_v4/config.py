@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -42,8 +42,9 @@ class DYDXv4DataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws : str, optional
         The base URL for WebSocket connections.
         If ``None`` then will use the default URL for the selected network.
-    update_instruments_interval_mins : PositiveInt or None, default 60
-        The interval (minutes) between reloading instruments from the venue.
+    bars_timestamp_on_close : bool, default True
+        If bar `ts_event` timestamps should be the bar close time.
+        If False, the venue-native open time will be used.
     max_retries : PositiveInt, optional
         The maximum number of retries for HTTP requests or websocket reconnects.
     retry_delay_initial_ms : PositiveInt, optional
@@ -55,9 +56,9 @@ class DYDXv4DataClientConfig(LiveDataClientConfig, frozen=True):
 
     wallet_address: str | None = None
     is_testnet: bool = False
+    bars_timestamp_on_close: bool = True
     base_url_http: str | None = None
     base_url_ws: str | None = None
-    update_instruments_interval_mins: PositiveInt | None = 60
     max_retries: PositiveInt | None = 3
     retry_delay_initial_ms: PositiveInt | None = 1_000
     retry_delay_max_ms: PositiveInt | None = 10_000
@@ -76,11 +77,10 @@ class DYDXv4ExecClientConfig(LiveExecClientConfig, frozen=True):
     subaccount : int, default 0
         The subaccount number.
         The venue creates subaccount 0 by default.
-    mnemonic : str, optional
-        The mnemonic string which is used to generate the private key.
-        The private key is used to sign transactions like submitting orders.
-        If ``None`` then will source `DYDX_MNEMONIC` or
-        `DYDX_TESTNET_MNEMONIC` environment variables.
+    private_key : str, optional
+        The hex-encoded private key used to sign transactions like submitting orders.
+        If ``None`` then will source `DYDX_PRIVATE_KEY` or
+        `DYDX_TESTNET_PRIVATE_KEY` environment variables.
     authenticator_ids : list[int], optional
         List of authenticator IDs for permissioned key trading.
         When provided, transactions will include a TxExtension to enable trading
@@ -108,7 +108,7 @@ class DYDXv4ExecClientConfig(LiveExecClientConfig, frozen=True):
 
     wallet_address: str | None = None
     subaccount: int = 0
-    mnemonic: str | None = None
+    private_key: str | None = None
     authenticator_ids: list[int] | None = None
     is_testnet: bool = False
     base_url_http: str | None = None

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -225,7 +225,7 @@ mod tests {
         clock::{Clock, TestClock},
         python::clock::PyClock,
         runner::{TimeEventSender, set_time_event_sender},
-        timer::{TimeEventCallback, TimeEventHandlerV2},
+        timer::{TimeEventCallback, TimeEventHandler},
     };
 
     fn ensure_sender() {
@@ -239,7 +239,7 @@ mod tests {
     struct DummySender;
 
     impl TimeEventSender for DummySender {
-        fn send(&self, _handler: TimeEventHandlerV2) {}
+        fn send(&self, _handler: TimeEventHandler) {}
     }
 
     #[fixture]

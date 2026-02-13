@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,7 +15,7 @@
 //! WebSocket message types for Bybit public and private channels.
 
 use nautilus_model::{
-    data::{Data, FundingRateUpdate, OrderBookDeltas},
+    data::{Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas},
     events::{AccountState, OrderCancelRejected, OrderModifyRejected, OrderRejected},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
@@ -32,8 +32,8 @@ use crate::{
             BybitTriggerDirection, BybitTriggerType, BybitWsOrderRequestOp,
         },
         parse::{
-            deserialize_decimal_or_zero, deserialize_optional_decimal,
-            deserialize_optional_decimal_or_zero,
+            deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero,
+            deserialize_optional_decimal_str,
         },
     },
     websocket::enums::BybitWsOperation,
@@ -102,6 +102,10 @@ pub enum NautilusWsMessage {
     Data(Vec<Data>),
     /// Order book deltas.
     Deltas(OrderBookDeltas),
+    /// Mark price updates from ticker stream.
+    MarkPrices(Vec<MarkPriceUpdate>),
+    /// Index price updates from ticker stream.
+    IndexPrices(Vec<IndexPriceUpdate>),
     /// Funding rate updates from ticker stream.
     FundingRates(Vec<FundingRateUpdate>),
     /// Order status reports from account stream or operation responses.
@@ -900,7 +904,7 @@ pub struct BybitWsAccountPosition {
     pub position_value: String,
     pub risk_id: i64,
     pub risk_limit_value: String,
-    #[serde(deserialize_with = "deserialize_optional_decimal")]
+    #[serde(deserialize_with = "deserialize_optional_decimal_str")]
     pub entry_price: Option<Decimal>,
     pub mark_price: String,
     pub leverage: String,

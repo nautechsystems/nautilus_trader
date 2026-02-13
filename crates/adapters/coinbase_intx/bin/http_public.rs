@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,13 +16,10 @@
 use nautilus_coinbase_intx::{
     common::consts::COINBASE_INTX_REST_SANDBOX_URL, http::client::CoinbaseIntxHttpClient,
 };
-use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::TRACE)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     // Example of using custom url for the Coinbase International sandbox
     let base_url = COINBASE_INTX_REST_SANDBOX_URL.to_string();
@@ -30,7 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let resp = client.request_instruments().await?;
     for inst in resp {
-        tracing::info!("{inst:?}");
+        log::info!("{inst:?}");
     }
 
     Ok(())

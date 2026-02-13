@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,7 +15,7 @@
 
 //! Represents a valid trader ID.
 
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Display};
 
 use nautilus_core::correctness::{FAILED, check_string_contains, check_valid_string_ascii};
 use ustr::Ustr;
@@ -107,16 +107,36 @@ impl TraderId {
         // SAFETY: Unwrap safe as value previously validated
         self.0.split('-').next_back().unwrap()
     }
+
+    /// Creates an external trader ID used for orders from external sources.
+    #[must_use]
+    pub fn external() -> Self {
+        // SAFETY: Constant value is safe
+        Self::new("EXTERNAL-0")
+    }
+
+    /// Returns whether this trader ID is external.
+    #[must_use]
+    pub fn is_external(&self) -> bool {
+        self.0.as_str() == "EXTERNAL-0"
+    }
+}
+
+impl Default for TraderId {
+    /// Returns the default trader ID "TRADER-001".
+    fn default() -> Self {
+        Self::from("TRADER-001")
+    }
 }
 
 impl Debug for TraderId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "\"{}\"", self.0)
     }
 }
 
 impl Display for TraderId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }

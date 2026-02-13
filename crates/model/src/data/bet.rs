@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -79,9 +79,10 @@ impl Bet {
     ///
     /// Panics if the side is not [BetSide::Lay].
     pub fn from_liability(price: Decimal, liability: Decimal, side: BetSide) -> Self {
-        if side != BetSide::Lay {
-            panic!("Liability-based betting is only applicable for Lay side.");
-        }
+        assert!(
+            side == BetSide::Lay,
+            "Liability-based betting is only applicable for Lay side."
+        );
         let adjusted_volume = liability / (price - Decimal::ONE);
         Self::new(price, adjusted_volume, side)
     }

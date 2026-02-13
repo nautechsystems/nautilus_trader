@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,28 +19,28 @@ use pyo3::prelude::*;
 
 use crate::common::urls;
 
-/// Gets the OKX HTTP base URL.
+/// Returns the OKX HTTP base URL.
 #[pyfunction]
 pub fn get_okx_http_base_url() -> String {
-    urls::get_http_base_url()
+    urls::get_http_base_url().to_string()
 }
 
-/// Gets the OKX WebSocket URL for public data (market data).
+/// Returns the OKX WebSocket URL for public data (market data).
 #[pyfunction]
 pub fn get_okx_ws_url_public(is_demo: bool) -> String {
-    urls::get_ws_base_url_public(is_demo)
+    urls::get_ws_base_url_public(is_demo).to_string()
 }
 
-/// Gets the OKX WebSocket URL for private data (account/order management).
+/// Returns the OKX WebSocket URL for private data (account/order management).
 #[pyfunction]
 pub fn get_okx_ws_url_private(is_demo: bool) -> String {
-    urls::get_ws_base_url_private(is_demo)
+    urls::get_ws_base_url_private(is_demo).to_string()
 }
 
-/// Gets the OKX WebSocket URL for business data (bars/candlesticks).
+/// Returns the OKX WebSocket URL for business data (bars/candlesticks).
 #[pyfunction]
 pub fn get_okx_ws_url_business(is_demo: bool) -> String {
-    urls::get_ws_base_url_business(is_demo)
+    urls::get_ws_base_url_business(is_demo).to_string()
 }
 
 /// Checks if OKX endpoint requires authentication.

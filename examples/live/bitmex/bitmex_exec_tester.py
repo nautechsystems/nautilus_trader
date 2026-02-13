@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -122,10 +122,13 @@ config_tester = ExecTesterConfig(
     # stop_trigger_type=TriggerType.MARK_PRICE,
     # enable_brackets=True,
     # test_reject_post_only=True,
-    # cancel_orders_on_stop=False,
-    # close_positions_on_stop=False,
     # use_batch_cancel_on_stop=True,
     # use_individual_cancels_on_stop=True,
+    # cancel_orders_on_stop=False,
+    # close_positions_on_stop=False,
+    manage_stop=True,
+    market_exit_time_in_force=TimeInForce.IOC,
+    market_exit_reduce_only=True,
     log_data=False,
     # dry_run=True,
 )

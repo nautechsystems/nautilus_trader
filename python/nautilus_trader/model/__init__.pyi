@@ -4,17 +4,22 @@ import builtins
 import typing
 from enum import Enum
 
+__all__ = ["AmmType", "Blockchain", "Chain", "DataType", "Dex", "DexType"]
 
+@typing.final
 class DataType:
     r"""
     Represents a data type including metadata.
     """
 
-    def __init__(self, type_name: builtins.str, metadata: typing.Mapping[builtins.str, builtins.str] | None) -> None: ...
+    def __init__(
+        self, type_name: builtins.str, metadata: typing.Mapping[builtins.str, builtins.str] | None
+    ) -> None: ...
     def py_type_name(self) -> builtins.str: ...
     def py_metadata(self) -> builtins.dict[builtins.str, builtins.str] | None: ...
     def py_topic(self) -> builtins.str: ...
 
+@typing.final
 class AmmType(Enum):
     r"""
     Represents different types of Automated Market Makers (AMMs) in DeFi protocols.
@@ -45,6 +50,7 @@ class AmmType(Enum):
     Advanced pool type that can nest other pools (Balancer V3).
     """
 
+@typing.final
 class DexType(Enum):
     r"""
     Represents different types of decentralized exchanges (DEXes) supported by Nautilus.
@@ -68,12 +74,13 @@ class DexType(Enum):
     UniswapV3 = ...
     UniswapV4 = ...
 
+@typing.final
 class Dex:
     r"""
     Represents a decentralized exchange (DEX) in a blockchain ecosystem.
     """
 
-
+@typing.final
 class Blockchain(Enum):
     r"""
     Represents different blockchain networks.
@@ -160,10 +167,8 @@ class Blockchain(Enum):
     ZKsync = ...
     Zora = ...
 
+@typing.final
 class Chain:
     r"""
     Defines a blockchain with its unique identifiers and connection details for network interaction.
     """
-
-
-__all__ = ["AmmType", "Blockchain", "Chain", "DataType", "Dex", "DexType"]

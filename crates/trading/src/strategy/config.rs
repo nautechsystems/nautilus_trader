@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,8 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::serialization::{default_false, default_true};
 use nautilus_model::{
-    enums::OmsType,
+    enums::{OmsType, TimeInForce},
     identifiers::{InstrumentId, StrategyId},
 };
 use serde::{Deserialize, Serialize};
@@ -43,7 +44,7 @@ pub struct StrategyConfig {
     /// The external order claim instrument IDs.
     /// External orders for matching instrument IDs will be associated with (claimed by) the strategy.
     pub external_order_claims: Option<Vec<InstrumentId>>,
-    /// If OUO and OCO **open** contingent orders should be managed automatically by the strategy.
+    /// If OTO, OCO, and OUO **open** contingent orders should be managed automatically by the strategy.
     /// Any emulated orders which are active local will be managed by the `OrderEmulator` instead.
     #[serde(default = "default_false")]
     pub manage_contingent_orders: bool,
@@ -51,6 +52,26 @@ pub struct StrategyConfig {
     /// If True, then will ensure open orders have their GTD timers re-activated on start.
     #[serde(default = "default_false")]
     pub manage_gtd_expiry: bool,
+    /// If the strategy should automatically perform a market exit when stopped.
+    /// If true, calling stop() will first cancel all orders and close all positions
+    /// before the strategy transitions to the STOPPED state.
+    #[serde(default = "default_false")]
+    pub manage_stop: bool,
+    /// The interval in milliseconds to check for in-flight orders and open positions
+    /// during a market exit.
+    #[serde(default = "default_market_exit_interval_ms")]
+    pub market_exit_interval_ms: u64,
+    /// The maximum number of attempts to wait for orders and positions to close
+    /// during a market exit before completing. Defaults to 100 attempts
+    /// (10 seconds at 100ms intervals).
+    #[serde(default = "default_market_exit_max_attempts")]
+    pub market_exit_max_attempts: u64,
+    /// The time in force for closing market orders during a market exit.
+    #[serde(default = "default_market_exit_time_in_force")]
+    pub market_exit_time_in_force: TimeInForce,
+    /// If closing market orders during a market exit should be reduce only.
+    #[serde(default = "default_true")]
+    pub market_exit_reduce_only: bool,
     /// If events should be logged by the strategy.
     /// If False, then only warning events and above are logged.
     #[serde(default = "default_true")]
@@ -61,6 +82,18 @@ pub struct StrategyConfig {
     /// If order rejected events where `due_post_only` is True should be logged as warnings.
     #[serde(default = "default_true")]
     pub log_rejected_due_post_only_as_warning: bool,
+}
+
+const fn default_market_exit_interval_ms() -> u64 {
+    100
+}
+
+const fn default_market_exit_max_attempts() -> u64 {
+    100
+}
+
+const fn default_market_exit_time_in_force() -> TimeInForce {
+    TimeInForce::Gtc
 }
 
 impl Default for StrategyConfig {
@@ -74,19 +107,16 @@ impl Default for StrategyConfig {
             external_order_claims: None,
             manage_contingent_orders: false,
             manage_gtd_expiry: false,
+            manage_stop: false,
+            market_exit_interval_ms: default_market_exit_interval_ms(),
+            market_exit_max_attempts: default_market_exit_max_attempts(),
+            market_exit_time_in_force: TimeInForce::Gtc,
+            market_exit_reduce_only: true,
             log_events: true,
             log_commands: true,
             log_rejected_due_post_only_as_warning: true,
         }
     }
-}
-
-fn default_true() -> bool {
-    true
-}
-
-fn default_false() -> bool {
-    false
 }
 
 #[cfg(test)]
@@ -107,6 +137,11 @@ mod tests {
         assert!(config.external_order_claims.is_none());
         assert!(!config.manage_contingent_orders);
         assert!(!config.manage_gtd_expiry);
+        assert!(!config.manage_stop);
+        assert_eq!(config.market_exit_interval_ms, 100);
+        assert_eq!(config.market_exit_max_attempts, 100);
+        assert_eq!(config.market_exit_time_in_force, TimeInForce::Gtc);
+        assert!(config.market_exit_reduce_only);
         assert!(config.log_events);
         assert!(config.log_commands);
         assert!(config.log_rejected_due_post_only_as_warning);

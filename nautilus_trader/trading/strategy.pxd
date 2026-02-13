@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -64,6 +64,13 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 cdef class Strategy(Actor):
     cdef OrderManager _manager
+    cdef bint _is_exiting
+    cdef bint _pending_stop
+    cdef int _market_exit_attempts
+    cdef str _market_exit_tag
+    cdef str _market_exit_timer_name
+    cdef TimeInForce _market_exit_time_in_force
+    cdef bint _market_exit_reduce_only
     cdef bint _log_events
     cdef bint _log_commands
     cdef bint _log_rejected_due_post_only_as_warning
@@ -97,9 +104,12 @@ cdef class Strategy(Actor):
     )
     cpdef void change_id(self, StrategyId strategy_id)
     cpdef void change_order_id_tag(self, str order_id_tag)
+    cpdef void stop(self)
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
+    cpdef void on_market_exit(self)
+    cpdef void post_market_exit(self)
     cpdef void on_order_event(self, OrderEvent event)
     cpdef void on_order_initialized(self, OrderInitialized event)
     cpdef void on_order_denied(self, OrderDenied event)
@@ -154,6 +164,8 @@ cdef class Strategy(Actor):
     cpdef void close_all_positions(self, InstrumentId instrument_id, PositionSide position_side=*, ClientId client_id=*, list[str] tags=*, TimeInForce time_in_force=*, bint reduce_only=*, bint quote_quantity=*, dict[str, object] params=*)
     cpdef void query_account(self, AccountId account_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void query_order(self, Order order, ClientId client_id=*, dict[str, object] params=*)
+    cpdef void market_exit(self)
+    cpdef bint is_exiting(self)
     cdef ModifyOrder _create_modify_order(
         self,
         Order order,
@@ -170,6 +182,9 @@ cdef class Strategy(Actor):
     cdef str _get_gtd_expiry_timer_name(self, ClientOrderId client_order_id)
     cdef void _set_gtd_expiry(self, Order order)
     cpdef void _expire_gtd_order(self, TimeEvent event)
+    cpdef void _check_market_exit(self, TimeEvent event)
+    cdef void _finalize_market_exit(self)
+    cdef void _cancel_market_exit(self)
 
 # -- EVENTS ---------------------------------------------------------------------------------------
 

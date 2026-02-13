@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -89,6 +89,17 @@ impl KrakenSpotAddOrderParamsBuilder {
             && (self.price.is_none() || self.price.as_ref().unwrap().is_none())
         {
             return Err("price is required for limit orders".to_string());
+        }
+
+        // Validate price2 (limit price) is present for stop-loss-limit and take-profit-limit
+        if let Some(KrakenOrderType::StopLossLimit | KrakenOrderType::TakeProfitLimit) =
+            self.order_type
+            && (self.price2.is_none() || self.price2.as_ref().unwrap().is_none())
+        {
+            return Err(
+                "price2 (limit price) is required for stop-loss-limit and take-profit-limit orders"
+                    .to_string(),
+            );
         }
         Ok(())
     }

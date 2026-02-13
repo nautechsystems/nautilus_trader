@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,6 +32,10 @@ pub struct OKXInstrument {
     pub inst_type: OKXInstrumentType,
     /// Instrument ID, e.g. "BTC-USD-SWAP".
     pub inst_id: Ustr,
+    /// Instrument ID code (numeric). Required for WebSocket order operations.
+    /// E.g., 10458 for BTC-USD-SWAP. May not be present for SPOT instruments.
+    #[serde(default)]
+    pub inst_id_code: Option<u64>,
     /// Underlying of the instrument, e.g. "BTC-USD". Only applicable to FUTURES/SWAP/OPTION.
     pub uly: Ustr,
     /// Instrument family, e.g. "BTC-USD". Only applicable to FUTURES/SWAP/OPTION.

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -148,7 +148,7 @@ class BinanceOrder(msgspec.Struct, frozen=True):
 
     # Parameters in SPOT/MARGIN only:
     orderListId: int | None = None  # Unless OCO, the value will always be -1
-    cumulativeQuoteQty: str | None = None  # cumulative quote qty
+    cummulativeQuoteQty: str | None = None  # Binance uses double 'm' (their typo)
     icebergQty: str | None = None
     isWorking: bool | None = None
     workingTime: int | None = None
@@ -177,9 +177,7 @@ class BinanceOrder(msgspec.Struct, frozen=True):
         enum_parser: BinanceEnumParser,
     ) -> tuple[TimeInForce | None, datetime | None]:
         time_in_force = (
-            enum_parser.parse_binance_time_in_force(self.timeInForce)
-            if self.timeInForce
-            else None
+            enum_parser.parse_binance_time_in_force(self.timeInForce) if self.timeInForce else None
         )
         expire_time: datetime | None = None
 
@@ -193,6 +191,15 @@ class BinanceOrder(msgspec.Struct, frozen=True):
                 expire_time = expire_ts.to_pydatetime()
 
         return time_in_force, expire_time
+
+    def _parse_avg_px(self) -> Decimal | None:
+        # Futures provides avgPrice, Spot requires calculation from cumulative fields
+        if self.avgPrice is not None:
+            return Decimal(self.avgPrice)
+        elif self.cummulativeQuoteQty is not None and self.executedQty is not None:
+            executed_qty = Decimal(self.executedQty)
+            return Decimal(self.cummulativeQuoteQty) / executed_qty if executed_qty > 0 else None
+        return None
 
     def parse_to_order_status_report(
         self,
@@ -229,10 +236,11 @@ class BinanceOrder(msgspec.Struct, frozen=True):
             trailing_offset = Decimal(self.priceRate)
             trailing_offset_type = TrailingOffsetType.BASIS_POINTS
 
-        avg_px = Decimal(self.avgPrice) if self.avgPrice is not None else None
+        avg_px = self._parse_avg_px()
         post_only = (
             self.type == BinanceOrderType.LIMIT_MAKER or self.timeInForce == BinanceTimeInForce.GTX
         )
+
         reduce_only = self.reduceOnly if self.reduceOnly is not None else False
 
         if self.side is None:

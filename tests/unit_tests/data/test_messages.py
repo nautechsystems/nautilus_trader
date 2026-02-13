@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,7 +26,6 @@ from nautilus_trader.data.messages import SubscribeData
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeData
 from nautilus_trader.model.data import DataType
-from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -227,9 +226,10 @@ class TestDataMessage:
             == "RequestData(data_type=TradeTick{'instrument_id': InstrumentId('SOMETHING.RANDOM')}, instrument_id=SOMETHING.RANDOM, "
             "start=None, end=None, limit=1000, client_id=None, venue=BINANCE)"
         )
-        assert (
-            f"RequestData(data_type=TradeTick{{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'limit': 1000}}, "
-            f"instrument_id=SOMETHING.RANDOM, start=None, end=None, client_id=None, venue=BINANCE, callback={handler!r}, id={request_id})"
+        assert repr(request) == (
+            f"RequestData(data_type=TradeTick{{'instrument_id': InstrumentId('SOMETHING.RANDOM')}}, "
+            f"instrument_id=SOMETHING.RANDOM, start=None, end=None, limit=1000, client_id=None, venue=BINANCE, "
+            f"callback={handler!r}, id={request_id}, correlation_id=None)"
         )
 
     def test_data_response_message_str_and_repr(self):
@@ -332,30 +332,3 @@ class TestDataMessage:
         assert request.correlation_id == command_id
         assert "subscription_name" in request.params
         assert request.params["subscription_name"] == "OrderBookDepth10.AUD/USD.SIM"
-
-    def test_subscribe_order_book_to_request_conversion_with_invalid_data_type_raises_error(self):
-        # Arrange
-        instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
-        command_id = UUID4()
-
-        subscribe = SubscribeOrderBook(
-            instrument_id=instrument_id,
-            book_data_type=OrderBookDelta,  # Invalid data type for order book depth conversion
-            book_type=BookType.L2_MBP,
-            client_id=ClientId("TEST"),
-            venue=instrument_id.venue,
-            command_id=command_id,
-            ts_init=self.clock.timestamp_ns(),
-            depth=10,
-        )
-
-        callback = [].append
-        start = pd.Timestamp("2023-01-01", tz="UTC")
-        end = pd.Timestamp("2023-01-02", tz="UTC")
-
-        # Act & Assert
-        with pytest.raises(ValueError) as e:
-            subscribe.to_request(start=start, end=end, callback=callback)
-
-        assert "Cannot convert SubscribeOrderBook with data_type" in str(e.value)
-        assert "Only OrderBookDepth10 subscriptions can be converted" in str(e.value)

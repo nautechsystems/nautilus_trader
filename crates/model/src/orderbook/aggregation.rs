@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -342,10 +342,11 @@ mod tests {
 
     #[rstest]
     fn test_price_to_order_id_comprehensive_collision_check() {
+        const TOTAL_TESTS: usize = 500_000;
+
         // Comprehensive test combining all edge cases
         let mut seen = AHashSet::new();
         let mut collision_count = 0;
-        const TOTAL_TESTS: usize = 500_000;
 
         // Test 1: Dense range around zero
         for i in -100_000..100_000 {

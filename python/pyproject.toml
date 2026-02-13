@@ -25,9 +25,9 @@ readme = "../README.md"
 requires-python = ">=3.12,<3.15"
 dependencies = [
   "numpy>=1.26.4",
-  "pandas>=2.2.3,<3.0.0",
-  "pyarrow>=21.0.0",
-  "python-dotenv>=1.1.0",
+  "pandas>=2.3.3,<3.0.0",
+  "pyarrow>=22.0.0",
+  "python-dotenv>=1.2.1",
   "pytz>=2025.2.0",
 ]
 
@@ -37,7 +37,7 @@ repository = "https://github.com/nautechsystems/nautilus_trader"
 docs = "https://nautilustrader.io/docs"
 
 [build-system]
-requires = ["maturin>=1.9.6", "patchelf"]
+requires = ["maturin>=1.11.5", "patchelf"]
 build-backend = "maturin"
 
 [tool.maturin.scripts]
@@ -54,6 +54,7 @@ features = [
   "postgres",
   "defi",
   "hypersync",
+  "tracing-bridge",
 ]
 strip = false
 
@@ -61,7 +62,7 @@ include = ["**/*.pyi"]
 
 [dependency-groups]
 dev = [
-  "maturin>=1.9.6",
+  "maturin>=1.11.5",
   "mypy>=1.18.2,<2.0.0",
   "pre-commit>=4.3.0,<5.0.0",
   "ruff==0.12.12", # Pinned to 0.12.12 for import sorting stability

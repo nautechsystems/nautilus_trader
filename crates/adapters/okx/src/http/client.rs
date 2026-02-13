@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,7 +25,7 @@
 //! • Deserialization of JSON payloads into domain models.
 //! • Conversion of raw exchange errors into the rich [`OKXHttpError`] enum.
 //!
-//! # Official documentation
+//! # Official Documentation
 //!
 //! | Endpoint                             | Reference                                              |
 //! |--------------------------------------|--------------------------------------------------------|
@@ -35,7 +35,7 @@
 
 use std::{
     collections::HashMap,
-    fmt::{Debug, Formatter},
+    fmt::Debug,
     num::NonZeroU32,
     str::FromStr,
     sync::{
@@ -113,6 +113,36 @@ use crate::{
 
 const OKX_SUCCESS_CODE: &str = "0";
 
+fn resolve_okx_error_message(response_body: &[u8], top_level_msg: &str) -> String {
+    let message = top_level_msg.trim();
+    if !message.is_empty() {
+        return message.to_string();
+    }
+
+    if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(response_body)
+        && let Some(first_item) = payload
+            .get("data")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|items| items.first())
+    {
+        if let Some(s_msg) = first_item.get("sMsg").and_then(serde_json::Value::as_str) {
+            let s_msg = s_msg.trim();
+            if !s_msg.is_empty() {
+                return s_msg.to_string();
+            }
+        }
+
+        if let Some(s_code) = first_item.get("sCode").and_then(serde_json::Value::as_str) {
+            let s_code = s_code.trim();
+            if !s_code.is_empty() {
+                return s_code.to_string();
+            }
+        }
+    }
+
+    String::new()
+}
+
 /// Default OKX REST API rate limit: 500 requests per 2 seconds.
 ///
 /// - Sub-account order limit: 1000 requests per 2 seconds.
@@ -159,7 +189,7 @@ impl Default for OKXRawHttpClient {
 }
 
 impl Debug for OKXRawHttpClient {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let credential = self.credential.as_ref().map(|_| "<redacted>");
         f.debug_struct(stringify!(OKXRawHttpClient))
             .field("base_url", &self.base_url)
@@ -464,19 +494,19 @@ impl OKXRawHttpClient {
                     )
                     .await?;
 
-                tracing::trace!("Response: {resp:?}");
+                log::trace!("Response: {resp:?}");
 
                 if resp.status.is_success() {
                     let okx_response: OKXResponse<T> =
                         serde_json::from_slice(&resp.body).map_err(|e| {
-                            tracing::error!("Failed to deserialize OKXResponse: {e}");
+                            log::error!("Failed to deserialize OKXResponse: {e}");
                             OKXHttpError::JsonError(e.to_string())
                         })?;
 
                     if okx_response.code != OKX_SUCCESS_CODE {
                         return Err(OKXHttpError::OkxError {
                             error_code: okx_response.code,
-                            message: okx_response.msg,
+                            message: resolve_okx_error_message(&resp.body, &okx_response.msg),
                         });
                     }
 
@@ -484,9 +514,9 @@ impl OKXRawHttpClient {
                 } else {
                     let error_body = String::from_utf8_lossy(&resp.body);
                     if resp.status.as_u16() == StatusCode::NOT_FOUND.as_u16() {
-                        tracing::debug!("HTTP 404 with body: {error_body}");
+                        log::debug!("HTTP 404 with body: {error_body}");
                     } else {
-                        tracing::error!(
+                        log::error!(
                             "HTTP error {} with body: {error_body}",
                             resp.status.as_str()
                         );
@@ -495,7 +525,7 @@ impl OKXRawHttpClient {
                     if let Ok(parsed_error) = serde_json::from_slice::<OKXResponse<T>>(&resp.body) {
                         return Err(OKXHttpError::OkxError {
                             error_code: parsed_error.code,
-                            message: parsed_error.msg,
+                            message: resolve_okx_error_message(&resp.body, &parsed_error.msg),
                         });
                     }
 
@@ -1255,7 +1285,7 @@ impl OKXHttpClient {
                 } = &e
                     && error_code == "50115"
                 {
-                    tracing::warn!(
+                    log::warn!(
                         "Account does not support position mode setting (derivatives trading not enabled): {message}"
                     );
                     return Ok(()); // Gracefully handle this case
@@ -1270,11 +1300,17 @@ impl OKXHttpClient {
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails or instrument parsing fails.
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// - `Vec<InstrumentAny>`: The parsed instruments
+    /// - `Vec<(Ustr, u64)>`: Mappings of inst_id to inst_id_code for WebSocket order operations
     pub async fn request_instruments(
         &self,
         instrument_type: OKXInstrumentType,
         instrument_family: Option<String>,
-    ) -> anyhow::Result<Vec<InstrumentAny>> {
+    ) -> anyhow::Result<(Vec<InstrumentAny>, Vec<(Ustr, u64)>)> {
         let mut params = GetInstrumentsParamsBuilder::default();
         params.inst_type(instrument_type);
 
@@ -1300,11 +1336,11 @@ impl OKXHttpClient {
             match self.inner.get_trade_fee(fee_params).await {
                 Ok(rates) => rates.into_iter().next(),
                 Err(OKXHttpError::MissingCredentials) => {
-                    tracing::debug!("Missing credentials for fee rates, using None");
+                    log::debug!("Missing credentials for fee rates, using None");
                     None
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to fetch fee rates for {instrument_type}: {e}");
+                    log::warn!("Failed to fetch fee rates for {instrument_type}: {e}");
                     None
                 }
             }
@@ -1313,7 +1349,13 @@ impl OKXHttpClient {
         let ts_init = self.generate_ts_init();
 
         let mut instruments: Vec<InstrumentAny> = Vec::new();
+        let mut inst_id_codes: Vec<(Ustr, u64)> = Vec::new();
+
         for inst in &resp {
+            // Collect inst_id_code mappings for WebSocket order operations
+            if let Some(code) = inst.inst_id_code {
+                inst_id_codes.push((inst.inst_id, code));
+            }
             // Skip pre-open instruments which have incomplete/empty field values
             // Keep suspended instruments as they have valid metadata and may return to live
             if inst.state == OKXInstrumentStatus::Preopen {
@@ -1332,15 +1374,15 @@ impl OKXHttpClient {
                     (&fee_rate.maker, &fee_rate.taker)
                 };
 
-                let maker = if !maker_str.is_empty() {
+                let maker = if maker_str.is_empty() {
+                    None
+                } else {
                     Decimal::from_str(maker_str).ok().map(|v| -v)
-                } else {
-                    None
                 };
-                let taker = if !taker_str.is_empty() {
-                    Decimal::from_str(taker_str).ok().map(|v| -v)
-                } else {
+                let taker = if taker_str.is_empty() {
                     None
+                } else {
+                    Decimal::from_str(taker_str).ok().map(|v| -v)
                 };
 
                 (maker, taker)
@@ -1356,12 +1398,12 @@ impl OKXHttpClient {
                     // Unsupported instrument type, skip silently
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to parse instrument {}: {e}", inst.inst_id);
+                    log::warn!("Failed to parse instrument {}: {e}", inst.inst_id);
                 }
             }
         }
 
-        Ok(instruments)
+        Ok((instruments, inst_id_codes))
     }
 
     /// Requests a single instrument by `instrument_id` from OKX.
@@ -1412,11 +1454,11 @@ impl OKXHttpClient {
             match self.inner.get_trade_fee(fee_params).await {
                 Ok(rates) => rates.into_iter().next(),
                 Err(OKXHttpError::MissingCredentials) => {
-                    tracing::debug!("Missing credentials for fee rates, using None");
+                    log::debug!("Missing credentials for fee rates, using None");
                     None
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to fetch fee rates for {symbol}: {e}");
+                    log::warn!("Failed to fetch fee rates for {symbol}: {e}");
                     None
                 }
             }
@@ -1433,15 +1475,15 @@ impl OKXHttpClient {
                 (&fee_rate.maker, &fee_rate.taker)
             };
 
-            let maker = if !maker_str.is_empty() {
+            let maker = if maker_str.is_empty() {
+                None
+            } else {
                 Decimal::from_str(maker_str).ok().map(|v| -v)
-            } else {
-                None
             };
-            let taker = if !taker_str.is_empty() {
-                Decimal::from_str(taker_str).ok().map(|v| -v)
-            } else {
+            let taker = if taker_str.is_empty() {
                 None
+            } else {
+                Decimal::from_str(taker_str).ok().map(|v| -v)
             };
 
             (maker, taker)
@@ -1537,6 +1579,15 @@ impl OKXHttpClient {
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
         const OKX_TRADES_MAX_LIMIT: u32 = 100;
+        const MAX_PAGES: usize = 500;
+        const MAX_CONSECUTIVE_EMPTY: usize = 3;
+
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        enum Mode {
+            Latest,
+            Backward,
+            Range,
+        }
 
         let limit = if limit == Some(0) { None } else { limit };
 
@@ -1559,13 +1610,6 @@ impl OKXHttpClient {
         } else {
             end
         };
-
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-        enum Mode {
-            Latest,
-            Backward,
-            Range,
-        }
 
         let mode = match (start, end) {
             (None, None) => Mode::Latest,
@@ -1590,8 +1634,6 @@ impl OKXHttpClient {
                 std::collections::HashSet::new();
             let mut unique_count = 0usize;
             let mut consecutive_empty_pages = 0usize;
-            const MAX_PAGES: usize = 500;
-            const MAX_CONSECUTIVE_EMPTY: usize = 3;
 
             // Only apply default limit when there's no start boundary
             // (start provides a natural stopping point, end alone allows infinite backward pagination)
@@ -1601,30 +1643,25 @@ impl OKXHttpClient {
                 limit.unwrap_or(OKX_TRADES_MAX_LIMIT)
             };
 
-            tracing::debug!(
-                "Starting trades pagination: mode={:?}, start={:?}, end={:?}, limit={:?}, effective_limit={}",
-                mode,
-                start,
-                end,
-                limit,
-                effective_limit
+            log::debug!(
+                "Starting trades pagination: mode={mode:?}, start={start:?}, end={end:?}, limit={limit:?}, effective_limit={effective_limit}"
             );
 
             loop {
                 if pages >= MAX_PAGES {
-                    tracing::warn!("Hit MAX_PAGES limit of {}", MAX_PAGES);
+                    log::warn!("Hit MAX_PAGES limit of {MAX_PAGES}");
                     break;
                 }
 
                 if effective_limit < u32::MAX && unique_count >= effective_limit as usize {
-                    tracing::debug!("Reached effective limit: unique_count={}", unique_count);
+                    log::debug!("Reached effective limit: unique_count={unique_count}");
                     break;
                 }
 
                 let remaining = (effective_limit as usize).saturating_sub(unique_count);
                 let page_cap = remaining.min(OKX_TRADES_MAX_LIMIT as usize) as u32;
 
-                tracing::debug!(
+                log::debug!(
                     "Requesting page {}: before_id={:?}, page_cap={}, unique_count={}",
                     pages + 1,
                     before_trade_id,
@@ -1650,20 +1687,18 @@ impl OKXHttpClient {
                     .await
                     .map_err(anyhow::Error::new)?;
 
-                tracing::debug!("Received {} raw trades from API", raw.len());
+                log::debug!("Received {} raw trades from API", raw.len());
 
                 if !raw.is_empty() {
                     let first_id = &raw.first().unwrap().trade_id;
                     let last_id = &raw.last().unwrap().trade_id;
-                    tracing::debug!(
-                        "Raw response trade ID range: first={} (newest), last={} (oldest)",
-                        first_id,
-                        last_id
+                    log::debug!(
+                        "Raw response trade ID range: first={first_id} (newest), last={last_id} (oldest)"
                     );
                 }
 
                 if raw.is_empty() {
-                    tracing::debug!("API returned empty page, stopping pagination");
+                    log::debug!("API returned empty page, stopping pagination");
                     break;
                 }
 
@@ -1708,11 +1743,11 @@ impl OKXHttpClient {
                                 duplicates += 1;
                             }
                         }
-                        Err(e) => tracing::error!("{e}"),
+                        Err(e) => log::error!("{e}"),
                     }
                 }
 
-                tracing::debug!(
+                log::debug!(
                     "Page {} processed: {} trades kept, {} filtered out, {} duplicates, hit_start_boundary={}",
                     pages,
                     page_trades.len(),
@@ -1722,11 +1757,31 @@ impl OKXHttpClient {
                 );
 
                 // Extract oldest unique trade ID for next page cursor
-                let oldest_trade_id = if !page_trades.is_empty() {
+                let oldest_trade_id = if page_trades.is_empty() {
+                    // Only apply consecutive empty guard if we've already collected some trades
+                    // This allows historical backfills to paginate through empty prelude
+                    if unique_count > 0 {
+                        consecutive_empty_pages += 1;
+                        if consecutive_empty_pages >= MAX_CONSECUTIVE_EMPTY {
+                            log::debug!(
+                                "Stopping: {consecutive_empty_pages} consecutive pages with no trades in range after collecting {unique_count} trades"
+                            );
+                            break;
+                        }
+                    }
+                    // No unique trades on page, use raw response for cursor
+                    raw.last().map(|t| {
+                        let id = t.trade_id.to_string();
+                        log::debug!(
+                            "Setting cursor from raw response (no unique trades): oldest_id={id}"
+                        );
+                        id
+                    })
+                } else {
                     // Use oldest deduplicated trade ID before reversing
                     let oldest_id = page_trades.last().map(|t| {
                         let id = t.trade_id.to_string();
-                        tracing::debug!(
+                        log::debug!(
                             "Setting cursor from deduplicated trades: oldest_id={}, ts_event={}",
                             id,
                             t.ts_event.as_i64()
@@ -1737,29 +1792,6 @@ impl OKXHttpClient {
                     page_results.push(page_trades);
                     consecutive_empty_pages = 0;
                     oldest_id
-                } else {
-                    // Only apply consecutive empty guard if we've already collected some trades
-                    // This allows historical backfills to paginate through empty prelude
-                    if unique_count > 0 {
-                        consecutive_empty_pages += 1;
-                        if consecutive_empty_pages >= MAX_CONSECUTIVE_EMPTY {
-                            tracing::debug!(
-                                "Stopping: {} consecutive pages with no trades in range after collecting {} trades",
-                                consecutive_empty_pages,
-                                unique_count
-                            );
-                            break;
-                        }
-                    }
-                    // No unique trades on page, use raw response for cursor
-                    raw.last().map(|t| {
-                        let id = t.trade_id.to_string();
-                        tracing::debug!(
-                            "Setting cursor from raw response (no unique trades): oldest_id={}",
-                            id
-                        );
-                        id
-                    })
                 };
 
                 if let Some(ref old_id) = before_trade_id
@@ -1781,10 +1813,8 @@ impl OKXHttpClient {
                 tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
             }
 
-            tracing::debug!(
-                "Pagination complete: {} pages, {} unique trades collected",
-                pages,
-                unique_count
+            log::debug!(
+                "Pagination complete: {pages} pages, {unique_count} unique trades collected"
             );
 
             let mut out: Vec<TradeTick> = Vec::new();
@@ -1800,7 +1830,7 @@ impl OKXHttpClient {
             });
 
             if out.len() < pre_dedup_len {
-                tracing::debug!(
+                log::debug!(
                     "Removed {} duplicate trades during final dedup",
                     pre_dedup_len - out.len()
                 );
@@ -1811,11 +1841,11 @@ impl OKXHttpClient {
                 && out.len() > lim as usize
             {
                 let excess = out.len() - lim as usize;
-                tracing::debug!("Trimming {} oldest trades to respect limit={}", excess, lim);
+                log::debug!("Trimming {excess} oldest trades to respect limit={lim}");
                 out.drain(0..excess);
             }
 
-            tracing::debug!("Returning {} trades", out.len());
+            log::debug!("Returning {} trades", out.len());
             return Ok(out);
         }
 
@@ -1844,7 +1874,7 @@ impl OKXHttpClient {
                 ts_init,
             ) {
                 Ok(trade) => trades.push(trade),
-                Err(e) => tracing::error!("{e}"),
+                Err(e) => log::error!("{e}"),
             }
         }
 
@@ -1915,6 +1945,13 @@ impl OKXHttpClient {
         const HISTORY_SPLIT_DAYS: i64 = 100;
         const MAX_PAGES_SOFT: usize = 500;
 
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        enum Mode {
+            Latest,
+            Backward,
+            Range,
+        }
+
         let limit = if limit == Some(0) { None } else { limit };
 
         anyhow::ensure!(
@@ -1961,13 +1998,6 @@ impl OKXHttpClient {
             _ => unreachable!("Unsupported aggregation should have been caught above"),
         };
         let slot_ns: i64 = slot_ms * 1_000_000;
-
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-        enum Mode {
-            Latest,
-            Backward,
-            Range,
-        }
 
         let mode = match (start, end) {
             (None, None) => Mode::Latest,
@@ -2140,9 +2170,7 @@ impl OKXHttpClient {
                         .get_history_candles(params2)
                         .await
                         .map_err(anyhow::Error::new)?;
-                    if !raw2.is_empty() {
-                        raw = raw2;
-                    } else {
+                    if raw2.is_empty() {
                         // Step back one page interval and retry loop
                         let jump = (page_cap as i64).saturating_mul(slot_ms.max(1));
                         before_ms = Some(b.saturating_sub(jump));
@@ -2151,6 +2179,8 @@ impl OKXHttpClient {
                             break;
                         }
                         continue;
+                    } else {
+                        raw = raw2;
                     }
                 }
 
@@ -2236,7 +2266,7 @@ impl OKXHttpClient {
 
                 // Debug: log the page range
                 if !page.is_empty() {
-                    tracing::debug!(
+                    log::debug!(
                         "Range mode bootstrap page: {} bars from {} to {}, filtering with start={:?} end={:?}",
                         page.len(),
                         page.first().unwrap().ts_event.as_i64() / 1_000_000,
@@ -2602,9 +2632,9 @@ impl OKXHttpClient {
             }
 
             let Ok(inst) = self.instrument_from_cache(order.inst_id) else {
-                tracing::debug!(
-                    symbol = %order.inst_id,
-                    "Skipping order report for instrument not in cache"
+                log::debug!(
+                    "Skipping order report for instrument not in cache: symbol={}",
+                    order.inst_id,
                 );
                 continue;
             };
@@ -2619,7 +2649,7 @@ impl OKXHttpClient {
             ) {
                 Ok(report) => report,
                 Err(e) => {
-                    tracing::error!("Failed to parse order status report: {e}");
+                    log::error!("Failed to parse order status report: {e}");
                     continue;
                 }
             };
@@ -2714,9 +2744,9 @@ impl OKXHttpClient {
             }
 
             let Ok(inst) = self.instrument_from_cache(detail.inst_id) else {
-                tracing::debug!(
-                    symbol = %detail.inst_id,
-                    "Skipping fill report for instrument not in cache"
+                log::debug!(
+                    "Skipping fill report for instrument not in cache: symbol={}",
+                    detail.inst_id,
                 );
                 continue;
             };
@@ -2731,7 +2761,7 @@ impl OKXHttpClient {
             ) {
                 Ok(report) => report,
                 Err(e) => {
-                    tracing::error!("Failed to parse fill report: {e}");
+                    log::error!("Failed to parse fill report: {e}");
                     continue;
                 }
             };
@@ -2817,9 +2847,9 @@ impl OKXHttpClient {
 
         for position in resp {
             let Ok(inst) = self.instrument_from_cache(position.inst_id) else {
-                tracing::debug!(
-                    symbol = %position.inst_id,
-                    "Skipping position report for instrument not in cache"
+                log::debug!(
+                    "Skipping position report for instrument not in cache: symbol={}",
+                    position.inst_id,
                 );
                 continue;
             };
@@ -2833,7 +2863,7 @@ impl OKXHttpClient {
             ) {
                 Ok(report) => reports.push(report),
                 Err(e) => {
-                    tracing::error!("Failed to parse position status report: {e}");
+                    log::error!("Failed to parse position status report: {e}");
                     continue;
                 }
             };
@@ -2889,9 +2919,8 @@ impl OKXHttpClient {
                 let (instrument_id, size_precision) = match instrument_result {
                     Some((id, prec)) => (id, prec),
                     None => {
-                        tracing::debug!(
-                            "Skipping balance for {} - no matching instrument in cache",
-                            ccy_str
+                        log::debug!(
+                            "Skipping balance for {ccy_str} - no matching instrument in cache"
                         );
                         continue;
                     }
@@ -2907,9 +2936,8 @@ impl OKXHttpClient {
                     Ok(Some(report)) => reports.push(report),
                     Ok(None) => {} // No margin position for this currency
                     Err(e) => {
-                        tracing::error!(
-                            "Failed to parse spot margin position from balance for {}: {e}",
-                            ccy_str
+                        log::error!(
+                            "Failed to parse spot margin position from balance for {ccy_str}: {e}"
                         );
                         continue;
                     }
@@ -2986,6 +3014,37 @@ impl OKXHttpClient {
             .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))
     }
 
+    /// Cancels multiple algo orders via HTTP in a single request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-cancel-algo-order>
+    pub async fn cancel_algo_orders(
+        &self,
+        requests: Vec<OKXCancelAlgoOrderRequest>,
+    ) -> Result<Vec<OKXCancelAlgoOrderResponse>, OKXHttpError> {
+        if requests.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let body =
+            serde_json::to_vec(&requests).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+
+        self.inner
+            .send_request::<_, ()>(
+                Method::POST,
+                "/api/v5/trade/cancel-algos",
+                None,
+                Some(body),
+                true,
+            )
+            .await
+    }
+
     /// Places an algo order using domain types.
     ///
     /// This is a convenience method that accepts Nautilus domain types
@@ -3028,6 +3087,7 @@ impl OKXHttpClient {
 
         let request = OKXPlaceAlgoOrderRequest {
             inst_id: instrument_id.symbol.as_str().to_string(),
+            inst_id_code: None,
             td_mode,
             side: okx_side,
             ord_type: OKXAlgoOrderType::Trigger, // All conditional orders use 'trigger' type
@@ -3061,6 +3121,7 @@ impl OKXHttpClient {
     ) -> Result<OKXCancelAlgoOrderResponse, OKXHttpError> {
         let request = OKXCancelAlgoOrderRequest {
             inst_id: instrument_id.symbol.to_string(),
+            inst_id_code: None,
             algo_id: Some(algo_id),
             algo_cl_ord_id: None,
         };
@@ -3214,9 +3275,9 @@ impl OKXHttpClient {
                 instrument.clone()
             } else {
                 let Ok(instrument) = self.instrument_from_cache(order.inst_id) else {
-                    tracing::debug!(
-                        symbol = %order.inst_id,
-                        "Skipping algo order report for instrument not in cache"
+                    log::debug!(
+                        "Skipping algo order report for instrument not in cache: symbol={}",
+                        order.inst_id,
                     );
                     continue;
                 };
@@ -3227,7 +3288,7 @@ impl OKXHttpClient {
             match parse_http_algo_order(order, account_id, &instrument, ts_init) {
                 Ok(report) => reports.push(report),
                 Err(e) => {
-                    tracing::error!("Failed to parse algo order report: {e}");
+                    log::error!("Failed to parse algo order report: {e}");
                 }
             }
         }

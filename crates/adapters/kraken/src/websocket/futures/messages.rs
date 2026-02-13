@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,9 @@
 //! Data models for Kraken Futures WebSocket v1 API messages.
 
 use nautilus_model::{
-    data::{IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick},
+    data::{
+        FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick,
+    },
     events::{OrderAccepted, OrderCanceled, OrderExpired, OrderUpdated},
     reports::{FillReport, OrderStatusReport},
 };
@@ -35,6 +37,7 @@ pub enum KrakenFuturesWsMessage {
     Trade(TradeTick),
     MarkPrice(MarkPriceUpdate),
     IndexPrice(IndexPriceUpdate),
+    FundingRate(FundingRateUpdate),
     OrderAccepted(OrderAccepted),
     OrderCanceled(OrderCanceled),
     OrderExpired(OrderExpired),
@@ -70,6 +73,7 @@ pub enum KrakenFuturesChannel {
     Quotes,
     Mark,
     Index,
+    Funding,
 }
 
 /// Kraken Futures WebSocket event types.
@@ -109,6 +113,8 @@ pub enum KrakenFuturesMessageType {
     Unsubscribed,
     Challenge,
     Heartbeat,
+    Error,
+    Alert,
     Unknown,
 }
 
@@ -121,6 +127,8 @@ pub fn classify_futures_message(value: &Value) -> KrakenFuturesMessageType {
             "subscribed" => KrakenFuturesMessageType::Subscribed,
             "unsubscribed" => KrakenFuturesMessageType::Unsubscribed,
             "challenge" => KrakenFuturesMessageType::Challenge,
+            "error" => KrakenFuturesMessageType::Error,
+            "alert" => KrakenFuturesMessageType::Alert,
             _ => KrakenFuturesMessageType::Unknown,
         };
     }
@@ -695,6 +703,26 @@ mod tests {
         assert_eq!(
             classify_futures_message(&value),
             KrakenFuturesMessageType::Subscribed
+        );
+    }
+
+    #[rstest]
+    fn test_classify_error_event() {
+        let json = r#"{"event":"error","message":"Unknown product_id"}"#;
+        let value: Value = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            classify_futures_message(&value),
+            KrakenFuturesMessageType::Error
+        );
+    }
+
+    #[rstest]
+    fn test_classify_alert_event() {
+        let json = r#"{"event":"alert","message":"Rate limit exceeded"}"#;
+        let value: Value = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            classify_futures_message(&value),
+            KrakenFuturesMessageType::Alert
         );
     }
 }

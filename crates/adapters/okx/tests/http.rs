@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -2120,6 +2120,231 @@ async fn test_http_okx_error_response() {
         }) => {
             assert_eq!(error_code, "51000");
             assert!(message.contains("instType"));
+        }
+        other => panic!("expected OkxError: {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_okx_error_falls_back_to_s_msg_on_http_200() {
+    let router = Router::new().route(
+        "/api/v5/account/set-position-mode",
+        post(|headers: HeaderMap| async move {
+            if !has_auth_headers(&headers) {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!({
+                        "code": "401",
+                        "msg": "Missing authentication headers",
+                        "data": [],
+                    })),
+                )
+                    .into_response();
+            }
+
+            Json(json!({
+                "code": "1",
+                "msg": "",
+                "data": [{
+                    "sCode": "51000",
+                    "sMsg": "Parameter triggerPx error",
+                }],
+            }))
+            .into_response()
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    wait_for_server(addr, "/api/v5/account/set-position-mode").await;
+
+    let base_url = format!("http://{addr}");
+    let client = OKXRawHttpClient::with_credentials(
+        "test_key".to_string(),
+        "test_secret".to_string(),
+        "test_passphrase".to_string(),
+        base_url,
+        Some(60),
+        None,
+        None,
+        None,
+        false,
+        None,
+    )
+    .unwrap();
+
+    let params = SetPositionModeParamsBuilder::default()
+        .pos_mode(OKXPositionMode::LongShortMode)
+        .build()
+        .unwrap();
+    let result = client.set_position_mode(params).await;
+
+    match result {
+        Err(OKXHttpError::OkxError {
+            error_code,
+            message,
+        }) => {
+            assert_eq!(error_code, "1");
+            assert_eq!(message, "Parameter triggerPx error");
+        }
+        other => panic!("expected OkxError: {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_okx_error_falls_back_to_s_msg_on_http_400() {
+    let router = Router::new().route(
+        "/api/v5/account/set-position-mode",
+        post(|headers: HeaderMap| async move {
+            if !has_auth_headers(&headers) {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!({
+                        "code": "401",
+                        "msg": "Missing authentication headers",
+                        "data": [],
+                    })),
+                )
+                    .into_response();
+            }
+
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "code": "1",
+                    "msg": "",
+                    "data": [{
+                        "sCode": "51000",
+                        "sMsg": "Parameter triggerPx error",
+                    }],
+                })),
+            )
+                .into_response()
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    wait_for_server(addr, "/api/v5/account/set-position-mode").await;
+
+    let base_url = format!("http://{addr}");
+    let client = OKXRawHttpClient::with_credentials(
+        "test_key".to_string(),
+        "test_secret".to_string(),
+        "test_passphrase".to_string(),
+        base_url,
+        Some(60),
+        None,
+        None,
+        None,
+        false,
+        None,
+    )
+    .unwrap();
+
+    let params = SetPositionModeParamsBuilder::default()
+        .pos_mode(OKXPositionMode::LongShortMode)
+        .build()
+        .unwrap();
+    let result = client.set_position_mode(params).await;
+
+    match result {
+        Err(OKXHttpError::OkxError {
+            error_code,
+            message,
+        }) => {
+            assert_eq!(error_code, "1");
+            assert_eq!(message, "Parameter triggerPx error");
+        }
+        other => panic!("expected OkxError: {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_okx_error_falls_back_to_s_code_when_s_msg_empty() {
+    let router = Router::new().route(
+        "/api/v5/account/set-position-mode",
+        post(|headers: HeaderMap| async move {
+            if !has_auth_headers(&headers) {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!({
+                        "code": "401",
+                        "msg": "Missing authentication headers",
+                        "data": [],
+                    })),
+                )
+                    .into_response();
+            }
+
+            Json(json!({
+                "code": "1",
+                "msg": "",
+                "data": [{
+                    "sCode": "51008",
+                    "sMsg": "",
+                }],
+            }))
+            .into_response()
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    wait_for_server(addr, "/api/v5/account/set-position-mode").await;
+
+    let base_url = format!("http://{addr}");
+    let client = OKXRawHttpClient::with_credentials(
+        "test_key".to_string(),
+        "test_secret".to_string(),
+        "test_passphrase".to_string(),
+        base_url,
+        Some(60),
+        None,
+        None,
+        None,
+        false,
+        None,
+    )
+    .unwrap();
+
+    let params = SetPositionModeParamsBuilder::default()
+        .pos_mode(OKXPositionMode::LongShortMode)
+        .build()
+        .unwrap();
+    let result = client.set_position_mode(params).await;
+
+    match result {
+        Err(OKXHttpError::OkxError {
+            error_code,
+            message,
+        }) => {
+            assert_eq!(error_code, "1");
+            assert_eq!(message, "51008");
         }
         other => panic!("expected OkxError: {other:?}"),
     }

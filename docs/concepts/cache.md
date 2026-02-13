@@ -108,6 +108,7 @@ cache_config = CacheConfig(
     encoding: str = "msgpack",               # Data encoding format ('msgpack' or 'json')
     timestamps_as_iso8601: bool = False,     # Store timestamps as ISO8601 strings
     buffer_interval_ms: int | None = None,   # Buffer interval for batch operations
+    bulk_read_batch_size: int | None = None, # Batch size for bulk reads (e.g., MGET)
     use_trader_prefix: bool = True,          # Use trader prefix in keys
     use_instance_id: bool = False,           # Include instance ID in keys
     flush_on_start: bool = False,            # Clear database on startup
@@ -531,3 +532,9 @@ class AnotherStrategy(Strategy):
             shared_data = pickle.loads(data_bytes)
             self.log.info(f"Shared data retrieved: {shared_data}")
 ```
+
+## Related guides
+
+- [Data](data.md) - Data types stored in the cache.
+- [Strategies](strategies.md) - Strategies access cache for market data and state.
+- [Reports](reports.md) - Generate reports from cached data.

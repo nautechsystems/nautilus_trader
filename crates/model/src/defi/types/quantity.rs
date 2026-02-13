@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -50,12 +50,11 @@ impl Quantity {
     /// Panics if the quantity has precision other than 18.
     #[must_use]
     pub fn as_wei(&self) -> U256 {
-        if self.precision != 18 {
-            panic!(
-                "Failed to convert quantity with precision {} to wei (requires precision 18)",
-                self.precision
-            );
-        }
+        assert!(
+            self.precision == 18,
+            "Failed to convert quantity with precision {} to wei (requires precision 18)",
+            self.precision
+        );
 
         U256::from(self.raw)
     }

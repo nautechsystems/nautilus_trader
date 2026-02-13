@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,16 +24,15 @@ use nautilus_model::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
-#[builder(default)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Builder)]
 #[serde(tag = "type")]
 pub struct CancelOrder {
     pub trader_id: TraderId,
-    pub client_id: ClientId,
+    pub client_id: Option<ClientId>,
     pub strategy_id: StrategyId,
     pub instrument_id: InstrumentId,
     pub client_order_id: ClientOrderId,
-    pub venue_order_id: VenueOrderId,
+    pub venue_order_id: Option<VenueOrderId>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub params: Option<IndexMap<String, String>>,
@@ -41,23 +40,20 @@ pub struct CancelOrder {
 
 impl CancelOrder {
     /// Creates a new [`CancelOrder`] instance.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if parameters are invalid.
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         trader_id: TraderId,
-        client_id: ClientId,
+        client_id: Option<ClientId>,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
-        venue_order_id: VenueOrderId,
+        venue_order_id: Option<VenueOrderId>,
         command_id: UUID4,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             trader_id,
             client_id,
             strategy_id,
@@ -67,7 +63,7 @@ impl CancelOrder {
             command_id,
             ts_init,
             params,
-        })
+        }
     }
 }
 
@@ -75,18 +71,17 @@ impl Display for CancelOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "CancelOrder(instrument_id={}, client_order_id={}, venue_order_id={})",
+            "CancelOrder(instrument_id={}, client_order_id={}, venue_order_id={:?})",
             self.instrument_id, self.client_order_id, self.venue_order_id,
         )
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
-#[builder(default)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Builder)]
 #[serde(tag = "type")]
 pub struct CancelAllOrders {
     pub trader_id: TraderId,
-    pub client_id: ClientId,
+    pub client_id: Option<ClientId>,
     pub strategy_id: StrategyId,
     pub instrument_id: InstrumentId,
     pub order_side: OrderSide,
@@ -97,22 +92,19 @@ pub struct CancelAllOrders {
 
 impl CancelAllOrders {
     /// Creates a new [`CancelAllOrders`] instance.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if parameters are invalid.
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         trader_id: TraderId,
-        client_id: ClientId,
+        client_id: Option<ClientId>,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
         order_side: OrderSide,
         command_id: UUID4,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             trader_id,
             client_id,
             strategy_id,
@@ -121,7 +113,7 @@ impl CancelAllOrders {
             command_id,
             ts_init,
             params,
-        })
+        }
     }
 }
 
@@ -135,12 +127,11 @@ impl Display for CancelAllOrders {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
-#[builder(default)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Builder)]
 #[serde(tag = "type")]
 pub struct BatchCancelOrders {
     pub trader_id: TraderId,
-    pub client_id: ClientId,
+    pub client_id: Option<ClientId>,
     pub strategy_id: StrategyId,
     pub instrument_id: InstrumentId,
     pub cancels: Vec<CancelOrder>,
@@ -151,22 +142,19 @@ pub struct BatchCancelOrders {
 
 impl BatchCancelOrders {
     /// Creates a new [`BatchCancelOrders`] instance.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if parameters are invalid.
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         trader_id: TraderId,
-        client_id: ClientId,
+        client_id: Option<ClientId>,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
         cancels: Vec<CancelOrder>,
         command_id: UUID4,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             trader_id,
             client_id,
             strategy_id,
@@ -175,7 +163,7 @@ impl BatchCancelOrders {
             command_id,
             ts_init,
             params,
-        })
+        }
     }
 }
 

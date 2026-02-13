@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -78,7 +78,7 @@ pub extern "C" fn level_new(order_side: OrderSide, price: Price, orders: CVec) -
         side: order_side.as_specified(),
     };
     let mut level = BookLevel::new(price);
-    level.add_bulk(orders);
+    level.add_bulk(&orders);
     BookLevel_API::new(level)
 }
 

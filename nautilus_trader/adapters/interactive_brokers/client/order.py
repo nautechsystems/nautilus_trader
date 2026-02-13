@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,7 @@
 import functools
 from decimal import Decimal
 
-from ibapi.commission_report import CommissionReport
+from ibapi.commission_and_fees_report import CommissionAndFeesReport
 from ibapi.contract import Contract
 from ibapi.execution import Execution
 from ibapi.execution import ExecutionFilter
@@ -26,8 +26,10 @@ from ibapi.order_state import OrderState as IBOrderState
 
 from nautilus_trader.adapters.interactive_brokers.client.common import AccountOrderRef
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
+from nautilus_trader.adapters.interactive_brokers.client.common import get_venue_order_id
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.model.identifiers import VenueOrderId
 
 
 class InteractiveBrokersClientOrderMixin(BaseMixin):
@@ -54,7 +56,9 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
             details, and order specifics.
 
         """
-        self._order_id_to_order_ref[order.orderId] = AccountOrderRef(
+        # For orders we place, orderId is valid (permId not yet assigned)
+        venue_order_id = VenueOrderId(str(order.orderId))
+        self._order_id_to_order_ref[venue_order_id] = AccountOrderRef(
             account_id=order.account,
             order_id=order.orderRef.rsplit(":", 1)[0],
         )
@@ -242,8 +246,16 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
 
         """
         self._next_valid_order_id = max(self._next_valid_order_id, order_id, 101)
+        self._log.debug(
+            f"Next valid order id set: {self._next_valid_order_id}, accounts: {self.accounts()}",
+        )
 
-        if self.accounts() and not self._is_ib_connected.is_set():
+        # Set connection flag once we have next valid order id AND accounts
+        if (
+            self._next_valid_order_id >= 0
+            and self.accounts()
+            and not self._is_ib_connected.is_set()
+        ):
             self._log.debug("`_is_ib_connected` set by `nextValidId`", LogColor.BLUE)
             self._is_ib_connected.set()
 
@@ -267,7 +279,8 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
             request.result.append(order)
 
             # Validate and add reverse mapping, if not exists
-            if order_ref := self._order_id_to_order_ref.get(order.orderId):
+            venue_order_id = get_venue_order_id(order.orderId, order.permId)
+            if order_ref := self._order_id_to_order_ref.get(venue_order_id):
                 if not (
                     order_ref.account_id == order.account and order_ref.order_id == order.orderRef
                 ):
@@ -276,7 +289,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                         f"was (account={order.account}, order_id={order.orderRef}",
                     )
             else:
-                self._order_id_to_order_ref[order.orderId] = AccountOrderRef(
+                self._order_id_to_order_ref[venue_order_id] = AccountOrderRef(
                     account_id=order.account,
                     order_id=order.orderRef,
                 )
@@ -320,14 +333,16 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         Note: Often there are duplicate orderStatus messages.
 
         """
-        order_ref = self._order_id_to_order_ref.get(order_id, None)
+        venue_order_id = get_venue_order_id(order_id, perm_id)
+        order_ref = self._order_id_to_order_ref.get(venue_order_id, None)
 
         if order_ref:
             name = f"orderStatus-{order_ref.account_id}"
 
             if handler := self._event_subscriptions.get(name, None):
                 handler(
-                    order_ref=self._order_id_to_order_ref[order_id].order_id,
+                    venue_order_id=venue_order_id,
+                    order_ref=order_ref.order_id,
                     order_status=status,
                     avg_fill_price=avg_fill_price,
                     filled=filled,
@@ -368,7 +383,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                 "commission_report": cache["commission_report"],
             }
             request.result.append(execution_detail)
-                # Don't remove from cache yet, wait for execDetailsEnd
+            # Don't remove from cache yet, wait for execDetailsEnd
 
         # Handle event-based response for live executions
         name = f"execDetails-{execution.acctNumber}"
@@ -389,10 +404,10 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
     async def process_commission_report(
         self,
         *,
-        commission_report: CommissionReport,
+        commission_report: CommissionAndFeesReport,
     ) -> None:
         """
-        Provide the CommissionReport of an Execution.
+        Provide the CommissionAndFeesReport of an Execution.
         """
         if not (cache := self._exec_id_details.get(commission_report.execId, None)):
             self._exec_id_details[commission_report.execId] = {}

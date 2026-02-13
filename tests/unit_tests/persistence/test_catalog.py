@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,9 +30,12 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.rust.model import AggressorSide
 from nautilus_trader.core.rust.model import BookAction
+from nautilus_trader.core.rust.model import OrderSide
 from nautilus_trader.model.custom import customdataclass
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import CustomData
+from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import TradeId
@@ -75,14 +78,16 @@ def test_catalog_query_filtered(
     trades = catalog_betfair.trade_ticks(start=1576875378384999936)
     assert len(trades) == 121
 
-    trades = catalog_betfair.trade_ticks(start=datetime.datetime(2019, 12, 20, 20, 56, 18, tzinfo=datetime.UTC))
+    trades = catalog_betfair.trade_ticks(
+        start=datetime.datetime(2019, 12, 20, 20, 56, 18, tzinfo=datetime.UTC),
+    )
     assert len(trades) == 121
 
     deltas = catalog_betfair.order_book_deltas()
     assert len(deltas) == 2384
 
     deltas = catalog_betfair.order_book_deltas(batched=True)
-    assert len(deltas) == 2007
+    assert len(deltas) == 2009
 
 
 def test_catalog_query_custom_filtered(
@@ -1071,7 +1076,8 @@ class TestConsolidateDataByPeriod:
         # Verify data values are preserved
         for original_bar, retrieved_bar in zip(
             sorted(test_bars, key=lambda x: x.ts_init),
-            sorted(all_bars, key=lambda x: x.ts_init), strict=False,
+            sorted(all_bars, key=lambda x: x.ts_init),
+            strict=False,
         ):
             assert original_bar.open == retrieved_bar.open
             assert original_bar.high == retrieved_bar.high
@@ -1115,7 +1121,9 @@ class TestConsolidateDataByPeriod:
         retrieved_sorted = sorted(all_bars, key=lambda x: x.ts_init)
 
         # Verify each bar's timestamp is exactly preserved
-        for i, (original, retrieved) in enumerate(zip(original_sorted, retrieved_sorted, strict=False)):
+        for i, (original, retrieved) in enumerate(
+            zip(original_sorted, retrieved_sorted, strict=False),
+        ):
             assert original.ts_init == retrieved.ts_init, f"Timestamp mismatch at index {i}"
 
     def test_consolidate_mixed_data_types_integration(self):
@@ -1236,6 +1244,56 @@ class TestConsolidateDataByPeriod:
 
         retrieved_timestamps = sorted([bar.ts_init for bar in bars])
         assert retrieved_timestamps == sorted(boundary_timestamps)
+
+    def test_consolidate_rejects_conflicting_metadata(self):
+        """
+        Test that consolidation raises when parquet files have different precision
+        metadata.
+        """
+        # Arrange
+        instrument_id = self.audusd_sim.id
+
+        # Write batch with price_precision=2, size_precision=4
+        deltas_batch1 = [
+            OrderBookDelta(
+                instrument_id=instrument_id,
+                action=BookAction.UPDATE,
+                order=BookOrder(
+                    OrderSide.BUY,
+                    Price(1.11, 2),
+                    Quantity(10.0001, 4),
+                    1,
+                ),
+                flags=0,
+                sequence=0,
+                ts_event=100,
+                ts_init=100,
+            ),
+        ]
+        self.catalog.write_data(deltas_batch1)
+
+        # Write batch with price_precision=3, size_precision=6
+        deltas_batch2 = [
+            OrderBookDelta(
+                instrument_id=instrument_id,
+                action=BookAction.UPDATE,
+                order=BookOrder(
+                    OrderSide.BUY,
+                    Price(1.123, 3),
+                    Quantity(10.000001, 6),
+                    2,
+                ),
+                flags=0,
+                sequence=0,
+                ts_event=200,
+                ts_init=200,
+            ),
+        ]
+        self.catalog.write_data(deltas_batch2, skip_disjoint_check=True)
+
+        # Act & Assert
+        with pytest.raises(ValueError, match="conflicting metadata"):
+            self.catalog.consolidate_catalog(ensure_contiguous_files=False)
 
 
 def test_consolidate_catalog_by_period(catalog: ParquetDataCatalog) -> None:
@@ -1737,9 +1795,9 @@ def test_delete_data_range_cross_file_split(catalog: ParquetDataCatalog) -> None
     remaining_timestamps.sort()
 
     expected_remaining = [1_000_000_000, 2_000_000_000, 3_000_000_000]
-    assert (
-        remaining_timestamps == expected_remaining
-    ), f"Expected {expected_remaining}, was {remaining_timestamps}"
+    assert remaining_timestamps == expected_remaining, (
+        f"Expected {expected_remaining}, was {remaining_timestamps}"
+    )
 
     # Verify file structure - should have 1 file remaining
     final_intervals = catalog.get_intervals(QuoteTick, "AUD/USD.SIM")
@@ -1748,12 +1806,12 @@ def test_delete_data_range_cross_file_split(catalog: ParquetDataCatalog) -> None
     # Verify the remaining file covers the correct range (should end just before deletion start)
     expected_start = 1_000_000_000
     expected_end = 4_000_000_000 - 1  # Just before deletion range starts (one nanosecond before)
-    assert (
-        final_intervals[0][0] == expected_start
-    ), f"Expected start {expected_start}, was {final_intervals[0][0]}"
-    assert (
-        final_intervals[0][1] == expected_end
-    ), f"Expected end {expected_end}, was {final_intervals[0][1]}"
+    assert final_intervals[0][0] == expected_start, (
+        f"Expected start {expected_start}, was {final_intervals[0][0]}"
+    )
+    assert final_intervals[0][1] == expected_end, (
+        f"Expected end {expected_end}, was {final_intervals[0][1]}"
+    )
 
     # Verify we can query the remaining data correctly
     queried_quotes = catalog.query(
@@ -1765,9 +1823,9 @@ def test_delete_data_range_cross_file_split(catalog: ParquetDataCatalog) -> None
     queried_timestamps = [q.ts_init for q in queried_quotes]
     queried_timestamps.sort()
 
-    assert (
-        queried_timestamps == expected_remaining
-    ), f"Query result should be {expected_remaining}, was {queried_timestamps}"
+    assert queried_timestamps == expected_remaining, (
+        f"Query result should be {expected_remaining}, was {queried_timestamps}"
+    )
 
 
 def test_delete_data_range_cross_file_split_keep_end(catalog: ParquetDataCatalog) -> None:
@@ -1833,9 +1891,9 @@ def test_delete_data_range_cross_file_split_keep_end(catalog: ParquetDataCatalog
     remaining_timestamps.sort()
 
     expected_remaining = [8_000_000_000, 9_000_000_000, 10_000_000_000]
-    assert (
-        remaining_timestamps == expected_remaining
-    ), f"Expected {expected_remaining}, was {remaining_timestamps}"
+    assert remaining_timestamps == expected_remaining, (
+        f"Expected {expected_remaining}, was {remaining_timestamps}"
+    )
 
     # Verify file structure - should have 2 files remaining (split file 2 + intact file 3)
     final_intervals = catalog.get_intervals(QuoteTick, "AUD/USD.SIM")
@@ -1851,9 +1909,9 @@ def test_delete_data_range_cross_file_split_keep_end(catalog: ParquetDataCatalog
     queried_timestamps = [q.ts_init for q in queried_quotes]
     queried_timestamps.sort()
 
-    assert (
-        queried_timestamps == expected_remaining
-    ), f"Query result should be {expected_remaining}, was {queried_timestamps}"
+    assert queried_timestamps == expected_remaining, (
+        f"Query result should be {expected_remaining}, was {queried_timestamps}"
+    )
 
 
 def test_delete_catalog_range_partial_overlap(catalog: ParquetDataCatalog) -> None:
@@ -2204,9 +2262,7 @@ def test_backend_session_table_naming_multiple_instruments(catalog: ParquetDataC
         "ADABTC-1m-2021-11-27.csv",
         bar_type1,
         instrument1,
-    )[
-        :5
-    ]  # Use fewer bars for faster test
+    )[:5]  # Use fewer bars for faster test
 
     bar_type2 = TestDataStubs.bartype_btcusdt_binance_100tick_last()
     instrument2 = TestInstrumentProvider.btcusdt_binance()
@@ -2214,9 +2270,7 @@ def test_backend_session_table_naming_multiple_instruments(catalog: ParquetDataC
         "ADABTC-1m-2021-11-27.csv",  # Reuse same CSV data but with different bar_type
         bar_type2,
         instrument2,
-    )[
-        :5
-    ]  # Use fewer bars for faster test
+    )[:5]  # Use fewer bars for faster test
 
     # Write data for both instruments
     catalog.write_data(bars1)
@@ -2415,7 +2469,7 @@ def test_backend_session_files_with_optimize_disabled_reads_only_specified_files
     catalog.write_data(trades_batch3)
 
     all_files = catalog._query_files(TradeTick, [str(instrument.id)], None, None)
-    assert len(all_files) == 3, f"Expected 3 files, got {len(all_files)}: {all_files}"
+    assert len(all_files) == 3, f"Expected 3 files, was {len(all_files)}: {all_files}"
     selected_files = [all_files[0]]
 
     # Act
@@ -2433,9 +2487,9 @@ def test_backend_session_files_with_optimize_disabled_reads_only_specified_files
         data.extend(capsule_to_list(chunk))
 
     # Assert
-    assert len(data) == 3, f"Expected 3 trades from one file, got {len(data)}"
+    assert len(data) == 3, f"Expected 3 trades from one file, was {len(data)}"
     prices = {str(trade.price) for trade in data}
-    assert len(prices) == 1, f"Expected trades from single batch, got prices: {prices}"
+    assert len(prices) == 1, f"Expected trades from single batch, was prices: {prices}"
 
 
 def test_backend_session_files_with_optimize_reads_entire_directory(
@@ -2501,6 +2555,6 @@ def test_backend_session_files_with_optimize_reads_entire_directory(
         data.extend(capsule_to_list(chunk))
 
     # Assert - with optimize_file_loading=True, the entire directory is read
-    assert len(data) == 6, f"Expected 6 trades from entire directory, got {len(data)}"
+    assert len(data) == 6, f"Expected 6 trades from entire directory, was {len(data)}"
     prices = {str(trade.price) for trade in data}
-    assert len(prices) == 2, f"Expected trades from both batches, got prices: {prices}"
+    assert len(prices) == 2, f"Expected trades from both batches, was prices: {prices}"

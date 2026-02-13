@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -51,3 +51,5 @@ pub const BYBIT_TOPIC_ORDER: &str = "order";
 pub const BYBIT_TOPIC_EXECUTION: &str = "execution";
 pub const BYBIT_TOPIC_WALLET: &str = "wallet";
 pub const BYBIT_TOPIC_POSITION: &str = "position";
+
+pub const BYBIT_DEFAULT_ORDERBOOK_DEPTH: u32 = 50;

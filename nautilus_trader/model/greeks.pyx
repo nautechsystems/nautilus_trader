@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,6 +17,8 @@ from typing import Callable
 
 from nautilus_trader.core.nautilus_pyo3 import black_scholes_greeks
 from nautilus_trader.core.nautilus_pyo3 import imply_vol_and_greeks
+from nautilus_trader.core.nautilus_pyo3 import refine_vol_and_greeks
+from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import InstrumentClass
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.greeks_data import GreeksData
@@ -90,6 +92,7 @@ cdef class GreeksCalculator:
         vol_shock: float = 0.,
         time_to_expiry_shock: float = 0.,
         use_cached_greeks: bool = False,
+        update_vol: bool = False,
         cache_greeks: bool = False,
         publish_greeks: bool = False,
         ts_event: int = 0,
@@ -106,6 +109,7 @@ cdef class GreeksCalculator:
         - Apply shocks to the spot value of the instrument's underlying, implied volatility or time to expiry.
         - Compute percent greeks.
         - Compute beta-weighted delta and gamma with respect to an index.
+        - Update volatility to a target price from a previously calculated volatility.
 
         Parameters
         ----------
@@ -127,6 +131,8 @@ cdef class GreeksCalculator:
             Shock in years to apply to time to expiry.
         use_cached_greeks : bool, default False
             Whether to use cached greeks values if available.
+        update_vol : bool, default False
+            Whether to update the volatility to a target price using the previously calculated volatility.
         cache_greeks : bool, default False
             Whether to cache the calculated greeks.
         publish_greeks : bool, default False
@@ -220,15 +226,31 @@ cdef class GreeksCalculator:
             option_price = float(option_price_obj)
             underlying_price = float(underlying_price_obj)
 
-            greeks = imply_vol_and_greeks(underlying_price, interest_rate, cost_of_carry, is_call, strike,
-                                          expiry_in_years, option_price, multiplier)
+            # Use cached greeks if available to update vol with target_price
+            cached_greeks = None
+            if update_vol and (cached_greeks := self._cache.greeks(instrument_id)) is not None:
+                # Use cached vol as initial vol and refine with new price using target_price
+                initial_vol = cached_greeks.vol
+                greeks = refine_vol_and_greeks(underlying_price, interest_rate, cost_of_carry, is_call, strike,
+                                              expiry_in_years, option_price, initial_vol, multiplier)
+                if greeks is not None:
+                    self._log.debug(f"Updated vol from cached greeks for {instrument_id=}: {initial_vol:.4f} -> {greeks.vol:.4f}")
+                else:
+                    # Fallback to standard implied vol calculation if refinement failed
+                    greeks = imply_vol_and_greeks(underlying_price, interest_rate, cost_of_carry, is_call, strike,
+                                                  expiry_in_years, option_price, multiplier)
+            else:
+                # Standard implied vol calculation
+                greeks = imply_vol_and_greeks(underlying_price, interest_rate, cost_of_carry, is_call, strike,
+                                              expiry_in_years, option_price, multiplier)
+
             delta, gamma, vega = self.modify_greeks(greeks.delta, greeks.gamma, underlying_instrument_id, underlying_price,
                                                      underlying_price, percent_greeks, index_instrument_id, beta_weights,
                                                      greeks.vega, greeks.vol, expiry_in_days, vega_time_weight_base)
 
             greeks_data = GreeksData(utc_now_ns, utc_now_ns, instrument_id, is_call, strike, expiry_int, expiry_in_days, expiry_in_years, multiplier, 1.0,
                                      underlying_price, interest_rate, cost_of_carry, greeks.vol, 0., greeks.price, delta, gamma, vega, greeks.theta,
-                                     abs(greeks.delta / multiplier))
+                                     greeks.itm_prob)
 
             # adding greeks to cache
             if cache_greeks:
@@ -255,7 +277,7 @@ cdef class GreeksCalculator:
                                      greeks_data.instrument_id, greeks_data.is_call, greeks_data.strike, greeks_data.expiry,
                                      int(shocked_time_to_expiry * 365.25), shocked_time_to_expiry, greeks_data.multiplier, greeks_data.quantity, shocked_underlying_price,
                                      greeks_data.interest_rate, greeks_data.cost_of_carry, shocked_vol, 0., greeks.price, delta, gamma, vega,
-                                     greeks.theta, abs(greeks.delta / greeks_data.multiplier))
+                                     greeks.theta, greeks.itm_prob)
 
         if position is not None:
             greeks_data.pnl = greeks_data.price - greeks_data.multiplier * position.avg_px_open
@@ -263,6 +285,14 @@ cdef class GreeksCalculator:
         return greeks_data
 
     cdef object _get_price(self, InstrumentId instrument_id):
+        # Check if the instrument is an index - if so, use index price
+        instrument = self._cache.instrument(instrument_id)
+        if instrument is not None and instrument.asset_class is AssetClass.INDEX:
+            index_price = self._cache.index_price(instrument_id)
+            if index_price is not None:
+                return index_price.value
+            # If no index price, fall through to regular price lookup
+
         # Try MID price first, then LAST price as fallback
         price_obj = self._cache.price(instrument_id, PriceType.MID)
         if price_obj is None:
@@ -393,6 +423,7 @@ cdef class GreeksCalculator:
         vol_shock: float = 0.0,
         time_to_expiry_shock: float = 0.0,
         use_cached_greeks: bool = False,
+        update_vol: bool = False,
         cache_greeks: bool = False,
         publish_greeks: bool = False,
         percent_greeks: bool = False,
@@ -410,6 +441,7 @@ cdef class GreeksCalculator:
         - Apply shocks to the spot value of an instrument's underlying, implied volatility or time to expiry.
         - Compute percent greeks.
         - Compute beta-weighted delta and gamma with respect to an index.
+        - Update volatility to a target price from a previously calculated volatility.
 
         Parameters
         ----------
@@ -430,7 +462,7 @@ cdef class GreeksCalculator:
         side : PositionSide, default PositionSide.NO_POSITION_SIDE
             The position side to filter.
             Only positions with this side will be included.
-        flat_interest_rate : float, default 0.05
+        flat_interest_rate : float, default 0.0425
             The interest rate to use for calculations when no curve is available.
         flat_dividend_yield : float, optional
             The dividend yield to use for calculations when no dividend curve is available.
@@ -442,6 +474,8 @@ cdef class GreeksCalculator:
             Shock in years to apply to time to expiry.
         use_cached_greeks : bool, default False
             Whether to use cached Greeks calculations if available.
+        update_vol : bool, default False
+            Whether to update the volatility to a target price using the previously calculated volatility.
         cache_greeks : bool, default False
             Whether to cache the calculated Greeks.
         publish_greeks : bool, default False
@@ -498,6 +532,7 @@ cdef class GreeksCalculator:
                 vol_shock,
                 time_to_expiry_shock,
                 use_cached_greeks,
+                update_vol,
                 cache_greeks,
                 publish_greeks,
                 ts_event,

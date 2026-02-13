@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -45,9 +45,7 @@ cdef class Quantity:
 
     cdef Quantity add(self, Quantity other)
     cdef Quantity sub(self, Quantity other)
-    cdef Quantity saturating_sub(self, Quantity other)
-    cdef void add_assign(self, Quantity other)
-    cdef void sub_assign(self, Quantity other)
+    cpdef Quantity saturating_sub(self, Quantity other)
 
     @staticmethod
     cdef object _extract_decimal(object obj)
@@ -63,6 +61,9 @@ cdef class Quantity:
 
     @staticmethod
     cdef Quantity from_raw_c(QuantityRaw raw, uint8_t precision)
+
+    @staticmethod
+    cdef Quantity from_decimal_c(amount, uint8_t precision)
 
     @staticmethod
     cdef Quantity zero_c(uint8_t precision)
@@ -95,8 +96,6 @@ cdef class Price:
 
     cdef Price add(self, Price other)
     cdef Price sub(self, Price other)
-    cdef void add_assign(self, Price other)
-    cdef void sub_assign(self, Price other)
 
     @staticmethod
     cdef object _extract_decimal(object obj)
@@ -112,6 +111,9 @@ cdef class Price:
 
     @staticmethod
     cdef Price from_raw_c(PriceRaw raw, uint8_t precision)
+
+    @staticmethod
+    cdef Price from_decimal_c(amount, uint8_t precision)
 
     @staticmethod
     cdef Price from_str_c(str value)
@@ -141,6 +143,9 @@ cdef class Money:
     cdef Money from_raw_c(MoneyRaw raw, Currency currency)
 
     @staticmethod
+    cdef Money from_decimal_c(amount, Currency currency)
+
+    @staticmethod
     cdef Money from_str_c(str value)
 
     @staticmethod
@@ -148,8 +153,6 @@ cdef class Money:
 
     cdef Money add(self, Money other)
     cdef Money sub(self, Money other)
-    cdef void add_assign(self, Money other)
-    cdef void sub_assign(self, Money other)
 
     cpdef str to_formatted_str(self)
     cpdef object as_decimal(self)

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,26 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Execution client integration module.
+//! Live execution client implementations for the Kraken adapter.
 //!
-//! Provides order placement, cancellation, modification, and position management
-//! for Kraken Spot and Futures markets via Rust HTTP clients exposed to Python.
+//! This module provides separate execution clients for Kraken Spot and Futures markets:
+//!
+//! - [`KrakenSpotExecutionClient`] - For Spot markets using WebSocket v2
+//! - [`KrakenFuturesExecutionClient`] - For Futures markets
+//!
+//! # Supported Operations
+//!
+//! ## Common
+//! - Order submission (market, limit, stop)
+//! - Order modification
+//! - Order cancellation (single, batch, cancel-all)
+//! - Account state and balance queries
+//!
+//! ## Futures Only
+//! - Position management
+
+mod futures;
+mod spot;
+
+pub use futures::KrakenFuturesExecutionClient;
+pub use spot::KrakenSpotExecutionClient;

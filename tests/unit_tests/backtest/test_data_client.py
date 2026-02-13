@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -313,7 +313,7 @@ class TestBacktestMarketDataClientFuturesSpread:
         self.spread_instrument_id = new_generic_spread_id(
             [
                 (self.future1.id, -1),  # Short front month
-                (self.future2.id, 1),   # Long back month
+                (self.future2.id, 1),  # Long back month
             ],
         )
 
@@ -354,7 +354,8 @@ class TestBacktestMarketDataClientFuturesSpread:
         assert spread_instrument.asset_class == self.future1.asset_class
         # Should use minimum expiration
         assert spread_instrument.expiration_ns == min(
-            self.future1.expiration_ns, self.future2.expiration_ns,
+            self.future1.expiration_ns,
+            self.future2.expiration_ns,
         )
 
     def test_request_instrument_futures_spread_selects_minimum_price_increment(self):

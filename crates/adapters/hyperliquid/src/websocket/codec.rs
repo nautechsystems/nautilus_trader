@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,8 +15,11 @@
 
 use std::str::FromStr;
 
+use nautilus_core::serialization::{
+    deserialize_decimal, serialize_decimal_as_str as serialize_decimal,
+};
 use rust_decimal::Decimal;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use crate::{
@@ -122,12 +125,10 @@ pub enum WsInbound {
     UserFills(Vec<WsFill>),
     UserFundings(Vec<WsFunding>),
     UserEvents(Vec<WsUserEvent>),
-
     SubscriptionResponse(SubResp),
     Pong(Option<i64>),
     Notification(Notice),
     Post(PostAck),
-
     #[serde(other)]
     Unknown,
 }
@@ -306,23 +307,6 @@ pub struct WsUserEvent {
     pub event_type: String,
     pub data: serde_json::Value,
     pub ts: i64,
-}
-
-fn serialize_decimal<S: Serializer>(d: &Decimal, s: S) -> Result<S::Ok, S::Error> {
-    s.serialize_str(&d.normalize().to_string())
-}
-
-fn deserialize_decimal<'de, D: Deserializer<'de>>(d: D) -> Result<Decimal, D::Error> {
-    let v = serde_json::Value::deserialize(d)?;
-    match v {
-        serde_json::Value::String(s) => Decimal::from_str(&s).map_err(serde::de::Error::custom),
-        serde_json::Value::Number(n) => {
-            Decimal::from_str(&n.to_string()).map_err(serde::de::Error::custom)
-        }
-        _ => Err(serde::de::Error::custom(
-            "expected decimal string or number",
-        )),
-    }
 }
 
 /// Convert normalized outbound message to Hyperliquid native format.
@@ -531,7 +515,7 @@ pub fn decode_inbound(msg: &HyperliquidWsMessage) -> WsInbound {
                 WsInbound::Candle(vec![candle])
             }
             Err(e) => {
-                tracing::error!("Failed to parse candle interval '{}': {}", data.i, e);
+                log::error!("Failed to parse candle interval '{}': {}", data.i, e);
                 WsInbound::Unknown
             }
         },

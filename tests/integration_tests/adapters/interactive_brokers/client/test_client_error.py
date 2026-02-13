@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,6 +25,7 @@ async def test_ib_is_ready_by_notification_1101(ib_client):
     # Act
     await ib_client.process_error(
         req_id=-1,
+        error_time=0,
         error_code=1101,
         error_string="Connectivity between IB and Trader Workstation has been restored",
     )
@@ -41,6 +42,7 @@ async def test_ib_is_ready_by_notification_1102(ib_client):
     # Act
     await ib_client.process_error(
         req_id=-1,
+        error_time=0,
         error_code=1102,
         error_string="Connectivity between IB and Trader Workstation has been restored",
     )
@@ -59,6 +61,7 @@ async def test_ib_is_not_ready_by_error_10182(ib_client):
     # Act
     await ib_client.process_error(
         req_id=req_id,
+        error_time=0,
         error_code=10182,
         error_string="Failed to request live updates (disconnected).",
     )

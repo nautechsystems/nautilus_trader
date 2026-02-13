@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,13 +24,12 @@ from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import PositionId
-from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -42,8 +41,8 @@ class TestPortfolioAnalyzer:
         # Fixture Setup
         self.analyzer = PortfolioAnalyzer()
         self.order_factory = OrderFactory(
-            trader_id=TraderId("TESTER-000"),
-            strategy_id=StrategyId("S-001"),
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
             clock=TestClock(),
         )
 
@@ -155,7 +154,7 @@ class TestPortfolioAnalyzer:
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00000"),
         )
 
@@ -163,7 +162,7 @@ class TestPortfolioAnalyzer:
             order2,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00010"),
         )
 
@@ -171,7 +170,7 @@ class TestPortfolioAnalyzer:
             order3,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-2"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00000"),
         )
 
@@ -179,7 +178,7 @@ class TestPortfolioAnalyzer:
             order4,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-2"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00020"),
         )
 
@@ -199,3 +198,31 @@ class TestPortfolioAnalyzer:
         assert len(result) == 2
         assert result["P-1"] == 6.0
         assert result["P-2"] == 16.0
+
+    def test_add_positions_skips_empty_shell_positions_with_zero_ts_closed(self):
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            strategy_id=TestIdStubs.strategy_id(),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+
+        # Purge the fill to create an empty shell with ts_closed = 0
+        position.purge_events_for_order(order1.client_order_id)
+
+        # Act
+        self.analyzer.add_positions([position])
+        returns = self.analyzer.returns()
+
+        # Assert: no returns should be added for empty shell position
+        assert len(returns) == 0

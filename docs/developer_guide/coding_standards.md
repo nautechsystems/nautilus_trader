@@ -65,6 +65,10 @@ documentation feel natural to end-users.
 
 2. **Spelling**: Use "hardcoded" (single word) rather than "hard-coded" or "hard coded" – this is the more modern and accepted spelling.
 
+3. **Error variable naming**: Use single-letter `e` for caught errors/exceptions:
+   - Rust: `Err(e)` not `Err(err)` or `Err(error)`, and `|e|` not `|err|` in closures
+   - Python: `except SomeError as e:` not `as err:` or `as error:`
+
 ### Naming conventions
 
 1. **Internal fields**: Abbreviations are acceptable for private/internal fields (e.g., `_price_prec`, `_size_prec`) to keep hot-path code concise.

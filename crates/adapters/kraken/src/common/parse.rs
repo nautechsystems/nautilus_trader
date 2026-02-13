@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,8 +19,8 @@ use std::str::FromStr;
 
 use anyhow::Context;
 use nautilus_core::{
-    datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos,
-    parsing::min_increment_precision_from_str, uuid::UUID4,
+    datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, parsing::precision_from_str,
+    uuid::UUID4,
 };
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
@@ -78,6 +78,27 @@ pub fn normalize_currency_code(code: &str) -> &str {
     code.strip_prefix("X")
         .or_else(|| code.strip_prefix("Z"))
         .unwrap_or(code)
+}
+
+/// Normalizes a Kraken spot symbol to use BTC instead of XBT.
+///
+/// Kraken's REST API returns `XBT` for Bitcoin (following ISO 4217 conventions), but their
+/// WebSocket v2 API uses the more common `BTC` format. This function normalizes symbols
+/// so that instruments and subscriptions use consistent, industry-standard symbols.
+/// Handles XBT in both base position (XBT/USD -> BTC/USD) and quote position (ETH/XBT -> ETH/BTC).
+#[inline]
+pub fn normalize_spot_symbol(symbol: &str) -> String {
+    let normalized = if symbol.starts_with("XBT/") {
+        symbol.replacen("XBT/", "BTC/", 1)
+    } else {
+        symbol.to_string()
+    };
+
+    if normalized.ends_with("/XBT") {
+        normalized.replacen("/XBT", "/BTC", 1)
+    } else {
+        normalized
+    }
 }
 
 /// Parse an optional decimal string.
@@ -152,7 +173,8 @@ pub fn parse_spot_instrument(
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let symbol_str = definition.wsname.as_ref().unwrap_or(&definition.altname);
-    let instrument_id = InstrumentId::new(Symbol::new(symbol_str.as_str()), *KRAKEN_VENUE);
+    let normalized_symbol = normalize_spot_symbol(symbol_str);
+    let instrument_id = InstrumentId::new(Symbol::new(&normalized_symbol), *KRAKEN_VENUE);
     let raw_symbol = Symbol::new(pair_name);
 
     let base_currency = get_currency(definition.base.as_str());
@@ -210,10 +232,10 @@ pub fn parse_spot_instrument(
         None,
         None,
         None,
+        None,
+        None,
         maker_fee,
         taker_fee,
-        None,
-        None,
         ts_event,
         ts_init,
     );
@@ -250,7 +272,7 @@ pub fn parse_futures_instrument(
     // Derive precision from tick_size string representation to handle non-power-of-10
     // tick sizes correctly (e.g., 0.25, 2.5)
     let tick_size = instrument.tick_size;
-    let price_precision = min_increment_precision_from_str(&tick_size.to_string());
+    let price_precision = precision_from_str(&tick_size.to_string());
     if price_precision > FIXED_PRECISION {
         anyhow::bail!(
             "Cannot parse instrument '{}': tick_size {tick_size} requires precision {price_precision} \
@@ -331,13 +353,11 @@ pub fn parse_futures_instrument(
 }
 
 fn parse_price(value: &str, field: &str) -> anyhow::Result<Price> {
-    Price::from_str(value)
-        .map_err(|err| anyhow::anyhow!("Failed to parse {field}='{value}': {err}"))
+    Price::from_str(value).map_err(|e| anyhow::anyhow!("Failed to parse {field}='{value}': {e}"))
 }
 
 fn parse_quantity(value: &str, field: &str) -> anyhow::Result<Quantity> {
-    Quantity::from_str(value)
-        .map_err(|err| anyhow::anyhow!("Failed to parse {field}='{value}': {err}"))
+    Quantity::from_str(value).map_err(|e| anyhow::anyhow!("Failed to parse {field}='{value}': {e}"))
 }
 
 /// Returns a currency from the internal map or creates a new crypto currency.
@@ -654,11 +674,7 @@ fn compute_avg_px(order: &SpotOrder) -> Option<Decimal> {
             if let Ok(v) = &vol_exec
                 && *v > dec!(0)
             {
-                tracing::warn!(
-                    "Cannot compute avg_px: cost={:?}, vol_exec={:?}",
-                    cost,
-                    vol_exec
-                );
+                log::warn!("Cannot compute avg_px: cost={cost:?}, vol_exec={vol_exec:?}");
             }
             None
         }
@@ -956,13 +972,14 @@ pub fn parse_futures_position_status_report(
     };
 
     let quantity = Quantity::new(position.size, instrument.size_precision());
+    let size_decimal = Decimal::from_str(&position.size.to_string()).unwrap_or(dec!(0));
     let signed_decimal_qty = match position_side {
-        PositionSideSpecified::Long => Decimal::from_f64_retain(position.size).unwrap_or(dec!(0)),
-        PositionSideSpecified::Short => -Decimal::from_f64_retain(position.size).unwrap_or(dec!(0)),
+        PositionSideSpecified::Long => size_decimal,
+        PositionSideSpecified::Short => -size_decimal,
         PositionSideSpecified::Flat => dec!(0),
     };
 
-    let avg_px_open = Some(Decimal::from_f64_retain(position.price).unwrap_or(dec!(0)));
+    let avg_px_open = Decimal::from_str(&position.price.to_string()).ok();
 
     Ok(PositionStatusReport {
         account_id,
@@ -1099,6 +1116,10 @@ mod tests {
                 assert!(pair.price_increment.as_f64() > 0.0);
                 assert!(pair.size_increment.as_f64() > 0.0);
                 assert!(pair.min_quantity.is_some());
+                assert_eq!(pair.maker_fee, dec!(0.0025));
+                assert_eq!(pair.taker_fee, dec!(0.004));
+                assert_eq!(pair.margin_init, dec!(0));
+                assert_eq!(pair.margin_maint, dec!(0));
             }
             _ => panic!("Expected CurrencyPair"),
         }
@@ -1496,5 +1517,19 @@ mod tests {
     #[case("SOL", "SOL")]
     fn test_normalize_currency_code(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(normalize_currency_code(input), expected);
+    }
+
+    #[rstest]
+    #[case("XBT/EUR", "BTC/EUR")]
+    #[case("XBT/USD", "BTC/USD")]
+    #[case("XBT/USDT", "BTC/USDT")]
+    #[case("ETH/USD", "ETH/USD")]
+    #[case("ETH/XBT", "ETH/BTC")]
+    #[case("SOL/XBT", "SOL/BTC")]
+    #[case("SOL/USD", "SOL/USD")]
+    #[case("BTC/USD", "BTC/USD")]
+    #[case("ETH/BTC", "ETH/BTC")]
+    fn test_normalize_spot_symbol(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(normalize_spot_symbol(input), expected);
     }
 }

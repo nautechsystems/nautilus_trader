@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,11 +18,7 @@
 use ahash::AHashMap;
 use nautilus_model::{defi::Blockchain, identifiers::InstrumentId};
 
-use crate::msgbus::{
-    core::{MStr, Topic},
-    get_message_bus,
-    switchboard::MessagingSwitchboard,
-};
+use crate::msgbus::{MStr, MessagingSwitchboard, Topic, get_message_bus};
 
 /// DeFi-specific switchboard state.
 #[derive(Clone, Debug, Default)]

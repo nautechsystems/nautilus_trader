@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -68,7 +68,7 @@ class OrderBookActor(Actor):
                 f"best_bid: {bid_prc} best_ask: {ask_prc}",
             )
             self.log.error(f"\n{self.order_book.pprint(num_levels=10)}")
-            raise
+            raise RuntimeError(f"Invalid order book state: bid {bid_prc} > ask {ask_prc}")
 
     def on_stop(self):
         pass
@@ -110,7 +110,6 @@ def run():
     """
     Download Tardis data, loads it, and runs a backtest.
     """
-    nautilus_pyo3.init_tracing()
     _guard = init_logging(level_stdout=LogLevel.INFO)
 
     api_key = os.getenv("TARDIS_API_KEY") or os.getenv("TM_API_KEY")

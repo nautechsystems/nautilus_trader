@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -41,7 +41,10 @@ pub use dydx_proto::{
     },
     dydxprotocol,
     dydxprotocol::{
-        accountplus::TxExtension,
+        accountplus::{
+            AccountAuthenticator, GetAuthenticatorsRequest, GetAuthenticatorsResponse, TxExtension,
+            query_client::QueryClient as AccountPlusClient,
+        },
         clob::{
             ClobPair, MsgBatchCancel, MsgCancelOrder, MsgPlaceOrder, Order, OrderBatch, OrderId,
             QueryAllClobPairRequest,

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -210,6 +210,25 @@ class Controller(Actor):
         """
         self._trader.stop_strategy(strategy.id)
 
+    def market_exit_strategy(self, strategy: Strategy) -> None:
+        """
+        Market exit the given `strategy`.
+
+        Will log a warning if the strategy is not ``RUNNING``.
+
+        Parameters
+        ----------
+        strategy : Strategy
+            The strategy to market exit.
+
+        Raises
+        ------
+        ValueError
+            If `strategy` is not already registered with the trader.
+
+        """
+        self._trader.market_exit_strategy(strategy.id)
+
     def remove_actor(self, actor: Actor) -> None:
         """
         Remove the given `actor`.
@@ -382,6 +401,25 @@ class Controller(Actor):
 
         """
         self._trader.stop_strategy(strategy_id)
+
+    def market_exit_strategy_from_id(self, strategy_id: StrategyId) -> None:
+        """
+        Market exit the strategy corresponding to `strategy_id`.
+
+        Will log a warning if the strategy is not ``RUNNING``.
+
+        Parameters
+        ----------
+        strategy_id : StrategyId
+            The ID of the strategy to market exit.
+
+        Raises
+        ------
+        ValueError
+            If `strategy` is not already registered with the trader.
+
+        """
+        self._trader.market_exit_strategy(strategy_id)
 
     def remove_actor_from_id(self, actor_id: ComponentId) -> None:
         """

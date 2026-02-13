@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -254,6 +254,7 @@ class OKXExecutionClient(LiveExecutionClient):
             instruments=self.okx_instrument_provider.instruments_pyo3(),
             callback=self._handle_msg,
         )
+        self._ws_client.cache_inst_id_codes(self.okx_instrument_provider.inst_id_codes())
 
         # Wait for connection to be established
         await self._ws_client.wait_until_active(timeout_secs=30.0)
@@ -449,13 +450,8 @@ class OKXExecutionClient(LiveExecutionClient):
                 self._apply_client_order_alias(report)
                 self._log.debug(f"Received {report}", LogColor.MAGENTA)
                 reports.append(report)
-        except ValueError as e:
-            if "request canceled" in str(e).lower():
-                self._log.debug("OrderStatusReports request cancelled during shutdown")
-            else:
-                self._log.exception("Failed to generate OrderStatusReports", e)
-        except Exception as e:
-            self._log.exception("Failed to generate OrderStatusReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "OrderStatusReports")
 
         self._log_report_receipt(
             len(reports),
@@ -518,13 +514,8 @@ class OKXExecutionClient(LiveExecutionClient):
                 ) or (command.venue_order_id and report.venue_order_id == command.venue_order_id):
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
                     return report
-        except ValueError as e:
-            if "request canceled" in str(e).lower():
-                self._log.debug("OrderStatusReport request cancelled during shutdown")
-            else:
-                self._log.exception("Failed to generate OrderStatusReport", e)
-        except Exception as e:
-            self._log.exception("Failed to generate OrderStatusReport", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "OrderStatusReport")
 
         if canonical_requested_id is not None:
             return await self._resolve_algo_fallback(
@@ -697,13 +688,8 @@ class OKXExecutionClient(LiveExecutionClient):
                 if canonical_id is not None:
                     report.client_order_id = canonical_id
                 reports.append(report)
-        except ValueError as e:
-            if "request canceled" in str(e).lower():
-                self._log.debug("FillReports request cancelled during shutdown")
-            else:
-                self._log.exception("Failed to generate FillReports", e)
-        except Exception as e:
-            self._log.exception("Failed to generate FillReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "FillReports")
 
         self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
 
@@ -926,13 +912,8 @@ class OKXExecutionClient(LiveExecutionClient):
                 report = PositionStatusReport.from_pyo3(pyo3_report)
                 self._log.debug(f"Received {report}", LogColor.MAGENTA)
                 reports.append(report)
-        except ValueError as e:
-            if "request canceled" in str(e).lower():
-                self._log.debug("PositionReports request cancelled during shutdown")
-            else:
-                self._log.exception("Failed to generate PositionReports", e)
-        except Exception as e:
-            self._log.exception("Failed to generate PositionReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "PositionReports")
 
         self._log_report_receipt(
             len(reports),
@@ -1139,7 +1120,7 @@ class OKXExecutionClient(LiveExecutionClient):
                 trigger_price=pyo3_trigger_price,
                 trigger_type=pyo3_trigger_type,
                 limit_price=pyo3_limit_price,
-                reduce_only=order.is_reduce_only if order.is_reduce_only else None,
+                reduce_only=order.is_reduce_only or None,
             )
 
             if response.get("s_code") and response["s_code"] != "0":
@@ -1159,9 +1140,22 @@ class OKXExecutionClient(LiveExecutionClient):
             )
 
     async def _batch_cancel_orders(self, command) -> None:
-        orders_to_cancel = []
+        regular_orders, algo_orders = self._categorize_orders_for_batch_cancel(command.cancels)
 
-        for cancel in command.cancels:
+        if regular_orders:
+            await self._batch_cancel_regular_orders(regular_orders)
+
+        if algo_orders:
+            await self._batch_cancel_algo_orders(algo_orders)
+
+        if not regular_orders and not algo_orders:
+            self._log.warning("No valid orders to cancel in batch")
+
+    def _categorize_orders_for_batch_cancel(self, cancels):
+        regular_orders = []
+        algo_orders: list[tuple[ClientOrderId, InstrumentId, str]] = []
+
+        for cancel in cancels:
             order = self._cache.order(cancel.client_order_id)
             if order is None:
                 self._log.warning(f"{cancel.client_order_id!r} not found in cache, skipping")
@@ -1173,38 +1167,55 @@ class OKXExecutionClient(LiveExecutionClient):
                 )
                 continue
 
-            pyo3_inst_id = nautilus_pyo3.InstrumentId.from_str(cancel.instrument_id.value)
+            canonical_client_order_id = (
+                self._canonical_client_order_id(cancel.client_order_id) or cancel.client_order_id
+            )
+            algo_id = self._algo_order_ids.get(canonical_client_order_id)
 
+            if algo_id:
+                algo_orders.append((canonical_client_order_id, cancel.instrument_id, algo_id))
+                continue
+
+            pyo3_inst_id = nautilus_pyo3.InstrumentId.from_str(cancel.instrument_id.value)
             resolved_client_order_id = self._exchange_client_order_id(cancel.client_order_id)
             pyo3_client_order_id = (
                 nautilus_pyo3.ClientOrderId(resolved_client_order_id.value)
                 if resolved_client_order_id is not None
                 else None
             )
-
             pyo3_venue_order_id = (
                 nautilus_pyo3.VenueOrderId(cancel.venue_order_id.value)
                 if cancel.venue_order_id
                 else None
             )
+            regular_orders.append((pyo3_inst_id, pyo3_client_order_id, pyo3_venue_order_id))
 
-            orders_to_cancel.append(
-                (
-                    pyo3_inst_id,
-                    pyo3_client_order_id,
-                    pyo3_venue_order_id,
-                ),
-            )
+        return regular_orders, algo_orders
 
-        if not orders_to_cancel:
-            self._log.warning("No valid orders to cancel in batch")
-            return
-
+    async def _batch_cancel_regular_orders(self, orders_to_cancel) -> None:
         try:
             await self._ws_client.batch_cancel_orders(orders_to_cancel)
-            self._log.info(f"Submitted batch cancel for {len(orders_to_cancel)} orders")
+            self._log.info(f"Submitted batch cancel for {len(orders_to_cancel)} regular orders")
         except Exception as e:
-            self._log.error(f"Failed to batch cancel orders: {e}")
+            self._log.error(f"Failed to batch cancel regular orders: {e}")
+
+    async def _batch_cancel_algo_orders(
+        self,
+        algo_orders: list[tuple[ClientOrderId, InstrumentId, str]],
+    ) -> None:
+        try:
+            pyo3_algo_orders = [
+                (nautilus_pyo3.InstrumentId.from_str(inst_id.value), algo_id)
+                for _, inst_id, algo_id in algo_orders
+            ]
+            await self._http_client.cancel_algo_orders(pyo3_algo_orders)
+            self._log.info(f"Submitted batch cancel for {len(algo_orders)} algo orders")
+
+            for client_order_id, _, _ in algo_orders:
+                self._algo_order_ids.pop(client_order_id, None)
+                self._algo_order_instruments.pop(client_order_id, None)
+        except Exception as e:
+            self._log.error(f"Failed to batch cancel algo orders: {e}")
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         order: Order | None = self._cache.order(command.client_order_id)

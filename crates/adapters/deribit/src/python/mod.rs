@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,18 +29,11 @@ use pyo3::prelude::*;
 /// Returns an error if any bindings fail to register with the Python module.
 #[pymodule]
 pub fn deribit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // Clients
     m.add_class::<super::http::client::DeribitHttpClient>()?;
     m.add_class::<super::websocket::client::DeribitWebSocketClient>()?;
-
-    // Enums
-    m.add_class::<crate::http::models::DeribitCurrency>()?;
-    m.add_class::<crate::http::models::DeribitInstrumentKind>()?;
-    m.add_class::<crate::http::models::DeribitOptionType>()?;
+    m.add_class::<crate::common::enums::DeribitCurrency>()?;
+    m.add_class::<crate::common::enums::DeribitProductType>()?;
     m.add_class::<crate::websocket::enums::DeribitUpdateInterval>()?;
-    m.add_class::<crate::websocket::enums::DeribitWsChannel>()?;
-
-    // URL helper functions
     m.add_function(wrap_pyfunction!(urls::py_get_deribit_http_base_url, m)?)?;
     m.add_function(wrap_pyfunction!(urls::py_get_deribit_ws_url, m)?)?;
 

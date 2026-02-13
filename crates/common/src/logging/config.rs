@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,23 +23,32 @@
 //! The `NAUTILUS_LOG` environment variable uses a semicolon-separated format:
 //!
 //! ```text
-//! stdout=Info;fileout=Debug;RiskEngine=Error;is_colored;print_config
+//! stdout=Info;fileout=Debug;RiskEngine=Error;my_crate::module=Debug;is_colored
 //! ```
 //!
 //! ## Supported Keys
 //!
-//! | Key                   | Type      | Description                                |
-//! |-----------------------|-----------|--------------------------------------------|
-//! | `stdout`              | Log level | Maximum level for stdout output.           |
-//! | `fileout`             | Log level | Maximum level for file output.             |
-//! | `is_colored`          | Boolean   | Enable ANSI colors (default: true).        |
-//! | `print_config`        | Boolean   | Print config at startup.                   |
-//! | `log_components_only` | Boolean   | Only log components with explicit filters. |
-//! | `<component>`         | Log level | Component-specific log level filter.       |
+//! | Key                   | Type      | Description                                  |
+//! |-----------------------|-----------|----------------------------------------------|
+//! | `stdout`              | Log level | Maximum level for stdout output.             |
+//! | `fileout`             | Log level | Maximum level for file output.               |
+//! | `is_colored`          | Boolean   | Enable ANSI colors (default: true).          |
+//! | `print_config`        | Boolean   | Print config to stdout at startup.           |
+//! | `log_components_only` | Boolean   | Only log components with explicit filters.   |
+//! | `use_tracing`         | Boolean   | Enable tracing subscriber for external libs. |
+//! | `<component>`         | Log level | Component-specific log level (exact match).  |
+//! | `<module::path>`      | Log level | Module-specific log level (prefix match).    |
 //!
 //! ## Log Levels
 //!
-//! `Off`, `Error`, `Warn`, `Info`, `Debug`, `Trace` (case-insensitive)
+//! All log levels are case-insensitive.
+//!
+//! - `Off`
+//! - `Error`
+//! - `Warn`
+//! - `Info`
+//! - `Debug`
+//! - `Trace`
 //!
 //! ## Boolean Values
 //!
@@ -63,14 +72,18 @@ pub struct LoggerConfig {
     pub stdout_level: LevelFilter,
     /// Maximum log level for file output (`Off` disables file logging).
     pub fileout_level: LevelFilter,
-    /// Per-component log level overrides.
+    /// Per-component log level overrides (exact match).
     pub component_level: AHashMap<Ustr, LevelFilter>,
+    /// Per-module path log level overrides (prefix match).
+    pub module_level: AHashMap<Ustr, LevelFilter>,
     /// Log only components with explicit level filters.
     pub log_components_only: bool,
     /// Use ANSI color codes in output.
     pub is_colored: bool,
-    /// Print configuration at startup.
+    /// Print configuration to stdout at startup.
     pub print_config: bool,
+    /// Initialize the tracing subscriber for external Rust crate logs.
+    pub use_tracing: bool,
 }
 
 impl Default for LoggerConfig {
@@ -80,9 +93,11 @@ impl Default for LoggerConfig {
             stdout_level: LevelFilter::Info,
             fileout_level: LevelFilter::Off,
             component_level: AHashMap::new(),
+            module_level: AHashMap::new(),
             log_components_only: false,
             is_colored: true,
             print_config: false,
+            use_tracing: false,
         }
     }
 }
@@ -90,21 +105,26 @@ impl Default for LoggerConfig {
 impl LoggerConfig {
     /// Creates a new [`LoggerConfig`] instance.
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         stdout_level: LevelFilter,
         fileout_level: LevelFilter,
         component_level: AHashMap<Ustr, LevelFilter>,
+        module_level: AHashMap<Ustr, LevelFilter>,
         log_components_only: bool,
         is_colored: bool,
         print_config: bool,
+        use_tracing: bool,
     ) -> Self {
         Self {
             stdout_level,
             fileout_level,
             component_level,
+            module_level,
             log_components_only,
             is_colored,
             print_config,
+            use_tracing,
         }
     }
 
@@ -114,7 +134,7 @@ impl LoggerConfig {
     ///
     /// Semicolon-separated key-value pairs or bare flags:
     /// ```text
-    /// stdout=Info;fileout=Debug;RiskEngine=Error;is_colored;print_config
+    /// stdout=Info;fileout=Debug;RiskEngine=Error;my_crate::module=Debug;is_colored
     /// ```
     ///
     /// # Errors
@@ -137,6 +157,7 @@ impl LoggerConfig {
                     "log_components_only" => config.log_components_only = true,
                     "is_colored" => config.is_colored = true,
                     "print_config" => config.print_config = true,
+                    "use_tracing" => config.use_tracing = true,
                     _ => anyhow::bail!("Invalid spec pair: {kv}"),
                 }
                 continue;
@@ -161,16 +182,22 @@ impl LoggerConfig {
                 "print_config" => {
                     config.print_config = parse_bool_value(v);
                 }
+                "use_tracing" => {
+                    config.use_tracing = parse_bool_value(v);
+                }
                 "stdout" => {
                     config.stdout_level = parse_level(v)?;
                 }
                 "fileout" => {
                     config.fileout_level = parse_level(v)?;
                 }
-                // Use original key case for component names
                 _ => {
                     let lvl = parse_level(v)?;
-                    config.component_level.insert(Ustr::from(k), lvl);
+                    if k.contains("::") {
+                        config.module_level.insert(Ustr::from(k), lvl);
+                    } else {
+                        config.component_level.insert(Ustr::from(k), lvl);
+                    }
                 }
             }
         }
@@ -413,5 +440,123 @@ mod tests {
     fn test_all_log_levels(#[case] level_str: &str, #[case] expected: LevelFilter) {
         let config = LoggerConfig::from_spec(&format!("stdout={level_str}")).unwrap();
         assert_eq!(config.stdout_level, expected);
+    }
+
+    #[rstest]
+    fn test_from_spec_single_module_path() {
+        let config = LoggerConfig::from_spec("nautilus_okx::websocket=Debug").unwrap();
+        assert_eq!(
+            config.module_level[&Ustr::from("nautilus_okx::websocket")],
+            LevelFilter::Debug
+        );
+        assert!(config.component_level.is_empty());
+    }
+
+    #[rstest]
+    fn test_from_spec_multiple_module_paths() {
+        let config =
+            LoggerConfig::from_spec("nautilus_okx::websocket=Debug;nautilus_binance::data=Trace")
+                .unwrap();
+        assert_eq!(
+            config.module_level[&Ustr::from("nautilus_okx::websocket")],
+            LevelFilter::Debug
+        );
+        assert_eq!(
+            config.module_level[&Ustr::from("nautilus_binance::data")],
+            LevelFilter::Trace
+        );
+        assert!(config.component_level.is_empty());
+    }
+
+    #[rstest]
+    fn test_from_spec_mixed_module_and_component() {
+        let config = LoggerConfig::from_spec(
+            "nautilus_okx::websocket=Debug;RiskEngine=Error;nautilus_network::data=Trace",
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.module_level[&Ustr::from("nautilus_okx::websocket")],
+            LevelFilter::Debug
+        );
+        assert_eq!(
+            config.module_level[&Ustr::from("nautilus_network::data")],
+            LevelFilter::Trace
+        );
+        assert_eq!(config.module_level.len(), 2);
+        assert_eq!(
+            config.component_level[&Ustr::from("RiskEngine")],
+            LevelFilter::Error
+        );
+        assert_eq!(config.component_level.len(), 1);
+    }
+
+    #[rstest]
+    fn test_from_spec_deeply_nested_module_path() {
+        let config =
+            LoggerConfig::from_spec("nautilus_okx::websocket::handler::auth=Trace").unwrap();
+        assert_eq!(
+            config.module_level[&Ustr::from("nautilus_okx::websocket::handler::auth")],
+            LevelFilter::Trace
+        );
+    }
+
+    #[rstest]
+    fn test_from_spec_module_path_with_underscores() {
+        let config =
+            LoggerConfig::from_spec("nautilus_trader::adapters::interactive_brokers=Debug")
+                .unwrap();
+        assert_eq!(
+            config.module_level[&Ustr::from("nautilus_trader::adapters::interactive_brokers")],
+            LevelFilter::Debug
+        );
+    }
+
+    #[rstest]
+    fn test_from_spec_full_example_with_modules() {
+        let config = LoggerConfig::from_spec(
+            "stdout=Info;fileout=Debug;RiskEngine=Error;nautilus_okx::websocket=Trace;is_colored",
+        )
+        .unwrap();
+
+        assert_eq!(config.stdout_level, LevelFilter::Info);
+        assert_eq!(config.fileout_level, LevelFilter::Debug);
+        assert_eq!(
+            config.component_level[&Ustr::from("RiskEngine")],
+            LevelFilter::Error
+        );
+        assert_eq!(
+            config.module_level[&Ustr::from("nautilus_okx::websocket")],
+            LevelFilter::Trace
+        );
+        assert!(config.is_colored);
+    }
+
+    #[rstest]
+    fn test_from_spec_module_path_preserves_case() {
+        let config = LoggerConfig::from_spec("MyModule::SubModule=Info").unwrap();
+        assert!(
+            config
+                .module_level
+                .contains_key(&Ustr::from("MyModule::SubModule"))
+        );
+    }
+
+    #[rstest]
+    fn test_from_spec_single_colon_is_component() {
+        // Single colon is NOT a module path separator in Rust
+        let config = LoggerConfig::from_spec("Component:Name=Info").unwrap();
+        assert!(config.module_level.is_empty());
+        assert!(
+            config
+                .component_level
+                .contains_key(&Ustr::from("Component:Name"))
+        );
+    }
+
+    #[rstest]
+    fn test_default_module_level_is_empty() {
+        let config = LoggerConfig::default();
+        assert!(config.module_level.is_empty());
     }
 }

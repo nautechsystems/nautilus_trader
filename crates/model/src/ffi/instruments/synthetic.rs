@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -84,7 +84,7 @@ pub unsafe extern "C" fn synthetic_instrument_new(
     // TODO: There is absolutely no error handling here yet
     let components = unsafe { bytes_to_string_vec(components_ptr) }
         .into_iter()
-        .map(|s| InstrumentId::from(s.as_str()))
+        .map(InstrumentId::from)
         .collect::<Vec<InstrumentId>>();
     let formula = unsafe { cstr_as_str(formula_ptr).to_string() };
     let synth = SyntheticInstrument::new(
@@ -169,7 +169,7 @@ pub unsafe extern "C" fn synthetic_instrument_is_valid_formula(
 
     let components = unsafe { bytes_to_string_vec(components_ptr) }
         .into_iter()
-        .map(|s| InstrumentId::from(s.as_str()))
+        .map(InstrumentId::from)
         .collect::<Vec<InstrumentId>>();
 
     let formula = unsafe { cstr_as_str(formula_ptr) };

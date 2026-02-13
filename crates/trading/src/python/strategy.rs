@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -79,6 +79,11 @@ impl StrategyConfig {
         external_order_claims=None,
         manage_contingent_orders=false,
         manage_gtd_expiry=false,
+        manage_stop=false,
+        market_exit_interval_ms=100,
+        market_exit_max_attempts=100,
+        market_exit_time_in_force=TimeInForce::Gtc,
+        market_exit_reduce_only=true,
         use_uuid_client_order_ids=false,
         use_hyphens_in_client_order_ids=true,
         log_events=true,
@@ -93,6 +98,11 @@ impl StrategyConfig {
         external_order_claims: Option<Vec<InstrumentId>>,
         manage_contingent_orders: bool,
         manage_gtd_expiry: bool,
+        manage_stop: bool,
+        market_exit_interval_ms: u64,
+        market_exit_max_attempts: u64,
+        market_exit_time_in_force: TimeInForce,
+        market_exit_reduce_only: bool,
         use_uuid_client_order_ids: bool,
         use_hyphens_in_client_order_ids: bool,
         log_events: bool,
@@ -102,12 +112,17 @@ impl StrategyConfig {
         Self {
             strategy_id,
             order_id_tag,
+            use_uuid_client_order_ids,
+            use_hyphens_in_client_order_ids,
             oms_type,
             external_order_claims,
             manage_contingent_orders,
             manage_gtd_expiry,
-            use_uuid_client_order_ids,
-            use_hyphens_in_client_order_ids,
+            manage_stop,
+            market_exit_interval_ms,
+            market_exit_max_attempts,
+            market_exit_time_in_force,
+            market_exit_reduce_only,
             log_events,
             log_commands,
             log_rejected_due_post_only_as_warning,
@@ -175,7 +190,7 @@ pub struct PyStrategyInner {
 
 impl Debug for PyStrategyInner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PyStrategyInner")
+        f.debug_struct(stringify!(PyStrategyInner))
             .field("core", &self.core)
             .field("py_self", &self.py_self.as_ref().map(|_| "<Py<PyAny>>"))
             .field("clock", &self.clock)
@@ -518,17 +533,21 @@ impl Deref for PyStrategyInner {
     type Target = DataActorCore;
 
     fn deref(&self) -> &Self::Target {
-        &self.core.actor
+        &self.core
     }
 }
 
 impl DerefMut for PyStrategyInner {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core.actor
+        &mut self.core
     }
 }
 
 impl Strategy for PyStrategyInner {
+    fn core(&self) -> &StrategyCore {
+        &self.core
+    }
+
     fn core_mut(&mut self) -> &mut StrategyCore {
         &mut self.core
     }
@@ -733,7 +752,7 @@ pub struct PyStrategy {
 
 impl Debug for PyStrategy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PyStrategy")
+        f.debug_struct(stringify!(PyStrategy))
             .field("inner", &self.inner())
             .finish()
     }
@@ -864,12 +883,12 @@ impl PyStrategy {
     #[pyo3(name = "clock")]
     fn py_clock(&self) -> PyResult<PyClock> {
         let inner = self.inner();
-        if !inner.core.actor.is_registered() {
+        if inner.core.actor.is_registered() {
+            Ok(inner.clock.clone())
+        } else {
             Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
                 "Strategy must be registered with a trader before accessing clock",
             ))
-        } else {
-            Ok(inner.clock.clone())
         }
     }
 
@@ -877,12 +896,12 @@ impl PyStrategy {
     #[pyo3(name = "cache")]
     fn py_cache(&self) -> PyResult<PyCache> {
         let inner = self.inner();
-        if !inner.core.actor.is_registered() {
+        if inner.core.actor.is_registered() {
+            Ok(PyCache::from_rc(inner.core.actor.cache_rc()))
+        } else {
             Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
                 "Strategy must be registered with a trader before accessing cache",
             ))
-        } else {
-            Ok(PyCache::from_rc(inner.core.actor.cache_rc()))
         }
     }
 

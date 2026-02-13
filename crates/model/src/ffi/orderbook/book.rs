@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -164,6 +164,31 @@ pub extern "C" fn orderbook_apply_deltas(book: &mut OrderBook_API, deltas: &Orde
     }
 }
 
+/// Creates an `OrderBookDeltas` snapshot from the current order book state.
+///
+/// This is the reverse operation of `orderbook_apply_deltas`: it converts the current book state
+/// back into a snapshot format with a `Clear` delta followed by `Add` deltas for all orders.
+///
+/// # Parameters
+///
+/// * `book` - The order book to convert.
+/// * `sequence` - The message sequence number for the snapshot.
+/// * `ts_event` - UNIX timestamp (nanoseconds) when the book event occurred.
+/// * `ts_init` - UNIX timestamp (nanoseconds) when the instance was created.
+///
+/// # Returns
+///
+/// An `OrderBookDeltas_API` containing a snapshot of the current order book state.
+#[unsafe(no_mangle)]
+pub extern "C" fn orderbook_to_snapshot_deltas(
+    book: &OrderBook_API,
+    ts_event: u64,
+    ts_init: u64,
+) -> OrderBookDeltas_API {
+    use nautilus_core::UnixNanos;
+    OrderBookDeltas_API::new(book.to_deltas(UnixNanos::from(ts_event), UnixNanos::from(ts_init)))
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_apply_depth(book: &mut OrderBook_API, depth: &OrderBookDepth10) {
     if let Err(e) = book.apply_depth_unchecked(depth) {
@@ -277,6 +302,17 @@ pub extern "C" fn orderbook_get_quantity_for_price(
     order_side: OrderSide,
 ) -> f64 {
     book.get_quantity_for_price(price, order_side)
+}
+
+#[unsafe(no_mangle)]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
+pub extern "C" fn orderbook_get_quantity_at_level(
+    book: &OrderBook_API,
+    price: Price,
+    order_side: OrderSide,
+    size_precision: u8,
+) -> Quantity {
+    book.get_quantity_at_level(price, order_side, size_precision)
 }
 
 /// Updates the order book with a quote tick.

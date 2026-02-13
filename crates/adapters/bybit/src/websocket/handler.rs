@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,7 +17,6 @@
 
 use std::{
     collections::VecDeque,
-    num::NonZero,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU8, Ordering},
@@ -29,8 +28,7 @@ use dashmap::DashMap;
 use nautilus_common::cache::quote::QuoteCache;
 use nautilus_core::{UUID4, nanos::UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
-    data::{BarSpecification, BarType, Data},
-    enums::{AggregationSource, BarAggregation, PriceType},
+    data::{BarType, Data},
     events::{OrderCancelRejected, OrderModifyRejected, OrderRejected},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
@@ -50,8 +48,10 @@ use super::{
         BybitWsResponse, BybitWsSubscriptionMsg, NautilusWsMessage,
     },
     parse::{
-        parse_kline_topic, parse_millis_i64, parse_orderbook_deltas, parse_orderbook_quote,
-        parse_ticker_linear_funding, parse_ws_account_state, parse_ws_fill_report,
+        parse_millis_i64, parse_orderbook_deltas, parse_orderbook_quote,
+        parse_ticker_linear_funding, parse_ticker_linear_index_price,
+        parse_ticker_linear_mark_price, parse_ticker_option_index_price,
+        parse_ticker_option_mark_price, parse_ws_account_state, parse_ws_fill_report,
         parse_ws_kline_bar, parse_ws_order_status_report, parse_ws_position_status_report,
         parse_ws_trade_tick,
     },
@@ -173,6 +173,7 @@ pub(super) struct FeedHandler {
     bars_timestamp_on_close: bool,
     quote_cache: QuoteCache,
     funding_cache: FundingCache,
+    bar_types_cache: Arc<DashMap<String, BarType>>,
     retry_manager: RetryManager<BybitWsError>,
     pending_place_requests: DashMap<String, PlaceRequestData>,
     pending_cancel_requests: DashMap<String, CancelRequestData>,
@@ -197,6 +198,7 @@ impl FeedHandler {
         auth_tracker: AuthTracker,
         subscriptions: SubscriptionState,
         funding_cache: FundingCache,
+        bar_types_cache: Arc<DashMap<String, BarType>>,
     ) -> Self {
         Self {
             signal,
@@ -213,6 +215,7 @@ impl FeedHandler {
             bars_timestamp_on_close,
             quote_cache: QuoteCache::new(),
             funding_cache,
+            bar_types_cache,
             retry_manager: create_websocket_retry_manager(),
             pending_place_requests: DashMap::new(),
             pending_cancel_requests: DashMap::new(),
@@ -324,15 +327,13 @@ impl FeedHandler {
     ) {
         if op.contains("create") {
             if let Some((_, batch_data)) = self.pending_batch_place_requests.remove(req_id) {
-                tracing::warn!(
-                    req_id = %req_id,
-                    ret_msg = %ret_msg,
-                    num_orders = batch_data.len(),
-                    "Batch place request failed"
+                log::warn!(
+                    "Batch place request failed: req_id={req_id}, ret_msg={ret_msg}, num_orders={}",
+                    batch_data.len()
                 );
 
                 let Some(account_id) = self.account_id else {
-                    tracing::error!("Cannot create OrderRejected events: account_id is None");
+                    log::error!("Cannot create OrderRejected events: account_id is None");
                     return;
                 };
 
@@ -357,11 +358,9 @@ impl FeedHandler {
         } else if op.contains("cancel")
             && let Some((_, batch_data)) = self.pending_batch_cancel_requests.remove(req_id)
         {
-            tracing::warn!(
-                req_id = %req_id,
-                ret_msg = %ret_msg,
-                num_cancels = batch_data.len(),
-                "Batch cancel request failed"
+            log::warn!(
+                "Batch cancel request failed: req_id={req_id}, ret_msg={ret_msg}, num_cancels={}",
+                batch_data.len()
             );
 
             let reason = Ustr::from(ret_msg);
@@ -393,9 +392,9 @@ impl FeedHandler {
         result: &mut Vec<NautilusWsMessage>,
     ) {
         let Some(req_id) = &resp.req_id else {
-            tracing::warn!(
-                op = %resp.op,
-                "Batch response missing req_id - cannot correlate with pending requests"
+            log::warn!(
+                "Batch response missing req_id - cannot correlate with pending requests: op={}",
+                resp.op
             );
             return;
         };
@@ -406,18 +405,16 @@ impl FeedHandler {
             if let Some((_, batch_data)) = self.pending_batch_place_requests.remove(req_id) {
                 self.process_batch_place_errors(batch_data, batch_errors, result);
             } else {
-                tracing::debug!(
-                    req_id = %req_id,
-                    "Batch place response received but no pending request found"
+                log::debug!(
+                    "Batch place response received but no pending request found: req_id={req_id}"
                 );
             }
         } else if resp.op.contains("cancel") {
             if let Some((_, batch_data)) = self.pending_batch_cancel_requests.remove(req_id) {
                 self.process_batch_cancel_errors(batch_data, batch_errors, result);
             } else {
-                tracing::debug!(
-                    req_id = %req_id,
-                    "Batch cancel response received but no pending request found"
+                log::debug!(
+                    "Batch cancel response received but no pending request found: req_id={req_id}"
                 );
             }
         }
@@ -431,7 +428,7 @@ impl FeedHandler {
         result: &mut Vec<NautilusWsMessage>,
     ) {
         let Some(account_id) = self.account_id else {
-            tracing::error!("Cannot create OrderRejected events: account_id is None");
+            log::error!("Cannot create OrderRejected events: account_id is None");
             return;
         };
 
@@ -444,11 +441,10 @@ impl FeedHandler {
             if let Some(error) = errors.get(idx)
                 && error.code != 0
             {
-                tracing::warn!(
-                    client_order_id = %client_order_id,
-                    error_code = error.code,
-                    error_msg = %error.msg,
-                    "Batch order rejected"
+                log::warn!(
+                    "Batch order rejected: client_order_id={client_order_id}, error_code={}, error_msg={}",
+                    error.code,
+                    error.msg
                 );
 
                 let rejected = OrderRejected::new(
@@ -485,11 +481,10 @@ impl FeedHandler {
             if let Some(error) = errors.get(idx)
                 && error.code != 0
             {
-                tracing::warn!(
-                    client_order_id = %client_order_id,
-                    error_code = error.code,
-                    error_msg = %error.msg,
-                    "Batch cancel rejected"
+                log::warn!(
+                    "Batch cancel rejected: client_order_id={client_order_id}, error_code={}, error_msg={}",
+                    error.code,
+                    error.msg
                 );
 
                 let rejected = OrderCancelRejected::new(
@@ -522,41 +517,41 @@ impl FeedHandler {
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
                         HandlerCommand::SetClient(client) => {
-                            tracing::debug!("WebSocketClient received by handler");
+                            log::debug!("WebSocketClient received by handler");
                             self.client = Some(client);
                         }
                         HandlerCommand::Disconnect => {
-                            tracing::debug!("Disconnect command received");
+                            log::debug!("Disconnect command received");
 
                             if let Some(client) = self.client.take() {
                                 client.disconnect().await;
                             }
                         }
                         HandlerCommand::Authenticate { payload } => {
-                            tracing::debug!("Authenticate command received");
+                            log::debug!("Authenticate command received");
                             if let Err(e) = self.send_with_retry(payload).await {
-                                tracing::error!("Failed to send authentication after retries: {e}");
+                                log::error!("Failed to send authentication after retries: {e}");
                             }
                         }
                         HandlerCommand::Subscribe { topics } => {
                             for topic in topics {
-                                tracing::debug!(topic = %topic, "Subscribing to topic");
+                                log::debug!("Subscribing to topic: topic={topic}");
                                 if let Err(e) = self.send_with_retry(topic.clone()).await {
-                                    tracing::error!(topic = %topic, error = %e, "Failed to send subscription after retries");
+                                    log::error!("Failed to send subscription after retries: topic={topic}, error={e}");
                                 }
                             }
                         }
                         HandlerCommand::Unsubscribe { topics } => {
                             for topic in topics {
-                                tracing::debug!(topic = %topic, "Unsubscribing from topic");
+                                log::debug!("Unsubscribing from topic: topic={topic}");
                                 if let Err(e) = self.send_with_retry(topic.clone()).await {
-                                    tracing::error!(topic = %topic, error = %e, "Failed to send unsubscription after retries");
+                                    log::error!("Failed to send unsubscription after retries: topic={topic}, error={e}");
                                 }
                             }
                         }
                         HandlerCommand::SendText { payload } => {
                             if let Err(e) = self.send_with_retry(payload).await {
-                                tracing::error!("Error sending text with retry: {e}");
+                                log::error!("Error sending text with retry: {e}");
                             }
                         }
                         HandlerCommand::InitializeInstruments(instruments) => {
@@ -568,18 +563,16 @@ impl FeedHandler {
                             self.instruments_cache.insert(inst.symbol().inner(), inst);
                         }
                         HandlerCommand::RegisterBatchPlace { req_id, orders } => {
-                            tracing::debug!(
-                                req_id = %req_id,
-                                num_orders = orders.len(),
-                                "Registering batch place request"
+                            log::debug!(
+                                "Registering batch place request: req_id={req_id}, num_orders={}",
+                                orders.len()
                             );
                             self.pending_batch_place_requests.insert(req_id, orders);
                         }
                         HandlerCommand::RegisterBatchCancel { req_id, cancels } => {
-                            tracing::debug!(
-                                req_id = %req_id,
-                                num_cancels = cancels.len(),
-                                "Registering batch cancel request"
+                            log::debug!(
+                                "Registering batch cancel request: req_id={req_id}, num_cancels={}",
+                                cancels.len()
                             );
                             self.pending_batch_cancel_requests.insert(req_id, cancels);
                         }
@@ -613,7 +606,7 @@ impl FeedHandler {
                             if let Ok(payload) = serde_json::to_string(&request)
                                 && let Err(e) = self.send_with_retry(payload).await
                             {
-                                tracing::error!("Failed to send place order after retries: {e}");
+                                log::error!("Failed to send place order after retries: {e}");
                                 self.pending_place_requests.remove(&request_id);
                             }
                         }
@@ -642,7 +635,7 @@ impl FeedHandler {
                             if let Ok(payload) = serde_json::to_string(&request)
                                 && let Err(e) = self.send_with_retry(payload).await
                             {
-                                tracing::error!("Failed to send amend order after retries: {e}");
+                                log::error!("Failed to send amend order after retries: {e}");
                                 self.pending_amend_requests.remove(&request_id);
                             }
                         }
@@ -671,7 +664,7 @@ impl FeedHandler {
                             if let Ok(payload) = serde_json::to_string(&request)
                                 && let Err(e) = self.send_with_retry(payload).await
                             {
-                                tracing::error!("Failed to send cancel order after retries: {e}");
+                                log::error!("Failed to send cancel order after retries: {e}");
                                 self.pending_cancel_requests.remove(&request_id);
                             }
                         }
@@ -680,9 +673,9 @@ impl FeedHandler {
                     continue;
                 }
 
-                _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
+                () = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
                     if self.signal.load(Ordering::Relaxed) {
-                        tracing::debug!("Stop signal received during idle period");
+                        log::debug!("Stop signal received during idle period");
                         return None;
                     }
                     continue;
@@ -692,18 +685,18 @@ impl FeedHandler {
                     let msg = match msg {
                         Some(msg) => msg,
                         None => {
-                            tracing::debug!("WebSocket stream closed");
+                            log::debug!("WebSocket stream closed");
                             return None;
                         }
                     };
 
                     if let Message::Ping(data) = &msg {
-                        tracing::trace!("Received ping frame with {} bytes", data.len());
+                        log::trace!("Received ping frame with {} bytes", data.len());
 
                         if let Some(client) = &self.client
                             && let Err(e) = client.send_pong(data.to_vec()).await
                         {
-                            tracing::warn!(error = %e, "Failed to send pong frame");
+                            log::warn!("Failed to send pong frame: error={e}");
                         }
                         continue;
                     }
@@ -714,7 +707,7 @@ impl FeedHandler {
                     };
 
                     if self.signal.load(Ordering::Relaxed) {
-                        tracing::debug!("Stop signal received");
+                        log::debug!("Stop signal received");
                         return None;
                     }
 
@@ -744,7 +737,7 @@ impl FeedHandler {
         match msg {
             Message::Text(text) => {
                 if text == nautilus_network::RECONNECTED {
-                    tracing::info!("Received WebSocket reconnected signal");
+                    log::info!("Received WebSocket reconnected signal");
                     return Some(BybitWsMessage::Reconnected);
                 }
 
@@ -752,12 +745,12 @@ impl FeedHandler {
                     return None;
                 }
 
-                tracing::trace!("Raw websocket message: {text}");
+                log::trace!("Raw websocket message: {text}");
 
                 let value: Value = match serde_json::from_str(&text) {
                     Ok(v) => v,
                     Err(e) => {
-                        tracing::error!("Failed to parse WebSocket message: {e}: {text}");
+                        log::error!("Failed to parse WebSocket message: {e}: {text}");
                         return None;
                     }
                 };
@@ -765,11 +758,11 @@ impl FeedHandler {
                 Some(classify_bybit_message(value))
             }
             Message::Binary(msg) => {
-                tracing::debug!("Raw binary: {msg:?}");
+                log::debug!("Raw binary: {msg:?}");
                 None
             }
             Message::Close(_) => {
-                tracing::debug!("Received close message, waiting for reconnection");
+                log::debug!("Received close message, waiting for reconnection");
                 None
             }
             _ => None,
@@ -797,7 +790,7 @@ impl FeedHandler {
                 if let Some(instrument) = instruments.get(&symbol) {
                     match parse_orderbook_deltas(&msg, instrument, ts_init) {
                         Ok(deltas) => result.push(NautilusWsMessage::Deltas(deltas)),
-                        Err(e) => tracing::error!("Error parsing orderbook deltas: {e}"),
+                        Err(e) => log::error!("Error parsing orderbook deltas: {e}"),
                     }
 
                     // For depth=1 subscriptions, also emit QuoteTick from top-of-book
@@ -812,11 +805,13 @@ impl FeedHandler {
                                 self.quote_cache.insert(instrument_id, quote);
                                 result.push(NautilusWsMessage::Data(vec![Data::Quote(quote)]));
                             }
-                            Err(e) => tracing::debug!("Skipping orderbook quote: {e}"),
+                            Err(e) => log::debug!("Skipping orderbook quote: {e}"),
                         }
                     }
                 } else {
-                    tracing::debug!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol in Orderbook message");
+                    log::debug!(
+                        "No instrument found for symbol in Orderbook message: raw_symbol={raw_symbol}, full_symbol={symbol}"
+                    );
                 }
             }
             BybitWsMessage::Trade(msg) => {
@@ -829,10 +824,12 @@ impl FeedHandler {
                     if let Some(instrument) = instruments.get(&symbol) {
                         match parse_ws_trade_tick(trade, instrument, ts_init) {
                             Ok(tick) => data_vec.push(Data::Trade(tick)),
-                            Err(e) => tracing::error!("Error parsing trade tick: {e}"),
+                            Err(e) => log::error!("Error parsing trade tick: {e}"),
                         }
                     } else {
-                        tracing::debug!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol in Trade message");
+                        log::debug!(
+                            "No instrument found for symbol in Trade message: raw_symbol={raw_symbol}, full_symbol={symbol}"
+                        );
                     }
                 }
 
@@ -841,60 +838,45 @@ impl FeedHandler {
                 }
             }
             BybitWsMessage::Kline(msg) => {
-                let (interval_str, raw_symbol) = match parse_kline_topic(&msg.topic) {
-                    Ok(parts) => parts,
-                    Err(e) => {
-                        tracing::warn!("Failed to parse kline topic: {e}");
+                let bar_type = match self.bar_types_cache.get(msg.topic.as_str()) {
+                    Some(bt) => *bt,
+                    None => {
+                        log::debug!("No bar type subscription found for topic: {}", msg.topic);
                         return result;
                     }
                 };
 
-                let symbol = product_type
-                    .map_or_else(|| raw_symbol.into(), |pt| make_bybit_symbol(raw_symbol, pt));
-
-                if let Some(instrument) = instruments.get(&symbol) {
-                    let (step, aggregation) = match interval_str.parse::<usize>() {
-                        Ok(minutes) if minutes > 0 => (minutes, BarAggregation::Minute),
-                        _ => {
-                            tracing::warn!("Unsupported kline interval: {}", interval_str);
-                            return result;
-                        }
-                    };
-
-                    if let Some(non_zero_step) = NonZero::new(step) {
-                        let bar_spec = BarSpecification {
-                            step: non_zero_step,
-                            aggregation,
-                            price_type: PriceType::Last,
-                        };
-                        let bar_type =
-                            BarType::new(instrument.id(), bar_spec, AggregationSource::External);
-
-                        let mut data_vec = Vec::new();
-                        for kline in &msg.data {
-                            // Only process confirmed bars (not partial/building bars)
-                            if !kline.confirm {
-                                continue;
-                            }
-                            match parse_ws_kline_bar(
-                                kline,
-                                instrument,
-                                bar_type,
-                                self.bars_timestamp_on_close,
-                                ts_init,
-                            ) {
-                                Ok(bar) => data_vec.push(Data::Bar(bar)),
-                                Err(e) => tracing::error!("Error parsing kline to bar: {e}"),
-                            }
-                        }
-                        if !data_vec.is_empty() {
-                            result.push(NautilusWsMessage::Data(data_vec));
-                        }
-                    } else {
-                        tracing::error!("Invalid step value: {}", step);
+                let symbol = Ustr::from(bar_type.instrument_id().symbol.as_str());
+                let instrument = match instruments.get(&symbol) {
+                    Some(inst) => inst,
+                    None => {
+                        log::debug!(
+                            "No instrument found for bar type: {}",
+                            bar_type.instrument_id()
+                        );
+                        return result;
                     }
-                } else {
-                    tracing::debug!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol in Kline message");
+                };
+
+                let mut data_vec = Vec::new();
+                for kline in &msg.data {
+                    // Only process confirmed bars (not partial/building bars)
+                    if !kline.confirm {
+                        continue;
+                    }
+                    match parse_ws_kline_bar(
+                        kline,
+                        instrument,
+                        bar_type,
+                        self.bars_timestamp_on_close,
+                        ts_init,
+                    ) {
+                        Ok(bar) => data_vec.push(Data::Bar(bar)),
+                        Err(e) => log::error!("Error parsing kline to bar: {e}"),
+                    }
+                }
+                if !data_vec.is_empty() {
+                    result.push(NautilusWsMessage::Data(data_vec));
                 }
             }
             BybitWsMessage::TickerLinear(msg) => {
@@ -951,7 +933,7 @@ impl FeedHandler {
                                 Err(e) => {
                                     let raw_data = serde_json::to_string(&msg.data)
                                         .unwrap_or_else(|_| "<failed to serialize>".to_string());
-                                    tracing::debug!(
+                                    log::debug!(
                                         "Skipping partial ticker update: {e}, raw_data: {raw_data}"
                                     );
                                 }
@@ -960,13 +942,12 @@ impl FeedHandler {
                         _ => {
                             let raw_data = serde_json::to_string(&msg.data)
                                 .unwrap_or_else(|_| "<failed to serialize>".to_string());
-                            tracing::warn!(
+                            log::warn!(
                                 "Failed to parse ticker fields, skipping update, raw_data: {raw_data}"
                             );
                         }
                     }
 
-                    // Extract funding rate if available
                     if msg.data.funding_rate.is_some() && msg.data.next_funding_time.is_some() {
                         let should_publish = {
                             let cache = funding_cache.read().await;
@@ -996,13 +977,41 @@ impl FeedHandler {
                                     result.push(NautilusWsMessage::FundingRates(vec![funding]));
                                 }
                                 Err(e) => {
-                                    tracing::debug!("Skipping funding rate update: {e}");
+                                    log::debug!("Skipping funding rate update: {e}");
                                 }
                             }
                         }
                     }
+
+                    if msg.data.mark_price.is_some() {
+                        match parse_ticker_linear_mark_price(
+                            &msg.data, instrument, ts_event, ts_init,
+                        ) {
+                            Ok(mark_price) => {
+                                result.push(NautilusWsMessage::MarkPrices(vec![mark_price]));
+                            }
+                            Err(e) => {
+                                log::debug!("Skipping mark price update: {e}");
+                            }
+                        }
+                    }
+
+                    if msg.data.index_price.is_some() {
+                        match parse_ticker_linear_index_price(
+                            &msg.data, instrument, ts_event, ts_init,
+                        ) {
+                            Ok(index_price) => {
+                                result.push(NautilusWsMessage::IndexPrices(vec![index_price]));
+                            }
+                            Err(e) => {
+                                log::debug!("Skipping index price update: {e}");
+                            }
+                        }
+                    }
                 } else {
-                    tracing::debug!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol in TickerLinear message");
+                    log::debug!(
+                        "No instrument found for symbol in TickerLinear message: raw_symbol={raw_symbol}, full_symbol={symbol}"
+                    );
                 }
             }
             BybitWsMessage::TickerOption(msg) => {
@@ -1057,7 +1066,7 @@ impl FeedHandler {
                                 Err(e) => {
                                     let raw_data = serde_json::to_string(&msg.data)
                                         .unwrap_or_else(|_| "<failed to serialize>".to_string());
-                                    tracing::debug!(
+                                    log::debug!(
                                         "Skipping partial ticker update: {e}, raw_data: {raw_data}"
                                     );
                                 }
@@ -1066,13 +1075,33 @@ impl FeedHandler {
                         _ => {
                             let raw_data = serde_json::to_string(&msg.data)
                                 .unwrap_or_else(|_| "<failed to serialize>".to_string());
-                            tracing::warn!(
+                            log::warn!(
                                 "Failed to parse ticker fields, skipping update, raw_data: {raw_data}"
                             );
                         }
                     }
+
+                    match parse_ticker_option_mark_price(&msg, instrument, ts_init) {
+                        Ok(mark_price) => {
+                            result.push(NautilusWsMessage::MarkPrices(vec![mark_price]));
+                        }
+                        Err(e) => {
+                            log::debug!("Skipping option mark price update: {e}");
+                        }
+                    }
+
+                    match parse_ticker_option_index_price(&msg, instrument, ts_init) {
+                        Ok(index_price) => {
+                            result.push(NautilusWsMessage::IndexPrices(vec![index_price]));
+                        }
+                        Err(e) => {
+                            log::debug!("Skipping option index price update: {e}");
+                        }
+                    }
                 } else {
-                    tracing::debug!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol in TickerOption message");
+                    log::debug!(
+                        "No instrument found for symbol in TickerOption message: raw_symbol={raw_symbol}, full_symbol={symbol}"
+                    );
                 }
             }
             BybitWsMessage::AccountOrder(msg) => {
@@ -1087,10 +1116,12 @@ impl FeedHandler {
                                 order, instrument, account_id, ts_init,
                             ) {
                                 Ok(report) => reports.push(report),
-                                Err(e) => tracing::error!("Error parsing order status report: {e}"),
+                                Err(e) => log::error!("Error parsing order status report: {e}"),
                             }
                         } else {
-                            tracing::debug!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol in AccountOrder message");
+                            log::debug!(
+                                "No instrument found for symbol in AccountOrder message: raw_symbol={raw_symbol}, full_symbol={symbol}"
+                            );
                         }
                     }
                     if !reports.is_empty() {
@@ -1108,10 +1139,12 @@ impl FeedHandler {
                         if let Some(instrument) = instruments.get(&symbol) {
                             match parse_ws_fill_report(execution, account_id, instrument, ts_init) {
                                 Ok(report) => reports.push(report),
-                                Err(e) => tracing::error!("Error parsing fill report: {e}"),
+                                Err(e) => log::error!("Error parsing fill report: {e}"),
                             }
                         } else {
-                            tracing::debug!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol in AccountExecution message");
+                            log::debug!(
+                                "No instrument found for symbol in AccountExecution message: raw_symbol={raw_symbol}, full_symbol={symbol}"
+                            );
                         }
                     }
                     if !reports.is_empty() {
@@ -1133,11 +1166,13 @@ impl FeedHandler {
                                     result.push(NautilusWsMessage::PositionStatusReport(report));
                                 }
                                 Err(e) => {
-                                    tracing::error!("Error parsing position status report: {e}");
+                                    log::error!("Error parsing position status report: {e}");
                                 }
                             }
                         } else {
-                            tracing::debug!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol in AccountPosition message");
+                            log::debug!(
+                                "No instrument found for symbol in AccountPosition message: raw_symbol={raw_symbol}, full_symbol={symbol}"
+                            );
                         }
                     }
                 }
@@ -1149,14 +1184,18 @@ impl FeedHandler {
 
                         match parse_ws_account_state(wallet, account_id, ts_event, ts_init) {
                             Ok(state) => result.push(NautilusWsMessage::AccountState(state)),
-                            Err(e) => tracing::error!("Error parsing account state: {e}"),
+                            Err(e) => log::error!("Error parsing account state: {e}"),
                         }
                     }
                 }
             }
             BybitWsMessage::OrderResponse(resp) => {
                 if resp.ret_code == 0 {
-                    tracing::debug!(op = %resp.op, ret_msg = %resp.ret_msg, "Order operation successful");
+                    log::debug!(
+                        "Order operation successful: op={}, ret_msg={}",
+                        resp.op,
+                        resp.ret_msg
+                    );
 
                     if resp.op.contains("batch") {
                         self.handle_batch_response(&resp, &mut result);
@@ -1200,10 +1239,9 @@ impl FeedHandler {
                             self.pending_place_requests.remove(req_id)
                     {
                         let Some(account_id) = self.account_id else {
-                            tracing::error!(
-                                request_id = %req_id,
-                                reason = %resp.ret_msg,
-                                "Cannot create OrderRejected event: account_id is None"
+                            log::error!(
+                                "Cannot create OrderRejected event: account_id is None: request_id={req_id}, reason={}",
+                                resp.ret_msg
                             );
                             return result;
                         };
@@ -1288,10 +1326,9 @@ impl FeedHandler {
                             self.find_and_remove_place_request_by_client_order_id(&client_order_id)
                         {
                             let Some(account_id) = self.account_id else {
-                                tracing::error!(
-                                    client_order_id = %client_order_id,
-                                    reason = %resp.ret_msg,
-                                    "Cannot create OrderRejected event: account_id is None"
+                                log::error!(
+                                    "Cannot create OrderRejected event: account_id is None: client_order_id={client_order_id}, reason={}",
+                                    resp.ret_msg
                                 );
                                 return result;
                             };
@@ -1353,11 +1390,11 @@ impl FeedHandler {
                         result.push(NautilusWsMessage::OrderModifyRejected(rejected));
                     }
                 } else {
-                    tracing::warn!(
-                        op = %resp.op,
-                        ret_code = resp.ret_code,
-                        ret_msg = %resp.ret_msg,
-                        "Order operation failed but request_id could not be extracted from response"
+                    log::warn!(
+                        "Order operation failed but request_id could not be extracted from response: op={}, ret_code={}, ret_msg={}",
+                        resp.op,
+                        resp.ret_code,
+                        resp.ret_msg
                     );
                 }
             }
@@ -1367,7 +1404,7 @@ impl FeedHandler {
 
                 if is_success {
                     self.auth_tracker.succeed();
-                    tracing::info!("WebSocket authenticated");
+                    log::info!("WebSocket authenticated");
                     result.push(NautilusWsMessage::Authenticated);
                 } else {
                     let error_msg = auth_response
@@ -1375,7 +1412,7 @@ impl FeedHandler {
                         .as_deref()
                         .unwrap_or("Authentication rejected");
                     self.auth_tracker.fail(error_msg);
-                    tracing::error!(error = error_msg, "WebSocket authentication failed");
+                    log::error!("WebSocket authentication failed: error={error_msg}");
                     result.push(NautilusWsMessage::Error(BybitWebSocketError::from_message(
                         error_msg.to_string(),
                     )));
@@ -1395,15 +1432,14 @@ impl FeedHandler {
                         if sub_msg.success {
                             for topic in pending_topics {
                                 self.subscriptions.confirm_subscribe(&topic);
-                                tracing::debug!(topic = topic, "Subscription confirmed");
+                                log::debug!("Subscription confirmed: topic={topic}");
                             }
                         } else {
                             for topic in pending_topics {
                                 self.subscriptions.mark_failure(&topic);
-                                tracing::warn!(
-                                    topic = topic,
-                                    error = ?sub_msg.ret_msg,
-                                    "Subscription failed, will retry on reconnect"
+                                log::warn!(
+                                    "Subscription failed, will retry on reconnect: topic={topic}, error={:?}",
+                                    sub_msg.ret_msg
                                 );
                             }
                         }
@@ -1413,14 +1449,13 @@ impl FeedHandler {
                         if sub_msg.success {
                             for topic in pending_unsub {
                                 self.subscriptions.confirm_unsubscribe(&topic);
-                                tracing::debug!(topic = topic, "Unsubscription confirmed");
+                                log::debug!("Unsubscription confirmed: topic={topic}");
                             }
                         } else {
                             for topic in pending_unsub {
-                                tracing::warn!(
-                                    topic = topic,
-                                    error = ?sub_msg.ret_msg,
-                                    "Unsubscription failed"
+                                log::warn!(
+                                    "Unsubscription failed: topic={topic}, error={:?}",
+                                    sub_msg.ret_msg
                                 );
                             }
                         }
@@ -1563,6 +1598,7 @@ mod tests {
         let auth_tracker = AuthTracker::new();
         let subscriptions = SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER);
         let funding_cache = Arc::new(tokio::sync::RwLock::new(AHashMap::new()));
+        let bar_types_cache = Arc::new(DashMap::new());
 
         FeedHandler::new(
             signal,
@@ -1576,6 +1612,7 @@ mod tests {
             auth_tracker,
             subscriptions,
             funding_cache,
+            bar_types_cache,
         )
     }
 

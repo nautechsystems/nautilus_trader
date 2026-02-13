@@ -62,8 +62,6 @@ nautilus-serialization = { workspace = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 arrow = { workspace = true }
-binary-heap-plus = { workspace = true }
-compare = { workspace = true }
 datafusion = { workspace = true }
 futures = { workspace = true }
 heck = { workspace = true }
@@ -98,8 +96,10 @@ harness = false
 name = "to_json"
 path = "bin/to_json.rs"
 required-features = ["python"]
+doc = false
 
 [[bin]]
 name = "to_parquet"
 path = "bin/to_parquet.rs"
 required-features = ["python"]
+doc = false

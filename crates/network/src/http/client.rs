@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -161,7 +161,7 @@ impl HttpClient {
     ) -> Result<HttpResponse, HttpClientError> {
         let keys = keys.map(into_ustr_vec);
         let rate_limiter = self.rate_limiter.clone();
-        rate_limiter.await_keys_ready(keys).await;
+        rate_limiter.await_keys_ready(keys.as_deref()).await;
 
         self.client
             .send_request_with_query(method, url, params, headers, body, timeout_secs)
@@ -185,7 +185,7 @@ impl HttpClient {
         keys: Option<Vec<Ustr>>,
     ) -> Result<HttpResponse, HttpClientError> {
         let rate_limiter = self.rate_limiter.clone();
-        rate_limiter.await_keys_ready(keys).await;
+        rate_limiter.await_keys_ready(keys.as_deref()).await;
 
         self.client
             .send_request(method, url, params, headers, body, timeout_secs)
@@ -362,7 +362,7 @@ impl InnerHttpClient {
                     .parse()
                     .map_err(|e| HttpClientError::from(format!("Invalid header value: {e}")))?,
             ) {
-                tracing::trace!("Replaced header '{key}': old={old_value:?}, new={header_value}");
+                log::trace!("Replaced header '{key}': old={old_value:?}, new={header_value}");
             }
         }
 
@@ -384,7 +384,7 @@ impl InnerHttpClient {
             None => request_builder.build().map_err(HttpClientError::from)?,
         };
 
-        tracing::trace!("{request:?}");
+        log::trace!("{} {}", request.method(), request.url());
 
         let response = self
             .client
@@ -401,7 +401,7 @@ impl InnerHttpClient {
     ///
     /// Returns an error if unable to send request or times out.
     pub async fn to_response(&self, response: Response) -> Result<HttpResponse, HttpClientError> {
-        tracing::trace!("{response:?}");
+        log::trace!("{response:?}");
 
         let headers: HashMap<String, String> = self
             .header_keys
@@ -469,7 +469,7 @@ fn encode_url_params(
 #[cfg(test)]
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
-    use std::net::{SocketAddr, TcpListener};
+    use std::net::SocketAddr;
 
     use axum::{
         Router,
@@ -480,18 +480,6 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-
-    fn get_unique_port() -> u16 {
-        // Create a temporary TcpListener to get an available port
-        let listener =
-            TcpListener::bind("127.0.0.1:0").expect("Failed to bind temporary TcpListener");
-        let port = listener.local_addr().unwrap().port();
-
-        // Close the listener to free up the port
-        drop(listener);
-
-        port
-    }
 
     fn create_router() -> Router {
         Router::new()
@@ -510,10 +498,7 @@ mod tests {
     }
 
     async fn start_test_server() -> Result<SocketAddr, Box<dyn std::error::Error + Send + Sync>> {
-        let port = get_unique_port();
-        let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}"))
-            .await
-            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
 
         tokio::spawn(async move {

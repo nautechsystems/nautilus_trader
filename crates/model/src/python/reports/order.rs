@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -388,6 +388,19 @@ impl OrderStatusReport {
     #[pyo3(name = "ts_triggered")]
     fn py_ts_triggered(&self) -> Option<u64> {
         self.ts_triggered.map(|t| t.as_u64())
+    }
+
+    #[getter]
+    #[pyo3(name = "is_open")]
+    fn py_is_open(&self) -> bool {
+        matches!(
+            self.order_status,
+            OrderStatus::Accepted
+                | OrderStatus::Triggered
+                | OrderStatus::PendingCancel
+                | OrderStatus::PendingUpdate
+                | OrderStatus::PartiallyFilled
+        )
     }
 
     /// Creates an `OrderStatusReport` from a Python dictionary.

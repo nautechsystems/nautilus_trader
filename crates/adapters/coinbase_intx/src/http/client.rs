@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -246,25 +246,25 @@ impl CoinbaseIntxHttpInnerClient {
             None
         };
 
-        tracing::trace!("Request: {url:?} {body:?}");
+        log::trace!("Request: {url:?} {body:?}");
 
         let resp = self
             .client
             .request(method.clone(), url, None, headers, body, None, None)
             .await?;
 
-        tracing::trace!("Response: {resp:?}");
+        log::trace!("Response: {resp:?}");
 
         if resp.status.is_success() {
             let coinbase_response: T = serde_json::from_slice(&resp.body).map_err(|e| {
-                tracing::error!("Failed to deserialize CoinbaseResponse: {e}");
+                log::error!("Failed to deserialize CoinbaseResponse: {e}");
                 CoinbaseIntxHttpError::JsonError(e.to_string())
             })?;
 
             Ok(coinbase_response)
         } else {
             let error_body = String::from_utf8_lossy(&resp.body);
-            tracing::error!(
+            log::error!(
                 "HTTP error {} with body: {error_body}",
                 resp.status.as_str()
             );
@@ -1095,7 +1095,7 @@ impl CoinbaseIntxHttpClient {
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
 
         let resp = self.inner.http_create_order(params).await?;
-        tracing::debug!("Submitted order: {resp:?}");
+        log::debug!("Submitted order: {resp:?}");
 
         let instrument = self.get_instrument_from_cache(resp.symbol)?;
         let ts_init = get_atomic_clock_realtime().get_time_ns();
@@ -1125,7 +1125,7 @@ impl CoinbaseIntxHttpClient {
             .inner
             .http_cancel_order(client_order_id.as_str(), portfolio_id)
             .await?;
-        tracing::debug!("Canceled order: {resp:?}");
+        log::debug!("Canceled order: {resp:?}");
 
         let instrument = self.get_instrument_from_cache(resp.symbol)?;
         let ts_init = get_atomic_clock_realtime().get_time_ns();
@@ -1167,7 +1167,7 @@ impl CoinbaseIntxHttpClient {
 
         let mut reports: Vec<OrderStatusReport> = Vec::with_capacity(resp.len());
         for order in resp {
-            tracing::debug!("Canceled order: {order:?}");
+            log::debug!("Canceled order: {order:?}");
             let report = parse_order_status_report(
                 order,
                 account_id,
@@ -1214,7 +1214,7 @@ impl CoinbaseIntxHttpClient {
             .inner
             .http_modify_order(client_order_id.as_str(), params)
             .await?;
-        tracing::debug!("Modified order {}", resp.client_order_id);
+        log::debug!("Modified order {}", resp.client_order_id);
 
         let instrument = self.get_instrument_from_cache(resp.symbol)?;
         let ts_init = get_atomic_clock_realtime().get_time_ns();

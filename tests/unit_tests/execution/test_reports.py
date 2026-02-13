@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -89,7 +89,9 @@ class TestExecutionReports:
 
         # Assert
         # When trailing_offset_type is None in Python, it converts to NO_TRAILING_OFFSET in Rust
-        assert pyo3_report.trailing_offset_type == nautilus_pyo3.TrailingOffsetType.NO_TRAILING_OFFSET
+        assert (
+            pyo3_report.trailing_offset_type == nautilus_pyo3.TrailingOffsetType.NO_TRAILING_OFFSET
+        )
         assert pyo3_report.account_id.value == "SIM-001"
         assert pyo3_report.venue_order_id.value == "TEST-001"
         assert pyo3_report.order_side == nautilus_pyo3.OrderSide.BUY
@@ -173,9 +175,11 @@ class TestExecutionReports:
         assert len(pyo3_mass_status.order_reports) == 1
         pyo3_order_report = next(iter(pyo3_mass_status.order_reports.values()))
         # When trailing_offset_type is None in Python, it converts to NO_TRAILING_OFFSET in Rust
-        assert pyo3_order_report.trailing_offset_type == nautilus_pyo3.TrailingOffsetType.NO_TRAILING_OFFSET
+        assert (
+            pyo3_order_report.trailing_offset_type
+            == nautilus_pyo3.TrailingOffsetType.NO_TRAILING_OFFSET
+        )
         assert pyo3_order_report.avg_px == Decimal("0.90050")
-
 
     def test_instantiate_order_status_report(self):
         # Arrange, Act
@@ -381,6 +385,40 @@ class TestExecutionReports:
             repr(report)
             == f"ExecutionMassStatus(client_id=IB, account_id=IB-U123456789, venue=IDEALPRO, order_reports={{}}, fill_reports={{}}, position_reports={{}}, report_id={report_id}, ts_init=0)"
         )
+
+    def test_instantiate_execution_mass_status_with_venue_none(self):
+        """
+        Test ExecutionMassStatus with venue=None for multi-venue brokers like IB.
+        """
+        # Arrange
+        client_id = ClientId("IB")
+        account_id = AccountId("IB-U123456789")  # Account ID contains venue prefix "IB"
+
+        # Act
+        report_id = UUID4()
+        report = ExecutionMassStatus(
+            client_id=client_id,
+            account_id=account_id,
+            venue=None,  # Multi-venue broker, venue derived from account_id
+            report_id=report_id,
+            ts_init=0,
+        )
+
+        # Assert
+        assert report.client_id == client_id
+        assert report.account_id == account_id
+        assert report.venue is None
+        assert report.ts_init == 0
+        assert report.order_reports == {}
+        assert report.position_reports == {}
+
+        # Test that venue is derived from account_id in to_dict()
+        report_dict = report.to_dict()
+        assert report_dict["venue"] == "IB"  # Derived from account_id.get_issuer()
+
+        # Test that venue is derived from account_id in to_pyo3()
+        pyo3_report = report.to_pyo3()
+        assert pyo3_report.venue.value == "IB"  # Derived from account_id.get_issuer()
 
     def test_add_order_status_reports(self):
         # Arrange

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -54,16 +54,15 @@ def test_initialize_limit_order():
     assert order.is_primary
     assert not order.is_spawned
     assert (
-        str(order)
-        == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, "
-         "client_order_id=O-20210410-022422-001-001-1, venue_order_id=None, position_id=None, "
-         "exec_algorithm_id=TWAP, exec_spawn_id=O-20210410-022422-001-001-1, tags=None)"
+        str(order) == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, "
+        "client_order_id=O-20210410-022422-001-001-1, venue_order_id=None, position_id=None, "
+        "exec_algorithm_id=TWAP, exec_spawn_id=O-20210410-022422-001-001-1, tags=None)"
     )
     assert (
         repr(order)
         == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, "
-         "client_order_id=O-20210410-022422-001-001-1, venue_order_id=None, position_id=None, "
-         "exec_algorithm_id=TWAP, exec_spawn_id=O-20210410-022422-001-001-1, tags=None)"
+        "client_order_id=O-20210410-022422-001-001-1, venue_order_id=None, position_id=None, "
+        "exec_algorithm_id=TWAP, exec_spawn_id=O-20210410-022422-001-001-1, tags=None)"
     )
 
 

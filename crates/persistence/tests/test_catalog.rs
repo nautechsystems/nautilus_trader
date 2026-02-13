@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -1263,10 +1263,6 @@ fn test_generic_consolidate_data_by_period_with_time_range() {
     assert!(!intervals.is_empty());
 }
 
-// ================================================================================================
-// Integration tests for consolidation workflow
-// ================================================================================================
-
 #[rstest]
 fn test_consolidation_workflow_end_to_end() {
     let (_temp_dir, catalog) = create_temp_catalog();
@@ -1635,10 +1631,6 @@ fn test_reconstruct_full_uri_moved() {
     let expected = format!("{}/data/quotes/file.parquet", tmp.path().display());
     assert_eq!(reconstructed, expected);
 }
-
-// ================================================================================================
-// Delete functionality tests
-// ================================================================================================
 
 #[rstest]
 fn test_delete_data_range_complete_file_deletion() {
@@ -2494,4 +2486,77 @@ fn test_query_typed_data_repeated_calls() {
     assert_eq!(result1[1].ts_init, result2[1].ts_init);
     assert_eq!(result2[0].ts_init, result3[0].ts_init);
     assert_eq!(result2[1].ts_init, result3[1].ts_init);
+}
+
+#[rstest]
+fn test_write_skips_if_file_exists() {
+    let (_temp_dir, catalog) = create_temp_catalog();
+
+    // Write initial data
+    let bars1 = vec![create_bar(1), create_bar(2)];
+    let path1 = catalog.write_to_parquet(bars1, None, None, None).unwrap();
+
+    // Attempt to write same interval again (same timestamps)
+    let bars2 = vec![create_bar(1), create_bar(2)];
+    let path2 = catalog.write_to_parquet(bars2, None, None, None).unwrap();
+
+    // Should return the same path (file exists, write skipped)
+    assert_eq!(path1, path2);
+
+    // Verify only one file exists
+    let intervals = catalog
+        .get_intervals("bars", Some("AUD/USD.SIM".to_string()))
+        .unwrap();
+    assert_eq!(intervals, vec![(1, 2)]);
+}
+
+#[rstest]
+fn test_write_errors_on_overlapping_intervals() {
+    let (_temp_dir, catalog) = create_temp_catalog();
+
+    // Write initial data with interval (1, 5)
+    let bars1 = vec![create_bar(1), create_bar(5)];
+    catalog.write_to_parquet(bars1, None, None, None).unwrap();
+
+    // Attempt to write overlapping interval (3, 7) - should fail
+    let bars2 = vec![create_bar(3), create_bar(7)];
+    let result = catalog.write_to_parquet(bars2, None, None, None);
+
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("non-disjoint intervals"));
+}
+
+#[rstest]
+fn test_write_succeeds_with_disjoint_intervals() {
+    let (_temp_dir, catalog) = create_temp_catalog();
+
+    // Write first interval (1, 2)
+    let bars1 = vec![create_bar(1), create_bar(2)];
+    catalog.write_to_parquet(bars1, None, None, None).unwrap();
+
+    // Write non-overlapping interval (5, 6) - should succeed
+    let bars2 = vec![create_bar(5), create_bar(6)];
+    catalog.write_to_parquet(bars2, None, None, None).unwrap();
+
+    let intervals = catalog
+        .get_intervals("bars", Some("AUD/USD.SIM".to_string()))
+        .unwrap();
+    assert_eq!(intervals, vec![(1, 2), (5, 6)]);
+}
+
+#[rstest]
+fn test_write_with_skip_disjoint_check() {
+    let (_temp_dir, catalog) = create_temp_catalog();
+
+    // Write initial data with interval (1, 5)
+    let bars1 = vec![create_bar(1), create_bar(5)];
+    catalog.write_to_parquet(bars1, None, None, None).unwrap();
+
+    // Write overlapping interval with skip_disjoint_check=true - should succeed
+    let bars2 = vec![create_bar(3), create_bar(7)];
+    let result = catalog.write_to_parquet(bars2, None, None, Some(true));
+
+    // Should succeed because we skipped the check
+    assert!(result.is_ok());
 }

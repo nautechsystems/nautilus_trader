@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -484,7 +484,7 @@ class DYDXDataClient(LiveMarketDataClient):
                     order=BookOrder(
                         side=OrderSide.BUY,
                         price=bid_price,
-                        size=Quantity(bid_size - ask_size, instrument.size_precision),
+                        size=bid_size - ask_size,
                         order_id=0,
                     ),
                     flags=0,
@@ -517,7 +517,7 @@ class DYDXDataClient(LiveMarketDataClient):
                     order=BookOrder(
                         side=OrderSide.SELL,
                         price=ask_price,
-                        size=Quantity(ask_size - bid_size, instrument.size_precision),
+                        size=ask_size - bid_size,
                         order_id=0,
                     ),
                     flags=0,

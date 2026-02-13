@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -109,10 +109,6 @@ where
     }
 }
 
-// ================================================================================================
-// Base Types
-// ================================================================================================
-
 impl<'a> ToCapnp<'a> for nautilus_core::UUID4 {
     type Builder = base_capnp::u_u_i_d4::Builder<'a>;
 
@@ -184,10 +180,6 @@ impl<'a> FromCapnp<'a> for Decimal {
         Ok(decimal_from_parts(lo, mid, hi, flags))
     }
 }
-
-// ================================================================================================
-// Identifiers
-// ================================================================================================
 
 impl<'a> ToCapnp<'a> for TraderId {
     type Builder = identifiers_capnp::trader_id::Builder<'a>;
@@ -449,29 +441,15 @@ impl<'a> FromCapnp<'a> for InstrumentId {
 impl<'a> ToCapnp<'a> for Price {
     type Builder = types_capnp::price::Builder<'a>;
 
+    #[allow(clippy::useless_conversion)] // Needed for non-high-precision builds
     fn to_capnp(&self, mut builder: Self::Builder) {
-        let raw = self.raw;
+        let raw_i128: i128 = self.raw.into();
+        let lo = raw_i128 as u64;
+        let hi = (raw_i128 >> 64) as u64;
 
-        #[cfg(not(feature = "high-precision"))]
-        {
-            let raw_i128 = raw as i128;
-            let lo = raw_i128 as u64;
-            let hi = (raw_i128 >> 64) as u64;
-
-            let mut raw_builder = builder.reborrow().init_raw();
-            raw_builder.set_lo(lo);
-            raw_builder.set_hi(hi);
-        }
-
-        #[cfg(feature = "high-precision")]
-        {
-            let lo = raw as u64;
-            let hi = (raw >> 64) as u64;
-
-            let mut raw_builder = builder.reborrow().init_raw();
-            raw_builder.set_lo(lo);
-            raw_builder.set_hi(hi);
-        }
+        let mut raw_builder = builder.reborrow().init_raw();
+        raw_builder.set_lo(lo);
+        raw_builder.set_hi(hi);
 
         builder.set_precision(self.precision);
     }
@@ -492,46 +470,30 @@ impl<'a> FromCapnp<'a> for Price {
         let raw_i128 = ((hi as i64 as i128) << 64) | (lo as i128);
 
         #[cfg(not(feature = "high-precision"))]
-        {
-            let raw = i64::try_from(raw_i128).map_err(|_| -> Box<dyn Error> {
-                "Price value overflows i64 in standard precision mode".into()
-            })?;
-            Ok(Price::from_raw(raw.into(), precision))
-        }
+        let raw = i64::try_from(raw_i128).map_err(|_| -> Box<dyn Error> {
+            "Price value overflows i64 in standard precision mode".into()
+        })?;
 
         #[cfg(feature = "high-precision")]
-        {
-            Ok(Self::from_raw(raw_i128, precision))
-        }
+        let raw = raw_i128;
+
+        #[allow(clippy::useless_conversion)] // Needed for non-high-precision builds
+        Ok(Self::from_raw(raw.into(), precision))
     }
 }
 
 impl<'a> ToCapnp<'a> for Quantity {
     type Builder = types_capnp::quantity::Builder<'a>;
 
+    #[allow(clippy::useless_conversion)] // Needed for non-high-precision builds
     fn to_capnp(&self, mut builder: Self::Builder) {
-        let raw = self.raw;
+        let raw_u128: u128 = self.raw.into();
+        let lo = raw_u128 as u64;
+        let hi = (raw_u128 >> 64) as u64;
 
-        #[cfg(not(feature = "high-precision"))]
-        {
-            let raw_u128 = raw as u128;
-            let lo = raw_u128 as u64;
-            let hi = (raw_u128 >> 64) as u64;
-
-            let mut raw_builder = builder.reborrow().init_raw();
-            raw_builder.set_lo(lo);
-            raw_builder.set_hi(hi);
-        }
-
-        #[cfg(feature = "high-precision")]
-        {
-            let lo = raw as u64;
-            let hi = (raw >> 64) as u64;
-
-            let mut raw_builder = builder.reborrow().init_raw();
-            raw_builder.set_lo(lo);
-            raw_builder.set_hi(hi);
-        }
+        let mut raw_builder = builder.reborrow().init_raw();
+        raw_builder.set_lo(lo);
+        raw_builder.set_hi(hi);
 
         builder.set_precision(self.precision);
     }
@@ -550,17 +512,15 @@ impl<'a> FromCapnp<'a> for Quantity {
         let raw_u128 = ((hi as u128) << 64) | (lo as u128);
 
         #[cfg(not(feature = "high-precision"))]
-        {
-            let raw = u64::try_from(raw_u128).map_err(|_| -> Box<dyn Error> {
-                "Quantity value overflows u64 in standard precision mode".into()
-            })?;
-            Ok(Quantity::from_raw(raw.into(), precision))
-        }
+        let raw = u64::try_from(raw_u128).map_err(|_| -> Box<dyn Error> {
+            "Quantity value overflows u64 in standard precision mode".into()
+        })?;
 
         #[cfg(feature = "high-precision")]
-        {
-            Ok(Self::from_raw(raw_u128, precision))
-        }
+        let raw = raw_u128;
+
+        #[allow(clippy::useless_conversion)] // Needed for non-high-precision builds
+        Ok(Self::from_raw(raw.into(), precision))
     }
 }
 
@@ -1219,21 +1179,13 @@ impl<'a> FromCapnp<'a> for Currency {
 impl<'a> ToCapnp<'a> for Money {
     type Builder = types_capnp::money::Builder<'a>;
 
+    #[allow(clippy::useless_conversion)] // Needed for non-high-precision builds
     fn to_capnp(&self, mut builder: Self::Builder) {
         let mut raw_builder = builder.reborrow().init_raw();
 
-        #[cfg(not(feature = "high-precision"))]
-        {
-            let raw_i128 = self.raw as i128;
-            raw_builder.set_lo(raw_i128 as u64);
-            raw_builder.set_hi((raw_i128 >> 64) as u64);
-        }
-
-        #[cfg(feature = "high-precision")]
-        {
-            raw_builder.set_lo(self.raw as u64);
-            raw_builder.set_hi((self.raw >> 64) as u64);
-        }
+        let raw_i128: i128 = self.raw.into();
+        raw_builder.set_lo(raw_i128 as u64);
+        raw_builder.set_hi((raw_i128 >> 64) as u64);
 
         let currency_builder = builder.init_currency();
         self.currency.to_capnp(currency_builder);
@@ -1333,6 +1285,11 @@ impl<'a> FromCapnp<'a> for MarginBalance {
     }
 }
 
+/// Serializes an [`InstrumentId`] to Cap'n Proto bytes.
+///
+/// # Errors
+///
+/// Returns an error if Cap'n Proto serialization fails.
 pub fn serialize_instrument_id(id: &InstrumentId) -> Result<Vec<u8>, Box<dyn Error>> {
     let mut message = capnp::message::Builder::new_default();
     let builder = message.init_root::<identifiers_capnp::instrument_id::Builder>();
@@ -1343,6 +1300,11 @@ pub fn serialize_instrument_id(id: &InstrumentId) -> Result<Vec<u8>, Box<dyn Err
     Ok(bytes)
 }
 
+/// Deserializes an [`InstrumentId`] from Cap'n Proto bytes.
+///
+/// # Errors
+///
+/// Returns an error if Cap'n Proto deserialization fails.
 pub fn deserialize_instrument_id(bytes: &[u8]) -> Result<InstrumentId, Box<dyn Error>> {
     let reader =
         capnp::serialize::read_message(&mut &bytes[..], capnp::message::ReaderOptions::new())?;
@@ -1350,6 +1312,11 @@ pub fn deserialize_instrument_id(bytes: &[u8]) -> Result<InstrumentId, Box<dyn E
     InstrumentId::from_capnp(root)
 }
 
+/// Serializes a [`Price`] to Cap'n Proto bytes.
+///
+/// # Errors
+///
+/// Returns an error if Cap'n Proto serialization fails.
 pub fn serialize_price(price: &Price) -> Result<Vec<u8>, Box<dyn Error>> {
     let mut message = capnp::message::Builder::new_default();
     let builder = message.init_root::<types_capnp::price::Builder>();
@@ -1360,6 +1327,11 @@ pub fn serialize_price(price: &Price) -> Result<Vec<u8>, Box<dyn Error>> {
     Ok(bytes)
 }
 
+/// Deserializes a [`Price`] from Cap'n Proto bytes.
+///
+/// # Errors
+///
+/// Returns an error if Cap'n Proto deserialization fails.
 pub fn deserialize_price(bytes: &[u8]) -> Result<Price, Box<dyn Error>> {
     let reader =
         capnp::serialize::read_message(&mut &bytes[..], capnp::message::ReaderOptions::new())?;
@@ -1367,6 +1339,11 @@ pub fn deserialize_price(bytes: &[u8]) -> Result<Price, Box<dyn Error>> {
     Price::from_capnp(root)
 }
 
+/// Serializes a [`Quantity`] to Cap'n Proto bytes.
+///
+/// # Errors
+///
+/// Returns an error if Cap'n Proto serialization fails.
 pub fn serialize_quantity(qty: &Quantity) -> Result<Vec<u8>, Box<dyn Error>> {
     let mut message = capnp::message::Builder::new_default();
     let builder = message.init_root::<types_capnp::quantity::Builder>();
@@ -1377,6 +1354,11 @@ pub fn serialize_quantity(qty: &Quantity) -> Result<Vec<u8>, Box<dyn Error>> {
     Ok(bytes)
 }
 
+/// Deserializes a [`Quantity`] from Cap'n Proto bytes.
+///
+/// # Errors
+///
+/// Returns an error if Cap'n Proto deserialization fails.
 pub fn deserialize_quantity(bytes: &[u8]) -> Result<Quantity, Box<dyn Error>> {
     let reader =
         capnp::serialize::read_message(&mut &bytes[..], capnp::message::ReaderOptions::new())?;
@@ -1384,6 +1366,11 @@ pub fn deserialize_quantity(bytes: &[u8]) -> Result<Quantity, Box<dyn Error>> {
     Quantity::from_capnp(root)
 }
 
+/// Serializes a [`Currency`] to Cap'n Proto bytes.
+///
+/// # Errors
+///
+/// Returns an error if Cap'n Proto serialization fails.
 pub fn serialize_currency(currency: &Currency) -> Result<Vec<u8>, Box<dyn Error>> {
     let mut message = capnp::message::Builder::new_default();
     let builder = message.init_root::<types_capnp::currency::Builder>();
@@ -1394,6 +1381,11 @@ pub fn serialize_currency(currency: &Currency) -> Result<Vec<u8>, Box<dyn Error>
     Ok(bytes)
 }
 
+/// Deserializes a [`Currency`] from Cap'n Proto bytes.
+///
+/// # Errors
+///
+/// Returns an error if Cap'n Proto deserialization fails.
 pub fn deserialize_currency(bytes: &[u8]) -> Result<Currency, Box<dyn Error>> {
     let reader =
         capnp::serialize::read_message(&mut &bytes[..], capnp::message::ReaderOptions::new())?;
@@ -1401,6 +1393,11 @@ pub fn deserialize_currency(bytes: &[u8]) -> Result<Currency, Box<dyn Error>> {
     Currency::from_capnp(root)
 }
 
+/// Serializes a [`Money`] to Cap'n Proto bytes.
+///
+/// # Errors
+///
+/// Returns an error if Cap'n Proto serialization fails.
 pub fn serialize_money(money: &Money) -> Result<Vec<u8>, Box<dyn Error>> {
     let mut message = capnp::message::Builder::new_default();
     let builder = message.init_root::<types_capnp::money::Builder>();
@@ -1411,6 +1408,11 @@ pub fn serialize_money(money: &Money) -> Result<Vec<u8>, Box<dyn Error>> {
     Ok(bytes)
 }
 
+/// Deserializes a [`Money`] from Cap'n Proto bytes.
+///
+/// # Errors
+///
+/// Returns an error if Cap'n Proto deserialization fails.
 pub fn deserialize_money(bytes: &[u8]) -> Result<Money, Box<dyn Error>> {
     let reader =
         capnp::serialize::read_message(&mut &bytes[..], capnp::message::ReaderOptions::new())?;
@@ -1418,6 +1420,11 @@ pub fn deserialize_money(bytes: &[u8]) -> Result<Money, Box<dyn Error>> {
     Money::from_capnp(root)
 }
 
+/// Serializes an [`AccountBalance`] to Cap'n Proto bytes.
+///
+/// # Errors
+///
+/// Returns an error if Cap'n Proto serialization fails.
 pub fn serialize_account_balance(balance: &AccountBalance) -> Result<Vec<u8>, Box<dyn Error>> {
     let mut message = capnp::message::Builder::new_default();
     let builder = message.init_root::<types_capnp::account_balance::Builder>();
@@ -1428,6 +1435,11 @@ pub fn serialize_account_balance(balance: &AccountBalance) -> Result<Vec<u8>, Bo
     Ok(bytes)
 }
 
+/// Deserializes an [`AccountBalance`] from Cap'n Proto bytes.
+///
+/// # Errors
+///
+/// Returns an error if Cap'n Proto deserialization fails.
 pub fn deserialize_account_balance(bytes: &[u8]) -> Result<AccountBalance, Box<dyn Error>> {
     let reader =
         capnp::serialize::read_message(&mut &bytes[..], capnp::message::ReaderOptions::new())?;
@@ -1435,6 +1447,11 @@ pub fn deserialize_account_balance(bytes: &[u8]) -> Result<AccountBalance, Box<d
     AccountBalance::from_capnp(root)
 }
 
+/// Serializes a [`MarginBalance`] to Cap'n Proto bytes.
+///
+/// # Errors
+///
+/// Returns an error if Cap'n Proto serialization fails.
 pub fn serialize_margin_balance(balance: &MarginBalance) -> Result<Vec<u8>, Box<dyn Error>> {
     let mut message = capnp::message::Builder::new_default();
     let builder = message.init_root::<types_capnp::margin_balance::Builder>();
@@ -1445,6 +1462,11 @@ pub fn serialize_margin_balance(balance: &MarginBalance) -> Result<Vec<u8>, Box<
     Ok(bytes)
 }
 
+/// Deserializes a [`MarginBalance`] from Cap'n Proto bytes.
+///
+/// # Errors
+///
+/// Returns an error if Cap'n Proto deserialization fails.
 pub fn deserialize_margin_balance(bytes: &[u8]) -> Result<MarginBalance, Box<dyn Error>> {
     let reader =
         capnp::serialize::read_message(&mut &bytes[..], capnp::message::ReaderOptions::new())?;
@@ -2241,10 +2263,6 @@ impl<'a> FromCapnp<'a> for OrderBookDepth10 {
         })
     }
 }
-
-// ================================================================================================
-// Order Events
-// ================================================================================================
 
 impl<'a> ToCapnp<'a> for OrderDenied {
     type Builder = order_capnp::order_denied::Builder<'a>;
@@ -3836,7 +3854,7 @@ impl<'a> FromCapnp<'a> for OrderInitialized {
 
         let linked_order_ids = if reader.has_linked_order_ids() {
             let linked_order_ids_reader = reader.get_linked_order_ids()?;
-            let mut linked_order_ids = Vec::new();
+            let mut linked_order_ids = Vec::with_capacity(linked_order_ids_reader.len() as usize);
             for order_id_reader in linked_order_ids_reader {
                 linked_order_ids.push(ClientOrderId::from_capnp(order_id_reader)?);
             }
@@ -3862,7 +3880,7 @@ impl<'a> FromCapnp<'a> for OrderInitialized {
         let exec_algorithm_params = if reader.has_exec_algorithm_params() {
             let params_reader = reader.get_exec_algorithm_params()?;
             let entries_reader = params_reader.get_entries()?;
-            let mut params = IndexMap::new();
+            let mut params = IndexMap::with_capacity(entries_reader.len() as usize);
             for entry_reader in entries_reader {
                 let key = Ustr::from(entry_reader.get_key()?.to_str()?);
                 let value = Ustr::from(entry_reader.get_value()?.to_str()?);
@@ -3882,7 +3900,7 @@ impl<'a> FromCapnp<'a> for OrderInitialized {
 
         let tags = if reader.has_tags() {
             let tags_reader = reader.get_tags()?;
-            let mut tags = Vec::new();
+            let mut tags = Vec::with_capacity(tags_reader.len() as usize);
             for tag in tags_reader {
                 tags.push(Ustr::from(tag?.to_str()?));
             }
@@ -3928,10 +3946,6 @@ impl<'a> FromCapnp<'a> for OrderInitialized {
         })
     }
 }
-
-// ================================================================================================
-// Position Events
-// ================================================================================================
 
 // PositionOpened
 impl<'a> ToCapnp<'a> for PositionOpened {

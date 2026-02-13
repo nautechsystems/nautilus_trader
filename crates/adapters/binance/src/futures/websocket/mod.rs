@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,6 +16,8 @@
 //! Binance Futures WebSocket client module.
 
 pub mod client;
-pub mod handler;
+pub mod error;
+pub mod handler_data;
+pub mod handler_exec;
 pub mod messages;
 pub mod parse;

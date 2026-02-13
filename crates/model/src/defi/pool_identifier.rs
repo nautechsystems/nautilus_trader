@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    fmt::{Debug, Display, Formatter},
+    fmt::{Debug, Display},
     hash::{Hash, Hasher},
     str::FromStr,
 };
@@ -58,7 +58,7 @@ impl PoolIdentifier {
         let value = value.as_ref();
 
         if !value.starts_with("0x") {
-            anyhow::bail!("Pool identifier must start with '0x', got: {value}");
+            anyhow::bail!("Pool identifier must start with '0x', was: {value}");
         }
 
         match value.len() {
@@ -82,7 +82,7 @@ impl PoolIdentifier {
             }
             len => {
                 anyhow::bail!(
-                    "Pool identifier must be 42 chars (address) or 66 chars (pool ID), got {len} chars: {value}"
+                    "Pool identifier must be 42 chars (address) or 66 chars (pool ID), was {len} chars: {value}"
                 )
             }
         }
@@ -114,7 +114,7 @@ impl PoolIdentifier {
     pub fn from_pool_id_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
         anyhow::ensure!(
             bytes.len() == 32,
-            "Pool ID must be 32 bytes, got {}",
+            "Pool ID must be 32 bytes, was {}",
             bytes.len()
         );
 
@@ -133,7 +133,7 @@ impl PoolIdentifier {
 
         anyhow::ensure!(
             hex_str.len() == 64,
-            "Pool ID hex must be 64 characters (32 bytes), got {}",
+            "Pool ID hex must be 64 characters (32 bytes), was {}",
             hex_str.len()
         );
 
@@ -252,7 +252,7 @@ impl Hash for PoolIdentifier {
 }
 
 impl Display for PoolIdentifier {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Address(s) | Self::PoolId(s) => write!(f, "{s}"),
         }
@@ -260,7 +260,7 @@ impl Display for PoolIdentifier {
 }
 
 impl Debug for PoolIdentifier {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Address(s) => write!(f, "Address({s:?})"),
             Self::PoolId(s) => write!(f, "PoolId({s:?})"),

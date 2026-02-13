@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -33,9 +33,11 @@ from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport RequestBars
 from nautilus_trader.data.messages cimport RequestData
+from nautilus_trader.data.messages cimport RequestFundingRates
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
 from nautilus_trader.data.messages cimport RequestJoin
+from nautilus_trader.data.messages cimport RequestOrderBookDeltas
 from nautilus_trader.data.messages cimport RequestOrderBookDepth
 from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
 from nautilus_trader.data.messages cimport RequestQuoteTicks
@@ -114,6 +116,7 @@ cdef class DataEngine(Component):
     cdef readonly dict[UUID4, UUID4] _parent_join_request_id
     cdef readonly dict[UUID4, UUID4] _parent_request_id
     cdef readonly bint _disable_historical_cache
+    cdef readonly dict[UUID4, dict[str, Any]] _bar_types_params
 
     cdef TopicCache _topic_cache
 
@@ -161,7 +164,7 @@ cdef class DataEngine(Component):
     cpdef list subscribed_custom_data(self)
     cpdef list subscribed_instruments(self)
     cpdef list subscribed_order_book_deltas(self)
-    cpdef list subscribed_order_book_snapshots(self)
+    cpdef list subscribed_order_book_depth(self)
     cpdef list subscribed_quote_ticks(self)
     cpdef list subscribed_trade_ticks(self)
     cpdef list subscribed_mark_prices(self)
@@ -223,8 +226,10 @@ cdef class DataEngine(Component):
     cpdef void _finalize_request_join(self, DataResponse response)
     cpdef void _handle_request_instruments(self, DataClient client, RequestInstruments request)
     cpdef void _handle_request_instrument(self, DataClient client, RequestInstrument request)
-    cpdef void _handle_request_order_book_snapshot(self, DataClient client, RequestOrderBookSnapshot request)
+    cpdef void _handle_request_order_book_deltas(self, DataClient client, RequestOrderBookDeltas request)
     cpdef void _handle_request_order_book_depth(self, DataClient client, RequestOrderBookDepth request)
+    cpdef void _handle_request_order_book_snapshot(self, DataClient client, RequestOrderBookSnapshot request)
+    cpdef void _handle_order_book_deltas_snapshot_replay(self, DataResponse response)
     cpdef tuple _bound_dates(self, RequestData request)
     cpdef void _date_range_client_request(self, DataClient client, RequestData request)
     cpdef void _handle_date_range_request(self, DataClient client, RequestData request)
@@ -236,6 +241,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_spread_quote_tick_request(self, RequestQuoteTicks request)
     cpdef void _finalize_spread_quote_request(self, DataResponse response)
     cpdef void _handle_request_trade_ticks(self, DataClient client, RequestTradeTicks request)
+    cpdef void _handle_request_funding_rates(self, DataClient client, RequestFundingRates request)
     cpdef void _handle_request_bars(self, DataClient client, RequestBars request)
     cpdef void _handle_request_data(self, DataClient client, RequestData request)
     cpdef void _query_catalog(self, RequestData request)

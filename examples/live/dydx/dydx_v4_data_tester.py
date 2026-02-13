@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -80,12 +80,14 @@ config_tester = DataTesterConfig(
     instrument_ids=[instrument_id],
     bar_types=[BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL")],
     subscribe_instrument=True,
+    # subscribe_book_deltas=True,
+    # subscribe_book_at_interval=True,
     subscribe_quotes=True,
     subscribe_trades=True,
-    subscribe_book_deltas=True,
     subscribe_funding_rates=True,
-    manage_book=True,
-    book_levels_to_print=10,
+    subscribe_bars=True,
+    # request_trades=True,
+    # request_bars=True,
     log_data=True,
 )
 

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -40,6 +40,7 @@ use nautilus_network::http::HttpClient;
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
+use ustr::Ustr;
 
 fn test_data_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
@@ -125,10 +126,10 @@ async fn start_test_server()
 fn create_test_instrument() -> InstrumentAny {
     let market = PerpetualMarket {
         clob_pair_id: 0,
-        ticker: "BTC-USD".to_string(),
+        ticker: Ustr::from("BTC-USD"),
         status: DydxMarketStatus::Active,
-        base_asset: Some("BTC".to_string()),
-        quote_asset: Some("USD".to_string()),
+        base_asset: Some(Ustr::from("BTC")),
+        quote_asset: Some(Ustr::from("USD")),
         step_size: dec!(0.001),
         tick_size: dec!(1),
         index_price: Some(dec!(50000)),
@@ -181,7 +182,7 @@ fn create_test_order() -> Order {
         good_til_block_time: None,
         created_at_height: Some(12345),
         client_metadata: 0,
-        ticker: Some("BTC-USD".to_string()),
+        ticker: Some(Ustr::from("BTC-USD")),
         updated_at: None,
         updated_at_height: None,
         trigger_price: None,
@@ -199,7 +200,7 @@ fn create_test_fill() -> Fill {
         side: OrderSide::Buy,
         liquidity: DydxLiquidity::Taker,
         fill_type: DydxFillType::Limit,
-        market: "BTC-USD".to_string(),
+        market: Ustr::from("BTC-USD"),
         market_type: DydxTickerType::Perpetual,
         price: dec!(50000),
         size: dec!(0.05),
@@ -343,8 +344,7 @@ async fn test_parse_fill_report_maker_sell() {
     assert_eq!(report.order_side, OrderSide::Sell);
     assert_eq!(report.last_qty.as_f64(), 0.2);
     assert_eq!(report.last_px.as_f64(), 51000.0);
-    // Commission should be negated (rebate becomes positive in Nautilus)
-    assert!(report.commission.as_f64() > 0.0);
+    assert!(report.commission.as_decimal() < dec!(0));
 }
 
 #[rstest]
@@ -543,18 +543,15 @@ async fn test_empty_fills_response() {
 #[tokio::test]
 async fn test_parse_block_height_websocket_message() {
     use chrono::Utc;
-    use nautilus_dydx::websocket::{
-        enums::{DydxWsChannel, DydxWsMessageType},
-        messages::{DydxBlockHeightChannelContents, DydxWsBlockHeightChannelData},
+    use nautilus_dydx::websocket::messages::{
+        DydxBlockHeightChannelContents, DydxWsBlockHeightChannelData,
     };
 
     let test_block_height = "9876543210";
     let block_msg = DydxWsBlockHeightChannelData {
-        msg_type: DydxWsMessageType::ChannelData,
         connection_id: "test-conn-123".to_string(),
         message_id: 42,
         id: "dydx".to_string(),
-        channel: DydxWsChannel::BlockHeight,
         version: "4.0.0".to_string(),
         contents: DydxBlockHeightChannelContents {
             block_height: test_block_height.to_string(),
@@ -567,8 +564,6 @@ async fn test_parse_block_height_websocket_message() {
         9876543210_u64,
         "Block height string should parse to correct u64"
     );
-    assert_eq!(block_msg.channel, DydxWsChannel::BlockHeight);
-    assert_eq!(block_msg.msg_type, DydxWsMessageType::ChannelData);
 }
 
 #[rstest]

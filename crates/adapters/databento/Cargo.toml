@@ -21,15 +21,16 @@ name = "nautilus_databento"
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = ["live"]
+default = ["live", "high-precision"]
 extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
   "python",
   "pyo3/extension-module",
 ]
-live = ["nautilus-live", "nautilus-system", "dotenvy", "tracing-subscriber"]
+live = ["nautilus-live", "nautilus-system", "dotenvy"]
 python = [
+  "live",
   "nautilus-core/ffi", # Temporary as python currently relies on the ffi CVec
   "nautilus-core/python",
   "nautilus-model/python",
@@ -45,7 +46,6 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
-nautilus-data = { workspace = true }
 nautilus-live = { workspace = true, optional = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
@@ -65,26 +65,25 @@ strum = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
-tracing = { workspace = true }
 ustr = { workspace = true }
 zeroize = { workspace = true }
 
 dotenvy = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
-tracing-subscriber = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
 rstest = { workspace = true }
-tracing-test = { workspace = true }
 
 [[bin]]
 name = "databento-sandbox"
 path = "bin/sandbox.rs"
 required-features = ["python"]
+doc = false
 
-[[bin]]
-name = "databento-node-test"
-path = "bin/node_test.rs"
+[[example]]
+name = "databento-data-tester"
+path = "examples/node_data_tester.rs"
 required-features = ["live"]
+doc = false

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,7 +22,7 @@ using the new Rust-backed HTTP, WebSocket, and gRPC clients.
 Prerequisites:
   - Environment variables:
       DYDX_WALLET_ADDRESS (or DYDX_TESTNET_WALLET_ADDRESS for testnet)
-      DYDX_MNEMONIC (or DYDX_TESTNET_MNEMONIC for testnet)
+      DYDX_PRIVATE_KEY (or DYDX_TESTNET_PRIVATE_KEY for testnet)
 
 Usage:
   python dydx_v4_market_maker.py
@@ -78,7 +78,7 @@ config_node = TradingNodeConfig(
     exec_clients={
         DYDX: DYDXv4ExecClientConfig(
             wallet_address=None,  # 'DYDX_WALLET_ADDRESS' or 'DYDX_TESTNET_WALLET_ADDRESS' env var
-            mnemonic=None,  # 'DYDX_MNEMONIC' or 'DYDX_TESTNET_MNEMONIC' env var
+            private_key=None,  # 'DYDX_PRIVATE_KEY' or 'DYDX_TESTNET_PRIVATE_KEY' env var
             subaccount=0,
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint

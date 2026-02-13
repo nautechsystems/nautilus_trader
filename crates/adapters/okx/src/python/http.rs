@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -27,12 +27,12 @@ use nautilus_model::{
 use pyo3::{
     conversion::IntoPyObjectExt,
     prelude::*,
-    types::{PyDict, PyList},
+    types::{PyDict, PyList, PyTuple},
 };
 
 use crate::{
     common::enums::{OKXInstrumentType, OKXOrderStatus, OKXPositionMode, OKXTradeMode},
-    http::{client::OKXHttpClient, error::OKXHttpError},
+    http::{client::OKXHttpClient, error::OKXHttpError, models::OKXCancelAlgoOrderRequest},
 };
 
 #[pymethods]
@@ -178,7 +178,7 @@ impl OKXHttpClient {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let instruments = client
+            let (instruments, inst_id_codes) = client
                 .request_instruments(instrument_type, instrument_family)
                 .await
                 .map_err(to_pyvalue_err)?;
@@ -188,11 +188,20 @@ impl OKXHttpClient {
                     .into_iter()
                     .map(|inst| instrument_any_to_pyobject(py, inst))
                     .collect();
-                let pylist = PyList::new(py, py_instruments?)
+                let instruments_list = PyList::new(py, py_instruments?).unwrap();
+
+                // Convert inst_id_codes to list of (inst_id: str, inst_id_code: int) tuples
+                let py_codes: Vec<_> = inst_id_codes
+                    .into_iter()
+                    .map(|(inst_id, code)| (inst_id.to_string(), code))
+                    .collect();
+                let codes_list = PyList::new(py, py_codes).unwrap();
+
+                let result = PyTuple::new(py, [instruments_list.as_any(), codes_list.as_any()])
                     .unwrap()
                     .into_any()
                     .unbind();
-                Ok(pylist)
+                Ok(result)
             })
         })
     }
@@ -578,6 +587,57 @@ impl OKXHttpClient {
                     dict.set_item("s_msg", s_msg)?;
                 }
                 Ok(dict.into_py_any_unwrap(py))
+            })
+        })
+    }
+
+    /// Cancels multiple algo orders in a single request.
+    ///
+    /// Parameters
+    /// ----------
+    /// orders : list[tuple[InstrumentId, str]]
+    ///     List of (instrument_id, algo_id) tuples to cancel.
+    #[pyo3(name = "cancel_algo_orders")]
+    fn py_cancel_algo_orders<'py>(
+        &self,
+        py: Python<'py>,
+        orders: Vec<(InstrumentId, String)>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let requests: Vec<_> = orders
+                .into_iter()
+                .map(|(instrument_id, algo_id)| OKXCancelAlgoOrderRequest {
+                    inst_id: instrument_id.symbol.to_string(),
+                    inst_id_code: None,
+                    algo_id: Some(algo_id),
+                    algo_cl_ord_id: None,
+                })
+                .collect();
+
+            let responses = client
+                .cancel_algo_orders(requests)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let results: Vec<_> = responses
+                    .into_iter()
+                    .map(|resp| {
+                        let dict = PyDict::new(py);
+                        dict.set_item("algo_id", resp.algo_id).expect("set algo_id");
+                        if let Some(s_code) = resp.s_code {
+                            dict.set_item("s_code", s_code).expect("set s_code");
+                        }
+                        if let Some(s_msg) = resp.s_msg {
+                            dict.set_item("s_msg", s_msg).expect("set s_msg");
+                        }
+                        dict
+                    })
+                    .collect();
+                let pylist = PyList::new(py, results)?;
+                Ok(pylist.into_py_any_unwrap(py))
             })
         })
     }

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -703,19 +703,22 @@ async fn test_websocket_multiple_subscriptions() {
         .await
         .unwrap();
 
-    // Note: quotes and book share the same underlying Book channel,
-    // so with reference counting only 2 distinct subscriptions are sent (Book + Trade)
+    // Quotes use Ticker channel, Book uses Book channel, Trades use Trade channel
     wait_until_async(
         || {
             let state = state.clone();
-            async move { state.subscriptions.lock().await.len() >= 2 }
+            async move { state.subscriptions.lock().await.len() >= 3 }
         },
         Duration::from_secs(5),
     )
     .await;
 
     let subs = state.subscriptions.lock().await;
-    assert_eq!(subs.len(), 2, "Expected 2 subscriptions (Book + Trade)");
+    assert_eq!(
+        subs.len(),
+        3,
+        "Expected 3 subscriptions (Ticker + Trade + Book)"
+    );
 
     client.disconnect().await.unwrap();
 }
@@ -876,10 +879,6 @@ async fn test_websocket_cache_instrument() {
     // Cache multiple instruments
     client.cache_instruments(instruments);
 }
-
-// =============================================================================
-// Robustness and edge case tests
-// =============================================================================
 
 #[rstest]
 #[tokio::test]
@@ -1159,19 +1158,18 @@ async fn test_websocket_concurrent_subscriptions() {
     assert!(r2.is_ok(), "Trades subscription failed: {r2:?}");
     assert!(r3.is_ok(), "Book subscription failed: {r3:?}");
 
-    // Note: quotes and book share the same underlying Book channel,
-    // so with reference counting only 2 distinct subscriptions are sent (Book + Trade)
+    // Quotes use Ticker channel, Book uses Book channel, Trades use Trade channel
     wait_until_async(
         || {
             let state = state.clone();
-            async move { state.subscriptions.lock().await.len() >= 2 }
+            async move { state.subscriptions.lock().await.len() >= 3 }
         },
         Duration::from_secs(5),
     )
     .await;
 
     let subs = state.subscriptions.lock().await;
-    assert_eq!(subs.len(), 2);
+    assert_eq!(subs.len(), 3);
 
     client.disconnect().await.unwrap();
 }
@@ -1303,4 +1301,156 @@ async fn test_websocket_close_idempotent() {
 
     // Second close should either succeed or fail gracefully
     assert!(result.is_ok() || result.is_err());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_websocket_subscribe_quotes_sends_bbo_event_trigger() {
+    let state = Arc::new(TestServerState::default());
+    let url = start_test_server(state.clone()).await;
+
+    let config = KrakenDataClientConfig {
+        ws_public_url: Some(url),
+        ..Default::default()
+    };
+
+    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
+    let instruments = load_instruments();
+
+    client.connect().await.unwrap();
+    client.cache_instruments(instruments);
+    client.wait_until_active(5.0).await.unwrap();
+
+    let instrument_id = InstrumentId::from("XBT/USDT.KRAKEN");
+    client.subscribe_quotes(instrument_id).await.unwrap();
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { !state.subscriptions.lock().await.is_empty() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let subs = state.subscriptions.lock().await;
+    assert!(!subs.is_empty(), "No subscriptions recorded");
+
+    let sub = &subs[0];
+    let params = sub.get("params").expect("Missing params");
+    assert_eq!(
+        params.get("channel").and_then(|c| c.as_str()),
+        Some("ticker"),
+        "Expected ticker channel for quotes"
+    );
+    assert_eq!(
+        params.get("event_trigger").and_then(|e| e.as_str()),
+        Some("bbo"),
+        "Expected event_trigger: bbo for quotes subscription"
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_websocket_unsubscribe_quotes_sends_bbo_event_trigger() {
+    let state = Arc::new(TestServerState::default());
+    let url = start_test_server(state.clone()).await;
+
+    let config = KrakenDataClientConfig {
+        ws_public_url: Some(url),
+        ..Default::default()
+    };
+
+    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
+    let instruments = load_instruments();
+
+    client.connect().await.unwrap();
+    client.cache_instruments(instruments);
+    client.wait_until_active(5.0).await.unwrap();
+
+    let instrument_id = InstrumentId::from("XBT/USDT.KRAKEN");
+    client.subscribe_quotes(instrument_id).await.unwrap();
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { !state.subscriptions.lock().await.is_empty() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    client.unsubscribe_quotes(instrument_id).await.unwrap();
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { !state.unsubscriptions.lock().await.is_empty() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let unsubs = state.unsubscriptions.lock().await;
+    assert!(!unsubs.is_empty(), "No unsubscriptions recorded");
+
+    let unsub = &unsubs[0];
+    let params = unsub.get("params").expect("Missing params");
+    assert_eq!(
+        params.get("channel").and_then(|c| c.as_str()),
+        Some("ticker"),
+        "Expected ticker channel for quotes unsubscription"
+    );
+    assert_eq!(
+        params.get("event_trigger").and_then(|e| e.as_str()),
+        Some("bbo"),
+        "Expected event_trigger: bbo for quotes unsubscription (required to match subscription)"
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_websocket_quotes_subscription_uses_quotes_key() {
+    let state = Arc::new(TestServerState::default());
+    let url = start_test_server(state.clone()).await;
+
+    let config = KrakenDataClientConfig {
+        ws_public_url: Some(url),
+        ..Default::default()
+    };
+
+    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
+    let instruments = load_instruments();
+
+    client.connect().await.unwrap();
+    client.cache_instruments(instruments);
+    client.wait_until_active(5.0).await.unwrap();
+
+    let instrument_id = InstrumentId::from("XBT/USDT.KRAKEN");
+    client.subscribe_quotes(instrument_id).await.unwrap();
+
+    wait_until_async(
+        || {
+            let client = client.clone();
+            async move { !client.get_subscriptions().is_empty() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let subs = client.get_subscriptions();
+    assert!(
+        subs.iter().any(|s| s.starts_with("quotes:")),
+        "Expected quotes:{{symbol}} subscription key, found: {subs:?}"
+    );
+    assert!(
+        !subs.iter().any(|s| s.starts_with("ticker:")),
+        "Should not have ticker:{{symbol}} key for quotes subscription"
+    );
+
+    client.disconnect().await.unwrap();
 }

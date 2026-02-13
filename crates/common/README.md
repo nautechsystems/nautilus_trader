@@ -32,6 +32,11 @@ or as part of a Rust only build.
 - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 - `defi`: Enables DeFi (Decentralized Finance) support.
+- `indicators`: Includes the `nautilus-indicators` crate and indicator utilities.
+- `capnp`: Enables [Cap'n Proto](https://capnproto.org/) serialization support.
+- `live`: Enables the Tokio async runtime for live trading.
+- `tracing-bridge`: Enables the `tracing` subscriber bridge for log integration.
+- `extension-module`: Builds the crate as a Python extension module.
 
 ## Documentation
 
@@ -50,4 +55,4 @@ For more information, visit <https://nautilustrader.io>.
 
 <img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-logo-white.png" alt="logo" width="400" height="auto"/>
 
-© 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+© 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
