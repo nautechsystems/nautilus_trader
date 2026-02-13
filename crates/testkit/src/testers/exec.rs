@@ -462,13 +462,13 @@ impl Deref for ExecTester {
     type Target = DataActorCore;
 
     fn deref(&self) -> &Self::Target {
-        &self.core.actor
+        &self.core
     }
 }
 
 impl DerefMut for ExecTester {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core.actor
+        &mut self.core
     }
 }
 
@@ -524,7 +524,7 @@ impl DataActor for ExecTester {
         let client_id = self.config.client_id;
 
         if self.config.cancel_orders_on_stop {
-            let strategy_id = StrategyId::from(self.core.actor.actor_id.inner().as_str());
+            let strategy_id = StrategyId::from(self.core.actor_id.inner().as_str());
             if self.config.use_individual_cancels_on_stop {
                 let cache = self.cache();
                 let open_orders: Vec<OrderAny> = cache
@@ -677,16 +677,16 @@ impl DataActor for ExecTester {
 }
 
 impl Strategy for ExecTester {
+    fn core(&self) -> &StrategyCore {
+        &self.core
+    }
+
     fn core_mut(&mut self) -> &mut StrategyCore {
         &mut self.core
     }
 
     fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
         self.config.base.external_order_claims.clone()
-    }
-
-    fn is_exiting(&self) -> bool {
-        self.core.is_exiting
     }
 }
 
@@ -1106,11 +1106,7 @@ impl ExecTester {
 
         let quantity = instrument.make_qty(self.config.order_qty.as_f64(), None);
 
-        let Some(factory) = &mut self.core.order_factory else {
-            anyhow::bail!("Strategy not registered: OrderFactory missing");
-        };
-
-        let order = factory.limit(
+        let order = self.core.order_factory().limit(
             self.config.instrument_id,
             order_side,
             quantity,
@@ -1179,9 +1175,7 @@ impl ExecTester {
         // Use instrument's make_qty to ensure correct precision
         let quantity = instrument.make_qty(self.config.order_qty.as_f64(), None);
 
-        let Some(factory) = &mut self.core.order_factory else {
-            anyhow::bail!("Strategy not registered: OrderFactory missing");
-        };
+        let factory = self.core.order_factory();
 
         let order: OrderAny = match self.config.stop_order_type {
             OrderType::StopMarket => factory.stop_market(
@@ -1345,11 +1339,7 @@ impl ExecTester {
             _ => anyhow::bail!("Invalid order side for bracket: {order_side:?}"),
         };
 
-        let Some(factory) = &mut self.core.order_factory else {
-            anyhow::bail!("Strategy not registered: OrderFactory missing");
-        };
-
-        let orders = factory.bracket(
+        let orders = self.core.order_factory().bracket(
             self.config.instrument_id,
             order_side,
             quantity,
@@ -1409,10 +1399,6 @@ impl ExecTester {
 
         let quantity = instrument.make_qty(net_qty.abs().to_f64().unwrap_or(0.0), None);
 
-        let Some(factory) = &mut self.core.order_factory else {
-            anyhow::bail!("Strategy not registered: OrderFactory missing");
-        };
-
         // Test reduce_only rejection by setting reduce_only on open position order
         let reduce_only = if self.config.test_reject_reduce_only {
             Some(true)
@@ -1420,7 +1406,7 @@ impl ExecTester {
             None
         };
 
-        let order = factory.market(
+        let order = self.core.order_factory().market(
             self.config.instrument_id,
             order_side,
             quantity,

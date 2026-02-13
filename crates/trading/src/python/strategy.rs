@@ -533,17 +533,21 @@ impl Deref for PyStrategyInner {
     type Target = DataActorCore;
 
     fn deref(&self) -> &Self::Target {
-        &self.core.actor
+        &self.core
     }
 }
 
 impl DerefMut for PyStrategyInner {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core.actor
+        &mut self.core
     }
 }
 
 impl Strategy for PyStrategyInner {
+    fn core(&self) -> &StrategyCore {
+        &self.core
+    }
+
     fn core_mut(&mut self) -> &mut StrategyCore {
         &mut self.core
     }
@@ -614,10 +618,6 @@ impl Strategy for PyStrategyInner {
 
     fn on_position_closed(&mut self, event: PositionClosed) {
         let _ = self.dispatch_on_position_closed(event);
-    }
-
-    fn is_exiting(&self) -> bool {
-        self.core.is_exiting
     }
 }
 

@@ -72,6 +72,12 @@ use ustr::Ustr;
 /// the trading engine. All order and position management methods are provided
 /// as default implementations.
 pub trait Strategy: DataActor {
+    /// Provides access to the internal `StrategyCore`.
+    ///
+    /// This method must be implemented by the user's strategy struct, typically
+    /// by returning a reference to its `StrategyCore` member.
+    fn core(&self) -> &StrategyCore;
+
     /// Provides mutable access to the internal `StrategyCore`.
     ///
     /// This method must be implemented by the user's strategy struct, typically
@@ -154,9 +160,7 @@ pub trait Strategy: DataActor {
             ts_init,
         );
 
-        let Some(manager) = &mut core.order_manager else {
-            anyhow::bail!("Strategy not registered: OrderManager missing");
-        };
+        let manager = core.order_manager();
 
         if matches!(order.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger) {
             manager.send_emulator_command(TradingCommand::SubmitOrder(command));
@@ -205,11 +209,7 @@ pub trait Strategy: DataActor {
         let order_list = if orders.first().is_some_and(|o| o.order_list_id().is_some()) {
             OrderList::from_orders(&orders, ts_init)
         } else {
-            let order_factory = core
-                .order_factory
-                .as_mut()
-                .expect("OrderFactory not initialized");
-            order_factory.create_list(&mut orders, ts_init)
+            core.order_factory().create_list(&mut orders, ts_init)
         };
 
         {
@@ -266,9 +266,7 @@ pub trait Strategy: DataActor {
                 || o.is_emulated()
         });
 
-        let Some(manager) = &mut core.order_manager else {
-            anyhow::bail!("Strategy not registered: OrderManager missing");
-        };
+        let manager = core.order_manager();
 
         if has_emulated_order {
             manager.send_emulator_command(TradingCommand::SubmitOrderList(command));
@@ -323,11 +321,7 @@ pub trait Strategy: DataActor {
         let order_list = if orders.first().is_some_and(|o| o.order_list_id().is_some()) {
             OrderList::from_orders(&orders, ts_init)
         } else {
-            let order_factory = core
-                .order_factory
-                .as_mut()
-                .expect("OrderFactory not initialized");
-            order_factory.create_list(&mut orders, ts_init)
+            core.order_factory().create_list(&mut orders, ts_init)
         };
 
         {
@@ -390,9 +384,7 @@ pub trait Strategy: DataActor {
                 || o.is_emulated()
         });
 
-        let Some(manager) = &mut core.order_manager else {
-            anyhow::bail!("Strategy not registered: OrderManager missing");
-        };
+        let manager = core.order_manager();
 
         if has_emulated_order {
             manager.send_emulator_command(TradingCommand::SubmitOrderList(command));
@@ -474,9 +466,7 @@ pub trait Strategy: DataActor {
             params,
         );
 
-        let Some(manager) = &mut core.order_manager else {
-            anyhow::bail!("Strategy not registered: OrderManager missing");
-        };
+        let manager = core.order_manager();
 
         if matches!(order.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger) {
             manager.send_emulator_command(TradingCommand::ModifyOrder(command));
@@ -532,9 +522,7 @@ pub trait Strategy: DataActor {
             params,
         );
 
-        let Some(manager) = &mut core.order_manager else {
-            anyhow::bail!("Strategy not registered: OrderManager missing");
-        };
+        let manager = core.order_manager();
 
         if matches!(order.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger)
             || order.is_emulated()
@@ -570,9 +558,7 @@ pub trait Strategy: DataActor {
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
         let ts_init = core.clock().timestamp_ns();
 
-        let Some(manager) = &mut core.order_manager else {
-            anyhow::bail!("Strategy not registered: OrderManager missing");
-        };
+        let manager = core.order_manager();
 
         let first = orders.remove(0);
         let instrument_id = first.instrument_id();
@@ -725,9 +711,7 @@ pub trait Strategy: DataActor {
             return Ok(());
         }
 
-        let Some(manager) = &mut core.order_manager else {
-            anyhow::bail!("Strategy not registered: OrderManager missing");
-        };
+        let manager = core.order_manager();
 
         let side_str = order_side.map(|s| format!(" {s}")).unwrap_or_default();
 
@@ -804,9 +788,6 @@ pub trait Strategy: DataActor {
         quote_quantity: Option<bool>,
     ) -> anyhow::Result<()> {
         let core = self.core_mut();
-        let Some(order_factory) = &mut core.order_factory else {
-            anyhow::bail!("Strategy not registered: OrderFactory missing");
-        };
 
         if position.is_closed() {
             log::warn!("Cannot close position (already closed): {}", position.id);
@@ -815,7 +796,7 @@ pub trait Strategy: DataActor {
 
         let closing_side = OrderCore::closing_side(position.side);
 
-        let order = order_factory.market(
+        let order = core.order_factory().market(
             position.instrument_id,
             closing_side,
             position.quantity,
@@ -885,12 +866,8 @@ pub trait Strategy: DataActor {
             }
 
             let core = self.core_mut();
-            let Some(order_factory) = &mut core.order_factory else {
-                anyhow::bail!("Strategy not registered: OrderFactory missing");
-            };
-
             let closing_side = OrderCore::closing_side(pos_side);
-            let order = order_factory.market(
+            let order = core.order_factory().market(
                 pos_instrument_id,
                 closing_side,
                 pos_quantity,
@@ -929,11 +906,8 @@ pub trait Strategy: DataActor {
 
         let command = QueryAccount::new(trader_id, client_id, account_id, UUID4::new(), ts_init);
 
-        let Some(manager) = &mut core.order_manager else {
-            anyhow::bail!("Strategy not registered: OrderManager missing");
-        };
-
-        manager.send_exec_command(TradingCommand::QueryAccount(command));
+        core.order_manager()
+            .send_exec_command(TradingCommand::QueryAccount(command));
         Ok(())
     }
 
@@ -963,11 +937,8 @@ pub trait Strategy: DataActor {
             ts_init,
         );
 
-        let Some(manager) = &mut core.order_manager else {
-            anyhow::bail!("Strategy not registered: OrderManager missing");
-        };
-
-        manager.send_exec_command(TradingCommand::QueryOrder(command));
+        core.order_manager()
+            .send_exec_command(TradingCommand::QueryOrder(command));
         Ok(())
     }
 
@@ -1211,7 +1182,9 @@ pub trait Strategy: DataActor {
     /// Returns whether the strategy is currently executing a market exit.
     ///
     /// Strategies can check this to avoid submitting new orders during exit.
-    fn is_exiting(&self) -> bool;
+    fn is_exiting(&self) -> bool {
+        self.core().is_exiting
+    }
 
     /// Initiates an iterative market exit for the strategy.
     ///
@@ -1387,16 +1360,11 @@ pub trait Strategy: DataActor {
                 }
 
                 let core = self.core_mut();
-                let Some(order_factory) = &mut core.order_factory else {
-                    log::error!("OrderFactory missing during market exit");
-                    continue;
-                };
-
                 let time_in_force = core.config.market_exit_time_in_force;
                 let reduce_only = core.config.market_exit_reduce_only;
                 let market_exit_tag = core.market_exit_tag;
                 let closing_side = OrderCore::closing_side(side);
-                let order = order_factory.market(
+                let order = core.order_factory().market(
                     instrument_id,
                     closing_side,
                     quantity,
@@ -1781,25 +1749,25 @@ mod tests {
     impl Deref for TestStrategy {
         type Target = DataActorCore;
         fn deref(&self) -> &Self::Target {
-            &self.core.actor
+            &self.core
         }
     }
 
     impl DerefMut for TestStrategy {
         fn deref_mut(&mut self) -> &mut Self::Target {
-            &mut self.core.actor
+            &mut self.core
         }
     }
 
     impl DataActor for TestStrategy {}
 
     impl Strategy for TestStrategy {
-        fn core_mut(&mut self) -> &mut StrategyCore {
-            &mut self.core
+        fn core(&self) -> &StrategyCore {
+            &self.core
         }
 
-        fn is_exiting(&self) -> bool {
-            self.core.is_exiting
+        fn core_mut(&mut self) -> &mut StrategyCore {
+            &mut self.core
         }
 
         fn on_order_rejected(&mut self, _event: OrderRejected) {
@@ -2332,25 +2300,25 @@ mod tests {
     impl Deref for MarketExitHookTrackingStrategy {
         type Target = DataActorCore;
         fn deref(&self) -> &Self::Target {
-            &self.core.actor
+            &self.core
         }
     }
 
     impl DerefMut for MarketExitHookTrackingStrategy {
         fn deref_mut(&mut self) -> &mut Self::Target {
-            &mut self.core.actor
+            &mut self.core
         }
     }
 
     impl DataActor for MarketExitHookTrackingStrategy {}
 
     impl Strategy for MarketExitHookTrackingStrategy {
-        fn core_mut(&mut self) -> &mut StrategyCore {
-            &mut self.core
+        fn core(&self) -> &StrategyCore {
+            &self.core
         }
 
-        fn is_exiting(&self) -> bool {
-            self.core.is_exiting
+        fn core_mut(&mut self) -> &mut StrategyCore {
+            &mut self.core
         }
 
         fn on_market_exit(&mut self) {
@@ -2435,25 +2403,25 @@ mod tests {
     impl Deref for FailingPostExitStrategy {
         type Target = DataActorCore;
         fn deref(&self) -> &Self::Target {
-            &self.core.actor
+            &self.core
         }
     }
 
     impl DerefMut for FailingPostExitStrategy {
         fn deref_mut(&mut self) -> &mut Self::Target {
-            &mut self.core.actor
+            &mut self.core
         }
     }
 
     impl DataActor for FailingPostExitStrategy {}
 
     impl Strategy for FailingPostExitStrategy {
-        fn core_mut(&mut self) -> &mut StrategyCore {
-            &mut self.core
+        fn core(&self) -> &StrategyCore {
+            &self.core
         }
 
-        fn is_exiting(&self) -> bool {
-            self.core.is_exiting
+        fn core_mut(&mut self) -> &mut StrategyCore {
+            &mut self.core
         }
 
         fn post_market_exit(&mut self) {

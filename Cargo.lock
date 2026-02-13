@@ -5989,6 +5989,8 @@ dependencies = [
  "nautilus-portfolio",
  "pyo3",
  "rstest",
+ "rust_decimal",
+ "rust_decimal_macros",
  "serde",
  "serde_json",
  "strum",

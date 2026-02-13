@@ -41,28 +41,18 @@ use super::config::StrategyConfig;
 /// to satisfy the trait bounds of [`Strategy`](super::Strategy) and
 /// [`DataActor`](nautilus_common::actor::data_actor::DataActor).
 pub struct StrategyCore {
-    /// The underlying data actor core.
-    pub actor: DataActorCore,
+    pub(crate) actor: DataActorCore,
     /// The strategy configuration.
     pub config: StrategyConfig,
-    /// The order manager.
-    pub order_manager: Option<OrderManager>,
-    /// The order factory.
-    pub order_factory: Option<OrderFactory>,
-    /// The portfolio.
-    pub portfolio: Option<Rc<RefCell<Portfolio>>>,
-    /// Maps client order IDs to GTD expiry timer names.
-    pub gtd_timers: AHashMap<ClientOrderId, Ustr>,
-    /// Whether the strategy is currently executing a market exit.
-    pub is_exiting: bool,
-    /// Whether a stop is pending (waiting for market exit to complete).
-    pub pending_stop: bool,
-    /// The number of market exit check attempts made.
-    pub market_exit_attempts: u64,
-    /// The timer name for market exit checks.
-    pub market_exit_timer_name: Ustr,
-    /// The tag applied to market exit orders.
-    pub market_exit_tag: Ustr,
+    pub(crate) order_manager: Option<OrderManager>,
+    pub(crate) order_factory: Option<OrderFactory>,
+    pub(crate) portfolio: Option<Rc<RefCell<Portfolio>>>,
+    pub(crate) gtd_timers: AHashMap<ClientOrderId, Ustr>,
+    pub(crate) is_exiting: bool,
+    pub(crate) pending_stop: bool,
+    pub(crate) market_exit_attempts: u64,
+    pub(crate) market_exit_timer_name: Ustr,
+    pub(crate) market_exit_tag: Ustr,
 }
 
 impl Debug for StrategyCore {
@@ -148,6 +138,39 @@ impl StrategyCore {
         self.portfolio = Some(portfolio);
 
         Ok(())
+    }
+
+    /// Returns a mutable reference to the [`OrderFactory`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the strategy has not been registered.
+    pub fn order_factory(&mut self) -> &mut OrderFactory {
+        self.order_factory
+            .as_mut()
+            .expect("Strategy not registered: OrderFactory not initialized")
+    }
+
+    /// Returns a mutable reference to the [`OrderManager`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the strategy has not been registered.
+    pub fn order_manager(&mut self) -> &mut OrderManager {
+        self.order_manager
+            .as_mut()
+            .expect("Strategy not registered: OrderManager not initialized")
+    }
+
+    /// Returns a reference to the [`Portfolio`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the strategy has not been registered.
+    pub fn portfolio(&self) -> &Rc<RefCell<Portfolio>> {
+        self.portfolio
+            .as_ref()
+            .expect("Strategy not registered: Portfolio not initialized")
     }
 
     /// Resets the market exit state.

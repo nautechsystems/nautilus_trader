@@ -822,7 +822,6 @@ mod tests {
 
     impl DataActor for TestStrategy {}
 
-    // Deref through StrategyCore to DataActorCore
     impl Deref for TestStrategy {
         type Target = DataActorCore;
         fn deref(&self) -> &Self::Target {
@@ -837,12 +836,12 @@ mod tests {
     }
 
     impl StrategyTrait for TestStrategy {
-        fn core_mut(&mut self) -> &mut StrategyCore {
-            &mut self.core
+        fn core(&self) -> &StrategyCore {
+            &self.core
         }
 
-        fn is_exiting(&self) -> bool {
-            self.core.is_exiting
+        fn core_mut(&mut self) -> &mut StrategyCore {
+            &mut self.core
         }
     }
 

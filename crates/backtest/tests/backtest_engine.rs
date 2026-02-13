@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 use std::{
     cell::Cell,
     fmt::Debug,
@@ -42,13 +57,13 @@ impl EmptyStrategy {
 impl Deref for EmptyStrategy {
     type Target = DataActorCore;
     fn deref(&self) -> &Self::Target {
-        &self.core.actor
+        &self.core
     }
 }
 
 impl DerefMut for EmptyStrategy {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core.actor
+        &mut self.core
     }
 }
 
@@ -61,12 +76,12 @@ impl Debug for EmptyStrategy {
 impl DataActor for EmptyStrategy {}
 
 impl Strategy for EmptyStrategy {
-    fn core_mut(&mut self) -> &mut StrategyCore {
-        &mut self.core
+    fn core(&self) -> &StrategyCore {
+        &self.core
     }
 
-    fn is_exiting(&self) -> bool {
-        self.core.is_exiting
+    fn core_mut(&mut self) -> &mut StrategyCore {
+        &mut self.core
     }
 }
 
@@ -102,23 +117,18 @@ impl EmaCross {
     }
 
     fn enter(&mut self, side: OrderSide) -> anyhow::Result<()> {
-        let order = self
-            .core
-            .order_factory
-            .as_mut()
-            .expect("OrderFactory should be initialized")
-            .market(
-                self.instrument_id,
-                side,
-                self.trade_size,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            );
+        let order = self.core.order_factory().market(
+            self.instrument_id,
+            side,
+            self.trade_size,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
         self.submit_order(order, None, None)
     }
 }
@@ -126,13 +136,13 @@ impl EmaCross {
 impl Deref for EmaCross {
     type Target = DataActorCore;
     fn deref(&self) -> &Self::Target {
-        &self.core.actor
+        &self.core
     }
 }
 
 impl DerefMut for EmaCross {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core.actor
+        &mut self.core
     }
 }
 
@@ -174,12 +184,12 @@ impl DataActor for EmaCross {
 }
 
 impl Strategy for EmaCross {
-    fn core_mut(&mut self) -> &mut StrategyCore {
-        &mut self.core
+    fn core(&self) -> &StrategyCore {
+        &self.core
     }
 
-    fn is_exiting(&self) -> bool {
-        self.core.is_exiting
+    fn core_mut(&mut self) -> &mut StrategyCore {
+        &mut self.core
     }
 }
 
@@ -823,13 +833,13 @@ impl CascadingStopStrategy {
 impl Deref for CascadingStopStrategy {
     type Target = DataActorCore;
     fn deref(&self) -> &Self::Target {
-        &self.core.actor
+        &self.core
     }
 }
 
 impl DerefMut for CascadingStopStrategy {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core.actor
+        &mut self.core
     }
 }
 
@@ -848,23 +858,18 @@ impl DataActor for CascadingStopStrategy {
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
         if !self.entry_submitted.get() {
             self.entry_submitted.set(true);
-            let order = self
-                .core
-                .order_factory
-                .as_mut()
-                .expect("OrderFactory should be initialized")
-                .market(
-                    self.instrument_id,
-                    OrderSide::Buy,
-                    self.trade_size,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                );
+            let order = self.core.order_factory().market(
+                self.instrument_id,
+                OrderSide::Buy,
+                self.trade_size,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
             self.submit_order(order, None, None)?;
         }
         Ok(())
@@ -874,29 +879,24 @@ impl DataActor for CascadingStopStrategy {
         // Submit stop-loss in response to fill (cascading command)
         if !self.stop_submitted.get() {
             self.stop_submitted.set(true);
-            let order = self
-                .core
-                .order_factory
-                .as_mut()
-                .expect("OrderFactory should be initialized")
-                .stop_market(
-                    self.instrument_id,
-                    OrderSide::Sell,
-                    self.trade_size,
-                    Price::from("900.00"),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                );
+            let order = self.core.order_factory().stop_market(
+                self.instrument_id,
+                OrderSide::Sell,
+                self.trade_size,
+                Price::from("900.00"),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
             self.submit_order(order, None, None)?;
         }
         Ok(())
@@ -904,12 +904,12 @@ impl DataActor for CascadingStopStrategy {
 }
 
 impl Strategy for CascadingStopStrategy {
-    fn core_mut(&mut self) -> &mut StrategyCore {
-        &mut self.core
+    fn core(&self) -> &StrategyCore {
+        &self.core
     }
 
-    fn is_exiting(&self) -> bool {
-        self.core.is_exiting
+    fn core_mut(&mut self) -> &mut StrategyCore {
+        &mut self.core
     }
 }
 

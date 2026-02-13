@@ -76,23 +76,18 @@ impl EmaCross {
     }
 
     fn enter(&mut self, side: OrderSide) -> anyhow::Result<()> {
-        let order = self
-            .core
-            .order_factory
-            .as_mut()
-            .expect("OrderFactory should be initialized")
-            .market(
-                self.instrument_id,
-                side,
-                self.trade_size,
-                None, // time_in_force
-                None, // reduce_only
-                None, // quote_quantity
-                None, // display_qty
-                None, // expire_time
-                None, // emulation_trigger
-                None, // tags
-            );
+        let order = self.core.order_factory().market(
+            self.instrument_id,
+            side,
+            self.trade_size,
+            None, // time_in_force
+            None, // reduce_only
+            None, // quote_quantity
+            None, // display_qty
+            None, // expire_time
+            None, // emulation_trigger
+            None, // tags
+        );
         self.submit_order(order, None, None)
     }
 }
@@ -100,13 +95,13 @@ impl EmaCross {
 impl Deref for EmaCross {
     type Target = DataActorCore;
     fn deref(&self) -> &Self::Target {
-        &self.core.actor
+        &self.core
     }
 }
 
 impl DerefMut for EmaCross {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core.actor
+        &mut self.core
     }
 }
 
@@ -158,11 +153,11 @@ impl DataActor for EmaCross {
 }
 
 impl Strategy for EmaCross {
-    fn core_mut(&mut self) -> &mut StrategyCore {
-        &mut self.core
+    fn core(&self) -> &StrategyCore {
+        &self.core
     }
 
-    fn is_exiting(&self) -> bool {
-        self.core.is_exiting
+    fn core_mut(&mut self) -> &mut StrategyCore {
+        &mut self.core
     }
 }

@@ -77,6 +77,7 @@ pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-indicators = { workspace = true }
+nautilus-trading = { workspace = true, features = ["examples"] }
 rstest = { workspace = true }
 tempfile = { workspace = true }
 
