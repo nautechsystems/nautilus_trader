@@ -480,7 +480,7 @@ cdef class RiskEngine(Component):
 
         if not self._check_orders_risk(instrument, command.order_list.orders):
             # Deny all orders in list
-            self._deny_order_list(command.order_list, "OrderList {command.order_list.id.to_str()} DENIED")
+            self._deny_order_list(command.order_list, f"OrderList {command.order_list.id.to_str()} DENIED")
             return # Denied
 
         self._execution_gateway(instrument, command)
