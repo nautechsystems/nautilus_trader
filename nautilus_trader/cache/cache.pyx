@@ -1138,6 +1138,7 @@ cdef class Cache(CacheFacade):
         self._index_instrument_position_snapshots.clear()
         self._index_strategy_orders.clear()
         self._index_strategy_positions.clear()
+        self._index_account_orders.clear()
         self._index_account_positions.clear()
         self._index_exec_algorithm_orders.clear()
         self._index_exec_spawn_orders.clear()

@@ -212,7 +212,7 @@ cdef class OrderEmulator(Actor):
             if order.parent_order_id is not None:
                 parent_order = self.cache.order(order.parent_order_id)
                 if parent_order is None:
-                    self._log.error("Cannot handle order: parent {order.parent_order_id!r} not found")
+                    self._log.error(f"Cannot handle order: parent {order.parent_order_id!r} not found")
                     continue
                 position_id = parent_order.position_id
                 if parent_order.is_closed_c() and (position_id is None or self.cache.is_position_closed(position_id)):
@@ -465,7 +465,7 @@ cdef class OrderEmulator(Actor):
         cdef Order order = self.cache.order(command.client_order_id)
         if order is None:
             self._log.error(
-                f"Cannot modify order: {repr(order.client_order_id)} not found",
+                f"Cannot modify order: {command.client_order_id!r} not found",
             )
             return
 
@@ -567,7 +567,7 @@ cdef class OrderEmulator(Actor):
     cpdef void _cancel_order(self, Order order):
         if order is None:
             self._log.error(
-                f"Cannot cancel order: order for {repr(order.client_order_id)} not found",
+                "Cannot cancel order: order was None",
             )
             return
 
@@ -602,7 +602,7 @@ cdef class OrderEmulator(Actor):
     cpdef void _update_order(self, Order order, Quantity new_quantity):
         if order is None:
             self._log.error(
-                f"Cannot update order: order for {repr(order.client_order_id)} not found",
+                "Cannot update order: order was None",
             )
             return
 

@@ -557,7 +557,7 @@ cdef class AccountsManager:
                 if (
                     pnl.is_positive()
                     or fill.order_type == OrderType.MARKET
-                    or instrument.instrument_class in [InstrumentClass.SPORTS_BETTING]
+                    or (instrument is not None and instrument.instrument_class in [InstrumentClass.SPORTS_BETTING])
                 ):
                     new_free = new_free.add(pnl)
                 else:

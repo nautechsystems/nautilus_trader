@@ -1025,12 +1025,6 @@ cdef class DataEngine(Component):
             self._setup_order_book(client, command)
 
     cpdef void _setup_order_book(self, MarketDataClient client, SubscribeOrderBook command):
-        cdef Instrument instrument = self._cache.instrument(command.instrument_id)
-        if instrument is None:
-            self._log.warning(
-                f"No instrument found for {command.instrument_id} on order book data subscription"
-            )
-
         cdef:
             list[Instrument] instruments
             str root

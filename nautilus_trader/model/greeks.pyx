@@ -159,6 +159,9 @@ cdef class GreeksCalculator:
 
         """
         instrument = self._cache.instrument(instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot calculate greeks: instrument {instrument_id!r} not found")
+            return None
 
         if instrument.instrument_class is not InstrumentClass.OPTION:
             multiplier = float(instrument.multiplier)
