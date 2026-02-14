@@ -140,8 +140,8 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
 
         """
         self._eclient.reset()
-        self._eclient._host = self._host
-        self._eclient._port = self._port
+        self._eclient.host = self._host
+        self._eclient.port = self._port
         self._eclient.clientId = self._client_id
 
     async def _connect_socket(self) -> None:

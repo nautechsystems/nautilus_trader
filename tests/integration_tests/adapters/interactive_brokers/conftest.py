@@ -206,6 +206,9 @@ def data_client(data_client_config, venue, event_loop, msgbus, cache, clock):
     client._client._is_ib_connected.set()
     client._client._connect = AsyncMock()
     client._client._account_ids = {"DU123456"}
+    client._client._eclient.serverVersion_ = (
+        0  # ibapi 10.43 needs serverVersion_ set for useProtoBuf()
+    )
     return client
 
 
@@ -230,6 +233,9 @@ def exec_client(exec_client_config, venue, event_loop, msgbus, cache, clock):
     client._client._is_ib_connected.set()
     client._client._connect = AsyncMock()
     client._client._account_ids = {"DU123456"}
+    client._client._eclient.serverVersion_ = (
+        0  # ibapi 10.43 needs serverVersion_ set for useProtoBuf()
+    )
     return client
 
 
