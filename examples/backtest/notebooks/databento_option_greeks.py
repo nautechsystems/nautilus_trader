@@ -48,7 +48,6 @@ from nautilus_trader.core.datetime import time_object_to_dt
 from nautilus_trader.core.datetime import unix_nanos_to_iso8601
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
-from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.greeks_data import GreeksData
@@ -249,26 +248,6 @@ class OptionStrategy(Strategy):
         self.subscribe_bars(self.bar_type_2)
         self.subscribe_bars(self.bar_type_3)
 
-        # Subscribing to custom greeks data if it's already stored
-        self.user_log(
-            f"Subscribing to GreeksData for options, load_greeks={self.config.load_greeks}",
-        )
-        self.subscribe_data(
-            DataType(GreeksData),
-            instrument_id=self.config.option_id,
-            params={
-                "append_data": False,
-            },  # prepending data ensures that greeks are cached and available before on_bar
-        )
-        self.subscribe_data(
-            DataType(GreeksData),
-            instrument_id=self.config.option_id2,
-            params={"append_data": False},
-        )
-        self.greeks.subscribe_greeks(
-            InstrumentId.from_str("ES*.XCME"),
-        )  # adds all ES greeks read from the message bus to the cache
-
     def on_instrument(self, instrument):
         self.user_log(f"Received instrument: {instrument}")
 
@@ -349,7 +328,6 @@ class OptionStrategy(Strategy):
         self.user_log("Calculating portfolio greeks...")
         portfolio_greeks = self.greeks.portfolio_greeks(
             use_cached_greeks=self.config.load_greeks,
-            publish_greeks=(not self.config.load_greeks),
             # underlyings=["ES"],
             # spot_shock=10.,
             # vol_shock=0.0,
@@ -387,8 +365,6 @@ class OptionStrategy(Strategy):
         self.unsubscribe_bars(self.bar_type_3)
         self.unsubscribe_quote_ticks(self.config.option_id)
         self.unsubscribe_quote_ticks(self.config.option_id2)
-        self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id)
-        self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id2)
         self.unsubscribe_quote_ticks(self.config.spread_id, params=self.default_data_params)
         self.unsubscribe_quote_ticks(self.config.spread_id2, params=self.default_data_params)
 
@@ -541,10 +517,6 @@ results = node.run()
 
 # %%
 if not load_greeks:
-    catalog.convert_stream_to_data(
-        results[0].instance_id,
-        GreeksData,
-    )
     catalog.convert_stream_to_data(
         results[0].instance_id,
         Bar,

@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Callable
-
 from nautilus_trader.core.nautilus_pyo3 import black_scholes_greeks
 from nautilus_trader.core.nautilus_pyo3 import imply_vol_and_greeks
 from nautilus_trader.core.nautilus_pyo3 import refine_vol_and_greeks
@@ -27,11 +25,9 @@ from nautilus_trader.model.greeks_data import PortfolioGreeks
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Logger
-from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.model cimport OptionKind
 from nautilus_trader.core.rust.model cimport PositionSide
-from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
@@ -48,8 +44,6 @@ cdef class GreeksCalculator:
 
     Parameters
     ----------
-    msgbus : MessageBus
-        The message bus for the calculator.
     cache : CacheFacade
         The cache for the calculator.
     clock : LiveClock
@@ -74,11 +68,9 @@ cdef class GreeksCalculator:
 
     def __init__(
         self,
-        MessageBus msgbus not None,
         CacheFacade cache not None,
         Clock clock not None,
     ) -> None:
-        self._msgbus = msgbus
         self._cache = cache
         self._clock = clock
         self._log = Logger(type(self).__name__)
@@ -94,7 +86,6 @@ cdef class GreeksCalculator:
         use_cached_greeks: bool = False,
         update_vol: bool = False,
         cache_greeks: bool = False,
-        publish_greeks: bool = False,
         ts_event: int = 0,
         position: Position | None = None,
         percent_greeks: bool = False,
@@ -135,8 +126,6 @@ cdef class GreeksCalculator:
             Whether to update the volatility to a target price using the previously calculated volatility.
         cache_greeks : bool, default False
             Whether to cache the calculated greeks.
-        publish_greeks : bool, default False
-            Whether to publish the calculated greeks.
         ts_event : int, default 0
             Timestamp of the event triggering the calculation, by default 0.
         position : Position, optional
@@ -173,12 +162,12 @@ cdef class GreeksCalculator:
 
             underlying_price = float(underlying_price_obj)
 
-            delta, _, _ = self.modify_greeks(multiplier, 0., underlying_instrument_id, underlying_price + spot_shock, underlying_price,
+            delta, _, _ = self.modify_greeks(1.,0., underlying_instrument_id, underlying_price + spot_shock, underlying_price,
                                              percent_greeks, index_instrument_id, beta_weights, 0.0, 0.0, 0, None)
             greeks_data = GreeksData.from_delta(instrument_id, delta, multiplier, ts_event)
 
             if position is not None:
-                greeks_data.pnl = multiplier * ((underlying_price + spot_shock) - position.avg_px_open)
+                greeks_data.pnl = ((underlying_price + spot_shock) - position.avg_px_open)
                 greeks_data.price = greeks_data.pnl
 
             return greeks_data
@@ -204,14 +193,12 @@ cdef class GreeksCalculator:
             else:
                 interest_rate = flat_interest_rate
 
-            # cost of carry is 0 for futures
+            # cost of carry is 0 for options on futures
             cost_of_carry = 0.
-
             if (dividend_curve := self._cache.yield_curve(str(underlying_instrument_id))) is not None:
                 dividend_yield = dividend_curve(expiry_in_years)
                 cost_of_carry = interest_rate - dividend_yield
             elif flat_dividend_yield is not None:
-                # Use a dividend rate of 0. to have a cost of carry of interest rate for options on stocks
                 cost_of_carry = interest_rate - flat_dividend_yield
 
             multiplier = float(instrument.multiplier)
@@ -235,17 +222,17 @@ cdef class GreeksCalculator:
                 # Use cached vol as initial vol and refine with new price using target_price
                 initial_vol = cached_greeks.vol
                 greeks = refine_vol_and_greeks(underlying_price, interest_rate, cost_of_carry, is_call, strike,
-                                              expiry_in_years, option_price, initial_vol, multiplier)
+                                               expiry_in_years, option_price, initial_vol)
                 if greeks is not None:
                     self._log.debug(f"Updated vol from cached greeks for {instrument_id=}: {initial_vol:.4f} -> {greeks.vol:.4f}")
                 else:
                     # Fallback to standard implied vol calculation if refinement failed
                     greeks = imply_vol_and_greeks(underlying_price, interest_rate, cost_of_carry, is_call, strike,
-                                                  expiry_in_years, option_price, multiplier)
+                                                  expiry_in_years, option_price)
             else:
                 # Standard implied vol calculation
                 greeks = imply_vol_and_greeks(underlying_price, interest_rate, cost_of_carry, is_call, strike,
-                                              expiry_in_years, option_price, multiplier)
+                                              expiry_in_years, option_price)
 
             delta, gamma, vega = self.modify_greeks(greeks.delta, greeks.gamma, underlying_instrument_id, underlying_price,
                                                      underlying_price, percent_greeks, index_instrument_id, beta_weights,
@@ -259,11 +246,6 @@ cdef class GreeksCalculator:
             if cache_greeks:
                 self._cache.add_greeks(greeks_data)
 
-            # publishing greeks on the message bus so they can be written to a catalog from streamed objects
-            if publish_greeks:
-                data_type = DataType(GreeksData)
-                self._msgbus.publish_c(topic=f"data.{instrument_id.venue}.{instrument_id.symbol.topic()}", msg=greeks_data)
-
         if spot_shock != 0. or vol_shock != 0. or time_to_expiry_shock != 0.:
             underlying_price = greeks_data.underlying_price
             shocked_underlying_price = underlying_price + spot_shock
@@ -271,10 +253,10 @@ cdef class GreeksCalculator:
             shocked_time_to_expiry = greeks_data.expiry_in_years - time_to_expiry_shock
 
             greeks = black_scholes_greeks(shocked_underlying_price, greeks_data.interest_rate, greeks_data.cost_of_carry,
-                                          shocked_vol, greeks_data.is_call, greeks_data.strike, shocked_time_to_expiry, greeks_data.multiplier)
+                                          shocked_vol, greeks_data.is_call, greeks_data.strike, shocked_time_to_expiry)
             delta, gamma, vega = self.modify_greeks(greeks.delta, greeks.gamma, underlying_instrument_id, shocked_underlying_price, underlying_price,
-                                                     percent_greeks, index_instrument_id, beta_weights,
-                                                     greeks.vega, shocked_vol, int(shocked_time_to_expiry * 365.25), vega_time_weight_base)
+                                                    percent_greeks, index_instrument_id, beta_weights,
+                                                    greeks.vega, shocked_vol, int(shocked_time_to_expiry * 365.25), vega_time_weight_base)
 
             greeks_data = GreeksData(greeks_data.ts_event, greeks_data.ts_event,
                                      greeks_data.instrument_id, greeks_data.is_call, greeks_data.strike, greeks_data.expiry,
@@ -283,7 +265,7 @@ cdef class GreeksCalculator:
                                      greeks.theta, greeks.itm_prob)
 
         if position is not None:
-            greeks_data.pnl = greeks_data.price - greeks_data.multiplier * position.avg_px_open
+            greeks_data.pnl = greeks_data.price - position.avg_px_open
 
         return greeks_data
 
@@ -428,7 +410,6 @@ cdef class GreeksCalculator:
         use_cached_greeks: bool = False,
         update_vol: bool = False,
         cache_greeks: bool = False,
-        publish_greeks: bool = False,
         percent_greeks: bool = False,
         index_instrument_id: InstrumentId | None = None,
         beta_weights: dict[InstrumentId, float] | None = None,
@@ -481,8 +462,6 @@ cdef class GreeksCalculator:
             Whether to update the volatility to a target price using the previously calculated volatility.
         cache_greeks : bool, default False
             Whether to cache the calculated Greeks.
-        publish_greeks : bool, default False
-            Whether to publish the Greeks data to the message bus.
         percent_greeks : bool, optional
             Whether to compute greeks as percentage of the underlying price, by default False.
         index_instrument_id : InstrumentId, optional
@@ -537,7 +516,6 @@ cdef class GreeksCalculator:
                 use_cached_greeks,
                 update_vol,
                 cache_greeks,
-                publish_greeks,
                 ts_event,
                 position,
                 percent_greeks,
@@ -556,31 +534,3 @@ cdef class GreeksCalculator:
                 portfolio_greeks += position_greeks
 
         return portfolio_greeks
-
-    def subscribe_greeks(self, instrument_id: InstrumentId | None = None, handler: Callable[[GreeksData], None] = None) -> None:
-        """
-        Subscribe to Greeks data for a given underlying instrument.
-
-        Useful for reading greeks from a backtesting data catalog and caching them for later use.
-
-        Parameters
-        ----------
-        instrument_id : str, optional
-            The underlying instrument ID subscribe to.
-            Use for example InstrumentId.from_str("ES*.GLBX") to cache all ES greeks.
-            If empty, subscribes to all Greeks data.
-        handler : Callable[[GreeksData], None], optional
-            The callback function to handle received Greeks data.
-            If None, defaults to adding greeks to the cache.
-
-        Returns
-        -------
-        None
-
-        """
-        used_handler = handler or (lambda greeks: self._cache.add_greeks(greeks))
-        topic = f"data.GreeksData.{instrument_id.venue}.{instrument_id.symbol.topic()}" if instrument_id else "data.GreeksData.*"
-        self._msgbus.subscribe(
-            topic=topic,
-            handler=used_handler,
-        )

@@ -8731,10 +8731,9 @@ def black_scholes_greeks(
     is_call: bool,
     k: float,
     t: float,
-    multiplier: float,
 ) -> BlackScholesGreeksResult:
     """
-    Calculate the Black-Scholes Greeks for a given option contract.
+    Calculate the Black-Scholes Greeks for a given option contract (per unit).
 
     Parameters
     ----------
@@ -8752,8 +8751,6 @@ def black_scholes_greeks(
         The strike price of the option.
     t : float
         The time to expiration of the option in years.
-    multiplier : float
-        The multiplier for the option contract.
 
     Returns
     -------
@@ -8789,8 +8786,6 @@ def imply_vol(
         The time to expiration of the option in years.
     price : float
         The current market price of the option.
-    multiplier : float
-        The multiplier for the option contract.
 
     Returns
     -------
@@ -8806,10 +8801,9 @@ def imply_vol_and_greeks(
     k: float,
     t: float,
     price: float,
-    multiplier: float,
 ) -> BlackScholesGreeksResult:
     """
-    Calculate the implied volatility and Greeks for an option contract.
+    Calculate the implied volatility and Greeks for an option contract (per unit).
 
     Parameters
     ----------
@@ -8827,8 +8821,6 @@ def imply_vol_and_greeks(
         The time to expiration of the option in years.
     price : float
         The current market price of the option.
-    multiplier : float
-        The multiplier for the option contract.
 
     Returns
     -------
@@ -8845,7 +8837,6 @@ def refine_vol_and_greeks(
     t: float,
     target_price: float,
     initial_vol: float,
-    multiplier: float,
 ) -> BlackScholesGreeksResult:
     """
     Refine implied volatility using an initial guess and compute greeks.
@@ -8871,8 +8862,6 @@ def refine_vol_and_greeks(
         The target market price of the option.
     initial_vol : float
         The initial guess for the volatility.
-    multiplier : float
-        The multiplier for the option contract.
 
     Returns
     -------

@@ -231,14 +231,19 @@ fn pricing_kernel<T: BlackScholesReal>(
     let p_theta =
         theta_base + r * k * disc * (T::splat(1.0) - n_d2) - phi_theta * (b - r) * s * n_d1;
 
+    let price = T::select(is_call, c_price, p_price);
+    let delta = T::select(is_call, n_d1, n_d1 - T::splat(1.0));
+    let theta = T::select(is_call, c_theta, p_theta);
+    let itm_prob = T::select(is_call, n_d2, T::splat(1.0) - n_d2);
+
     Greeks {
-        price: T::select(is_call, c_price, p_price),
+        price,
         vol,
-        delta: T::select(is_call, n_d1, n_d1 - T::splat(1.0)),
+        delta,
         gamma,
         vega,
-        theta: T::select(is_call, c_theta, p_theta),
-        itm_prob: T::select(is_call, n_d2, T::splat(1.0) - n_d2),
+        theta,
+        itm_prob,
     }
 }
 
@@ -401,7 +406,7 @@ mod tests {
         );
 
         // Compute using exact f64 method
-        let g_exact = black_scholes_greeks_exact(s, r, b, vol, true, k, t, multiplier);
+        let g_exact = black_scholes_greeks_exact(s, r, b, vol, true, k, t);
 
         // Compare with tolerance for f32 precision
         let price_tol = 1e-4;
@@ -458,7 +463,7 @@ mod tests {
         let multiplier = 1.0f64;
 
         // Compute the exact price using the true volatility
-        let g_exact = black_scholes_greeks_exact(s, r, b, vol_true, true, k, t, multiplier);
+        let g_exact = black_scholes_greeks_exact(s, r, b, vol_true, true, k, t);
         let mkt_price = g_exact.price;
 
         // Compute implied vol using one Halley step with initial guess
@@ -536,9 +541,8 @@ mod tests {
         let r = 0.05f64;
         let b = 0.05f64;
         let vol_true = 0.2f64;
-        let multiplier = 1.0f64;
 
-        let g_exact = black_scholes_greeks_exact(s, r, b, vol_true, true, k, t, multiplier);
+        let g_exact = black_scholes_greeks_exact(s, r, b, vol_true, true, k, t);
         let mkt_price = g_exact.price;
 
         println!("\n=== Halley Step IV Test (Using True Vol as Initial Guess) ===");
@@ -576,13 +580,11 @@ mod tests {
         let r = 0.05f64;
         let b = 0.05f64;
         let vol_true = 0.2f64;
-        let multiplier = 1.0f64;
 
         // Deep ITM: s=150, k=100 (spot is 50% above strike)
         let s_itm = 150.0f64;
         let k_itm = 100.0f64;
-        let g_exact_itm =
-            black_scholes_greeks_exact(s_itm, r, b, vol_true, true, k_itm, t, multiplier);
+        let g_exact_itm = black_scholes_greeks_exact(s_itm, r, b, vol_true, true, k_itm, t);
         let mkt_price_itm = g_exact_itm.price;
 
         println!("\n=== Deep ITM Test ===");
@@ -610,8 +612,7 @@ mod tests {
         // Deep OTM: s=50, k=100 (spot is 50% below strike)
         let s_otm = 50.0f64;
         let k_otm = 100.0f64;
-        let g_exact_otm =
-            black_scholes_greeks_exact(s_otm, r, b, vol_true, true, k_otm, t, multiplier);
+        let g_exact_otm = black_scholes_greeks_exact(s_otm, r, b, vol_true, true, k_otm, t);
         let mkt_price_otm = g_exact_otm.price;
 
         println!("\n=== Deep OTM Test ===");

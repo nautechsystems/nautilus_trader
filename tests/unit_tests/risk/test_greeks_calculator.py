@@ -16,7 +16,6 @@
 from datetime import UTC
 from datetime import datetime
 
-from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.data import QuoteTick
@@ -47,10 +46,6 @@ class TestGreeksCalculator:
         self.clock = TestClock()
         # Set clock to 30 days before option expiry (2024-02-14 16:00 UTC)
         self.clock.set_time(1_707_926_400_000_000_000)
-        self.msgbus = MessageBus(
-            trader_id=TestIdStubs.trader_id(),
-            clock=self.clock,
-        )
         self.cache = TestComponentStubs.cache()
 
         # Create test instruments
@@ -96,7 +91,6 @@ class TestGreeksCalculator:
 
         # Create GreeksCalculator
         self.greeks_calculator = GreeksCalculator(
-            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
         )
@@ -144,21 +138,21 @@ class TestGreeksCalculator:
         )
 
         # Expected values for AAPL $150C with underlying at 155, 30 DTE, IV ~32.6%
-        assert abs(greeks.price - 850.0007629395) < 1e-3, (
-            f"Price mismatch: {greeks.price} vs 850.0007629395"
+        assert abs(greeks.price - 8.500007629394531) < 1e-3, (
+            f"Price mismatch: {greeks.price} vs 8.500007629394531"
         )
         assert abs(greeks.vol - 0.3260962941) < 1e-5, f"Vol mismatch: {greeks.vol} vs 0.3260962941"
-        assert abs(greeks.delta - 65.4531240463) < 1e-3, (
-            f"Delta mismatch: {greeks.delta} vs 65.4531240463"
+        assert abs(greeks.delta - 0.6545312404632568) < 1e-3, (
+            f"Delta mismatch: {greeks.delta} vs 0.6545312404632568"
         )
-        assert abs(greeks.gamma - 2.5358643383) < 1e-3, (
-            f"Gamma mismatch: {greeks.gamma} vs 2.5358643383"
+        assert abs(greeks.gamma - 0.025358643383) < 1e-3, (
+            f"Gamma mismatch: {greeks.gamma} vs 0.025358643383"
         )
-        assert abs(greeks.vega - 16.3179779053) < 1e-3, (
-            f"Vega mismatch: {greeks.vega} vs 16.3179779053"
+        assert abs(greeks.vega - 0.163179779053) < 1e-3, (
+            f"Vega mismatch: {greeks.vega} vs 0.163179779053"
         )
-        assert abs(greeks.theta - (-8.7698151199)) < 1e-3, (
-            f"Theta mismatch: {greeks.theta} vs -8.7698151199"
+        assert abs(greeks.theta - (-0.087698151199)) < 1e-3, (
+            f"Theta mismatch: {greeks.theta} vs -0.087698151199"
         )
 
     def test_instrument_greeks_with_caching(self):
@@ -282,8 +276,8 @@ class TestGreeksCalculator:
         )
 
         # Expected updated price from computation
-        assert abs(updated_greeks.price - 899.9732971191) < 1e-3, (
-            f"Updated price mismatch: {updated_greeks.price} vs 899.9732971191"
+        assert abs(updated_greeks.price - 8.999732971191406) < 1e-3, (
+            f"Updated price mismatch: {updated_greeks.price} vs 8.999732971191406"
         )
         # Vol should be updated based on new price (should be different from initial)
         assert abs(updated_greeks.vol - initial_vol) > 1e-3, (
@@ -331,8 +325,8 @@ class TestGreeksCalculator:
 
         # Should compute greeks using standard implied vol (same as without update_vol)
         # Expected values for 30 DTE, IV ~32.6%
-        assert abs(greeks.price - 850.0007629395) < 1e-3, (
-            f"Price should match expected: {greeks.price} vs 850.0007629395"
+        assert abs(greeks.price - 8.500007629394531) < 1e-3, (
+            f"Price should match expected: {greeks.price} vs 8.500007629394531"
         )
         assert abs(greeks.vol - 0.3260962941) < 1e-5, (
             f"Vol should match expected: {greeks.vol} vs 0.3260962941"
@@ -429,8 +423,8 @@ class TestGreeksCalculator:
         # Position is long 1 contract, so signed_qty = 1.0
         # Portfolio price = 1.0 * instrument_price (already includes multiplier)
         tol = 1e-2
-        assert abs(portfolio_greeks.price - 899.9732971191) < tol, (
-            f"Portfolio price should match updated option price: {portfolio_greeks.price} vs 899.9732971191"
+        assert abs(portfolio_greeks.price - 899.9732971191406) < tol, (
+            f"Portfolio price should match updated option price: {portfolio_greeks.price} vs 899.9732971191406"
         )
         # Portfolio delta should be non-zero (1.0 * instrument_delta from the position)
         assert abs(portfolio_greeks.delta) > 1e-3, (

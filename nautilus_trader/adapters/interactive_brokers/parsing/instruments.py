@@ -261,10 +261,8 @@ RE_FUT3_ORIGINAL = re.compile(
     r"^(?P<symbol>[A-Z]+)(?P<year>\d{2})(?P<month>(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC))FUT$",
 )  # "NIFTY25MARFUT"
 RE_FUT4 = re.compile(
-    r"^(?P<underlying>[A-Z0-9]{2,10})\s+"
-    r"(?P<tradingClass>[A-Z0-9]{2,6})\s+"
-    r"(?P<expiry>\d{8})$",
-)
+    r"^(?P<underlying>[A-Z0-9]{2,10})\s+(?P<tradingClass>[A-Z0-9]{2,6})\s+(?P<expiry>\d{8})$",
+)  # "ESTX50 FESX 20240315"
 RE_FOP = re.compile(
     r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d{2})(?P<right>[CP])(?P<strike>.{4,6})$",
 )  # "ESM23C4200"
@@ -1059,29 +1057,30 @@ def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too comple
     contract_details_map: dict[int, IBContractDetails] | None = None,
 ) -> InstrumentId:
     security_type = contract.secType
-
     if security_type == "BAG":
         return bag_contract_to_instrument_id(contract, venue, contract_details_map)
     elif security_type == "STK":
         symbol = (contract.localSymbol or contract.symbol).replace(" ", "-")
     elif security_type == "IND":
         symbol = f"^{(contract.localSymbol or contract.symbol)}"
-    elif security_type == "OPT" and contract.localSymbol:
-        symbol = contract.localSymbol
     elif security_type == "OPT":
-        symbol = f"{contract.right} {contract.tradingClass} {contract.lastTradeDateOrContractMonth} {contract.strike}"
+        if contract.localSymbol:
+            symbol = contract.localSymbol
+        else:
+            symbol = f"{contract.right} {contract.tradingClass} {contract.lastTradeDateOrContractMonth} {contract.strike}"
     elif security_type == "CONTFUT":
         symbol = contract.symbol
-    elif security_type == "FUT" and (m := RE_FUT_ORIGINAL.match(contract.localSymbol)):
-        symbol = f"{m['symbol']}{m['month']}{m['year']}"
-    elif security_type == "FUT" and len(contract.lastTradeDateOrContractMonth) == 8:
-        symbol = (
-            f"{contract.symbol} {contract.tradingClass} {contract.lastTradeDateOrContractMonth}"
-        )
-    elif (security_type == "FUT" and (m := RE_FUT2_ORIGINAL.match(contract.localSymbol))) or (
-        security_type == "FUT" and (m := RE_FUT3_ORIGINAL.match(contract.localSymbol))
-    ):
-        symbol = f"{m['symbol']}{FUTURES_MONTH_TO_CODE[m['month']]}{m['year'][-1]}"
+    elif security_type == "FUT":
+        if m := RE_FUT_ORIGINAL.match(contract.localSymbol):
+            symbol = f"{m['symbol']}{m['month']}{m['year']}"
+        elif len(contract.lastTradeDateOrContractMonth) == 8:
+            symbol = (
+                f"{contract.symbol} {contract.tradingClass} {contract.lastTradeDateOrContractMonth}"
+            )
+        elif (m := RE_FUT2_ORIGINAL.match(contract.localSymbol)) or (
+            m := RE_FUT3_ORIGINAL.match(contract.localSymbol)
+        ):
+            symbol = f"{m['symbol']}{FUTURES_MONTH_TO_CODE[m['month']]}{m['year'][-1]}"
     elif security_type == "FOP" and (m := RE_FOP_ORIGINAL.match(contract.localSymbol)):
         symbol = f"{m['symbol']}{m['month']}{m['year']} {m['right']}{m['strike']}"
     elif security_type in ["CASH", "CRYPTO"]:
