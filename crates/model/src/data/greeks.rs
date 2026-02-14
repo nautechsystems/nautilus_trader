@@ -32,6 +32,10 @@ use crate::{
 };
 
 const FRAC_SQRT_2_PI: f64 = f64::from_bits(0x3fd9884533d43651);
+/// used to convert theta to per-calendar-day change when building BlackScholesGreeksResult.
+const THETA_DAILY_FACTOR: f64 = 1.0 / 365.25;
+/// Scale for vega to express as absolute percent change when building BlackScholesGreeksResult.
+const VEGA_PERCENT_FACTOR: f64 = 0.01;
 
 #[inline(always)]
 fn norm_pdf(x: f64) -> f64 {
@@ -67,7 +71,6 @@ pub fn black_scholes_greeks_exact(
     is_call: bool,
     k: f64,
     t: f64,
-    multiplier: f64,
 ) -> BlackScholesGreeksResult {
     let phi = if is_call { 1.0 } else { -1.0 };
     let scaled_vol = vol * t.sqrt();
@@ -80,14 +83,14 @@ pub fn black_scholes_greeks_exact(
     let s_t = s * df;
     let k_t = k * (-r * t).exp();
 
-    let price = multiplier * phi * (s_t * cdf_phi_d1 - k_t * cdf_phi_d2);
-    let delta = multiplier * phi * df * cdf_phi_d1;
-    let gamma = multiplier * df * dist_d1 / (s * scaled_vol);
-    let vega = multiplier * s_t * t.sqrt() * dist_d1 * 0.01; // in absolute percent change
-    let theta = multiplier
-        * (s_t * (-dist_d1 * vol / (2.0 * t.sqrt()) - phi * (b - r) * cdf_phi_d1)
-            - phi * r * k_t * cdf_phi_d2)
-        * 0.0027378507871321013; // 1 / 365.25 in change per calendar day
+    let price = phi * (s_t * cdf_phi_d1 - k_t * cdf_phi_d2);
+    let delta = phi * df * cdf_phi_d1;
+    let gamma = df * dist_d1 / (s * scaled_vol);
+    let vega = s_t * t.sqrt() * dist_d1 * VEGA_PERCENT_FACTOR;
+    let theta = (s_t * (-dist_d1 * vol / (2.0 * t.sqrt()) - phi * (b - r) * cdf_phi_d1)
+        - phi * r * k_t * cdf_phi_d2)
+        * THETA_DAILY_FACTOR;
+    let itm_prob = cdf_phi_d2;
 
     BlackScholesGreeksResult {
         price,
@@ -96,7 +99,7 @@ pub fn black_scholes_greeks_exact(
         gamma,
         vega,
         theta,
-        itm_prob: cdf_phi_d2,
+        itm_prob,
     }
 }
 
@@ -126,26 +129,19 @@ pub fn black_scholes_greeks(
     is_call: bool,
     k: f64,
     t: f64,
-    multiplier: f64,
 ) -> BlackScholesGreeksResult {
-    // Pass both r (risk-free rate) and b (cost of carry) to compute_greeks
     // Use f32 for performance, then cast to f64 when applying multiplier
     let greeks = compute_greeks::<f32>(
         s as f32, k as f32, t as f32, r as f32, b as f32, vol as f32, is_call,
     );
 
-    // Apply multiplier and convert units to match exact implementation
-    // Vega in compute_greeks is raw (not scaled by 0.01), Theta is raw (not scaled by daily factor)
-    let daily_factor = 0.0027378507871321013; // 1 / 365.25
-
-    // Convert from Greeks<f32> to BlackScholesGreeksResult (f64) with multiplier
     BlackScholesGreeksResult {
-        price: (greeks.price as f64) * multiplier,
+        price: (greeks.price as f64),
         vol,
-        delta: (greeks.delta as f64) * multiplier,
-        gamma: (greeks.gamma as f64) * multiplier,
-        vega: (greeks.vega as f64) * multiplier * 0.01, // Convert to absolute percent change
-        theta: (greeks.theta as f64) * multiplier * daily_factor, // Convert to daily changes
+        delta: (greeks.delta as f64),
+        gamma: (greeks.gamma as f64),
+        vega: (greeks.vega as f64) * VEGA_PERCENT_FACTOR,
+        theta: (greeks.theta as f64) * THETA_DAILY_FACTOR,
         itm_prob: greeks.itm_prob as f64,
     }
 }
@@ -161,14 +157,13 @@ pub fn imply_vol_and_greeks(
     k: f64,
     t: f64,
     price: f64,
-    multiplier: f64,
 ) -> BlackScholesGreeksResult {
     let vol = imply_vol(s, r, b, is_call, k, t, price);
     // Handle case when imply_vol fails and returns 0.0 or very small value
     // Using a very small vol (1e-8) instead of 0.0 prevents division by zero in greeks calculations
     // This ensures greeks remain finite even when imply_vol fails
     let safe_vol = if vol < 1e-8 { 1e-8 } else { vol };
-    black_scholes_greeks(s, r, b, safe_vol, is_call, k, t, multiplier)
+    black_scholes_greeks(s, r, b, safe_vol, is_call, k, t)
 }
 
 /// Refines implied volatility using an initial guess and computes greeks.
@@ -184,9 +179,7 @@ pub fn refine_vol_and_greeks(
     t: f64,
     target_price: f64,
     initial_vol: f64,
-    multiplier: f64,
 ) -> BlackScholesGreeksResult {
-    // Pass both r (risk-free rate) and b (cost of carry) to compute_iv_and_greeks
     // Use f32 for performance, then cast to f64 when applying multiplier
     let greeks = compute_iv_and_greeks::<f32>(
         target_price as f32,
@@ -199,17 +192,13 @@ pub fn refine_vol_and_greeks(
         initial_vol as f32,
     );
 
-    // Apply multiplier and convert units to match exact implementation
-    let daily_factor = 0.0027378507871321013; // 1 / 365.25
-
-    // Convert from Greeks<f32> to BlackScholesGreeksResult (f64) with multiplier
     BlackScholesGreeksResult {
-        price: (greeks.price as f64) * multiplier,
+        price: (greeks.price as f64),
         vol: greeks.vol as f64,
-        delta: (greeks.delta as f64) * multiplier,
-        gamma: (greeks.gamma as f64) * multiplier,
-        vega: (greeks.vega as f64) * multiplier * 0.01, // Convert to absolute percent change
-        theta: (greeks.theta as f64) * multiplier * daily_factor, // Convert to daily changes
+        delta: (greeks.delta as f64),
+        gamma: (greeks.gamma as f64),
+        vega: (greeks.vega as f64) * VEGA_PERCENT_FACTOR,
+        theta: (greeks.theta as f64) * THETA_DAILY_FACTOR,
         itm_prob: greeks.itm_prob as f64,
     }
 }
@@ -722,9 +711,8 @@ mod tests {
         let is_call = true;
         let k = 100.0;
         let t = 1.0;
-        let multiplier = 1.0;
 
-        let greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t, multiplier);
+        let greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t);
 
         assert!(greeks.price > 0.0);
         assert!(greeks.delta > 0.0 && greeks.delta < 1.0);
@@ -742,9 +730,8 @@ mod tests {
         let is_call = false;
         let k = 100.0;
         let t = 1.0;
-        let multiplier = 1.0;
 
-        let greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t, multiplier);
+        let greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t);
 
         assert!(
             greeks.price > 0.0,
@@ -758,28 +745,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_black_scholes_greeks_with_multiplier() {
-        let s = 100.0;
-        let r = 0.05;
-        let b = 0.05;
-        let vol = 0.2;
-        let is_call = true;
-        let k = 100.0;
-        let t = 1.0;
-        let multiplier = 100.0;
-
-        let greeks_1x = black_scholes_greeks(s, r, b, vol, is_call, k, t, 1.0);
-        let greeks_100x = black_scholes_greeks(s, r, b, vol, is_call, k, t, multiplier);
-
-        let tolerance = 1e-10;
-        assert!((greeks_100x.price - greeks_1x.price * 100.0).abs() < tolerance);
-        assert!((greeks_100x.delta - greeks_1x.delta * 100.0).abs() < tolerance);
-        assert!((greeks_100x.gamma - greeks_1x.gamma * 100.0).abs() < tolerance);
-        assert!((greeks_100x.vega - greeks_1x.vega * 100.0).abs() < tolerance);
-        assert!((greeks_100x.theta - greeks_1x.theta * 100.0).abs() < tolerance);
-    }
-
-    #[rstest]
     fn test_black_scholes_greeks_deep_itm_call() {
         let s = 150.0;
         let r = 0.05;
@@ -788,9 +753,8 @@ mod tests {
         let is_call = true;
         let k = 100.0;
         let t = 1.0;
-        let multiplier = 1.0;
 
-        let greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t, multiplier);
+        let greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t);
 
         assert!(greeks.delta > 0.9); // Deep ITM call has delta close to 1
         assert!(greeks.gamma > 0.0 && greeks.gamma < 0.01); // Low gamma for deep ITM
@@ -805,9 +769,8 @@ mod tests {
         let is_call = true;
         let k = 100.0;
         let t = 1.0;
-        let multiplier = 1.0;
 
-        let greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t, multiplier);
+        let greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t);
 
         assert!(greeks.delta < 0.1); // Deep OTM call has delta close to 0
         assert!(greeks.gamma > 0.0 && greeks.gamma < 0.01); // Low gamma for deep OTM
@@ -822,9 +785,8 @@ mod tests {
         let is_call = true;
         let k = 100.0;
         let t = 0.0001; // Near zero time
-        let multiplier = 1.0;
 
-        let greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t, multiplier);
+        let greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t);
 
         assert!(greeks.price >= 0.0);
         assert!(greeks.theta.is_finite());
@@ -840,7 +802,7 @@ mod tests {
         let k = 100.0;
         let t = 1.0;
 
-        let theoretical_price = black_scholes_greeks(s, r, b, vol, is_call, k, t, 1.0).price;
+        let theoretical_price = black_scholes_greeks(s, r, b, vol, is_call, k, t).price;
         let implied_vol = imply_vol(s, r, b, is_call, k, t, theoretical_price);
 
         // Tolerance relaxed due to numerical precision differences between fast_norm_query and exact methods
@@ -1171,9 +1133,8 @@ mod tests {
         let is_call = true;
         let k = 10.0; // Very deep ITM
         let t = 0.1;
-        let multiplier = 1.0;
 
-        let greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t, multiplier);
+        let greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t);
 
         assert!(greeks.price.is_finite());
         assert!(greeks.delta.is_finite());
@@ -1193,9 +1154,8 @@ mod tests {
         let is_call = true;
         let k = 100.0;
         let t = 1.0;
-        let multiplier = 1.0;
 
-        let greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t, multiplier);
+        let greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t);
 
         assert!(greeks.price.is_finite());
         assert!(greeks.delta.is_finite());
@@ -1248,19 +1208,19 @@ mod tests {
         let is_call = true;
         let eps = 1e-3;
 
-        let greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t, 1.0);
+        let greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t);
 
         // Use exact method for finite difference calculations for better precision
-        let price0 = |s: f64| black_scholes_greeks_exact(s, r, b, vol, is_call, k, t, 1.0).price;
+        let price0 = |s: f64| black_scholes_greeks_exact(s, r, b, vol, is_call, k, t).price;
 
         let delta_bnr = (price0(s + eps) - price0(s - eps)) / (2.0 * eps);
         let gamma_bnr = (price0(s + eps) + price0(s - eps) - 2.0 * price0(s)) / (eps * eps);
-        let vega_bnr = (black_scholes_greeks_exact(s, r, b, vol + eps, is_call, k, t, 1.0).price
-            - black_scholes_greeks_exact(s, r, b, vol - eps, is_call, k, t, 1.0).price)
+        let vega_bnr = (black_scholes_greeks_exact(s, r, b, vol + eps, is_call, k, t).price
+            - black_scholes_greeks_exact(s, r, b, vol - eps, is_call, k, t).price)
             / (2.0 * eps)
             / 100.0;
-        let theta_bnr = (black_scholes_greeks_exact(s, r, b, vol, is_call, k, t - eps, 1.0).price
-            - black_scholes_greeks_exact(s, r, b, vol, is_call, k, t + eps, 1.0).price)
+        let theta_bnr = (black_scholes_greeks_exact(s, r, b, vol, is_call, k, t - eps).price
+            - black_scholes_greeks_exact(s, r, b, vol, is_call, k, t + eps).price)
             / (2.0 * eps)
             / 365.25;
 
@@ -1281,6 +1241,7 @@ mod tests {
             greeks.gamma,
             gamma_bnr
         );
+        // Both greeks.vega and vega_bnr are per 1% vol (absolute percent change).
         assert!(
             (greeks.vega - vega_bnr).abs() < tolerance,
             "Vega difference exceeds tolerance: {} vs {}",
@@ -1306,19 +1267,19 @@ mod tests {
         let is_call = false;
         let eps = 1e-3;
 
-        let greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t, 1.0);
+        let greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t);
 
         // Use exact method for finite difference calculations for better precision
-        let price0 = |s: f64| black_scholes_greeks_exact(s, r, b, vol, is_call, k, t, 1.0).price;
+        let price0 = |s: f64| black_scholes_greeks_exact(s, r, b, vol, is_call, k, t).price;
 
         let delta_bnr = (price0(s + eps) - price0(s - eps)) / (2.0 * eps);
         let gamma_bnr = (price0(s + eps) + price0(s - eps) - 2.0 * price0(s)) / (eps * eps);
-        let vega_bnr = (black_scholes_greeks_exact(s, r, b, vol + eps, is_call, k, t, 1.0).price
-            - black_scholes_greeks_exact(s, r, b, vol - eps, is_call, k, t, 1.0).price)
+        let vega_bnr = (black_scholes_greeks_exact(s, r, b, vol + eps, is_call, k, t).price
+            - black_scholes_greeks_exact(s, r, b, vol - eps, is_call, k, t).price)
             / (2.0 * eps)
             / 100.0;
-        let theta_bnr = (black_scholes_greeks_exact(s, r, b, vol, is_call, k, t - eps, 1.0).price
-            - black_scholes_greeks_exact(s, r, b, vol, is_call, k, t + eps, 1.0).price)
+        let theta_bnr = (black_scholes_greeks_exact(s, r, b, vol, is_call, k, t - eps).price
+            - black_scholes_greeks_exact(s, r, b, vol, is_call, k, t + eps).price)
             / (2.0 * eps)
             / 365.25;
 
@@ -1339,6 +1300,7 @@ mod tests {
             greeks.gamma,
             gamma_bnr
         );
+        // Both greeks.vega and vega_bnr are per 1% vol (absolute percent change).
         assert!(
             (greeks.vega - vega_bnr).abs() < tolerance,
             "Vega difference exceeds tolerance: {} vs {}",
@@ -1363,10 +1325,10 @@ mod tests {
         let vol = 0.2;
         let is_call = true;
 
-        let base_greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t, 1.0);
+        let base_greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t);
         let price = base_greeks.price;
 
-        let implied_result = imply_vol_and_greeks(s, r, b, is_call, k, t, price, 1.0);
+        let implied_result = imply_vol_and_greeks(s, r, b, is_call, k, t, price);
 
         // Tolerance relaxed due to numerical precision differences
         let tolerance = 2e-4;
@@ -1417,29 +1379,19 @@ mod tests {
         let is_call = true;
         let k = 100.0;
         let t = 1.0;
-        let multiplier = 1.0;
 
         // Calculate the price with the initial vol
-        let initial_greeks = black_scholes_greeks(s, r, b, initial_vol, is_call, k, t, multiplier);
+        let initial_greeks = black_scholes_greeks(s, r, b, initial_vol, is_call, k, t);
         let target_price = initial_greeks.price;
 
         // Now use a slightly different vol and refine it using target_price
         let refined_vol = initial_vol * 1.1; // 10% higher vol
-        let refined_greeks = refine_vol_and_greeks(
-            s,
-            r,
-            b,
-            is_call,
-            k,
-            t,
-            target_price,
-            refined_vol,
-            multiplier,
-        );
+        let refined_greeks =
+            refine_vol_and_greeks(s, r, b, is_call, k, t, target_price, refined_vol);
 
         // The refined vol should be closer to the initial vol, and the price should match the target
         // Tolerance matches the function's convergence tolerance (price_epsilon * 2.0)
-        let price_tolerance = (s * 5e-5 * multiplier).max(1e-4) * 2.0;
+        let price_tolerance = (s * 5e-5).max(1e-4) * 2.0;
         assert!(
             (refined_greeks.price - target_price).abs() < price_tolerance,
             "Refined price should match target: {} vs {}",
@@ -1466,29 +1418,19 @@ mod tests {
         let is_call = false;
         let k = 105.0;
         let t = 0.5;
-        let multiplier = 1.0;
 
         // Calculate the price with the initial vol
-        let initial_greeks = black_scholes_greeks(s, r, b, initial_vol, is_call, k, t, multiplier);
+        let initial_greeks = black_scholes_greeks(s, r, b, initial_vol, is_call, k, t);
         let target_price = initial_greeks.price;
 
         // Now use a different vol and refine it using target_price
         let refined_vol = initial_vol * 0.8; // 20% lower vol
-        let refined_greeks = refine_vol_and_greeks(
-            s,
-            r,
-            b,
-            is_call,
-            k,
-            t,
-            target_price,
-            refined_vol,
-            multiplier,
-        );
+        let refined_greeks =
+            refine_vol_and_greeks(s, r, b, is_call, k, t, target_price, refined_vol);
 
         // The refined price should match the target
         // Tolerance matches the function's convergence tolerance (price_epsilon * 2.0)
-        let price_tolerance = (s * 5e-5 * multiplier).max(1e-4) * 2.0;
+        let price_tolerance = (s * 5e-5).max(1e-4) * 2.0;
         assert!(
             (refined_greeks.price - target_price).abs() < price_tolerance,
             "Refined price should match target: {} vs {}",
@@ -1516,10 +1458,10 @@ mod tests {
         let vol = 0.2;
         let is_call = false;
 
-        let base_greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t, 1.0);
+        let base_greeks = black_scholes_greeks(s, r, b, vol, is_call, k, t);
         let price = base_greeks.price;
 
-        let implied_result = imply_vol_and_greeks(s, r, b, is_call, k, t, price, 1.0);
+        let implied_result = imply_vol_and_greeks(s, r, b, is_call, k, t, price);
 
         // Tolerance relaxed due to numerical precision differences
         let tolerance = 2e-4;
@@ -1573,10 +1515,9 @@ mod tests {
         let r = 0.05;
         let b = 0.05;
         let k = 100.0;
-        let multiplier = 1.0;
 
-        let greeks_fast = black_scholes_greeks(spot, r, b, vol, is_call, k, t, multiplier);
-        let greeks_exact = black_scholes_greeks_exact(spot, r, b, vol, is_call, k, t, multiplier);
+        let greeks_fast = black_scholes_greeks(spot, r, b, vol, is_call, k, t);
+        let greeks_exact = black_scholes_greeks_exact(spot, r, b, vol, is_call, k, t);
 
         // Verify ~7 significant decimals precision using relative error checks
         // For 7 significant decimals: relative error < 5e-6 (accounts for f32 intermediate calculations)
@@ -1638,31 +1579,20 @@ mod tests {
         let r = 0.05;
         let b = 0.05;
         let k = 100.0;
-        let multiplier = 1.0;
 
         // Compute the theoretical price using the target volatility
-        let base_greeks = black_scholes_greeks(spot, r, b, target_vol, is_call, k, t, multiplier);
+        let base_greeks = black_scholes_greeks(spot, r, b, target_vol, is_call, k, t);
         let target_price = base_greeks.price;
 
         // Initial guess is 0.01 below the target vol
         let initial_guess = target_vol - 0.01;
 
         // Recover volatility using refine_vol_and_greeks
-        let refined_result = refine_vol_and_greeks(
-            spot,
-            r,
-            b,
-            is_call,
-            k,
-            t,
-            target_price,
-            initial_guess,
-            multiplier,
-        );
+        let refined_result =
+            refine_vol_and_greeks(spot, r, b, is_call, k, t, target_price, initial_guess);
 
         // Recover volatility using imply_vol_and_greeks
-        let implied_result =
-            imply_vol_and_greeks(spot, r, b, is_call, k, t, target_price, multiplier);
+        let implied_result = imply_vol_and_greeks(spot, r, b, is_call, k, t, target_price);
 
         // Detect deep ITM/OTM options (more than 5% away from ATM)
         // These are especially challenging for imply_vol with very short expiry

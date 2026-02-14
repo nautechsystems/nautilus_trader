@@ -75,11 +75,8 @@ pub fn py_black_scholes_greeks(
     is_call: bool,
     k: f64,
     t: f64,
-    multiplier: f64,
 ) -> PyResult<BlackScholesGreeksResult> {
-    Ok(black_scholes_greeks(
-        s, r, b, vol, is_call, k, t, multiplier,
-    ))
+    Ok(black_scholes_greeks(s, r, b, vol, is_call, k, t))
 }
 
 /// Computes the implied volatility for an option given its parameters and market price.
@@ -119,11 +116,8 @@ pub fn py_imply_vol_and_greeks(
     k: f64,
     t: f64,
     price: f64,
-    multiplier: f64,
 ) -> PyResult<BlackScholesGreeksResult> {
-    Ok(imply_vol_and_greeks(
-        s, r, b, is_call, k, t, price, multiplier,
-    ))
+    Ok(imply_vol_and_greeks(s, r, b, is_call, k, t, price))
 }
 
 /// Refines implied volatility using an initial guess and computes greeks.
@@ -145,7 +139,6 @@ pub fn py_refine_vol_and_greeks(
     t: f64,
     target_price: f64,
     initial_vol: f64,
-    multiplier: f64,
 ) -> PyResult<BlackScholesGreeksResult> {
     Ok(refine_vol_and_greeks(
         s,
@@ -156,6 +149,5 @@ pub fn py_refine_vol_and_greeks(
         t,
         target_price,
         initial_vol,
-        multiplier,
     ))
 }
