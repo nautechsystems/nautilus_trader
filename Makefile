@@ -124,26 +124,26 @@ install-deps:  #-- Install Python dependencies only (no package build)
 install: export BUILD_MODE=release
 install:  #-- Install in release mode with all dependencies and extras
 	$(info $(M) Installing NautilusTrader in release mode...)
-	$Q uv sync --active --all-groups --all-extras
+	$Q uv sync --active --all-groups --all-extras --inexact
 
 .PHONY: install-debug
 install-debug: export BUILD_MODE=debug
 install-debug:  #-- Install in debug mode for development
 	$(info $(M) Installing NautilusTrader in debug mode...)
-	$Q uv sync --active --all-groups --all-extras
+	$Q uv sync --active --all-groups --all-extras --inexact
 
 #== Build
 
 .PHONY: build
 build: export BUILD_MODE=release
 build: export CARGO_TARGET_DIR=$(TARGET_DIR)
-build: install-deps  #-- Build the package in release mode
+build:  #-- Build the package in release mode
 	uv run --active --no-sync build.py
 
 .PHONY: build-debug
 build-debug: export BUILD_MODE=debug
 build-debug: export CARGO_TARGET_DIR=$(TARGET_DIR)
-build-debug: install-deps  #-- Build the package in debug mode (recommended for development)
+build-debug:  #-- Build the package in debug mode (recommended for development)
 ifeq ($(VERBOSE),true)
 	$(info $(M) Building in debug mode with verbose output...)
 	uv run --active --no-sync build.py
@@ -155,7 +155,7 @@ endif
 .PHONY: build-debug-pyo3
 build-debug-pyo3: export BUILD_MODE=debug-pyo3
 build-debug-pyo3: export CARGO_TARGET_DIR=$(TARGET_DIR)
-build-debug-pyo3: install-deps  #-- Build the package with PyO3 debug symbols (for debugging Rust code)
+build-debug-pyo3:  #-- Build the package with PyO3 debug symbols (for debugging Rust code)
 ifeq ($(VERBOSE),true)
 	$(info $(M) Building in debug mode with PyO3 debug symbols...)
 	uv run --active --no-sync build.py
