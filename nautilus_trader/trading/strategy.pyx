@@ -1738,6 +1738,7 @@ cdef class Strategy(Actor):
             self._log.warning(
                 f"Order with {repr(client_order_id)} not found in the cache to apply {event}"
             )
+            return
 
         if order.is_closed_c():
             self._log.warning(f"GTD expired order {order.client_order_id} was already closed")
