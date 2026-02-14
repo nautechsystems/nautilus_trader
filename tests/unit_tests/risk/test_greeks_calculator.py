@@ -16,7 +16,6 @@
 from datetime import UTC
 from datetime import datetime
 
-from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.data import QuoteTick
@@ -47,10 +46,6 @@ class TestGreeksCalculator:
         self.clock = TestClock()
         # Set clock to 30 days before option expiry (2024-02-14 16:00 UTC)
         self.clock.set_time(1_707_926_400_000_000_000)
-        self.msgbus = MessageBus(
-            trader_id=TestIdStubs.trader_id(),
-            clock=self.clock,
-        )
         self.cache = TestComponentStubs.cache()
 
         # Create test instruments
@@ -96,7 +91,6 @@ class TestGreeksCalculator:
 
         # Create GreeksCalculator
         self.greeks_calculator = GreeksCalculator(
-            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
         )

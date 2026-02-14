@@ -4312,7 +4312,6 @@ class TestSpreadQuoteAggregator:
         )
         self.cache = Cache()
         self.greeks_calculator = GreeksCalculator(
-            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
         )
@@ -4894,7 +4893,6 @@ class TestSpreadQuoteAggregator:
         from nautilus_trader.model.instruments import CryptoFuture
 
         greeks_calculator = GreeksCalculator(
-            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
         )
@@ -5701,7 +5699,6 @@ class TestSpreadQuoteAggregator:
         # Note: Not adding underlying trade tick, so greeks will be missing
 
         greeks_calculator = GreeksCalculator(
-            msgbus=self.msgbus,
             cache=cache,
             clock=self.clock,
         )
@@ -5779,7 +5776,6 @@ class TestSpreadQuoteAggregatorHistoricalMode:
         )
         self.cache = Cache()
         self.greeks_calculator = GreeksCalculator(
-            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
         )

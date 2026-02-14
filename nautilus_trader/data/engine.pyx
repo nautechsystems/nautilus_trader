@@ -3278,7 +3278,7 @@ cdef class DataEngine(Component):
 
         update_interval_seconds = params.get("update_interval_seconds", 1)
         quote_build_delay = params.get("quote_build_delay", 0)
-        greeks_calculator = GreeksCalculator(self._msgbus, self._cache, self._clock)
+        greeks_calculator = GreeksCalculator(self._cache, self._clock)
         self._spread_quote_aggregators[key] = SpreadQuoteAggregator(
             spread_instrument=instrument,
             handler=self._handle_spread_quote,
@@ -3318,7 +3318,7 @@ cdef class DataEngine(Component):
             # independently from the system clock (which may be ahead)
             test_clock = TestClock()
             aggregator.set_clock(test_clock)
-            greeks_calculator = GreeksCalculator(self._msgbus, self._cache, test_clock)
+            greeks_calculator = GreeksCalculator(self._cache, test_clock)
             aggregator.set_historical_mode(historical, self.process_historical, greeks_calculator)
         else:
             if aggregator.historical_mode:
@@ -3327,7 +3327,7 @@ cdef class DataEngine(Component):
 
             aggregator.stop_timer()
             aggregator.set_clock(self._clock)
-            greeks_calculator = GreeksCalculator(self._msgbus, self._cache, self._clock)
+            greeks_calculator = GreeksCalculator(self._cache, self._clock)
             aggregator.set_historical_mode(historical, self._handle_spread_quote, greeks_calculator)
 
         # Subscribe aggregator to message bus to receive underlying data
