@@ -872,6 +872,6 @@ cpdef list[Instrument] instruments_from_pyo3(list pyo3_instruments):
         elif isinstance(pyo3_instrument, nautilus_pyo3.OptionSpread):
             instruments.append(OptionSpread.from_pyo3_c(pyo3_instrument))
         else:
-            RuntimeError(f"Instrument {pyo3_instrument} not supported")
+            raise RuntimeError(f"Instrument {pyo3_instrument} not supported")
 
     return instruments
