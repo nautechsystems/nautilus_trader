@@ -1612,11 +1612,11 @@ wheels = [
 
 [[package]]
 name = "nautilus-ibapi"
-version = "10.37.2"
+version = "10.43.2"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/68/13/bbadf2c1216533053b2d29841107ae4a6d9eabbe4cd2bf4048503ee6ed65/nautilus_ibapi-10.37.2.tar.gz", hash = "sha256:5e498f5c8d83849c38eab1930926e33cd393d730f64835cb27af657a20e5528d", size = 90528, upload-time = "2025-08-26T08:28:20.614Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/76/a7/cd2c00d99a2500a9fde23db64bbe5588e396cd13f933dd9973a6edb27fd0/nautilus_ibapi-10.43.2.tar.gz", hash = "sha256:e7d9b0c14c81f44f88815a27ac543ac93d22ead08d14cd4d3d336b31ec3f1753", size = 154445, upload-time = "2026-02-11T21:38:40.435Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8e/71/cf8cb1f9fc6a3af902939405cfadfc09f154895f6a0830a2bcc95b5a2d07/nautilus_ibapi-10.37.2-py3-none-any.whl", hash = "sha256:7c665ce6ad85c550e7c2050d0c85ee446de5b35bf2ced07532b9a12470a78a5d", size = 117567, upload-time = "2025-08-26T08:28:19.511Z" },
+    { url = "https://files.pythonhosted.org/packages/0a/03/b810d53eea98bbc29c0cd6ba06ffe942bdbe22e0c09582df4a6741b119c3/nautilus_ibapi-10.43.2-py3-none-any.whl", hash = "sha256:2afa9f42bc9f662dea0938829a1261c04edc42ecabbee9b06a27d5494b1113dc", size = 325562, upload-time = "2026-02-11T21:38:38.763Z" },
 ]
 
 [[package]]
@@ -1655,6 +1655,7 @@ dydx = [
 ib = [
     { name = "defusedxml", marker = "python_full_version < '3.14'" },
     { name = "nautilus-ibapi", marker = "python_full_version < '3.14'" },
+    { name = "protobuf", marker = "python_full_version < '3.14'" },
 ]
 polymarket = [
     { name = "py-clob-client" },
@@ -1707,12 +1708,13 @@ requires-dist = [
     { name = "fsspec", specifier = ">=2025.2.0,<=2026.1.0" },
     { name = "grpcio", marker = "python_full_version < '3.14' and extra == 'dydx'", specifier = "==1.68.1" },
     { name = "msgspec", specifier = ">=0.20.0,<1.0.0" },
-    { name = "nautilus-ibapi", marker = "python_full_version < '3.14' and extra == 'ib'", specifier = "==10.37.2" },
+    { name = "nautilus-ibapi", marker = "python_full_version < '3.14' and extra == 'ib'", specifier = "==10.43.2" },
     { name = "numpy", specifier = ">=1.26.4" },
     { name = "pandas", specifier = ">=2.3.3,<3.0.0" },
     { name = "plotly", marker = "extra == 'visualization'", specifier = ">=6.3.1,<7.0.0" },
     { name = "portion", specifier = ">=2.6.1" },
     { name = "protobuf", marker = "python_full_version < '3.14' and extra == 'dydx'", specifier = "==5.29.5" },
+    { name = "protobuf", marker = "python_full_version < '3.14' and extra == 'ib'", specifier = ">=5.29.5" },
     { name = "py-clob-client", marker = "extra == 'polymarket'", specifier = ">=0.34.5,<1.0.0" },
     { name = "pyarrow", specifier = ">=22.0.0" },
     { name = "pycryptodome", marker = "python_full_version < '3.14' and extra == 'dydx'", specifier = ">=3.20.0,<4.0.0" },

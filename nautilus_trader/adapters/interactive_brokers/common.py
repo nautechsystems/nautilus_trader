@@ -234,6 +234,7 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     minSize: Decimal = UNSET_DECIMAL
     sizeIncrement: Decimal = UNSET_DECIMAL
     suggestedSizeIncrement: Decimal = UNSET_DECIMAL
+    minAlgoSize: Decimal = UNSET_DECIMAL
 
     # BOND values
     cusip: str = ""
@@ -273,6 +274,9 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     )
     fundAssetType: FundAssetType = FundAssetType.NoneItem
     ineligibilityReasonList: list = None
+    eventContract1: str = ""
+    eventContractDescription1: str = ""
+    eventContractDescription2: str = ""
 
 
 def dict_to_contract_details(dict_details: dict) -> IBContractDetails:
@@ -289,7 +293,7 @@ def dict_to_contract_details(dict_details: dict) -> IBContractDetails:
 
     # Deserialize Decimal fields from strings back to Decimal objects
     # These fields are known to be Decimal type in IBContractDetails
-    decimal_fields = ["minSize", "sizeIncrement", "suggestedSizeIncrement"]
+    decimal_fields = ["minSize", "sizeIncrement", "suggestedSizeIncrement", "minAlgoSize"]
     for field in decimal_fields:
         if field in details_copy and isinstance(details_copy[field], str):
             try:
