@@ -295,7 +295,7 @@ version = "1.0.101"
 criteria = "safe-to-deploy"
 
 [[exemptions.arc-swap]]
-version = "1.8.1"
+version = "1.8.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.arcstr]]
@@ -492,6 +492,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.bitcoin_hashes]]
 version = "0.14.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.bitflags]]
+version = "2.11.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.bitvec]]
@@ -2560,7 +2564,7 @@ version = "1.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.uuid]]
-version = "1.20.0"
+version = "1.21.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.value-bag]]

@@ -170,6 +170,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Renamed Deribit instrument kind enum to product type (#3512), thanks @filipmacek
 - Refactored execution clients to use `OrderEventEmitter` in Rust (#3469), thanks @filipmacek
 - Refactored computation of greeks (#3393), thanks @faysou
+- Refactored `instrument_greeks` (#3587), thanks @faysou
 - Refactored `TearsheetConfig.charts` to chart objects (removed `chart_args`) (#3398), thanks @KaulSe
 - Refactored Betfair order matching to use `rfo` as primary key
 - Refactored Deribit WS client to use standard Nautilus method names (#3418), thanks @filipmacek
@@ -207,7 +208,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Optimized `Money::from_decimal` with integer arithmetic
 - Optimized message bus publish with thread-local `SmallVec` buffers in Rust
 - Optimized message bus pattern matching with greedy algorithm
-- Upgraded Interactive Brokers adapter to `ibapi` 10.37.2 (#3427), thanks @faysou
+- Upgraded Interactive Brokers adapter to `ibapi` 10.43 (#3427, #3595), thanks @faysou
 - Upgraded Rust (MSRV) to 1.93.0
 - Upgraded Cap'n Proto to v1.3.0
 - Upgraded Cython to v3.2.4

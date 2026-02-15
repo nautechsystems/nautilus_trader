@@ -85,7 +85,7 @@ repos:
   #  GitHub Actions linting (complementary tools covering different aspects)
   ##############################################################################
   - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.10
+    rev: v1.7.11
     hooks:
       - id: actionlint
         name: actionlint (syntax/structure)
@@ -244,16 +244,17 @@ repos:
         types: [file]
         pass_filenames: false
 
-      - id: cargo-doc
-        name: cargo doc
-        description: Check documentation builds without errors or warnings
-        entry:
-          cargo doc --workspace --features "ffi,python,high-precision,defi"
-          --profile nextest --no-deps --quiet
-        language: system
-        files: '\.(rs|toml)$'
-        types: [file]
-        pass_filenames: false
+      # TODO: Too slow for standard development flows
+      # - id: cargo-doc
+      #   name: cargo doc
+      #   description: Check documentation builds without errors or warnings
+      #   entry:
+      #     cargo doc --workspace --features "ffi,python,high-precision,defi"
+      #     --profile nextest --no-deps --quiet
+      #   language: system
+      #   files: '\.(rs|toml)$'
+      #   types: [file]
+      #   pass_filenames: false
 
   ##############################################################################
   #  Python/Cython formatting and linting

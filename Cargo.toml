@@ -281,7 +281,7 @@ tracing-subscriber = { version = "0.3.22", default-features = false, features = 
 unbounded-interval-tree = { version = "1.1.2", default-features = false }
 url = { version = "2.5.8", default-features = false }
 ustr = { version = "1.1.0", features = ["serde"] }
-uuid = { version = "1.20.0", features = ["v4", "serde"] }
+uuid = { version = "1.21.0", features = ["v4", "serde"] }
 webpki-roots = "1.0.6"
 
 # -----------------------------------------------------------------------------
@@ -296,7 +296,7 @@ alloy-signer-local = { version = "1.6.3", default-features = false, features = [
   "mnemonic",
 ] }
 alloy-sol-types = "1.5.6"
-arc-swap = "1.8.1"
+arc-swap = "1.8.2"
 cosmrs = { version = "0.22.0", default-features = false, features = ["bip32"] }
 csv = "1.4.0"
 databento = { version = "0.40.0", default-features = false, features = [
