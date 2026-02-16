@@ -2469,13 +2469,130 @@ class ParquetDataCatalog(BaseDataCatalog):
             if feather_table is None:
                 continue
 
-            file_data = self._handle_table_nautilus(
-                feather_table,
-                data_cls,
-                convert_bar_type_to_external=True,
+            self._convert_feather_table_to_parquet(
+                feather_table=feather_table,
+                feather_path=feather_file.path,
+                data_cls=data_cls,
+                used_catalog=used_catalog,
                 use_ts_event_for_ts_init=use_ts_event_for_ts_init,
             )
-            used_catalog.write_data(file_data)
+
+    def _convert_feather_table_to_parquet(
+        self,
+        feather_table: pa.Table,
+        feather_path: str,
+        data_cls: type,
+        used_catalog: ParquetDataCatalog,
+        use_ts_event_for_ts_init: bool = False,
+    ) -> None:
+        # Apply table-only transforms (no deserialization).
+        table = self._apply_stream_conversion_transforms(
+            feather_table,
+            use_ts_event_for_ts_init=use_ts_event_for_ts_init,
+            convert_bar_type_to_external=True,
+        )
+        if table is None or len(table) == 0:
+            return
+
+        identifier = self._identifier_from_table_or_path(table, data_cls, feather_path)
+        start = int(pa.compute.min(table["ts_init"]).as_py())
+        end = int(pa.compute.max(table["ts_init"]).as_py())
+
+        directory = used_catalog._make_path(data_cls=data_cls, identifier=identifier)
+        used_catalog.fs.mkdirs(directory, exist_ok=True)
+        filename = _timestamps_to_filename(start, end)
+        parquet_file = f"{directory}/{filename}"
+
+        if used_catalog.fs.exists(parquet_file):
+            print(f"File {parquet_file} already exists, skipping write")
+            return
+
+        current_intervals = used_catalog._get_directory_intervals(directory)
+        new_intervals = [*current_intervals, (start, end)]
+        if not _are_intervals_disjoint(new_intervals):
+            raise ValueError(
+                f"Writing file {filename} with interval ({start}, {end}) would create "
+                f"non-disjoint intervals. Existing intervals: {current_intervals}",
+            )
+
+        pq.write_table(
+            table,
+            where=parquet_file,
+            filesystem=used_catalog.fs,
+            row_group_size=used_catalog.max_rows_per_group,
+        )
+
+    @staticmethod
+    def _apply_stream_conversion_transforms(
+        table: pa.Table,
+        use_ts_event_for_ts_init: bool = False,
+        convert_bar_type_to_external: bool = False,
+    ) -> pa.Table:
+        if use_ts_event_for_ts_init:
+            schema = table.schema
+            column_names = schema.names
+            if "ts_event" not in column_names or "ts_init" not in column_names:
+                raise ValueError(
+                    "Both 'ts_event' and 'ts_init' columns must exist in the table "
+                    "to use 'use_ts_event_for_ts_init' option",
+                )
+
+            ts_event_idx = column_names.index("ts_event")
+            ts_init_idx = column_names.index("ts_init")
+            new_arrays = list(table.columns)
+            new_arrays[ts_init_idx] = new_arrays[ts_event_idx]
+            table = pa.Table.from_arrays(new_arrays, schema=schema)
+
+        if convert_bar_type_to_external and table.schema.metadata:
+            metadata = dict(table.schema.metadata)
+            if b"bar_type" in metadata:
+                bar_type_str = metadata[b"bar_type"].decode()
+                if bar_type_str.endswith("-INTERNAL"):
+                    metadata[b"bar_type"] = bar_type_str.replace(
+                        "-INTERNAL",
+                        "-EXTERNAL",
+                    ).encode()
+
+            table = table.replace_schema_metadata(metadata)
+
+        # Enforce ts_init non-decreasing for non-empty tables
+        if len(table) > 0:
+            if "ts_init" not in table.schema.names:
+                raise ValueError(
+                    "Table has no 'ts_init' column; cannot enforce monotonicity",
+                )
+
+            if len(table) > 1:
+                sort_indices = pa.compute.sort_indices(
+                    table,
+                    sort_keys=[("ts_init", "ascending")],
+                )
+                identity = pa.array(range(len(table)), type=pa.uint64())
+                if not sort_indices.equals(identity):
+                    table = table.take(sort_indices)
+
+        return table
+
+    @staticmethod
+    def _identifier_from_table_or_path(
+        table: pa.Table,
+        data_cls: type,
+        feather_path: str,
+    ) -> str | None:
+        metadata = table.schema.metadata or {}
+        if b"bar_type" in metadata:
+            return metadata[b"bar_type"].decode()
+
+        if b"instrument_id" in metadata:
+            return metadata[b"instrument_id"].decode()
+
+        # Fallback: per-instrument feather layout .../data_name/identifier/file.feather
+        parts = feather_path.rstrip("/").split("/")
+        data_name = class_to_filename(data_cls)
+        if len(parts) >= 3 and parts[-3] == data_name:
+            return parts[-2]
+
+        return None
 
     def _read_feather_file(
         self,
@@ -2501,40 +2618,11 @@ class ParquetDataCatalog(BaseDataCatalog):
         if isinstance(table, pd.DataFrame):
             table = pa.Table.from_pandas(table)
 
-        # Replace ts_init column with ts_event if requested
-        if use_ts_event_for_ts_init:
-            schema = table.schema
-            column_names = schema.names
-
-            if "ts_event" not in column_names or "ts_init" not in column_names:
-                raise ValueError(
-                    "Both 'ts_event' and 'ts_init' columns must exist in the table "
-                    "to use 'use_ts_event_for_ts_init' option",
-                )
-
-            ts_event_idx = column_names.index("ts_event")
-            ts_init_idx = column_names.index("ts_init")
-
-            # Create new arrays with ts_init replaced by ts_event
-            new_arrays = list(table.columns)
-            new_arrays[ts_init_idx] = new_arrays[ts_event_idx]
-
-            # Create new table with updated arrays
-            table = pa.Table.from_arrays(new_arrays, schema=schema)
-
-        # Convert metadata from INTERNAL to EXTERNAL if requested
-        if convert_bar_type_to_external and table.schema.metadata:
-            metadata = dict(table.schema.metadata)
-
-            # Convert bar_type metadata (for Bar data)
-            if b"bar_type" in metadata:
-                bar_type_str = metadata[b"bar_type"].decode()
-
-                if bar_type_str.endswith("-INTERNAL"):
-                    metadata[b"bar_type"] = bar_type_str.replace("-INTERNAL", "-EXTERNAL").encode()
-
-            # Replace schema with updated metadata (shallow copy)
-            table = table.replace_schema_metadata(metadata)
+        table = ParquetDataCatalog._apply_stream_conversion_transforms(
+            table,
+            use_ts_event_for_ts_init=use_ts_event_for_ts_init,
+            convert_bar_type_to_external=convert_bar_type_to_external,
+        )
 
         data = ArrowSerializer.deserialize(data_cls=data_cls, batch=table)
         if len(data) == 0:

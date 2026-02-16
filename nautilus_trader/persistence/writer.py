@@ -456,7 +456,7 @@ class StreamingFeatherWriter:
 
         self.log.info(f"Created writer for table '{table_name}'")
 
-    def _extract_obj_metadata(
+    def _extract_obj_metadata(  # noqa: C901
         self,
         obj: TradeTick
         | QuoteTick
@@ -466,6 +466,7 @@ class StreamingFeatherWriter:
         | FundingRateUpdate
         | object,
     ) -> dict[bytes, bytes]:
+        # Derive instrument_id and (when possible) precision from the object to match catalog/Rust metadata.
         if isinstance(obj, Bar):
             instrument_id = obj.bar_type.instrument_id
         elif hasattr(obj, "instrument_id"):
@@ -475,20 +476,70 @@ class StreamingFeatherWriter:
                 f"Object of type '{type(obj).__name__}' does not have an instrument_id attribute",
             )
 
-        instrument = self.cache.instrument(instrument_id)
         metadata = {b"instrument_id": instrument_id.value.encode()}
 
         if isinstance(obj, Bar):
             metadata.update(
                 {
                     b"bar_type": str(obj.bar_type).encode(),
-                    b"price_precision": str(instrument.price_precision).encode(),
-                    b"size_precision": str(instrument.size_precision).encode(),
+                    b"price_precision": str(obj.open.precision).encode(),
+                    b"size_precision": str(obj.volume.precision).encode(),
                 },
             )
+        elif isinstance(obj, QuoteTick):
+            metadata.update(
+                {
+                    b"price_precision": str(obj.bid_price.precision).encode(),
+                    b"size_precision": str(obj.bid_size.precision).encode(),
+                },
+            )
+        elif isinstance(obj, TradeTick):
+            metadata.update(
+                {
+                    b"price_precision": str(obj.price.precision).encode(),
+                    b"size_precision": str(obj.size.precision).encode(),
+                },
+            )
+        elif isinstance(obj, OrderBookDelta):
+            metadata.update(
+                {
+                    b"price_precision": str(obj.order.price.precision).encode(),
+                    b"size_precision": str(obj.order.size.precision).encode(),
+                },
+            )
+        elif isinstance(obj, OrderBookDepth10):
+            if obj.bids:
+                first_bid = obj.bids[0]
+                metadata.update(
+                    {
+                        b"price_precision": str(first_bid.price.precision).encode(),
+                        b"size_precision": str(first_bid.size.precision).encode(),
+                    },
+                )
+            else:
+                instrument = self.cache.instrument(instrument_id)
+                if instrument is None:
+                    raise ValueError(
+                        f"Cannot determine precision for OrderBookDepth10 with empty bids: "
+                        f"instrument '{instrument_id}' not found in cache",
+                    )
+                metadata.update(
+                    {
+                        b"price_precision": str(instrument.price_precision).encode(),
+                        b"size_precision": str(instrument.size_precision).encode(),
+                    },
+                )
         elif isinstance(obj, FundingRateUpdate):
+            # FundingRateUpdate only has instrument_id in Rust metadata; no precision.
             pass
         else:
+            # Fallback for custom or legacy types: use cache
+            instrument = self.cache.instrument(instrument_id)
+            if instrument is None:
+                raise ValueError(
+                    f"Cannot determine precision for type '{type(obj).__name__}': "
+                    f"instrument '{instrument_id}' not found in cache",
+                )
             metadata.update(
                 {
                     b"price_precision": str(instrument.price_precision).encode(),

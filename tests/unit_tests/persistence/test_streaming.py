@@ -16,6 +16,9 @@
 import copy
 from collections import Counter
 
+import pyarrow as pa
+import pyarrow.parquet as pq
+
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.cache.cache import Cache
@@ -747,3 +750,72 @@ class TestPersistenceStreaming:
         # Original values were: ts_event=3_000_000_000, ts_init=3_300_000_000
         assert trade_ticks[2].ts_event == 3_000_000_000
         assert trade_ticks[2].ts_init == trade_ticks[2].ts_event
+
+    def test_convert_stream_to_data_preserves_feather_schema_in_parquet(
+        self,
+        catalog_betfair: ParquetDataCatalog,
+    ) -> None:
+        # Arrange: write bar to feather then convert to parquet (direct table write).
+        self.catalog = catalog_betfair
+        clock = TestClock()
+        cache = Cache()
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        cache.add_instrument(instrument)
+
+        instance_id = "test_instance_schema_match"
+        writer = StreamingFeatherWriter(
+            path=f"{self.catalog.path}/backtest/{instance_id}",
+            cache=cache,
+            clock=clock,
+            fs_protocol="file",
+            include_types=[Bar],
+        )
+
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
+        bar_type_internal = BarType(
+            instrument.id,
+            bar_spec,
+            AggregationSource.INTERNAL,
+        )
+        bar = Bar(
+            bar_type=bar_type_internal,
+            open=Price.from_str("1.00002"),
+            high=Price.from_str("1.00004"),
+            low=Price.from_str("1.00001"),
+            close=Price.from_str("1.00003"),
+            volume=Quantity.from_int(1_000_000),
+            ts_event=1000,
+            ts_init=1000,
+        )
+        writer.write(bar)
+        writer.close()
+
+        feather_files = list(
+            self.catalog.fs.glob(
+                f"{self.catalog.path}/backtest/{instance_id}/bar/**/*.feather",
+            ),
+        )
+        assert len(feather_files) >= 1
+        feather_path = feather_files[0]
+
+        with self.catalog.fs.open(feather_path) as f:
+            feather_table = pa.ipc.open_stream(f).read_all()
+        transformed_feather_table = ParquetDataCatalog._apply_stream_conversion_transforms(
+            feather_table,
+            use_ts_event_for_ts_init=False,
+            convert_bar_type_to_external=True,
+        )
+
+        self.catalog.convert_stream_to_data(instance_id, Bar)
+
+        parquet_files = list(
+            self.catalog.fs.glob(f"{self.catalog.path}/data/bar/**/*.parquet"),
+        )
+        assert len(parquet_files) >= 1
+        with self.catalog.fs.open(parquet_files[0]) as f:
+            parquet_table = pq.read_table(f)
+
+        assert parquet_table.schema.equals(
+            transformed_feather_table.schema,
+            check_metadata=True,
+        )
