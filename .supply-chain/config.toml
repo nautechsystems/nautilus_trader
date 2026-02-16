@@ -1131,12 +1131,40 @@ criteria = "safe-to-deploy"
 version = "2.0.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.futures]]
+version = "0.3.32"
+criteria = "safe-to-deploy"
+
+[[exemptions.futures-channel]]
+version = "0.3.32"
+criteria = "safe-to-deploy"
+
+[[exemptions.futures-core]]
+version = "0.3.32"
+criteria = "safe-to-deploy"
+
+[[exemptions.futures-executor]]
+version = "0.3.32"
+criteria = "safe-to-deploy"
+
 [[exemptions.futures-intrusive]]
 version = "0.5.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.futures-io]]
+version = "0.3.32"
+criteria = "safe-to-deploy"
+
+[[exemptions.futures-macro]]
+version = "0.3.32"
+criteria = "safe-to-deploy"
+
+[[exemptions.futures-sink]]
+version = "0.3.32"
+criteria = "safe-to-deploy"
+
 [[exemptions.futures-task]]
-version = "0.3.31"
+version = "0.3.32"
 criteria = "safe-to-deploy"
 
 [[exemptions.futures-timer]]
@@ -1144,7 +1172,7 @@ version = "3.0.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.futures-util]]
-version = "0.3.31"
+version = "0.3.32"
 criteria = "safe-to-deploy"
 
 [[exemptions.futures-utils-wasm]]
@@ -2312,7 +2340,7 @@ version = "1.0.109"
 criteria = "safe-to-deploy"
 
 [[exemptions.syn]]
-version = "2.0.115"
+version = "2.0.116"
 criteria = "safe-to-deploy"
 
 [[exemptions.syn-solidity]]
@@ -2324,7 +2352,7 @@ version = "1.0.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.sysinfo]]
-version = "0.38.1"
+version = "0.38.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.tabled]]
@@ -2336,7 +2364,7 @@ version = "0.11.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.target-lexicon]]
-version = "0.13.4"
+version = "0.13.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.tempfile]]
@@ -2524,7 +2552,7 @@ version = "0.9.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.unicode-ident]]
-version = "1.0.23"
+version = "1.0.24"
 criteria = "safe-to-deploy"
 
 [[exemptions.unicode-properties]]

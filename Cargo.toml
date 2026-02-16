@@ -147,11 +147,11 @@ dotenvy = "0.15.7"
 ed25519-dalek = "2.2.0"
 enum_dispatch = "0.3.13"
 evalexpr = "=11.3.1" # Pinned to v11.3.1 for MIT licensing
-futures = { version = "0.3.31", default-features = false, features = [
+futures = { version = "0.3.32", default-features = false, features = [
   "std",
   "async-await",
 ] }
-futures-util = { version = "0.3.31", default-features = false, features = [
+futures-util = { version = "0.3.32", default-features = false, features = [
   "std",
   "async-await",
   "sink",
@@ -244,7 +244,7 @@ sqlx = { version = "0.8.6", default-features = false, features = [
   "rust_decimal",
 ] }
 strum = { version = "0.27.2", features = ["derive"] }
-sysinfo = { version = "0.38.1", default-features = false, features = [
+sysinfo = { version = "0.38.2", default-features = false, features = [
   "system",
 ] }
 tabled = { version = "0.20.0", default-features = false, features = [
