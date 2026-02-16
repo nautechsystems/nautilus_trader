@@ -18,7 +18,7 @@
 use std::path::PathBuf;
 
 use nautilus_core::{
-    python::{IntoPyObjectNautilusExt, to_pyvalue_err},
+    python::{IntoPyObjectNautilusExt, to_pyexception, to_pyvalue_err},
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
@@ -27,7 +27,6 @@ use nautilus_model::{
 };
 use pyo3::{
     IntoPyObjectExt,
-    exceptions::PyException,
     prelude::*,
     types::{PyDict, PyList},
 };
@@ -85,9 +84,7 @@ impl DatabentoHistoricalClient {
                     dict.set_item("end", res.end)?;
                     dict.into_py_any(py)
                 }),
-                Err(e) => Err(PyErr::new::<PyException, _>(format!(
-                    "Error handling response: {e}"
-                ))),
+                Err(e) => Err(to_pyexception(format!("Error handling response: {e}"))),
             }
         })
     }

@@ -48,7 +48,7 @@ use nautilus_model::{
     },
     types::{Price, Quantity},
 };
-use pyo3::{IntoPyObjectExt, exceptions::PyRuntimeError, prelude::*};
+use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
     common::enums::DeribitTimeInForce,
@@ -316,7 +316,7 @@ impl DeribitWebSocketClient {
             client
                 .wait_until_active(timeout_secs)
                 .await
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+                .map_err(to_pyruntime_err)?;
             Ok(())
         })
     }

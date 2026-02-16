@@ -43,7 +43,7 @@ use nautilus_model::{
     orderbook::OrderBook,
     python::instruments::instrument_any_to_pyobject,
 };
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyDict};
+use pyo3::{prelude::*, types::PyDict};
 
 use crate::{
     actor::{
@@ -82,13 +82,13 @@ impl ImportableActorConfig {
                 .call_method("dumps", (config.bind(py),), None)?
                 .extract()?;
 
-            let json_value: serde_json::Value = serde_json::from_str(&json_str)
-                .map_err(|e| PyErr::new::<PyValueError, _>(e.to_string()))?;
+            let json_value: serde_json::Value =
+                serde_json::from_str(&json_str).map_err(to_pyvalue_err)?;
 
             if let serde_json::Value::Object(map) = json_value {
                 Ok(map.into_iter().collect())
             } else {
-                Err(PyErr::new::<PyValueError, _>("Config must be a dictionary"))
+                Err(to_pyvalue_err("Config must be a dictionary"))
             }
         })?;
 
@@ -115,8 +115,7 @@ impl ImportableActorConfig {
         let py_dict = PyDict::new(py);
         for (key, value) in &self.config {
             // Convert serde_json::Value back to Python object via JSON
-            let json_str = serde_json::to_string(value)
-                .map_err(|e| PyErr::new::<PyValueError, _>(e.to_string()))?;
+            let json_str = serde_json::to_string(value).map_err(to_pyvalue_err)?;
             let py_value = PyModule::import(py, "json")?.call_method("loads", (json_str,), None)?;
             py_dict.set_item(key, py_value)?;
         }
@@ -860,7 +859,7 @@ impl PyDataActor {
         if inner.core.is_registered() {
             Ok(inner.clock.clone())
         } else {
-            Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+            Err(to_pyruntime_err(
                 "Actor must be registered with a trader before accessing clock",
             ))
         }
@@ -873,7 +872,7 @@ impl PyDataActor {
         if inner.core.is_registered() {
             Ok(PyCache::from_rc(inner.core.cache_rc()))
         } else {
-            Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+            Err(to_pyruntime_err(
                 "Actor must be registered with a trader before accessing cache",
             ))
         }
@@ -1188,7 +1187,7 @@ impl PyDataActor {
     ) -> PyResult<()> {
         let depth = depth.and_then(NonZeroUsize::new);
         let interval_ms = NonZeroUsize::new(interval_ms)
-            .ok_or_else(|| PyErr::new::<PyValueError, _>("interval_ms must be > 0"))?;
+            .ok_or_else(|| to_pyvalue_err("interval_ms must be > 0"))?;
 
         DataActor::subscribe_book_at_interval(
             self.inner_mut(),
@@ -1619,7 +1618,7 @@ impl PyDataActor {
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
         let interval_ms = NonZeroUsize::new(interval_ms)
-            .ok_or_else(|| PyErr::new::<PyValueError, _>("interval_ms must be > 0"))?;
+            .ok_or_else(|| to_pyvalue_err("interval_ms must be > 0"))?;
 
         DataActor::unsubscribe_book_at_interval(
             self.inner_mut(),

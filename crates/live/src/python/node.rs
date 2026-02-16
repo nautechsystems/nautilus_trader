@@ -23,11 +23,13 @@ use nautilus_common::{
     live::get_runtime,
     python::actor::PyDataActor,
 };
-use nautilus_core::{UUID4, python::to_pyruntime_err};
+use nautilus_core::{
+    UUID4,
+    python::{to_pyruntime_err, to_pyvalue_err},
+};
 use nautilus_model::identifiers::{ActorId, TraderId};
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::{
-    exceptions::{PyRuntimeError, PyValueError},
     prelude::*,
     types::{PyDict, PyTuple},
 };
@@ -48,7 +50,7 @@ impl LiveNode {
             Ok(builder) => Ok(LiveNodeBuilderPy {
                 inner: Rc::new(RefCell::new(Some(builder.with_name(name)))),
             }),
-            Err(e) => Err(PyErr::new::<PyRuntimeError, _>(e.to_string())),
+            Err(e) => Err(to_pyruntime_err(e)),
         }
     }
 
@@ -79,21 +81,17 @@ impl LiveNode {
     #[pyo3(name = "start")]
     fn py_start(&mut self) -> PyResult<()> {
         if self.is_running() {
-            return Err(PyRuntimeError::new_err("LiveNode is already running"));
+            return Err(to_pyruntime_err("LiveNode is already running"));
         }
 
         // Non-blocking start - just start the node in the background
-        get_runtime().block_on(async {
-            self.start()
-                .await
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
-        })
+        get_runtime().block_on(async { self.start().await.map_err(to_pyruntime_err) })
     }
 
     #[pyo3(name = "run")]
     fn py_run(&mut self, py: Python) -> PyResult<()> {
         if self.is_running() {
-            return Err(PyRuntimeError::new_err("LiveNode is already running"));
+            return Err(to_pyruntime_err("LiveNode is already running"));
         }
 
         // Get a handle for coordinating with the signal checker
@@ -123,13 +121,8 @@ impl LiveNode {
         signal_module.call_method1("signal", (2, signal_callback))?;
 
         // Run the node and restore signal handler afterward
-        let result = {
-            get_runtime().block_on(async {
-                self.run()
-                    .await
-                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
-            })
-        };
+        let result =
+            { get_runtime().block_on(async { self.run().await.map_err(to_pyruntime_err) }) };
 
         // Restore original signal handler
         signal_module.call_method1("signal", (2, original_handler))?;
@@ -140,7 +133,7 @@ impl LiveNode {
     #[pyo3(name = "stop")]
     fn py_stop(&self) -> PyResult<()> {
         if !self.is_running() {
-            return Err(PyRuntimeError::new_err("LiveNode is not running"));
+            return Err(to_pyruntime_err("LiveNode is not running"));
         }
 
         // Use the handle to signal stop - this is thread-safe and doesn't require async
@@ -163,7 +156,7 @@ impl LiveNode {
         // Extract module and class name from actor_path
         let parts: Vec<&str> = config.actor_path.split(':').collect();
         if parts.len() != 2 {
-            return Err(PyValueError::new_err(
+            return Err(to_pyvalue_err(
                 "actor_path must be in format 'module.path:ClassName'",
             ));
         }
@@ -177,7 +170,7 @@ impl LiveNode {
             let actor_class = actor_module.getattr(class_name)?;
             Ok(actor_class.unbind())
         })
-        .map_err(|e| PyRuntimeError::new_err(format!("Failed to import Python class: {e}")))?;
+        .map_err(|e| to_pyruntime_err(format!("Failed to import Python class: {e}")))?;
 
         // Create default DataActorConfig for Rust PyDataActor
         // Inherited config attributes will be extracted and wired in after Python actor creation
@@ -433,9 +426,7 @@ impl LiveNodeBuilderPy {
                 inner: self.inner.clone(),
             })
         } else {
-            Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                "Builder already consumed",
-            ))
+            Err(to_pyruntime_err("Builder already consumed"))
         }
     }
 
@@ -449,9 +440,7 @@ impl LiveNodeBuilderPy {
                 inner: self.inner.clone(),
             })
         } else {
-            Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                "Builder already consumed",
-            ))
+            Err(to_pyruntime_err("Builder already consumed"))
         }
     }
 
@@ -465,9 +454,7 @@ impl LiveNodeBuilderPy {
                 inner: self.inner.clone(),
             })
         } else {
-            Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                "Builder already consumed",
-            ))
+            Err(to_pyruntime_err("Builder already consumed"))
         }
     }
 
@@ -503,15 +490,11 @@ impl LiveNodeBuilderPy {
                             inner: self.inner.clone(),
                         })
                     }
-                    Err(e) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                        "Failed to add data client: {e}"
-                    ))),
+                    Err(e) => Err(to_pyruntime_err(format!("Failed to add data client: {e}"))),
                 }
             })
         } else {
-            Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                "Builder already consumed",
-            ))
+            Err(to_pyruntime_err("Builder already consumed"))
         }
     }
 
@@ -522,14 +505,10 @@ impl LiveNodeBuilderPy {
         if let Some(builder) = inner_ref.take() {
             match builder.build() {
                 Ok(node) => Ok(node),
-                Err(e) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                    e.to_string(),
-                )),
+                Err(e) => Err(to_pyruntime_err(e)),
             }
         } else {
-            Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                "Builder already consumed",
-            ))
+            Err(to_pyruntime_err("Builder already consumed"))
         }
     }
 

@@ -23,7 +23,10 @@ use std::{
 };
 
 use bytes::Bytes;
-use nautilus_core::{collections::into_ustr_vec, python::to_pyvalue_err};
+use nautilus_core::{
+    collections::into_ustr_vec,
+    python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err},
+};
 use pyo3::{create_exception, exceptions::PyException, prelude::*, types::PyDict};
 use reqwest::blocking::Client;
 
@@ -281,9 +284,7 @@ fn params_to_hashmap(
     };
 
     let Ok(dict) = params.cast::<PyDict>() else {
-        return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
-            "params must be a dict",
-        ));
+        return Err(to_pytype_err("params must be a dict"));
     };
 
     let mut result = HashMap::new();
@@ -566,7 +567,7 @@ pub fn http_download(
     let mut response = request_builder.send().map_err(to_pyvalue_err)?;
 
     if !response.status().is_success() {
-        return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+        return Err(to_pyruntime_err(format!(
             "HTTP error: {}",
             response.status()
         )));

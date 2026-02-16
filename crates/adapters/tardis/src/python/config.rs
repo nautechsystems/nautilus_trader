@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{data::BarSpecification, identifiers::InstrumentId};
 use pyo3::prelude::*;
 use ustr::Ustr;
@@ -82,6 +83,5 @@ impl TardisInstrumentMiniInfo {
 /// Returns an error if the bar specification cannot be converted to a Tardis format.
 #[pyfunction(name = "bar_spec_to_tardis_trade_bar_string")]
 pub fn py_bar_spec_to_tardis_trade_bar_string(bar_spec: &BarSpecification) -> PyResult<String> {
-    bar_spec_to_tardis_trade_bar_string(bar_spec)
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))
+    bar_spec_to_tardis_trade_bar_string(bar_spec).map_err(to_pyvalue_err)
 }

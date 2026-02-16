@@ -18,7 +18,7 @@
 use std::str::FromStr;
 
 use nautilus_core::python::to_pyvalue_err;
-use pyo3::{PyTypeInfo, exceptions::PyValueError, prelude::*, types::PyType};
+use pyo3::{PyTypeInfo, prelude::*, types::PyType};
 
 use crate::{
     enums::{
@@ -1856,7 +1856,7 @@ impl PriceType {
     #[pyo3(name = "from_int")]
     fn py_from_int(_: &Bound<'_, PyType>, value: i32) -> PyResult<Self> {
         Self::from_repr(value as usize)
-            .ok_or_else(|| PyValueError::new_err(format!("Invalid PriceType value: {value}")))
+            .ok_or_else(|| to_pyvalue_err(format!("Invalid PriceType value: {value}")))
     }
 
     #[classattr]

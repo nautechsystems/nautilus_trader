@@ -56,7 +56,7 @@ use nautilus_model::{
     },
     types::{Price, Quantity},
 };
-use pyo3::{IntoPyObjectExt, exceptions::PyRuntimeError, prelude::*};
+use pyo3::{IntoPyObjectExt, prelude::*};
 use ustr::Ustr;
 
 use crate::{
@@ -339,7 +339,7 @@ impl OKXWebSocketClient {
             client
                 .wait_until_active(timeout_secs)
                 .await
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+                .map_err(to_pyruntime_err)?;
             Ok(())
         })
     }
@@ -1052,9 +1052,7 @@ impl OKXWebSocketClient {
                 Option<Price>,
                 Option<bool>,
                 Option<bool>,
-            ) = obj
-                .extract(py)
-                .map_err(|e: PyErr| PyRuntimeError::new_err(e.to_string()))?;
+            ) = obj.extract(py).map_err(to_pyruntime_err)?;
 
             domain_orders.push((
                 instrument_type,
@@ -1096,9 +1094,7 @@ impl OKXWebSocketClient {
                 InstrumentId,
                 Option<ClientOrderId>,
                 Option<VenueOrderId>,
-            ) = obj
-                .extract(py)
-                .map_err(|e: PyErr| PyRuntimeError::new_err(e.to_string()))?;
+            ) = obj.extract(py).map_err(to_pyruntime_err)?;
             batched_cancels.push((instrument_id, client_order_id, order_id));
         }
 
@@ -1135,9 +1131,7 @@ impl OKXWebSocketClient {
                 ClientOrderId,
                 Option<Price>,
                 Option<Quantity>,
-            ) = obj
-                .extract(py)
-                .map_err(|e: PyErr| PyRuntimeError::new_err(e.to_string()))?;
+            ) = obj.extract(py).map_err(to_pyruntime_err)?;
             let inst_type =
                 OKXInstrumentType::from_str(&instrument_type).map_err(to_pyvalue_err)?;
             domain_orders.push((

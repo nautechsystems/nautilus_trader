@@ -64,7 +64,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_portfolio::portfolio::Portfolio;
-use pyo3::{exceptions::PyValueError, prelude::*};
+use pyo3::prelude::*;
 use ustr::Ustr;
 
 use crate::strategy::{Strategy, StrategyConfig, StrategyCore};
@@ -886,7 +886,7 @@ impl PyStrategy {
         if inner.core.actor.is_registered() {
             Ok(inner.clock.clone())
         } else {
-            Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+            Err(to_pyruntime_err(
                 "Strategy must be registered with a trader before accessing clock",
             ))
         }
@@ -899,7 +899,7 @@ impl PyStrategy {
         if inner.core.actor.is_registered() {
             Ok(PyCache::from_rc(inner.core.actor.cache_rc()))
         } else {
-            Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+            Err(to_pyruntime_err(
                 "Strategy must be registered with a trader before accessing cache",
             ))
         }
@@ -1334,7 +1334,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let depth = depth.and_then(NonZeroUsize::new);
         let interval_ms = NonZeroUsize::new(interval_ms)
-            .ok_or_else(|| PyErr::new::<PyValueError, _>("interval_ms must be > 0"))?;
+            .ok_or_else(|| to_pyvalue_err("interval_ms must be > 0"))?;
 
         DataActor::subscribe_book_at_interval(
             self.inner_mut(),
@@ -1668,7 +1668,7 @@ impl PyStrategy {
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
         let interval_ms = NonZeroUsize::new(interval_ms)
-            .ok_or_else(|| PyErr::new::<PyValueError, _>("interval_ms must be > 0"))?;
+            .ok_or_else(|| to_pyvalue_err("interval_ms must be > 0"))?;
 
         DataActor::unsubscribe_book_at_interval(
             self.inner_mut(),

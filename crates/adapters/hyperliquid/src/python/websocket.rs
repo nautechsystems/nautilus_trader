@@ -22,7 +22,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId},
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
 };
-use pyo3::{conversion::IntoPyObjectExt, exceptions::PyRuntimeError, prelude::*};
+use pyo3::{conversion::IntoPyObjectExt, prelude::*};
 
 use crate::websocket::{
     HyperliquidWebSocketClient,
@@ -266,7 +266,7 @@ impl HyperliquidWebSocketClient {
                 }
 
                 if start.elapsed().as_secs_f64() >= timeout_secs {
-                    return Err(PyRuntimeError::new_err(format!(
+                    return Err(to_pyruntime_err(format!(
                         "WebSocket connection did not become active within {timeout_secs} seconds"
                     )));
                 }

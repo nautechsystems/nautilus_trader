@@ -19,6 +19,7 @@
 
 use std::sync::Arc;
 
+use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::identifiers::ClientOrderId;
 use pyo3::prelude::*;
 
@@ -65,10 +66,7 @@ impl PyDydxClientOrderIdEncoder {
     #[pyo3(name = "encode")]
     fn py_encode(&self, client_order_id: &str) -> PyResult<(u32, u32)> {
         let id = ClientOrderId::from(client_order_id);
-        let encoded = self
-            .inner
-            .encode(id)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
+        let encoded = self.inner.encode(id).map_err(to_pyruntime_err)?;
         Ok((encoded.client_id, encoded.client_metadata))
     }
 

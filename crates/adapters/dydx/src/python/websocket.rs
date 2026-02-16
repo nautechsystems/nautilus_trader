@@ -42,15 +42,10 @@ use crate::{
     websocket::{
         client::DydxWebSocketClient,
         enums::NautilusWsMessage,
-        error::DydxWsError,
         handler::HandlerCommand,
         parse::{parse_ws_fill_report, parse_ws_order_report, parse_ws_position_report},
     },
 };
-
-fn to_pyvalue_err_dydx(e: DydxWsError) -> PyErr {
-    pyo3::exceptions::PyValueError::new_err(e.to_string())
-}
 
 #[pymethods]
 impl DydxWebSocketClient {
@@ -136,7 +131,7 @@ impl DydxWebSocketClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             // Connect the WebSocket client
-            client.connect().await.map_err(to_pyvalue_err_dydx)?;
+            client.connect().await.map_err(to_pyvalue_err)?;
 
             // Take the receiver for messages
             if let Some(mut rx) = client.take_receiver() {
@@ -497,7 +492,7 @@ impl DydxWebSocketClient {
     fn py_disconnect<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let mut client = self.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client.disconnect().await.map_err(to_pyvalue_err_dydx)?;
+            client.disconnect().await.map_err(to_pyvalue_err)?;
             Ok(())
         })
     }
@@ -573,7 +568,7 @@ impl DydxWebSocketClient {
             client
                 .subscribe_trades(instrument_id)
                 .await
-                .map_err(to_pyvalue_err_dydx)?;
+                .map_err(to_pyvalue_err)?;
             Ok(())
         })
     }
@@ -589,7 +584,7 @@ impl DydxWebSocketClient {
             client
                 .unsubscribe_trades(instrument_id)
                 .await
-                .map_err(to_pyvalue_err_dydx)?;
+                .map_err(to_pyvalue_err)?;
             Ok(())
         })
     }
@@ -605,7 +600,7 @@ impl DydxWebSocketClient {
             client
                 .subscribe_orderbook(instrument_id)
                 .await
-                .map_err(to_pyvalue_err_dydx)?;
+                .map_err(to_pyvalue_err)?;
             Ok(())
         })
     }
@@ -621,7 +616,7 @@ impl DydxWebSocketClient {
             client
                 .unsubscribe_orderbook(instrument_id)
                 .await
-                .map_err(to_pyvalue_err_dydx)?;
+                .map_err(to_pyvalue_err)?;
             Ok(())
         })
     }
@@ -647,7 +642,7 @@ impl DydxWebSocketClient {
             // Register bar type in handler before subscribing
             client
                 .send_command(HandlerCommand::RegisterBarType { topic, bar_type })
-                .map_err(to_pyvalue_err_dydx)?;
+                .map_err(to_pyvalue_err)?;
 
             // Brief delay to ensure handler processes registration
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -655,7 +650,7 @@ impl DydxWebSocketClient {
             client
                 .subscribe_candles(instrument_id, &resolution)
                 .await
-                .map_err(to_pyvalue_err_dydx)?;
+                .map_err(to_pyvalue_err)?;
             Ok(())
         })
     }
@@ -681,12 +676,12 @@ impl DydxWebSocketClient {
             client
                 .unsubscribe_candles(instrument_id, &resolution)
                 .await
-                .map_err(to_pyvalue_err_dydx)?;
+                .map_err(to_pyvalue_err)?;
 
             // Unregister bar type after unsubscribing
             client
                 .send_command(HandlerCommand::UnregisterBarType { topic })
-                .map_err(to_pyvalue_err_dydx)?;
+                .map_err(to_pyvalue_err)?;
 
             Ok(())
         })
@@ -696,10 +691,7 @@ impl DydxWebSocketClient {
     fn py_subscribe_markets<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client
-                .subscribe_markets()
-                .await
-                .map_err(to_pyvalue_err_dydx)?;
+            client.subscribe_markets().await.map_err(to_pyvalue_err)?;
             Ok(())
         })
     }
@@ -708,10 +700,7 @@ impl DydxWebSocketClient {
     fn py_unsubscribe_markets<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client
-                .unsubscribe_markets()
-                .await
-                .map_err(to_pyvalue_err_dydx)?;
+            client.unsubscribe_markets().await.map_err(to_pyvalue_err)?;
             Ok(())
         })
     }
@@ -728,7 +717,7 @@ impl DydxWebSocketClient {
             client
                 .subscribe_subaccount(&address, subaccount_number)
                 .await
-                .map_err(to_pyvalue_err_dydx)?;
+                .map_err(to_pyvalue_err)?;
             Ok(())
         })
     }
@@ -745,7 +734,7 @@ impl DydxWebSocketClient {
             client
                 .unsubscribe_subaccount(&address, subaccount_number)
                 .await
-                .map_err(to_pyvalue_err_dydx)?;
+                .map_err(to_pyvalue_err)?;
             Ok(())
         })
     }
@@ -757,7 +746,7 @@ impl DydxWebSocketClient {
             client
                 .subscribe_block_height()
                 .await
-                .map_err(to_pyvalue_err_dydx)?;
+                .map_err(to_pyvalue_err)?;
             Ok(())
         })
     }
@@ -769,7 +758,7 @@ impl DydxWebSocketClient {
             client
                 .unsubscribe_block_height()
                 .await
-                .map_err(to_pyvalue_err_dydx)?;
+                .map_err(to_pyvalue_err)?;
             Ok(())
         })
     }

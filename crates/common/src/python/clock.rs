@@ -113,11 +113,9 @@ impl PyClock {
     ) -> PyResult<()> {
         let interval_ns_i64 = interval
             .num_nanoseconds()
-            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("Interval too large"))?;
+            .ok_or_else(|| to_pyvalue_err("Interval too large"))?;
         if interval_ns_i64 <= 0 {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Interval must be positive",
-            ));
+            return Err(to_pyvalue_err("Interval must be positive"));
         }
         let interval_ns = interval_ns_i64 as u64;
 

@@ -27,7 +27,8 @@ pub mod websocket;
 
 use std::num::NonZeroU32;
 
-use pyo3::{exceptions::PyException, prelude::*};
+use nautilus_core::python::to_pyexception;
+use pyo3::prelude::*;
 
 use crate::{
     python::{
@@ -48,7 +49,7 @@ impl Quota {
     pub fn rate_per_second(max_burst: u32) -> PyResult<Self> {
         match NonZeroU32::new(max_burst) {
             Some(max_burst) => Ok(Self::per_second(max_burst)),
-            None => Err(PyErr::new::<PyException, _>(
+            None => Err(to_pyexception(
                 "Max burst capacity should be a non-zero integer",
             )),
         }
@@ -63,7 +64,7 @@ impl Quota {
     pub fn rate_per_minute(max_burst: u32) -> PyResult<Self> {
         match NonZeroU32::new(max_burst) {
             Some(max_burst) => Ok(Self::per_minute(max_burst)),
-            None => Err(PyErr::new::<PyException, _>(
+            None => Err(to_pyexception(
                 "Max burst capacity should be a non-zero integer",
             )),
         }
@@ -78,7 +79,7 @@ impl Quota {
     pub fn rate_per_hour(max_burst: u32) -> PyResult<Self> {
         match NonZeroU32::new(max_burst) {
             Some(max_burst) => Ok(Self::per_hour(max_burst)),
-            None => Err(PyErr::new::<PyException, _>(
+            None => Err(to_pyexception(
                 "Max burst capacity should be a non-zero integer",
             )),
         }

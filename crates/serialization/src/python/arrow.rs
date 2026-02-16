@@ -16,7 +16,7 @@
 use std::io::Cursor;
 
 use arrow::{ipc::writer::StreamWriter, record_batch::RecordBatch};
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err};
 use nautilus_model::{
     data::{
         Bar, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick,
@@ -30,7 +30,6 @@ use nautilus_model::{
 };
 use pyo3::{
     conversion::IntoPyObjectExt,
-    exceptions::{PyRuntimeError, PyTypeError, PyValueError},
     prelude::*,
     types::{PyBytes, PyType},
 };
@@ -47,16 +46,12 @@ fn arrow_record_batch_to_pybytes(py: Python, batch: RecordBatch) -> PyResult<Py<
     // Create a cursor to write to a byte array in memory
     let mut cursor = Cursor::new(Vec::new());
     {
-        let mut writer = StreamWriter::try_new(&mut cursor, &batch.schema())
-            .map_err(|e| PyRuntimeError::new_err(format!("{e}")))?;
+        let mut writer =
+            StreamWriter::try_new(&mut cursor, &batch.schema()).map_err(to_pyruntime_err)?;
 
-        writer
-            .write(&batch)
-            .map_err(|e| PyRuntimeError::new_err(format!("{e}")))?;
+        writer.write(&batch).map_err(to_pyruntime_err)?;
 
-        writer
-            .finish()
-            .map_err(|e| PyRuntimeError::new_err(format!("{e}")))?;
+        writer.finish().map_err(to_pyruntime_err)?;
     }
 
     let buffer = cursor.into_inner();
@@ -83,7 +78,7 @@ pub fn get_arrow_schema_map(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResult
         stringify!(IndexPriceUpdate) => IndexPriceUpdate::get_schema_map(),
         stringify!(InstrumentClose) => InstrumentClose::get_schema_map(),
         _ => {
-            return Err(PyTypeError::new_err(format!(
+            return Err(to_pytype_err(format!(
                 "Arrow schema for `{cls_str}` is not currently implemented in Rust."
             )));
         }
@@ -156,7 +151,7 @@ pub fn pyobjects_to_arrow_record_batch_bytes(
             let closes = pyobjects_to_instrument_closes(data)?;
             py_instrument_closes_to_arrow_record_batch_bytes(py, closes)
         }
-        _ => Err(PyValueError::new_err(format!(
+        _ => Err(to_pyvalue_err(format!(
             "unsupported data type: {data_type}"
         ))),
     }

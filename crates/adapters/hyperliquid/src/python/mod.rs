@@ -20,9 +20,9 @@ pub mod http;
 pub mod urls;
 pub mod websocket;
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::identifiers::ClientOrderId;
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
+use pyo3::prelude::*;
 
 use crate::{
     common::builder_fee::{
@@ -94,12 +94,12 @@ fn py_approve_hyperliquid_builder_fee(non_interactive: bool) -> PyResult<bool> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {e}")))?;
+            .map_err(|e| to_pyruntime_err(format!("Failed to create runtime: {e}")))?;
 
         Ok(runtime.block_on(approve_from_env(non_interactive)))
     })
     .join()
-    .map_err(|_| PyRuntimeError::new_err("Thread panicked"))?
+    .map_err(|_| to_pyruntime_err("Thread panicked"))?
 }
 
 /// Revoke the Nautilus builder fee approval for your wallet.
@@ -126,12 +126,12 @@ fn py_revoke_hyperliquid_builder_fee(non_interactive: bool) -> PyResult<bool> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {e}")))?;
+            .map_err(|e| to_pyruntime_err(format!("Failed to create runtime: {e}")))?;
 
         Ok(runtime.block_on(revoke_from_env(non_interactive)))
     })
     .join()
-    .map_err(|_| PyRuntimeError::new_err("Thread panicked"))?
+    .map_err(|_| to_pyruntime_err("Thread panicked"))?
 }
 
 /// Verify the Nautilus builder fee approval status for a wallet.
@@ -156,12 +156,12 @@ fn py_verify_hyperliquid_builder_fee(wallet_address: Option<String>) -> PyResult
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {e}")))?;
+            .map_err(|e| to_pyruntime_err(format!("Failed to create runtime: {e}")))?;
 
         Ok(runtime.block_on(verify_from_env_or_address(wallet_address)))
     })
     .join()
-    .map_err(|_| PyRuntimeError::new_err("Thread panicked"))?
+    .map_err(|_| to_pyruntime_err("Thread panicked"))?
 }
 
 /// Loaded as `nautilus_pyo3.hyperliquid`.

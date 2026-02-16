@@ -19,6 +19,7 @@
 
 use std::sync::Arc;
 
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use pyo3::prelude::*;
 
 use crate::execution::wallet::Wallet;
@@ -40,8 +41,7 @@ impl PyDydxWallet {
     #[staticmethod]
     #[pyo3(name = "from_private_key")]
     pub fn py_from_private_key(private_key: &str) -> PyResult<Self> {
-        let wallet = Wallet::from_private_key(private_key)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{e}")))?;
+        let wallet = Wallet::from_private_key(private_key).map_err(to_pyvalue_err)?;
         Ok(Self {
             inner: Arc::new(wallet),
         })
@@ -54,10 +54,7 @@ impl PyDydxWallet {
     /// Returns an error if address derivation fails.
     #[pyo3(name = "address")]
     pub fn py_address(&self) -> PyResult<String> {
-        let account = self
-            .inner
-            .account_offline()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
+        let account = self.inner.account_offline().map_err(to_pyruntime_err)?;
         Ok(account.address)
     }
 

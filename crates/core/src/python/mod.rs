@@ -42,7 +42,9 @@ use std::fmt::Display;
 use pyo3::{
     Py,
     conversion::IntoPyObjectExt,
-    exceptions::{PyRuntimeError, PyTypeError, PyValueError},
+    exceptions::{
+        PyException, PyKeyError, PyNotImplementedError, PyRuntimeError, PyTypeError, PyValueError,
+    },
     prelude::*,
     types::PyString,
     wrap_pyfunction,
@@ -140,6 +142,33 @@ pub fn to_pytype_err(e: impl Display) -> PyErr {
 /// Returns a Python error with the error string.
 pub fn to_pyruntime_err(e: impl Display) -> PyErr {
     PyRuntimeError::new_err(e.to_string())
+}
+
+/// Converts any type that implements `Display` to a Python `KeyError`.
+///
+/// # Errors
+///
+/// Returns a Python error with the error string.
+pub fn to_pykey_err(e: impl Display) -> PyErr {
+    PyKeyError::new_err(e.to_string())
+}
+
+/// Converts any type that implements `Display` to a Python `Exception`.
+///
+/// # Errors
+///
+/// Returns a Python error with the error string.
+pub fn to_pyexception(e: impl Display) -> PyErr {
+    PyException::new_err(e.to_string())
+}
+
+/// Converts any type that implements `Display` to a Python `NotImplementedError`.
+///
+/// # Errors
+///
+/// Returns a Python error with the error string.
+pub fn to_pynotimplemented_err(e: impl Display) -> PyErr {
+    PyNotImplementedError::new_err(e.to_string())
 }
 
 /// Return a value indicating whether the `obj` is a `PyCapsule`.
