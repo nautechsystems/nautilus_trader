@@ -576,7 +576,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::{enums::TardisExchange, tests::load_test_json};
+    use crate::{common::testing::load_test_json, enums::TardisExchange};
 
     #[rstest]
     fn test_parse_book_change_message() {

@@ -766,7 +766,7 @@ mod tests {
     use rstest::*;
 
     use super::*;
-    use crate::{parse::parse_price, tests::get_test_data_path};
+    use crate::{common::testing::get_test_data_path, parse::parse_price};
 
     #[rstest]
     #[case(0.0, 0)]

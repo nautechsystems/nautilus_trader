@@ -28,7 +28,10 @@ use super::{
     parse::parse_instrument_any,
     query::InstrumentFilter,
 };
-use crate::{common::credential::Credential, enums::TardisExchange};
+use crate::{
+    common::{consts::TARDIS_API_KEY, credential::Credential},
+    enums::TardisExchange,
+};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -74,12 +77,12 @@ impl TardisHttpClient {
     ) -> anyhow::Result<Self> {
         let credential = match api_key {
             Some(key) => Some(Credential::new(key)),
-            None => env::var("TARDIS_API_KEY").ok().map(Credential::new),
+            None => env::var(TARDIS_API_KEY).ok().map(Credential::new),
         };
 
         if credential.is_none() {
             anyhow::bail!(
-                "API key must be provided or set in the 'TARDIS_API_KEY' environment variable"
+                "API key must be provided or set in the '{TARDIS_API_KEY}' environment variable"
             );
         }
 

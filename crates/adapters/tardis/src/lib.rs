@@ -52,7 +52,9 @@
 pub mod common;
 pub mod config;
 pub mod csv;
+pub mod data;
 pub mod enums;
+pub mod factories;
 pub mod http;
 pub mod machine;
 pub mod parse;
@@ -62,6 +64,3 @@ pub mod replay;
 
 #[cfg(feature = "python")]
 pub mod python;
-
-#[cfg(test)]
-pub mod tests;

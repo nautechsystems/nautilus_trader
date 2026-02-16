@@ -1489,7 +1489,7 @@ mod tests {
     use rstest::*;
 
     use super::*;
-    use crate::{csv::load::load_deltas, parse::parse_price, tests::get_test_data_path};
+    use crate::{common::testing::get_test_data_path, csv::load::load_deltas, parse::parse_price};
 
     #[rstest]
     #[case(0.0, 0)]
