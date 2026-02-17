@@ -1064,7 +1064,8 @@ def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too comple
         if contract.localSymbol:
             symbol = contract.localSymbol
         else:
-            symbol = f"{contract.right} {contract.tradingClass} {contract.lastTradeDateOrContractMonth} {contract.strike}"
+            strike_str = f"{contract.strike:g}"
+            symbol = f"{contract.right} {contract.tradingClass} {contract.lastTradeDateOrContractMonth} {strike_str}"
     elif security_type == "CONTFUT":
         symbol = contract.symbol
     elif security_type == "FUT":

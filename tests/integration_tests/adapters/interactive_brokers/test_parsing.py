@@ -107,7 +107,7 @@ simplified_symbology_params = [
             symbol="OESX",
             tradingClass="OESX",
             lastTradeDateOrContractMonth="20260213",
-            strike=4775.0,
+            strike=4775,
             right="C",
         ),
         "C OESX 20260213 4775.EUREX",
