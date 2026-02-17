@@ -287,12 +287,12 @@ webpki-roots = "1.0.6"
 # -----------------------------------------------------------------------------
 # Adapter dependencies
 # -----------------------------------------------------------------------------
-alloy = { version = "1.6.3", default-features = false, features = [
+alloy = { version = "1.7.1", default-features = false, features = [
   "sol-types",
   "contract",
 ] }
-alloy-signer = { version = "1.6.3", default-features = false }
-alloy-signer-local = { version = "1.6.3", default-features = false, features = [
+alloy-signer = { version = "1.7.1", default-features = false }
+alloy-signer-local = { version = "1.7.1", default-features = false, features = [
   "mnemonic",
 ] }
 alloy-sol-types = "1.5.6"
