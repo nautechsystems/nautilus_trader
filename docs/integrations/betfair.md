@@ -278,6 +278,11 @@ The adapter handles several edge cases when processing fills from the stream:
   or stream reconnection replays.
 - **Race conditions**: When stream fills arrive before the HTTP order response, the adapter caches
   the venue order ID immediately to ensure correct order matching.
+- **Network error recovery**: When an HTTP order submission fails with a network error (timeout,
+  connection reset), the order may still have been placed on the venue. The adapter defers
+  rejection for `submit_rejection_delay_secs` to allow the stream to confirm the order. Any
+  stream update for the order cancels the deferred rejection and generates acceptance. Set to
+  `0` to reject immediately.
 
 ## Rate limiting
 
@@ -439,6 +444,7 @@ Set `stream_conflate_ms=0` explicitly to guarantee no conflation and receive eve
 | `reconcile_market_ids_only`  | `False`  | When `True`, reconciliation only covers `instrument_config.market_ids` (no effect if unset). |
 | `stream_market_ids_filter`   | `None`   | List of market IDs to process from stream; others are silently skipped. |
 | `ignore_external_orders`     | `False`  | When `True`, ignore stream orders missing from the local cache. |
+| `submit_rejection_delay_secs`| `10`     | Grace period (seconds) before rejecting after a network error during submission. |
 | `proxy_url`                  | `None`   | Optional proxy URL for HTTP requests. |
 
 :::warning

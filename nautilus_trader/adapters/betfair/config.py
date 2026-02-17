@@ -98,6 +98,14 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
         If True, orders received over the stream that aren't found in the cache
         will be silently ignored. This is useful when multiple trading nodes
         share the same Betfair account across different markets.
+    submit_rejection_delay_secs : NonNegativeInt, default 10
+        Grace period (seconds) before rejecting an order after a network error
+        during submission. When a place_orders HTTP call fails with a non-API
+        error (timeout, connection reset, etc.), the order may have been placed
+        on the venue. This delay keeps the customer_order_ref registered so
+        the stream can confirm the order before rejection. Set to 0 to reject
+        immediately. Values below 5 are not recommended as stream confirmation
+        may not arrive before the grace period expires.
     proxy_url : str, optional
         The proxy URL for HTTP requests.
 
@@ -114,4 +122,5 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     reconcile_market_ids_only: bool = False
     stream_market_ids_filter: list[str] | None = None
     ignore_external_orders: bool = False
+    submit_rejection_delay_secs: NonNegativeInt = 10
     proxy_url: str | None = None

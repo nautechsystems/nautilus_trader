@@ -190,6 +190,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Improved visualization to use fill report for create_bars_with_fills (#3466), thanks @faysou
 - Improved Architect AX WebSocket data and order handling (#3577), thanks @andrew-cho-architect
 - Improved Betfair adapter rate limiting and fill deduplication
+- Improved Betfair deferred rejection for network errors
 - Improved Deribit with high-performance `Decimal` deserialization (#3510), thanks @filipmacek
 - Improved precision-mode validation for Arrow data (#3511), thanks for reporting @2-5
 - Improved dYdX v4 data client subscription handling (#3537), thanks @filipmacek
