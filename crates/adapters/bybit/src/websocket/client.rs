@@ -111,7 +111,7 @@ fn resolve_credential(
 }
 
 /// Public/market data WebSocket client for Bybit.
-#[cfg_attr(feature = "python", pyo3::pyclass)]
+#[cfg_attr(feature = "python", pyo3::pyclass(from_py_object))]
 pub struct BybitWebSocketClient {
     url: String,
     environment: BybitEnvironment,

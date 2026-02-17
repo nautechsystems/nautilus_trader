@@ -175,7 +175,7 @@ pub struct OKXAccount {
 /// Represents a balance detail for a single currency in an OKX account.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "python", pyo3::pyclass)]
+#[cfg_attr(feature = "python", pyo3::pyclass(from_py_object))]
 pub struct OKXBalanceDetail {
     /// Available balance.
     pub avail_bal: String,

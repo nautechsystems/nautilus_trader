@@ -61,7 +61,10 @@ use crate::{
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.coinbase_intx")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.coinbase_intx",
+        from_py_object
+    )
 )]
 pub struct CoinbaseIntxWebSocketClient {
     url: String,

@@ -201,6 +201,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Refined `OptionExerciseModule` (#3423), thanks @faysou
 - Refined instrument `is_spread()` method (#3434), thanks @faysou
 - Refined `OrderBookDeltas.batch` (#3437), thanks @faysou
+- Refined conversion of feather files to parquet (#3590), thanks @faysou
 - Refined Interactive Brokers adapter (#3195), thanks @faysou
 - Refined Interactive Brokers query of option chains (#3481), thanks @faysou
 - Refined Interactive Brokers parsing of alternative option symbol format (#3564), thanks @faysou
@@ -215,6 +216,8 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Upgraded Cython to v3.2.4
 - Upgraded `databento` crate to v0.39.0
 - Upgraded `datafusion` crate to v52.1.0
+- Upgraded `pyo3` crate to v0.28.1
+- Upgraded `pyo3-async-runtimes` crate to v0.28.0
 - Upgraded `redis` crate to v1.0.3
 - Upgraded `tokio` crate to v1.49.0
 

@@ -5687,9 +5687,9 @@ class AxEnvironment(Enum):
     def from_str(cls, value: str) -> AxEnvironment: ...
 
 class AxMarketDataLevel(Enum):
-    LEVEL_1 = "LEVEL_1"
-    LEVEL_2 = "LEVEL_2"
-    LEVEL_3 = "LEVEL_3"
+    LEVEL1 = "LEVEL1"
+    LEVEL2 = "LEVEL2"
+    LEVEL3 = "LEVEL3"
 
     @classmethod
     def from_str(cls, value: str) -> AxMarketDataLevel: ...

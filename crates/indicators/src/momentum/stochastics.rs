@@ -61,7 +61,8 @@ const MAX_PERIOD: usize = 1_024;
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.indicators"
+        module = "nautilus_trader.core.nautilus_pyo3.indicators",
+        from_py_object,
     )
 )]
 pub enum StochasticsDMethod {

@@ -42,7 +42,7 @@ use super::nanos::Nanos;
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network", from_py_object)
 )]
 pub struct Quota {
     pub(crate) max_burst: NonZeroU32,

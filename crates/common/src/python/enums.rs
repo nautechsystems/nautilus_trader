@@ -70,24 +70,6 @@ impl Environment {
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
-
-    #[classattr]
-    #[pyo3(name = "BACKTEST")]
-    const fn py_backtest() -> Self {
-        Self::Backtest
-    }
-
-    #[classattr]
-    #[pyo3(name = "SANDBOX")]
-    const fn py_sandbox() -> Self {
-        Self::Sandbox
-    }
-
-    #[classattr]
-    #[pyo3(name = "LIVE")]
-    const fn py_live() -> Self {
-        Self::Live
-    }
 }
 
 #[pymethods]
@@ -139,36 +121,6 @@ impl LogLevel {
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
-
-    #[classattr]
-    #[pyo3(name = "OFF")]
-    const fn py_off() -> Self {
-        Self::Off
-    }
-
-    #[classattr]
-    #[pyo3(name = "DEBUG")]
-    const fn py_debug() -> Self {
-        Self::Debug
-    }
-
-    #[classattr]
-    #[pyo3(name = "INFO")]
-    const fn py_info() -> Self {
-        Self::Info
-    }
-
-    #[classattr]
-    #[pyo3(name = "WARNING")]
-    const fn py_warning() -> Self {
-        Self::Warning
-    }
-
-    #[classattr]
-    #[pyo3(name = "ERROR")]
-    const fn py_error() -> Self {
-        Self::Error
-    }
 }
 
 #[pymethods]
@@ -219,47 +171,5 @@ impl LogColor {
         let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
-    }
-
-    #[classattr]
-    #[pyo3(name = "NORMAL")]
-    const fn py_normal() -> Self {
-        Self::Normal
-    }
-
-    #[classattr]
-    #[pyo3(name = "GREEN")]
-    const fn py_green() -> Self {
-        Self::Green
-    }
-
-    #[classattr]
-    #[pyo3(name = "BLUE")]
-    const fn py_blue() -> Self {
-        Self::Blue
-    }
-
-    #[classattr]
-    #[pyo3(name = "MAGENTA")]
-    const fn py_magenta() -> Self {
-        Self::Magenta
-    }
-
-    #[classattr]
-    #[pyo3(name = "CYAN")]
-    const fn py_cyan() -> Self {
-        Self::Cyan
-    }
-
-    #[classattr]
-    #[pyo3(name = "YELLOW")]
-    const fn py_error() -> Self {
-        Self::Yellow
-    }
-
-    #[classattr]
-    #[pyo3(name = "RED")]
-    const fn py_red() -> Self {
-        Self::Red
     }
 }

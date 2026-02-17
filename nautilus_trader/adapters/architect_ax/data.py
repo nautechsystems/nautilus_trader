@@ -259,14 +259,14 @@ class AxDataClient(LiveMarketDataClient):
         instrument_id = self._get_pyo3_instrument_id(command.instrument_id)
 
         if command.book_type == BookType.L3_MBO:
-            level = nautilus_pyo3.AxMarketDataLevel.LEVEL_3
+            level = nautilus_pyo3.AxMarketDataLevel.LEVEL3
         elif command.book_type == BookType.L2_MBP:
-            level = nautilus_pyo3.AxMarketDataLevel.LEVEL_2
+            level = nautilus_pyo3.AxMarketDataLevel.LEVEL2
         else:
             self._log.warning(
                 f"Book type {book_type_to_str(command.book_type)} not supported, using L2",
             )
-            level = nautilus_pyo3.AxMarketDataLevel.LEVEL_2
+            level = nautilus_pyo3.AxMarketDataLevel.LEVEL2
 
         await self._ws_client.subscribe_book_deltas(instrument_id, level)
         self._log.debug(f"Subscribed to order book for {command.instrument_id} at {level}")

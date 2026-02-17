@@ -431,7 +431,8 @@ pub struct BinanceSetMarginTypeParams {
     pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.binance",
         name = "FuturesBatchOrderItem",
-        get_all
+        get_all,
+        from_py_object,
     )
 )]
 pub struct BatchOrderItem {
@@ -546,7 +547,8 @@ impl BatchOrderItem {
     pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.binance",
         name = "FuturesBatchCancelItem",
-        get_all
+        get_all,
+        from_py_object,
     )
 )]
 pub struct BatchCancelItem {
@@ -621,7 +623,8 @@ impl BatchCancelItem {
     pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.binance",
         name = "FuturesBatchModifyItem",
-        get_all
+        get_all,
+        from_py_object,
     )
 )]
 pub struct BatchModifyItem {

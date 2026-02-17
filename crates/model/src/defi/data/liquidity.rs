@@ -42,7 +42,11 @@ use crate::{
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.model",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
 )]
 /// Represents the type of liquidity update operation in a DEX pool.
 #[non_exhaustive]
@@ -57,7 +61,7 @@ pub enum PoolLiquidityUpdateType {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
 pub struct PoolLiquidityUpdate {
     /// The blockchain network where the liquidity update occurred.

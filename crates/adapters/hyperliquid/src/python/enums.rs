@@ -75,18 +75,6 @@ impl HyperliquidTpSl {
         let data_str: String = data.str()?.extract()?;
         Self::from_str(&data_str).map_err(to_pyvalue_err)
     }
-
-    #[classattr]
-    #[pyo3(name = "TP")]
-    fn py_tp() -> Self {
-        Self::Tp
-    }
-
-    #[classattr]
-    #[pyo3(name = "SL")]
-    fn py_sl() -> Self {
-        Self::Sl
-    }
 }
 
 #[pymethods]
@@ -138,42 +126,6 @@ impl HyperliquidConditionalOrderType {
         let data_str: String = data.str()?.extract()?;
         Self::from_str(&data_str).map_err(to_pyvalue_err)
     }
-
-    #[classattr]
-    #[pyo3(name = "STOP_MARKET")]
-    fn py_stop_market() -> Self {
-        Self::StopMarket
-    }
-
-    #[classattr]
-    #[pyo3(name = "STOP_LIMIT")]
-    fn py_stop_limit() -> Self {
-        Self::StopLimit
-    }
-
-    #[classattr]
-    #[pyo3(name = "TAKE_PROFIT_MARKET")]
-    fn py_take_profit_market() -> Self {
-        Self::TakeProfitMarket
-    }
-
-    #[classattr]
-    #[pyo3(name = "TAKE_PROFIT_LIMIT")]
-    fn py_take_profit_limit() -> Self {
-        Self::TakeProfitLimit
-    }
-
-    #[classattr]
-    #[pyo3(name = "TRAILING_STOP_MARKET")]
-    fn py_trailing_stop_market() -> Self {
-        Self::TrailingStopMarket
-    }
-
-    #[classattr]
-    #[pyo3(name = "TRAILING_STOP_LIMIT")]
-    fn py_trailing_stop_limit() -> Self {
-        Self::TrailingStopLimit
-    }
 }
 
 #[pymethods]
@@ -224,24 +176,6 @@ impl HyperliquidTrailingOffsetType {
     fn py_from_str(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
         let data_str: String = data.str()?.extract()?;
         Self::from_str(&data_str).map_err(to_pyvalue_err)
-    }
-
-    #[classattr]
-    #[pyo3(name = "PRICE")]
-    fn py_price() -> Self {
-        Self::Price
-    }
-
-    #[classattr]
-    #[pyo3(name = "PERCENTAGE")]
-    fn py_percentage() -> Self {
-        Self::Percentage
-    }
-
-    #[classattr]
-    #[pyo3(name = "BASIS_POINTS")]
-    fn py_basis_points() -> Self {
-        Self::BasisPoints
     }
 }
 
@@ -297,17 +231,5 @@ impl HyperliquidProductType {
     fn py_from_str(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
         let data_str: String = data.str()?.extract()?;
         Self::from_str(&data_str).map_err(to_pyvalue_err)
-    }
-
-    #[classattr]
-    #[pyo3(name = "PERP")]
-    fn py_perp() -> Self {
-        Self::Perp
-    }
-
-    #[classattr]
-    #[pyo3(name = "SPOT")]
-    fn py_spot() -> Self {
-        Self::Spot
     }
 }

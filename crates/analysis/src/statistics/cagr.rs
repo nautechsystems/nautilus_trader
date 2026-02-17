@@ -33,7 +33,7 @@ use crate::statistic::PortfolioStatistic;
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis", from_py_object)
 )]
 pub struct CAGR {
     /// The number of periods per year for annualization (e.g., 252 for trading days).

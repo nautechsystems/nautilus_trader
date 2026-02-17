@@ -26,7 +26,10 @@ use nautilus_system::ClientConfig;
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.blockchain")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.blockchain",
+        from_py_object
+    )
 )]
 #[cfg_attr(
     feature = "python",
@@ -60,7 +63,10 @@ impl Default for DexPoolFilters {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.blockchain")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.blockchain",
+        from_py_object
+    )
 )]
 #[cfg_attr(
     feature = "python",

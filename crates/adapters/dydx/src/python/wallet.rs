@@ -25,7 +25,7 @@ use pyo3::prelude::*;
 use crate::execution::wallet::Wallet;
 
 /// Python wrapper for the Wallet.
-#[pyclass(name = "DydxWallet")]
+#[pyclass(name = "DydxWallet", from_py_object)]
 #[derive(Debug, Clone)]
 pub struct PyDydxWallet {
     pub(crate) inner: Arc<Wallet>,

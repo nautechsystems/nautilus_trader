@@ -64,7 +64,10 @@ pub(super) enum AssetContextDataType {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.hyperliquid")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
+        from_py_object
+    )
 )]
 pub struct HyperliquidWebSocketClient {
     url: String,

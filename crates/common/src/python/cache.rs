@@ -50,7 +50,11 @@ use crate::{
 /// This wrapper holds an `Rc<RefCell<Cache>>` allowing actors to share
 /// the same cache instance. All methods delegate to the underlying cache.
 #[allow(non_camel_case_types)]
-#[pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", unsendable)]
+#[pyo3::pyclass(
+    module = "nautilus_trader.core.nautilus_pyo3.common",
+    unsendable,
+    from_py_object
+)]
 #[derive(Debug, Clone)]
 pub struct PyCache(Rc<RefCell<Cache>>);
 

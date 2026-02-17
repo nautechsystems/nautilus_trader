@@ -102,7 +102,10 @@ impl SymbolDataTypes {
 /// Requires Bearer token authentication obtained via the HTTP `/api/authenticate` endpoint.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.architect")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.architect",
+        from_py_object
+    )
 )]
 pub struct AxMdWebSocketClient {
     url: String,

@@ -24,7 +24,7 @@ use pyo3::prelude::*;
 
 use crate::grpc::DydxGrpcClient;
 
-#[pyclass(name = "DydxGrpcClient")]
+#[pyclass(name = "DydxGrpcClient", from_py_object)]
 #[derive(Debug, Clone)]
 pub struct PyDydxGrpcClient {
     pub(crate) inner: Arc<DydxGrpcClient>,

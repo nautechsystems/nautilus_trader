@@ -52,7 +52,7 @@ use std::fmt::Debug;
 /// - On disconnect, client transitions to CLOSED state and caller must manually reconnect.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network", from_py_object)
 )]
 #[derive(Clone, Debug)]
 pub struct WebSocketConfig {

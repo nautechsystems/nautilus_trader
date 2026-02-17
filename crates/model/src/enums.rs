@@ -69,7 +69,9 @@ pub trait FromU16 {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum AccountType {
@@ -109,7 +111,9 @@ pub enum AccountType {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum AggregationSource {
@@ -146,7 +150,9 @@ pub enum AggregationSource {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum AggressorSide {
@@ -196,7 +202,9 @@ impl FromU8 for AggressorSide {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 #[allow(non_camel_case_types)]
@@ -258,7 +266,9 @@ impl FromU8 for AssetClass {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum BarAggregation {
@@ -327,7 +337,9 @@ pub enum BarAggregation {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum BarIntervalType {
@@ -364,7 +376,9 @@ pub enum BarIntervalType {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum BetSide {
@@ -426,7 +440,9 @@ impl From<OrderSide> for BetSide {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum BookAction {
@@ -478,7 +494,9 @@ impl FromU8 for BookAction {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 #[allow(non_camel_case_types)]
@@ -531,7 +549,9 @@ impl FromU8 for BookType {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum ContingencyType {
@@ -572,7 +592,9 @@ pub enum ContingencyType {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum CurrencyType {
@@ -610,7 +632,9 @@ pub enum CurrencyType {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum InstrumentClass {
@@ -677,7 +701,9 @@ impl InstrumentClass {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum InstrumentCloseType {
@@ -724,7 +750,9 @@ impl FromU8 for InstrumentCloseType {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 #[allow(clippy::enum_variant_names)]
@@ -763,7 +791,9 @@ pub enum LiquiditySide {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum MarketStatus {
@@ -807,7 +837,9 @@ pub enum MarketStatus {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum MarketStatusAction {
@@ -897,7 +929,9 @@ impl FromU16 for MarketStatusAction {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum OmsType {
@@ -938,7 +972,9 @@ pub enum OmsType {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum OptionKind {
@@ -975,7 +1011,9 @@ pub enum OptionKind {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum OtoTriggerMode {
@@ -1014,7 +1052,9 @@ pub enum OtoTriggerMode {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum OrderSide {
@@ -1147,7 +1187,9 @@ impl OrderSideSpecified {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum OrderStatus {
@@ -1250,7 +1292,9 @@ impl OrderStatus {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum OrderType {
@@ -1295,7 +1339,13 @@ pub enum OrderType {
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+    pyo3::pyclass(
+        eq,
+        eq_int,
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
 )]
 pub enum PositionAdjustmentType {
     /// Commission adjustment affecting position quantity.
@@ -1342,7 +1392,9 @@ impl FromU8 for PositionAdjustmentType {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum PositionSide {
@@ -1401,7 +1453,9 @@ impl PositionSide {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum PositionSideSpecified {
@@ -1451,7 +1505,9 @@ impl PositionSideSpecified {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum PriceType {
@@ -1496,7 +1552,9 @@ pub enum PriceType {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 #[allow(non_camel_case_types)]
@@ -1549,7 +1607,9 @@ impl RecordFlag {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum TimeInForce {
@@ -1595,7 +1655,9 @@ pub enum TimeInForce {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum TradingState {
@@ -1634,7 +1696,9 @@ pub enum TradingState {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum TrailingOffsetType {
@@ -1678,7 +1742,9 @@ pub enum TrailingOffsetType {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.model.enums"
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
 pub enum TriggerType {

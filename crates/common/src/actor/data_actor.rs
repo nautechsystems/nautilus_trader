@@ -98,7 +98,11 @@ use crate::{
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", subclass)
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.common",
+        subclass,
+        from_py_object
+    )
 )]
 pub struct DataActorConfig {
     /// The custom identifier for the Actor.
@@ -123,7 +127,7 @@ impl Default for DataActorConfig {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", from_py_object)
 )]
 pub struct ImportableActorConfig {
     /// The fully qualified name of the Actor class.

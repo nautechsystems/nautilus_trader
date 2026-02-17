@@ -27,7 +27,7 @@ use pyo3::{prelude::*, types::PyCapsule};
 use crate::backend::session::{DataBackendSession, DataQueryResult};
 
 #[repr(C)]
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NautilusDataType {
     // Custom = 0,  # First slot reserved for custom data

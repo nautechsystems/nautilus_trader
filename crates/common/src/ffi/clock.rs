@@ -92,7 +92,9 @@ pub unsafe extern "C" fn test_clock_register_default_handler(
     assert!(!callback_ptr.is_null());
     assert!(unsafe { ffi::Py_None() } != callback_ptr);
 
-    let callback = Python::attach(|py| unsafe { Py::<PyAny>::from_borrowed_ptr(py, callback_ptr) });
+    let callback = Python::attach(|py| unsafe {
+        Bound::<PyAny>::from_borrowed_ptr(py, callback_ptr).unbind()
+    });
     let callback = TimeEventCallback::from(callback);
 
     clock.register_default_handler(callback);
@@ -159,8 +161,9 @@ pub unsafe extern "C" fn test_clock_set_time_alert(
     let callback = if callback_ptr == unsafe { ffi::Py_None() } {
         None
     } else {
-        let callback =
-            Python::attach(|py| unsafe { Py::<PyAny>::from_borrowed_ptr(py, callback_ptr) });
+        let callback = Python::attach(|py| unsafe {
+            Bound::<PyAny>::from_borrowed_ptr(py, callback_ptr).unbind()
+        });
         Some(TimeEventCallback::from(callback))
     };
 
@@ -204,8 +207,9 @@ pub unsafe extern "C" fn test_clock_set_timer(
     let callback = if callback_ptr == unsafe { ffi::Py_None() } {
         None
     } else {
-        let callback =
-            Python::attach(|py| unsafe { Py::<PyAny>::from_borrowed_ptr(py, callback_ptr) });
+        let callback = Python::attach(|py| unsafe {
+            Bound::<PyAny>::from_borrowed_ptr(py, callback_ptr).unbind()
+        });
         Some(TimeEventCallback::from(callback))
     };
 
@@ -350,7 +354,9 @@ pub unsafe extern "C" fn live_clock_register_default_handler(
     assert!(!callback_ptr.is_null());
     assert!(unsafe { ffi::Py_None() } != callback_ptr);
 
-    let callback = Python::attach(|py| unsafe { Py::<PyAny>::from_borrowed_ptr(py, callback_ptr) });
+    let callback = Python::attach(|py| unsafe {
+        Bound::<PyAny>::from_borrowed_ptr(py, callback_ptr).unbind()
+    });
     let callback = TimeEventCallback::from(callback);
 
     clock.register_default_handler(callback);
@@ -414,8 +420,9 @@ pub unsafe extern "C" fn live_clock_set_time_alert(
     let callback = if callback_ptr == unsafe { ffi::Py_None() } {
         None
     } else {
-        let callback =
-            Python::attach(|py| unsafe { Py::<PyAny>::from_borrowed_ptr(py, callback_ptr) });
+        let callback = Python::attach(|py| unsafe {
+            Bound::<PyAny>::from_borrowed_ptr(py, callback_ptr).unbind()
+        });
         Some(TimeEventCallback::from(callback))
     };
 
@@ -461,8 +468,9 @@ pub unsafe extern "C" fn live_clock_set_timer(
     let callback = if callback_ptr == unsafe { ffi::Py_None() } {
         None
     } else {
-        let callback =
-            Python::attach(|py| unsafe { Py::<PyAny>::from_borrowed_ptr(py, callback_ptr) });
+        let callback = Python::attach(|py| unsafe {
+            Bound::<PyAny>::from_borrowed_ptr(py, callback_ptr).unbind()
+        });
         Some(TimeEventCallback::from(callback))
     };
 

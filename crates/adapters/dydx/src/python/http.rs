@@ -86,8 +86,7 @@ impl DydxHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            #[allow(deprecated)]
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_instruments: PyResult<Vec<Py<PyAny>>> = instruments
                     .into_iter()
                     .map(|inst| instrument_any_to_pyobject(py, inst))

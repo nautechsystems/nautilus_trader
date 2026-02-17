@@ -37,7 +37,10 @@ fn escape_sql_string(value: &str) -> String {
 #[builder(default)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.infrastructure",
+        from_py_object
+    )
 )]
 #[cfg_attr(
     feature = "python",

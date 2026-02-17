@@ -47,7 +47,10 @@ pub type Dataset = Ustr;
 /// Represents a Databento publisher.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.databento",
+        from_py_object
+    )
 )]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
 pub struct DatabentoPublisher {
@@ -67,7 +70,10 @@ pub struct DatabentoPublisher {
 /// excluding `publisher_id` and `instrument_id`.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.databento",
+        from_py_object
+    )
 )]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
 pub struct DatabentoImbalance {
@@ -134,7 +140,10 @@ impl DatabentoImbalance {
 /// excluding `publisher_id` and `instrument_id`.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.databento",
+        from_py_object
+    )
 )]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
 pub struct DatabentoStatistics {

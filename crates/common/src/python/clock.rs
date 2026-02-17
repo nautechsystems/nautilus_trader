@@ -38,7 +38,8 @@ use crate::{
 #[pyo3::pyclass(
     module = "nautilus_trader.core.nautilus_pyo3.common",
     name = "Clock",
-    unsendable
+    unsendable,
+    from_py_object
 )]
 #[derive(Debug, Clone)]
 pub struct PyClock(Rc<RefCell<dyn Clock>>);

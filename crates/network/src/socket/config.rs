@@ -34,7 +34,7 @@ use super::types::TcpMessageHandler;
 /// Configuration for TCP socket connection.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network", from_py_object)
 )]
 pub struct SocketConfig {
     /// The URL to connect to.

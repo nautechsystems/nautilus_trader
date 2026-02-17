@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.trading")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.trading", from_py_object)
 )]
 pub struct StrategyConfig {
     /// The unique ID for the strategy. Will become the strategy ID if not None.
