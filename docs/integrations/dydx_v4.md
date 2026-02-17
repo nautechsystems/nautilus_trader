@@ -125,26 +125,26 @@ time-in-force and expiry, so no manual tagging is needed (unlike the legacy Pyth
 
 ### Order types
 
-| Order Type             | Perpetuals | Notes                                                                   |
-|------------------------|------------|-------------------------------------------------------------------------|
-| `MARKET`               | ✓          | Immediate execution at best available price.                            |
-| `LIMIT`                | ✓          |                                                                         |
-| `STOP_MARKET`          | ✓          | Conditional order, always long-term.                                    |
-| `STOP_LIMIT`           | ✓          | Conditional order, always long-term.                                    |
-| `MARKET_IF_TOUCHED`    | ✓          | Take-profit market order, triggers on price touch.                      |
-| `LIMIT_IF_TOUCHED`     | ✓          | Take-profit limit order, triggers on price touch.                       |
-| `TRAILING_STOP_MARKET` | -          | *Not supported*.                                                        |
+| Order Type             | Perpetuals | Notes                                                              |
+|------------------------|------------|--------------------------------------------------------------------|
+| `MARKET`               | ✓          | Immediate execution at best available price.                       |
+| `LIMIT`                | ✓          |                                                                    |
+| `STOP_MARKET`          | ✓          | Conditional order, always long-term.                               |
+| `STOP_LIMIT`           | ✓          | Conditional order, always long-term.                               |
+| `MARKET_IF_TOUCHED`    | ✓          | Take-profit market order, triggers on price touch.                 |
+| `LIMIT_IF_TOUCHED`     | ✓          | Take-profit limit order, triggers on price touch.                  |
+| `TRAILING_STOP_MARKET` | -          | *Not supported*.                                                   |
 
 ### Execution instructions
 
-| Instruction   | Perpetuals | Notes                                                                        |
-|---------------|------------|------------------------------------------------------------------------------|
+| Instruction   | Perpetuals | Notes                                                                       |
+|---------------|------------|-----------------------------------------------------------------------------|
 | `post_only`   | ✓          | Supported on LIMIT, STOP_LIMIT, and LIMIT_IF_TOUCHED orders.                |
-| `reduce_only` | ✓          | Supported on all order types except MARKET.                                  |
+| `reduce_only` | ✓          | Supported on all order types except MARKET.                                 |
 
 ### Time in force options
 
-| Time in force | Perpetuals | Notes               |
+| Time in force | Perpetuals | Notes                |
 |---------------|------------|----------------------|
 | `GTC`         | ✓          | Good Till Canceled.  |
 | `GTD`         | ✓          | Good Till Date.      |
@@ -153,19 +153,19 @@ time-in-force and expiry, so no manual tagging is needed (unlike the legacy Pyth
 
 ### Advanced order features
 
-| Feature            | Perpetuals | Notes              |
-|--------------------|------------|--------------------|
-| Order modification | -          | *Not supported*.   |
-| Bracket/OCO orders | -          | *Not supported*.   |
-| Iceberg orders     | -          | *Not supported*.   |
+| Feature            | Perpetuals | Notes            |
+|--------------------|------------|------------------|
+| Order modification | -          | *Not supported*. |
+| Bracket/OCO orders | -          | *Not supported*. |
+| Iceberg orders     | -          | *Not supported*. |
 
 ### Batch operations
 
-| Operation    | Perpetuals | Notes              |
-|--------------|------------|--------------------|
-| Batch submit | -          | *Not supported*.   |
-| Batch modify | -          | *Not supported*.   |
-| Batch cancel | ✓          |                    |
+| Operation    | Perpetuals | Notes            |
+|--------------|------------|------------------|
+| Batch submit | -          | *Not supported*. |
+| Batch modify | -          | *Not supported*. |
+| Batch cancel | ✓          |                  |
 
 ### Position management
 
@@ -173,7 +173,7 @@ time-in-force and expiry, so no manual tagging is needed (unlike the legacy Pyth
 |-----------------|------------|-------------------------------|
 | Query positions | ✓          | Real-time position updates.   |
 | Position mode   | -          | Net position mode only.       |
-| Leverage control| ✓          | Per-market leverage settings.  |
+| Leverage control| ✓          | Per-market leverage settings. |
 | Margin mode     | -          | Cross margin only.            |
 
 ### Order querying
@@ -187,12 +187,12 @@ time-in-force and expiry, so no manual tagging is needed (unlike the legacy Pyth
 
 ### Contingent orders
 
-| Feature            | Perpetuals | Notes                                             |
-|--------------------|------------|---------------------------------------------------|
-| Order lists        | -          | *Not supported*.                                  |
-| OCO orders         | -          | *Not supported*.                                  |
-| Bracket orders     | -          | *Not supported*.                                  |
-| Conditional orders | ✓          | Stop, take-profit market, and take-profit limit.  |
+| Feature            | Perpetuals | Notes                                            |
+|--------------------|------------|--------------------------------------------------|
+| Order lists        | -          | *Not supported*.                                 |
+| OCO orders         | -          | *Not supported*.                                 |
+| Bracket orders     | -          | *Not supported*.                                 |
+| Conditional orders | ✓          | Stop, take-profit market, and take-profit limit. |
 
 ### Order classification
 
@@ -211,16 +211,16 @@ and expiry time.
 
 The v4 adapter supports the following data subscriptions:
 
-| Data type           | Subscription | Historical request | Notes                                       |
-|---------------------|--------------|--------------------|---------------------------------------------|
-| Trade ticks         | ✓            | ✓                  |                                             |
-| Quote ticks         | ✓            | -                  | Synthesized from order book top-of-book.    |
-| Order book deltas   | ✓            | ✓                  | L2 depth only. Snapshot via HTTP request.   |
-| Bars                | ✓            | ✓                  | See supported resolutions below.            |
-| Mark prices         | ✓            | -                  | Via markets channel.                        |
-| Index prices        | ✓            | -                  | Via markets channel.                        |
-| Funding rates       | ✓            | -                  | Via markets channel.                        |
-| Instrument status   | ✓            | -                  | Via markets channel.                        |
+| Data type           | Subscription | Historical request | Notes                                     |
+|---------------------|--------------|--------------------|-------------------------------------------|
+| Trade ticks         | ✓            | ✓                  |                                           |
+| Quote ticks         | ✓            | -                  | Synthesized from order book top-of-book.  |
+| Order book deltas   | ✓            | ✓                  | L2 depth only. Snapshot via HTTP request. |
+| Bars                | ✓            | ✓                  | See supported resolutions below.          |
+| Mark prices         | ✓            | -                  | Via markets channel.                      |
+| Index prices        | ✓            | -                  | Via markets channel.                      |
+| Funding rates       | ✓            | -                  | Via markets channel.                      |
+| Instrument status   | ✓            | -                  | Via markets channel.                      |
 
 ### Supported bar resolutions
 
@@ -277,6 +277,7 @@ clients support environment variable fallbacks for credentials and network-speci
 
 | Option                    | Default | Description                                                                              |
 |---------------------------|---------|------------------------------------------------------------------------------------------|
+| `wallet_address`          | `None`  | dYdX wallet address. Falls back to `DYDX_WALLET_ADDRESS` / `DYDX_TESTNET_WALLET_ADDRESS` env var. |
 | `is_testnet`              | `False` | Connect to dYdX testnet when `True`.                                                     |
 | `bars_timestamp_on_close` | `True`  | Use bar close time for `ts_event` timestamps. Set `False` to use venue-native open time. |
 | `base_url_http`           | `None`  | HTTP API endpoint override.                                                              |
@@ -289,8 +290,10 @@ clients support environment variable fallbacks for credentials and network-speci
 
 | Option                   | Default | Description                                                                           |
 |--------------------------|---------|---------------------------------------------------------------------------------------|
+| `wallet_address`         | `None`  | dYdX wallet address. Falls back to `DYDX_WALLET_ADDRESS` / `DYDX_TESTNET_WALLET_ADDRESS` env var. |
 | `subaccount`             | `0`     | Subaccount number (0-127). Subaccount 0 is the default.                               |
-| `authenticator_ids`      | `None`  | List of authenticator IDs for permissioned key trading (institutional setups).         |
+| `private_key`            | `None`  | Hex-encoded private key for signing. Falls back to `DYDX_PRIVATE_KEY` / `DYDX_TESTNET_PRIVATE_KEY` env var. |
+| `authenticator_ids`      | `None`  | List of authenticator IDs for permissioned key trading (institutional setups).        |
 | `is_testnet`             | `False` | Connect to dYdX testnet when `True`.                                                  |
 | `base_url_http`          | `None`  | HTTP client custom endpoint override.                                                 |
 | `base_url_ws`            | `None`  | WebSocket client custom endpoint override.                                            |
@@ -299,12 +302,6 @@ clients support environment variable fallbacks for credentials and network-speci
 | `retry_delay_initial_ms` | `1000`  | Initial delay (milliseconds) between retries.                                         |
 | `retry_delay_max_ms`     | `10000` | Maximum delay (milliseconds) between retries.                                         |
 
-:::note
-Credentials (`wallet_address` and `private_key`) are resolved by the Rust layer directly from
-environment variables based on the `is_testnet` setting. They are not passed through the Python
-configuration.
-:::
-
 ### Basic setup
 
 Configure a live `TradingNode` to include dYdX v4 data and execution clients:
@@ -312,19 +309,23 @@ Configure a live `TradingNode` to include dYdX v4 data and execution clients:
 ```python
 from nautilus_trader.adapters.dydx_v4 import DYDXv4DataClientConfig
 from nautilus_trader.adapters.dydx_v4 import DYDXv4ExecClientConfig
+from nautilus_trader.adapters.dydx_v4.constants import DYDX
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import TradingNodeConfig
 
 config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
-        "DYDX": DYDXv4DataClientConfig(
+        DYDX: DYDXv4DataClientConfig(
+            wallet_address=None,  # Falls back to env var
             instrument_provider=InstrumentProviderConfig(load_all=True),
             is_testnet=False,
         ),
     },
     exec_clients={
-        "DYDX": DYDXv4ExecClientConfig(
+        DYDX: DYDXv4ExecClientConfig(
+            wallet_address=None,  # Falls back to env var
+            private_key=None,  # Falls back to env var
             subaccount=0,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             is_testnet=False,
@@ -351,38 +352,91 @@ node.build()
 
 ### API credentials
 
-Credentials are resolved by the Rust layer from environment variables. The Python layer does
-not handle credentials directly.
+Credentials can be passed directly via the Python config (`wallet_address`, `private_key`) or
+resolved automatically from environment variables based on the `is_testnet` setting.
 
 #### Environment variables
 
-The adapter selects environment variables based on the `is_testnet` setting:
+| Variable                        | Network  | Description                                    |
+|---------------------------------|----------|------------------------------------------------|
+| `DYDX_WALLET_ADDRESS`           | Mainnet  | Bech32-encoded wallet address (`dydx1...`).    |
+| `DYDX_PRIVATE_KEY`              | Mainnet  | Hex-encoded secp256k1 private key for signing. |
+| `DYDX_TESTNET_WALLET_ADDRESS`   | Testnet  | Testnet wallet address (`dydx1...`).           |
+| `DYDX_TESTNET_PRIVATE_KEY`      | Testnet  | Testnet private key.                           |
 
-**Mainnet:**
+#### Resolution priority
 
-- `DYDX_WALLET_ADDRESS` - Your dYdX wallet address
-- `DYDX_PRIVATE_KEY` - Hex-encoded private key for signing
+1. Value passed in the Python config (if non-empty)
+2. Environment variable (selected by `is_testnet` flag)
 
-**Testnet:**
+### Testnet setup
 
-- `DYDX_TESTNET_WALLET_ADDRESS` - Your testnet wallet address
-- `DYDX_TESTNET_PRIVATE_KEY` - Testnet private key
+The dYdX v4 testnet (`dydx-testnet-4`) is a full replica of mainnet for testing strategies
+without risking real funds. All default testnet endpoints are resolved automatically when
+`is_testnet=True`.
 
-### Testnet configuration
+#### 1. Create a testnet wallet
 
-Configure clients to connect to the dYdX testnet by setting `is_testnet=True`:
+**Option A: Via the dYdX testnet web app (easiest)**
+
+1. Go to [v4.testnet.dydx.exchange](https://v4.testnet.dydx.exchange)
+2. Connect with MetaMask, Keplr, Phantom, or WalletConnect
+3. A dYdX account is generated automatically
+4. Export your secret phrase: click your address (top-right) and select "Export secret phrase"
+
+**Option B: Use an existing secp256k1 private key**
+
+Any 32-byte hex-encoded secp256k1 private key will work. The adapter derives the `dydx1...`
+address from the key automatically using Cosmos bech32 encoding.
+
+#### 2. Fund the testnet account
+
+A subaccount must be funded before the adapter can connect (see [First-time account activation](#architecture)).
+
+**Via the testnet web app:**
+
+Click the deposit/recharge button on [v4.testnet.dydx.exchange](https://v4.testnet.dydx.exchange)
+to receive testnet USDC automatically.
+
+**Via the faucet API directly:**
+
+```bash
+# Fund subaccount 0 with 2000 USDC
+curl -X POST https://faucet.v4testnet.dydx.exchange/faucet/tokens \
+  -H "Content-Type: application/json" \
+  -d '{"address": "dydx1...", "subaccountNumber": 0, "amount": 2000}'
+
+# Fund native tokens (for gas fees)
+curl -X POST https://faucet.v4testnet.dydx.exchange/faucet/native-token \
+  -H "Content-Type: application/json" \
+  -d '{"address": "dydx1..."}'
+```
+
+#### 3. Set environment variables
+
+```bash
+export DYDX_TESTNET_WALLET_ADDRESS="dydx1..."
+export DYDX_TESTNET_PRIVATE_KEY="0x..."  # hex-encoded, 0x prefix optional
+```
+
+#### 4. Configure the trading node
+
+Set `is_testnet=True` on both data and execution clients:
 
 ```python
 config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
-        "DYDX": DYDXv4DataClientConfig(
+        DYDX: DYDXv4DataClientConfig(
+            wallet_address=None,  # Falls back to DYDX_TESTNET_WALLET_ADDRESS env var
             instrument_provider=InstrumentProviderConfig(load_all=True),
             is_testnet=True,
         ),
     },
     exec_clients={
-        "DYDX": DYDXv4ExecClientConfig(
+        DYDX: DYDXv4ExecClientConfig(
+            wallet_address=None,  # Falls back to DYDX_TESTNET_WALLET_ADDRESS env var
+            private_key=None,  # Falls back to DYDX_TESTNET_PRIVATE_KEY env var
             subaccount=0,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             is_testnet=True,
@@ -391,10 +445,17 @@ config = TradingNodeConfig(
 )
 ```
 
-:::warning
-Ensure you have testnet credentials in the appropriate environment variables
-(`DYDX_TESTNET_WALLET_ADDRESS` and `DYDX_TESTNET_PRIVATE_KEY`) before connecting to testnet.
-:::
+#### Testnet endpoints
+
+Default testnet endpoints are used automatically. Override with `base_url_*` config options if needed.
+
+| Service   | Default URL                                          |
+|-----------|------------------------------------------------------|
+| HTTP      | `https://indexer.v4testnet.dydx.exchange`            |
+| WebSocket | `wss://indexer.v4testnet.dydx.exchange/v4/ws`        |
+| gRPC      | `https://test-dydx-grpc.kingnodes.com:443` (primary) |
+| Faucet    | `https://faucet.v4testnet.dydx.exchange`             |
+| Web app   | `https://v4.testnet.dydx.exchange`                   |
 
 ### Permissioned key trading
 
