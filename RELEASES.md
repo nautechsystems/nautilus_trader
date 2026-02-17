@@ -143,6 +143,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Fixed Interactive Brokers contract for ESTX50 IND contract (#3556), thanks @davidsblom
 - Fixed Interactive Brokers parsing options for Stoxx50 (#3562), thanks @davidsblom
 - Fixed Interactive Brokers contract details for FESX futures (#3575), thanks @davidsblom
+- Fixed Interactive Brokers ibapi 10.43 protobuf compatibility: `IBContract.strike` default and `ContractDetails.underConId` field typo, thanks @shzhng
 - Fixed Kraken spot instrument fee/margin parsing where parameters were incorrectly swapped
 - Fixed Kraken spot XBT to BTC symbol normalization (#3509), thanks for reporting @chester0
 - Fixed OKX HTTP error messages missing rejection reason details (#3580), thanks @griffith-h
