@@ -295,10 +295,7 @@ def sec_type_to_asset_class(sec_type: str) -> AssetClass:
 
 
 def contract_details_to_ib_contract_details(contract_details: ContractDetails) -> IBContractDetails:
-    contract_details.contract = IBContract(**contract_details.contract.__dict__)
-    contract_details = IBContractDetails(**contract_details.__dict__)
-
-    return contract_details
+    return IBContractDetails.from_contract_details(contract_details)
 
 
 def parse_instrument(  # noqa: C901
@@ -1067,7 +1064,8 @@ def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too comple
         if contract.localSymbol:
             symbol = contract.localSymbol
         else:
-            symbol = f"{contract.right} {contract.tradingClass} {contract.lastTradeDateOrContractMonth} {contract.strike}"
+            strike_str = f"{contract.strike:g}"
+            symbol = f"{contract.right} {contract.tradingClass} {contract.lastTradeDateOrContractMonth} {strike_str}"
     elif security_type == "CONTFUT":
         symbol = contract.symbol
     elif security_type == "FUT":
@@ -1247,7 +1245,7 @@ def instrument_id_to_ib_contract_simplified_symbology(  # noqa: C901 (too comple
                 symbol=m["tradingClass"],
                 tradingClass=m["tradingClass"],
                 right=m["right"],
-                strike=m["strike"],
+                strike=float(m["strike"]),
                 lastTradeDateOrContractMonth=m["expiry"],
             )
     elif exchange in VENUES_FUT:
