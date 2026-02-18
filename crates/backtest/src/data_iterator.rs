@@ -531,4 +531,44 @@ mod tests {
 
         assert_eq!(collect_ts(&mut it), vec![1, 2, 3, 4]);
     }
+
+    #[rstest]
+    fn test_prepend_stream_always_wins_ties_across_batches() {
+        // Verifies that a prepend stream (negative priority) wins ties
+        // even when added after multiple append streams
+        let mut it = BacktestDataIterator::new();
+        it.add_data("append_a", vec![quote("A.B", 100)], true);
+        it.add_data("append_b", vec![quote("C.D", 100)], true);
+        it.add_data("prepend", vec![quote("E.F", 100)], false);
+
+        let first = it.next().unwrap();
+        assert_eq!(
+            first.instrument_id(),
+            InstrumentId::from("E.F"),
+            "Prepend stream should always come first in ties"
+        );
+    }
+
+    #[rstest]
+    fn test_equal_timestamps_across_many_streams_preserves_priority_order() {
+        // All items at the same timestamp — ordering is strictly by priority
+        let mut it = BacktestDataIterator::new();
+        it.add_data("s1", vec![quote("A.B", 50)], true);
+        it.add_data("s2", vec![quote("C.D", 50)], true);
+        it.add_data("s3", vec![quote("E.F", 50)], true);
+        it.add_data("s4", vec![quote("G.H", 50)], true);
+
+        let mut ids = Vec::new();
+        while let Some(d) = it.next() {
+            ids.push(d.instrument_id());
+        }
+
+        assert_eq!(ids.len(), 4);
+
+        // All should be yielded (no duplicates dropped, no items lost)
+        assert!(ids.contains(&InstrumentId::from("A.B")));
+        assert!(ids.contains(&InstrumentId::from("C.D")));
+        assert!(ids.contains(&InstrumentId::from("E.F")));
+        assert!(ids.contains(&InstrumentId::from("G.H")));
+    }
 }

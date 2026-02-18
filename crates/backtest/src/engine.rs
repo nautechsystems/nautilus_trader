@@ -113,6 +113,7 @@ pub struct BacktestEngine {
     iteration: usize,
     force_stop: bool,
     last_ns: UnixNanos,
+    last_module_ns: Option<UnixNanos>,
     end_ns: UnixNanos,
     run_started: Option<UnixNanos>,
     run_finished: Option<UnixNanos>,
@@ -157,6 +158,7 @@ impl BacktestEngine {
             iteration: 0,
             force_stop: false,
             last_ns: UnixNanos::default(),
+            last_module_ns: None,
             end_ns: UnixNanos::default(),
             run_started: None,
             run_finished: None,
@@ -563,14 +565,15 @@ impl BacktestEngine {
 
             // Drain deferred commands, then process exchange queues
             self.drain_command_queues();
-            self.process_and_settle_venues(ts_init);
+            self.settle_venues(ts_init);
 
             let prev_last_ns = self.last_ns;
             data = self.data_iterator.next();
 
-            // If timestamp changed, flush accumulated timer events
+            // If timestamp changed (or exhausted), flush timers then run modules
             if data.is_none() || data.as_ref().unwrap().ts_init() > prev_last_ns {
                 self.flush_accumulator_events(&clocks, prev_last_ns);
+                self.run_venue_modules(prev_last_ns);
             }
 
             self.iteration += 1;
@@ -578,9 +581,8 @@ impl BacktestEngine {
 
         // Process remaining exchange messages
         let ts_now = self.kernel.clock.borrow().timestamp_ns();
-        for exchange in self.venues.values() {
-            exchange.borrow_mut().process(ts_now);
-        }
+        self.settle_venues(ts_now);
+        self.run_venue_modules(ts_now);
 
         // Flush remaining timer events up to end time
         self.flush_accumulator_events(&clocks, end_ns);
@@ -600,9 +602,8 @@ impl BacktestEngine {
 
         // Process remaining exchange messages
         let ts_now = self.kernel.clock.borrow().timestamp_ns();
-        for exchange in self.venues.values() {
-            exchange.borrow_mut().process(ts_now);
-        }
+        self.settle_venues(ts_now);
+        self.run_venue_modules(ts_now);
 
         self.run_finished = Some(UnixNanos::from(std::time::SystemTime::now()));
         self.backtest_end = Some(self.kernel.clock.borrow().timestamp_ns());
@@ -654,6 +655,7 @@ impl BacktestEngine {
         self.iteration = 0;
         self.force_stop = false;
         self.last_ns = UnixNanos::default();
+        self.last_module_ns = None;
         self.end_ns = UnixNanos::default();
 
         self.accumulator.clear();
@@ -829,21 +831,31 @@ impl BacktestEngine {
         while let Some(handler) = self.accumulator.pop_next_at_or_before(ts_before) {
             let ts_event = handler.event.ts_event;
 
+            // When timestamp changes, run modules for the previous timestamp
+            // after all its handlers have finished
+            if let Some(ts) = ts_last
+                && ts != ts_event
+            {
+                self.run_venue_modules(ts);
+            }
+
             Self::set_all_clocks_time(clocks, ts_event);
             logging_clock_set_static_time(ts_event.as_u64());
 
             handler.run();
             self.drain_command_queues();
-
-            if ts_last != Some(ts_event) {
-                ts_last = Some(ts_event);
-                self.process_and_settle_venues(ts_event);
-            }
+            self.settle_venues(ts_event);
+            ts_last = Some(ts_event);
 
             // Re-advance clocks to capture chained timers
             for clock in clocks {
                 Self::advance_clock_on_accumulator(&mut self.accumulator, clock, ts_now, false);
             }
+        }
+
+        // Run modules for the final timestamp
+        if let Some(ts) = ts_last {
+            self.run_venue_modules(ts);
         }
 
         Self::set_all_clocks_time(clocks, ts_now);
@@ -860,21 +872,31 @@ impl BacktestEngine {
         while let Some(handler) = self.accumulator.pop_next_at_or_before(ts_now) {
             let ts_event = handler.event.ts_event;
 
+            // When timestamp changes, run modules for the previous timestamp
+            // after all its handlers have finished
+            if let Some(ts) = ts_last
+                && ts != ts_event
+            {
+                self.run_venue_modules(ts);
+            }
+
             Self::set_all_clocks_time(clocks, ts_event);
             logging_clock_set_static_time(ts_event.as_u64());
 
             handler.run();
             self.drain_command_queues();
-
-            if ts_last != Some(ts_event) {
-                ts_last = Some(ts_event);
-                self.process_and_settle_venues(ts_event);
-            }
+            self.settle_venues(ts_event);
+            ts_last = Some(ts_event);
 
             // Re-advance clocks to capture chained timers
             for clock in clocks {
                 Self::advance_clock_on_accumulator(&mut self.accumulator, clock, ts_now, false);
             }
+        }
+
+        // Run modules for the final timestamp
+        if let Some(ts) = ts_last {
+            self.run_venue_modules(ts);
         }
     }
 
@@ -915,7 +937,7 @@ impl BacktestEngine {
         clocks
     }
 
-    fn process_and_settle_venues(&self, ts_now: UnixNanos) {
+    fn settle_venues(&self, ts_now: UnixNanos) {
         loop {
             for exchange in self.venues.values() {
                 exchange.borrow_mut().process(ts_now);
@@ -930,6 +952,25 @@ impl BacktestEngine {
                 break;
             }
         }
+    }
+
+    fn run_venue_modules(&mut self, ts_now: UnixNanos) {
+        if self.last_module_ns == Some(ts_now) {
+            return;
+        }
+        self.last_module_ns = Some(ts_now);
+
+        // Pre-settle handler-generated work so modules see final state
+        self.drain_command_queues();
+        self.settle_venues(ts_now);
+
+        for exchange in self.venues.values() {
+            exchange.borrow().process_modules(ts_now);
+        }
+
+        // Post-settle any commands emitted by modules
+        self.drain_command_queues();
+        self.settle_venues(ts_now);
     }
 
     fn drain_exec_client_events(&self) {

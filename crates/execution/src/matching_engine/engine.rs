@@ -65,7 +65,7 @@ use nautilus_model::{
 use ustr::Ustr;
 
 use crate::{
-    matching_core::{OrderMatchInfo, OrderMatchingCore},
+    matching_core::{MatchAction, OrderMatchInfo, OrderMatchingCore},
     matching_engine::{config::OrderMatchingEngineConfig, ids_generator::IdsGenerator},
     models::{
         fee::{FeeModel, FeeModelAny},
@@ -118,6 +118,7 @@ pub struct OrderMatchingEngine {
     queue_ahead: AHashMap<ClientOrderId, (PriceRaw, QuantityRaw)>,
     queue_excess: AHashMap<ClientOrderId, QuantityRaw>,
     instrument_close: Option<InstrumentClose>,
+    settlement_price: Option<Price>,
     expiration_processed: bool,
 }
 
@@ -146,13 +147,7 @@ impl OrderMatchingEngine {
         config: OrderMatchingEngineConfig,
     ) -> Self {
         let book = OrderBook::new(instrument.id(), book_type);
-        let core = OrderMatchingCore::new(
-            instrument.id(),
-            instrument.price_increment(),
-            None, // TBD (will be a function on the engine)
-            None, // TBD (will be a function on the engine)
-            None, // TBD (will be a function on the engine)
-        );
+        let core = OrderMatchingCore::new(instrument.id(), instrument.price_increment());
         let ids_generator = IdsGenerator::new(
             instrument.id().venue,
             oms_type,
@@ -195,6 +190,7 @@ impl OrderMatchingEngine {
             queue_ahead: AHashMap::new(),
             queue_excess: AHashMap::new(),
             instrument_close: None,
+            settlement_price: None,
             expiration_processed: false,
         }
     }
@@ -221,6 +217,7 @@ impl OrderMatchingEngine {
         self.queue_ahead.clear();
         self.queue_excess.clear();
         self.instrument_close = None;
+        self.settlement_price = None;
         self.expiration_processed = false;
         self.fill_at_market = true;
         self.ids_generator.reset();
@@ -297,6 +294,10 @@ impl OrderMatchingEngine {
     /// Sets the fill model for the matching engine.
     pub fn set_fill_model(&mut self, fill_model: FillModelAny) {
         self.fill_model = fill_model;
+    }
+
+    pub fn set_settlement_price(&mut self, price: Price) {
+        self.settlement_price = Some(price);
     }
 
     fn snapshot_queue_position(&mut self, order: &OrderAny, price: Price) {
@@ -561,15 +562,9 @@ impl OrderMatchingEngine {
         &self.core
     }
 
-    pub fn get_core_mut(&mut self) -> &mut OrderMatchingCore {
-        &mut self.core
-    }
-
     pub fn set_fill_at_market(&mut self, value: bool) {
         self.fill_at_market = value;
     }
-
-    // -- DATA PROCESSING -------------------------------------------------------------------------
 
     fn check_price_precision(&self, actual: u8, field: &str) -> anyhow::Result<()> {
         let expected = self.instrument.price_precision();
@@ -1252,17 +1247,16 @@ impl OrderMatchingEngine {
 
             let venue_order_id = self.ids_generator.get_venue_order_id(&order).unwrap();
             self.generate_order_accepted(&mut order, venue_order_id);
+            let fill_price = self.settlement_price.unwrap_or(close.close_price);
             self.apply_fills(
                 &mut order,
-                vec![(close.close_price, quantity)],
+                vec![(fill_price, quantity)],
                 LiquiditySide::Taker,
                 Some(position_id),
                 None,
             );
         }
     }
-
-    // -- TRADING COMMANDS ------------------------------------------------------------------------
 
     /// Processes a new order submission.
     ///
@@ -1693,6 +1687,14 @@ impl OrderMatchingEngine {
                 log::debug!("Failed to update order in cache: {e}");
             }
             self.fill_limit_order(order.client_order_id());
+
+            // If fill didn't execute (e.g. all liquidity consumed), revert to
+            // maker so the fill model check applies on subsequent iterations
+            if self.core.order_exists(order.client_order_id())
+                && let Some(cached) = self.cache.borrow_mut().mut_order(&order.client_order_id())
+            {
+                cached.set_liquidity_side(LiquiditySide::Maker);
+            }
         } else if matches!(order.time_in_force(), TimeInForce::Fok | TimeInForce::Ioc) {
             self.cancel_order(order, None);
         } else {
@@ -2016,8 +2018,6 @@ impl OrderMatchingEngine {
         }
     }
 
-    // -- ORDER PROCESSING ----------------------------------------------------
-
     /// Iterate the matching engine by processing the bid and ask order sides
     /// and advancing time up to the given UNIX `timestamp_ns`.
     ///
@@ -2041,7 +2041,20 @@ impl OrderMatchingEngine {
         // Process expiration before matching to prevent fills on expired instruments
         self.check_instrument_expiration();
 
-        self.core.iterate();
+        // Process bid actions before snapshotting asks so cross-side
+        // contingencies (OCO/OUO) mutate state between sides
+        for action in self.core.iterate_bids() {
+            match action {
+                MatchAction::FillLimit(id) => self.fill_limit_order(id),
+                MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
+            }
+        }
+        for action in self.core.iterate_asks() {
+            match action {
+                MatchAction::FillLimit(id) => self.fill_limit_order(id),
+                MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
+            }
+        }
 
         let orders_bid = self.core.get_orders_bid().to_vec();
         let orders_ask = self.core.get_orders_ask().to_vec();
@@ -3397,8 +3410,6 @@ impl OrderMatchingEngine {
         self.generate_order_updated(order, order.quantity(), new_price, new_trigger_price, None);
     }
 
-    // -- EVENT HANDLING -----------------------------------------------------
-
     fn accept_order(&mut self, order: &mut OrderAny) {
         if order.is_closed() {
             // Temporary guard to prevent invalid processing
@@ -3720,8 +3731,6 @@ impl OrderMatchingEngine {
             }
         }
     }
-
-    // -- EVENT GENERATORS -----------------------------------------------------
 
     fn generate_order_rejected(&self, order: &OrderAny, reason: Ustr) {
         let ts_now = self.clock.borrow().timestamp_ns();

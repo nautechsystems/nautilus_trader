@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_common::logging::logger::Logger;
 use nautilus_core::UnixNanos;
 use nautilus_model::data::Data;
 
@@ -25,7 +24,6 @@ use crate::exchange::SimulatedExchange;
 /// simulation environment. Implementations can add specialized behavior such as
 /// market makers, price impact models, or other venue-specific simulation logic
 /// that runs alongside the core backtesting engine.
-#[warn(dead_code)]
 pub trait SimulationModule {
     /// Registers a simulated exchange venue with this module.
     fn register_venue(&self, exchange: SimulatedExchange);
@@ -37,7 +35,7 @@ pub trait SimulationModule {
     fn process(&self, ts_now: UnixNanos);
 
     /// Logs diagnostic information about the module's state.
-    fn log_diagnostics(&self, logger: Logger);
+    fn log_diagnostics(&self);
 
     /// Resets the module to its initial state.
     fn reset(&self);

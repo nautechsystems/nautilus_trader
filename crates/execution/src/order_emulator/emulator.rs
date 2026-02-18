@@ -46,7 +46,7 @@ use nautilus_model::{
 };
 
 use crate::{
-    matching_core::{OrderMatchInfo, OrderMatchingCore},
+    matching_core::{MatchAction, OrderMatchInfo, OrderMatchingCore},
     order_manager::{
         handlers::{CancelOrderHandlerAny, ModifyOrderHandlerAny, SubmitOrderHandlerAny},
         manager::OrderManager,
@@ -352,8 +352,7 @@ impl OrderEmulator {
         instrument_id: InstrumentId,
         price_increment: Price,
     ) -> OrderMatchingCore {
-        let matching_core =
-            OrderMatchingCore::new(instrument_id, price_increment, None, None, None);
+        let matching_core = OrderMatchingCore::new(instrument_id, price_increment);
         self.matching_cores
             .insert(instrument_id, matching_core.clone());
         log::info!("Creating matching core for {instrument_id:?}");
@@ -800,12 +799,37 @@ impl OrderEmulator {
     }
 
     fn iterate_orders(&mut self, instrument_id: &InstrumentId) {
-        let orders = if let Some(matching_core) = self.matching_cores.get_mut(instrument_id) {
-            matching_core.iterate();
-
-            matching_core.get_orders()
+        // Process bid actions before ask actions so cross-side
+        // contingencies (OCO/OUO) mutate state between sides
+        let bid_actions = if let Some(matching_core) = self.matching_cores.get_mut(instrument_id) {
+            matching_core.iterate_bids()
         } else {
             log::error!("Cannot iterate orders: no matching core for instrument {instrument_id}");
+            return;
+        };
+        for action in bid_actions {
+            match action {
+                MatchAction::FillLimit(id) => self.fill_limit_order(id),
+                MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
+            }
+        }
+
+        let ask_actions = if let Some(matching_core) = self.matching_cores.get_mut(instrument_id) {
+            matching_core.iterate_asks()
+        } else {
+            return;
+        };
+        for action in ask_actions {
+            match action {
+                MatchAction::FillLimit(id) => self.fill_limit_order(id),
+                MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
+            }
+        }
+
+        // Re-snapshot orders after actions to avoid stale trailing stop updates
+        let orders = if let Some(matching_core) = self.matching_cores.get(instrument_id) {
+            matching_core.get_orders()
+        } else {
             return;
         };
 
