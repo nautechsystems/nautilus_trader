@@ -131,8 +131,9 @@ pub const DERIBIT_POST_ONLY_ERROR_CODE: i64 = 11054;
 ///
 /// <https://docs.deribit.com/#rate-limits>
 pub static DERIBIT_HTTP_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
-    Quota::per_second(NonZeroU32::new(20).expect("20 is non-zero"))
-        .allow_burst(NonZeroU32::new(100).expect("100 is non-zero"))
+    Quota::per_second(NonZeroU32::new(20).expect("non-zero"))
+        .expect("valid constant")
+        .allow_burst(NonZeroU32::new(100).expect("non-zero"))
 });
 
 /// Deribit matching engine (order operations) rate limit.
@@ -143,13 +144,15 @@ pub static DERIBIT_HTTP_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
 ///
 /// Note: Actual limits vary by account tier based on 7-day trading volume.
 pub static DERIBIT_HTTP_ORDER_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
-    Quota::per_second(NonZeroU32::new(5).expect("5 is non-zero"))
-        .allow_burst(NonZeroU32::new(20).expect("20 is non-zero"))
+    Quota::per_second(NonZeroU32::new(5).expect("non-zero"))
+        .expect("valid constant")
+        .allow_burst(NonZeroU32::new(20).expect("non-zero"))
 });
 
 /// Conservative rate limit for account information endpoints.
-pub static DERIBIT_HTTP_ACCOUNT_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| Quota::per_second(NonZeroU32::new(5).expect("5 is non-zero")));
+pub static DERIBIT_HTTP_ACCOUNT_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(5).expect("non-zero")).expect("valid constant")
+});
 
 /// Global rate limit key for Deribit HTTP requests.
 pub const DERIBIT_GLOBAL_RATE_KEY: &str = "deribit:global";
@@ -172,16 +175,18 @@ pub const DERIBIT_ACCOUNT_RATE_KEY: &str = "deribit:account";
 ///
 /// <https://support.deribit.com/hc/en-us/articles/25944617523357-Rate-Limits>
 pub static DERIBIT_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
-    Quota::per_second(NonZeroU32::new(3).expect("3 is non-zero"))
-        .allow_burst(NonZeroU32::new(10).expect("10 is non-zero"))
+    Quota::per_second(NonZeroU32::new(3).expect("non-zero"))
+        .expect("valid constant")
+        .allow_burst(NonZeroU32::new(10).expect("non-zero"))
 });
 
 /// Deribit WebSocket order rate limit: 5 requests per second with 20 burst.
 ///
 /// Matching engine operations (buy, sell, edit, cancel) have stricter limits.
 pub static DERIBIT_WS_ORDER_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
-    Quota::per_second(NonZeroU32::new(5).expect("5 is non-zero"))
-        .allow_burst(NonZeroU32::new(20).expect("20 is non-zero"))
+    Quota::per_second(NonZeroU32::new(5).expect("non-zero"))
+        .expect("valid constant")
+        .allow_burst(NonZeroU32::new(20).expect("non-zero"))
 });
 
 /// Rate limit key for WebSocket subscriptions.

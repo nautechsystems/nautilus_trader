@@ -89,22 +89,24 @@ use crate::common::{
 /// Default OKX WebSocket connection rate limit: 3 requests per second.
 ///
 /// This applies to establishing WebSocket connections, not to subscribe/unsubscribe operations.
-pub static OKX_WS_CONNECTION_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| Quota::per_second(NonZeroU32::new(3).unwrap()));
+pub static OKX_WS_CONNECTION_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(3).expect("non-zero")).expect("valid constant")
+});
 
 /// OKX WebSocket subscription rate limit: 480 requests per hour per connection.
 ///
 /// This applies to subscribe/unsubscribe/login operations.
 /// 480 per hour = 8 per minute, but we use per-hour for accurate limiting.
 pub static OKX_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| Quota::per_hour(NonZeroU32::new(480).unwrap()));
+    LazyLock::new(|| Quota::per_hour(NonZeroU32::new(480).expect("non-zero")));
 
 /// Rate limit for order-related WebSocket operations: 250 requests per second.
 ///
 /// Based on OKX documentation for sub-account order limits (1000 per 2 seconds,
 /// so we use half for conservative rate limiting).
-pub static OKX_WS_ORDER_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| Quota::per_second(NonZeroU32::new(250).unwrap()));
+pub static OKX_WS_ORDER_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(250).expect("non-zero")).expect("valid constant")
+});
 
 /// Pre-interned rate limit key for subscription operations (subscribe/unsubscribe/login).
 ///

@@ -201,8 +201,8 @@ impl BitmexRawHttpClient {
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
-                Self::rate_limiter_quotas(max_req_per_sec, max_req_per_min),
-                Some(Self::default_quota(max_req_per_sec)),
+                Self::rate_limiter_quotas(max_req_per_sec, max_req_per_min)?,
+                Some(Self::default_quota(max_req_per_sec)?),
                 timeout_secs,
                 proxy_url,
             )
@@ -259,8 +259,8 @@ impl BitmexRawHttpClient {
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
-                Self::rate_limiter_quotas(max_req_per_sec, max_req_per_min),
-                Some(Self::default_quota(max_req_per_sec)),
+                Self::rate_limiter_quotas(max_req_per_sec, max_req_per_min)?,
+                Some(Self::default_quota(max_req_per_sec)?),
                 timeout_secs,
                 proxy_url,
             )
@@ -278,30 +278,31 @@ impl BitmexRawHttpClient {
         HashMap::from([(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())])
     }
 
-    fn default_quota(max_requests_per_second: u32) -> Quota {
-        Quota::per_second(
-            NonZeroU32::new(max_requests_per_second)
-                .unwrap_or_else(|| NonZeroU32::new(BITMEX_DEFAULT_RATE_LIMIT_PER_SECOND).unwrap()),
-        )
+    fn default_quota(max_requests_per_second: u32) -> Result<Quota, BitmexHttpError> {
+        let burst = NonZeroU32::new(max_requests_per_second)
+            .unwrap_or(NonZeroU32::new(BITMEX_DEFAULT_RATE_LIMIT_PER_SECOND).expect("non-zero"));
+        Quota::per_second(burst).ok_or_else(|| {
+            BitmexHttpError::ValidationError(format!(
+                "Invalid max_requests_per_second: {max_requests_per_second} exceeds maximum"
+            ))
+        })
     }
 
     fn rate_limiter_quotas(
         max_requests_per_second: u32,
         max_requests_per_minute: u32,
-    ) -> Vec<(String, Quota)> {
-        let per_sec_quota = Quota::per_second(
-            NonZeroU32::new(max_requests_per_second)
-                .unwrap_or_else(|| NonZeroU32::new(BITMEX_DEFAULT_RATE_LIMIT_PER_SECOND).unwrap()),
-        );
+    ) -> Result<Vec<(String, Quota)>, BitmexHttpError> {
+        let per_sec_quota = Self::default_quota(max_requests_per_second)?;
         let per_min_quota =
             Quota::per_minute(NonZeroU32::new(max_requests_per_minute).unwrap_or_else(|| {
-                NonZeroU32::new(BITMEX_DEFAULT_RATE_LIMIT_PER_MINUTE_AUTHENTICATED).unwrap()
+                NonZeroU32::new(BITMEX_DEFAULT_RATE_LIMIT_PER_MINUTE_AUTHENTICATED)
+                    .expect("non-zero")
             }));
 
-        vec![
+        Ok(vec![
             (BITMEX_GLOBAL_RATE_KEY.to_string(), per_sec_quota),
             (BITMEX_MINUTE_RATE_KEY.to_string(), per_min_quota),
-        ]
+        ])
     }
 
     fn rate_limit_keys() -> Vec<Ustr> {

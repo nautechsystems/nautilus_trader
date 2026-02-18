@@ -117,8 +117,9 @@ fn bar_type_to_resolution(bar_type: &BarType) -> anyhow::Result<DydxCandleResolu
 /// The dYdX Indexer API rate limits are generous for read-only operations:
 /// - General: 100 requests per 10 seconds per IP
 /// - We use a conservative 10 requests per second as the default quota.
-pub static DYDX_REST_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| Quota::per_second(NonZeroU32::new(10).unwrap()));
+pub static DYDX_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(10).expect("non-zero")).expect("valid constant")
+});
 
 /// Represents a dYdX HTTP response wrapper.
 ///

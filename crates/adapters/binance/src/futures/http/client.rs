@@ -501,8 +501,9 @@ impl BinanceRawFuturesHttpClient {
             }
         }
 
-        let default_quota =
-            default.unwrap_or_else(|| Quota::per_second(NonZeroU32::new(10).unwrap()));
+        let default_quota = default.unwrap_or_else(|| {
+            Quota::per_second(NonZeroU32::new(10).expect("non-zero")).expect("valid constant")
+        });
 
         keyed.push((BINANCE_GLOBAL_RATE_KEY.to_string(), default_quota));
 
@@ -516,7 +517,7 @@ impl BinanceRawFuturesHttpClient {
     fn quota_from(quota: &BinanceRateLimitQuota) -> Option<Quota> {
         let burst = NonZeroU32::new(quota.limit)?;
         match quota.interval {
-            BinanceRateLimitInterval::Second => Some(Quota::per_second(burst)),
+            BinanceRateLimitInterval::Second => Quota::per_second(burst),
             BinanceRateLimitInterval::Minute => Some(Quota::per_minute(burst)),
             BinanceRateLimitInterval::Day => {
                 Quota::with_period(Duration::from_secs(86_400)).map(|q| q.allow_burst(burst))

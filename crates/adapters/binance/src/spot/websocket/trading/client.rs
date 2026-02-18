@@ -73,7 +73,7 @@ pub static BINANCE_WS_RATE_LIMIT_KEY_ORDER: LazyLock<[Ustr; 1]> =
 /// This function will never panic as it uses a constant non-zero value.
 #[must_use]
 pub fn binance_ws_order_quota() -> Quota {
-    Quota::per_second(NonZeroU32::new(20).expect("20 > 0"))
+    Quota::per_second(NonZeroU32::new(20).expect("non-zero")).expect("valid constant")
 }
 
 /// Binance Spot WebSocket API client for SBE trading.

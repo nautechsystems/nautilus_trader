@@ -116,6 +116,12 @@ impl SocketClientInner {
             anyhow::bail!("Socket suffix cannot be empty: suffix is required for message framing");
         }
 
+        if let Some((interval_secs, _)) = &config.heartbeat
+            && *interval_secs == 0
+        {
+            anyhow::bail!("Heartbeat interval cannot be zero");
+        }
+
         let SocketConfig {
             url,
             mode,
@@ -466,14 +472,13 @@ impl SocketClientInner {
 
     /// Check if the client is still alive.
     ///
-    /// The client is connected if the read task has not finished. It is expected
-    /// that in case of any failure client or server side. The read task will be
-    /// shutdown. There might be some delay between the connection being closed
-    /// and the client detecting it.
+    /// Returns `true` if both the read and write tasks are still running.
+    /// There may be some delay between the connection closing and the
+    /// client detecting it.
     #[inline]
     #[must_use]
     pub fn is_alive(&self) -> bool {
-        !self.read_task.is_finished()
+        !self.read_task.is_finished() && !self.write_task.is_finished()
     }
 
     #[must_use]
@@ -914,6 +919,8 @@ impl SocketClient {
                 self.controller_task.abort();
                 log_task_aborted("controller");
             }
+            self.connection_mode
+                .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
         }
     }
 

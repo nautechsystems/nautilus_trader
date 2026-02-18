@@ -191,8 +191,24 @@ impl SocketClient {
                 }
                 _ => {
                     mode.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
-                    while !ConnectionMode::from_atomic(&mode).is_active() {
-                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    let timeout = tokio::time::timeout(Duration::from_secs(30), async {
+                        loop {
+                            let current = ConnectionMode::from_atomic(&mode);
+                            if current.is_active() {
+                                return Ok(());
+                            }
+                            if current.is_closed() || current.is_disconnect() {
+                                return Err("Connection closed during reconnect");
+                            }
+                            tokio::time::sleep(Duration::from_millis(10)).await;
+                        }
+                    })
+                    .await;
+
+                    match timeout {
+                        Ok(Ok(())) => log::debug!("Reconnected successfully"),
+                        Ok(Err(e)) => log::warn!("Reconnect aborted: {e}"),
+                        Err(_) => log::error!("Reconnect timed out after 30s"),
                     }
                 }
             }
@@ -226,8 +242,17 @@ impl SocketClient {
                 }
                 _ => {
                     mode.store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
-                    while !ConnectionMode::from_atomic(&mode).is_closed() {
-                        tokio::time::sleep(Duration::from_millis(10)).await;
+
+                    let timeout = tokio::time::timeout(Duration::from_secs(5), async {
+                        while !ConnectionMode::from_atomic(&mode).is_closed() {
+                            tokio::time::sleep(Duration::from_millis(10)).await;
+                        }
+                    })
+                    .await;
+
+                    if timeout.is_err() {
+                        log::error!("Timeout waiting for socket to close, forcing closed state");
+                        mode.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
                     }
                 }
             }

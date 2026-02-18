@@ -268,3 +268,42 @@ fn test_turmoil_real_websocket_network_partition(mut websocket_config: WebSocket
 
     sim.run().unwrap();
 }
+
+#[rstest]
+fn test_turmoil_real_websocket_disconnect_during_reconnect(mut websocket_config: WebSocketConfig) {
+    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.reconnect_delay_initial_ms = Some(100);
+
+    let mut sim = Builder::new().build();
+
+    sim.host("server", ws_echo_server);
+
+    sim.client("client", async move {
+        let (handler, _rx) = channel_message_handler();
+
+        let client =
+            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
+                .await
+                .expect("Should connect");
+
+        assert!(client.is_active(), "Client should be active after connect");
+
+        turmoil::partition("client", "server");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        client.disconnect().await;
+
+        assert!(
+            client.is_disconnected(),
+            "Client should be disconnected after disconnect during reconnect"
+        );
+        assert!(
+            !client.is_active(),
+            "Client should not be active after disconnect"
+        );
+
+        Ok(())
+    });
+
+    sim.run().unwrap();
+}

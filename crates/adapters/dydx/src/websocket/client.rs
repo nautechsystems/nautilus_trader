@@ -40,8 +40,9 @@ pub static DYDX_RATE_LIMIT_KEY_SUBSCRIPTION: LazyLock<[Ustr; 1]> =
 pub const DYDX_WS_TOPIC_DELIMITER: char = ':';
 
 /// Default WebSocket quota for dYdX subscriptions (2 messages per second).
-pub static DYDX_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| Quota::per_second(NonZeroU32::new(2).expect("non-zero")));
+pub static DYDX_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(2).expect("non-zero")).expect("valid constant")
+});
 
 use std::{
     num::NonZeroU32,

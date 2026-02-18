@@ -190,10 +190,9 @@ impl AuthTracker {
             Ok(Ok(Err(msg))) => Err(E::from(msg)),
             Ok(Err(_)) => Err(E::from("Authentication channel closed".to_string())),
             Err(_) => {
-                // Clear the sender on timeout to prevent memory leak
-                if let Ok(mut guard) = self.tx.lock() {
-                    guard.take();
-                }
+                // Don't clear the sender: a concurrent begin() may have replaced it,
+                // and guard.take() would cancel the newer sender. The next begin()
+                // call cleans up any stale sender.
                 Err(E::from("Authentication timed out".to_string()))
             }
         }

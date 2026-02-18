@@ -86,7 +86,7 @@ use crate::common::{
 ///
 /// Conservative default of 10 requests per second.
 pub static AX_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
-    Quota::per_second(NonZeroU32::new(10).expect("Should be a valid non-zero u32"))
+    Quota::per_second(NonZeroU32::new(10).expect("non-zero")).expect("valid constant")
 });
 
 const AX_GLOBAL_RATE_KEY: &str = "architect:global";

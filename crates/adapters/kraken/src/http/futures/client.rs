@@ -154,8 +154,8 @@ impl KrakenFuturesRawHttpClient {
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
-                Self::rate_limiter_quotas(rate_limit),
-                Some(Self::default_quota(rate_limit)),
+                Self::rate_limiter_quotas(rate_limit)?,
+                Some(Self::default_quota(rate_limit)?),
                 timeout_secs,
                 proxy_url,
             )
@@ -206,8 +206,8 @@ impl KrakenFuturesRawHttpClient {
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
-                Self::rate_limiter_quotas(rate_limit),
-                Some(Self::default_quota(rate_limit)),
+                Self::rate_limiter_quotas(rate_limit)?,
+                Some(Self::default_quota(rate_limit)?),
                 timeout_secs,
                 proxy_url,
             )
@@ -252,17 +252,22 @@ impl KrakenFuturesRawHttpClient {
         HashMap::from([(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())])
     }
 
-    fn default_quota(max_requests_per_second: u32) -> Quota {
-        Quota::per_second(NonZeroU32::new(max_requests_per_second).unwrap_or_else(|| {
-            NonZeroU32::new(KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND).unwrap()
-        }))
+    fn default_quota(max_requests_per_second: u32) -> anyhow::Result<Quota> {
+        let burst = NonZeroU32::new(max_requests_per_second).unwrap_or(
+            NonZeroU32::new(KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND).expect("non-zero"),
+        );
+        Quota::per_second(burst).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Invalid max_requests_per_second: {max_requests_per_second} exceeds maximum"
+            )
+        })
     }
 
-    fn rate_limiter_quotas(max_requests_per_second: u32) -> Vec<(String, Quota)> {
-        vec![(
+    fn rate_limiter_quotas(max_requests_per_second: u32) -> anyhow::Result<Vec<(String, Quota)>> {
+        Ok(vec![(
             KRAKEN_GLOBAL_RATE_KEY.to_string(),
-            Self::default_quota(max_requests_per_second),
-        )]
+            Self::default_quota(max_requests_per_second)?,
+        )])
     }
 
     fn rate_limit_keys(endpoint: &str) -> Vec<String> {

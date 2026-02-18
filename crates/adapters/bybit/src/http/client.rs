@@ -106,14 +106,14 @@ const DEFAULT_RECV_WINDOW_MS: u64 = 5_000;
 /// Bybit implements rate limiting per endpoint with varying limits.
 /// We use a conservative 10 requests per second as a general default.
 pub static BYBIT_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
-    Quota::per_second(NonZeroU32::new(10).expect("Should be a valid non-zero u32"))
+    Quota::per_second(NonZeroU32::new(10).expect("non-zero")).expect("valid constant")
 });
 
 /// Bybit repay endpoint rate limit.
 ///
 /// Conservative limit to avoid hitting API restrictions when repaying small borrows.
 pub static BYBIT_REPAY_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
-    Quota::per_second(NonZeroU32::new(1).expect("Should be a valid non-zero u32"))
+    Quota::per_second(NonZeroU32::new(1).expect("non-zero")).expect("valid constant")
 });
 
 const BYBIT_GLOBAL_RATE_KEY: &str = "bybit:global";

@@ -223,15 +223,17 @@ pub const BINANCE_EAPI_RATE_LIMITS: &[BinanceRateLimitQuota] = &[
 /// WebSocket subscription rate limit: 5 messages per second.
 ///
 /// Binance limits incoming WebSocket messages (subscribe/unsubscribe) to 5 per second.
-pub static BINANCE_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| Quota::per_second(NonZeroU32::new(5).expect("5 > 0")));
+pub static BINANCE_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(5).expect("non-zero")).expect("valid constant")
+});
 
 /// WebSocket connection rate limit: 1 per second (conservative).
 ///
 /// Binance limits connections to 300 per 5 minutes per IP. This conservative quota
 /// of 1 per second helps avoid hitting the connection limit during reconnection storms.
-pub static BINANCE_WS_CONNECTION_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| Quota::per_second(NonZeroU32::new(1).expect("1 > 0")));
+pub static BINANCE_WS_CONNECTION_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(1).expect("non-zero")).expect("valid constant")
+});
 
 /// Pre-interned rate limit key for WebSocket subscription operations.
 pub static BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION: LazyLock<[Ustr; 1]> =

@@ -198,8 +198,17 @@ impl WebSocketClient {
                 }
                 _ => {
                     connection_mode.store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
-                    while !ConnectionMode::from_atomic(&connection_mode).is_closed() {
-                        tokio::time::sleep(Duration::from_millis(10)).await;
+
+                    let timeout = tokio::time::timeout(Duration::from_secs(5), async {
+                        while !ConnectionMode::from_atomic(&connection_mode).is_closed() {
+                            tokio::time::sleep(Duration::from_millis(10)).await;
+                        }
+                    })
+                    .await;
+
+                    if timeout.is_err() {
+                        log::error!("Timeout waiting for WebSocket to close, forcing closed state");
+                        connection_mode.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
                     }
                 }
             }

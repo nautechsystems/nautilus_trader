@@ -47,12 +47,13 @@ impl Quota {
     /// Returns a `PyErr` if the max burst capacity is 0
     #[staticmethod]
     pub fn rate_per_second(max_burst: u32) -> PyResult<Self> {
-        match NonZeroU32::new(max_burst) {
-            Some(max_burst) => Ok(Self::per_second(max_burst)),
-            None => Err(to_pyexception(
-                "Max burst capacity should be a non-zero integer",
-            )),
-        }
+        let max_burst = NonZeroU32::new(max_burst)
+            .ok_or_else(|| to_pyexception("Max burst capacity should be a non-zero integer"))?;
+        Self::per_second(max_burst).ok_or_else(|| {
+            to_pyexception(
+                "Max burst too large: replenish interval rounds to zero (max 1_000_000_000)",
+            )
+        })
     }
 
     /// Construct a quota for a number of requests per minute.

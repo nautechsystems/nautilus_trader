@@ -180,6 +180,13 @@ impl WebSocketClientInner {
     ) -> Result<Self, Error> {
         install_cryptographic_provider();
 
+        if config.heartbeat == Some(0) {
+            return Err(Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Heartbeat interval cannot be zero",
+            )));
+        }
+
         // Capture whether we're in stream mode before moving config
         let is_stream_mode = message_handler.is_none();
         let reconnect_max_attempts = config.reconnect_max_attempts;
@@ -487,19 +494,17 @@ impl WebSocketClientInner {
         })?
     }
 
-    /// Check if the client is still connected.
+    /// Check if the client is still alive.
     ///
-    /// The client is connected if the read task has not finished. It is expected
-    /// that in case of any failure client or server side. The read task will be
-    /// shutdown or will receive a `Close` frame which will finish it. There
-    /// might be some delay between the connection being closed and the client
-    /// detecting.
+    /// Returns `true` if both the read and write tasks are still running.
+    /// There may be some delay between the connection closing and the
+    /// client detecting it.
     #[inline]
     #[must_use]
     pub fn is_alive(&self) -> bool {
         match &self.read_task {
-            Some(read_task) => !read_task.is_finished(),
-            None => true, // Stream is being used directly
+            Some(read_task) => !read_task.is_finished() && !self.write_task.is_finished(),
+            None => !self.write_task.is_finished(),
         }
     }
 
@@ -1089,6 +1094,8 @@ impl WebSocketClient {
                 self.controller_task.abort();
                 log_task_aborted("controller");
             }
+            self.connection_mode
+                .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
         }
     }
 
@@ -1520,7 +1527,7 @@ mod tests {
     #[tokio::test]
     async fn test_rate_limiter() {
         let server = TestServer::setup().await;
-        let quota = Quota::per_second(NonZeroU32::new(2).unwrap());
+        let quota = Quota::per_second(NonZeroU32::new(2).unwrap()).unwrap();
 
         let config = WebSocketConfig {
             url: format!("ws://127.0.0.1:{}", server.port),
@@ -2144,8 +2151,9 @@ mod rust_tests {
         };
 
         // Very restrictive rate limit: 1 request per second, burst of 1
-        let quota =
-            Quota::per_second(NonZeroU32::new(1).unwrap()).allow_burst(NonZeroU32::new(1).unwrap());
+        let quota = Quota::per_second(NonZeroU32::new(1).unwrap())
+            .unwrap()
+            .allow_burst(NonZeroU32::new(1).unwrap());
 
         let client = Arc::new(
             WebSocketClient::connect(
