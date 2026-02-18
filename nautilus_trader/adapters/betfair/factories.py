@@ -17,6 +17,8 @@ import asyncio
 import os
 from functools import lru_cache
 
+from nautilus_trader.adapters.betfair.client import BETFAIR_RATE_LIMIT_KEY_DEFAULT
+from nautilus_trader.adapters.betfair.client import BETFAIR_RATE_LIMIT_KEY_ORDERS
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
 from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
@@ -33,18 +35,24 @@ from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
 
-@lru_cache(1)
+_CACHED_BETFAIR_CLIENTS: dict[tuple, BetfairHttpClient] = {}
+
+
 def get_cached_betfair_client(
     username: str | None = None,
     password: str | None = None,
     app_key: str | None = None,
     proxy_url: str | None = None,
+    request_rate_per_second: int = 5,
+    order_request_rate_per_second: int = 20,
 ) -> BetfairHttpClient:
     """
     Cache and return a Betfair HTTP client with the given credentials.
 
-    If a cached client with matching credentials already exists, then that
-    cached client will be returned.
+    If a cached client with matching parameters already exists, then that
+    cached client will be returned. The cache key includes credentials and
+    rate limit settings. With default rate limits, data and execution
+    factories share a single client instance.
 
     Parameters
     ----------
@@ -59,6 +67,11 @@ def get_cached_betfair_client(
         If None then will source from the `BETFAIR_APP_KEY` env var.
     proxy_url : str, optional
         The proxy URL for HTTP requests.
+    request_rate_per_second : int, default 5
+        The rate limit (requests/second) for general API endpoints.
+    order_request_rate_per_second : int, default 20
+        The rate limit (requests/second) for order endpoints
+        (placeOrders, replaceOrders, cancelOrders).
 
     Returns
     -------
@@ -69,19 +82,48 @@ def get_cached_betfair_client(
     password = password or os.environ["BETFAIR_PASSWORD"]
     app_key = app_key or os.environ["BETFAIR_APP_KEY"]
 
-    Logger("BetfairFactory").debug("Creating new instance of `BetfairHttpClient`")
+    cache_key = (
+        username,
+        password,
+        app_key,
+        proxy_url,
+        request_rate_per_second,
+        order_request_rate_per_second,
+    )
+    if cache_key in _CACHED_BETFAIR_CLIENTS:
+        return _CACHED_BETFAIR_CLIENTS[cache_key]
 
-    # Betfair best practice: ~5 requests/second for most endpoints
-    # https://support.developer.betfair.com/hc/en-us/articles/360000406111
-    ratelimiter_default_quota = Quota.rate_per_second(5)
+    logger = Logger("BetfairFactory")
 
-    return BetfairHttpClient(
+    # Warn if a client with the same credentials but different rate
+    # limits already exists, as this creates a second HTTP session
+    cred_key = (username, password, app_key, proxy_url)
+    for existing_key in _CACHED_BETFAIR_CLIENTS:
+        if existing_key[:4] == cred_key:
+            logger.warning(
+                "Creating additional BetfairHttpClient for same credentials "
+                "with different rate limit settings",
+            )
+            break
+
+    logger.debug("Creating new instance of `BetfairHttpClient`")
+
+    ratelimiter_default_quota = Quota.rate_per_second(request_rate_per_second)
+    ratelimiter_keyed_quotas = [
+        (BETFAIR_RATE_LIMIT_KEY_DEFAULT, Quota.rate_per_second(request_rate_per_second)),
+        (BETFAIR_RATE_LIMIT_KEY_ORDERS, Quota.rate_per_second(order_request_rate_per_second)),
+    ]
+
+    client = BetfairHttpClient(
         username=username,
         password=password,
         app_key=app_key,
         proxy_url=proxy_url,
         ratelimiter_default_quota=ratelimiter_default_quota,
+        ratelimiter_keyed_quotas=ratelimiter_keyed_quotas,
     )
+    _CACHED_BETFAIR_CLIENTS[cache_key] = client
+    return client
 
 
 @lru_cache(1)
@@ -218,6 +260,7 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
             password=config.password,
             app_key=config.app_key,
             proxy_url=config.proxy_url,
+            order_request_rate_per_second=config.order_request_rate_per_second,
         )
         provider = get_cached_betfair_instrument_provider(
             client=client,

@@ -143,7 +143,6 @@ def is_session_error(error: BetfairError) -> bool:
         "NO_SESSION" in msg
         or "INVALID_SESSION_INFORMATION" in msg
         or "is not a valid JSONExceptionCode" in msg
-        or "JSON_PARSE_ERROR" in msg
     )
 
 

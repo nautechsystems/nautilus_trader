@@ -43,6 +43,7 @@ from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import CustomData
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
@@ -777,3 +778,112 @@ def test_betfair_order_voided_equality():
     assert voided1 != voided3  # Different client_order_id
     assert voided1 != None  # noqa: E711
     assert voided1 != "not a voided object"
+
+
+def test_rcm_runner_data_reaches_subscriber_via_data_engine(data_client, data_engine, msgbus):
+    """
+    Verify that an actor subscribing with DataType(BetfairRaceRunnerData,
+    {"selection_id": N}) receives runner data through the full pipeline.
+    """
+    # Arrange
+    received = []
+    data_type = DataType(BetfairRaceRunnerData, {"selection_id": 49411491})
+    topic = f"data.{data_type.topic}"
+    msgbus.subscribe(topic=topic, handler=received.append)
+
+    raw = (RESOURCES_PATH / "streaming" / "streaming_rcm_tpd_live.jsonl").read_bytes()
+    lines = raw.splitlines()
+
+    # Act - first message has 3 runners including selection_id 49411491
+    data_client.on_market_update(lines[0])
+
+    # Assert
+    assert len(received) == 1
+    assert isinstance(received[0], BetfairRaceRunnerData)
+    assert received[0].selection_id == 49411491
+    assert received[0].race_id == "35270435.1830"
+    assert received[0].latitude == 52.6056631
+    assert received[0].longitude == -2.145348
+    assert received[0].speed == 1.73
+
+
+def test_rcm_runner_data_filtered_by_selection_id(data_client, data_engine, msgbus):
+    """
+    Verify that subscribing to a specific selection_id only receives data for that
+    runner, not others in the same RCM message.
+    """
+    # Arrange
+    received_target = []
+    received_other = []
+    topic_target = f"data.{DataType(BetfairRaceRunnerData, {'selection_id': 44169412}).topic}"
+    topic_other = f"data.{DataType(BetfairRaceRunnerData, {'selection_id': 19080425}).topic}"
+    msgbus.subscribe(topic=topic_target, handler=received_target.append)
+    msgbus.subscribe(topic=topic_other, handler=received_other.append)
+
+    raw = (RESOURCES_PATH / "streaming" / "streaming_rcm_tpd_live.jsonl").read_bytes()
+    lines = raw.splitlines()
+
+    # Act - first message has runners 49411491, 44169412, 19080425
+    data_client.on_market_update(lines[0])
+
+    # Assert - each subscriber only gets their runner
+    assert len(received_target) == 1
+    assert received_target[0].selection_id == 44169412
+    assert received_target[0].speed == 1.32
+
+    assert len(received_other) == 1
+    assert received_other[0].selection_id == 19080425
+    assert received_other[0].speed == 1.45
+
+
+def test_rcm_progress_data_reaches_subscriber_via_data_engine(data_client, data_engine, msgbus):
+    """
+    Verify that an actor subscribing with DataType(BetfairRaceProgress) receives race
+    progress data through the full pipeline.
+    """
+    # Arrange
+    received = []
+    data_type = DataType(BetfairRaceProgress)
+    topic = f"data.{data_type.topic}"
+    msgbus.subscribe(topic=topic, handler=received.append)
+
+    raw = (RESOURCES_PATH / "streaming" / "streaming_rcm_tpd_live.jsonl").read_bytes()
+    lines = raw.splitlines()
+
+    # Act - second message has race progress data
+    data_client.on_market_update(lines[1])
+
+    # Assert
+    assert len(received) == 1
+    assert isinstance(received[0], BetfairRaceProgress)
+    assert received[0].race_id == "35270435.1830"
+    assert received[0].market_id == "1.254088503"
+    assert received[0].progress == 1025
+
+
+def test_rcm_sequence_delivers_all_updates(data_client, data_engine, msgbus):
+    """
+    Verify that processing a sequence of RCM messages delivers all runner and progress
+    updates to their respective subscribers.
+    """
+    # Arrange
+    runner_data = []
+    progress_data = []
+    msgbus.subscribe(topic="data.BetfairRaceRunnerData*", handler=runner_data.append)
+    msgbus.subscribe(
+        topic=f"data.{DataType(BetfairRaceProgress).topic}",
+        handler=progress_data.append,
+    )
+
+    raw = (RESOURCES_PATH / "streaming" / "streaming_rcm_tpd_live.jsonl").read_bytes()
+
+    # Act - process all 3 messages
+    for line in raw.splitlines():
+        data_client.on_market_update(line)
+
+    # Assert - 3 runners from msg 0, 1 runner from msg 2, 1 progress from msg 1
+    assert len(runner_data) == 4
+    assert all(isinstance(d, BetfairRaceRunnerData) for d in runner_data)
+
+    assert len(progress_data) == 1
+    assert isinstance(progress_data[0], BetfairRaceProgress)

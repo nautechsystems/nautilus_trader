@@ -99,7 +99,14 @@ def merge_instrument_fields(
     old_dict = old.to_dict(old)
     new_dict = new.to_dict(new)
     for key, value in new_dict.items():
-        if key in ("type", "id", "info"):
+        if key in ("type", "id"):
+            continue
+        if key == "info":
+            # Merge info dicts so stream fields (e.g. version) are preserved
+            if isinstance(value, dict) and isinstance(old_dict.get(key), dict):
+                merged_info = {**old_dict[key], **value}
+                if merged_info != old_dict[key]:
+                    old_dict[key] = merged_info
             continue
         if value != old_dict[key] and value:
             old_value = old_dict[key]

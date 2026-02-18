@@ -28,6 +28,7 @@ from betfair_parser.spec.betting.orders import PlaceOrders
 from betfair_parser.spec.betting.orders import ReplaceOrders
 from betfair_parser.spec.betting.type_definitions import CancelExecutionReport
 from betfair_parser.spec.betting.type_definitions import CurrentOrderSummary
+from betfair_parser.spec.betting.type_definitions import MarketVersion
 from betfair_parser.spec.betting.type_definitions import PlaceExecutionReport
 from betfair_parser.spec.common import OrderStatus as BetfairOrderStatus
 from betfair_parser.spec.common import TimeRange
@@ -175,6 +176,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.stream_market_ids_filter=}", LogColor.BLUE)
         self._log.info(f"{config.ignore_external_orders=}", LogColor.BLUE)
         self._log.info(f"{config.submit_rejection_delay_secs=}", LogColor.BLUE)
+        self._log.info(f"{config.use_market_version=}", LogColor.BLUE)
 
         # Include filter for order stream updates (None = process all markets)
         self._stream_market_ids_filter: set[str] | None = (
@@ -273,21 +275,22 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.info("Reconnecting to Betfair")
         self._is_reconnecting = True
 
-        if self._update_account_task:
-            self._update_account_task.cancel()
-            self._update_account_task = None
+        try:
+            if self._update_account_task:
+                self._update_account_task.cancel()
+                self._update_account_task = None
 
-        await self._client.reconnect()
-        self._sync_fill_caches_from_orders()
-        await self._stream.reconnect()
+            await self._client.reconnect()
+            self._sync_fill_caches_from_orders()
+            await self._stream.reconnect()
 
-        account_state = await self.request_account_state()
-        self._send_account_state(account_state)
+            account_state = await self.request_account_state()
+            self._send_account_state(account_state)
 
-        if self.config.request_account_state_secs:
-            self._update_account_task = self.create_task(self._update_account_state())
-
-        self._is_reconnecting = False
+            if self.config.request_account_state_secs:
+                self._update_account_task = self.create_task(self._update_account_state())
+        finally:
+            self._is_reconnecting = False
 
     async def _disconnect(self) -> None:
         if BETFAIR_FILL_CACHE_SWEEP_TIMER in self._clock.timer_names:
@@ -425,6 +428,16 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug(f"Received account state: {account_state}")
 
         return account_state
+
+    def _get_market_version(self, instrument: BettingInstrument) -> MarketVersion | None:
+        if not self.config.use_market_version:
+            return None
+
+        version = instrument.info.get("version")
+        if version is not None:
+            return MarketVersion(version=version)
+
+        return None
 
     def _market_ids_filter(self) -> set[str] | None:
         if (
@@ -764,6 +777,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         place_orders: PlaceOrders = order_submit_to_place_order_params(
             command=command,
             instrument=instrument,
+            market_version=self._get_market_version(instrument),
         )
 
         try:
@@ -986,6 +1000,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             command=command,
             venue_order_id=existing_order.venue_order_id,
             instrument=instrument,
+            market_version=self._get_market_version(instrument),
         )
         pending_key = (command.client_order_id, existing_order.venue_order_id)
         self._pending_update_keys.add(pending_key)

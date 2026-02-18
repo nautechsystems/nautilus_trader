@@ -286,9 +286,16 @@ The adapter handles several edge cases when processing fills from the stream:
 
 ## Rate limiting
 
-The adapter enforces a default rate limit of 5 requests/second across all endpoints, aligned with
-Betfair's best practice recommendation. Order status and fill report queries retry once on
-`TOO_MANY_REQUESTS` errors after a 1-second delay; order operations reject with the error message.
+The adapter uses separate rate limit buckets so that account state polling and
+reconciliation do not throttle order placement:
+
+| Bucket  | Default | Endpoints                                            | Configurable                     |
+|---------|---------|------------------------------------------------------|----------------------------------|
+| General | 5/s     | Account state, reconciliation, keep-alive.           |                                  |
+| Orders  | 20/s    | `placeOrders`, `replaceOrders`, `cancelOrders`.      | `order_request_rate_per_second`. |
+
+Order status and fill report queries retry once on `TOO_MANY_REQUESTS` errors
+after a 1-second delay; order operations reject with the error message.
 
 Betfair's actual API limits are more nuanced:
 
@@ -313,13 +320,13 @@ though strategies can register handlers for specific data types.
 
 Real-time ticker data for a betting selection.
 
-| Field                | Type    | Description                              |
-|----------------------|---------|------------------------------------------|
-| `instrument_id`      | str     | Nautilus instrument identifier.          |
-| `last_traded_price`  | float   | Last matched price (odds).               |
-| `traded_volume`      | float   | Total matched volume.                    |
-| `starting_price_near`| float   | Near-side BSP indicator.                 |
-| `starting_price_far` | float   | Far-side BSP indicator.                  |
+| Field                 | Type    | Description                     |
+|-----------------------|---------|---------------------------------|
+| `instrument_id`       | str     | Nautilus instrument identifier. |
+| `last_traded_price`   | float   | Last matched price (odds).      |
+| `traded_volume`       | float   | Total matched volume.           |
+| `starting_price_near` | float   | Near-side BSP indicator.        |
+| `starting_price_far`  | float   | Far-side BSP indicator.         |
 
 ### BetfairStartingPrice
 
@@ -335,16 +342,16 @@ The realized Betfair Starting Price (BSP) after market close.
 Live GPS tracking data for individual horses (Total Performance Data).
 Available for supported UK and Irish races.
 
-| Field              | Type  | Description                                |
-|--------------------|-------|--------------------------------------------|
-| `race_id`          | str   | Betfair race identifier.                   |
-| `market_id`        | str   | Betfair market identifier.                 |
-| `selection_id`     | int   | Betfair selection (runner) identifier.     |
-| `latitude`         | float | GPS latitude.                              |
-| `longitude`        | float | GPS longitude.                             |
-| `speed`            | float | Current speed in m/s (Doppler-derived).    |
-| `progress`         | float | Distance to finish line in meters.         |
-| `stride_frequency` | float | Stride frequency in Hz.                    |
+| Field              | Type  | Description                             |
+|--------------------|-------|-----------------------------------------|
+| `race_id`          | str   | Betfair race identifier.                |
+| `market_id`        | str   | Betfair market identifier.              |
+| `selection_id`     | int   | Betfair selection (runner) identifier.  |
+| `latitude`         | float | GPS latitude.                           |
+| `longitude`        | float | GPS longitude.                          |
+| `speed`            | float | Current speed in m/s (Doppler-derived). |
+| `progress`         | float | Distance to finish line in meters.      |
+| `stride_frequency` | float | Stride frequency in Hz.                 |
 
 ### BetfairRaceProgress
 
@@ -365,7 +372,7 @@ Race summary data with sectional times and running order.
 ### Subscribing to custom data
 
 Custom data flows automatically through the Betfair market stream when you subscribe to markets.
-To receive custom data in your strategy, register a handler with the Betfair client ID:
+To receive custom data in your strategy or actor, register a handler with the Betfair client ID:
 
 ```python
 from nautilus_trader.adapters.betfair.constants import BETFAIR_CLIENT_ID
@@ -376,14 +383,27 @@ from nautilus_trader.model.data import DataType
 
 class MyStrategy(Strategy):
     def on_start(self):
-        # Register handlers for custom data types (client_id required)
+        # Subscribe to ticker data
         self.subscribe_data(DataType(BetfairTicker), client_id=BETFAIR_CLIENT_ID)
+
+        # Subscribe to ALL race runner data (wildcard)
         self.subscribe_data(DataType(BetfairRaceRunnerData), client_id=BETFAIR_CLIENT_ID)
+
+        # Or subscribe to a specific runner by selection_id
+        self.subscribe_data(
+            DataType(BetfairRaceRunnerData, metadata={"selection_id": 49411491}),
+            client_id=BETFAIR_CLIENT_ID,
+        )
+
+        # Subscribe to race progress updates
         self.subscribe_data(DataType(BetfairRaceProgress), client_id=BETFAIR_CLIENT_ID)
 
     def on_data(self, data):
         if isinstance(data, BetfairRaceRunnerData):
-            self.log.info(f"Runner {data.selection_id}: speed={data.speed} m/s")
+            self.log.info(
+                f"Runner {data.selection_id}: speed={data.speed} m/s, "
+                f"progress={data.progress}m to finish"
+            )
         elif isinstance(data, BetfairRaceProgress):
             self.log.info(f"Race order: {data.order}")
         elif isinstance(data, BetfairTicker):
@@ -391,8 +411,14 @@ class MyStrategy(Strategy):
 ```
 
 :::info
-Race data (RCM messages) is only available for races with Total Performance Data coverage.
-Not all races have GPS tracking enabled.
+Subscribing with `DataType(BetfairRaceRunnerData)` (no metadata) receives data for
+**all** runners. Adding `metadata={"selection_id": <id>}` filters to a specific runner.
+The `race_id` field is available on each data object for filtering in handlers, but should
+not be included in subscription metadata since it changes per race and is unknown at
+subscription time.
+
+Race data (RCM messages) requires Total Performance Data (TPD) coverage and a Betfair
+API key with TPD access. Not all races have GPS tracking enabled.
 :::
 
 ### Loading race data from files
@@ -445,6 +471,8 @@ Set `stream_conflate_ms=0` explicitly to guarantee no conflation and receive eve
 | `stream_market_ids_filter`   | `None`   | List of market IDs to process from stream; others are silently skipped. |
 | `ignore_external_orders`     | `False`  | When `True`, ignore stream orders missing from the local cache. |
 | `submit_rejection_delay_secs`| `10`     | Grace period (seconds) before rejecting after a network error during submission. |
+| `use_market_version`         | `False`  | When `True`, attach the latest market version to order requests for price protection. |
+| `order_request_rate_per_second` | `20`  | Rate limit (requests/second) for order endpoints, separate from general API endpoints. |
 | `proxy_url`                  | `None`   | Optional proxy URL for HTTP requests. |
 
 :::warning
@@ -464,6 +492,38 @@ reconnection when `NO_SESSION` or `INVALID_SESSION_INFORMATION` errors occur:
 :::info
 Session errors during account state polling or keep-alive trigger automatic reconnection.
 No manual intervention is required for normal session expiry.
+:::
+
+## Market version price protection
+
+Betfair markets have a `version` number that increments whenever the market book changes
+(e.g., a new price level appears, a bet is matched). The adapter can attach this version
+to `placeOrders` and `replaceOrders` requests, providing price protection against stale orders.
+
+When `use_market_version=True`, each order request includes the market version last seen
+by the adapter. If the market has advanced beyond that version by the time Betfair processes
+the order, Betfair **lapses** the bet rather than matching it against a changed book.
+
+```python
+from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
+
+exec_config = BetfairExecClientConfig(
+    account_currency="GBP",
+    use_market_version=True,
+)
+```
+
+The adapter reads the market version from the instrument's `info` dictionary, which
+the Exchange Streaming API's `MarketDefinition` updates populate. This means:
+
+- The version reflects the most recent stream update, not the HTTP API snapshot.
+- There is inherent latency between a market change and the adapter receiving the updated version.
+- Orders submitted before the first stream `MarketDefinition` is received will not include a version.
+
+:::warning
+Market version protection is conservative. In fast-moving markets, the version may advance
+between your order signal and submission, causing the bet to lapse even though the price
+is still acceptable. Consider this trade-off between protection and fill rate.
 :::
 
 ## Multi-node deployment

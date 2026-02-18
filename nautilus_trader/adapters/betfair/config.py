@@ -106,6 +106,17 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
         the stream can confirm the order before rejection. Set to 0 to reject
         immediately. Values below 5 are not recommended as stream confirmation
         may not arrive before the grace period expires.
+    use_market_version : bool, default False
+        If True, automatically attach the latest market version to placeOrders
+        and replaceOrders requests. When the market version has advanced beyond
+        the version sent with the order, Betfair will lapse the bet rather than
+        matching it against a changed book. This provides price protection by
+        preventing orders from being matched when the market has moved.
+    order_request_rate_per_second : PositiveInt, default 20
+        The rate limit (requests/second) for order endpoints (placeOrders,
+        replaceOrders, cancelOrders). Order endpoints use a separate rate
+        limit bucket from general API endpoints (5/sec) so order placement
+        is not throttled by account state polling or reconciliation queries.
     proxy_url : str, optional
         The proxy URL for HTTP requests.
 
@@ -123,4 +134,6 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     stream_market_ids_filter: list[str] | None = None
     ignore_external_orders: bool = False
     submit_rejection_delay_secs: NonNegativeInt = 10
+    use_market_version: bool = False
+    order_request_rate_per_second: PositiveInt = 20
     proxy_url: str | None = None

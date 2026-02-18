@@ -36,6 +36,7 @@ from betfair_parser.spec.betting.orders import ListClearedOrders
 from betfair_parser.spec.betting.orders import ListCurrentOrders
 from betfair_parser.spec.betting.orders import PlaceOrders
 from betfair_parser.spec.betting.orders import ReplaceOrders
+from betfair_parser.spec.betting.orders import UpdateOrders
 from betfair_parser.spec.betting.type_definitions import CancelExecutionReport
 from betfair_parser.spec.betting.type_definitions import ClearedOrderSummary
 from betfair_parser.spec.betting.type_definitions import ClearedOrderSummaryReport
@@ -71,6 +72,12 @@ from nautilus_trader.core.nautilus_pyo3 import Quota
 from nautilus_trader.core.rust.common import LogColor
 
 
+BETFAIR_RATE_LIMIT_KEY_ORDERS = "orders"
+BETFAIR_RATE_LIMIT_KEY_DEFAULT = "default"
+
+_ORDER_REQUEST_TYPES = (PlaceOrders, ReplaceOrders, CancelOrders, UpdateOrders)
+
+
 class BetfairHttpClient:
     """
     Provides a HTTP client for Betfair.
@@ -87,6 +94,8 @@ class BetfairHttpClient:
         The proxy URL for HTTP requests.
     ratelimiter_default_quota : Quota, optional
         The default rate limiter quota for requests.
+    ratelimiter_keyed_quotas : list[tuple[str, Quota]], optional
+        Per-key rate limiter quotas (e.g. separate quota for order endpoints).
 
     """
 
@@ -97,6 +106,7 @@ class BetfairHttpClient:
         app_key: str,
         proxy_url: str | None = None,
         ratelimiter_default_quota: Quota | None = None,
+        ratelimiter_keyed_quotas: list[tuple[str, Quota]] | None = None,
     ) -> None:
         # Config
         self.username = username
@@ -107,6 +117,7 @@ class BetfairHttpClient:
         self._client = HttpClient(
             proxy_url=proxy_url,
             default_quota=ratelimiter_default_quota,
+            keyed_quotas=ratelimiter_keyed_quotas or [],
         )
         self._headers: dict[str, str] = {}
         self._log = Logger(name=type(self).__name__)
@@ -120,15 +131,24 @@ class BetfairHttpClient:
         if isinstance(body, str):
             body = body.encode()
         self._log.debug(f"[REQ] {method} {url} {body.decode()}")
+
+        keys = self._rate_limit_keys(request)
         response: HttpResponse = await self._client.request(
             method,
             url,
             headers=headers,
             body=body,
+            keys=keys,
         )
         if url not in SKIP_LOG_URLS:
             self._log.debug(f"[RESP] {response.body.decode()}")
         return response
+
+    @staticmethod
+    def _rate_limit_keys(request: Request) -> list[str]:
+        if isinstance(request, _ORDER_REQUEST_TYPES):
+            return [BETFAIR_RATE_LIMIT_KEY_ORDERS]
+        return [BETFAIR_RATE_LIMIT_KEY_DEFAULT]
 
     def _parse_response(self, request: Request, response: HttpResponse) -> Request.return_type:
         if not response.body:

@@ -33,6 +33,7 @@ from betfair_parser.spec.betting.type_definitions import CurrentOrderSummary
 from betfair_parser.spec.betting.type_definitions import LimitOnCloseOrder
 from betfair_parser.spec.betting.type_definitions import LimitOrder
 from betfair_parser.spec.betting.type_definitions import MarketOnCloseOrder
+from betfair_parser.spec.betting.type_definitions import MarketVersion
 from betfair_parser.spec.common import BetId
 from betfair_parser.spec.common import CustomerOrderRef
 from betfair_parser.spec.common import OrderStatus as BetfairOrderStatus
@@ -251,6 +252,7 @@ def nautilus_order_to_place_instructions(
 def order_submit_to_place_order_params(
     command: SubmitOrder,
     instrument: BettingInstrument,
+    market_version: MarketVersion | None = None,
 ) -> PlaceOrders:
     """
     Convert a SubmitOrder command into the data required by BetfairClient.
@@ -263,6 +265,7 @@ def order_submit_to_place_order_params(
             strategy_id=command.strategy_id.value,
         ),
         instructions=[nautilus_order_to_place_instructions(command, instrument)],
+        market_version=market_version,
     )
 
 
@@ -270,6 +273,7 @@ def order_update_to_replace_order_params(
     command: ModifyOrder,
     venue_order_id: VenueOrderId,
     instrument: BettingInstrument,
+    market_version: MarketVersion | None = None,
 ) -> ReplaceOrders:
     """
     Convert an ModifyOrder command into the data required by BetfairClient.
@@ -283,6 +287,7 @@ def order_update_to_replace_order_params(
                 new_price=command.price.as_double(),
             ),
         ],
+        market_version=market_version,
     )
 
 

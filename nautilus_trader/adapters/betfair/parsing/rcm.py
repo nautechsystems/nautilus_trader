@@ -190,7 +190,7 @@ def race_change_to_updates(
             )
             updates.append(
                 CustomData(
-                    DataType(BetfairRaceRunnerData, {"race_id": rc.id, "selection_id": rrc.id}),
+                    DataType(BetfairRaceRunnerData, {"selection_id": rrc.id}),
                     runner_data,
                 ),
             )
@@ -214,7 +214,7 @@ def race_change_to_updates(
         )
         updates.append(
             CustomData(
-                DataType(BetfairRaceProgress, {"race_id": rc.id}),
+                DataType(BetfairRaceProgress),
                 progress,
             ),
         )
