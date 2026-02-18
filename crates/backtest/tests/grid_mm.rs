@@ -23,7 +23,7 @@ use nautilus_model::{
     instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     types::{Money, Price, Quantity},
 };
-use nautilus_trading::examples::strategies::GridMarketMaker;
+use nautilus_trading::examples::strategies::{GridMarketMaker, GridMarketMakerConfig};
 use rstest::*;
 
 fn create_engine() -> BacktestEngine {
@@ -83,17 +83,13 @@ fn test_generates_orders(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let instrument_id = instrument.id();
     engine.add_instrument(instrument).unwrap();
 
-    engine
-        .add_strategy(GridMarketMaker::new(
-            instrument_id,
-            Quantity::from("0.100"),
-            3,                      // num_levels
-            1.0,                    // grid_interval
-            0.01,                   // skew_factor
-            Quantity::from("10.0"), // max_position
-            0.50,                   // requote_threshold
-        ))
-        .unwrap();
+    let config = GridMarketMakerConfig::new(instrument_id, Quantity::from("10.0"))
+        .with_trade_size(Quantity::from("0.100"))
+        .with_num_levels(3)
+        .with_grid_step_bps(10)
+        .with_skew_factor(0.01)
+        .with_requote_threshold_bps(5);
+    engine.add_strategy(GridMarketMaker::new(config)).unwrap();
 
     // Phase 1: Stable at 1000 (5 ticks, within threshold) — initial quote placed, rest skip
     // Phase 2: Ramp up to 1010 (20 ticks, 0.5/tick) — triggers requotes as mid moves
@@ -148,17 +144,13 @@ fn test_skips_requote_within_threshold(crypto_perpetual_ethusdt: CryptoPerpetual
     let instrument_id = instrument.id();
     engine.add_instrument(instrument).unwrap();
 
-    engine
-        .add_strategy(GridMarketMaker::new(
-            instrument_id,
-            Quantity::from("0.100"),
-            3,                      // num_levels
-            1.0,                    // grid_interval
-            0.01,                   // skew_factor
-            Quantity::from("10.0"), // max_position
-            5.0,                    // requote_threshold (very wide)
-        ))
-        .unwrap();
+    let config = GridMarketMakerConfig::new(instrument_id, Quantity::from("10.0"))
+        .with_trade_size(Quantity::from("0.100"))
+        .with_num_levels(3)
+        .with_grid_step_bps(10)
+        .with_skew_factor(0.01)
+        .with_requote_threshold_bps(50);
+    engine.add_strategy(GridMarketMaker::new(config)).unwrap();
 
     // All quotes within the 5.0 threshold — only the first triggers orders
     let quotes: Vec<Data> = (0..10u64)
@@ -193,17 +185,12 @@ fn test_enforces_max_position_across_levels(crypto_perpetual_ethusdt: CryptoPerp
     let instrument_id = instrument.id();
     engine.add_instrument(instrument).unwrap();
 
-    engine
-        .add_strategy(GridMarketMaker::new(
-            instrument_id,
-            Quantity::from("0.100"),
-            3,                       // num_levels
-            1.0,                     // grid_interval
-            0.0,                     // skew_factor (disabled for clarity)
-            Quantity::from("0.150"), // max_position (only room for 1 level per side)
-            0.50,                    // requote_threshold
-        ))
-        .unwrap();
+    let config = GridMarketMakerConfig::new(instrument_id, Quantity::from("0.150"))
+        .with_trade_size(Quantity::from("0.100"))
+        .with_num_levels(3)
+        .with_grid_step_bps(10)
+        .with_requote_threshold_bps(5);
+    engine.add_strategy(GridMarketMaker::new(config)).unwrap();
 
     // Single quote to trigger one requote cycle
     let quotes = vec![quote(instrument_id, "999.95", "1000.05", 1_000_000_000)];
