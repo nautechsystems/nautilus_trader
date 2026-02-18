@@ -13,7 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::time::{Duration, Instant};
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
 
 use serde_json::Value;
 
@@ -96,22 +100,22 @@ pub struct RateLimitSnapshot {
 }
 
 pub fn backoff_full_jitter(attempt: u32, base: Duration, cap: Duration) -> Duration {
-    use std::{
-        collections::hash_map::DefaultHasher,
-        hash::{Hash, Hasher},
-    };
-
-    // Simple pseudo-random based on attempt and time
     let mut hasher = DefaultHasher::new();
     attempt.hash(&mut hasher);
-    Instant::now().elapsed().as_nanos().hash(&mut hasher);
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    nanos.hash(&mut hasher);
     let hash = hasher.finish();
 
     let max = (base.as_millis() as u64)
         .saturating_mul(1u64 << attempt.min(16))
         .min(cap.as_millis() as u64)
         .max(base.as_millis() as u64);
-    Duration::from_millis(hash % max)
+
+    // Floor at 1ms to prevent zero-duration backoff
+    Duration::from_millis((hash % max).max(1))
 }
 
 /// Classify Info requests into weight classes based on request_type.
@@ -326,7 +330,7 @@ mod tests {
 
         let delay = backoff_full_jitter(attempt, base, cap);
 
-        // Should be in expected ranges (allowing for jitter)
+        assert!(delay.as_millis() >= 1);
         assert!(delay.as_millis() <= max_expected_ms as u128);
     }
 

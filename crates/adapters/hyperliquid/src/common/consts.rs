@@ -31,11 +31,16 @@ pub const HYPERLIQUID_TESTNET_INFO_URL: &str = "https://api.hyperliquid-testnet.
 pub const HYPERLIQUID_TESTNET_EXCHANGE_URL: &str = "https://api.hyperliquid-testnet.xyz/exchange";
 
 // Builder codes fee configuration for rebates
-// See: https://hyperliquid.gitbook.io/hyperliquid-docs/trading/builder-codes
+// - https://hyperliquid.gitbook.io/hyperliquid-docs/trading/builder-codes
+// - https://hyperliquid.gitbook.io/hyperliquid-docs/trading/fees
 // Fee is specified in tenths of a basis point (0.1 bps)
 // Note: Address MUST be lowercase for msgpack serialization to match Python SDK
 pub const NAUTILUS_BUILDER_FEE_ADDRESS: &str = "0x0c8d970c462726e014ad36f6c5a63e99db48a8e7";
-pub const NAUTILUS_BUILDER_FEE_TENTHS_BP: u32 = 10; // 1 bp = 0.01%
+pub const NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP: u32 = 10; // 1 bp = 0.01%
+pub const NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP: u32 = 5; // 0.5 bp = 0.005%
+
+/// Hyperliquid signing chain ID (0x66eee = 421614 decimal).
+pub const HYPERLIQUID_CHAIN_ID: u64 = 421614;
 
 // Error message substrings for detecting specific rejection reasons
 pub const HYPERLIQUID_POST_ONLY_WOULD_MATCH: &str =

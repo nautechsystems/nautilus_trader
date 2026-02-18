@@ -40,26 +40,73 @@ use nautilus_network::http::{HttpClient, Method};
 use serde::{Deserialize, Serialize};
 
 use super::consts::{
-    NAUTILUS_BUILDER_FEE_ADDRESS, NAUTILUS_BUILDER_FEE_TENTHS_BP, exchange_url, info_url,
+    HYPERLIQUID_CHAIN_ID, NAUTILUS_BUILDER_FEE_ADDRESS, NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP,
+    NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP, exchange_url, info_url,
 };
-use crate::{common::credential::EvmPrivateKey, http::error::Result};
+use crate::{
+    common::credential::EvmPrivateKey,
+    http::{error::Result, models::HyperliquidExecBuilderFee},
+};
 
 /// Builder fee approval rate (0.01% = 1 basis point).
-const APPROVAL_FEE_RATE: &str = "0.01%";
+const BUILDER_CODES_APPROVAL_FEE_RATE: &str = "0.01%";
 
-/// Hyperliquid signing chain ID (0x66eee = 421614 decimal).
-const HYPERLIQUID_CHAIN_ID: u64 = 421614;
+/// Resolves the builder fee for an order based on symbol and post-only flag.
+///
+/// Returns `None` for spot orders (no builder fee). For perps, uses the
+/// maker rate when `post_only` is true, otherwise the taker rate.
+#[must_use]
+pub fn resolve_builder_fee(symbol: &str, post_only: bool) -> Option<HyperliquidExecBuilderFee> {
+    if symbol.ends_with("-SPOT") {
+        return None;
+    }
+
+    let fee_tenths_bp = if post_only {
+        NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP
+    } else {
+        NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP
+    };
+
+    Some(HyperliquidExecBuilderFee {
+        address: NAUTILUS_BUILDER_FEE_ADDRESS.to_string(),
+        fee_tenths_bp,
+    })
+}
+
+/// Resolves the builder fee for a batch of orders, using the lowest fee.
+///
+/// Returns `None` if any order is spot, the maker rate if any perp order
+/// is post-only, otherwise the taker rate.
+///
+/// Hyperliquid applies a single builder fee per action (not per order), so
+/// mixed post-only/taker batches use the minimum to avoid overcharging.
+/// Mixed spot/perp batches cannot occur since `OrderList` enforces a single
+/// instrument.
+#[must_use]
+pub fn resolve_builder_fee_batch(orders: &[(&str, bool)]) -> Option<HyperliquidExecBuilderFee> {
+    let mut min: Option<HyperliquidExecBuilderFee> = None;
+
+    for &(symbol, post_only) in orders {
+        let fee = resolve_builder_fee(symbol, post_only)?;
+        min = Some(match min {
+            Some(current) if current.fee_tenths_bp <= fee.fee_tenths_bp => current,
+            _ => fee,
+        });
+    }
+
+    min
+}
 
 /// Information about the Nautilus builder fee configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BuilderFeeInfo {
     /// The builder address that receives fees.
     pub address: String,
-    /// Fee rate for perpetuals in basis points.
-    pub perp_rate_bps: u32,
-    /// Fee rate for spot in basis points.
-    pub spot_rate_bps: u32,
-    /// The approval rate required (covers both products).
+    /// Taker fee rate for perpetuals in tenths of a basis point.
+    pub perp_taker_tenths_bp: u32,
+    /// Maker fee rate for perpetuals in tenths of a basis point.
+    pub perp_maker_tenths_bp: u32,
+    /// The approval rate required.
     pub approval_rate: String,
 }
 
@@ -75,9 +122,9 @@ impl BuilderFeeInfo {
     pub fn new() -> Self {
         Self {
             address: NAUTILUS_BUILDER_FEE_ADDRESS.to_string(),
-            perp_rate_bps: NAUTILUS_BUILDER_FEE_TENTHS_BP / 10, // Convert tenths to bps
-            spot_rate_bps: NAUTILUS_BUILDER_FEE_TENTHS_BP / 10,
-            approval_rate: APPROVAL_FEE_RATE.to_string(),
+            perp_taker_tenths_bp: NAUTILUS_BUILDER_FEE_TAKER_TENTHS_BP,
+            perp_maker_tenths_bp: NAUTILUS_BUILDER_FEE_MAKER_TENTHS_BP,
+            approval_rate: BUILDER_CODES_APPROVAL_FEE_RATE.to_string(),
         }
     }
 
@@ -91,25 +138,16 @@ impl BuilderFeeInfo {
         println!();
         println!("Builder address: {}", self.address);
         println!();
-        let bp_label = |n: u32| {
-            if n == 1 {
-                "basis point"
-            } else {
-                "basis points"
-            }
-        };
-        println!("Fee rates charged per fill:");
+        println!("Fee rates charged per fill (perpetuals only, no fee on spot):");
         println!(
-            "  - Perpetuals: {:.2}% ({} {})",
-            self.perp_rate_bps as f64 / 100.0,
-            self.perp_rate_bps,
-            bp_label(self.perp_rate_bps)
+            "  - Taker: {:.3}% ({} tenths of a basis point)",
+            self.perp_taker_tenths_bp as f64 / 1000.0,
+            self.perp_taker_tenths_bp,
         );
         println!(
-            "  - Spot sells: {:.2}% ({} {})",
-            self.spot_rate_bps as f64 / 100.0,
-            self.spot_rate_bps,
-            bp_label(self.spot_rate_bps)
+            "  - Maker: {:.3}% ({} tenths of a basis point)",
+            self.perp_maker_tenths_bp as f64 / 1000.0,
+            self.perp_maker_tenths_bp,
         );
         println!();
         println!("These fees are charged in addition to Hyperliquid's standard fees.");
@@ -172,13 +210,14 @@ pub async fn approve_builder_fee(
         .map_err(|e| crate::http::error::Error::transport(format!("Time error: {e}")))?
         .as_millis() as u64;
 
-    let signature = sign_approve_builder_fee(&pk, is_testnet, nonce, APPROVAL_FEE_RATE)?;
+    let signature =
+        sign_approve_builder_fee(&pk, is_testnet, nonce, BUILDER_CODES_APPROVAL_FEE_RATE)?;
 
     let action = serde_json::json!({
         "type": "approveBuilderFee",
         "hyperliquidChain": if is_testnet { "Testnet" } else { "Mainnet" },
         "signatureChainId": "0x66eee",
-        "maxFeeRate": APPROVAL_FEE_RATE,
+        "maxFeeRate": BUILDER_CODES_APPROVAL_FEE_RATE,
         "builder": NAUTILUS_BUILDER_FEE_ADDRESS,
         "nonce": nonce,
     });
@@ -304,9 +343,12 @@ pub async fn approve_from_env(non_interactive: bool) -> bool {
     println!("Approving Nautilus builder fee on {network}");
     println!("Builder address: {}", info.address);
     println!(
-        "Approval rate: {} (1 basis point, covers perps and spot sells)",
+        "Approval rate: {} (covers perpetual taker and maker fills)",
         info.approval_rate
     );
+    println!("  - Taker: 1 bp (0.01%) on perpetual fills");
+    println!("  - Maker: 0.5 bp (0.005%) on perpetual post-only fills");
+    println!("  - Spot: no builder fee");
     println!();
     println!("This is at the low end of ecosystem norms.");
     println!("Hyperliquid allows up to 0.1% (10 bps) for perps and 1% (100 bps) for spot.");
@@ -644,7 +686,7 @@ pub async fn verify_builder_fee(
         wallet_address: wallet_address.to_string(),
         builder_address: NAUTILUS_BUILDER_FEE_ADDRESS.to_string(),
         approved_rate,
-        required_rate: APPROVAL_FEE_RATE.to_string(),
+        required_rate: BUILDER_CODES_APPROVAL_FEE_RATE.to_string(),
         is_approved,
         is_testnet,
     })
@@ -727,9 +769,10 @@ pub async fn verify_from_env_or_address(wallet_address: Option<String>) -> bool 
             if result.is_approved {
                 println!("Status: APPROVED");
                 println!();
-                println!(
-                    "NautilusTrader charges 0.01% (1 basis point) per fill (perps and spot sells)."
-                );
+                println!("NautilusTrader builder fee rates (perpetuals only, no fee on spot):");
+                println!("  - Taker: 1 bp (0.01%) per fill");
+                println!("  - Maker: 0.5 bp (0.005%) per fill");
+                println!();
                 println!("This is at the low end of ecosystem norms.");
                 println!(
                     "(Hyperliquid allows up to 0.1% (10 bps) for perps and 1% (100 bps) for spot)"
@@ -918,8 +961,8 @@ mod tests {
     fn test_builder_fee_info() {
         let info = BuilderFeeInfo::new();
         assert_eq!(info.address, NAUTILUS_BUILDER_FEE_ADDRESS);
-        assert_eq!(info.perp_rate_bps, 1); // 0.01%
-        assert_eq!(info.spot_rate_bps, 1); // 0.01%
+        assert_eq!(info.perp_taker_tenths_bp, 10);
+        assert_eq!(info.perp_maker_tenths_bp, 5);
         assert_eq!(info.approval_rate, "0.01%");
     }
 
@@ -948,7 +991,8 @@ mod tests {
         .unwrap();
         let nonce = 1640995200000u64;
 
-        let signature = sign_approve_builder_fee(&pk, false, nonce, APPROVAL_FEE_RATE).unwrap();
+        let signature =
+            sign_approve_builder_fee(&pk, false, nonce, BUILDER_CODES_APPROVAL_FEE_RATE).unwrap();
 
         assert!(signature.get("r").is_some());
         assert!(signature.get("s").is_some());

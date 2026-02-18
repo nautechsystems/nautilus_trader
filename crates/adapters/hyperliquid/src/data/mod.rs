@@ -186,6 +186,11 @@ impl HyperliquidDataClient {
             .await
             .context("failed to connect to Hyperliquid WebSocket")?;
 
+        // Transfer task handle to original so disconnect() can await it
+        if let Some(handle) = ws_client.take_task_handle() {
+            self.ws_client.set_task_handle(handle);
+        }
+
         let data_sender = self.data_sender.clone();
         let cancellation_token = self.cancellation_token.clone();
 

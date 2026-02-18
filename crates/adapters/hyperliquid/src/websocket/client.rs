@@ -81,7 +81,7 @@ pub struct HyperliquidWebSocketClient {
     bar_types: Arc<DashMap<String, BarType>>,
     asset_context_subs: Arc<DashMap<Ustr, AHashSet<AssetContextDataType>>>,
     cloid_cache: Arc<DashMap<Ustr, ClientOrderId>>,
-    task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
+    task_handle: Option<tokio::task::JoinHandle<()>>,
     account_id: Option<AccountId>,
 }
 
@@ -267,8 +267,18 @@ impl HyperliquidWebSocketClient {
             }
             log::debug!("Handler task completed");
         });
-        self.task_handle = Some(Arc::new(stream_handle));
+        self.task_handle = Some(stream_handle);
         Ok(())
+    }
+
+    /// Takes the handler task handle from this client so that another
+    /// instance (e.g., the non-clone original) can await it on disconnect.
+    pub fn take_task_handle(&mut self) -> Option<tokio::task::JoinHandle<()>> {
+        self.task_handle.take()
+    }
+
+    pub fn set_task_handle(&mut self, handle: tokio::task::JoinHandle<()>) {
+        self.task_handle = Some(handle);
     }
 
     /// Disconnects the WebSocket connection.
@@ -280,32 +290,22 @@ impl HyperliquidWebSocketClient {
                 "Failed to send disconnect command (handler may already be shut down): {e}"
             );
         }
-        if let Some(task_handle) = self.task_handle.take() {
-            match Arc::try_unwrap(task_handle) {
-                Ok(handle) => {
-                    log::debug!("Waiting for task handle to complete");
-                    let abort_handle = handle.abort_handle();
-                    tokio::select! {
-                        result = handle => {
-                            match result {
-                                Ok(()) => log::debug!("Task handle completed successfully"),
-                                Err(e) if e.is_cancelled() => {
-                                    log::debug!("Task was cancelled");
-                                }
-                                Err(e) => log::error!("Task handle encountered an error: {e:?}"),
-                            }
+        if let Some(handle) = self.task_handle.take() {
+            log::debug!("Waiting for task handle to complete");
+            let abort_handle = handle.abort_handle();
+            tokio::select! {
+                result = handle => {
+                    match result {
+                        Ok(()) => log::debug!("Task handle completed successfully"),
+                        Err(e) if e.is_cancelled() => {
+                            log::debug!("Task was cancelled");
                         }
-                        () = tokio::time::sleep(tokio::time::Duration::from_secs(2)) => {
-                            log::warn!("Timeout waiting for task handle, aborting task");
-                            abort_handle.abort();
-                        }
+                        Err(e) => log::error!("Task handle encountered an error: {e:?}"),
                     }
                 }
-                Err(arc_handle) => {
-                    log::debug!(
-                        "Cannot take ownership of task handle - other references exist, aborting task"
-                    );
-                    arc_handle.abort();
+                () = tokio::time::sleep(tokio::time::Duration::from_secs(2)) => {
+                    log::warn!("Timeout waiting for task handle, aborting task");
+                    abort_handle.abort();
                 }
             }
         } else {
@@ -858,73 +858,83 @@ impl HyperliquidWebSocketClient {
 }
 
 /// Reconstructs a subscription request from a topic string.
+///
+/// Uses `split_once`/`rsplit_once` rather than `split(':')` because
+/// coin names can contain colons (e.g., vault tokens `vntls:vCURSOR`).
 fn subscription_from_topic(topic: &str) -> anyhow::Result<SubscriptionRequest> {
-    let parts: Vec<&str> = topic.split(':').collect();
+    let (kind, rest) = topic
+        .split_once(':')
+        .map_or((topic, None), |(k, r)| (k, Some(r)));
 
-    match parts.first() {
-        Some(&"allMids") => {
-            let dex = parts.get(1).map(|s| (*s).to_string());
-            Ok(SubscriptionRequest::AllMids { dex })
-        }
-        Some(&"notification") => Ok(SubscriptionRequest::Notification {
-            user: (*parts.get(1).context("Missing user")?).to_string(),
+    match kind {
+        "allMids" => Ok(SubscriptionRequest::AllMids {
+            dex: rest.map(|s| s.to_string()),
         }),
-        Some(&"webData2") => Ok(SubscriptionRequest::WebData2 {
-            user: (*parts.get(1).context("Missing user")?).to_string(),
+        "notification" => Ok(SubscriptionRequest::Notification {
+            user: rest.context("Missing user")?.to_string(),
         }),
-        Some(&"candle") => {
-            let coin = Ustr::from(parts.get(1).context("Missing coin")?);
-            let interval_str = parts.get(2).context("Missing interval")?;
+        "webData2" => Ok(SubscriptionRequest::WebData2 {
+            user: rest.context("Missing user")?.to_string(),
+        }),
+        "candle" => {
+            // Format: candle:{coin}:{interval} - interval is last segment
+            let rest = rest.context("Missing candle params")?;
+            let (coin, interval_str) = rest.rsplit_once(':').context("Missing interval")?;
             let interval = HyperliquidBarInterval::from_str(interval_str)?;
-            Ok(SubscriptionRequest::Candle { coin, interval })
+            Ok(SubscriptionRequest::Candle {
+                coin: Ustr::from(coin),
+                interval,
+            })
         }
-        Some(&"l2Book") => Ok(SubscriptionRequest::L2Book {
-            coin: Ustr::from(parts.get(1).context("Missing coin")?),
+        "l2Book" => Ok(SubscriptionRequest::L2Book {
+            coin: Ustr::from(rest.context("Missing coin")?),
             mantissa: None,
             n_sig_figs: None,
         }),
-        Some(&"trades") => Ok(SubscriptionRequest::Trades {
-            coin: Ustr::from(parts.get(1).context("Missing coin")?),
+        "trades" => Ok(SubscriptionRequest::Trades {
+            coin: Ustr::from(rest.context("Missing coin")?),
         }),
-        Some(&"orderUpdates") => Ok(SubscriptionRequest::OrderUpdates {
-            user: (*parts.get(1).context("Missing user")?).to_string(),
+        "orderUpdates" => Ok(SubscriptionRequest::OrderUpdates {
+            user: rest.context("Missing user")?.to_string(),
         }),
-        Some(&"userEvents") => Ok(SubscriptionRequest::UserEvents {
-            user: (*parts.get(1).context("Missing user")?).to_string(),
+        "userEvents" => Ok(SubscriptionRequest::UserEvents {
+            user: rest.context("Missing user")?.to_string(),
         }),
-        Some(&"userFills") => Ok(SubscriptionRequest::UserFills {
-            user: (*parts.get(1).context("Missing user")?).to_string(),
+        "userFills" => Ok(SubscriptionRequest::UserFills {
+            user: rest.context("Missing user")?.to_string(),
             aggregate_by_time: None,
         }),
-        Some(&"userFundings") => Ok(SubscriptionRequest::UserFundings {
-            user: (*parts.get(1).context("Missing user")?).to_string(),
+        "userFundings" => Ok(SubscriptionRequest::UserFundings {
+            user: rest.context("Missing user")?.to_string(),
         }),
-        Some(&"userNonFundingLedgerUpdates") => {
-            Ok(SubscriptionRequest::UserNonFundingLedgerUpdates {
-                user: (*parts.get(1).context("Missing user")?).to_string(),
+        "userNonFundingLedgerUpdates" => Ok(SubscriptionRequest::UserNonFundingLedgerUpdates {
+            user: rest.context("Missing user")?.to_string(),
+        }),
+        "activeAssetCtx" => Ok(SubscriptionRequest::ActiveAssetCtx {
+            coin: Ustr::from(rest.context("Missing coin")?),
+        }),
+        "activeSpotAssetCtx" => Ok(SubscriptionRequest::ActiveSpotAssetCtx {
+            coin: Ustr::from(rest.context("Missing coin")?),
+        }),
+        "activeAssetData" => {
+            // Format: activeAssetData:{user}:{coin} - user is eth addr (no colons)
+            let rest = rest.context("Missing params")?;
+            let (user, coin) = rest.split_once(':').context("Missing coin")?;
+            Ok(SubscriptionRequest::ActiveAssetData {
+                user: user.to_string(),
+                coin: coin.to_string(),
             })
         }
-        Some(&"activeAssetCtx") => Ok(SubscriptionRequest::ActiveAssetCtx {
-            coin: Ustr::from(parts.get(1).context("Missing coin")?),
+        "userTwapSliceFills" => Ok(SubscriptionRequest::UserTwapSliceFills {
+            user: rest.context("Missing user")?.to_string(),
         }),
-        Some(&"activeSpotAssetCtx") => Ok(SubscriptionRequest::ActiveSpotAssetCtx {
-            coin: Ustr::from(parts.get(1).context("Missing coin")?),
+        "userTwapHistory" => Ok(SubscriptionRequest::UserTwapHistory {
+            user: rest.context("Missing user")?.to_string(),
         }),
-        Some(&"activeAssetData") => Ok(SubscriptionRequest::ActiveAssetData {
-            user: (*parts.get(1).context("Missing user")?).to_string(),
-            coin: (*parts.get(2).context("Missing coin")?).to_string(),
+        "bbo" => Ok(SubscriptionRequest::Bbo {
+            coin: Ustr::from(rest.context("Missing coin")?),
         }),
-        Some(&"userTwapSliceFills") => Ok(SubscriptionRequest::UserTwapSliceFills {
-            user: (*parts.get(1).context("Missing user")?).to_string(),
-        }),
-        Some(&"userTwapHistory") => Ok(SubscriptionRequest::UserTwapHistory {
-            user: (*parts.get(1).context("Missing user")?).to_string(),
-        }),
-        Some(&"bbo") => Ok(SubscriptionRequest::Bbo {
-            coin: Ustr::from(parts.get(1).context("Missing coin")?),
-        }),
-        Some(channel) => anyhow::bail!("Unknown subscription channel: {channel}"),
-        None => anyhow::bail!("Empty topic string"),
+        _ => anyhow::bail!("Unknown subscription channel: {kind}"),
     }
 }
 
@@ -1002,6 +1012,9 @@ mod tests {
     #[case(SubscriptionRequest::Bbo { coin: "ETH".into() })]
     #[case(SubscriptionRequest::Candle { coin: "SOL".into(), interval: HyperliquidBarInterval::OneHour })]
     #[case(SubscriptionRequest::OrderUpdates { user: "0x123".to_string() })]
+    #[case(SubscriptionRequest::Trades { coin: "vntls:vCURSOR".into() })]
+    #[case(SubscriptionRequest::L2Book { coin: "vntls:vCURSOR".into(), mantissa: None, n_sig_figs: None })]
+    #[case(SubscriptionRequest::Candle { coin: "vntls:vCURSOR".into(), interval: HyperliquidBarInterval::OneHour })]
     fn test_subscription_reconstruction(#[case] subscription: SubscriptionRequest) {
         let topic = subscription_topic(&subscription);
         let reconstructed = subscription_from_topic(&topic).expect("Failed to reconstruct");

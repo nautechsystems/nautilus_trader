@@ -56,10 +56,8 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::{
-            HYPERLIQUID_VENUE, NAUTILUS_BUILDER_FEE_ADDRESS, NAUTILUS_BUILDER_FEE_TENTHS_BP,
-            exchange_url, info_url,
-        },
+        builder_fee::{resolve_builder_fee, resolve_builder_fee_batch},
+        consts::{HYPERLIQUID_VENUE, exchange_url, info_url},
         credential::{Secrets, VaultAddress},
         enums::{
             HyperliquidBarInterval, HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
@@ -71,7 +69,7 @@ use crate::{
         error::{Error, Result},
         models::{
             Cloid, HyperliquidCandleSnapshot, HyperliquidExchangeRequest,
-            HyperliquidExchangeResponse, HyperliquidExecAction, HyperliquidExecBuilderFee,
+            HyperliquidExchangeResponse, HyperliquidExecAction,
             HyperliquidExecCancelByCloidRequest, HyperliquidExecCancelOrderRequest,
             HyperliquidExecGrouping, HyperliquidExecLimitParams, HyperliquidExecOrderKind,
             HyperliquidExecOrderResponseData, HyperliquidExecOrderStatus,
@@ -957,7 +955,19 @@ impl HyperliquidHttpClient {
                 .instruments_by_coin
                 .write()
                 .expect("Failed to acquire write lock");
-            instruments_by_coin.insert((coin, product_type), instrument);
+            instruments_by_coin.insert((coin, product_type), instrument.clone());
+
+            // Spot raw_symbols use @{pair_index} format (e.g., "@107") but
+            // callers often extract the base currency from the symbol (e.g.,
+            // "HYPE" from "HYPE-USDC-SPOT"), so also index by base name
+            if coin.as_str().starts_with('@')
+                && let Some(base) = full_symbol.as_str().split('-').next()
+            {
+                let base_ustr = Ustr::from(base);
+                if base_ustr != coin {
+                    instruments_by_coin.insert((base_ustr, product_type), instrument);
+                }
+            }
         } else {
             log::warn!("Unable to determine product type for symbol: {full_symbol}");
         }
@@ -1390,12 +1400,15 @@ impl HyperliquidHttpClient {
     ///
     /// # Panics
     ///
-    /// Panics if `account_id` is not set on the client.
+    /// Returns an error if `account_id` is not set on the client.
     pub async fn request_order_status_reports(
         &self,
         user: &str,
         instrument_id: Option<InstrumentId>,
     ) -> Result<Vec<OrderStatusReport>> {
+        let account_id = self
+            .account_id
+            .ok_or_else(|| Error::bad_request("Account ID not set"))?;
         let response = self.info_frontend_open_orders(user).await?;
 
         // Parse the JSON response into a vector of orders
@@ -1437,7 +1450,7 @@ impl HyperliquidHttpClient {
                 &order,
                 &status,
                 &instrument,
-                self.account_id.expect("account_id not set"),
+                account_id,
                 ts_init,
             ) {
                 Ok(report) => reports.push(report),
@@ -1460,14 +1473,15 @@ impl HyperliquidHttpClient {
     ///
     /// Returns an error if the API request fails or parsing fails.
     ///
-    /// # Panics
-    ///
-    /// Panics if `account_id` is not set on the client.
+    /// Returns an error if `account_id` is not set on the client.
     pub async fn request_fill_reports(
         &self,
         user: &str,
         instrument_id: Option<InstrumentId>,
     ) -> Result<Vec<FillReport>> {
+        let account_id = self
+            .account_id
+            .ok_or_else(|| Error::bad_request("Account ID not set"))?;
         let fills_response = self.info_user_fills(user).await?;
 
         let mut reports = Vec::new();
@@ -1488,12 +1502,7 @@ impl HyperliquidHttpClient {
             }
 
             // Parse to FillReport
-            match crate::http::parse::parse_fill_report(
-                &fill,
-                &instrument,
-                self.account_id.expect("account_id not set"),
-                ts_init,
-            ) {
+            match crate::http::parse::parse_fill_report(&fill, &instrument, account_id, ts_init) {
                 Ok(report) => reports.push(report),
                 Err(e) => log::error!("Failed to parse fill report: {e}"),
             }
@@ -1514,14 +1523,15 @@ impl HyperliquidHttpClient {
     ///
     /// Returns an error if the API request fails or parsing fails.
     ///
-    /// # Panics
-    ///
-    /// Panics if `account_id` has not been set on the client.
+    /// Returns an error if `account_id` has not been set on the client.
     pub async fn request_position_status_reports(
         &self,
         user: &str,
         instrument_id: Option<InstrumentId>,
     ) -> Result<Vec<PositionStatusReport>> {
+        let account_id = self
+            .account_id
+            .ok_or_else(|| Error::bad_request("Account ID not set"))?;
         let state_response = self.info_clearinghouse_state(user).await?;
 
         // Extract asset positions from the clearinghouse state
@@ -1560,7 +1570,7 @@ impl HyperliquidHttpClient {
             match crate::http::parse::parse_position_status_report(
                 &position_value,
                 &instrument,
-                self.account_id.expect("account_id not set"),
+                account_id,
                 ts_init,
             ) {
                 Ok(report) => reports.push(report),
@@ -1575,14 +1585,13 @@ impl HyperliquidHttpClient {
     ///
     /// Fetches clearinghouse state from Hyperliquid API and converts it to `AccountState`.
     ///
-    /// # Panics
-    ///
-    /// Panics if `account_id` is not set on the client.
-    ///
     /// # Errors
     ///
-    /// Returns an error if the API request fails or parsing fails.
+    /// Returns an error if `account_id` is not set or the API request fails.
     pub async fn request_account_state(&self, user: &str) -> Result<AccountState> {
+        let account_id = self
+            .account_id
+            .ok_or_else(|| Error::bad_request("Account ID not set"))?;
         let state_response = self.info_clearinghouse_state(user).await?;
         let ts_init = get_atomic_clock_realtime().get_time_ns();
 
@@ -1630,8 +1639,6 @@ impl HyperliquidHttpClient {
                 Money::from_decimal(free, usdc).map_err(|e| Error::decode(e.to_string()))?,
             )]
         };
-
-        let account_id = self.account_id.expect("account_id not set");
 
         Ok(AccountState::new(
             account_id,
@@ -1884,10 +1891,7 @@ impl HyperliquidHttpClient {
         let action = HyperliquidExecAction::Order {
             orders: vec![hyperliquid_order],
             grouping: HyperliquidExecGrouping::Na,
-            builder: Some(HyperliquidExecBuilderFee {
-                address: NAUTILUS_BUILDER_FEE_ADDRESS.to_string(),
-                fee_tenths_bp: NAUTILUS_BUILDER_FEE_TENTHS_BP,
-            }),
+            builder: resolve_builder_fee(symbol, post_only),
         };
 
         let response = self.inner.post_action_exec(&action).await?;
@@ -2077,13 +2081,18 @@ impl HyperliquidHttpClient {
             hyperliquid_orders.push(request);
         }
 
+        let order_props: Vec<(String, bool)> = orders
+            .iter()
+            .map(|o| (o.instrument_id().symbol.to_string(), o.is_post_only()))
+            .collect();
+        let batch_refs: Vec<(&str, bool)> =
+            order_props.iter().map(|(s, p)| (s.as_str(), *p)).collect();
+        let builder = resolve_builder_fee_batch(&batch_refs);
+
         let action = HyperliquidExecAction::Order {
             orders: hyperliquid_orders,
             grouping: HyperliquidExecGrouping::Na,
-            builder: Some(HyperliquidExecBuilderFee {
-                address: NAUTILUS_BUILDER_FEE_ADDRESS.to_string(),
-                fee_tenths_bp: NAUTILUS_BUILDER_FEE_TENTHS_BP,
-            }),
+            builder,
         };
 
         // Submit to exchange using the typed exec endpoint

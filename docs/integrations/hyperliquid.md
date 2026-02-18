@@ -29,32 +29,47 @@ Most users will define a configuration for a live trading node (as shown below)
 and won't need to work directly with these lower-level components.
 :::
 
+## Examples
+
+You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/hyperliquid/).
+
 ## Builder fees
 
 This integration is free and open source. NautilusTrader participates in the Hyperliquid
 [Builder Codes](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/builder-codes) program,
-which routes a small 1 basis point (0.01%) fee on fills to support ongoing development and maintenance.
-This fee is charged by Hyperliquid in addition to standard fees, and applies to perpetuals and spot sells only.
+which routes a small fee on perpetual fills to support ongoing development and maintenance.
+
+These fees are charged by Hyperliquid in addition to standard fees:
+
+- **Taker**: 1 bp (0.01%) on perpetual fills
+- **Maker**: 0.5 bp (0.005%) on perpetual fills (post-only orders)
+- **Spot**: no builder fee
 
 :::info
-This builder fee is at the low end of ecosystem norms (Hyperliquid allows up to 0.1% (10 bps) for perps and 1% (100 bps) for spot).
+These builder fees are at the low end of ecosystem norms. Hyperliquid allows builders to charge up to:
+
+- **Perps**: 10 bps (0.1%)
+- **Spot**: 100 bps (1%)
+
 See [Hyperliquid Builder Codes](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/builder-codes)
 and [Hyperliquid Fees](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/fees) for details.
 :::
 
 ### Checking approval status
 
-You can check whether your wallet has approved the builder fee:
+You can check whether your wallet has approved the builder fee.
+
+By wallet address (no private key required):
 
 ```bash
-# Check by wallet address (no private key required)
 python nautilus_trader/adapters/hyperliquid/scripts/builder_fee_verify.py 0xYourWalletAddress
-
-# Or derive address from private key env var
-python nautilus_trader/adapters/hyperliquid/scripts/builder_fee_verify.py
 ```
 
-This queries the Hyperliquid API to verify your approval status.
+Or derive the address from the private key environment variable:
+
+```bash
+python nautilus_trader/adapters/hyperliquid/scripts/builder_fee_verify.py
+```
 
 ### Approving builder fees
 
@@ -71,11 +86,15 @@ This cannot be done with an API key or agent wallet.
 The script reads your private key from environment variables (`HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK`).
 It prompts for confirmation before submitting.
 
-```bash
-# Mainnet (uses HYPERLIQUID_PK)
-python nautilus_trader/adapters/hyperliquid/scripts/builder_fee_approve.py
+Mainnet (uses `HYPERLIQUID_PK`):
 
-# Testnet (uses HYPERLIQUID_TESTNET_PK)
+```bash
+python nautilus_trader/adapters/hyperliquid/scripts/builder_fee_approve.py
+```
+
+Testnet (uses `HYPERLIQUID_TESTNET_PK`):
+
+```bash
 HYPERLIQUID_TESTNET=true python nautilus_trader/adapters/hyperliquid/scripts/builder_fee_approve.py
 ```
 
@@ -83,12 +102,9 @@ The script outputs confirmation of the approval. Once approved, all subsequent o
 placed through NautilusTrader include the builder fee automatically.
 
 :::note
-The approval authorizes a 0.01% (1 basis point) fee rate which applies to perpetuals and spot sells.
-:::
-
-:::note
-You only need to run this script **once** per wallet per network. The approval persists until you
-explicitly revoke it.
+The approval authorizes a maximum 0.01% (1 basis point) fee rate which covers both taker and maker
+perpetual fills. You only need to run this script **once** per wallet per network. The approval
+persists until you explicitly revoke it.
 :::
 
 ### Revoking approval
@@ -97,11 +113,15 @@ If you need to revoke the builder fee approval, the script reads from the same e
 variables as the approval script (`HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK`).
 The script prompts for confirmation before submitting.
 
-```bash
-# Mainnet (uses HYPERLIQUID_PK)
-python nautilus_trader/adapters/hyperliquid/scripts/builder_fee_revoke.py
+Mainnet (uses `HYPERLIQUID_PK`):
 
-# Testnet (uses HYPERLIQUID_TESTNET_PK)
+```bash
+python nautilus_trader/adapters/hyperliquid/scripts/builder_fee_revoke.py
+```
+
+Testnet (uses `HYPERLIQUID_TESTNET_PK`):
+
+```bash
 HYPERLIQUID_TESTNET=true python nautilus_trader/adapters/hyperliquid/scripts/builder_fee_revoke.py
 ```
 
@@ -117,10 +137,6 @@ If you see an error mentioning "builder fee" when placing orders, this indicates
 has not been approved for your wallet. Run the approval script as described above to resolve this.
 
 You can verify your approval status at any time using the [verify script](#checking-approval-status).
-
-## Examples
-
-You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/hyperliquid/).
 
 ## Testnet setup
 
@@ -309,8 +325,9 @@ against the [mark price](https://hyperliquid.gitbook.io/hyperliquid-docs/trading
 
 :::note
 Market orders require cached quote data. The adapter uses the best ask (for buys) or best bid
-(for sells) with 0.5% slippage, rounded to 5 significant figures. Ensure you subscribe to
-quotes for any instrument you intend to trade with market orders.
+(for sells) with 0.5% slippage. Prices are rounded to 5 significant figures, which is a
+Hyperliquid API requirement for all limit prices. Ensure you subscribe to quotes for any
+instrument you intend to trade with market orders.
 :::
 
 ### Time in force
@@ -351,6 +368,12 @@ Order modification exists in the Rust layer but is not yet wired through to the 
 execution client. Cancel all and batch cancel issue individual cancel requests per order.
 :::
 
+:::info
+Orders placed outside NautilusTrader (e.g. via the Hyperliquid web UI or another client)
+are detected and tracked as external orders. They appear in order status reports and position
+reconciliation.
+:::
+
 ## Order books
 
 Order books are maintained via L2 WebSocket subscription with delta updates.
@@ -363,6 +386,27 @@ Order book snapshot rebuilds are triggered on:
 :::note
 There is a limitation of one order book per instrument per trader instance.
 :::
+
+## Account and position management
+
+The adapter uses cross-margin mode and reports account state with USDC balances and margin
+usage. On connect, the execution client performs a full reconciliation of orders, fills, and
+positions against Hyperliquid's clearinghouse state. This ensures the local cache is
+consistent even after restarts or disconnections.
+
+:::note
+Leverage is managed directly through the Hyperliquid web UI or API, not through the adapter.
+Set your desired leverage per instrument on Hyperliquid before trading.
+:::
+
+## Connection management
+
+The adapter automatically reconnects on WebSocket disconnection using exponential backoff
+(starting at 250ms, up to 30s). On reconnect, all active subscriptions are resubscribed
+automatically, and order book snapshots are rebuilt. No manual intervention is required.
+
+A heartbeat ping is sent every 30 seconds to keep the connection alive (Hyperliquid closes
+idle connections after 60 seconds).
 
 ## API credentials
 

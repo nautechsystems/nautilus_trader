@@ -18,8 +18,9 @@
 //! This is a ONE-TIME setup step required before trading on Hyperliquid.
 //!
 //! What you are approving:
-//! - A 1 basis point (0.01%) fee on fills, charged by Hyperliquid in addition to standard fees
-//! - Applies to perpetuals and spot sells only
+//! - Taker: 1 bp (0.01%) on perpetual fills
+//! - Maker: 0.5 bp (0.005%) on perpetual post-only fills
+//! - No builder fee on spot orders
 //!
 //! This is at the low end of ecosystem norms. Hyperliquid allows builders to charge
 //! up to 10 basis points (0.1%) for perps and 100 basis points (1%) for spot.

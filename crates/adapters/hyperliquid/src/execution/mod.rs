@@ -21,10 +21,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ahash::AHashSet;
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
+    cache::fifo::FifoCache,
     clients::ExecutionClient,
     live::{runner::get_exec_event_sender, runtime::get_runtime},
     messages::{
@@ -54,7 +54,8 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::{HYPERLIQUID_VENUE, NAUTILUS_BUILDER_FEE_ADDRESS, NAUTILUS_BUILDER_FEE_TENTHS_BP},
+        builder_fee::{resolve_builder_fee, resolve_builder_fee_batch},
+        consts::HYPERLIQUID_VENUE,
         credential::Secrets,
         parse::{
             client_order_id_to_cancel_request_with_asset, extract_error_message,
@@ -66,8 +67,8 @@ use crate::{
     http::{
         client::HyperliquidHttpClient,
         models::{
-            ClearinghouseState, Cloid, HyperliquidExecAction, HyperliquidExecBuilderFee,
-            HyperliquidExecGrouping, HyperliquidExecModifyOrderRequest,
+            ClearinghouseState, Cloid, HyperliquidExecAction, HyperliquidExecGrouping,
+            HyperliquidExecModifyOrderRequest,
         },
     },
     websocket::{ExecutionReport, NautilusWsMessage, client::HyperliquidWebSocketClient},
@@ -472,10 +473,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
         self.emitter.emit_order_submitted(&order);
 
-        let builder_fee = HyperliquidExecBuilderFee {
-            address: NAUTILUS_BUILDER_FEE_ADDRESS.to_string(),
-            fee_tenths_bp: NAUTILUS_BUILDER_FEE_TENTHS_BP,
-        };
+        let builder = resolve_builder_fee(&symbol, order.is_post_only());
 
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -486,7 +484,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             let action = HyperliquidExecAction::Order {
                 orders: vec![hyperliquid_order],
                 grouping: HyperliquidExecGrouping::Na,
-                builder: Some(builder_fee),
+                builder,
             };
 
             match http_client.post_action_exec(&action).await {
@@ -564,10 +562,13 @@ impl ExecutionClient for HyperliquidExecutionClient {
             self.emitter.emit_order_submitted(order);
         }
 
-        let builder_fee = HyperliquidExecBuilderFee {
-            address: NAUTILUS_BUILDER_FEE_ADDRESS.to_string(),
-            fee_tenths_bp: NAUTILUS_BUILDER_FEE_TENTHS_BP,
-        };
+        let order_props: Vec<(String, bool)> = valid_orders
+            .iter()
+            .map(|o| (o.instrument_id().symbol.to_string(), o.is_post_only()))
+            .collect();
+        let batch_refs: Vec<(&str, bool)> =
+            order_props.iter().map(|(s, p)| (s.as_str(), *p)).collect();
+        let builder = resolve_builder_fee_batch(&batch_refs);
 
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -581,7 +582,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             let action = HyperliquidExecAction::Order {
                 orders: hyperliquid_orders,
                 grouping: HyperliquidExecGrouping::Na,
-                builder: Some(builder_fee),
+                builder,
             };
             match http_client.post_action_exec(&action).await {
                 Ok(response) => {
@@ -1148,10 +1149,18 @@ impl HyperliquidExecutionClient {
             .await?;
         log::info!("Subscribed to Hyperliquid execution updates for {subscription_address}");
 
+        // Transfer task handle to original so disconnect() can await it
+        if let Some(handle) = ws_client.take_task_handle() {
+            self.ws_client.set_task_handle(handle);
+        }
+
         let runtime = get_runtime();
         let handle = runtime.spawn(async move {
-            // Orders with FILLED status awaiting their final fill
-            let mut pending_filled: AHashSet<ClientOrderId> = AHashSet::new();
+            // Deferred cloid cleanup for FILLED orders. We keep the
+            // mapping alive until a fill arrives after the FILLED
+            // status so partial fills don't lose client_order_id.
+            // Auto-eviction at capacity bounds orphaned entries.
+            let mut pending_filled: FifoCache<ClientOrderId, 10_000> = FifoCache::new();
 
             loop {
                 let event = ws_client.next_event().await;
@@ -1160,30 +1169,28 @@ impl HyperliquidExecutionClient {
                     Some(msg) => {
                         match msg {
                             NautilusWsMessage::ExecutionReports(reports) => {
-                                let mut terminal_ids: Vec<ClientOrderId> = Vec::new();
-                                let mut filled_ids: Vec<ClientOrderId> = Vec::new();
-                                let mut fill_ids: Vec<ClientOrderId> = Vec::new();
+                                let mut immediate_cleanup: Vec<ClientOrderId> = Vec::new();
 
                                 for report in &reports {
-                                    match report {
-                                        ExecutionReport::Order(order_report) => {
-                                            if let Some(id) = order_report.client_order_id
-                                                && !order_report.order_status.is_open()
-                                            {
-                                                if order_report.order_status
-                                                    == OrderStatus::Filled
-                                                {
-                                                    filled_ids.push(id);
-                                                } else {
-                                                    terminal_ids.push(id);
-                                                }
-                                            }
+                                    if let ExecutionReport::Order(order_report) = report
+                                        && let Some(id) = order_report.client_order_id
+                                        && !order_report.order_status.is_open()
+                                    {
+                                        if order_report.order_status == OrderStatus::Filled {
+                                            pending_filled.add(id);
+                                        } else {
+                                            immediate_cleanup.push(id);
                                         }
-                                        ExecutionReport::Fill(fill_report) => {
-                                            if let Some(id) = fill_report.client_order_id {
-                                                fill_ids.push(id);
-                                            }
-                                        }
+                                    }
+                                }
+
+                                for report in &reports {
+                                    if let ExecutionReport::Fill(fill_report) = report
+                                        && let Some(id) = fill_report.client_order_id
+                                        && pending_filled.contains(&id)
+                                    {
+                                        pending_filled.remove(&id);
+                                        immediate_cleanup.push(id);
                                     }
                                 }
 
@@ -1191,51 +1198,14 @@ impl HyperliquidExecutionClient {
                                     dispatch_execution_report(report);
                                 }
 
-                                for id in terminal_ids {
+                                for id in immediate_cleanup {
                                     let cloid = Cloid::from_client_order_id(id);
-                                    ws_client.remove_cloid_mapping(&Ustr::from(
-                                        &cloid.to_hex(),
-                                    ));
-                                }
-
-                                // Track FILLED status for deferred cleanup
-                                for id in filled_ids {
-                                    pending_filled.insert(id);
-                                }
-
-                                // Clean up only after FILLED has been observed
-                                for id in fill_ids {
-                                    if pending_filled.remove(&id) {
-                                        let cloid = Cloid::from_client_order_id(id);
-                                        ws_client.remove_cloid_mapping(&Ustr::from(
-                                            &cloid.to_hex(),
-                                        ));
-                                    }
+                                    ws_client.remove_cloid_mapping(&Ustr::from(&cloid.to_hex()));
                                 }
                             }
-                            NautilusWsMessage::Reconnected => {
-                                log::info!("WebSocket reconnected, resubscribing to user channels");
-
-                                if let Err(e) = ws_client
-                                    .subscribe_order_updates(&subscription_address)
-                                    .await
-                                {
-                                    log::error!(
-                                        "Failed to resubscribe to order updates after reconnect: {e}"
-                                    );
-                                }
-
-                                if let Err(e) = ws_client
-                                    .subscribe_user_events(&subscription_address)
-                                    .await
-                                {
-                                    log::error!(
-                                        "Failed to resubscribe to user events after reconnect: {e}"
-                                    );
-                                }
-
-                                log::info!("Resubscribed to execution channels");
-                            }
+                            // Reconnected is handled by WS client internally
+                            // (resubscribe_all) and never forwarded here
+                            NautilusWsMessage::Reconnected => {}
                             NautilusWsMessage::Error(e) => {
                                 log::error!("WebSocket error: {e}");
                             }

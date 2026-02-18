@@ -146,9 +146,11 @@ strat_config = ExecTesterConfig(
     # enable_stop_sells=True,
     # tob_offset_ticks=0,  # Ticks away from top of book (0 = at market)
     use_post_only=True,  # Use post-only orders to get maker fees
+    reduce_only_on_stop=reduce_only_on_stop,
     # cancel_orders_on_stop=False,
     # close_positions_on_stop=False,
-    reduce_only_on_stop=reduce_only_on_stop,
+    manage_stop=True,
+    market_exit_reduce_only=reduce_only_on_stop,
     # test_reject_post_only=True,
     log_data=False,  # Set to True for verbose data logging
 )
