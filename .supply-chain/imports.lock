@@ -114,8 +114,8 @@ version = "0.53.0"
 audited_as = "0.52.0"
 
 [[publisher.bumpalo]]
-version = "3.19.1"
-when = "2025-12-16"
+version = "3.20.1"
+when = "2026-02-18"
 user-id = 696
 user-login = "fitzgen"
 user-name = "Nick Fitzgerald"

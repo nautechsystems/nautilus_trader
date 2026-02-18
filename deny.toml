@@ -180,6 +180,10 @@ skip = [
   # Cap'n Proto - hypersync-client uses 0.23.x, nautilus-serialization uses 0.25.0
   { crate = "capnp" },
 
+  # TOML parser - cbindgen requires 0.9.x, pyo3-stub-gen requires 1.0.x
+  { crate = "toml" },
+  { crate = "toml_datetime" },
+
   # TLS roots - version fragmentation in TLS ecosystem
   { crate = "webpki-roots" },
 

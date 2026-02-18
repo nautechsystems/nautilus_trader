@@ -106,7 +106,7 @@ nautilus-tardis = { path = "crates/adapters/tardis", version = "0.53.0", default
 # Core dependencies
 # -----------------------------------------------------------------------------
 ahash = { version = "0.8.12", features = ["serde"] }
-alloy-primitives = { version = "1.5.6", default-features = false, features = [
+alloy-primitives = { version = "1.5.7", default-features = false, features = [
   "std",
   "serde",
 ] }
@@ -119,7 +119,7 @@ arrow = { version = "57.3.0", default-features = false, features = [
 ] }
 async-stream = "0.3.6"
 async-trait = "0.1.89"
-aws-lc-rs = { version = "1.15.4", default-features = false, features = [
+aws-lc-rs = { version = "1.16.0", default-features = false, features = [
   "non-fips",
 ] }
 base64 = "0.22.1"
@@ -178,7 +178,7 @@ parquet = { version = "57.3.0", default-features = false, features = [
   "async",
 ] }
 pem = "3.0.6"
-pyo3 = { version = "0.28.1", default-features = false, features = [
+pyo3 = { version = "0.28.2", default-features = false, features = [
   "chrono",
   "hashbrown",
   "indexmap",
@@ -267,7 +267,7 @@ tokio-tungstenite = { version = "0.28.0", features = [
   "rustls-tls-webpki-roots",
 ] }
 tokio-util = { version = "0.7.18", default-features = false, features = ["io"] }
-toml = { version = "0.9.12", default-features = false, features = [
+toml = { version = "1.0.3", default-features = false, features = [
   "parse",
   "serde",
 ] }
@@ -287,19 +287,19 @@ webpki-roots = "1.0.6"
 # -----------------------------------------------------------------------------
 # Adapter dependencies
 # -----------------------------------------------------------------------------
-alloy = { version = "1.7.1", default-features = false, features = [
+alloy = { version = "1.7.3", default-features = false, features = [
   "sol-types",
   "contract",
 ] }
-alloy-signer = { version = "1.7.1", default-features = false }
-alloy-signer-local = { version = "1.7.1", default-features = false, features = [
+alloy-signer = { version = "1.7.3", default-features = false }
+alloy-signer-local = { version = "1.7.3", default-features = false, features = [
   "mnemonic",
 ] }
-alloy-sol-types = "1.5.6"
+alloy-sol-types = "1.5.7"
 arc-swap = "1.8.2"
 cosmrs = { version = "0.22.0", default-features = false, features = ["bip32"] }
 csv = "1.4.0"
-databento = { version = "0.40.0", default-features = false, features = [
+databento = { version = "0.41.0", default-features = false, features = [
   "historical",
   "live",
 ] }

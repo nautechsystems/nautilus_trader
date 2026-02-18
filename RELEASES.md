@@ -35,7 +35,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Added Databento bulk subscription and historical request support (#3490), thanks @shzhng
 - Added Interactive Brokers subscribe index price functionality (#3514), thanks @Murph24
 - Added Interactive Brokers `TotalCashValue` to account summary `info` dict, exposing actual cash balance (#3567), thanks @shzhng
-- Added Interactive Brokers `request_timeout` config to `InteractiveBrokersExecClientConfig` and consolidated all IB request timeouts into a single configurable value, thanks @shzhng
+- Added Interactive Brokers `request_timeout` config to `InteractiveBrokersExecClientConfig` and consolidated all IB request timeouts into a single configurable value (#3602), thanks @shzhng
 - Added OKX batch cancel support for conditional (algo) orders
 - Added Polymarket data loader event-level API support (#3484), thanks @jsemldonado
 - Added Polymarket `event_slug_builder` support (#3501), thanks @jsemldonado
@@ -160,6 +160,7 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 ### Internal Improvements
 - Added support for setting cache database adapter in cache and `LiveNode` (#3401), thanks @filipmacek
 - Added `ts_init` normalization option to `convert_stream_to_data` (#3433), thanks @faysou
+- Added Params type and catalog instrument persistence in Rust (#3539), thanks @faysou
 - Added metadata validation for parquet file consolidation to improve handling of mixed precision instruments
 - Added Binance `listenKeyExpired` event handling (#3387), thanks @Johnkhk
 - Added Deribit data client (#3368), thanks @filipmacek
@@ -189,8 +190,10 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Improved pnl FX conversions in portfolio (#3335), thanks @faysou
 - Improved live timers to use `BTreeMap` for storage (#3392), thanks @faysou
 - Improved checks before writing data in catalog._write_chunk (#3411), thanks @faysou
+- Improved `ts_init` monotonicity enforcement in `convert_stream_to_data` (#3600), thanks @faysou
 - Improved `OptionExerciseModule` logging and fix cache reference (#3388), thanks @davidsblom
 - Improved execution reports builder pattern in Rust (#3417), thanks @filipmacek
+- Improved `GridMarketMaker` strategy and dYdX cancel handling (#3601), thanks @filipmacek
 - Improved visualization to use fill report for create_bars_with_fills (#3466), thanks @faysou
 - Improved Architect AX WebSocket data and order handling (#3577), thanks @andrew-cho-architect
 - Improved Betfair adapter rate limiting and fill deduplication
@@ -219,9 +222,9 @@ This will be the final release with support for the dYdX v3 (legacy) API. Future
 - Upgraded Rust (MSRV) to 1.93.1
 - Upgraded Cap'n Proto to v1.3.0
 - Upgraded Cython to v3.2.4
-- Upgraded `databento` crate to v0.39.0
+- Upgraded `databento` crate to v0.41.0
 - Upgraded `datafusion` crate to v52.1.0
-- Upgraded `pyo3` crate to v0.28.1
+- Upgraded `pyo3` crate to v0.28.2
 - Upgraded `pyo3-async-runtimes` crate to v0.28.0
 - Upgraded `redis` crate to v1.0.3
 - Upgraded `tokio` crate to v1.49.0
