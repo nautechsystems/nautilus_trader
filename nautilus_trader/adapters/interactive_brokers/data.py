@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from __future__ import annotations
 
 import asyncio
@@ -324,7 +325,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         await self._client.unsubscribe_ticks(command.instrument_id, "AllLast")
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
-        if command.bar_type.spec.timedelta == 5:
+        if command.bar_type.spec.timedelta.total_seconds() == 5:
             await self._client.unsubscribe_realtime_bars(command.bar_type)
         else:
             await self._client.unsubscribe_historical_bars(command.bar_type)
